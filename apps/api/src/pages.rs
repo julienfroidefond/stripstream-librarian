@@ -64,13 +64,14 @@ impl OutputFormat {
     }
 }
 
+/// Get a specific page image from a book with optional format conversion
 #[utoipa::path(
     get,
     path = "/books/{book_id}/pages/{n}",
     tag = "books",
     params(
-        ("book_id" = Uuid, description = "Book UUID"),
-        ("n" = u32, description = "Page number (starts at 1)"),
+        ("book_id" = String, Path, description = "Book UUID"),
+        ("n" = u32, Path, description = "Page number (starts at 1)"),
         ("format" = Option<String>, Query, description = "Output format: webp, jpeg, png"),
         ("quality" = Option<u8>, Query, description = "JPEG quality 1-100"),
         ("width" = Option<u32>, Query, description = "Max width (max 2160)"),
@@ -79,7 +80,9 @@ impl OutputFormat {
         (status = 200, description = "Page image", content_type = "image/webp"),
         (status = 400, description = "Invalid parameters"),
         (status = 404, description = "Book or page not found"),
-    )
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
 )]
 pub async fn get_page(
     State(state): State<AppState>,

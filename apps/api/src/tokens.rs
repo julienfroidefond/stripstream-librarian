@@ -20,6 +20,7 @@ pub struct CreateTokenRequest {
 
 #[derive(Serialize, ToSchema)]
 pub struct TokenResponse {
+    #[schema(value_type = String)]
     pub id: Uuid,
     pub name: String,
     pub scope: String,
@@ -28,11 +29,13 @@ pub struct TokenResponse {
     pub last_used_at: Option<DateTime<Utc>>,
     #[schema(value_type = Option<String>)]
     pub revoked_at: Option<DateTime<Utc>>,
+    #[schema(value_type = String)]
     pub created_at: DateTime<Utc>,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct CreatedTokenResponse {
+    #[schema(value_type = String)]
     pub id: Uuid,
     pub name: String,
     pub scope: String,
@@ -40,15 +43,19 @@ pub struct CreatedTokenResponse {
     pub prefix: String,
 }
 
+/// Create a new API token with read or admin scope. The token is only shown once.
 #[utoipa::path(
     post,
     path = "/admin/tokens",
-    tag = "admin",
+    tag = "tokens",
     request_body = CreateTokenRequest,
     responses(
         (status = 200, body = CreatedTokenResponse, description = "Token created - token is only shown once"),
         (status = 400, description = "Invalid input"),
-    )
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
 )]
 pub async fn create_token(
     State(state): State<AppState>,
@@ -97,13 +104,17 @@ pub async fn create_token(
     }))
 }
 
+/// List all API tokens
 #[utoipa::path(
     get,
     path = "/admin/tokens",
-    tag = "admin",
+    tag = "tokens",
     responses(
         (status = 200, body = Vec<TokenResponse>),
-    )
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
 )]
 pub async fn list_tokens(State(state): State<AppState>) -> Result<Json<Vec<TokenResponse>>, ApiError> {
     let rows = sqlx::query(
@@ -128,14 +139,21 @@ pub async fn list_tokens(State(state): State<AppState>) -> Result<Json<Vec<Token
     Ok(Json(items))
 }
 
+/// Revoke an API token by ID
 #[utoipa::path(
     delete,
     path = "/admin/tokens/{id}",
-    tag = "admin",
+    tag = "tokens",
+    params(
+        ("id" = String, Path, description = "Token UUID"),
+    ),
     responses(
         (status = 200, description = "Token revoked"),
         (status = 404, description = "Token not found"),
-    )
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
 )]
 pub async fn revoke_token(
     State(state): State<AppState>,

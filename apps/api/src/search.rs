@@ -25,12 +25,13 @@ pub struct SearchResponse {
     pub processing_time_ms: Option<u64>,
 }
 
+/// Search books across all libraries using Meilisearch
 #[utoipa::path(
     get,
     path = "/search",
     tag = "books",
     params(
-        ("q" = String, description = "Search query"),
+        ("q" = String, Query, description = "Search query"),
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),
         ("type" = Option<String>, Query, description = "Filter by type (cbz, cbr, pdf)"),
         ("kind" = Option<String>, Query, description = "Filter by kind (alias for type)"),
@@ -38,7 +39,9 @@ pub struct SearchResponse {
     ),
     responses(
         (status = 200, body = SearchResponse),
-    )
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
 )]
 pub async fn search_books(
     State(state): State<AppState>,

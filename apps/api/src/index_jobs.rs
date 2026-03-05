@@ -15,6 +15,7 @@ pub struct RebuildRequest {
 
 #[derive(Serialize, ToSchema)]
 pub struct IndexJobResponse {
+    #[schema(value_type = String)]
     pub id: Uuid,
     #[schema(value_type = Option<String>)]
     pub library_id: Option<Uuid>,
@@ -26,6 +27,7 @@ pub struct IndexJobResponse {
     pub finished_at: Option<DateTime<Utc>>,
     pub stats_json: Option<serde_json::Value>,
     pub error_opt: Option<String>,
+    #[schema(value_type = String)]
     pub created_at: DateTime<Utc>,
 }
 
@@ -35,14 +37,18 @@ pub struct FolderItem {
     pub path: String,
 }
 
+/// Enqueue a job to rebuild the search index for a library (or all libraries if no library_id specified)
 #[utoipa::path(
     post,
     path = "/index/rebuild",
-    tag = "admin",
+    tag = "indexing",
     request_body = Option<RebuildRequest>,
     responses(
         (status = 200, body = IndexJobResponse),
-    )
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
 )]
 pub async fn enqueue_rebuild(
     State(state): State<AppState>,
@@ -69,13 +75,17 @@ pub async fn enqueue_rebuild(
     Ok(Json(map_row(row)))
 }
 
+/// List recent indexing jobs with their status
 #[utoipa::path(
     get,
     path = "/index/status",
-    tag = "admin",
+    tag = "indexing",
     responses(
         (status = 200, body = Vec<IndexJobResponse>),
-    )
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
 )]
 pub async fn list_index_jobs(State(state): State<AppState>) -> Result<Json<Vec<IndexJobResponse>>, ApiError> {
     let rows = sqlx::query(
@@ -87,14 +97,21 @@ pub async fn list_index_jobs(State(state): State<AppState>) -> Result<Json<Vec<I
     Ok(Json(rows.into_iter().map(map_row).collect()))
 }
 
+/// Cancel a pending or running indexing job
 #[utoipa::path(
     post,
     path = "/index/cancel/{id}",
-    tag = "admin",
+    tag = "indexing",
+    params(
+        ("id" = String, Path, description = "Job UUID"),
+    ),
     responses(
         (status = 200, body = IndexJobResponse),
         (status = 404, description = "Job not found or already finished"),
-    )
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
 )]
 pub async fn cancel_job(
     State(state): State<AppState>,
@@ -121,13 +138,17 @@ pub async fn cancel_job(
     Ok(Json(map_row(row)))
 }
 
+/// List available folders in /libraries for library creation
 #[utoipa::path(
     get,
     path = "/folders",
-    tag = "admin",
+    tag = "indexing",
     responses(
         (status = 200, body = Vec<FolderItem>),
-    )
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
 )]
 pub async fn list_folders(State(_state): State<AppState>) -> Result<Json<Vec<FolderItem>>, ApiError> {
     let libraries_path = std::path::Path::new("/libraries");

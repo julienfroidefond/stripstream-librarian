@@ -10,6 +10,7 @@ use crate::{error::ApiError, AppState};
 
 #[derive(Serialize, ToSchema)]
 pub struct LibraryResponse {
+    #[schema(value_type = String)]
     pub id: Uuid,
     pub name: String,
     pub root_path: String,
@@ -25,13 +26,17 @@ pub struct CreateLibraryRequest {
     pub root_path: String,
 }
 
+/// List all libraries with their book counts
 #[utoipa::path(
     get,
     path = "/libraries",
-    tag = "admin",
+    tag = "libraries",
     responses(
         (status = 200, body = Vec<LibraryResponse>),
-    )
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
 )]
 pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<LibraryResponse>>, ApiError> {
     let rows = sqlx::query(
@@ -56,15 +61,19 @@ pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<Li
     Ok(Json(items))
 }
 
+/// Create a new library from an absolute path
 #[utoipa::path(
     post,
     path = "/libraries",
-    tag = "admin",
+    tag = "libraries",
     request_body = CreateLibraryRequest,
     responses(
         (status = 200, body = LibraryResponse),
         (status = 400, description = "Invalid input"),
-    )
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
 )]
 pub async fn create_library(
     State(state): State<AppState>,
@@ -96,14 +105,21 @@ pub async fn create_library(
     }))
 }
 
+/// Delete a library by ID
 #[utoipa::path(
     delete,
     path = "/libraries/{id}",
-    tag = "admin",
+    tag = "libraries",
+    params(
+        ("id" = String, Path, description = "Library UUID"),
+    ),
     responses(
         (status = 200, description = "Library deleted"),
         (status = 404, description = "Library not found"),
-    )
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
 )]
 pub async fn delete_library(
     State(state): State<AppState>,

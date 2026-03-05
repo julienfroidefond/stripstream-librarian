@@ -1,3 +1,4 @@
+use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::OpenApi;
 
 #[derive(OpenApi)]
@@ -35,11 +36,73 @@ use utoipa::OpenApi;
             crate::tokens::CreateTokenRequest,
             crate::tokens::TokenResponse,
             crate::tokens::CreatedTokenResponse,
+            ErrorResponse,
         )
     ),
+    security(
+        ("Bearer" = [])
+    ),
     tags(
-        (name = "books", description = "Books management endpoints"),
-        (name = "admin", description = "Admin management endpoints"),
-    )
+        (name = "books", description = "Read-only endpoints for browsing and searching books"),
+        (name = "libraries", description = "Library management endpoints (Admin only)"),
+        (name = "indexing", description = "Search index management and job control (Admin only)"),
+        (name = "tokens", description = "API token management (Admin only)"),
+    ),
+    modifiers(&SecurityAddon)
 )]
 pub struct ApiDoc;
+
+pub struct SecurityAddon;
+
+impl utoipa::Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        if let Some(components) = openapi.components.as_mut() {
+            components.add_security_scheme(
+                "Bearer",
+                SecurityScheme::Http(
+                    HttpBuilder::new()
+                        .scheme(HttpAuthScheme::Bearer)
+                        .bearer_format("JWT")
+                        .description(Some(
+                            "Enter your API Bearer token (format: stl_<prefix>_<secret>)",
+                        ))
+                        .build(),
+                ),
+            );
+        }
+    }
+}
+
+#[derive(utoipa::ToSchema)]
+pub struct ErrorResponse {
+    #[allow(dead_code)]
+    pub error: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use utoipa::OpenApi;
+
+    #[test]
+    fn test_openapi_generation() {
+        let api_doc = ApiDoc::openapi();
+        let json = api_doc
+            .to_pretty_json()
+            .expect("Failed to serialize OpenAPI");
+
+        // Check that there are no references to non-existent schemas
+        assert!(
+            !json.contains("\"/components/schemas/Uuid\""),
+            "Uuid schema should not be referenced"
+        );
+        assert!(
+            !json.contains("\"/components/schemas/DateTime\""),
+            "DateTime schema should not be referenced"
+        );
+
+        // Save to file for inspection
+        std::fs::write("/tmp/openapi.json", &json).expect("Failed to write file");
+        println!("OpenAPI JSON saved to /tmp/openapi.json");
+    }
+}

@@ -13,6 +13,7 @@ pub struct ListBooksQuery {
     pub library_id: Option<Uuid>,
     #[schema(value_type = Option<String>)]
     pub kind: Option<String>,
+    #[schema(value_type = Option<String>)]
     pub cursor: Option<Uuid>,
     #[schema(value_type = Option<i64>, example = 50)]
     pub limit: Option<i64>,
@@ -20,7 +21,9 @@ pub struct ListBooksQuery {
 
 #[derive(Serialize, ToSchema)]
 pub struct BookItem {
+    #[schema(value_type = String)]
     pub id: Uuid,
+    #[schema(value_type = String)]
     pub library_id: Uuid,
     pub kind: String,
     pub title: String,
@@ -29,18 +32,22 @@ pub struct BookItem {
     pub volume: Option<String>,
     pub language: Option<String>,
     pub page_count: Option<i32>,
+    #[schema(value_type = String)]
     pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct BooksPage {
     pub items: Vec<BookItem>,
+    #[schema(value_type = Option<String>)]
     pub next_cursor: Option<Uuid>,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct BookDetails {
+    #[schema(value_type = String)]
     pub id: Uuid,
+    #[schema(value_type = String)]
     pub library_id: Uuid,
     pub kind: String,
     pub title: String,
@@ -54,19 +61,22 @@ pub struct BookDetails {
     pub file_parse_status: Option<String>,
 }
 
+/// List books with optional filtering and pagination
 #[utoipa::path(
     get,
     path = "/books",
     tag = "books",
     params(
-        ("library_id" = Option<Uuid>, Query, description = "Filter by library ID"),
+        ("library_id" = Option<String>, Query, description = "Filter by library ID"),
         ("kind" = Option<String>, Query, description = "Filter by book kind (cbz, cbr, pdf)"),
-        ("cursor" = Option<Uuid>, Query, description = "Cursor for pagination"),
+        ("cursor" = Option<String>, Query, description = "Cursor for pagination"),
         ("limit" = Option<i64>, Query, description = "Max items to return (max 200)"),
     ),
     responses(
         (status = 200, body = BooksPage),
-    )
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
 )]
 pub async fn list_books(
     State(state): State<AppState>,
@@ -120,14 +130,20 @@ pub async fn list_books(
     }))
 }
 
+/// Get detailed information about a specific book
 #[utoipa::path(
     get,
     path = "/books/{id}",
     tag = "books",
+    params(
+        ("id" = String, Path, description = "Book UUID"),
+    ),
     responses(
         (status = 200, body = BookDetails),
         (status = 404, description = "Book not found"),
-    )
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
 )]
 pub async fn get_book(
     State(state): State<AppState>,
