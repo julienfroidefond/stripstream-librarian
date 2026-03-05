@@ -3,6 +3,7 @@ mod books;
 mod error;
 mod index_jobs;
 mod libraries;
+mod openapi;
 mod pages;
 mod search;
 mod tokens;
@@ -22,6 +23,8 @@ use axum::{
     routing::{delete, get},
     Json, Router,
 };
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 use lru::LruCache;
 use stripstream_core::config::ApiConfig;
 use sqlx::postgres::PgPoolOptions;
@@ -118,6 +121,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health))
         .route("/ready", get(ready))
         .route("/metrics", get(metrics))
+        .route("/docs", get(docs_redirect))
+        .merge(SwaggerUi::new("/swagger-ui").url("/openapi.json", openapi::ApiDoc::openapi()))
         .merge(admin_routes)
         .merge(read_routes)
         .layer(middleware::from_fn_with_state(state.clone(), request_counter))
@@ -131,6 +136,10 @@ async fn main() -> anyhow::Result<()> {
 
 async fn health() -> &'static str {
     "ok"
+}
+
+async fn docs_redirect() -> impl axum::response::IntoResponse {
+    axum::response::Redirect::to("/swagger-ui/")
 }
 
 async fn ready(axum::extract::State(state): axum::extract::State<AppState>) -> Result<Json<serde_json::Value>, error::ApiError> {

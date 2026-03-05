@@ -6,17 +6,33 @@ use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use uuid::Uuid;
+use utoipa::ToSchema;
 
 use crate::{error::ApiError, AppState};
 
-#[derive(Deserialize)]
-pub struct CreateTokenInput {
+#[derive(Deserialize, ToSchema)]
+pub struct CreateTokenRequest {
+    #[schema(value_type = String, example = "My API Token")]
     pub name: String,
+    #[schema(value_type = Option<String>, example = "read")]
     pub scope: Option<String>,
 }
 
-#[derive(Serialize)]
-pub struct CreatedToken {
+#[derive(Serialize, ToSchema)]
+pub struct TokenResponse {
+    pub id: Uuid,
+    pub name: String,
+    pub scope: String,
+    pub prefix: String,
+    #[schema(value_type = Option<String>)]
+    pub last_used_at: Option<DateTime<Utc>>,
+    #[schema(value_type = Option<String>)]
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct CreatedTokenResponse {
     pub id: Uuid,
     pub name: String,
     pub scope: String,
@@ -24,21 +40,20 @@ pub struct CreatedToken {
     pub prefix: String,
 }
 
-#[derive(Serialize)]
-pub struct TokenItem {
-    pub id: Uuid,
-    pub name: String,
-    pub scope: String,
-    pub prefix: String,
-    pub last_used_at: Option<DateTime<Utc>>,
-    pub revoked_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-}
-
+#[utoipa::path(
+    post,
+    path = "/admin/tokens",
+    tag = "admin",
+    request_body = CreateTokenRequest,
+    responses(
+        (status = 200, body = CreatedTokenResponse, description = "Token created - token is only shown once"),
+        (status = 400, description = "Invalid input"),
+    )
+)]
 pub async fn create_token(
     State(state): State<AppState>,
-    Json(input): Json<CreateTokenInput>,
-) -> Result<Json<CreatedToken>, ApiError> {
+    Json(input): Json<CreateTokenRequest>,
+) -> Result<Json<CreatedTokenResponse>, ApiError> {
     if input.name.trim().is_empty() {
         return Err(ApiError::bad_request("name is required"));
     }
@@ -73,7 +88,7 @@ pub async fn create_token(
     .execute(&state.pool)
     .await?;
 
-    Ok(Json(CreatedToken {
+    Ok(Json(CreatedTokenResponse {
         id,
         name: input.name.trim().to_string(),
         scope: scope.to_string(),
@@ -82,7 +97,15 @@ pub async fn create_token(
     }))
 }
 
-pub async fn list_tokens(State(state): State<AppState>) -> Result<Json<Vec<TokenItem>>, ApiError> {
+#[utoipa::path(
+    get,
+    path = "/admin/tokens",
+    tag = "admin",
+    responses(
+        (status = 200, body = Vec<TokenResponse>),
+    )
+)]
+pub async fn list_tokens(State(state): State<AppState>) -> Result<Json<Vec<TokenResponse>>, ApiError> {
     let rows = sqlx::query(
         "SELECT id, name, scope, prefix, last_used_at, revoked_at, created_at FROM api_tokens ORDER BY created_at DESC",
     )
@@ -91,7 +114,7 @@ pub async fn list_tokens(State(state): State<AppState>) -> Result<Json<Vec<Token
 
     let items = rows
         .into_iter()
-        .map(|row| TokenItem {
+        .map(|row| TokenResponse {
             id: row.get("id"),
             name: row.get("name"),
             scope: row.get("scope"),
@@ -105,6 +128,15 @@ pub async fn list_tokens(State(state): State<AppState>) -> Result<Json<Vec<Token
     Ok(Json(items))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/admin/tokens/{id}",
+    tag = "admin",
+    responses(
+        (status = 200, description = "Token revoked"),
+        (status = 404, description = "Token not found"),
+    )
+)]
 pub async fn revoke_token(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,

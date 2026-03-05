@@ -1,24 +1,45 @@
 use axum::{extract::{Query, State}, Json};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::{error::ApiError, AppState};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct SearchQuery {
+    #[schema(value_type = String, example = "batman")]
     pub q: String,
+    #[schema(value_type = Option<String>)]
     pub library_id: Option<String>,
+    #[schema(value_type = Option<String>, example = "cbz")]
     pub r#type: Option<String>,
+    #[schema(value_type = Option<String>, example = "cbz")]
     pub kind: Option<String>,
+    #[schema(value_type = Option<usize>, example = 20)]
     pub limit: Option<usize>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct SearchResponse {
     pub hits: serde_json::Value,
     pub estimated_total_hits: Option<u64>,
     pub processing_time_ms: Option<u64>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/search",
+    tag = "books",
+    params(
+        ("q" = String, description = "Search query"),
+        ("library_id" = Option<String>, Query, description = "Filter by library ID"),
+        ("type" = Option<String>, Query, description = "Filter by type (cbz, cbr, pdf)"),
+        ("kind" = Option<String>, Query, description = "Filter by kind (alias for type)"),
+        ("limit" = Option<usize>, Query, description = "Max results (max 100)"),
+    ),
+    responses(
+        (status = 200, body = SearchResponse),
+    )
+)]
 pub async fn search_books(
     State(state): State<AppState>,
     Query(query): Query<SearchQuery>,

@@ -3,18 +3,22 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use uuid::Uuid;
+use utoipa::ToSchema;
 
 use crate::{error::ApiError, AppState};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct ListBooksQuery {
+    #[schema(value_type = Option<String>)]
     pub library_id: Option<Uuid>,
+    #[schema(value_type = Option<String>)]
     pub kind: Option<String>,
     pub cursor: Option<Uuid>,
+    #[schema(value_type = Option<i64>, example = 50)]
     pub limit: Option<i64>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct BookItem {
     pub id: Uuid,
     pub library_id: Uuid,
@@ -28,13 +32,13 @@ pub struct BookItem {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct BooksPage {
     pub items: Vec<BookItem>,
     pub next_cursor: Option<Uuid>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct BookDetails {
     pub id: Uuid,
     pub library_id: Uuid,
@@ -50,6 +54,20 @@ pub struct BookDetails {
     pub file_parse_status: Option<String>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/books",
+    tag = "books",
+    params(
+        ("library_id" = Option<Uuid>, Query, description = "Filter by library ID"),
+        ("kind" = Option<String>, Query, description = "Filter by book kind (cbz, cbr, pdf)"),
+        ("cursor" = Option<Uuid>, Query, description = "Cursor for pagination"),
+        ("limit" = Option<i64>, Query, description = "Max items to return (max 200)"),
+    ),
+    responses(
+        (status = 200, body = BooksPage),
+    )
+)]
 pub async fn list_books(
     State(state): State<AppState>,
     Query(query): Query<ListBooksQuery>,
@@ -102,6 +120,15 @@ pub async fn list_books(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/books/{id}",
+    tag = "books",
+    responses(
+        (status = 200, body = BookDetails),
+        (status = 404, description = "Book not found"),
+    )
+)]
 pub async fn get_book(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,

@@ -13,16 +13,20 @@ use axum::{
 };
 use image::{codecs::jpeg::JpegEncoder, codecs::png::PngEncoder, codecs::webp::WebPEncoder, ColorType, ImageEncoder};
 use serde::Deserialize;
+use utoipa::ToSchema;
 use sha2::{Digest, Sha256};
 use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{error::ApiError, AppState};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct PageQuery {
+    #[schema(value_type = Option<String>, example = "webp")]
     pub format: Option<String>,
+    #[schema(value_type = Option<u8>, example = 80)]
     pub quality: Option<u8>,
+    #[schema(value_type = Option<u32>, example = 1200)]
     pub width: Option<u32>,
 }
 
@@ -60,6 +64,23 @@ impl OutputFormat {
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/books/{book_id}/pages/{n}",
+    tag = "books",
+    params(
+        ("book_id" = Uuid, description = "Book UUID"),
+        ("n" = u32, description = "Page number (starts at 1)"),
+        ("format" = Option<String>, Query, description = "Output format: webp, jpeg, png"),
+        ("quality" = Option<u8>, Query, description = "JPEG quality 1-100"),
+        ("width" = Option<u32>, Query, description = "Max width (max 2160)"),
+    ),
+    responses(
+        (status = 200, description = "Page image", content_type = "image/webp"),
+        (status = 400, description = "Invalid parameters"),
+        (status = 404, description = "Book or page not found"),
+    )
+)]
 pub async fn get_page(
     State(state): State<AppState>,
     AxumPath((book_id, n)): AxumPath<(Uuid, u32)>,

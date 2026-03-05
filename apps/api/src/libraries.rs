@@ -4,11 +4,12 @@ use axum::{extract::{Path as AxumPath, State}, Json};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use uuid::Uuid;
+use utoipa::ToSchema;
 
 use crate::{error::ApiError, AppState};
 
-#[derive(Serialize)]
-pub struct LibraryDto {
+#[derive(Serialize, ToSchema)]
+pub struct LibraryResponse {
     pub id: Uuid,
     pub name: String,
     pub root_path: String,
@@ -16,13 +17,23 @@ pub struct LibraryDto {
     pub book_count: i64,
 }
 
-#[derive(Deserialize)]
-pub struct CreateLibraryInput {
+#[derive(Deserialize, ToSchema)]
+pub struct CreateLibraryRequest {
+    #[schema(value_type = String, example = "Comics")]
     pub name: String,
+    #[schema(value_type = String, example = "/data/comics")]
     pub root_path: String,
 }
 
-pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<LibraryDto>>, ApiError> {
+#[utoipa::path(
+    get,
+    path = "/libraries",
+    tag = "admin",
+    responses(
+        (status = 200, body = Vec<LibraryResponse>),
+    )
+)]
+pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<LibraryResponse>>, ApiError> {
     let rows = sqlx::query(
         "SELECT l.id, l.name, l.root_path, l.enabled, 
                 (SELECT COUNT(*) FROM books b WHERE b.library_id = l.id) as book_count 
@@ -33,7 +44,7 @@ pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<Li
 
     let items = rows
         .into_iter()
-        .map(|row| LibraryDto {
+        .map(|row| LibraryResponse {
             id: row.get("id"),
             name: row.get("name"),
             root_path: row.get("root_path"),
@@ -45,10 +56,20 @@ pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<Li
     Ok(Json(items))
 }
 
+#[utoipa::path(
+    post,
+    path = "/libraries",
+    tag = "admin",
+    request_body = CreateLibraryRequest,
+    responses(
+        (status = 200, body = LibraryResponse),
+        (status = 400, description = "Invalid input"),
+    )
+)]
 pub async fn create_library(
     State(state): State<AppState>,
-    Json(input): Json<CreateLibraryInput>,
-) -> Result<Json<LibraryDto>, ApiError> {
+    Json(input): Json<CreateLibraryRequest>,
+) -> Result<Json<LibraryResponse>, ApiError> {
     if input.name.trim().is_empty() {
         return Err(ApiError::bad_request("name is required"));
     }
@@ -66,7 +87,7 @@ pub async fn create_library(
     .execute(&state.pool)
     .await?;
 
-    Ok(Json(LibraryDto {
+    Ok(Json(LibraryResponse {
         id,
         name: input.name.trim().to_string(),
         root_path,
@@ -75,6 +96,15 @@ pub async fn create_library(
     }))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/libraries/{id}",
+    tag = "admin",
+    responses(
+        (status = 200, description = "Library deleted"),
+        (status = 404, description = "Library not found"),
+    )
+)]
 pub async fn delete_library(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
