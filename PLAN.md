@@ -69,53 +69,53 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 **DoD:** Gestion librairies robuste et securisee.
 
 ### T7 - Jobs d'indexation
-- [ ] Orchestration scan/rebuild
-- [ ] `POST /index/rebuild`
-- [ ] `GET /index/status`
-- [ ] Persist statuts/erreurs dans `index_jobs`
+- [x] Orchestration scan/rebuild
+- [x] `POST /index/rebuild`
+- [x] `GET /index/status`
+- [x] Persist statuts/erreurs dans `index_jobs`
 
 **DoD:** Jobs tracables et relancables.
 
 ### T8 - Scan incremental
-- [ ] Decouverte fichiers supportes
-- [ ] Fingerprint (`size`, `mtime`, hash partiel)
-- [ ] Upsert `book_files`
-- [ ] Detection suppressions/renommages
+- [x] Decouverte fichiers supportes
+- [x] Fingerprint (`size`, `mtime`, hash partiel)
+- [x] Upsert `book_files`
+- [x] Detection suppressions/renommages
 
 **DoD:** Rescan = traitement des deltas uniquement.
 
 ### T9 - Parsing CBZ
-- [ ] Lecture zip + ordre pages naturel
-- [ ] Metadonnees de base + cover
-- [ ] Gestion erreurs archive
+- [x] Lecture zip + ordre pages naturel
+- [x] Metadonnees de base + cover
+- [x] Gestion erreurs archive
 
 **DoD:** Livres CBZ indexes correctement.
 
 ### T10 - Parsing CBR (temp disk)
-- [ ] Extraction temp via `unrar`
-- [ ] Ordonnancement pages
-- [ ] Cleanup garanti (meme en erreur)
+- [x] Extraction temp via `unrar`
+- [x] Ordonnancement pages
+- [x] Cleanup garanti (meme en erreur)
 
 **DoD:** Pas de fuite temp, parsing stable.
 
 ### T11 - Parsing PDF
-- [ ] Metadonnees (titre/auteur/pages)
-- [ ] Preparation rendu page a la volee
-- [ ] Gestion fichiers corrompus
+- [x] Metadonnees (titre/auteur/pages)
+- [x] Preparation rendu page a la volee
+- [x] Gestion fichiers corrompus
 
 **DoD:** PDF indexes et lisibles.
 
 ### T12 - API livres
-- [ ] `GET /books` (filtres + curseur)
-- [ ] `GET /books/:id`
-- [ ] Contrat JSON propre et stable
+- [x] `GET /books` (filtres + curseur)
+- [x] `GET /books/:id`
+- [x] Contrat JSON propre et stable
 
 **DoD:** Pagination/filtres fonctionnels.
 
 ### T13 - Recherche
-- [ ] Projection vers Meilisearch
-- [ ] `GET /search?q=...&library_id=...&type=...`
-- [ ] Fuzzy + filtres
+- [x] Projection vers Meilisearch
+- [x] `GET /search?q=...&library_id=...&type=...`
+- [x] Fuzzy + filtres
 
 **DoD:** Recherche rapide et pertinente.
 
@@ -190,7 +190,7 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 
 ## Suivi d'avancement
 - [x] Lot 1: Fondations (T1 -> T6)
-- [ ] Lot 2: Ingestion + Search (T7 -> T13)
+- [x] Lot 2: Ingestion + Search (T7 -> T13)
 - [ ] Lot 3: Lecture + UI + Hardening (T14 -> T18)
 
 ## Notes
@@ -200,3 +200,6 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 ## Journal
 - 2026-03-05: `docker compose up -d --build` valide, stack complete en healthy (`postgres`, `meilisearch`, `api`, `indexer`, `admin-ui`).
 - 2026-03-05: ajustements infra appliques pour demarrage stable (`unrar` -> `unrar-free`, image `rust:1-bookworm`, healthchecks `127.0.0.1`).
+- 2026-03-05: ajout d'un service `migrate` dans Compose pour executer automatiquement `infra/migrations/0001_init.sql` au demarrage.
+- 2026-03-05: Lot 2 termine (jobs, scan incremental, parsers `cbz/cbr/pdf`, API livres, sync + recherche Meilisearch).
+- 2026-03-05: verification de bout en bout OK sur une librairie de test (`/libraries/demo`) avec indexation, listing `/books` et recherche `/search` (1 CBZ detecte).

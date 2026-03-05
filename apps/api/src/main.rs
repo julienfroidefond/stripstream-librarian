@@ -1,6 +1,9 @@
 mod auth;
+mod books;
 mod error;
+mod index_jobs;
 mod libraries;
+mod search;
 mod tokens;
 
 use std::sync::Arc;
@@ -14,6 +17,8 @@ use tracing::info;
 struct AppState {
     pool: sqlx::PgPool,
     bootstrap_token: Arc<str>,
+    meili_url: Arc<str>,
+    meili_master_key: Arc<str>,
 }
 
 #[tokio::main]
@@ -33,18 +38,29 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         pool,
         bootstrap_token: Arc::from(config.api_bootstrap_token),
+        meili_url: Arc::from(config.meili_url),
+        meili_master_key: Arc::from(config.meili_master_key),
     };
 
-    let protected = Router::new()
+    let admin_routes = Router::new()
         .route("/libraries", get(libraries::list_libraries).post(libraries::create_library))
         .route("/libraries/:id", delete(libraries::delete_library))
+        .route("/index/rebuild", axum::routing::post(index_jobs::enqueue_rebuild))
+        .route("/index/status", get(index_jobs::list_index_jobs))
         .route("/admin/tokens", get(tokens::list_tokens).post(tokens::create_token))
         .route("/admin/tokens/:id", delete(tokens::revoke_token))
         .layer(middleware::from_fn_with_state(state.clone(), auth::require_admin));
 
+    let read_routes = Router::new()
+        .route("/books", get(books::list_books))
+        .route("/books/:id", get(books::get_book))
+        .route("/search", get(search::search_books))
+        .layer(middleware::from_fn_with_state(state.clone(), auth::require_read));
+
     let app = Router::new()
         .route("/health", get(health))
-        .merge(protected)
+        .merge(admin_routes)
+        .merge(read_routes)
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&config.listen_addr).await?;

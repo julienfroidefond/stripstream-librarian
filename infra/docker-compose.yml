@@ -17,8 +17,8 @@ services:
 
   meilisearch:
     image: getmeili/meilisearch:v1.12
-    environment:
-      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-change-me}
+    env_file:
+      - ../.env
     ports:
       - "7700:7700"
     volumes:
@@ -29,6 +29,20 @@ services:
       timeout: 5s
       retries: 5
 
+  migrate:
+    image: postgres:16-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      [
+        "sh",
+        "-c",
+        "PGPASSWORD=stripstream psql -h postgres -U stripstream -d stripstream -f /migrations/0001_init.sql",
+      ]
+
   api:
     build:
       context: ..
@@ -37,7 +51,11 @@ services:
       - ../.env
     ports:
       - "8080:8080"
+    volumes:
+      - ../libraries:/libraries
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       meilisearch:
@@ -56,7 +74,11 @@ services:
       - ../.env
     ports:
       - "8081:8081"
+    volumes:
+      - ../libraries:/libraries
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       meilisearch:

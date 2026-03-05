@@ -32,6 +32,18 @@ pub async fn require_admin(
     Ok(next.run(req).await)
 }
 
+pub async fn require_read(
+    State(state): State<AppState>,
+    mut req: Request,
+    next: Next,
+) -> Result<Response, ApiError> {
+    let token = bearer_token(&req).ok_or_else(|| ApiError::unauthorized("missing bearer token"))?;
+    let scope = authenticate(&state, token).await?;
+
+    req.extensions_mut().insert(scope);
+    Ok(next.run(req).await)
+}
+
 fn bearer_token(req: &Request) -> Option<&str> {
     req.headers()
         .get(AUTHORIZATION)

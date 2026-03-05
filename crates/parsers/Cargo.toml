@@ -6,3 +6,5 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+lopdf = "0.35"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
