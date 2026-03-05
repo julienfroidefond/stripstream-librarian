@@ -137,10 +137,12 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 
 ### T16 - Backoffice Next.js
 - [x] Bootstrap app Next.js (`apps/backoffice`)
-- [x] Vue Libraries
-- [x] Vue Jobs
+- [x] Vue Libraries (folder selector, add/delete)
+- [x] Vue Jobs (rebuild per library, cancel job)
 - [x] Vue API Tokens (create/list/revoke)
 - [x] Auth backoffice via token API
+- [x] Theme switcher Light/Dark
+- [x] Style aligne avec site officiel
 
 **DoD:** Backoffice Next.js utilisable pour l'administration complete.
 

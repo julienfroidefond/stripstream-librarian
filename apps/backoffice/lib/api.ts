@@ -3,12 +3,17 @@ export type LibraryDto = {
   name: string;
   root_path: string;
   enabled: boolean;
+  book_count: number;
 };
 
 export type IndexJobDto = {
   id: string;
+  library_id: string | null;
   type: string;
   status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  error_opt: string | null;
   created_at: string;
 };
 
@@ -18,6 +23,11 @@ export type TokenDto = {
   scope: string;
   prefix: string;
   revoked_at: string | null;
+};
+
+export type FolderItem = {
+  name: string;
+  path: string;
 };
 
 function config() {
@@ -54,14 +64,52 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   return (await res.json()) as T;
 }
 
-export async function listLibraries() {
+export async function fetchLibraries() {
   return apiFetch<LibraryDto[]>("/libraries");
+}
+
+export async function createLibrary(name: string, rootPath: string) {
+  return apiFetch<LibraryDto>("/libraries", {
+    method: "POST",
+    body: JSON.stringify({ name, root_path: rootPath })
+  });
+}
+
+export async function deleteLibrary(id: string) {
+  return apiFetch<void>(`/libraries/${id}`, { method: "DELETE" });
 }
 
 export async function listJobs() {
   return apiFetch<IndexJobDto[]>("/index/status");
 }
 
+export async function rebuildIndex(libraryId?: string) {
+  const body = libraryId ? { library_id: libraryId } : {};
+  return apiFetch<IndexJobDto>("/index/rebuild", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export async function cancelJob(id: string) {
+  return apiFetch<IndexJobDto>(`/index/cancel/${id}`, { method: "POST" });
+}
+
+export async function listFolders() {
+  return apiFetch<FolderItem[]>("/folders");
+}
+
 export async function listTokens() {
   return apiFetch<TokenDto[]>("/admin/tokens");
+}
+
+export async function createToken(name: string, scope: string) {
+  return apiFetch<{ token: string }>("/admin/tokens", {
+    method: "POST",
+    body: JSON.stringify({ name, scope })
+  });
+}
+
+export async function revokeToken(id: string) {
+  return apiFetch<void>(`/admin/tokens/${id}`, { method: "DELETE" });
 }

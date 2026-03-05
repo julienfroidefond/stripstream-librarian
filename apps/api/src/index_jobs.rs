@@ -59,6 +59,57 @@ pub async fn list_index_jobs(State(state): State<AppState>) -> Result<Json<Vec<I
     Ok(Json(rows.into_iter().map(map_row).collect()))
 }
 
+pub async fn cancel_job(
+    State(state): State<AppState>,
+    id: axum::extract::Path<Uuid>,
+) -> Result<Json<IndexJobItem>, ApiError> {
+    let rows_affected = sqlx::query(
+        "UPDATE index_jobs SET status = 'cancelled' WHERE id = $1 AND status IN ('pending', 'running')",
+    )
+    .bind(id.0)
+    .execute(&state.pool)
+    .await?;
+
+    if rows_affected.rows_affected() == 0 {
+        return Err(ApiError::not_found("job not found or already finished"));
+    }
+
+    let row = sqlx::query(
+        "SELECT id, library_id, type, status, started_at, finished_at, stats_json, error_opt, created_at FROM index_jobs WHERE id = $1",
+    )
+    .bind(id.0)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(map_row(row)))
+}
+
+#[derive(Serialize)]
+pub struct FolderItem {
+    pub name: String,
+    pub path: String,
+}
+
+pub async fn list_folders(State(_state): State<AppState>) -> Result<Json<Vec<FolderItem>>, ApiError> {
+    let libraries_path = std::path::Path::new("/libraries");
+    let mut folders = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(libraries_path) {
+        for entry in entries.flatten() {
+            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                let name = entry.file_name().to_string_lossy().to_string();
+                folders.push(FolderItem {
+                    name: name.clone(),
+                    path: format!("/libraries/{}", name),
+                });
+            }
+        }
+    }
+
+    folders.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(Json(folders))
+}
+
 fn map_row(row: sqlx::postgres::PgRow) -> IndexJobItem {
     IndexJobItem {
         id: row.get("id"),

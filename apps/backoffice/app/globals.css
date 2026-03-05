@@ -210,6 +210,32 @@ button:hover {
   min-width: 66px;
 }
 
+.cancel-btn {
+  background: linear-gradient(95deg, hsl(2 72% 48% / 0.15), hsl(338 82% 62% / 0.2));
+  border-color: hsl(2 72% 48% / 0.5);
+}
+
+.status-pending { color: hsl(45 93% 47%); }
+.status-running { color: hsl(192 85% 55%); }
+.status-completed { color: hsl(142 60% 45%); }
+.status-failed { color: hsl(2 72% 48%); }
+.status-cancelled { color: hsl(220 13% 40%); }
+
+.error-hint {
+  display: inline-block;
+  margin-left: 6px;
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 50%;
+  background: hsl(2 72% 48%);
+  color: white;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: help;
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--line);

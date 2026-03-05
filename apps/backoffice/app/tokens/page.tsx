@@ -1,4 +1,6 @@
-import { listTokens } from "../../lib/api";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { listTokens, createToken, revokeToken, TokenDto } from "../../lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +10,25 @@ export default async function TokensPage({
   searchParams: Promise<{ created?: string }>;
 }) {
   const params = await searchParams;
-  const tokens = await listTokens().catch(() => []);
+  const tokens = await listTokens().catch(() => [] as TokenDto[]);
+
+  async function createTokenAction(formData: FormData) {
+    "use server";
+    const name = formData.get("name") as string;
+    const scope = formData.get("scope") as string;
+    if (name) {
+      const result = await createToken(name, scope);
+      revalidatePath("/tokens");
+      redirect(`/tokens?created=${encodeURIComponent(result.token)}`);
+    }
+  }
+
+  async function revokeTokenAction(formData: FormData) {
+    "use server";
+    const id = formData.get("id") as string;
+    await revokeToken(id);
+    revalidatePath("/tokens");
+  }
 
   return (
     <>
@@ -16,13 +36,13 @@ export default async function TokensPage({
 
       {params.created ? (
         <div className="card">
-          <strong>Token created:</strong>
+          <strong>Token created (copy it now, it won't be shown again):</strong>
           <pre>{params.created}</pre>
         </div>
       ) : null}
 
       <div className="card">
-        <form action="/tokens/create" method="post">
+        <form action={createTokenAction}>
           <input name="name" placeholder="token name" required />
           <select name="scope" defaultValue="read">
             <option value="read">read</option>
@@ -52,10 +72,12 @@ export default async function TokensPage({
               </td>
               <td>{token.revoked_at ? "yes" : "no"}</td>
               <td>
-                <form className="inline" action="/tokens/revoke" method="post">
-                  <input type="hidden" name="id" value={token.id} />
-                  <button type="submit">Revoke</button>
-                </form>
+                {!token.revoked_at && (
+                  <form action={revokeTokenAction}>
+                    <input type="hidden" name="id" value={token.id} />
+                    <button type="submit">Revoke</button>
+                  </form>
+                )}
               </td>
             </tr>
           ))}

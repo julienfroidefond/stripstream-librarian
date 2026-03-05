@@ -94,6 +94,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/libraries/:id", delete(libraries::delete_library))
         .route("/index/rebuild", axum::routing::post(index_jobs::enqueue_rebuild))
         .route("/index/status", get(index_jobs::list_index_jobs))
+        .route("/index/cancel/:id", axum::routing::post(index_jobs::cancel_job))
+        .route("/folders", get(index_jobs::list_folders))
         .route("/admin/tokens", get(tokens::list_tokens).post(tokens::create_token))
         .route("/admin/tokens/:id", delete(tokens::revoke_token))
         .route_layer(middleware::from_fn_with_state(

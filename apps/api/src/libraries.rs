@@ -13,6 +13,7 @@ pub struct LibraryDto {
     pub name: String,
     pub root_path: String,
     pub enabled: bool,
+    pub book_count: i64,
 }
 
 #[derive(Deserialize)]
@@ -22,7 +23,11 @@ pub struct CreateLibraryInput {
 }
 
 pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<LibraryDto>>, ApiError> {
-    let rows = sqlx::query("SELECT id, name, root_path, enabled FROM libraries ORDER BY created_at DESC")
+    let rows = sqlx::query(
+        "SELECT l.id, l.name, l.root_path, l.enabled, 
+                (SELECT COUNT(*) FROM books b WHERE b.library_id = l.id) as book_count 
+         FROM libraries l ORDER BY l.created_at DESC"
+    )
         .fetch_all(&state.pool)
         .await?;
 
@@ -33,6 +38,7 @@ pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<Li
             name: row.get("name"),
             root_path: row.get("root_path"),
             enabled: row.get("enabled"),
+            book_count: row.get("book_count"),
         })
         .collect();
 
@@ -65,6 +71,7 @@ pub async fn create_library(
         name: input.name.trim().to_string(),
         root_path,
         enabled: true,
+        book_count: 0,
     }))
 }
 
