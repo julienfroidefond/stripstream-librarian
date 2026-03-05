@@ -17,7 +17,7 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 - Auth: token bootstrap env + tokens admin en DB (creables/revocables)
 - Expiration tokens admin: aucune par defaut (revocation manuelle)
 - Rendu PDF: a la volee
-- CBR: extraction temporaire disque (`unrar`) + cleanup
+- CBR: extraction temporaire disque (`unrar-free`, commande `unrar`) + cleanup
 - Formats pages: `webp`, `jpeg`, `png`
 
 ---
@@ -25,46 +25,46 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 ## Backlog executable (ordre recommande)
 
 ### T1 - Bootstrap monorepo Rust
-- [ ] Creer workspace Cargo
-- [ ] Creer crates/apps: `apps/api`, `apps/indexer`, `apps/admin-ui`, `crates/core`, `crates/parsers`
-- [ ] Config env centralisee + logging de base
+- [x] Creer workspace Cargo
+- [x] Creer crates/apps: `apps/api`, `apps/indexer`, `apps/admin-ui`, `crates/core`, `crates/parsers`
+- [x] Config env centralisee + logging de base
 
 **DoD:** Build des crates OK.
 
 ### T2 - Infra Docker Compose
-- [ ] Definir services `postgres`, `meilisearch`, `api`, `indexer`
-- [ ] Volumes persistants
-- [ ] Healthchecks
+- [x] Definir services `postgres`, `meilisearch`, `api`, `indexer`
+- [x] Volumes persistants
+- [x] Healthchecks
 
 **DoD:** `docker compose up` demarre tout, services healthy.
 
 ### T3 - Schema DB + migrations
-- [ ] Tables: `libraries`, `books`, `book_files`, `index_jobs`, `api_tokens`
-- [ ] Index/contraintes (uniques, FK)
-- [ ] Scripts de migration
+- [x] Tables: `libraries`, `books`, `book_files`, `index_jobs`, `api_tokens`
+- [x] Index/contraintes (uniques, FK)
+- [x] Scripts de migration
 
 **DoD:** Migrations appliquees sans erreur, schema stable.
 
 ### T4 - Auth hybride
-- [ ] Middleware `Authorization: Bearer <token>`
-- [ ] Verif `API_BOOTSTRAP_TOKEN`
-- [ ] Verif tokens DB (hash Argon2id, non revoques/non expires)
-- [ ] MAJ `last_used_at`
+- [x] Middleware `Authorization: Bearer <token>`
+- [x] Verif `API_BOOTSTRAP_TOKEN`
+- [x] Verif tokens DB (hash Argon2id, non revoques/non expires)
+- [x] MAJ `last_used_at`
 
 **DoD:** Acces protege fonctionnel, tokens revoques refuses.
 
 ### T5 - API admin tokens
-- [ ] `POST /admin/tokens` (affichage secret une seule fois)
-- [ ] `GET /admin/tokens` (sans secret)
-- [ ] `DELETE /admin/tokens/:id` (revoke)
+- [x] `POST /admin/tokens` (affichage secret une seule fois)
+- [x] `GET /admin/tokens` (sans secret)
+- [x] `DELETE /admin/tokens/:id` (revoke)
 
 **DoD:** Flux creation/liste/revocation valide.
 
 ### T6 - CRUD librairies
-- [ ] `GET /libraries`
-- [ ] `POST /libraries`
-- [ ] `DELETE /libraries/:id`
-- [ ] Validation stricte des chemins (anti traversal)
+- [x] `GET /libraries`
+- [x] `POST /libraries`
+- [x] `DELETE /libraries/:id`
+- [x] Validation stricte des chemins (anti traversal)
 
 **DoD:** Gestion librairies robuste et securisee.
 
@@ -189,10 +189,14 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 ---
 
 ## Suivi d'avancement
-- [ ] Lot 1: Fondations (T1 -> T6)
+- [x] Lot 1: Fondations (T1 -> T6)
 - [ ] Lot 2: Ingestion + Search (T7 -> T13)
 - [ ] Lot 3: Lecture + UI + Hardening (T14 -> T18)
 
 ## Notes
 - Scope token v1: `admin`, `read`
 - Bootstrap token = break-glass (peut etre desactive plus tard)
+
+## Journal
+- 2026-03-05: `docker compose up -d --build` valide, stack complete en healthy (`postgres`, `meilisearch`, `api`, `indexer`, `admin-ui`).
+- 2026-03-05: ajustements infra appliques pour demarrage stable (`unrar` -> `unrar-free`, image `rust:1-bookworm`, healthchecks `127.0.0.1`).
