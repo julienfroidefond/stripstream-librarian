@@ -22,6 +22,7 @@ impl BookFormat {
 pub struct ParsedMetadata {
     pub title: String,
     pub series: Option<String>,
+    pub volume: Option<i32>,
     pub page_count: Option<i32>,
 }
 
@@ -40,10 +41,16 @@ pub fn parse_metadata(
     format: BookFormat,
     library_root: &Path,
 ) -> Result<ParsedMetadata> {
-    let title = path
+    let filename = path
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "Untitled".to_string());
+
+    // Extract volume from filename (patterns: T01, T02, Vol 1, Volume 1, #1, - 01, etc.)
+    let volume = extract_volume(&filename);
+
+    // Keep original filename as title (don't clean it)
+    let title = filename;
 
     // Determine series from parent folder relative to library root
     let series = path.parent().and_then(|parent| {
@@ -69,8 +76,69 @@ pub fn parse_metadata(
     Ok(ParsedMetadata {
         title,
         series,
+        volume,
         page_count,
     })
+}
+
+fn extract_volume(filename: &str) -> Option<i32> {
+    // Common volume patterns: T01, T02, T1, T2, Vol 1, Vol. 1, Volume 1, #1, #01, - 1, - 01
+    let patterns = [
+        // T01, T02 pattern (most common for manga/comics)
+        (r"(?i)T(\d+)", 1),
+        // Vol 1, Vol. 1, Volume 1
+        (r"(?i)Vol\.?\s*(\d+)", 1),
+        (r"(?i)Volume\s*(\d+)", 1),
+        // #1, #01
+        (r"#(\d+)", 1),
+        // - 1, - 01 at the end
+        (r"-\s*(\d+)\s*$", 1),
+    ];
+
+    for (pattern, group) in &patterns {
+        if let Ok(re) = regex::Regex::new(pattern) {
+            if let Some(caps) = re.captures(filename) {
+                if let Some(mat) = caps.get(*group) {
+                    // Parse as integer to remove leading zeros
+                    return mat.as_str().parse::<i32>().ok();
+                }
+            }
+        }
+    }
+
+    None
+}
+
+#[allow(dead_code)]
+fn clean_title(filename: &str) -> String {
+    // Remove volume patterns from title to clean it up
+    let cleaned = regex::Regex::new(r"(?i)\s*T\d+\s*")
+        .ok()
+        .and_then(|re| Some(re.replace_all(filename, " ").to_string()))
+        .unwrap_or_else(|| filename.to_string());
+
+    let cleaned = regex::Regex::new(r"(?i)\s*Vol\.?\s*\d+\s*")
+        .ok()
+        .and_then(|re| Some(re.replace_all(&cleaned, " ").to_string()))
+        .unwrap_or_else(|| cleaned);
+
+    let cleaned = regex::Regex::new(r"(?i)\s*Volume\s*\d+\s*")
+        .ok()
+        .and_then(|re| Some(re.replace_all(&cleaned, " ").to_string()))
+        .unwrap_or_else(|| cleaned);
+
+    let cleaned = regex::Regex::new(r"#\d+")
+        .ok()
+        .and_then(|re| Some(re.replace_all(&cleaned, " ").to_string()))
+        .unwrap_or_else(|| cleaned);
+
+    let cleaned = regex::Regex::new(r"-\s*\d+\s*$")
+        .ok()
+        .and_then(|re| Some(re.replace_all(&cleaned, " ").to_string()))
+        .unwrap_or_else(|| cleaned);
+
+    // Clean up extra spaces
+    cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn parse_cbz_page_count(path: &Path) -> Result<i32> {

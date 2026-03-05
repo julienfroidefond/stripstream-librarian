@@ -68,6 +68,13 @@ export default async function BookDetailPage({
               <span className={`book-kind ${book.kind}`}>{book.kind.toUpperCase()}</span>
             </div>
             
+            {book.volume && (
+              <div className="meta-row">
+                <span className="meta-label">Volume:</span>
+                <span>{book.volume}</span>
+              </div>
+            )}
+            
             {book.language && (
               <div className="meta-row">
                 <span className="meta-label">Language:</span>
@@ -87,10 +94,50 @@ export default async function BookDetailPage({
               <span>{library?.name || book.library_id}</span>
             </div>
 
+            {book.series && (
+              <div className="meta-row">
+                <span className="meta-label">Series:</span>
+                <span>{book.series}</span>
+              </div>
+            )}
+
+            {book.file_format && (
+              <div className="meta-row">
+                <span className="meta-label">File Format:</span>
+                <span>{book.file_format.toUpperCase()}</span>
+              </div>
+            )}
+
+            {book.file_parse_status && (
+              <div className="meta-row">
+                <span className="meta-label">Parse Status:</span>
+                <span className={`status-${book.file_parse_status}`}>{book.file_parse_status}</span>
+              </div>
+            )}
+
+            {book.file_path && (
+              <div className="meta-row">
+                <span className="meta-label">File Path:</span>
+                <code className="file-path">{book.file_path}</code>
+              </div>
+            )}
+
             <div className="meta-row">
-              <span className="meta-label">ID:</span>
+              <span className="meta-label">Book ID:</span>
               <code className="book-id">{book.id}</code>
             </div>
+
+            <div className="meta-row">
+              <span className="meta-label">Library ID:</span>
+              <code className="book-id">{book.library_id}</code>
+            </div>
+
+            {book.updated_at && (
+              <div className="meta-row">
+                <span className="meta-label">Updated:</span>
+                <span>{new Date(book.updated_at).toLocaleString()}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -37,9 +37,12 @@ export type BookDto = {
   title: string;
   author: string | null;
   series: string | null;
-  volume: string | null;
+  volume: number | null;
   language: string | null;
   page_count: number | null;
+  file_path: string | null;
+  file_format: string | null;
+  file_parse_status: string | null;
   updated_at: string;
 };
 
@@ -54,7 +57,7 @@ export type SearchHitDto = {
   title: string;
   author: string | null;
   series: string | null;
-  volume: string | null;
+  volume: number | null;
   kind: string;
   language: string | null;
 };

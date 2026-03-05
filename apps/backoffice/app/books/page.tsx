@@ -36,6 +36,9 @@ export default async function BooksPage({
         volume: hit.volume,
         language: hit.language,
         page_count: null,
+        file_path: null,
+        file_format: null,
+        file_parse_status: null,
         updated_at: ""
       }));
       totalHits = searchResponse.estimated_total_hits;

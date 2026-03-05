@@ -231,12 +231,13 @@ async fn scan_library(
             match parse_metadata(path, format, root) {
                 Ok(parsed) => {
                     sqlx::query(
-                        "UPDATE books SET title = $2, kind = $3, series = $4, page_count = $5, updated_at = NOW() WHERE id = $1",
+                        "UPDATE books SET title = $2, kind = $3, series = $4, volume = $5, page_count = $6, updated_at = NOW() WHERE id = $1",
                     )
                     .bind(book_id)
-                    .bind(parsed.title)
+                    .bind(&parsed.title)
                     .bind(kind_from_format(format))
-                    .bind(parsed.series)
+                    .bind(&parsed.series)
+                    .bind(&parsed.volume)
                     .bind(parsed.page_count)
                     .execute(&state.pool)
                     .await?;
@@ -274,13 +275,14 @@ async fn scan_library(
                 let book_id = Uuid::new_v4();
                 let file_id = Uuid::new_v4();
                 sqlx::query(
-                    "INSERT INTO books (id, library_id, kind, title, series, page_count) VALUES ($1, $2, $3, $4, $5, $6)",
+                    "INSERT INTO books (id, library_id, kind, title, series, volume, page_count) VALUES ($1, $2, $3, $4, $5, $6, $7)",
                 )
                 .bind(book_id)
                 .bind(library_id)
                 .bind(kind_from_format(format))
-                .bind(parsed.title)
-                .bind(parsed.series)
+                .bind(&parsed.title)
+                .bind(&parsed.series)
+                .bind(&parsed.volume)
                 .bind(parsed.page_count)
                 .execute(&state.pool)
                 .await?;

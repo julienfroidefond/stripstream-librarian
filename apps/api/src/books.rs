@@ -31,7 +31,7 @@ pub struct BookItem {
     pub title: String,
     pub author: Option<String>,
     pub series: Option<String>,
-    pub volume: Option<String>,
+    pub volume: Option<i32>,
     pub language: Option<String>,
     pub page_count: Option<i32>,
     #[schema(value_type = String)]
@@ -55,7 +55,7 @@ pub struct BookDetails {
     pub title: String,
     pub author: Option<String>,
     pub series: Option<String>,
-    pub volume: Option<String>,
+    pub volume: Option<i32>,
     pub language: Option<String>,
     pub page_count: Option<i32>,
     pub file_path: Option<String>,
@@ -102,7 +102,16 @@ pub async fn list_books(
           AND ($2::text IS NULL OR kind = $2)
           AND ($3::uuid IS NULL OR id > $3)
           {}
-        ORDER BY id ASC
+        ORDER BY 
+            -- Extract text part before numbers (case insensitive)
+            REGEXP_REPLACE(LOWER(title), '[0-9]+', '', 'g'),
+            -- Extract first number group and convert to integer for numeric sort
+            COALESCE(
+                NULLIF(REGEXP_REPLACE(LOWER(title), '^[^0-9]*', '', 'g'), '')::int, 
+                0
+            ),
+            -- Then by full title as fallback
+            title ASC
         LIMIT $4
         "#,
         series_condition
@@ -235,11 +244,18 @@ pub async fn list_series(
 ) -> Result<Json<Vec<SeriesItem>>, ApiError> {
     let rows = sqlx::query(
         r#"
-        WITH series_books AS (
+        WITH sorted_books AS (
             SELECT 
                 COALESCE(NULLIF(series, ''), 'unclassified') as name,
                 id,
-                ROW_NUMBER() OVER (PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified') ORDER BY id) as rn
+                -- Natural sort order for books within series
+                ROW_NUMBER() OVER (
+                    PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified') 
+                    ORDER BY 
+                        REGEXP_REPLACE(LOWER(title), '[0-9]+', '', 'g'),
+                        COALESCE(NULLIF(REGEXP_REPLACE(LOWER(title), '^[^0-9]*', '', 'g'), '')::int, 0),
+                        title ASC
+                ) as rn
             FROM books
             WHERE library_id = $1
         ),
@@ -247,7 +263,7 @@ pub async fn list_series(
             SELECT 
                 name,
                 COUNT(*) as book_count
-            FROM series_books
+            FROM sorted_books
             GROUP BY name
         )
         SELECT 
@@ -255,8 +271,16 @@ pub async fn list_series(
             sc.book_count,
             sb.id as first_book_id
         FROM series_counts sc
-        JOIN series_books sb ON sb.name = sc.name AND sb.rn = 1
-        ORDER BY sc.name ASC
+        JOIN sorted_books sb ON sb.name = sc.name AND sb.rn = 1
+        ORDER BY 
+            -- Natural sort: extract text part before numbers
+            REGEXP_REPLACE(LOWER(sc.name), '[0-9]+', '', 'g'),
+            -- Extract first number group and convert to integer
+            COALESCE(
+                NULLIF(REGEXP_REPLACE(LOWER(sc.name), '^[^0-9]*', '', 'g'), '')::int, 
+                0
+            ),
+            sc.name ASC
         "#,
     )
     .bind(library_id)
