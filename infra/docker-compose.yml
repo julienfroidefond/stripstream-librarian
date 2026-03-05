@@ -34,13 +34,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    env_file:
+      - ../.env
     volumes:
       - ./migrations:/migrations:ro
     command:
       [
         "sh",
         "-c",
-        "PGPASSWORD=stripstream psql -h postgres -U stripstream -d stripstream -f /migrations/0001_init.sql",
+        "for f in /migrations/*.sql; do echo \"Applying migration: $f\"; psql -h postgres -U \"$${POSTGRES_USER:-stripstream}\" -d \"$${POSTGRES_DB:-stripstream}\" -f \"$f\" || exit 1; done",
       ]
 
   api:
