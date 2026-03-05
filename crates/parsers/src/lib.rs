@@ -21,6 +21,7 @@ impl BookFormat {
 #[derive(Debug, Clone)]
 pub struct ParsedMetadata {
     pub title: String,
+    pub series: Option<String>,
     pub page_count: Option<i32>,
 }
 
@@ -34,11 +35,30 @@ pub fn detect_format(path: &Path) -> Option<BookFormat> {
     }
 }
 
-pub fn parse_metadata(path: &Path, format: BookFormat) -> Result<ParsedMetadata> {
+pub fn parse_metadata(
+    path: &Path,
+    format: BookFormat,
+    library_root: &Path,
+) -> Result<ParsedMetadata> {
     let title = path
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "Untitled".to_string());
+
+    // Determine series from parent folder relative to library root
+    let series = path.parent().and_then(|parent| {
+        // Get the relative path from library root to parent
+        let relative = parent.strip_prefix(library_root).ok()?;
+        // If relative path is not empty, use first component as series
+        let first_component = relative.components().next()?;
+        let series_name = first_component.as_os_str().to_string_lossy().to_string();
+        // Only if series_name is not empty
+        if series_name.is_empty() {
+            None
+        } else {
+            Some(series_name)
+        }
+    });
 
     let page_count = match format {
         BookFormat::Cbz => parse_cbz_page_count(path).ok(),
@@ -46,11 +66,16 @@ pub fn parse_metadata(path: &Path, format: BookFormat) -> Result<ParsedMetadata>
         BookFormat::Pdf => parse_pdf_page_count(path).ok(),
     };
 
-    Ok(ParsedMetadata { title, page_count })
+    Ok(ParsedMetadata {
+        title,
+        series,
+        page_count,
+    })
 }
 
 fn parse_cbz_page_count(path: &Path) -> Result<i32> {
-    let file = std::fs::File::open(path).with_context(|| format!("cannot open cbz: {}", path.display()))?;
+    let file = std::fs::File::open(path)
+        .with_context(|| format!("cannot open cbz: {}", path.display()))?;
     let mut archive = zip::ZipArchive::new(file).context("invalid cbz archive")?;
     let mut count: i32 = 0;
     for i in 0..archive.len() {
@@ -83,7 +108,8 @@ fn parse_cbr_page_count(path: &Path) -> Result<i32> {
 }
 
 fn parse_pdf_page_count(path: &Path) -> Result<i32> {
-    let doc = lopdf::Document::load(path).with_context(|| format!("cannot open pdf: {}", path.display()))?;
+    let doc = lopdf::Document::load(path)
+        .with_context(|| format!("cannot open pdf: {}", path.display()))?;
     Ok(doc.get_pages().len() as i32)
 }
 

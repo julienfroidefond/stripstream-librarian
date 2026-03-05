@@ -14,6 +14,8 @@ pub struct ListBooksQuery {
     #[schema(value_type = Option<String>)]
     pub kind: Option<String>,
     #[schema(value_type = Option<String>)]
+    pub series: Option<String>,
+    #[schema(value_type = Option<String>)]
     pub cursor: Option<Uuid>,
     #[schema(value_type = Option<i64>, example = 50)]
     pub limit: Option<i64>,
@@ -69,6 +71,7 @@ pub struct BookDetails {
     params(
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),
         ("kind" = Option<String>, Query, description = "Filter by book kind (cbz, cbr, pdf)"),
+        ("series" = Option<String>, Query, description = "Filter by series name (use 'unclassified' for books without series)"),
         ("cursor" = Option<String>, Query, description = "Cursor for pagination"),
         ("limit" = Option<i64>, Query, description = "Max items to return (max 200)"),
     ),
@@ -83,23 +86,42 @@ pub async fn list_books(
     Query(query): Query<ListBooksQuery>,
 ) -> Result<Json<BooksPage>, ApiError> {
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
-    let rows = sqlx::query(
+    
+    // Build series filter condition
+    let series_condition = match query.series.as_deref() {
+        Some("unclassified") => "AND (series IS NULL OR series = '')",
+        Some(_series_name) => "AND series = $5",
+        None => "",
+    };
+    
+    let sql = format!(
         r#"
         SELECT id, library_id, kind, title, author, series, volume, language, page_count, updated_at
         FROM books
         WHERE ($1::uuid IS NULL OR library_id = $1)
           AND ($2::text IS NULL OR kind = $2)
           AND ($3::uuid IS NULL OR id > $3)
+          {}
         ORDER BY id ASC
         LIMIT $4
         "#,
-    )
-    .bind(query.library_id)
-    .bind(query.kind.as_deref())
-    .bind(query.cursor)
-    .bind(limit + 1)
-    .fetch_all(&state.pool)
-    .await?;
+        series_condition
+    );
+    
+    let mut query_builder = sqlx::query(&sql)
+        .bind(query.library_id)
+        .bind(query.kind.as_deref())
+        .bind(query.cursor)
+        .bind(limit + 1);
+    
+    // Bind series parameter if it's not unclassified
+    if let Some(series) = query.series.as_deref() {
+        if series != "unclassified" {
+            query_builder = query_builder.bind(series);
+        }
+    }
+    
+    let rows = query_builder.fetch_all(&state.pool).await?;
 
     let mut items: Vec<BookItem> = rows
         .iter()
@@ -183,4 +205,72 @@ pub async fn get_book(
         file_format: row.get("format"),
         file_parse_status: row.get("parse_status"),
     }))
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SeriesItem {
+    pub name: String,
+    pub book_count: i64,
+    #[schema(value_type = String)]
+    pub first_book_id: Uuid,
+}
+
+/// List all series in a library
+#[utoipa::path(
+    get,
+    path = "/libraries/{library_id}/series",
+    tag = "books",
+    params(
+        ("library_id" = String, Path, description = "Library UUID"),
+    ),
+    responses(
+        (status = 200, body = Vec<SeriesItem>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn list_series(
+    State(state): State<AppState>,
+    Path(library_id): Path<Uuid>,
+) -> Result<Json<Vec<SeriesItem>>, ApiError> {
+    let rows = sqlx::query(
+        r#"
+        WITH series_books AS (
+            SELECT 
+                COALESCE(NULLIF(series, ''), 'unclassified') as name,
+                id,
+                ROW_NUMBER() OVER (PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified') ORDER BY id) as rn
+            FROM books
+            WHERE library_id = $1
+        ),
+        series_counts AS (
+            SELECT 
+                name,
+                COUNT(*) as book_count
+            FROM series_books
+            GROUP BY name
+        )
+        SELECT 
+            sc.name,
+            sc.book_count,
+            sb.id as first_book_id
+        FROM series_counts sc
+        JOIN series_books sb ON sb.name = sc.name AND sb.rn = 1
+        ORDER BY sc.name ASC
+        "#,
+    )
+    .bind(library_id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    let series: Vec<SeriesItem> = rows
+        .iter()
+        .map(|row| SeriesItem {
+            name: row.get("name"),
+            book_count: row.get("book_count"),
+            first_book_id: row.get("first_book_id"),
+        })
+        .collect();
+
+    Ok(Json(series))
 }

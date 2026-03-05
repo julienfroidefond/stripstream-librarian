@@ -25,6 +25,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <div className="links-wrap">
               <div className="links">
                 <Link href="/">Dashboard</Link>
+                <Link href="/books">Books</Link>
                 <Link href="/libraries">Libraries</Link>
                 <Link href="/jobs">Jobs</Link>
                 <Link href="/tokens">Tokens</Link>

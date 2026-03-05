@@ -6,6 +6,7 @@ use utoipa::OpenApi;
     paths(
         crate::books::list_books,
         crate::books::get_book,
+        crate::books::list_series,
         crate::pages::get_page,
         crate::search::search_books,
         crate::index_jobs::enqueue_rebuild,
@@ -25,6 +26,7 @@ use utoipa::OpenApi;
             crate::books::BookItem,
             crate::books::BooksPage,
             crate::books::BookDetails,
+            crate::books::SeriesItem,
             crate::pages::PageQuery,
             crate::search::SearchQuery,
             crate::search::SearchResponse,

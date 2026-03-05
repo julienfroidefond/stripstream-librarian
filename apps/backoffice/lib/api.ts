@@ -30,6 +30,47 @@ export type FolderItem = {
   path: string;
 };
 
+export type BookDto = {
+  id: string;
+  library_id: string;
+  kind: string;
+  title: string;
+  author: string | null;
+  series: string | null;
+  volume: string | null;
+  language: string | null;
+  page_count: number | null;
+  updated_at: string;
+};
+
+export type BooksPageDto = {
+  items: BookDto[];
+  next_cursor: string | null;
+};
+
+export type SearchHitDto = {
+  id: string;
+  library_id: string;
+  title: string;
+  author: string | null;
+  series: string | null;
+  volume: string | null;
+  kind: string;
+  language: string | null;
+};
+
+export type SearchResponseDto = {
+  hits: SearchHitDto[];
+  estimated_total_hits: number | null;
+  processing_time_ms: number | null;
+};
+
+export type SeriesDto = {
+  name: string;
+  book_count: number;
+  first_book_id: string;
+};
+
 function config() {
   const baseUrl = process.env.API_BASE_URL || "http://api:8080";
   const token = process.env.API_BOOTSTRAP_TOKEN;
@@ -112,4 +153,33 @@ export async function createToken(name: string, scope: string) {
 
 export async function revokeToken(id: string) {
   return apiFetch<void>(`/admin/tokens/${id}`, { method: "DELETE" });
+}
+
+export async function fetchBooks(libraryId?: string, series?: string, cursor?: string, limit: number = 50): Promise<BooksPageDto> {
+  const params = new URLSearchParams();
+  if (libraryId) params.set("library_id", libraryId);
+  if (series) params.set("series", series);
+  if (cursor) params.set("cursor", cursor);
+  params.set("limit", limit.toString());
+  
+  return apiFetch<BooksPageDto>(`/books?${params.toString()}`);
+}
+
+export async function fetchSeries(libraryId: string): Promise<SeriesDto[]> {
+  return apiFetch<SeriesDto[]>(`/libraries/${libraryId}/series`);
+}
+
+export async function searchBooks(query: string, libraryId?: string, limit: number = 20): Promise<SearchResponseDto> {
+  const params = new URLSearchParams();
+  params.set("q", query);
+  if (libraryId) params.set("library_id", libraryId);
+  params.set("limit", limit.toString());
+  
+  return apiFetch<SearchResponseDto>(`/search?${params.toString()}`);
+}
+
+export function getBookCoverUrl(bookId: string): string {
+  // Utiliser une route API locale pour éviter les problèmes CORS
+  // Le navigateur ne peut pas accéder à http://api:8080 (hostname Docker interne)
+  return `/api/books/${bookId}/pages/1?format=webp&width=200`;
 }

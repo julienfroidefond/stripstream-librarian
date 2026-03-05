@@ -110,6 +110,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/books", get(books::list_books))
         .route("/books/:id", get(books::get_book))
         .route("/books/:id/pages/:n", get(pages::get_page))
+        .route("/libraries/:library_id/series", get(books::list_series))
         .route("/search", get(search::search_books))
         .route_layer(middleware::from_fn_with_state(state.clone(), read_rate_limit))
         .route_layer(middleware::from_fn_with_state(
