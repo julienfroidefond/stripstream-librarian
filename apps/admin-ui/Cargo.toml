@@ -7,7 +7,11 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 axum.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 stripstream-core = { path = "../../crates/core" }
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+uuid.workspace = true

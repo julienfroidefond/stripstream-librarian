@@ -16,7 +16,7 @@ COPY crates/parsers/src crates/parsers/src
 RUN cargo build --release -p api
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget unrar-free poppler-utils && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/api /usr/local/bin/api
 EXPOSE 8080
 CMD ["/usr/local/bin/api"]

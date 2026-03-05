@@ -120,39 +120,39 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 **DoD:** Recherche rapide et pertinente.
 
 ### T14 - Streaming pages multi-format
-- [ ] `GET /books/:id/pages/:n`
-- [ ] Query: `format=webp|jpeg|png`, `quality=1..100`, `width`
-- [ ] Headers cache (`ETag`, `Cache-Control`)
-- [ ] Validation stricte params
+- [x] `GET /books/:id/pages/:n`
+- [x] Query: `format=webp|jpeg|png`, `quality=1..100`, `width`
+- [x] Headers cache (`ETag`, `Cache-Control`)
+- [x] Validation stricte params
 
 **DoD:** Pages servies correctement dans les 3 formats.
 
 ### T15 - Perf guards
-- [ ] Cache LRU en memoire (cle: `book:page:format:quality:width`)
-- [ ] Limite concurrence rendu PDF
-- [ ] Timeouts et bornes (`width` max)
+- [x] Cache LRU en memoire (cle: `book:page:format:quality:width`)
+- [x] Limite concurrence rendu PDF
+- [x] Timeouts et bornes (`width` max)
 
 **DoD:** Service stable sous charge homelab.
 
 ### T16 - Admin UI Rust SSR
-- [ ] Vue Libraries
-- [ ] Vue Jobs
-- [ ] Vue API Tokens (create/list/revoke)
+- [x] Vue Libraries
+- [x] Vue Jobs
+- [x] Vue API Tokens (create/list/revoke)
 
 **DoD:** Admin complet utilisable sans SPA lourde.
 
 ### T17 - Observabilite et hardening
-- [ ] Logs structures `tracing`
-- [ ] Metriques Prometheus
-- [ ] Health/readiness endpoints
-- [ ] Rate limiting leger
+- [x] Logs structures `tracing`
+- [x] Metriques Prometheus
+- [x] Health/readiness endpoints
+- [x] Rate limiting leger
 
 **DoD:** Diagnostics et exploitation simples.
 
 ### T18 - Validation MVP
 - [ ] Tests d'integration API
-- [ ] Smoke tests compose
-- [ ] Bench p95/p99 basiques
+- [x] Smoke tests compose
+- [x] Bench p95/p99 basiques
 
 **DoD:** Checklist MVP validee de bout en bout.
 
@@ -203,3 +203,6 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 - 2026-03-05: ajout d'un service `migrate` dans Compose pour executer automatiquement `infra/migrations/0001_init.sql` au demarrage.
 - 2026-03-05: Lot 2 termine (jobs, scan incremental, parsers `cbz/cbr/pdf`, API livres, sync + recherche Meilisearch).
 - 2026-03-05: verification de bout en bout OK sur une librairie de test (`/libraries/demo`) avec indexation, listing `/books` et recherche `/search` (1 CBZ detecte).
+- 2026-03-05: Lot 3 avancee: endpoint pages (`/books/:id/pages/:n`) actif avec cache LRU, ETag/Cache-Control, limite concurrence rendu et timeouts.
+- 2026-03-05: hardening API: readiness expose sans auth via `route_layer`, metriques simples `/metrics`, rate limiting lecture (120 req/s).
+- 2026-03-05: smoke + bench scripts corriges et verifies (`infra/smoke.sh`, `infra/bench.sh`).

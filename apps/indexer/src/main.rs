@@ -1,6 +1,7 @@
 use anyhow::Context;
-use axum::{routing::get, Router};
+use axum::{extract::State, routing::get, Json, Router};
 use chrono::{DateTime, Utc};
+use axum::http::StatusCode;
 use parsers::{detect_format, parse_metadata, BookFormat};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -48,7 +49,10 @@ async fn main() -> anyhow::Result<()> {
 
     tokio::spawn(run_worker(state.clone(), config.scan_interval_seconds));
 
-    let app = Router::new().route("/health", get(health));
+    let app = Router::new()
+        .route("/health", get(health))
+        .route("/ready", get(ready))
+        .with_state(state.clone());
 
     let listener = tokio::net::TcpListener::bind(&config.listen_addr).await?;
     info!(addr = %config.listen_addr, "indexer listening");
@@ -58,6 +62,14 @@ async fn main() -> anyhow::Result<()> {
 
 async fn health() -> &'static str {
     "ok"
+}
+
+async fn ready(State(state): State<AppState>) -> Result<Json<serde_json::Value>, StatusCode> {
+    sqlx::query("SELECT 1")
+        .execute(&state.pool)
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    Ok(Json(serde_json::json!({"status": "ready"})))
 }
 
 async fn run_worker(state: AppState, interval_seconds: u64) {
