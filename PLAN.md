@@ -5,7 +5,7 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 - API REST (librairies, livres, metadonnees, recherche, streaming pages),
 - indexation incrementale,
 - recherche full-text,
-- admin UI (Rust SSR) pour gerer librairies/jobs/tokens,
+ - backoffice web (Next.js) pour gerer librairies/jobs/tokens,
 - deploiement Docker Compose homelab.
 
 ## Decisions figees
@@ -19,6 +19,7 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 - Rendu PDF: a la volee
 - CBR: extraction temporaire disque (`unrar-free`, commande `unrar`) + cleanup
 - Formats pages: `webp`, `jpeg`, `png`
+- Backoffice UI: Next.js (remplace Rust SSR)
 
 ---
 
@@ -134,12 +135,14 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 
 **DoD:** Service stable sous charge homelab.
 
-### T16 - Admin UI Rust SSR
+### T16 - Backoffice Next.js
+- [x] Bootstrap app Next.js (`apps/backoffice`)
 - [x] Vue Libraries
 - [x] Vue Jobs
 - [x] Vue API Tokens (create/list/revoke)
+- [x] Auth backoffice via token API
 
-**DoD:** Admin complet utilisable sans SPA lourde.
+**DoD:** Backoffice Next.js utilisable pour l'administration complete.
 
 ### T17 - Observabilite et hardening
 - [x] Logs structures `tracing`
@@ -206,3 +209,5 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 - 2026-03-05: Lot 3 avancee: endpoint pages (`/books/:id/pages/:n`) actif avec cache LRU, ETag/Cache-Control, limite concurrence rendu et timeouts.
 - 2026-03-05: hardening API: readiness expose sans auth via `route_layer`, metriques simples `/metrics`, rate limiting lecture (120 req/s).
 - 2026-03-05: smoke + bench scripts corriges et verifies (`infra/smoke.sh`, `infra/bench.sh`).
+- 2026-03-05: pivot backoffice valide: remplacement de l'admin UI Rust SSR par une app Next.js.
+- 2026-03-05: backoffice Next.js implemente (`apps/backoffice`) avec branding neon base sur le logo, actions libraries/jobs/tokens, et integration Docker Compose.

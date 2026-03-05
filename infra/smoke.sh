@@ -3,7 +3,7 @@ set -euo pipefail
 
 BASE_API="${BASE_API:-http://127.0.0.1:8080}"
 BASE_INDEXER="${BASE_INDEXER:-http://127.0.0.1:8081}"
-BASE_ADMIN="${BASE_ADMIN:-http://127.0.0.1:8082}"
+BASE_BACKOFFICE="${BASE_BACKOFFICE:-${BASE_ADMIN:-http://127.0.0.1:8082}}"
 TOKEN="${API_TOKEN:-stripstream-dev-bootstrap-token}"
 
 echo "[smoke] health checks"
@@ -11,7 +11,7 @@ curl -fsS "$BASE_API/health" >/dev/null
 curl -fsS "$BASE_API/ready" >/dev/null
 curl -fsS "$BASE_INDEXER/health" >/dev/null
 curl -fsS "$BASE_INDEXER/ready" >/dev/null
-curl -fsS "$BASE_ADMIN/health" >/dev/null
+curl -fsS "$BASE_BACKOFFICE/health" >/dev/null
 
 echo "[smoke] list libraries"
 curl -fsS -H "Authorization: Bearer $TOKEN" "$BASE_API/libraries" >/dev/null
