@@ -34,10 +34,11 @@ export function MonitoringForm({ libraryId, monitorEnabled, scanMode, watcherEna
   };
 
   return (
-    <form action={handleSubmit} className="monitoring-form">
+    <form action={handleSubmit} className="monitoring-form-compact">
       <input type="hidden" name="id" value={libraryId} />
-      <div className="monitor-options">
-        <label className={`monitor-toggle ${isPending ? 'pending' : ''}`}>
+      
+      <div className="monitor-row">
+        <label className={`monitor-checkbox ${isPending ? 'pending' : ''}`}>
           <input
             type="checkbox"
             name="monitor_enabled"
@@ -45,9 +46,10 @@ export function MonitoringForm({ libraryId, monitorEnabled, scanMode, watcherEna
             defaultChecked={monitorEnabled}
             disabled={isPending}
           />
-          <span className="toggle-label">Auto-scan</span>
+          <span>Auto</span>
         </label>
-        <label className={`monitor-toggle watcher-toggle ${isPending ? 'pending' : ''} ${watcherEnabled ? 'active' : ''}`}>
+        
+        <label className={`monitor-checkbox watcher ${isPending ? 'pending' : ''} ${watcherEnabled ? 'active' : ''}`}>
           <input
             type="checkbox"
             name="watcher_enabled"
@@ -55,23 +57,25 @@ export function MonitoringForm({ libraryId, monitorEnabled, scanMode, watcherEna
             defaultChecked={watcherEnabled}
             disabled={isPending}
           />
-          <span className="toggle-label">Watcher</span>
-          <span className="toggle-hint" title="Detects file changes in real-time">⚡</span>
+          <span title="Real-time file watcher">⚡</span>
         </label>
+        
+        <select
+          name="scan_mode"
+          defaultValue={scanMode}
+          disabled={isPending}
+          className="scan-mode-select"
+        >
+          <option value="manual">Manual</option>
+          <option value="hourly">Hourly</option>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+        </select>
+        
+        <button type="submit" className="save-btn" disabled={isPending}>
+          {isPending ? '...' : '✓'}
+        </button>
       </div>
-      <select
-        name="scan_mode"
-        defaultValue={scanMode}
-        disabled={isPending}
-      >
-        <option value="manual">Manual only</option>
-        <option value="hourly">Hourly</option>
-        <option value="daily">Daily</option>
-        <option value="weekly">Weekly</option>
-      </select>
-      <button type="submit" className="update-btn" disabled={isPending}>
-        {isPending ? '...' : 'Update'}
-      </button>
     </form>
   );
 }
