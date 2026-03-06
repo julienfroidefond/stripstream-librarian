@@ -96,6 +96,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/libraries", get(libraries::list_libraries).post(libraries::create_library))
         .route("/libraries/:id", delete(libraries::delete_library))
         .route("/libraries/:id/scan", axum::routing::post(libraries::scan_library))
+        .route("/libraries/:id/monitoring", axum::routing::patch(libraries::update_monitoring))
         .route("/index/rebuild", axum::routing::post(index_jobs::enqueue_rebuild))
         .route("/index/status", get(index_jobs::list_index_jobs))
         .route("/index/jobs/active", get(index_jobs::get_active_jobs))

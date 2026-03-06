@@ -16,6 +16,9 @@ pub struct LibraryResponse {
     pub root_path: String,
     pub enabled: bool,
     pub book_count: i64,
+    pub monitor_enabled: bool,
+    pub scan_mode: String,
+    pub next_scan_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -40,7 +43,7 @@ pub struct CreateLibraryRequest {
 )]
 pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<LibraryResponse>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT l.id, l.name, l.root_path, l.enabled, 
+        "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at,
                 (SELECT COUNT(*) FROM books b WHERE b.library_id = l.id) as book_count 
          FROM libraries l ORDER BY l.created_at DESC"
     )
@@ -55,6 +58,9 @@ pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<Li
             root_path: row.get("root_path"),
             enabled: row.get("enabled"),
             book_count: row.get("book_count"),
+            monitor_enabled: row.get("monitor_enabled"),
+            scan_mode: row.get("scan_mode"),
+            next_scan_at: row.get("next_scan_at"),
         })
         .collect();
 
@@ -102,6 +108,9 @@ pub async fn create_library(
         root_path,
         enabled: true,
         book_count: 0,
+        monitor_enabled: false,
+        scan_mode: "manual".to_string(),
+        next_scan_at: None,
     }))
 }
 
@@ -209,4 +218,83 @@ pub async fn scan_library(
     .await?;
 
     Ok(Json(crate::index_jobs::map_row(row)))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateMonitoringRequest {
+    pub monitor_enabled: bool,
+    #[schema(value_type = String, example = "hourly")]
+    pub scan_mode: String, // 'manual', 'hourly', 'daily', 'weekly'
+}
+
+/// Update monitoring settings for a library
+#[utoipa::path(
+    patch,
+    path = "/libraries/{id}/monitoring",
+    tag = "libraries",
+    params(
+        ("id" = String, Path, description = "Library UUID"),
+    ),
+    request_body = UpdateMonitoringRequest,
+    responses(
+        (status = 200, body = LibraryResponse),
+        (status = 404, description = "Library not found"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn update_monitoring(
+    State(state): State<AppState>,
+    AxumPath(library_id): AxumPath<Uuid>,
+    Json(input): Json<UpdateMonitoringRequest>,
+) -> Result<Json<LibraryResponse>, ApiError> {
+    // Validate scan_mode
+    let valid_modes = ["manual", "hourly", "daily", "weekly"];
+    if !valid_modes.contains(&input.scan_mode.as_str()) {
+        return Err(ApiError::bad_request("scan_mode must be one of: manual, hourly, daily, weekly"));
+    }
+
+    // Calculate next_scan_at if monitoring is enabled
+    let next_scan_at = if input.monitor_enabled {
+        let interval_minutes = match input.scan_mode.as_str() {
+            "hourly" => 60,
+            "daily" => 1440,
+            "weekly" => 10080,
+            _ => 1440,
+        };
+        Some(chrono::Utc::now() + chrono::Duration::minutes(interval_minutes))
+    } else {
+        None
+    };
+
+    let result = sqlx::query(
+        "UPDATE libraries SET monitor_enabled = $2, scan_mode = $3, next_scan_at = $4 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at"
+    )
+    .bind(library_id)
+    .bind(input.monitor_enabled)
+    .bind(input.scan_mode)
+    .bind(next_scan_at)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let Some(row) = result else {
+        return Err(ApiError::not_found("library not found"));
+    };
+
+    let book_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM books WHERE library_id = $1")
+        .bind(library_id)
+        .fetch_one(&state.pool)
+        .await?;
+
+    Ok(Json(LibraryResponse {
+        id: row.get("id"),
+        name: row.get("name"),
+        root_path: row.get("root_path"),
+        enabled: row.get("enabled"),
+        book_count,
+        monitor_enabled: row.get("monitor_enabled"),
+        scan_mode: row.get("scan_mode"),
+        next_scan_at: row.get("next_scan_at"),
+    }))
 }

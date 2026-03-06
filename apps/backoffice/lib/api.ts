@@ -4,6 +4,9 @@ export type LibraryDto = {
   root_path: string;
   enabled: boolean;
   book_count: number;
+  monitor_enabled: boolean;
+  scan_mode: string;
+  next_scan_at: string | null;
 };
 
 export type IndexJobDto = {
@@ -129,6 +132,13 @@ export async function scanLibrary(libraryId: string, full?: boolean) {
   return apiFetch<IndexJobDto>(`/libraries/${libraryId}/scan`, {
     method: "POST",
     body: JSON.stringify(body)
+  });
+}
+
+export async function updateLibraryMonitoring(libraryId: string, monitorEnabled: boolean, scanMode: string) {
+  return apiFetch<LibraryDto>(`/libraries/${libraryId}/monitoring`, {
+    method: "PATCH",
+    body: JSON.stringify({ monitor_enabled: monitorEnabled, scan_mode: scanMode })
   });
 }
 

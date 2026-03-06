@@ -1171,3 +1171,66 @@ tr.job-highlighted td {
   0%, 100% { box-shadow: inset 0 0 0 1px hsl(198 78% 37% / 0.3); }
   50% { box-shadow: inset 0 0 0 2px hsl(198 78% 37% / 0.6); }
 }
+
+/* Monitoring styles */
+.monitoring-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.monitor-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.monitor-auto {
+  background: hsl(142 60% 45% / 0.2);
+  color: hsl(142 60% 35%);
+  border: 1px solid hsl(142 60% 45% / 0.5);
+}
+
+.monitor-manual {
+  background: hsl(220 13% 80% / 0.2);
+  color: hsl(220 13% 40%);
+  border: 1px solid hsl(220 13% 80% / 0.5);
+}
+
+.scan-mode {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.next-scan {
+  font-size: 0.7rem;
+  color: hsl(198 78% 37%);
+}
+
+.monitoring-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.monitor-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.monitor-toggle input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.monitoring-form select {
+  font-size: 0.75rem;
+  padding: 2px 4px;
+}
