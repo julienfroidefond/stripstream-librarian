@@ -6,9 +6,10 @@ interface MonitoringFormProps {
   libraryId: string;
   monitorEnabled: boolean;
   scanMode: string;
+  watcherEnabled: boolean;
 }
 
-export function MonitoringForm({ libraryId, monitorEnabled, scanMode }: MonitoringFormProps) {
+export function MonitoringForm({ libraryId, monitorEnabled, scanMode, watcherEnabled }: MonitoringFormProps) {
   const [isPending, startTransition] = useTransition();
 
   const handleSubmit = (formData: FormData) => {
@@ -20,6 +21,7 @@ export function MonitoringForm({ libraryId, monitorEnabled, scanMode }: Monitori
           body: JSON.stringify({
             monitor_enabled: formData.get("monitor_enabled") === "true",
             scan_mode: formData.get("scan_mode"),
+            watcher_enabled: formData.get("watcher_enabled") === "true",
           }),
         });
         if (response.ok) {
@@ -34,16 +36,29 @@ export function MonitoringForm({ libraryId, monitorEnabled, scanMode }: Monitori
   return (
     <form action={handleSubmit} className="monitoring-form">
       <input type="hidden" name="id" value={libraryId} />
-      <label className={`monitor-toggle ${isPending ? 'pending' : ''}`}>
-        <input
-          type="checkbox"
-          name="monitor_enabled"
-          value="true"
-          defaultChecked={monitorEnabled}
-          disabled={isPending}
-        />
-        Auto
-      </label>
+      <div className="monitor-options">
+        <label className={`monitor-toggle ${isPending ? 'pending' : ''}`}>
+          <input
+            type="checkbox"
+            name="monitor_enabled"
+            value="true"
+            defaultChecked={monitorEnabled}
+            disabled={isPending}
+          />
+          <span className="toggle-label">Auto-scan</span>
+        </label>
+        <label className={`monitor-toggle watcher-toggle ${isPending ? 'pending' : ''} ${watcherEnabled ? 'active' : ''}`}>
+          <input
+            type="checkbox"
+            name="watcher_enabled"
+            value="true"
+            defaultChecked={watcherEnabled}
+            disabled={isPending}
+          />
+          <span className="toggle-label">Watcher</span>
+          <span className="toggle-hint" title="Detects file changes in real-time">⚡</span>
+        </label>
+      </div>
       <select
         name="scan_mode"
         defaultValue={scanMode}

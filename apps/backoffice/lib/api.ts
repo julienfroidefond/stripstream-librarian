@@ -7,6 +7,7 @@ export type LibraryDto = {
   monitor_enabled: boolean;
   scan_mode: string;
   next_scan_at: string | null;
+  watcher_enabled: boolean;
 };
 
 export type IndexJobDto = {
@@ -135,10 +136,17 @@ export async function scanLibrary(libraryId: string, full?: boolean) {
   });
 }
 
-export async function updateLibraryMonitoring(libraryId: string, monitorEnabled: boolean, scanMode: string) {
+export async function updateLibraryMonitoring(libraryId: string, monitorEnabled: boolean, scanMode: string, watcherEnabled?: boolean) {
+  const body: { monitor_enabled: boolean; scan_mode: string; watcher_enabled?: boolean } = {
+    monitor_enabled: monitorEnabled,
+    scan_mode: scanMode,
+  };
+  if (watcherEnabled !== undefined) {
+    body.watcher_enabled = watcherEnabled;
+  }
   return apiFetch<LibraryDto>(`/libraries/${libraryId}/monitoring`, {
     method: "PATCH",
-    body: JSON.stringify({ monitor_enabled: monitorEnabled, scan_mode: scanMode })
+    body: JSON.stringify(body)
   });
 }
 

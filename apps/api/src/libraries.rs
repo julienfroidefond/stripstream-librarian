@@ -19,6 +19,7 @@ pub struct LibraryResponse {
     pub monitor_enabled: bool,
     pub scan_mode: String,
     pub next_scan_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub watcher_enabled: bool,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -43,7 +44,7 @@ pub struct CreateLibraryRequest {
 )]
 pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<LibraryResponse>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at,
+        "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at, l.watcher_enabled,
                 (SELECT COUNT(*) FROM books b WHERE b.library_id = l.id) as book_count 
          FROM libraries l ORDER BY l.created_at DESC"
     )
@@ -61,6 +62,7 @@ pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<Li
             monitor_enabled: row.get("monitor_enabled"),
             scan_mode: row.get("scan_mode"),
             next_scan_at: row.get("next_scan_at"),
+            watcher_enabled: row.get("watcher_enabled"),
         })
         .collect();
 
@@ -111,6 +113,7 @@ pub async fn create_library(
         monitor_enabled: false,
         scan_mode: "manual".to_string(),
         next_scan_at: None,
+        watcher_enabled: false,
     }))
 }
 
@@ -225,6 +228,7 @@ pub struct UpdateMonitoringRequest {
     pub monitor_enabled: bool,
     #[schema(value_type = String, example = "hourly")]
     pub scan_mode: String, // 'manual', 'hourly', 'daily', 'weekly'
+    pub watcher_enabled: Option<bool>,
 }
 
 /// Update monitoring settings for a library
@@ -268,13 +272,16 @@ pub async fn update_monitoring(
         None
     };
 
+    let watcher_enabled = input.watcher_enabled.unwrap_or(false);
+
     let result = sqlx::query(
-        "UPDATE libraries SET monitor_enabled = $2, scan_mode = $3, next_scan_at = $4 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at"
+        "UPDATE libraries SET monitor_enabled = $2, scan_mode = $3, next_scan_at = $4, watcher_enabled = $5 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled"
     )
     .bind(library_id)
     .bind(input.monitor_enabled)
     .bind(input.scan_mode)
     .bind(next_scan_at)
+    .bind(watcher_enabled)
     .fetch_optional(&state.pool)
     .await?;
 
@@ -296,5 +303,6 @@ pub async fn update_monitoring(
         monitor_enabled: row.get("monitor_enabled"),
         scan_mode: row.get("scan_mode"),
         next_scan_at: row.get("next_scan_at"),
+        watcher_enabled: row.get("watcher_enabled"),
     }))
 }

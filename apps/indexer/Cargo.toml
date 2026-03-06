@@ -8,6 +8,7 @@ license.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 chrono.workspace = true
+notify = "6.1"
 parsers = { path = "../../crates/parsers" }
 reqwest.workspace = true
 serde.workspace = true
