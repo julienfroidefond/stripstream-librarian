@@ -2,9 +2,10 @@ import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { listFolders, createLibrary, deleteLibrary, fetchLibraries, fetchSeries, scanLibrary, LibraryDto, FolderItem } from "../../lib/api";
 import { LibraryActions } from "../components/LibraryActions";
+import { LibraryForm } from "../components/LibraryForm";
 import { 
   Card, CardHeader, CardTitle, CardDescription, CardContent,
-  Button, Badge, FormField, FormInput, FormSelect, FormRow 
+  Button, Badge
 } from "../components/ui";
 
 export const dynamic = "force-dynamic";
@@ -92,24 +93,7 @@ export default async function LibrariesPage() {
           <CardDescription>Create a new library from an existing folder</CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={addLibrary}>
-            <FormRow>
-              <FormField className="flex-1 min-w-48">
-                <FormInput name="name" placeholder="Library name" required />
-              </FormField>
-              <FormField className="flex-1 min-w-48">
-                <FormSelect name="root_path" required defaultValue="">
-                  <option value="" disabled>Select folder...</option>
-                  {folders.map((folder) => (
-                    <option key={folder.path} value={folder.path}>
-                      {folder.name}
-                    </option>
-                  ))}
-                </FormSelect>
-              </FormField>
-              <Button type="submit">Add Library</Button>
-            </FormRow>
-          </form>
+          <LibraryForm initialFolders={folders} action={addLibrary} />
         </CardContent>
       </Card>
 

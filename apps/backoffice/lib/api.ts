@@ -41,6 +41,8 @@ export type TokenDto = {
 export type FolderItem = {
   name: string;
   path: string;
+  depth: number;
+  has_children: boolean;
 };
 
 export type BookDto = {
@@ -177,8 +179,9 @@ export async function cancelJob(id: string) {
   return apiFetch<IndexJobDto>(`/index/cancel/${id}`, { method: "POST" });
 }
 
-export async function listFolders() {
-  return apiFetch<FolderItem[]>("/folders");
+export async function listFolders(path?: string) {
+  const url = path ? `/folders?path=${encodeURIComponent(path)}` : "/folders";
+  return apiFetch<FolderItem[]>(url);
 }
 
 export async function listTokens() {

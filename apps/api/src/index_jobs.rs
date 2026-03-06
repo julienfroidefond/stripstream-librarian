@@ -40,6 +40,8 @@ pub struct IndexJobResponse {
 pub struct FolderItem {
     pub name: String,
     pub path: String,
+    pub depth: usize,
+    pub has_children: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -194,10 +196,14 @@ fn get_libraries_root() -> String {
 }
 
 /// List available folders in /libraries for library creation
+/// Supports browsing subdirectories via optional path parameter
 #[utoipa::path(
     get,
     path = "/folders",
     tag = "indexing",
+    params(
+        ("path" = Option<String>, Query, description = "Optional subdirectory path to browse (e.g., '/libraries/manga/action')"),
+    ),
     responses(
         (status = 200, body = Vec<FolderItem>),
         (status = 401, description = "Unauthorized"),
@@ -205,18 +211,73 @@ fn get_libraries_root() -> String {
     ),
     security(("Bearer" = []))
 )]
-pub async fn list_folders(State(_state): State<AppState>) -> Result<Json<Vec<FolderItem>>, ApiError> {
+pub async fn list_folders(
+    State(_state): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<Vec<FolderItem>>, ApiError> {
     let libraries_root = get_libraries_root();
-    let libraries_path = std::path::Path::new(&libraries_root);
+    let base_path = std::path::Path::new(&libraries_root);
+    
+    // Determine which path to browse
+    let target_path = if let Some(sub_path) = params.get("path") {
+        // Validate the path to prevent directory traversal attacks
+        if sub_path.contains("..") || sub_path.contains("~") {
+            return Err(ApiError::bad_request("Invalid path"));
+        }
+        // Remove /libraries/ prefix if present since base_path is already /libraries
+        let cleaned_path = sub_path.trim_start_matches("/libraries/").trim_start_matches('/');
+        if cleaned_path.is_empty() {
+            base_path.to_path_buf()
+        } else {
+            base_path.join(cleaned_path)
+        }
+    } else {
+        base_path.to_path_buf()
+    };
+    
+    // Ensure the path is within the libraries root
+    let canonical_target = target_path.canonicalize().unwrap_or(target_path.clone());
+    let canonical_base = base_path.canonicalize().unwrap_or(base_path.to_path_buf());
+    
+    if !canonical_target.starts_with(&canonical_base) {
+        return Err(ApiError::bad_request("Path is outside libraries root"));
+    }
+    
     let mut folders = Vec::new();
+    let depth = if params.get("path").is_some() {
+        canonical_target.strip_prefix(&canonical_base)
+            .map(|p| p.components().count())
+            .unwrap_or(0)
+    } else {
+        0
+    };
 
-    if let Ok(entries) = std::fs::read_dir(libraries_path) {
+    if let Ok(entries) = std::fs::read_dir(&canonical_target) {
         for entry in entries.flatten() {
             if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
                 let name = entry.file_name().to_string_lossy().to_string();
+                
+                // Check if this folder has children
+                let has_children = if let Ok(sub_entries) = std::fs::read_dir(entry.path()) {
+                    sub_entries.flatten().any(|e| {
+                        e.file_type().map(|ft| ft.is_dir()).unwrap_or(false)
+                    })
+                } else {
+                    false
+                };
+                
+                // Calculate the full path relative to libraries root
+                let full_path = if let Ok(relative) = entry.path().strip_prefix(&canonical_base) {
+                    format!("/libraries/{}", relative.to_string_lossy())
+                } else {
+                    format!("/libraries/{}", name)
+                };
+                
                 folders.push(FolderItem {
-                    name: name.clone(),
-                    path: format!("/libraries/{}", name),
+                    name,
+                    path: full_path,
+                    depth,
+                    has_children,
                 });
             }
         }
