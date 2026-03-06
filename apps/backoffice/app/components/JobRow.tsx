@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { JobProgress } from "./JobProgress";
 
 interface JobRowProps {
@@ -32,14 +33,16 @@ export function JobRow({ job, libraryName, highlighted, onCancel }: JobRowProps)
     <>
       <tr className={highlighted ? "job-highlighted" : undefined}>
         <td>
-          <code>{job.id.slice(0, 8)}</code>
+          <Link href={`/jobs/${job.id}`} className="job-id-link">
+            <code>{job.id.slice(0, 8)}</code>
+          </Link>
         </td>
         <td>{job.library_id ? libraryName || job.library_id.slice(0, 8) : "—"}</td>
         <td>{job.type}</td>
         <td>
           <span className={`status-${job.status}`}>{job.status}</span>
           {job.error_opt && <span className="error-hint" title={job.error_opt}>!</span>}
-          {job.status === "running" && (
+          {(job.status === "running" || job.status === "pending") && (
             <button 
               className="toggle-progress-btn"
               onClick={() => setShowProgress(!showProgress)}
@@ -50,14 +53,19 @@ export function JobRow({ job, libraryName, highlighted, onCancel }: JobRowProps)
         </td>
         <td>{new Date(job.created_at).toLocaleString()}</td>
         <td>
-          {job.status === "pending" || job.status === "running" ? (
-            <button 
-              className="cancel-btn"
-              onClick={() => onCancel(job.id)}
-            >
-              Cancel
-            </button>
-          ) : null}
+          <div style={{ display: "flex", gap: "8px" }}>
+            <Link href={`/jobs/${job.id}`} className="view-btn">
+              View
+            </Link>
+            {(job.status === "pending" || job.status === "running") && (
+              <button 
+                className="cancel-btn"
+                onClick={() => onCancel(job.id)}
+              >
+                Cancel
+              </button>
+            )}
+          </div>
         </td>
       </tr>
       {showProgress && (job.status === "running" || job.status === "pending") && (
