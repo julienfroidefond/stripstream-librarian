@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 import { ThemeProvider } from "./theme-provider";
 import { ThemeToggle } from "./theme-toggle";
-import { JobsIndicatorWrapper } from "./components/JobsIndicatorWrapper";
+import { JobsIndicator } from "./components/JobsIndicator";
 
 export const metadata: Metadata = {
   title: "Stripstream Backoffice",
@@ -34,7 +34,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 <Link href="/jobs">Jobs</Link>
                 <Link href="/tokens">Tokens</Link>
               </div>
-              <JobsIndicatorWrapper apiBaseUrl={apiBaseUrl} apiToken={apiToken} />
+              <JobsIndicator />
               <ThemeToggle />
             </div>
           </nav>
