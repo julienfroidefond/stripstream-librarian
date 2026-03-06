@@ -445,12 +445,15 @@ async fn process_job(state: &AppState, job_id: Uuid, target_library_id: Option<U
         removed_files: 0,
         errors: 0,
     };
+    
+    // Track processed files across all libraries for accurate progress
+    let mut total_processed_count = 0i32;
 
     for library in libraries {
         let library_id: Uuid = library.get("id");
         let root_path: String = library.get("root_path");
         let root_path = remap_libraries_path(&root_path);
-        match scan_library(state, job_id, library_id, Path::new(&root_path), &mut stats, total_files, is_full_rebuild).await {
+        match scan_library(state, job_id, library_id, Path::new(&root_path), &mut stats, &mut total_processed_count, total_files, is_full_rebuild).await {
             Ok(()) => {}
             Err(err) => {
                 stats.errors += 1;
@@ -461,9 +464,10 @@ async fn process_job(state: &AppState, job_id: Uuid, target_library_id: Option<U
 
     sync_meili(&state.pool, &state.meili_url, &state.meili_master_key).await?;
 
-    sqlx::query("UPDATE index_jobs SET status = 'success', finished_at = NOW(), stats_json = $2, current_file = NULL WHERE id = $1")
+    sqlx::query("UPDATE index_jobs SET status = 'success', finished_at = NOW(), stats_json = $2, current_file = NULL, progress_percent = 100, processed_files = $3 WHERE id = $1")
         .bind(job_id)
         .bind(serde_json::to_value(&stats)?)
+        .bind(total_processed_count)
         .execute(&state.pool)
         .await?;
 
@@ -485,6 +489,7 @@ async fn scan_library(
     library_id: Uuid,
     root: &Path,
     stats: &mut JobStats,
+    total_processed_count: &mut i32,
     total_files: usize,
     is_full_rebuild: bool,
 ) -> anyhow::Result<()> {
@@ -515,7 +520,7 @@ async fn scan_library(
     }
 
     let mut seen: HashMap<String, bool> = HashMap::new();
-    let mut processed_count = 0i32;
+    let mut library_processed_count = 0i32;
 
     for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
         if !entry.file_type().is_file() {
@@ -528,7 +533,8 @@ async fn scan_library(
         };
 
         stats.scanned_files += 1;
-        processed_count += 1;
+        library_processed_count += 1;
+        *total_processed_count += 1;
         let abs_path_local = path.to_string_lossy().to_string();
         // Convert local path to /libraries format for DB storage
         let abs_path = unmap_libraries_path(&abs_path_local);
@@ -536,12 +542,12 @@ async fn scan_library(
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| abs_path.clone());
 
-        info!("[SCAN] Job {} processing file {}/{}: {}", job_id, processed_count, total_files, file_name);
+        info!("[SCAN] Job {} processing file {}/{} (library: {}): {}", job_id, total_processed_count, total_files, library_processed_count, file_name);
         let start_time = std::time::Instant::now();
 
-        // Update progress in DB
+        // Update progress in DB using the global processed count
         let progress_percent = if total_files > 0 {
-            ((processed_count as f64 / total_files as f64) * 100.0) as i32
+            ((*total_processed_count as f64 / total_files as f64) * 100.0) as i32
         } else {
             0
         };
@@ -552,7 +558,7 @@ async fn scan_library(
         )
         .bind(job_id)
         .bind(&file_name)
-        .bind(processed_count)
+        .bind(*total_processed_count)
         .bind(progress_percent)
         .execute(&state.pool)
         .await
