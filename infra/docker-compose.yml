@@ -24,7 +24,7 @@ services:
     volumes:
       - meili_data:/meili_data
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:7700/health"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:${MEILI_PORT:-7700}/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -65,7 +65,7 @@ services:
       meilisearch:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:${API_PORT:-8080}/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -88,7 +88,7 @@ services:
       meilisearch:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8081/health"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:${INDEXER_PORT:-8081}/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -108,7 +108,7 @@ services:
       api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://host.docker.internal:8082/health"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://host.docker.internal:${BACKOFFICE_PORT:-8082}/health"]
       interval: 10s
       timeout: 5s
       retries: 5
