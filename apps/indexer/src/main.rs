@@ -562,7 +562,9 @@ async fn scan_library(
         })?;
         info!("[BDD] Progress update took {:?}", db_start.elapsed());
 
-        seen.insert(abs_path.clone(), true);
+        // Use local path for seen tracking to match existing keys
+        let seen_key = remap_libraries_path(&abs_path);
+        seen.insert(seen_key, true);
 
         let meta_start = std::time::Instant::now();
         let metadata = std::fs::metadata(path)
@@ -574,7 +576,9 @@ async fn scan_library(
         let fingerprint = compute_fingerprint(path, metadata.len(), &mtime)?;
         info!("[META] Metadata+fingerprint took {:?}", meta_start.elapsed());
 
-        if let Some((file_id, book_id, old_fingerprint)) = existing.get(&abs_path).cloned() {
+        // Use local path to lookup in existing (which has local paths as keys)
+        let lookup_path = remap_libraries_path(&abs_path);
+        if let Some((file_id, book_id, old_fingerprint)) = existing.get(&lookup_path).cloned() {
             // Skip fingerprint check for full rebuilds - always reindex
             if !is_full_rebuild && old_fingerprint == fingerprint {
                 info!("[SKIP] File unchanged, skipping: {} (total time: {:?})", file_name, start_time.elapsed());
