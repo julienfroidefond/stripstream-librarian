@@ -2,7 +2,6 @@
 members = [
   "apps/api",
   "apps/indexer",
-  "apps/admin-ui",
   "crates/core",
   "crates/parsers",
 ]
