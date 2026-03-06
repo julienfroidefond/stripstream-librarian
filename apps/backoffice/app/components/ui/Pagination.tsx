@@ -44,14 +44,14 @@ export function CursorPagination({
   };
 
   return (
-    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 pt-6 border-t border-line">
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-6 mt-8 pt-8 border-t border-line">
       {/* Page size selector */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <span className="text-sm text-muted">Show</span>
         <select
           value={pageSize.toString()}
           onChange={(e) => changePageSize(Number(e.target.value))}
-          className="w-20 px-2 py-1.5 text-sm border border-line rounded-lg bg-background text-foreground"
+          className="w-20 px-3 py-2 text-sm border border-line rounded-lg bg-background text-foreground"
         >
           {pageSizeOptions.map((size) => (
             <option key={size} value={size}>
@@ -68,7 +68,7 @@ export function CursorPagination({
       </div>
 
       {/* Navigation */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         {hasPrevPage && (
           <Button
             variant="secondary"
@@ -161,14 +161,14 @@ export function OffsetPagination({
   };
 
   return (
-    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 pt-6 border-t border-line">
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-6 mt-8 pt-8 border-t border-line">
       {/* Page size selector */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <span className="text-sm text-muted">Show</span>
         <select
           value={pageSize.toString()}
           onChange={(e) => changePageSize(Number(e.target.value))}
-          className="w-20 px-2 py-1.5 text-sm border border-line rounded-lg bg-background text-foreground"
+          className="w-20 px-3 py-2 text-sm border border-line rounded-lg bg-background text-foreground"
         >
           {pageSizeOptions.map((size) => (
             <option key={size} value={size}>
@@ -185,7 +185,7 @@ export function OffsetPagination({
       </div>
 
       {/* Page navigation */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-2">
         <Button
           variant="ghost"
           size="sm"
