@@ -31,6 +31,12 @@
   --color-primary: hsl(194 76% 62%);
   --color-primary-soft: hsl(210 34% 24%);
   --color-muted: hsl(218 17% 72%);
+  --color-success: hsl(142 70% 55%);
+  --color-success-soft: hsl(142 30% 20%);
+  --color-warning: hsl(45 90% 55%);
+  --color-warning-soft: hsl(45 30% 20%);
+  --color-error: hsl(2 80% 65%);
+  --color-error-soft: hsl(2 30% 20%);
 }
 
 /* Base styles */

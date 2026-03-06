@@ -1,6 +1,6 @@
 import { fetchBooks, searchBooks, fetchLibraries, BookDto, LibraryDto, getBookCoverUrl } from "../../lib/api";
 import { BooksGrid, EmptyState } from "../components/BookCard";
-import { Card, Button, FormField, FormInput, FormSelect, FormRow } from "../components/ui";
+import { Card, Button, FormField, FormInput, FormSelect, FormRow, CursorPagination } from "../components/ui";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +13,8 @@ export default async function BooksPage({
   const searchParamsAwaited = await searchParams;
   const libraryId = typeof searchParamsAwaited.library === "string" ? searchParamsAwaited.library : undefined;
   const searchQuery = typeof searchParamsAwaited.q === "string" ? searchParamsAwaited.q : "";
+  const cursor = typeof searchParamsAwaited.cursor === "string" ? searchParamsAwaited.cursor : undefined;
+  const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 20;
   
   const [libraries] = await Promise.all([
     fetchLibraries().catch(() => [] as LibraryDto[])
@@ -25,7 +27,7 @@ export default async function BooksPage({
 
   if (searchQuery) {
     // Mode recherche
-    const searchResponse = await searchBooks(searchQuery, libraryId).catch(() => null);
+    const searchResponse = await searchBooks(searchQuery, libraryId, limit).catch(() => null);
     if (searchResponse) {
       searchResults = searchResponse.hits.map(hit => ({
         id: hit.id,
@@ -45,16 +47,24 @@ export default async function BooksPage({
       totalHits = searchResponse.estimated_total_hits;
     }
   } else {
-    // Mode liste
-    const booksPage = await fetchBooks(libraryId).catch(() => ({ items: [] as BookDto[], next_cursor: null }));
+    // Mode liste avec pagination
+    const booksPage = await fetchBooks(libraryId, undefined, cursor, limit).catch(() => ({ 
+      items: [] as BookDto[], 
+      next_cursor: null,
+      prev_cursor: null 
+    }));
     books = booksPage.items;
     nextCursor = booksPage.next_cursor;
+    // Note: L'API ne supporte pas encore prev_cursor, on gère ça côté UI
   }
 
   const displayBooks = (searchResults || books).map(book => ({
     ...book,
     coverUrl: getBookCoverUrl(book.id)
   }));
+
+  const hasNextPage = !!nextCursor;
+  const hasPrevPage = !!cursor; // Si on a un cursor, on peut revenir en arrière (simplifié)
 
   return (
     <>
@@ -110,19 +120,14 @@ export default async function BooksPage({
           <BooksGrid books={displayBooks} />
           
           {/* Pagination */}
-          {!searchQuery && nextCursor && (
-            <div className="flex justify-center mt-8">
-              <form>
-                <input type="hidden" name="library" value={libraryId || ""} />
-                <input type="hidden" name="cursor" value={nextCursor} />
-                <button 
-                  type="submit"
-                  className="px-6 py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 transition-colors"
-                >
-                  📥 Load more
-                </button>
-              </form>
-            </div>
+          {!searchQuery && (
+            <CursorPagination
+              hasNextPage={hasNextPage}
+              hasPrevPage={hasPrevPage}
+              pageSize={limit}
+              currentCount={displayBooks.length}
+              nextCursor={nextCursor}
+            />
           )}
         </>
       ) : (

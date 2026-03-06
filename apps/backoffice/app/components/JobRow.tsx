@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { JobProgress } from "./JobProgress";
-import { StatusBadge, Button } from "./ui";
+import { StatusBadge, Button, MiniProgressBar } from "./ui";
 
 interface JobRowProps {
   job: {
@@ -12,14 +12,27 @@ interface JobRowProps {
     type: string;
     status: string;
     created_at: string;
+    started_at: string | null;
+    finished_at: string | null;
     error_opt: string | null;
+    stats_json: {
+      scanned_files: number;
+      indexed_files: number;
+      removed_files: number;
+      errors: number;
+    } | null;
+    progress_percent: number | null;
+    processed_files: number | null;
+    total_files: number | null;
   };
   libraryName: string | undefined;
   highlighted?: boolean;
   onCancel: (id: string) => void;
+  formatDate: (date: string) => string;
+  formatDuration: (start: string, end: string | null) => string;
 }
 
-export function JobRow({ job, libraryName, highlighted, onCancel }: JobRowProps) {
+export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, formatDuration }: JobRowProps) {
   const [showProgress, setShowProgress] = useState(
     highlighted || job.status === "running" || job.status === "pending"
   );
@@ -28,6 +41,24 @@ export function JobRow({ job, libraryName, highlighted, onCancel }: JobRowProps)
     setShowProgress(false);
     window.location.reload();
   };
+
+  // Calculate duration
+  const duration = job.started_at 
+    ? formatDuration(job.started_at, job.finished_at)
+    : "-";
+
+  // Get file stats
+  const scanned = job.stats_json?.scanned_files ?? 0;
+  const indexed = job.stats_json?.indexed_files ?? 0;
+  const removed = job.stats_json?.removed_files ?? 0;
+  const errors = job.stats_json?.errors ?? 0;
+
+  // Format files display
+  const filesDisplay = job.status === "running" && job.total_files
+    ? `${job.processed_files || 0}/${job.total_files}`
+    : scanned > 0 
+      ? `${scanned} scanned`
+      : "-";
 
   return (
     <>
@@ -65,8 +96,30 @@ export function JobRow({ job, libraryName, highlighted, onCancel }: JobRowProps)
             )}
           </div>
         </td>
+        <td className="px-4 py-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-sm text-foreground">{filesDisplay}</span>
+            {job.status === "running" && job.total_files && (
+              <MiniProgressBar 
+                value={job.processed_files || 0} 
+                max={job.total_files}
+                className="w-24"
+              />
+            )}
+            {job.status === "success" && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-success">✓ {indexed}</span>
+                {removed > 0 && <span className="text-warning">− {removed}</span>}
+                {errors > 0 && <span className="text-error">⚠ {errors}</span>}
+              </div>
+            )}
+          </div>
+        </td>
         <td className="px-4 py-3 text-sm text-muted">
-          {new Date(job.created_at).toLocaleString()}
+          {duration}
+        </td>
+        <td className="px-4 py-3 text-sm text-muted">
+          {formatDate(job.created_at)}
         </td>
         <td className="px-4 py-3">
           <div className="flex items-center gap-2">
@@ -90,7 +143,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel }: JobRowProps)
       </tr>
       {showProgress && (job.status === "running" || job.status === "pending") && (
         <tr>
-          <td colSpan={6} className="px-4 py-3 bg-muted/5">
+          <td colSpan={8} className="px-4 py-3 bg-muted/5">
             <JobProgress 
               jobId={job.id}
               onComplete={handleComplete}

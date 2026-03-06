@@ -19,6 +19,15 @@ export type IndexJobDto = {
   finished_at: string | null;
   error_opt: string | null;
   created_at: string;
+  stats_json: {
+    scanned_files: number;
+    indexed_files: number;
+    removed_files: number;
+    errors: number;
+  } | null;
+  progress_percent: number | null;
+  processed_files: number | null;
+  total_files: number | null;
 };
 
 export type TokenDto = {
