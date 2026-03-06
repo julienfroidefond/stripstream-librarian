@@ -1,45 +1,81 @@
 import { ReactNode, LabelHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes } from "react";
 
+// Form Field Container
 interface FormFieldProps {
   children: ReactNode;
   className?: string;
 }
 
 export function FormField({ children, className = "" }: FormFieldProps) {
-  return <div className={`flex-1 min-w-48 ${className}`}>{children}</div>;
+  return <div className={`flex flex-col space-y-1.5 ${className}`}>{children}</div>;
 }
 
+// Form Label
 interface FormLabelProps extends LabelHTMLAttributes<HTMLLabelElement> {
   children: ReactNode;
+  required?: boolean;
 }
 
-export function FormLabel({ children, className = "", ...props }: FormLabelProps) {
+export function FormLabel({ children, required, className = "", ...props }: FormLabelProps) {
   return (
-    <label className={`block text-sm font-medium text-foreground mb-1.5 ${className}`} {...props}>
+    <label 
+      className={`text-sm font-medium text-foreground leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${className}`} 
+      {...props}
+    >
       {children}
+      {required && <span className="text-destructive ml-1">*</span>}
     </label>
   );
 }
 
-interface FormInputProps extends InputHTMLAttributes<HTMLInputElement> {}
+// Form Input
+interface FormInputProps extends InputHTMLAttributes<HTMLInputElement> {
+  error?: string;
+}
 
-export function FormInput({ className = "", ...props }: FormInputProps) {
+export function FormInput({ className = "", error, ...props }: FormInputProps) {
   return (
     <input
-      className={`w-full h-10 px-3 rounded-lg border border-line bg-background text-foreground placeholder-muted focus:ring-2 focus:ring-primary focus:border-primary transition-colors text-sm ${className}`}
+      className={`
+        flex h-10 w-full 
+        rounded-md border border-input 
+        bg-background px-3 py-2 
+        text-sm 
+        shadow-sm
+        transition-colors duration-200
+        file:border-0 file:bg-transparent file:text-sm file:font-medium 
+        placeholder:text-muted-foreground/90
+        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
+        disabled:cursor-not-allowed disabled:opacity-50
+        ${error ? "border-destructive focus-visible:ring-destructive" : ""}
+        ${className}
+      `}
       {...props}
     />
   );
 }
 
+// Form Select
 interface FormSelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   children: ReactNode;
+  error?: string;
 }
 
-export function FormSelect({ children, className = "", ...props }: FormSelectProps) {
+export function FormSelect({ children, className = "", error, ...props }: FormSelectProps) {
   return (
     <select
-      className={`w-full h-10 px-3 rounded-lg border border-line bg-background text-foreground focus:ring-2 focus:ring-primary focus:border-primary transition-colors text-sm ${className}`}
+      className={`
+        flex h-10 w-full 
+        rounded-md border border-input 
+        bg-background px-3 py-2 
+        text-sm 
+        shadow-sm
+        transition-colors duration-200
+        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
+        disabled:cursor-not-allowed disabled:opacity-50
+        ${error ? "border-destructive focus-visible:ring-destructive" : ""}
+        ${className}
+      `}
       {...props}
     >
       {children}
@@ -47,11 +83,64 @@ export function FormSelect({ children, className = "", ...props }: FormSelectPro
   );
 }
 
+// Form Row (horizontal layout)
 interface FormRowProps {
   children: ReactNode;
   className?: string;
 }
 
 export function FormRow({ children, className = "" }: FormRowProps) {
-  return <div className={`flex items-end gap-3 flex-wrap ${className}`}>{children}</div>;
+  return <div className={`flex flex-wrap items-end gap-4 ${className}`}>{children}</div>;
+}
+
+// Form Section
+interface FormSectionProps {
+  title?: string;
+  description?: string;
+  children: ReactNode;
+  className?: string;
+}
+
+export function FormSection({ title, description, children, className = "" }: FormSectionProps) {
+  return (
+    <div className={`space-y-4 ${className}`}>
+      {(title || description) && (
+        <div className="space-y-1">
+          {title && <h3 className="text-lg font-medium text-foreground">{title}</h3>}
+          {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        </div>
+      )}
+      <div className="space-y-4">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// Form Error Message
+interface FormErrorProps {
+  children: ReactNode;
+  className?: string;
+}
+
+export function FormError({ children, className = "" }: FormErrorProps) {
+  return (
+    <p className={`text-xs text-destructive ${className}`}>
+      {children}
+    </p>
+  );
+}
+
+// Form Description
+interface FormDescriptionProps {
+  children: ReactNode;
+  className?: string;
+}
+
+export function FormDescription({ children, className = "" }: FormDescriptionProps) {
+  return (
+    <p className={`text-xs text-muted-foreground ${className}`}>
+      {children}
+    </p>
+  );
 }

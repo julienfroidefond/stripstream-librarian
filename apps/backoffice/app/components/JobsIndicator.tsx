@@ -2,6 +2,9 @@
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
+import { Button } from "./ui/Button";
+import { Badge } from "./ui/Badge";
+import { ProgressBar } from "./ui/ProgressBar";
 
 interface Job {
   id: string;
@@ -18,6 +21,27 @@ interface Job {
     errors: number;
   } | null;
 }
+
+// Icons
+const JobsIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+    <rect x="2" y="3" width="20" height="18" rx="2" />
+    <path d="M6 8h12M6 12h12M6 16h8" strokeLinecap="round" />
+  </svg>
+);
+
+const SpinnerIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+    <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+    <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+  </svg>
+);
+
+const ChevronIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+    <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
 
 export function JobsIndicator() {
   const [activeJobs, setActiveJobs] = useState<Job[]>([]);
@@ -67,13 +91,18 @@ export function JobsIndicator() {
     return (
       <Link 
         href="/jobs" 
-        className="flex items-center justify-center w-10 h-10 rounded-lg text-muted transition-all duration-200 hover:text-foreground hover:bg-primary-soft"
+        className="
+          flex items-center justify-center 
+          w-9 h-9 
+          rounded-md 
+          text-muted-foreground 
+          hover:text-foreground 
+          hover:bg-accent 
+          transition-colors duration-200
+        "
         title="View all jobs"
       >
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <rect x="2" y="3" width="20" height="18" rx="2" />
-          <path d="M6 8h12M6 12h12M6 16h8" />
-        </svg>
+        <JobsIcon className="w-[18px] h-[18px]" />
       </Link>
     );
   }
@@ -81,56 +110,61 @@ export function JobsIndicator() {
   return (
     <div className="relative" ref={dropdownRef}>
       <button 
-        className={`flex items-center gap-2 px-3 py-2 rounded-lg font-medium text-sm transition-all duration-200 ${
-          runningJobs.length > 0 
-            ? 'bg-success-soft text-success' 
-            : 'bg-warning-soft text-warning'
-        } ${isOpen ? 'ring-2 ring-primary' : ''}`}
+        className={`
+          flex items-center gap-2 
+          px-3 py-2 
+          rounded-md 
+          font-medium text-sm 
+          transition-all duration-200
+          ${runningJobs.length > 0 
+            ? 'bg-success/10 text-success hover:bg-success/20' 
+            : 'bg-warning/10 text-warning hover:bg-warning/20'
+          }
+          ${isOpen ? 'ring-2 ring-ring ring-offset-2 ring-offset-background' : ''}
+        `}
         onClick={() => setIsOpen(!isOpen)}
         title={`${totalCount} active job${totalCount !== 1 ? 's' : ''}`}
       >
         {/* Animated spinner for running jobs */}
         {runningJobs.length > 0 && (
           <div className="w-4 h-4 animate-spin">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-              <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-            </svg>
+            <SpinnerIcon className="w-4 h-4" />
           </div>
         )}
         
         {/* Icon */}
-        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <rect x="2" y="3" width="20" height="18" rx="2" />
-          <path d="M6 8h12M6 12h12M6 16h8" />
-        </svg>
+        <JobsIcon className="w-4 h-4" />
         
         {/* Badge with count */}
-        <span className="flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-bold text-white bg-current rounded-full">
+        <span className="flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-bold bg-current rounded-full">
           <span className="text-background">{totalCount > 99 ? "99+" : totalCount}</span>
         </span>
         
         {/* Chevron */}
-        <svg 
-          className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-          viewBox="0 0 24 24" 
-          fill="none" 
-          stroke="currentColor" 
-          strokeWidth="2"
-        >
-          <path d="M6 9l6 6 6-6" />
-        </svg>
+        <ChevronIcon 
+          className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} 
+        />
       </button>
 
-      {/* Popin/Dropdown */}
+      {/* Popin/Dropdown with glassmorphism */}
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-96 bg-card rounded-xl shadow-card border border-line overflow-hidden z-50">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-line bg-muted/5">
+        <div className="
+          absolute right-0 top-full mt-2 w-96 
+          bg-popover/95 backdrop-blur-md
+          rounded-xl 
+          shadow-elevation-2 
+          border border-border/60 
+          overflow-hidden 
+          z-50
+          animate-scale-in
+        ">
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border/60 bg-muted/50">
             <div className="flex items-center gap-3">
-              <span className="text-2xl">📊</span>
+              <span className="text-xl">📊</span>
               <div>
                 <h3 className="font-semibold text-foreground">Active Jobs</h3>
-                <p className="text-xs text-muted">
+                <p className="text-xs text-muted-foreground">
                   {runningJobs.length > 0 
                     ? `${runningJobs.length} running, ${pendingJobs.length} pending`
                     : `${pendingJobs.length} job${pendingJobs.length !== 1 ? 's' : ''} pending`
@@ -149,33 +183,29 @@ export function JobsIndicator() {
 
           {/* Overall progress bar if running */}
           {runningJobs.length > 0 && (
-            <div className="px-4 py-3 border-b border-line">
+            <div className="px-4 py-3 border-b border-border/60">
               <div className="flex items-center justify-between text-sm mb-2">
-                <span className="text-muted">Overall Progress</span>
+                <span className="text-muted-foreground">Overall Progress</span>
                 <span className="font-semibold text-foreground">{Math.round(totalProgress)}%</span>
               </div>
-              <div className="h-2 bg-line rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-success rounded-full transition-all duration-500"
-                  style={{ width: `${totalProgress}%` }}
-                />
-              </div>
+              <ProgressBar value={totalProgress} size="sm" variant="success" />
             </div>
           )}
           
-          <div className="max-h-80 overflow-y-auto">
+          {/* Job List */}
+          <div className="max-h-80 overflow-y-auto scrollbar-hide">
             {activeJobs.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-muted">
+              <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                 <span className="text-4xl mb-2">✅</span>
                 <p>No active jobs</p>
               </div>
             ) : (
-              <ul className="divide-y divide-line">
+              <ul className="divide-y divide-border/60">
                 {activeJobs.map(job => (
                   <li key={job.id}>
                     <Link 
                       href={`/jobs/${job.id}`}
-                      className="block px-4 py-3 hover:bg-muted/5 transition-colors"
+                      className="block px-4 py-3 hover:bg-accent/50 transition-colors duration-200"
                       onClick={() => setIsOpen(false)}
                     >
                       <div className="flex items-start gap-3">
@@ -186,37 +216,30 @@ export function JobsIndicator() {
                         
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <code className="text-xs px-1.5 py-0.5 bg-line/50 rounded font-mono">{job.id.slice(0, 8)}</code>
-                            <span className={`text-xs px-2 py-0.5 rounded font-medium ${
-                              job.type === 'rebuild' ? 'bg-primary-soft text-primary' : 'bg-muted/20 text-muted'
-                            }`}>
+                            <code className="text-xs px-1.5 py-0.5 bg-muted rounded font-mono">{job.id.slice(0, 8)}</code>
+                            <Badge variant={job.type === 'rebuild' ? 'primary' : 'secondary'} className="text-[10px]">
                               {job.type}
-                            </span>
+                            </Badge>
                           </div>
                           
                           {job.status === "running" && job.progress_percent !== null && (
                             <div className="flex items-center gap-2 mt-2">
-                              <div className="flex-1 h-1.5 bg-line rounded-full overflow-hidden">
-                                <div 
-                                  className="h-full bg-success rounded-full transition-all duration-300"
-                                  style={{ width: `${job.progress_percent}%` }}
-                                />
-                              </div>
-                              <span className="text-xs font-medium text-muted">{job.progress_percent}%</span>
+                              <MiniProgressBar value={job.progress_percent} />
+                              <span className="text-xs font-medium text-muted-foreground">{job.progress_percent}%</span>
                             </div>
                           )}
                           
                           {job.current_file && (
-                            <p className="text-xs text-muted mt-1.5 truncate" title={job.current_file}>
+                            <p className="text-xs text-muted-foreground mt-1.5 truncate" title={job.current_file}>
                               📄 {job.current_file}
                             </p>
                           )}
                           
                           {job.stats_json && (
-                            <div className="flex items-center gap-3 mt-1.5 text-xs text-muted">
+                            <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
                               <span>✓ {job.stats_json.indexed_files}</span>
                               {job.stats_json.errors > 0 && (
-                                <span className="text-error">⚠ {job.stats_json.errors}</span>
+                                <span className="text-destructive">⚠ {job.stats_json.errors}</span>
                               )}
                             </div>
                           )}
@@ -230,11 +253,23 @@ export function JobsIndicator() {
           </div>
 
           {/* Footer */}
-          <div className="px-4 py-2 border-t border-line bg-muted/5">
-            <p className="text-xs text-muted text-center">Auto-refreshing every 2s</p>
+          <div className="px-4 py-2 border-t border-border/60 bg-muted/50">
+            <p className="text-xs text-muted-foreground text-center">Auto-refreshing every 2s</p>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Mini progress bar for dropdown
+function MiniProgressBar({ value }: { value: number }) {
+  return (
+    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+      <div 
+        className="h-full bg-success rounded-full transition-all duration-300"
+        style={{ width: `${value}%` }}
+      />
     </div>
   );
 }

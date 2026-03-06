@@ -2,7 +2,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { listJobs, fetchLibraries, rebuildIndex, IndexJobDto, LibraryDto } from "../../lib/api";
 import { JobsList } from "../components/JobsList";
-import { Card, CardHeader, Button, FormField, FormSelect, FormRow } from "../components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormSelect, FormRow } from "../components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -33,43 +33,63 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
 
   return (
     <>
-      <h1 className="text-3xl font-bold text-foreground mb-6 flex items-center gap-3">
-        <svg className="w-8 h-8 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-        Index Jobs
-      </h1>
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
+          <svg className="w-8 h-8 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+          Index Jobs
+        </h1>
+      </div>
       
       <Card className="mb-6">
-        <form action={triggerRebuild}>
-          <FormRow>
-            <FormField>
-              <FormSelect name="library_id" defaultValue="">
-                <option value="">All libraries</option>
-                {libraries.map((lib) => (
-                  <option key={lib.id} value={lib.id}>
-                    {lib.name}
-                  </option>
-                ))}
-              </FormSelect>
-            </FormField>
-            <Button type="submit">🔄 Queue Rebuild</Button>
-          </FormRow>
-        </form>
-        
-        <form action={triggerFullRebuild} className="mt-3">
-          <FormRow>
-            <FormField>
-              <FormSelect name="library_id" defaultValue="">
-                <option value="">All libraries</option>
-                {libraries.map((lib) => (
-                  <option key={lib.id} value={lib.id}>
-                    {lib.name}
-                  </option>
-                ))}
-              </FormSelect>
-            </FormField>
-            <Button type="submit" variant="warning">🔁 Full Rebuild</Button>
-          </FormRow>
-        </form>
+        <CardHeader>
+          <CardTitle>Queue New Job</CardTitle>
+          <CardDescription>Select a library to rebuild or perform a full rebuild</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <form action={triggerRebuild}>
+            <FormRow>
+              <FormField className="flex-1">
+                <FormSelect name="library_id" defaultValue="">
+                  <option value="">All libraries</option>
+                  {libraries.map((lib) => (
+                    <option key={lib.id} value={lib.id}>
+                      {lib.name}
+                    </option>
+                  ))}
+                </FormSelect>
+              </FormField>
+              <Button type="submit">
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Queue Rebuild
+              </Button>
+            </FormRow>
+          </form>
+          
+          <form action={triggerFullRebuild}>
+            <FormRow>
+              <FormField className="flex-1">
+                <FormSelect name="library_id" defaultValue="">
+                  <option value="">All libraries</option>
+                  {libraries.map((lib) => (
+                    <option key={lib.id} value={lib.id}>
+                      {lib.name}
+                    </option>
+                  ))}
+                </FormSelect>
+              </FormField>
+              <Button type="submit" variant="warning">
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Full Rebuild
+              </Button>
+            </FormRow>
+          </form>
+        </CardContent>
       </Card>
       
       <JobsList 

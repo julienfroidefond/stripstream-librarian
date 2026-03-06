@@ -42,14 +42,14 @@ export function MonitoringForm({ libraryId, monitorEnabled, scanMode, watcherEna
           isPending 
             ? 'opacity-50 cursor-not-allowed' 
             : 'hover:border-primary'
-        } ${monitorEnabled ? 'bg-primary-soft border-primary text-primary' : 'bg-card border-line text-muted'}`}>
+        } ${monitorEnabled ? 'bg-primary/10 border-primary text-primary' : 'bg-card border-border text-muted-foreground'}`}>
           <input
             type="checkbox"
             name="monitor_enabled"
             value="true"
             defaultChecked={monitorEnabled}
             disabled={isPending}
-            className="w-3.5 h-3.5 rounded border-line text-primary focus:ring-primary"
+            className="w-3.5 h-3.5 rounded border-border text-primary focus:ring-primary"
           />
           <span>Auto</span>
         </label>
@@ -58,14 +58,14 @@ export function MonitoringForm({ libraryId, monitorEnabled, scanMode, watcherEna
           isPending 
             ? 'opacity-50 cursor-not-allowed' 
             : 'hover:border-primary'
-        } ${watcherEnabled ? 'bg-warning-soft border-warning text-warning' : 'bg-card border-line text-muted'}`}>
+        } ${watcherEnabled ? 'bg-warning/10 border-warning text-warning' : 'bg-card border-border text-muted-foreground'}`}>
           <input
             type="checkbox"
             name="watcher_enabled"
             value="true"
             defaultChecked={watcherEnabled}
             disabled={isPending}
-            className="w-3.5 h-3.5 rounded border-line text-warning focus:ring-warning"
+            className="w-3.5 h-3.5 rounded border-border text-warning focus:ring-warning"
           />
           <span title="Real-time file watcher">⚡</span>
         </label>
@@ -74,7 +74,7 @@ export function MonitoringForm({ libraryId, monitorEnabled, scanMode, watcherEna
           name="scan_mode"
           defaultValue={scanMode}
           disabled={isPending}
-          className="px-3 py-1.5 text-sm rounded-lg border border-line bg-card text-foreground focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50"
+          className="px-3 py-1.5 text-sm rounded-lg border border-border bg-card text-foreground focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50"
         >
           <option value="manual">Manual</option>
           <option value="hourly">Hourly</option>

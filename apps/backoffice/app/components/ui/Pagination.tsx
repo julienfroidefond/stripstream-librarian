@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "./Button";
+import { IconButton } from "./Button";
 
 interface CursorPaginationProps {
   hasNextPage: boolean;
@@ -44,14 +45,14 @@ export function CursorPagination({
   };
 
   return (
-    <div className="flex flex-col sm:flex-row items-center justify-between gap-6 mt-8 pt-8 border-t border-line">
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-6 mt-8 pt-8 border-t border-border/60">
       {/* Page size selector */}
       <div className="flex items-center gap-3">
-        <span className="text-sm text-muted">Show</span>
+        <span className="text-sm text-muted-foreground">Show</span>
         <select
           value={pageSize.toString()}
           onChange={(e) => changePageSize(Number(e.target.value))}
-          className="w-20 px-3 py-2 text-sm border border-line rounded-lg bg-background text-foreground"
+          className="w-20 px-3 py-2 text-sm rounded-md border border-input bg-background text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-colors"
         >
           {pageSizeOptions.map((size) => (
             <option key={size} value={size}>
@@ -59,33 +60,38 @@ export function CursorPagination({
             </option>
           ))}
         </select>
-        <span className="text-sm text-muted">per page</span>
+        <span className="text-sm text-muted-foreground">per page</span>
       </div>
 
       {/* Count info */}
-      <div className="text-sm text-muted">
+      <div className="text-sm text-muted-foreground">
         Showing {currentCount} items
       </div>
 
       {/* Navigation */}
-      <div className="flex items-center gap-3">
-        {hasPrevPage && (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={goToFirst}
-          >
-            ← First
-          </Button>
-        )}
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={goToFirst}
+          disabled={!hasPrevPage}
+        >
+          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+          </svg>
+          First
+        </Button>
 
         <Button
-          variant="secondary"
+          variant="outline"
           size="sm"
           onClick={goToNext}
           disabled={!hasNextPage}
         >
-          Next →
+          Next
+          <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
         </Button>
       </div>
     </div>
@@ -161,14 +167,14 @@ export function OffsetPagination({
   };
 
   return (
-    <div className="flex flex-col sm:flex-row items-center justify-between gap-6 mt-8 pt-8 border-t border-line">
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-6 mt-8 pt-8 border-t border-border/60">
       {/* Page size selector */}
       <div className="flex items-center gap-3">
-        <span className="text-sm text-muted">Show</span>
+        <span className="text-sm text-muted-foreground">Show</span>
         <select
           value={pageSize.toString()}
           onChange={(e) => changePageSize(Number(e.target.value))}
-          className="w-20 px-3 py-2 text-sm border border-line rounded-lg bg-background text-foreground"
+          className="w-20 px-3 py-2 text-sm rounded-md border border-input bg-background text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-colors"
         >
           {pageSizeOptions.map((size) => (
             <option key={size} value={size}>
@@ -176,34 +182,37 @@ export function OffsetPagination({
             </option>
           ))}
         </select>
-        <span className="text-sm text-muted">per page</span>
+        <span className="text-sm text-muted-foreground">per page</span>
       </div>
 
       {/* Page info */}
-      <div className="text-sm text-muted">
+      <div className="text-sm text-muted-foreground">
         {startItem}-{endItem} of {totalItems}
       </div>
 
       {/* Page navigation */}
-      <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
+      <div className="flex items-center gap-1">
+        <IconButton
           size="sm"
           onClick={() => goToPage(currentPage - 1)}
           disabled={currentPage <= 1}
+          title="Previous page"
         >
-          ←
-        </Button>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </IconButton>
 
         {getPageNumbers().map((page, index) => (
           <span key={index}>
             {page === "..." ? (
-              <span className="px-3 py-2 text-sm text-muted">...</span>
+              <span className="px-3 py-2 text-sm text-muted-foreground">...</span>
             ) : (
               <Button
-                variant={currentPage === page ? "primary" : "ghost"}
+                variant={currentPage === page ? "default" : "ghost"}
                 size="sm"
                 onClick={() => goToPage(page as number)}
+                className="min-w-[2.5rem]"
               >
                 {page}
               </Button>
@@ -211,14 +220,16 @@ export function OffsetPagination({
           </span>
         ))}
 
-        <Button
-          variant="ghost"
+        <IconButton
           size="sm"
           onClick={() => goToPage(currentPage + 1)}
           disabled={currentPage >= totalPages}
+          title="Next page"
         >
-          →
-        </Button>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </IconButton>
       </div>
     </div>
   );

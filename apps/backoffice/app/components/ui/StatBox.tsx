@@ -8,11 +8,11 @@ interface StatBoxProps {
 }
 
 const variantStyles: Record<string, string> = {
-  default: "bg-muted/5",
-  primary: "bg-primary-soft",
-  success: "bg-success-soft",
-  warning: "bg-warning-soft",
-  error: "bg-error-soft",
+  default: "bg-muted/50",
+  primary: "bg-primary/10",
+  success: "bg-success/10",
+  warning: "bg-warning/10",
+  error: "bg-destructive/10",
 };
 
 const valueVariantStyles: Record<string, string> = {
@@ -20,14 +20,14 @@ const valueVariantStyles: Record<string, string> = {
   primary: "text-primary",
   success: "text-success",
   warning: "text-warning",
-  error: "text-error",
+  error: "text-destructive",
 };
 
 export function StatBox({ value, label, variant = "default", className = "" }: StatBoxProps) {
   return (
-    <div className={`text-center p-4 rounded-lg ${variantStyles[variant]} ${className}`}>
+    <div className={`text-center p-4 rounded-lg transition-colors duration-200 ${variantStyles[variant]} ${className}`}>
       <span className={`block text-3xl font-bold ${valueVariantStyles[variant]}`}>{value}</span>
-      <span className={`text-xs ${valueVariantStyles[variant]}/80`}>{label}</span>
+      <span className={`text-xs text-muted-foreground`}>{label}</span>
     </div>
   );
 }

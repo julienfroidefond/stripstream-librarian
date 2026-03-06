@@ -13,22 +13,20 @@ function BookImage({ src, alt }: { src: string; alt: string }) {
   const [isLoaded, setIsLoaded] = useState(false);
 
   return (
-    <div className="relative aspect-[2/3] overflow-hidden bg-gradient-to-br from-line/50 to-line">
+    <div className="relative aspect-[2/3] overflow-hidden bg-muted">
       {/* Skeleton */}
       <div 
-        className={`absolute inset-0 bg-muted/10 animate-pulse transition-opacity duration-300 ${
+        className={`absolute inset-0 bg-muted/50 animate-pulse transition-opacity duration-300 ${
           isLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'
         }`}
-      >
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-muted/20 to-transparent shimmer" />
-      </div>
+      />
       
       {/* Image */}
       <Image
         src={src}
         alt={alt}
         fill
-        className={`object-cover group-hover:scale-105 transition-all duration-300 ${
+        className={`object-cover group-hover:scale-105 transition-transform duration-300 ${
           isLoaded ? 'opacity-100' : 'opacity-0'
         }`}
         sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 16vw"
@@ -45,7 +43,7 @@ export function BookCard({ book }: BookCardProps) {
   return (
     <Link 
       href={`/books/${book.id}`} 
-      className="group block bg-card rounded-xl border border-line shadow-soft hover:shadow-card hover:-translate-y-1 transition-all duration-200 overflow-hidden"
+      className="group block bg-card rounded-xl border border-border/60 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-200 overflow-hidden"
     >
       <BookImage 
         src={coverUrl}
@@ -62,11 +60,11 @@ export function BookCard({ book }: BookCardProps) {
         </h3>
         
         {book.author && (
-          <p className="text-sm text-muted mb-1 truncate">{book.author}</p>
+          <p className="text-sm text-muted-foreground mb-1 truncate">{book.author}</p>
         )}
         
         {book.series && (
-          <p className="text-xs text-muted/80 truncate mb-2">
+          <p className="text-xs text-muted-foreground/80 truncate mb-2">
             {book.series}
             {book.volume && <span className="text-primary font-medium"> #{book.volume}</span>}
           </p>
@@ -76,14 +74,14 @@ export function BookCard({ book }: BookCardProps) {
         <div className="flex items-center gap-2 mt-2">
           <span className={`
             px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full
-            ${book.kind === 'cbz' ? 'bg-success-soft text-success' : ''}
-            ${book.kind === 'cbr' ? 'bg-warning-soft text-warning' : ''}
-            ${book.kind === 'pdf' ? 'bg-error-soft text-error' : ''}
+            ${book.kind === 'cbz' ? 'bg-success/10 text-success' : ''}
+            ${book.kind === 'cbr' ? 'bg-warning/10 text-warning' : ''}
+            ${book.kind === 'pdf' ? 'bg-destructive/10 text-destructive' : ''}
           `}>
             {book.kind}
           </span>
           {book.language && (
-            <span className="px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider rounded-full bg-primary-soft text-primary">
+            <span className="px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider rounded-full bg-primary/10 text-primary">
               {book.language}
             </span>
           )}
@@ -114,12 +112,12 @@ interface EmptyStateProps {
 export function EmptyState({ message }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="w-16 h-16 mb-4 text-muted/30">
+      <div className="w-16 h-16 mb-4 text-muted-foreground/30">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
         </svg>
       </div>
-      <p className="text-muted text-lg">{message}</p>
+      <p className="text-muted-foreground text-lg">{message}</p>
     </div>
   );
 }

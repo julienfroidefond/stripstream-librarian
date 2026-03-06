@@ -62,7 +62,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
 
   return (
     <>
-      <tr className={highlighted ? 'bg-primary-soft/50' : 'hover:bg-muted/5'}>
+      <tr className={highlighted ? 'bg-primary/10' : 'hover:bg-muted/50'}>
         <td className="px-4 py-3">
           <Link 
             href={`/jobs/${job.id}`} 
@@ -115,10 +115,10 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
             )}
           </div>
         </td>
-        <td className="px-4 py-3 text-sm text-muted">
+        <td className="px-4 py-3 text-sm text-muted-foreground">
           {duration}
         </td>
-        <td className="px-4 py-3 text-sm text-muted">
+        <td className="px-4 py-3 text-sm text-muted-foreground">
           {formatDate(job.created_at)}
         </td>
         <td className="px-4 py-3">
@@ -143,7 +143,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
       </tr>
       {showProgress && (job.status === "running" || job.status === "pending") && (
         <tr>
-          <td colSpan={8} className="px-4 py-3 bg-muted/5">
+          <td colSpan={8} className="px-4 py-3 bg-muted/50">
             <JobProgress 
               jobId={job.id}
               onComplete={handleComplete}

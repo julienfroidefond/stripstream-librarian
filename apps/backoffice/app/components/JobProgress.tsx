@@ -70,7 +70,7 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
 
   if (error) {
     return (
-      <div className="p-4 bg-error-soft text-error rounded-lg text-sm">
+      <div className="p-4 bg-destructive/10 text-error rounded-lg text-sm">
         Error: {error}
       </div>
     );
@@ -78,7 +78,7 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
 
   if (!progress) {
     return (
-      <div className="p-4 text-muted text-sm">
+      <div className="p-4 text-muted-foreground text-sm">
         Loading progress...
       </div>
     );
@@ -89,7 +89,7 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
   const total = progress.total_files ?? 0;
 
   return (
-    <div className="p-4 bg-card rounded-lg border border-line">
+    <div className="p-4 bg-card rounded-lg border border-border">
       <div className="flex items-center justify-between mb-3">
         <StatusBadge status={progress.status} />
         {isComplete && (
@@ -99,7 +99,7 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
 
       <ProgressBar value={percent} showLabel size="lg" className="mb-3" />
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted mb-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground mb-3">
         <span>{processed} / {total} files</span>
         {progress.current_file && (
           <span className="truncate max-w-md" title={progress.current_file}>

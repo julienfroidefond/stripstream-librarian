@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { JobRow } from "./JobRow";
-import { MiniProgressBar } from "./ui";
 
 interface Job {
   id: string;
@@ -45,18 +44,15 @@ function formatDate(dateStr: string): string {
   const now = new Date();
   const diff = now.getTime() - date.getTime();
   
-  // Less than 1 hour: show relative
   if (diff < 3600000) {
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return "Just now";
     return `${mins}m ago`;
   }
-  // Less than 24 hours: show hours
   if (diff < 86400000) {
     const hours = Math.floor(diff / 3600000);
     return `${hours}h ago`;
   }
-  // Otherwise: show date
   return date.toLocaleDateString();
 }
 
@@ -105,22 +101,22 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
   };
 
   return (
-    <div className="bg-card rounded-xl shadow-soft border border-line overflow-hidden">
+    <div className="bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-line bg-muted/5">
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">ID</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Library</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Type</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Status</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Files</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Duration</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Created</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Actions</th>
+            <tr className="border-b border-border/60 bg-muted/50">
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">ID</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Library</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Type</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Files</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Duration</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Created</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-line">
+          <tbody className="divide-y divide-border/60">
             {jobs.map((job) => (
               <JobRow
                 key={job.id}

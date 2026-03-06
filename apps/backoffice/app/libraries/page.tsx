@@ -2,7 +2,10 @@ import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { listFolders, createLibrary, deleteLibrary, fetchLibraries, fetchSeries, scanLibrary, LibraryDto, FolderItem } from "../../lib/api";
 import { LibraryActions } from "../components/LibraryActions";
-import { Card, CardHeader, Button, Badge, FormField, FormInput, FormSelect, FormRow } from "../components/ui";
+import { 
+  Card, CardHeader, CardTitle, CardDescription, CardContent,
+  Button, Badge, FormField, FormInput, FormSelect, FormRow 
+} from "../components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -73,105 +76,130 @@ export default async function LibrariesPage() {
 
   return (
     <>
-      <h1 className="text-3xl font-bold text-foreground mb-6 flex items-center gap-3">
-        <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
-        Libraries
-      </h1>
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
+          <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+          </svg>
+          Libraries
+        </h1>
+      </div>
       
       {/* Add Library Form */}
       <Card className="mb-6">
-        <CardHeader title="Add New Library" />
-        <form action={addLibrary}>
-          <FormRow>
-            <FormField>
-              <FormInput name="name" placeholder="Library name" required />
-            </FormField>
-            <FormField>
-              <FormSelect name="root_path" required defaultValue="">
-                <option value="" disabled>Select folder...</option>
-                {folders.map((folder) => (
-                  <option key={folder.path} value={folder.path}>
-                    {folder.name}
-                  </option>
-                ))}
-              </FormSelect>
-            </FormField>
-            <Button type="submit">➕ Add Library</Button>
-          </FormRow>
-        </form>
+        <CardHeader>
+          <CardTitle>Add New Library</CardTitle>
+          <CardDescription>Create a new library from an existing folder</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={addLibrary}>
+            <FormRow>
+              <FormField className="flex-1 min-w-48">
+                <FormInput name="name" placeholder="Library name" required />
+              </FormField>
+              <FormField className="flex-1 min-w-48">
+                <FormSelect name="root_path" required defaultValue="">
+                  <option value="" disabled>Select folder...</option>
+                  {folders.map((folder) => (
+                    <option key={folder.path} value={folder.path}>
+                      {folder.name}
+                    </option>
+                  ))}
+                </FormSelect>
+              </FormField>
+              <Button type="submit">Add Library</Button>
+            </FormRow>
+          </form>
+        </CardContent>
       </Card>
 
       {/* Libraries Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {libraries.map((lib) => {
           const seriesCount = seriesCountMap.get(lib.id) || 0;
           return (
             <Card key={lib.id} className="flex flex-col">
-              {/* Header with settings */}
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground">{lib.name}</h3>
-                  {!lib.enabled && <Badge variant="muted" className="mt-1">Disabled</Badge>}
+              <CardHeader className="pb-2">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle className="text-lg">{lib.name}</CardTitle>
+                    {!lib.enabled && <Badge variant="muted" className="mt-1">Disabled</Badge>}
+                  </div>
+                  <LibraryActions
+                    libraryId={lib.id}
+                    monitorEnabled={lib.monitor_enabled}
+                    scanMode={lib.scan_mode}
+                    watcherEnabled={lib.watcher_enabled}
+                  />
                 </div>
-                <LibraryActions
-                  libraryId={lib.id}
-                  monitorEnabled={lib.monitor_enabled}
-                  scanMode={lib.scan_mode}
-                  watcherEnabled={lib.watcher_enabled}
-                />
-              </div>
+              </CardHeader>
+              <CardContent className="flex-1 pt-0">
+                {/* Path */}
+                <code className="text-xs font-mono text-muted-foreground mb-4 break-all block">{lib.root_path}</code>
 
-              {/* Path */}
-              <code className="text-xs font-mono text-muted mb-4 break-all">{lib.root_path}</code>
+                {/* Stats */}
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <Link 
+                    href={`/libraries/${lib.id}/books`} 
+                    className="text-center p-3 bg-muted/50 rounded-lg hover:bg-accent transition-colors duration-200"
+                  >
+                    <span className="block text-2xl font-bold text-primary">{lib.book_count}</span>
+                    <span className="text-xs text-muted-foreground">Books</span>
+                  </Link>
+                  <Link 
+                    href={`/libraries/${lib.id}/series`} 
+                    className="text-center p-3 bg-muted/50 rounded-lg hover:bg-accent transition-colors duration-200"
+                  >
+                    <span className="block text-2xl font-bold text-foreground">{seriesCount}</span>
+                    <span className="text-xs text-muted-foreground">Series</span>
+                  </Link>
+                </div>
 
-              {/* Stats */}
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                <Link href={`/libraries/${lib.id}/books`} className="text-center p-3 bg-muted/5 rounded-lg hover:bg-muted/10 transition-colors">
-                  <span className="block text-2xl font-bold text-primary">{lib.book_count}</span>
-                  <span className="text-xs text-muted">Books</span>
-                </Link>
-                <Link href={`/libraries/${lib.id}/series`} className="text-center p-3 bg-muted/5 rounded-lg hover:bg-muted/10 transition-colors">
-                  <span className="block text-2xl font-bold text-foreground">{seriesCount}</span>
-                  <span className="text-xs text-muted">Series</span>
-                </Link>
-              </div>
-
-              {/* Status */}
-              <div className="flex items-center gap-3 mb-4 text-sm">
-                <span className={`flex items-center gap-1 ${lib.monitor_enabled ? 'text-success' : 'text-muted'}`}>
-                  {lib.monitor_enabled ? '●' : '○'} {lib.monitor_enabled ? 'Auto' : 'Manual'}
-                </span>
-                {lib.watcher_enabled && (
-                  <span className="text-warning" title="File watcher active">⚡</span>
-                )}
-                {lib.monitor_enabled && lib.next_scan_at && (
-                  <span className="text-xs text-muted ml-auto">
-                    Next: {formatNextScan(lib.next_scan_at)}
+                {/* Status */}
+                <div className="flex items-center gap-3 mb-4 text-sm">
+                  <span className={`flex items-center gap-1 ${lib.monitor_enabled ? 'text-success' : 'text-muted-foreground'}`}>
+                    {lib.monitor_enabled ? '●' : '○'} {lib.monitor_enabled ? 'Auto' : 'Manual'}
                   </span>
-                )}
-              </div>
+                  {lib.watcher_enabled && (
+                    <span className="text-warning" title="File watcher active">⚡</span>
+                  )}
+                  {lib.monitor_enabled && lib.next_scan_at && (
+                    <span className="text-xs text-muted-foreground ml-auto">
+                      Next: {formatNextScan(lib.next_scan_at)}
+                    </span>
+                  )}
+                </div>
 
-              {/* Actions */}
-              <div className="flex items-center gap-2 mt-auto">
-                <form className="flex-1">
-                  <input type="hidden" name="id" value={lib.id} />
-                  <Button type="submit" variant="primary" size="sm" className="w-full" formAction={scanLibraryAction}>
-                    🔄 Index
-                  </Button>
-                </form>
-                <form className="flex-1">
-                  <input type="hidden" name="id" value={lib.id} />
-                  <Button type="submit" variant="secondary" size="sm" className="w-full" formAction={scanLibraryFullAction}>
-                    🔁 Full
-                  </Button>
-                </form>
-                <form>
-                  <input type="hidden" name="id" value={lib.id} />
-                  <Button type="submit" variant="danger" size="sm" formAction={removeLibrary}>
-                    🗑
-                  </Button>
-                </form>
-              </div>
+                {/* Actions */}
+                <div className="flex items-center gap-2">
+                  <form className="flex-1">
+                    <input type="hidden" name="id" value={lib.id} />
+                    <Button type="submit" variant="default" size="sm" className="w-full" formAction={scanLibraryAction}>
+                      <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Index
+                    </Button>
+                  </form>
+                  <form className="flex-1">
+                    <input type="hidden" name="id" value={lib.id} />
+                    <Button type="submit" variant="secondary" size="sm" className="w-full" formAction={scanLibraryFullAction}>
+                      <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Full
+                    </Button>
+                  </form>
+                  <form>
+                    <input type="hidden" name="id" value={lib.id} />
+                    <Button type="submit" variant="destructive" size="sm" formAction={removeLibrary}>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </Button>
+                  </form>
+                </div>
+              </CardContent>
             </Card>
           );
         })}
