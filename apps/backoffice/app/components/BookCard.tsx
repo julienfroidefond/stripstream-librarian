@@ -18,6 +18,7 @@ export function BookCard({ book, getBookCoverUrl }: BookCardProps) {
           height={220}
           className="cover-image"
           unoptimized
+          loading="lazy"
         />
       </div>
       <div className="book-info">

@@ -45,6 +45,7 @@ export default async function BookDetailPage({
             height={440}
             className="detail-cover-image"
             unoptimized
+            loading="lazy"
           />
         </div>
 
