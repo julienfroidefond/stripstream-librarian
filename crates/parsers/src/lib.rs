@@ -54,16 +54,47 @@ pub fn parse_metadata(
 
     // Determine series from parent folder relative to library root
     let series = path.parent().and_then(|parent| {
-        // Get the relative path from library root to parent
-        let relative = parent.strip_prefix(library_root).ok()?;
-        // If relative path is not empty, use first component as series
-        let first_component = relative.components().next()?;
-        let series_name = first_component.as_os_str().to_string_lossy().to_string();
-        // Only if series_name is not empty
+        // Normalize paths for comparison (handle different separators, etc.)
+        let parent_str = parent.to_string_lossy().to_string();
+        let root_str = library_root.to_string_lossy().to_string();
+
+        // Try to find the library root in the parent path
+        let relative = if let Some(idx) = parent_str.find(&root_str) {
+            // Found root in parent, extract what comes after
+            let after_root = &parent_str[idx + root_str.len()..];
+            Path::new(after_root)
+        } else if let Some(relative) = parent.strip_prefix(library_root).ok() {
+            // Standard approach works
+            relative
+        } else {
+            // Log for diagnostic on server
+            eprintln!(
+                "[PARSER] Cannot determine series: parent '{}' doesn't start with root '{}'",
+                parent.display(),
+                library_root.display()
+            );
+            return None;
+        };
+
+        // Remove leading separators
+        let relative_str = relative.to_string_lossy().to_string();
+        let relative_clean = relative_str.trim_start_matches(|c| c == '/' || c == '\\');
+
+        if relative_clean.is_empty() {
+            return None;
+        }
+
+        // Get first component as series
+        let first_sep = relative_clean.find(|c| c == '/' || c == '\\');
+        let series_name = match first_sep {
+            Some(idx) => &relative_clean[..idx],
+            None => relative_clean,
+        };
+
         if series_name.is_empty() {
             None
         } else {
-            Some(series_name)
+            Some(series_name.to_string())
         }
     });
 
