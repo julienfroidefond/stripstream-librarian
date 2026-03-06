@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 import { ThemeProvider } from "./theme-provider";
 import { ThemeToggle } from "./theme-toggle";
+import { JobsIndicatorWrapper } from "./components/JobsIndicatorWrapper";
 
 export const metadata: Metadata = {
   title: "Stripstream Backoffice",
@@ -12,6 +13,9 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
+  const apiBaseUrl = process.env.API_BASE_URL || "http://api:8080";
+  const apiToken = process.env.API_BOOTSTRAP_TOKEN || "";
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
@@ -30,6 +34,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 <Link href="/jobs">Jobs</Link>
                 <Link href="/tokens">Tokens</Link>
               </div>
+              <JobsIndicatorWrapper apiBaseUrl={apiBaseUrl} apiToken={apiToken} />
               <ThemeToggle />
             </div>
           </nav>

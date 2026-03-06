@@ -1,7 +1,10 @@
-use axum::{extract::State, Json};
+use axum::{extract::State, response::sse::{Event, Sse}, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
+use std::convert::Infallible;
+use std::time::Duration;
+use tokio_stream::Stream;
 use uuid::Uuid;
 use utoipa::ToSchema;
 
@@ -11,6 +14,8 @@ use crate::{error::ApiError, AppState};
 pub struct RebuildRequest {
     #[schema(value_type = Option<String>)]
     pub library_id: Option<Uuid>,
+    #[schema(value_type = Option<bool>, example = false)]
+    pub full: Option<bool>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -37,6 +42,49 @@ pub struct FolderItem {
     pub path: String,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct IndexJobDetailResponse {
+    #[schema(value_type = String)]
+    pub id: Uuid,
+    #[schema(value_type = Option<String>)]
+    pub library_id: Option<Uuid>,
+    pub r#type: String,
+    pub status: String,
+    #[schema(value_type = Option<String>)]
+    pub started_at: Option<DateTime<Utc>>,
+    #[schema(value_type = Option<String>)]
+    pub finished_at: Option<DateTime<Utc>>,
+    pub stats_json: Option<serde_json::Value>,
+    pub error_opt: Option<String>,
+    #[schema(value_type = String)]
+    pub created_at: DateTime<Utc>,
+    pub current_file: Option<String>,
+    pub progress_percent: Option<i32>,
+    pub total_files: Option<i32>,
+    pub processed_files: Option<i32>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct JobErrorResponse {
+    #[schema(value_type = String)]
+    pub id: Uuid,
+    pub file_path: String,
+    pub error_message: String,
+    #[schema(value_type = String)]
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ProgressEvent {
+    pub job_id: String,
+    pub status: String,
+    pub current_file: Option<String>,
+    pub progress_percent: Option<i32>,
+    pub processed_files: Option<i32>,
+    pub total_files: Option<i32>,
+    pub stats_json: Option<serde_json::Value>,
+}
+
 /// Enqueue a job to rebuild the search index for a library (or all libraries if no library_id specified)
 #[utoipa::path(
     post,
@@ -54,14 +102,17 @@ pub async fn enqueue_rebuild(
     State(state): State<AppState>,
     payload: Option<Json<RebuildRequest>>,
 ) -> Result<Json<IndexJobResponse>, ApiError> {
-    let library_id = payload.and_then(|p| p.0.library_id);
+    let library_id = payload.as_ref().and_then(|p| p.0.library_id);
+    let is_full = payload.as_ref().and_then(|p| p.0.full).unwrap_or(false);
+    let job_type = if is_full { "full_rebuild" } else { "rebuild" };
     let id = Uuid::new_v4();
 
     sqlx::query(
-        "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'rebuild', 'pending')",
+        "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, $3, 'pending')",
     )
     .bind(id)
     .bind(library_id)
+    .bind(job_type)
     .execute(&state.pool)
     .await?;
 
@@ -138,6 +189,10 @@ pub async fn cancel_job(
     Ok(Json(map_row(row)))
 }
 
+fn get_libraries_root() -> String {
+    std::env::var("LIBRARIES_ROOT_PATH").unwrap_or_else(|_| "/libraries".to_string())
+}
+
 /// List available folders in /libraries for library creation
 #[utoipa::path(
     get,
@@ -151,7 +206,8 @@ pub async fn cancel_job(
     security(("Bearer" = []))
 )]
 pub async fn list_folders(State(_state): State<AppState>) -> Result<Json<Vec<FolderItem>>, ApiError> {
-    let libraries_path = std::path::Path::new("/libraries");
+    let libraries_root = get_libraries_root();
+    let libraries_path = std::path::Path::new(&libraries_root);
     let mut folders = Vec::new();
 
     if let Ok(entries) = std::fs::read_dir(libraries_path) {
@@ -170,7 +226,7 @@ pub async fn list_folders(State(_state): State<AppState>) -> Result<Json<Vec<Fol
     Ok(Json(folders))
 }
 
-fn map_row(row: sqlx::postgres::PgRow) -> IndexJobResponse {
+pub fn map_row(row: sqlx::postgres::PgRow) -> IndexJobResponse {
     IndexJobResponse {
         id: row.get("id"),
         library_id: row.get("library_id"),
@@ -182,4 +238,214 @@ fn map_row(row: sqlx::postgres::PgRow) -> IndexJobResponse {
         error_opt: row.get("error_opt"),
         created_at: row.get("created_at"),
     }
+}
+
+fn map_row_detail(row: sqlx::postgres::PgRow) -> IndexJobDetailResponse {
+    IndexJobDetailResponse {
+        id: row.get("id"),
+        library_id: row.get("library_id"),
+        r#type: row.get("type"),
+        status: row.get("status"),
+        started_at: row.get("started_at"),
+        finished_at: row.get("finished_at"),
+        stats_json: row.get("stats_json"),
+        error_opt: row.get("error_opt"),
+        created_at: row.get("created_at"),
+        current_file: row.get("current_file"),
+        progress_percent: row.get("progress_percent"),
+        total_files: row.get("total_files"),
+        processed_files: row.get("processed_files"),
+    }
+}
+
+/// List active indexing jobs (pending or running)
+#[utoipa::path(
+    get,
+    path = "/index/jobs/active",
+    tag = "indexing",
+    responses(
+        (status = 200, body = Vec<IndexJobResponse>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn get_active_jobs(State(state): State<AppState>) -> Result<Json<Vec<IndexJobResponse>>, ApiError> {
+    let rows = sqlx::query(
+        "SELECT id, library_id, type, status, started_at, finished_at, stats_json, error_opt, created_at 
+         FROM index_jobs 
+         WHERE status IN ('pending', 'running') 
+         ORDER BY created_at ASC"
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(rows.into_iter().map(map_row).collect()))
+}
+
+/// Get detailed job information including progress
+#[utoipa::path(
+    get,
+    path = "/index/jobs/{id}/details",
+    tag = "indexing",
+    params(
+        ("id" = String, Path, description = "Job UUID"),
+    ),
+    responses(
+        (status = 200, body = IndexJobDetailResponse),
+        (status = 404, description = "Job not found"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn get_job_details(
+    State(state): State<AppState>,
+    id: axum::extract::Path<Uuid>,
+) -> Result<Json<IndexJobDetailResponse>, ApiError> {
+    let row = sqlx::query(
+        "SELECT id, library_id, type, status, started_at, finished_at, stats_json, error_opt, created_at,
+                current_file, progress_percent, total_files, processed_files
+         FROM index_jobs WHERE id = $1"
+    )
+    .bind(id.0)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    match row {
+        Some(row) => Ok(Json(map_row_detail(row))),
+        None => Err(ApiError::not_found("job not found")),
+    }
+}
+
+/// List errors for a specific job
+#[utoipa::path(
+    get,
+    path = "/index/jobs/{id}/errors",
+    tag = "indexing",
+    params(
+        ("id" = String, Path, description = "Job UUID"),
+    ),
+    responses(
+        (status = 200, body = Vec<JobErrorResponse>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn get_job_errors(
+    State(state): State<AppState>,
+    id: axum::extract::Path<Uuid>,
+) -> Result<Json<Vec<JobErrorResponse>>, ApiError> {
+    let rows = sqlx::query(
+        "SELECT id, file_path, error_message, created_at 
+         FROM index_job_errors 
+         WHERE job_id = $1 
+         ORDER BY created_at ASC"
+    )
+    .bind(id.0)
+    .fetch_all(&state.pool)
+    .await?;
+
+    let errors: Vec<JobErrorResponse> = rows
+        .into_iter()
+        .map(|row| JobErrorResponse {
+            id: row.get("id"),
+            file_path: row.get("file_path"),
+            error_message: row.get("error_message"),
+            created_at: row.get("created_at"),
+        })
+        .collect();
+
+    Ok(Json(errors))
+}
+
+/// Stream job progress via SSE
+#[utoipa::path(
+    get,
+    path = "/index/jobs/{id}/stream",
+    tag = "indexing",
+    params(
+        ("id" = String, Path, description = "Job UUID"),
+    ),
+    responses(
+        (status = 200, description = "SSE stream of progress events"),
+        (status = 404, description = "Job not found"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn stream_job_progress(
+    State(state): State<AppState>,
+    id: axum::extract::Path<Uuid>,
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, ApiError> {
+    // Verify job exists
+    let job_exists = sqlx::query("SELECT 1 FROM index_jobs WHERE id = $1")
+        .bind(id.0)
+        .fetch_optional(&state.pool)
+        .await?;
+
+    if job_exists.is_none() {
+        return Err(ApiError::not_found("job not found"));
+    }
+
+    let job_id = id.0;
+    let pool = state.pool.clone();
+
+    let stream = async_stream::stream! {
+        let mut last_status: Option<String> = None;
+        let mut last_processed: Option<i32> = None;
+        let mut interval = tokio::time::interval(Duration::from_millis(500));
+
+        loop {
+            interval.tick().await;
+
+            let row = sqlx::query(
+                "SELECT status, current_file, progress_percent, processed_files, total_files, stats_json
+                 FROM index_jobs WHERE id = $1"
+            )
+            .bind(job_id)
+            .fetch_one(&pool)
+            .await;
+
+            match row {
+                Ok(row) => {
+                    let status: String = row.get("status");
+                    let processed_files: Option<i32> = row.get("processed_files");
+
+                    // Send update if status changed or progress changed
+                    let should_send = last_status.as_ref() != Some(&status)
+                        || last_processed != processed_files;
+
+                    if should_send {
+                        last_status = Some(status.clone());
+                        last_processed = processed_files;
+
+                        let event = ProgressEvent {
+                            job_id: job_id.to_string(),
+                            status: status.clone(),
+                            current_file: row.get("current_file"),
+                            progress_percent: row.get("progress_percent"),
+                            processed_files,
+                            total_files: row.get("total_files"),
+                            stats_json: row.get("stats_json"),
+                        };
+
+                        if let Ok(json) = serde_json::to_string(&event) {
+                            yield Ok(Event::default().data(json));
+                        }
+
+                        // Stop streaming if job is finished
+                        if status == "success" || status == "failed" || status == "cancelled" {
+                            break;
+                        }
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    };
+
+    Ok(Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default()))
 }

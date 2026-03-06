@@ -123,12 +123,23 @@ export async function deleteLibrary(id: string) {
   return apiFetch<void>(`/libraries/${id}`, { method: "DELETE" });
 }
 
+export async function scanLibrary(libraryId: string, full?: boolean) {
+  const body: { full?: boolean } = {};
+  if (full) body.full = true;
+  return apiFetch<IndexJobDto>(`/libraries/${libraryId}/scan`, {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
 export async function listJobs() {
   return apiFetch<IndexJobDto[]>("/index/status");
 }
 
-export async function rebuildIndex(libraryId?: string) {
-  const body = libraryId ? { library_id: libraryId } : {};
+export async function rebuildIndex(libraryId?: string, full?: boolean) {
+  const body: { library_id?: string; full?: boolean } = {};
+  if (libraryId) body.library_id = libraryId;
+  if (full) body.full = true;
   return apiFetch<IndexJobDto>("/index/rebuild", {
     method: "POST",
     body: JSON.stringify(body)

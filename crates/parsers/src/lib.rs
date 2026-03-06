@@ -176,9 +176,30 @@ fn parse_cbr_page_count(path: &Path) -> Result<i32> {
 }
 
 fn parse_pdf_page_count(path: &Path) -> Result<i32> {
-    let doc = lopdf::Document::load(path)
-        .with_context(|| format!("cannot open pdf: {}", path.display()))?;
-    Ok(doc.get_pages().len() as i32)
+    // Use pdfinfo command line tool instead of lopdf for better performance
+    let output = std::process::Command::new("pdfinfo")
+        .arg(path)
+        .output()
+        .with_context(|| format!("failed to execute pdfinfo for {}", path.display()))?;
+
+    if !output.status.success() {
+        return Err(anyhow::anyhow!("pdfinfo failed for {}", path.display()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if line.starts_with("Pages:") {
+            if let Some(pages_str) = line.split_whitespace().nth(1) {
+                return pages_str
+                    .parse::<i32>()
+                    .with_context(|| format!("cannot parse page count: {}", pages_str));
+            }
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "could not find page count in pdfinfo output"
+    ))
 }
 
 fn is_image_name(name: &str) -> bool {

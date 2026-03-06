@@ -20,6 +20,15 @@ use uuid::Uuid;
 
 use crate::{error::ApiError, AppState};
 
+fn remap_libraries_path(path: &str) -> String {
+    if let Ok(root) = std::env::var("LIBRARIES_ROOT_PATH") {
+        if path.starts_with("/libraries/") {
+            return path.replacen("/libraries", &root, 1);
+        }
+    }
+    path.to_string()
+}
+
 #[derive(Deserialize, ToSchema)]
 pub struct PageQuery {
     #[schema(value_type = Option<String>, example = "webp")]
@@ -122,6 +131,8 @@ pub async fn get_page(
 
     let row = row.ok_or_else(|| ApiError::not_found("book file not found"))?;
     let abs_path: String = row.get("abs_path");
+    // Remap /libraries to LIBRARIES_ROOT_PATH for local development
+    let abs_path = remap_libraries_path(&abs_path);
     let input_format: String = row.get("format");
 
     let _permit = state

@@ -161,18 +161,72 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 
 **DoD:** Checklist MVP validee de bout en bout.
 
+### T19 - Progression temps reel des jobs (Option 2 - stockage minimal) - [COMPLETE]
+- [x] Table `index_job_errors` pour stocker les erreurs (job_id, file_path, error_message, created_at)
+- [x] Endpoint polling `GET /index/jobs/:id` (remplace SSE pour compatibilite) avec progression temps reel
+- [x] Indexer: stockage progression en DB (current_file, progress_percent, processed_files, total_files)
+- [x] Backoffice: composant `JobProgress` avec barre de progression et pourcentage
+- [x] Affichage du fichier en cours de traitement et compteur (traite/total)
+- [x] Stats globales utilisees depuis `index_jobs.stats_json`
+
+**DoD:** ✅ Barre de progression temps reel + erreurs stockees pour debug post-job.
+
+### T20 - Header avec indicateur jobs - [COMPLETE]
+- [x] Endpoint `GET /index/jobs/active` pour recuperer les jobs pending/running
+- [x] Composant `JobsIndicator` dans le header avec badge compteur dynamique
+- [x] Dropdown au clic affichant la liste des jobs actifs avec progression
+- [x] Polling toutes les 5s pour mise a jour temps reel
+- [x] Lien rapide vers la page jobs detaillee
+
+**DoD:** ✅ Icone cliquable dans le header montrant les jobs en cours avec badge rouge.
+
+### T21 - Bouton indexation sur libraries - [COMPLETE]
+- [x] Boutons "Index" (incremental) et "Index Full" (rebuild complet) sur chaque ligne
+- [x] Endpoint `POST /libraries/:id/scan` pour lancer le job
+- [x] Support parametre `full: true` pour rebuild complet
+- [x] Feedback visuel via revalidation Next.js
+- [x] Type de job `full_rebuild` distinct du `rebuild` normal
+
+**DoD:** ✅ Lancement d'indexation direct depuis la page libraries avec support full rebuild.
+
+### T22 - Details enrichis des jobs - [PARTIEL]
+- [x] Endpoint `GET /index/jobs/:id` avec statistiques completes (remplace /details)
+- [x] Endpoint `GET /index/jobs/:id/errors` avec liste des erreurs
+- [ ] Endpoint `GET /index/jobs/:id/files` avec pagination des fichiers traites
+- [ ] Page detaillee `/jobs/[id]/page.tsx` avec timeline et stats avancees
+- [x] Liste des erreurs de job accessible
+- [x] Navigation et affichage progression en temps reel sur la liste
+
+**DoD:** ⚠️ Fonctionnalites de base OK, page detaillee complete a finaliser.
+
+### T23 - Surveillance automatique des libraries - [PARTIEL]
+- [x] Migration `0004_library_monitoring.sql`: colonnes `monitor_enabled`, `scan_mode`, `last_scan_at`, `next_scan_at`
+- [x] Enum scan_mode: 'manual', 'hourly', 'daily', 'weekly' avec contrainte CHECK
+- [ ] Checkbox "Enable monitoring" et select "Scan frequency" dans formulaire library
+- [ ] Scheduler dans l'indexer (toutes les minutes) verifiant les libraries a scanner
+- [x] Endpoint `POST /libraries/:id/scan` pour scan manuel declenche par API
+- [ ] Badge "Auto" (vert) ou "Manual" (gris) dans la liste des libraries
+- [ ] Prochain scan estime affiche dans les details de la library
+
+**DoD:** ⚠️ Schema DB et endpoint API OK, UI et scheduler a implementer.
+
 ---
 
 ## Contrat API minimum (v1)
 - `GET /libraries`
 - `POST /libraries`
 - `DELETE /libraries/:id`
+- `POST /libraries/:id/scan` (T23)
 - `GET /books`
 - `GET /books/:id`
 - `GET /search`
 - `GET /books/:id/pages/:n`
 - `POST /index/rebuild`
 - `GET /index/status`
+- `GET /index/jobs/active` (T20)
+- `GET /index/jobs/:id/details` (T22)
+- `GET /index/jobs/:id/files` (T22)
+- `GET /index/jobs/:id/stream` (T19)
 - `POST /admin/tokens`
 - `GET /admin/tokens`
 - `DELETE /admin/tokens/:id`
@@ -196,7 +250,9 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 ## Suivi d'avancement
 - [x] Lot 1: Fondations (T1 -> T6)
 - [x] Lot 2: Ingestion + Search (T7 -> T13)
-- [ ] Lot 3: Lecture + UI + Hardening (T14 -> T18)
+- [x] Lot 3: Lecture + UI + Hardening (T14 -> T18)
+- [x] Lot 4: Ameliorations Indexation (T19 -> T22) [COMPLETE PARTIELLEMENT]
+- [ ] Lot 5: Optimisations et Polishing (T23 + ameliorations)
 
 ## Notes
 - Scope token v1: `admin`, `read`
@@ -213,3 +269,4 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 - 2026-03-05: smoke + bench scripts corriges et verifies (`infra/smoke.sh`, `infra/bench.sh`).
 - 2026-03-05: pivot backoffice valide: remplacement de l'admin UI Rust SSR par une app Next.js.
 - 2026-03-05: backoffice Next.js implemente (`apps/backoffice`) avec branding neon base sur le logo, actions libraries/jobs/tokens, et integration Docker Compose.
+- 2026-03-06: planification Lot 4 - ajout des taches T19-T23 pour ameliorations indexing (progression temps reel, indicateur header, bouton indexation, details jobs, surveillance auto libraries)

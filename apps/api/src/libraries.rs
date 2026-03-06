@@ -152,3 +152,61 @@ fn canonicalize_library_root(root_path: &str) -> Result<PathBuf, ApiError> {
 
     Ok(canonical)
 }
+
+use crate::index_jobs::{IndexJobResponse, RebuildRequest};
+
+/// Trigger a scan/indexing job for a specific library
+#[utoipa::path(
+    post,
+    path = "/libraries/{id}/scan",
+    tag = "libraries",
+    params(
+        ("id" = String, Path, description = "Library UUID"),
+    ),
+    request_body = Option<RebuildRequest>,
+    responses(
+        (status = 200, body = IndexJobResponse),
+        (status = 404, description = "Library not found"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn scan_library(
+    State(state): State<AppState>,
+    AxumPath(library_id): AxumPath<Uuid>,
+    payload: Option<Json<RebuildRequest>>,
+) -> Result<Json<IndexJobResponse>, ApiError> {
+    // Verify library exists
+    let library_exists = sqlx::query("SELECT 1 FROM libraries WHERE id = $1")
+        .bind(library_id)
+        .fetch_optional(&state.pool)
+        .await?;
+
+    if library_exists.is_none() {
+        return Err(ApiError::not_found("library not found"));
+    }
+
+    let is_full = payload.as_ref().and_then(|p| p.full).unwrap_or(false);
+    let job_type = if is_full { "full_rebuild" } else { "rebuild" };
+
+    // Create indexing job for this library
+    let job_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, $3, 'pending')",
+    )
+    .bind(job_id)
+    .bind(library_id)
+    .bind(job_type)
+    .execute(&state.pool)
+    .await?;
+
+    let row = sqlx::query(
+        "SELECT id, library_id, type, status, started_at, finished_at, stats_json, error_opt, created_at FROM index_jobs WHERE id = $1",
+    )
+    .bind(job_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(crate::index_jobs::map_row(row)))
+}
