@@ -107,7 +107,7 @@ pub async fn list_books(
             REGEXP_REPLACE(LOWER(title), '[0-9]+', '', 'g'),
             -- Extract first number group and convert to integer for numeric sort
             COALESCE(
-                NULLIF(REGEXP_REPLACE(LOWER(title), '^[^0-9]*', '', 'g'), '')::int, 
+                (REGEXP_MATCH(LOWER(title), '\d+'))[1]::int,
                 0
             ),
             -- Then by full title as fallback
@@ -253,7 +253,7 @@ pub async fn list_series(
                     PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified') 
                     ORDER BY 
                         REGEXP_REPLACE(LOWER(title), '[0-9]+', '', 'g'),
-                        COALESCE(NULLIF(REGEXP_REPLACE(LOWER(title), '^[^0-9]*', '', 'g'), '')::int, 0),
+                        COALESCE((REGEXP_MATCH(LOWER(title), '\d+'))[1]::int, 0),
                         title ASC
                 ) as rn
             FROM books
@@ -277,7 +277,7 @@ pub async fn list_series(
             REGEXP_REPLACE(LOWER(sc.name), '[0-9]+', '', 'g'),
             -- Extract first number group and convert to integer
             COALESCE(
-                NULLIF(REGEXP_REPLACE(LOWER(sc.name), '^[^0-9]*', '', 'g'), '')::int, 
+                (REGEXP_MATCH(LOWER(sc.name), '\d+'))[1]::int,
                 0
             ),
             sc.name ASC
