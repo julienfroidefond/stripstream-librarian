@@ -56,7 +56,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ../libraries:/libraries
+      - ${LIBRARIES_HOST_PATH:-../libraries}:/libraries
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -79,7 +79,7 @@ services:
     ports:
       - "8081:8081"
     volumes:
-      - ../libraries:/libraries
+      - ${LIBRARIES_HOST_PATH:-../libraries}:/libraries
     depends_on:
       migrate:
         condition: service_completed_successfully
