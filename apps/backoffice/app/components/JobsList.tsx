@@ -64,28 +64,32 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
   };
 
   return (
-    <table>
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Library</th>
-          <th>Type</th>
-          <th>Status</th>
-          <th>Created</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {jobs.map((job) => (
-          <JobRow
-            key={job.id}
-            job={job}
-            libraryName={job.library_id ? libraries.get(job.library_id) : undefined}
-            highlighted={job.id === highlightJobId}
-            onCancel={handleCancel}
-          />
-        ))}
-      </tbody>
-    </table>
+    <div className="bg-card rounded-xl shadow-soft border border-line overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-line bg-muted/5">
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">ID</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Library</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Type</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Created</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {jobs.map((job) => (
+              <JobRow
+                key={job.id}
+                job={job}
+                libraryName={job.library_id ? libraries.get(job.library_id) : undefined}
+                highlighted={job.id === highlightJobId}
+                onCancel={handleCancel}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }

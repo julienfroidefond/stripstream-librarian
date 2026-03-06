@@ -32,113 +32,128 @@ export default async function BookDetailPage({
 
   return (
     <>
-      <div className="breadcrumb">
-        <Link href="/books">← Back to books</Link>
+      <div className="mb-6">
+        <Link href="/books" className="inline-flex items-center text-sm text-muted hover:text-primary transition-colors">
+          ← Back to books
+        </Link>
       </div>
 
-      <div className="book-detail">
-        <div className="book-detail-cover">
-          <Image
-            src={getBookCoverUrl(book.id)}
-            alt={`Cover of ${book.title}`}
-            width={300}
-            height={440}
-            className="detail-cover-image"
-            unoptimized
-            loading="lazy"
-          />
+      <div className="flex flex-col lg:flex-row gap-8">
+        <div className="flex-shrink-0">
+          <div className="bg-card rounded-xl shadow-card border border-line p-4 inline-block">
+            <Image
+              src={getBookCoverUrl(book.id)}
+              alt={`Cover of ${book.title}`}
+              width={300}
+              height={440}
+              className="w-auto h-auto max-w-[300px] rounded-lg"
+              unoptimized
+              loading="lazy"
+            />
+          </div>
         </div>
 
-        <div className="book-detail-info">
-          <h1>{book.title}</h1>
-          
-          {book.author && (
-            <p className="detail-author">by {book.author}</p>
-          )}
-
-          {book.series && (
-            <p className="detail-series">
-              {book.series}
-              {book.volume && <span className="volume">Volume {book.volume}</span>}
-            </p>
-          )}
-
-          <div className="detail-meta">
-            <div className="meta-row">
-              <span className="meta-label">Format:</span>
-              <span className={`book-kind ${book.kind}`}>{book.kind.toUpperCase()}</span>
-            </div>
+        <div className="flex-1">
+          <div className="bg-card rounded-xl shadow-soft border border-line p-6">
+            <h1 className="text-3xl font-bold text-foreground mb-2">{book.title}</h1>
             
-            {book.volume && (
-              <div className="meta-row">
-                <span className="meta-label">Volume:</span>
-                <span>{book.volume}</span>
-              </div>
+            {book.author && (
+              <p className="text-lg text-muted mb-4">by {book.author}</p>
             )}
-            
-            {book.language && (
-              <div className="meta-row">
-                <span className="meta-label">Language:</span>
-                <span>{book.language.toUpperCase()}</span>
-              </div>
-            )}
-            
-            {book.page_count && (
-              <div className="meta-row">
-                <span className="meta-label">Pages:</span>
-                <span>{book.page_count}</span>
-              </div>
-            )}
-
-            <div className="meta-row">
-              <span className="meta-label">Library:</span>
-              <span>{library?.name || book.library_id}</span>
-            </div>
 
             {book.series && (
-              <div className="meta-row">
-                <span className="meta-label">Series:</span>
-                <span>{book.series}</span>
-              </div>
+              <p className="text-sm text-muted mb-6">
+                {book.series}
+                {book.volume && <span className="ml-2 px-2 py-1 bg-primary-soft text-primary rounded text-xs">Volume {book.volume}</span>}
+              </p>
             )}
 
-            {book.file_format && (
-              <div className="meta-row">
-                <span className="meta-label">File Format:</span>
-                <span>{book.file_format.toUpperCase()}</span>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between py-2 border-b border-line">
+                <span className="text-sm text-muted">Format:</span>
+                <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${
+                  book.kind === 'epub' ? 'bg-primary-soft text-primary' : 'bg-muted/20 text-muted'
+                }`}>
+                  {book.kind.toUpperCase()}
+                </span>
               </div>
-            )}
+              
+              {book.volume && (
+                <div className="flex items-center justify-between py-2 border-b border-line">
+                  <span className="text-sm text-muted">Volume:</span>
+                  <span className="text-sm text-foreground">{book.volume}</span>
+                </div>
+              )}
+              
+              {book.language && (
+                <div className="flex items-center justify-between py-2 border-b border-line">
+                  <span className="text-sm text-muted">Language:</span>
+                  <span className="text-sm text-foreground">{book.language.toUpperCase()}</span>
+                </div>
+              )}
+              
+              {book.page_count && (
+                <div className="flex items-center justify-between py-2 border-b border-line">
+                  <span className="text-sm text-muted">Pages:</span>
+                  <span className="text-sm text-foreground">{book.page_count}</span>
+                </div>
+              )}
 
-            {book.file_parse_status && (
-              <div className="meta-row">
-                <span className="meta-label">Parse Status:</span>
-                <span className={`status-${book.file_parse_status}`}>{book.file_parse_status}</span>
+              <div className="flex items-center justify-between py-2 border-b border-line">
+                <span className="text-sm text-muted">Library:</span>
+                <span className="text-sm text-foreground">{library?.name || book.library_id}</span>
               </div>
-            )}
 
-            {book.file_path && (
-              <div className="meta-row">
-                <span className="meta-label">File Path:</span>
-                <code className="file-path">{book.file_path}</code>
+              {book.series && (
+                <div className="flex items-center justify-between py-2 border-b border-line">
+                  <span className="text-sm text-muted">Series:</span>
+                  <span className="text-sm text-foreground">{book.series}</span>
+                </div>
+              )}
+
+              {book.file_format && (
+                <div className="flex items-center justify-between py-2 border-b border-line">
+                  <span className="text-sm text-muted">File Format:</span>
+                  <span className="text-sm text-foreground">{book.file_format.toUpperCase()}</span>
+                </div>
+              )}
+
+              {book.file_parse_status && (
+                <div className="flex items-center justify-between py-2 border-b border-line">
+                  <span className="text-sm text-muted">Parse Status:</span>
+                  <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${
+                    book.file_parse_status === 'success' ? 'bg-success-soft text-success' : 
+                    book.file_parse_status === 'failed' ? 'bg-error-soft text-error' : 'bg-muted/20 text-muted'
+                  }`}>
+                    {book.file_parse_status}
+                  </span>
+                </div>
+              )}
+
+              {book.file_path && (
+                <div className="flex flex-col py-2 border-b border-line">
+                  <span className="text-sm text-muted mb-1">File Path:</span>
+                  <code className="text-xs font-mono text-foreground break-all">{book.file_path}</code>
+                </div>
+              )}
+
+              <div className="flex flex-col py-2 border-b border-line">
+                <span className="text-sm text-muted mb-1">Book ID:</span>
+                <code className="text-xs font-mono text-foreground break-all">{book.id}</code>
               </div>
-            )}
 
-            <div className="meta-row">
-              <span className="meta-label">Book ID:</span>
-              <code className="book-id">{book.id}</code>
+              <div className="flex flex-col py-2 border-b border-line">
+                <span className="text-sm text-muted mb-1">Library ID:</span>
+                <code className="text-xs font-mono text-foreground break-all">{book.library_id}</code>
+              </div>
+
+              {book.updated_at && (
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-sm text-muted">Updated:</span>
+                  <span className="text-sm text-foreground">{new Date(book.updated_at).toLocaleString()}</span>
+                </div>
+              )}
             </div>
-
-            <div className="meta-row">
-              <span className="meta-label">Library ID:</span>
-              <code className="book-id">{book.library_id}</code>
-            </div>
-
-            {book.updated_at && (
-              <div className="meta-row">
-                <span className="meta-label">Updated:</span>
-                <span>{new Date(book.updated_at).toLocaleString()}</span>
-              </div>
-            )}
           </div>
         </div>
       </div>

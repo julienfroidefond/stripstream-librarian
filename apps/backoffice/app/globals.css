@@ -17,6 +17,9 @@
   --color-error-soft: hsl(2 72% 90%);
   
   --font-sans: "Avenir Next", "Segoe UI", "Noto Sans", system-ui, sans-serif;
+  
+  --shadow-soft: 0 1px 2px 0 rgb(23 32 46 / 0.06);
+  --shadow-card: 0 12px 30px -12px rgb(23 32 46 / 0.22);
 }
 
 .dark {
@@ -87,4 +90,19 @@ html {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Custom utilities - use directly in components */
+.shadow-soft {
+  box-shadow: var(--shadow-soft);
+}
+
+.shadow-card {
+  box-shadow: var(--shadow-card);
+}
+
+/* Dark mode overrides */
+.dark {
+  --shadow-soft: 0 1px 2px 0 rgb(2 8 18 / 0.35);
+  --shadow-card: 0 12px 30px -12px rgb(2 8 18 / 0.55);
 }

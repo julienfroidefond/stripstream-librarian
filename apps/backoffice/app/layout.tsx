@@ -6,6 +6,7 @@ import "./globals.css";
 import { ThemeProvider } from "./theme-provider";
 import { ThemeToggle } from "./theme-toggle";
 import { JobsIndicator } from "./components/JobsIndicator";
+import { NavIcon } from "./components/ui";
 
 export const metadata: Metadata = {
   title: "Stripstream Backoffice",
@@ -38,11 +39,21 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               {/* Navigation Links */}
               <div className="flex items-center gap-6">
                 <div className="hidden md:flex items-center gap-1">
-                  <NavLink href="/">Dashboard</NavLink>
-                  <NavLink href="/books">Books</NavLink>
-                  <NavLink href="/libraries">Libraries</NavLink>
-                  <NavLink href="/jobs">Jobs</NavLink>
-                  <NavLink href="/tokens">Tokens</NavLink>
+                  <NavLink href="/">
+                    <NavIcon name="dashboard" /> Dashboard
+                  </NavLink>
+                  <NavLink href="/books">
+                    <NavIcon name="books" /> Books
+                  </NavLink>
+                  <NavLink href="/libraries">
+                    <NavIcon name="libraries" /> Libraries
+                  </NavLink>
+                  <NavLink href="/jobs">
+                    <NavIcon name="jobs" /> Jobs
+                  </NavLink>
+                  <NavLink href="/tokens">
+                    <NavIcon name="tokens" /> Tokens
+                  </NavLink>
                 </div>
                 
                 <div className="flex items-center gap-3 pl-6 border-l border-line">
@@ -68,7 +79,7 @@ function NavLink({ href, children }: { href: "/" | "/books" | "/libraries" | "/j
   return (
     <Link 
       href={href} 
-      className="px-3 py-2 rounded-md text-sm font-medium text-foreground/80 hover:text-foreground hover:bg-primary-soft transition-colors"
+      className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-foreground/80 hover:text-foreground hover:bg-primary-soft transition-colors"
     >
       {children}
     </Link>

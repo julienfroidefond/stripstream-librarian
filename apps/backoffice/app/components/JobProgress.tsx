@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { StatusBadge, Badge, ProgressBar } from "./ui";
 
 interface ProgressEvent {
   job_id: string;
@@ -28,7 +29,6 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
   const [isComplete, setIsComplete] = useState(false);
 
   useEffect(() => {
-    // Use SSE via local proxy
     const eventSource = new EventSource(`/api/jobs/${jobId}/stream`);
     
     eventSource.onmessage = (event) => {
@@ -69,11 +69,19 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
   }, [jobId, onComplete]);
 
   if (error) {
-    return <div className="progress-error">Error: {error}</div>;
+    return (
+      <div className="p-4 bg-error-soft text-error rounded-lg text-sm">
+        Error: {error}
+      </div>
+    );
   }
 
   if (!progress) {
-    return <div className="progress-loading">Loading progress...</div>;
+    return (
+      <div className="p-4 text-muted text-sm">
+        Loading progress...
+      </div>
+    );
   }
 
   const percent = progress.progress_percent ?? 0;
@@ -81,26 +89,20 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
   const total = progress.total_files ?? 0;
 
   return (
-    <div className="job-progress">
-      <div className="progress-header">
-        <span className={`status-badge status-${progress.status}`}>
-          {progress.status}
-        </span>
-        {isComplete && <span className="complete-badge">Complete</span>}
+    <div className="p-4 bg-card rounded-lg border border-line">
+      <div className="flex items-center justify-between mb-3">
+        <StatusBadge status={progress.status} />
+        {isComplete && (
+          <Badge variant="success">Complete</Badge>
+        )}
       </div>
 
-      <div className="progress-bar-container">
-        <div 
-          className="progress-bar-fill" 
-          style={{ width: `${percent}%` }}
-        />
-        <span className="progress-percent">{percent}%</span>
-      </div>
+      <ProgressBar value={percent} showLabel size="md" className="mb-3" />
 
-      <div className="progress-stats">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted mb-3">
         <span>{processed} / {total} files</span>
         {progress.current_file && (
-          <span className="current-file" title={progress.current_file}>
+          <span className="truncate max-w-md" title={progress.current_file}>
             Current: {progress.current_file.length > 40 
               ? progress.current_file.substring(0, 40) + "..." 
               : progress.current_file}
@@ -109,12 +111,12 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
       </div>
 
       {progress.stats_json && (
-        <div className="progress-detailed-stats">
-          <span>Scanned: {progress.stats_json.scanned_files}</span>
-          <span>Indexed: {progress.stats_json.indexed_files}</span>
-          <span>Removed: {progress.stats_json.removed_files}</span>
+        <div className="flex flex-wrap gap-3 text-xs">
+          <Badge variant="primary">Scanned: {progress.stats_json.scanned_files}</Badge>
+          <Badge variant="success">Indexed: {progress.stats_json.indexed_files}</Badge>
+          <Badge variant="warning">Removed: {progress.stats_json.removed_files}</Badge>
           {progress.stats_json.errors > 0 && (
-            <span className="error-count">Errors: {progress.stats_json.errors}</span>
+            <Badge variant="error">Errors: {progress.stats_json.errors}</Badge>
           )}
         </div>
       )}

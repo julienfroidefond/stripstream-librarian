@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { listJobs, fetchLibraries, rebuildIndex, IndexJobDto, LibraryDto } from "../../lib/api";
 import { JobsList } from "../components/JobsList";
+import { Card, CardHeader, Button, FormField, FormSelect, FormRow } from "../components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -30,36 +31,47 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     redirect(`/jobs?highlight=${result.id}`);
   }
 
-  const apiBaseUrl = process.env.API_BASE_URL || "http://api:8080";
-  const apiToken = process.env.API_BOOTSTRAP_TOKEN || "";
-
   return (
     <>
-      <h1>Index Jobs</h1>
-      <div className="card">
+      <h1 className="text-3xl font-bold text-foreground mb-6 flex items-center gap-3">
+        <svg className="w-8 h-8 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+        Index Jobs
+      </h1>
+      
+      <Card className="mb-6">
         <form action={triggerRebuild}>
-          <select name="library_id" defaultValue="">
-            <option value="">All libraries</option>
-            {libraries.map((lib) => (
-              <option key={lib.id} value={lib.id}>
-                {lib.name}
-              </option>
-            ))}
-          </select>
-          <button type="submit">Queue Rebuild</button>
+          <FormRow>
+            <FormField>
+              <FormSelect name="library_id" defaultValue="">
+                <option value="">All libraries</option>
+                {libraries.map((lib) => (
+                  <option key={lib.id} value={lib.id}>
+                    {lib.name}
+                  </option>
+                ))}
+              </FormSelect>
+            </FormField>
+            <Button type="submit">🔄 Queue Rebuild</Button>
+          </FormRow>
         </form>
-        <form action={triggerFullRebuild} style={{ marginTop: '12px' }}>
-          <select name="library_id" defaultValue="">
-            <option value="">All libraries</option>
-            {libraries.map((lib) => (
-              <option key={lib.id} value={lib.id}>
-                {lib.name}
-              </option>
-            ))}
-          </select>
-          <button type="submit" className="full-rebuild-btn">Full Rebuild (Reindex All)</button>
+        
+        <form action={triggerFullRebuild} className="mt-3">
+          <FormRow>
+            <FormField>
+              <FormSelect name="library_id" defaultValue="">
+                <option value="">All libraries</option>
+                {libraries.map((lib) => (
+                  <option key={lib.id} value={lib.id}>
+                    {lib.name}
+                  </option>
+                ))}
+              </FormSelect>
+            </FormField>
+            <Button type="submit" variant="warning">🔁 Full Rebuild</Button>
+          </FormRow>
         </form>
-      </div>
+      </Card>
+      
       <JobsList 
         initialJobs={jobs}
         libraries={libraryMap}
