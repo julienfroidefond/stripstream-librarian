@@ -33,26 +33,38 @@ export async function GET(
             },
           });
           
-          if (response.ok) {
+          if (response.ok && isActive) {
             const data = await response.json();
             const dataStr = JSON.stringify(data);
             
             // Only send if data changed
-            if (dataStr !== lastData) {
+            if (dataStr !== lastData && isActive) {
               lastData = dataStr;
-              controller.enqueue(
-                new TextEncoder().encode(`data: ${dataStr}\n\n`)
-              );
+              try {
+                controller.enqueue(
+                  new TextEncoder().encode(`data: ${dataStr}\n\n`)
+                );
+              } catch (err) {
+                // Controller closed, ignore
+                isActive = false;
+                return;
+              }
               
               // Stop polling if job is complete
               if (data.status === "success" || data.status === "failed" || data.status === "cancelled") {
                 isActive = false;
-                controller.close();
+                try {
+                  controller.close();
+                } catch (err) {
+                  // Already closed, ignore
+                }
               }
             }
           }
         } catch (error) {
-          console.error("SSE fetch error:", error);
+          if (isActive) {
+            console.error("SSE fetch error:", error);
+          }
         }
       };
       

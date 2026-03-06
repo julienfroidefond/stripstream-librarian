@@ -28,20 +28,27 @@ export async function GET(request: NextRequest) {
             },
           });
           
-          if (response.ok) {
+          if (response.ok && isActive) {
             const data = await response.json();
             const dataStr = JSON.stringify(data);
             
             // Send if data changed
-            if (dataStr !== lastData) {
+            if (dataStr !== lastData && isActive) {
               lastData = dataStr;
-              controller.enqueue(
-                new TextEncoder().encode(`data: ${dataStr}\n\n`)
-              );
+              try {
+                controller.enqueue(
+                  new TextEncoder().encode(`data: ${dataStr}\n\n`)
+                );
+              } catch (err) {
+                // Controller closed, ignore
+                isActive = false;
+              }
             }
           }
         } catch (error) {
-          console.error("SSE fetch error:", error);
+          if (isActive) {
+            console.error("SSE fetch error:", error);
+          }
         }
       };
       
