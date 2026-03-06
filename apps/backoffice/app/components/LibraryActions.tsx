@@ -35,21 +35,32 @@ export function LibraryActions({
 
   const handleSubmit = (formData: FormData) => {
     startTransition(async () => {
-      const data = {
-        monitor_enabled: formData.get("monitor_enabled") === "true",
-        scan_mode: formData.get("scan_mode") as string,
-        watcher_enabled: formData.get("watcher_enabled") === "true",
-      };
+      const monitorEnabled = formData.get("monitor_enabled") === "true";
+      const watcherEnabled = formData.get("watcher_enabled") === "true";
+      const scanMode = formData.get("scan_mode") as string;
       
-      await fetch(`/api/libraries/${libraryId}/monitoring`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      
-      setIsOpen(false);
-      onUpdate?.();
-      window.location.reload();
+      try {
+        const response = await fetch(`/api/libraries/${libraryId}/monitoring`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            monitor_enabled: monitorEnabled,
+            scan_mode: scanMode,
+            watcher_enabled: watcherEnabled,
+          }),
+        });
+        
+        if (response.ok) {
+          setIsOpen(false);
+          window.location.reload();
+        } else {
+          console.error("Failed to save settings:", response.statusText);
+          alert("Failed to save settings. Please try again.");
+        }
+      } catch (error) {
+        console.error("Failed to save settings:", error);
+        alert("Failed to save settings. Please try again.");
+      }
     });
   };
 
@@ -69,23 +80,29 @@ export function LibraryActions({
           <form action={handleSubmit}>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-foreground">🔄 Auto Scan</label>
-                <input 
-                  type="checkbox" 
-                  name="monitor_enabled" 
-                  defaultChecked={monitorEnabled}
-                  className="w-4 h-4 rounded border-line text-primary focus:ring-primary"
-                />
+                <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                  <input 
+                    type="checkbox" 
+                    name="monitor_enabled" 
+                    value="true"
+                    defaultChecked={monitorEnabled}
+                    className="w-4 h-4 rounded border-line text-primary focus:ring-primary"
+                  />
+                  Auto Scan
+                </label>
               </div>
 
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-foreground">⚡ File Watcher</label>
-                <input 
-                  type="checkbox" 
-                  name="watcher_enabled" 
-                  defaultChecked={watcherEnabled}
-                  className="w-4 h-4 rounded border-line text-primary focus:ring-primary"
-                />
+                <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                  <input 
+                    type="checkbox" 
+                    name="watcher_enabled" 
+                    value="true"
+                    defaultChecked={watcherEnabled}
+                    className="w-4 h-4 rounded border-line text-primary focus:ring-primary"
+                  />
+                  File Watcher ⚡
+                </label>
               </div>
 
               <div className="flex items-center justify-between">
