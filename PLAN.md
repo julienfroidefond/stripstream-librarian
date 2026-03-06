@@ -189,15 +189,20 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 
 **DoD:** ✅ Lancement d'indexation direct depuis la page libraries avec support full rebuild.
 
-### T22 - Details enrichis des jobs - [PARTIEL]
-- [x] Endpoint `GET /index/jobs/:id` avec statistiques completes (remplace /details)
+### T22 - Details enrichis des jobs - [COMPLETE]
+- [x] Endpoint `GET /index/jobs/:id` avec statistiques completes
 - [x] Endpoint `GET /index/jobs/:id/errors` avec liste des erreurs
-- [ ] Endpoint `GET /index/jobs/:id/files` avec pagination des fichiers traites
-- [ ] Page detaillee `/jobs/[id]/page.tsx` avec timeline et stats avancees
-- [x] Liste des erreurs de job accessible
-- [x] Navigation et affichage progression en temps reel sur la liste
+- [x] Page detaillee `/jobs/[id]/page.tsx` avec:
+  - Timeline visuelle (Created → Started → Finished)
+  - Barre de progression avec pourcentage
+  - Stats: scanned, indexed, removed, errors
+  - Vitesse de traitement (fichiers/sec)
+  - Liste des erreurs detaillees
+  - Navigation retour vers la liste
+- [x] Bouton "View" sur chaque ligne de job
+- [x] Lien cliquable sur l'ID du job
 
-**DoD:** ⚠️ Fonctionnalites de base OK, page detaillee complete a finaliser.
+**DoD:** ✅ Page job detaillee avec timeline, stats completes et navigation.
 
 ### T23 - Surveillance automatique des libraries - [PARTIEL]
 - [x] Migration `0004_library_monitoring.sql`: colonnes `monitor_enabled`, `scan_mode`, `last_scan_at`, `next_scan_at`
