@@ -250,12 +250,14 @@ fn setup_watcher(
     libraries: HashMap<Uuid, String>,
     tx: mpsc::Sender<(Uuid, String)>,
 ) -> anyhow::Result<RecommendedWatcher> {
-    let watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
+    let libraries_for_closure = libraries.clone();
+    
+    let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
         match res {
             Ok(event) => {
                 if event.kind.is_modify() || event.kind.is_create() || event.kind.is_remove() {
                     for path in event.paths {
-                        if let Some((library_id, _)) = libraries.iter().find(|(_, root)| {
+                        if let Some((library_id, _)) = libraries_for_closure.iter().find(|(_, root)| {
                             path.starts_with(root)
                         }) {
                             let path_str = path.to_string_lossy().to_string();
@@ -269,6 +271,12 @@ fn setup_watcher(
             Err(err) => error!("[WATCHER] Event error: {}", err),
         }
     })?;
+
+    // Actually watch the library directories
+    for (_, root_path) in &libraries {
+        info!("[WATCHER] Watching directory: {}", root_path);
+        watcher.watch(std::path::Path::new(root_path), RecursiveMode::Recursive)?;
+    }
 
     Ok(watcher)
 }
