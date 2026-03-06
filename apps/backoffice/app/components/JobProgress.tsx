@@ -97,7 +97,7 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
         )}
       </div>
 
-      <ProgressBar value={percent} showLabel size="md" className="mb-3" />
+      <ProgressBar value={percent} showLabel size="lg" className="mb-3" />
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted mb-3">
         <span>{processed} / {total} files</span>
