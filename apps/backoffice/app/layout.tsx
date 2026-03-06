@@ -13,34 +13,64 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-  const apiBaseUrl = process.env.API_BASE_URL || "http://api:8080";
-  const apiToken = process.env.API_BOOTSTRAP_TOKEN || "";
-
   return (
     <html lang="en" suppressHydrationWarning>
-      <body>
+      <body className="min-h-screen bg-background text-foreground font-sans antialiased">
         <ThemeProvider>
-          <nav className="top-nav">
-            <Link href="/" className="brand">
-              <Image src="/logo.png" alt="Stripstream" width={36} height={36} />
-              <span className="brand-name">StripStream</span>
-              <span className="brand-subtitle">backoffice</span>
-            </Link>
-            <div className="links-wrap">
-              <div className="links">
-                <Link href="/">Dashboard</Link>
-                <Link href="/books">Books</Link>
-                <Link href="/libraries">Libraries</Link>
-                <Link href="/jobs">Jobs</Link>
-                <Link href="/tokens">Tokens</Link>
+          {/* Navigation */}
+          <nav className="sticky top-0 z-50 w-full border-b border-line bg-card/80 backdrop-blur-md">
+            <div className="container mx-auto flex h-16 items-center justify-between px-4">
+              {/* Brand */}
+              <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                <Image 
+                  src="/logo.png" 
+                  alt="Stripstream" 
+                  width={36} 
+                  height={36} 
+                  className="rounded-lg"
+                />
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xl font-bold tracking-tight">StripStream</span>
+                  <span className="text-sm text-muted font-medium">backoffice</span>
+                </div>
+              </Link>
+
+              {/* Navigation Links */}
+              <div className="flex items-center gap-6">
+                <div className="hidden md:flex items-center gap-1">
+                  <NavLink href="/">Dashboard</NavLink>
+                  <NavLink href="/books">Books</NavLink>
+                  <NavLink href="/libraries">Libraries</NavLink>
+                  <NavLink href="/jobs">Jobs</NavLink>
+                  <NavLink href="/tokens">Tokens</NavLink>
+                </div>
+                
+                <div className="flex items-center gap-3 pl-6 border-l border-line">
+                  <JobsIndicator />
+                  <ThemeToggle />
+                </div>
               </div>
-              <JobsIndicator />
-              <ThemeToggle />
             </div>
           </nav>
-          <main>{children}</main>
+
+          {/* Main Content */}
+          <main className="container mx-auto px-4 py-8">
+            {children}
+          </main>
         </ThemeProvider>
       </body>
     </html>
+  );
+}
+
+// Navigation Link Component
+function NavLink({ href, children }: { href: "/" | "/books" | "/libraries" | "/jobs" | "/tokens"; children: React.ReactNode }) {
+  return (
+    <Link 
+      href={href} 
+      className="px-3 py-2 rounded-md text-sm font-medium text-foreground/80 hover:text-foreground hover:bg-primary-soft transition-colors"
+    >
+      {children}
+    </Link>
   );
 }
