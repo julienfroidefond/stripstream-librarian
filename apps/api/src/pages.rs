@@ -363,6 +363,11 @@ fn extract_cbr_page(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiErro
         .map(|s| s.to_string())
         .collect();
     entries.sort();
+    
+    // Debug: show first few entries
+    if entries.len() > 0 {
+        debug!("First 5 entries in CBR {}: {:?}", abs_path, &entries[..entries.len().min(5)]);
+    }
     debug!("Found {} images in CBR {}", entries.len(), abs_path);
 
     let index = page_number as usize - 1;
@@ -375,6 +380,7 @@ fn extract_cbr_page(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiErro
     let page_output = std::process::Command::new("unrar")
         .arg("p")
         .arg("-inul")
+        .arg("-y")
         .arg(abs_path)
         .arg(selected)
         .output()
@@ -387,8 +393,45 @@ fn extract_cbr_page(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiErro
         error!("unrar could not extract page {} from {}: {}", selected, abs_path, stderr);
         return Err(ApiError::internal("unrar could not extract page"));
     }
-    debug!("Successfully extracted {} bytes from CBR page {}", page_output.stdout.len(), page_number);
-    Ok(page_output.stdout)
+    
+    let extracted_data = &page_output.stdout;
+    debug!("Extracted {} bytes from CBR page {}", extracted_data.len(), page_number);
+    
+    // Verify it's actually an image by checking magic bytes
+    if extracted_data.len() < 1000 {
+        // Show first few bytes for debugging
+        let preview: Vec<u8> = extracted_data.iter().take(32).copied().collect();
+        let hex_preview: String = preview.iter().map(|b| format!("{:02x}", b)).collect();
+        error!("Extracted data too small ({} bytes) for page {} from {} - first bytes: {}", 
+            extracted_data.len(), page_number, abs_path, hex_preview);
+        return Err(ApiError::internal("extracted data too small - not a valid image"));
+    }
+    
+    // Check magic bytes to verify it's an image
+    let is_valid_image = extracted_data.len() > 4 && (
+        // JPEG
+        extracted_data.starts_with(&[0xFF, 0xD8, 0xFF]) ||
+        // PNG
+        extracted_data.starts_with(&[0x89, 0x50, 0x4E, 0x47]) ||
+        // GIF
+        extracted_data.starts_with(b"GIF87a") || extracted_data.starts_with(b"GIF89a") ||
+        // WebP
+        extracted_data.starts_with(b"RIFF") && extracted_data.len() > 12 && &extracted_data[8..12] == b"WEBP" ||
+        // TIFF
+        extracted_data.starts_with(&[0x49, 0x49, 0x2A, 0x00]) || extracted_data.starts_with(&[0x4D, 0x4D, 0x00, 0x2A])
+    );
+    
+    if !is_valid_image {
+        // Show first few bytes for debugging
+        let preview: Vec<u8> = extracted_data.iter().take(32).copied().collect();
+        let hex_preview: String = preview.iter().map(|b| format!("{:02x}", b)).collect();
+        error!("Extracted data for page {} from {} is not a valid image format. First bytes: {} (size: {})", 
+            page_number, abs_path, hex_preview, extracted_data.len());
+        return Err(ApiError::internal("extracted data is not a valid image"));
+    }
+    
+    debug!("Successfully extracted {} bytes from CBR page {}", extracted_data.len(), page_number);
+    Ok(extracted_data.to_vec())
 }
 
 fn render_pdf_page(abs_path: &str, page_number: u32, width: u32) -> Result<Vec<u8>, ApiError> {

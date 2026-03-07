@@ -1,6 +1,5 @@
 use axum::{
-    extract::{Query, State},
-    response::IntoResponse,
+    extract::State,
     routing::{get, post},
     Json, Router,
 };
@@ -11,37 +10,21 @@ use sqlx::Row;
 use crate::{error::ApiError, AppState};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ImageProcessingSettings {
-    pub format: String,
-    pub quality: u8,
-    pub filter: String,
-    pub max_width: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CacheSettings {
-    pub enabled: bool,
-    pub directory: String,
-    pub max_size_mb: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LimitsSettings {
-    pub concurrent_renders: u8,
-    pub timeout_seconds: u8,
-    pub rate_limit_per_second: u16,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AppSettings {
-    pub image_processing: ImageProcessingSettings,
-    pub cache: CacheSettings,
-    pub limits: LimitsSettings,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateSettingRequest {
     pub value: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClearCacheResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheStats {
+    pub total_size_mb: f64,
+    pub file_count: u64,
+    pub directory: String,
 }
 
 pub fn settings_routes() -> Router<AppState> {
@@ -108,12 +91,6 @@ async fn update_setting(
     Ok(Json(value))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClearCacheResponse {
-    pub success: bool,
-    pub message: String,
-}
-
 async fn clear_cache(State(_state): State<AppState>) -> Result<Json<ClearCacheResponse>, ApiError> {
     let cache_dir = std::env::var("IMAGE_CACHE_DIR")
         .unwrap_or_else(|_| "/tmp/stripstream-image-cache".to_string());
@@ -141,13 +118,6 @@ async fn clear_cache(State(_state): State<AppState>) -> Result<Json<ClearCacheRe
     .map_err(|e| ApiError::internal(format!("cache clear failed: {}", e)))?;
 
     Ok(Json(result))
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CacheStats {
-    pub total_size_mb: f64,
-    pub file_count: u64,
-    pub directory: String,
 }
 
 async fn get_cache_stats(State(_state): State<AppState>) -> Result<Json<CacheStats>, ApiError> {
@@ -200,61 +170,4 @@ async fn get_cache_stats(State(_state): State<AppState>) -> Result<Json<CacheSta
     .map_err(|e| ApiError::internal(format!("cache stats failed: {}", e)))?;
 
     Ok(Json(stats))
-}
-
-pub async fn get_settings_from_db(
-    pool: &sqlx::PgPool,
-) -> Result<AppSettings, ApiError> {
-    let settings = get_settings_from_db_raw(pool).await?;
-    
-    let image_processing = settings
-        .get("image_processing")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_else(|| ImageProcessingSettings {
-            format: "webp".to_string(),
-            quality: 85,
-            filter: "lanczos3".to_string(),
-            max_width: 2160,
-        });
-
-    let cache = settings
-        .get("cache")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_else(|| CacheSettings {
-            enabled: true,
-            directory: "/tmp/stripstream-image-cache".to_string(),
-            max_size_mb: 10000,
-        });
-
-    let limits = settings
-        .get("limits")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_else(|| LimitsSettings {
-            concurrent_renders: 4,
-            timeout_seconds: 12,
-            rate_limit_per_second: 120,
-        });
-
-    Ok(AppSettings {
-        image_processing,
-        cache,
-        limits,
-    })
-}
-
-async fn get_settings_from_db_raw(
-    pool: &sqlx::PgPool,
-) -> Result<std::collections::HashMap<String, Value>, ApiError> {
-    let rows = sqlx::query(r#"SELECT key, value FROM app_settings"#)
-        .fetch_all(pool)
-        .await?;
-
-    let mut settings = std::collections::HashMap::new();
-    for row in rows {
-        let key: String = row.get("key");
-        let value: Value = row.get("value");
-        settings.insert(key, value);
-    }
-
-    Ok(settings)
 }
