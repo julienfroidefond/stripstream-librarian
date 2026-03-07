@@ -85,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
         meili_url: Arc::from(config.meili_url),
         meili_master_key: Arc::from(config.meili_master_key),
         page_cache: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(512).expect("non-zero")))),
-        page_render_limit: Arc::new(Semaphore::new(4)),
+        page_render_limit: Arc::new(Semaphore::new(8)),
         metrics: Arc::new(Metrics::new()),
         read_rate_limit: Arc::new(Mutex::new(ReadRateLimit {
             window_started_at: Instant::now(),
