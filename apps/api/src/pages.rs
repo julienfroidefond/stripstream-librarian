@@ -18,6 +18,7 @@ use sha2::{Digest, Sha256};
 use sqlx::Row;
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
+use walkdir::WalkDir;
 
 use crate::{error::ApiError, AppState};
 
@@ -220,7 +221,7 @@ pub async fn get_page(
     let start_time = std::time::Instant::now();
     
     let bytes = tokio::time::timeout(
-        Duration::from_secs(30),
+        Duration::from_secs(60),
         tokio::task::spawn_blocking(move || {
             render_page(&abs_path_clone, &input_format, n, &format_clone, quality, width)
         }),
@@ -342,93 +343,64 @@ fn extract_cbz_page(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiErro
 }
 
 fn extract_cbr_page(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiError> {
-    debug!("Listing CBR archive: {}", abs_path);
-    let list_output = std::process::Command::new("unrar")
-        .arg("lb")
+    info!("Opening CBR archive: {}", abs_path);
+    
+    let index = page_number as usize - 1;
+    let tmp_dir = std::env::temp_dir().join(format!("stripstream-cbr-{}", Uuid::new_v4()));
+    debug!("Creating temp dir for CBR extraction: {}", tmp_dir.display());
+    
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| {
+        error!("Cannot create temp dir: {}", e);
+        ApiError::internal(format!("temp dir error: {}", e))
+    })?;
+
+    // Extract directly - skip listing which fails on UTF-16 encoded filenames
+    let extract_output = std::process::Command::new("env")
+        .args(["LC_ALL=en_US.UTF-8", "LANG=en_US.UTF-8", "unar", "-o"])
+        .arg(&tmp_dir)
         .arg(abs_path)
         .output()
         .map_err(|e| {
-            error!("unrar list command failed for {}: {}", abs_path, e);
-            ApiError::internal(format!("unrar list failed: {e}"))
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+            error!("unar extract failed: {}", e);
+            ApiError::internal(format!("unar extract failed: {e}"))
         })?;
-    if !list_output.status.success() {
-        let stderr = String::from_utf8_lossy(&list_output.stderr);
-        error!("unrar could not list archive {}: {}", abs_path, stderr);
-        return Err(ApiError::internal("unrar could not list archive"));
+
+    if !extract_output.status.success() {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        let stderr = String::from_utf8_lossy(&extract_output.stderr);
+        error!("unar extract failed {}: {}", abs_path, stderr);
+        return Err(ApiError::internal("unar extract failed"));
     }
 
-    let mut entries: Vec<String> = String::from_utf8_lossy(&list_output.stdout)
-        .lines()
-        .filter(|line| is_image_name(&line.to_ascii_lowercase()))
-        .map(|s| s.to_string())
+    // Find and read the requested image (recursive search for CBR files with subdirectories)
+    let mut image_files: Vec<_> = WalkDir::new(&tmp_dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().to_lowercase();
+            is_image_name(&name)
+        })
         .collect();
-    entries.sort();
     
-    debug!("First 10 entries in CBR {}: {:?}", abs_path, &entries[..entries.len().min(10)]);
-    debug!("Found {} images in CBR {}", entries.len(), abs_path);
+    image_files.sort_by_key(|e| e.path().to_string_lossy().to_lowercase());
 
-    // Try multiple entries starting from the requested page number
-    // Some archives have non-image files (readme.txt, etc.) at the start
-    let mut tried_entries: Vec<String> = Vec::new();
-    let start_index = page_number.saturating_sub(1) as usize;
+    let selected = image_files.get(index).ok_or_else(|| {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        error!("Page {} not found (total: {})", page_number, image_files.len());
+        ApiError::not_found("page out of range")
+    })?;
+
+    let data = std::fs::read(selected.path()).map_err(|e| {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        error!("read failed: {}", e);
+        ApiError::internal(format!("read error: {}", e))
+    })?;
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
     
-    for offset in 0..10 {
-        let idx = start_index + offset;
-        if idx >= entries.len() {
-            break;
-        }
-        
-        let selected = &entries[idx];
-        tried_entries.push(selected.clone());
-        
-        debug!("Trying to extract entry {} ({}) from CBR {}", idx, selected, abs_path);
-        
-        let page_output = std::process::Command::new("unrar")
-            .arg("p")
-            .arg("-inul")
-            .arg("-y")
-            .arg(abs_path)
-            .arg(selected)
-            .output()
-            .map_err(|e| {
-                error!("unrar extract command failed for {} page {}: {}", abs_path, selected, e);
-                ApiError::internal(format!("unrar extract failed: {e}"))
-            })?;
-        
-        if !page_output.status.success() {
-            let stderr = String::from_utf8_lossy(&page_output.stderr);
-            warn!("unrar could not extract page {} from {}: {}", selected, abs_path, stderr);
-            continue;
-        }
-        
-        let extracted_data = &page_output.stdout;
-        
-        // Validate it's actually an image
-        if extracted_data.len() < 1000 {
-            warn!("Entry {} ({}) too small ({} bytes), trying next", idx, selected, extracted_data.len());
-            continue;
-        }
-        
-        let is_valid_image = extracted_data.len() > 4 && (
-            extracted_data.starts_with(&[0xFF, 0xD8, 0xFF]) || // JPEG
-            extracted_data.starts_with(&[0x89, 0x50, 0x4E, 0x47]) || // PNG
-            extracted_data.starts_with(b"GIF87a") || extracted_data.starts_with(b"GIF89a") || // GIF
-            (extracted_data.starts_with(b"RIFF") && extracted_data.len() > 12 && &extracted_data[8..12] == b"WEBP") || // WebP
-            extracted_data.starts_with(&[0x49, 0x49, 0x2A, 0x00]) || extracted_data.starts_with(&[0x4D, 0x4D, 0x00, 0x2A]) // TIFF
-        );
-        
-        if !is_valid_image {
-            warn!("Entry {} ({}) is not a valid image, trying next", idx, selected);
-            continue;
-        }
-        
-        // Found valid image!
-        info!("Successfully extracted valid image from CBR entry {} ({}) at offset {}", idx, selected, offset);
-        return Ok(extracted_data.to_vec());
-    }
-    
-    error!("Could not find valid image in CBR {} after trying: {:?}", abs_path, tried_entries);
-    Err(ApiError::not_found("no valid image found in archive after trying multiple entries"))
+    info!("Successfully extracted CBR page {} ({} bytes)", page_number, data.len());
+    Ok(data)
 }
 
 fn render_pdf_page(abs_path: &str, page_number: u32, width: u32) -> Result<Vec<u8>, ApiError> {
@@ -539,11 +511,16 @@ fn format_matches(source: &ImageFormat, target: &OutputFormat) -> bool {
 }
 
 fn is_image_name(name: &str) -> bool {
-    name.ends_with(".jpg")
-        || name.ends_with(".jpeg")
-        || name.ends_with(".png")
-        || name.ends_with(".webp")
-        || name.ends_with(".avif")
+    let lower = name.to_lowercase();
+    lower.ends_with(".jpg")
+        || lower.ends_with(".jpeg")
+        || lower.ends_with(".png")
+        || lower.ends_with(".webp")
+        || lower.ends_with(".avif")
+        || lower.ends_with(".gif")
+        || lower.ends_with(".tif")
+        || lower.ends_with(".tiff")
+        || lower.ends_with(".bmp")
 }
 
 #[allow(dead_code)]

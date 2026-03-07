@@ -78,6 +78,7 @@ dependencies = [
  "utoipa",
  "utoipa-swagger-ui",
  "uuid",
+ "walkdir",
  "webp",
  "zip 2.4.2",
 ]

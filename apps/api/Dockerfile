@@ -21,7 +21,10 @@ RUN --mount=type=cache,target=/sccache \
     cargo build --release -p api
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget unrar-free poppler-utils && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget unar poppler-utils locales && rm -rf /var/lib/apt/lists/*
+RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
 COPY --from=builder /app/target/release/api /usr/local/bin/api
 EXPOSE 8080
 CMD ["/usr/local/bin/api"]

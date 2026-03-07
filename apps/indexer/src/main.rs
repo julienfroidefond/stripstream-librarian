@@ -186,7 +186,6 @@ async fn run_file_watcher(state: AppState) -> anyhow::Result<()> {
     let pool = state.pool.clone();
 
     tokio::spawn(async move {
-        let mut watcher: Option<RecommendedWatcher> = None;
         let mut watched_libraries: HashMap<Uuid, String> = HashMap::new();
 
         loop {
@@ -217,17 +216,12 @@ async fn run_file_watcher(state: AppState) -> anyhow::Result<()> {
                     if needs_restart {
                         info!("[WATCHER] Restarting watcher for {} libraries", current_libraries.len());
 
-                        // Drop old watcher
-                        watcher = None;
-                        watched_libraries.clear();
-
                         if !current_libraries.is_empty() {
                             let tx_clone = tx.clone();
                             let libraries_clone = current_libraries.clone();
 
                             match setup_watcher(libraries_clone, tx_clone) {
-                                Ok(new_watcher) => {
-                                    watcher = Some(new_watcher);
+                                Ok(_new_watcher) => {
                                     watched_libraries = current_libraries;
                                     info!("[WATCHER] Watching {} libraries", watched_libraries.len());
                                 }
