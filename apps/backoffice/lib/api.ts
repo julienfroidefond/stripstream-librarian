@@ -209,8 +209,17 @@ export async function fetchBooks(libraryId?: string, series?: string, cursor?: s
   return apiFetch<BooksPageDto>(`/books?${params.toString()}`);
 }
 
-export async function fetchSeries(libraryId: string): Promise<SeriesDto[]> {
-  return apiFetch<SeriesDto[]>(`/libraries/${libraryId}/series`);
+export type SeriesPageDto = {
+  items: SeriesDto[];
+  next_cursor: string | null;
+};
+
+export async function fetchSeries(libraryId: string, cursor?: string, limit: number = 50): Promise<SeriesPageDto> {
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  params.set("limit", limit.toString());
+  
+  return apiFetch<SeriesPageDto>(`/libraries/${libraryId}/series?${params.toString()}`);
 }
 
 export async function searchBooks(query: string, libraryId?: string, limit: number = 20): Promise<SearchResponseDto> {
@@ -226,4 +235,53 @@ export function getBookCoverUrl(bookId: string): string {
   // Utiliser une route API locale pour éviter les problèmes CORS
   // Le navigateur ne peut pas accéder à http://api:8080 (hostname Docker interne)
   return `/api/books/${bookId}/pages/1?format=webp&width=200`;
+}
+
+export type Settings = {
+  image_processing: {
+    format: string;
+    quality: number;
+    filter: string;
+    max_width: number;
+  };
+  cache: {
+    enabled: boolean;
+    directory: string;
+    max_size_mb: number;
+  };
+  limits: {
+    concurrent_renders: number;
+    timeout_seconds: number;
+    rate_limit_per_second: number;
+  };
+};
+
+export type CacheStats = {
+  total_size_mb: number;
+  file_count: number;
+  directory: string;
+};
+
+export type ClearCacheResponse = {
+  success: boolean;
+  message: string;
+};
+
+export async function getSettings() {
+  return apiFetch<Settings>("/settings");
+}
+
+export async function updateSetting(key: string, value: unknown) {
+  return apiFetch<unknown>(`/settings/${key}`, {
+    method: "POST",
+    body: JSON.stringify({ value })
+  });
+}
+
+export async function getCacheStats() {
+  return apiFetch<CacheStats>("/settings/cache/stats");
+}
+
+export async function clearCache() {
+  return apiFetch<ClearCacheResponse>("/settings/cache/clear", { method: "POST" });
 }

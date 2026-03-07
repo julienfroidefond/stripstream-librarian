@@ -6,6 +6,7 @@ mod libraries;
 mod openapi;
 mod pages;
 mod search;
+mod settings;
 mod tokens;
 
 use std::{
@@ -107,6 +108,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/folders", get(index_jobs::list_folders))
         .route("/admin/tokens", get(tokens::list_tokens).post(tokens::create_token))
         .route("/admin/tokens/:id", delete(tokens::revoke_token))
+        .merge(settings::settings_routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_admin,

@@ -32,8 +32,8 @@ export default async function LibrariesPage() {
   const seriesCounts = await Promise.all(
     libraries.map(async (lib) => {
       try {
-        const series = await fetchSeries(lib.id);
-        return { id: lib.id, count: series.length };
+        const seriesPage = await fetchSeries(lib.id);
+        return { id: lib.id, count: seriesPage.items.length };
       } catch {
         return { id: lib.id, count: 0 };
       }

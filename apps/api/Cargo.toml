@@ -31,3 +31,4 @@ uuid.workspace = true
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
 utoipa.workspace = true
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }
+webp = "0.3"

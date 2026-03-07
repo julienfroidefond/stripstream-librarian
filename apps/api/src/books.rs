@@ -224,16 +224,33 @@ pub struct SeriesItem {
     pub first_book_id: Uuid,
 }
 
-/// List all series in a library
+#[derive(Serialize, ToSchema)]
+pub struct SeriesPage {
+    pub items: Vec<SeriesItem>,
+    #[schema(value_type = Option<String>)]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ListSeriesQuery {
+    #[schema(value_type = Option<String>)]
+    pub cursor: Option<String>,
+    #[schema(value_type = Option<i64>, example = 50)]
+    pub limit: Option<i64>,
+}
+
+/// List all series in a library with pagination
 #[utoipa::path(
     get,
     path = "/libraries/{library_id}/series",
     tag = "books",
     params(
         ("library_id" = String, Path, description = "Library UUID"),
+        ("cursor" = Option<String>, Query, description = "Cursor for pagination (series name)"),
+        ("limit" = Option<i64>, Query, description = "Max items to return (max 200)"),
     ),
     responses(
-        (status = 200, body = Vec<SeriesItem>),
+        (status = 200, body = SeriesPage),
         (status = 401, description = "Unauthorized"),
     ),
     security(("Bearer" = []))
@@ -241,7 +258,10 @@ pub struct SeriesItem {
 pub async fn list_series(
     State(state): State<AppState>,
     Path(library_id): Path<Uuid>,
-) -> Result<Json<Vec<SeriesItem>>, ApiError> {
+    Query(query): Query<ListSeriesQuery>,
+) -> Result<Json<SeriesPage>, ApiError> {
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+
     let rows = sqlx::query(
         r#"
         WITH sorted_books AS (
@@ -272,6 +292,7 @@ pub async fn list_series(
             sb.id as first_book_id
         FROM series_counts sc
         JOIN sorted_books sb ON sb.name = sc.name AND sb.rn = 1
+        WHERE ($2::text IS NULL OR sc.name > $2)
         ORDER BY 
             -- Natural sort: extract text part before numbers
             REGEXP_REPLACE(LOWER(sc.name), '[0-9]+', '', 'g'),
@@ -281,14 +302,18 @@ pub async fn list_series(
                 0
             ),
             sc.name ASC
+        LIMIT $3
         "#,
     )
     .bind(library_id)
+    .bind(query.cursor.as_deref())
+    .bind(limit + 1)
     .fetch_all(&state.pool)
     .await?;
 
-    let series: Vec<SeriesItem> = rows
+    let mut items: Vec<SeriesItem> = rows
         .iter()
+        .take(limit as usize)
         .map(|row| SeriesItem {
             name: row.get("name"),
             book_count: row.get("book_count"),
@@ -296,5 +321,14 @@ pub async fn list_series(
         })
         .collect();
 
-    Ok(Json(series))
+    let next_cursor = if rows.len() > limit as usize {
+        items.last().map(|s| s.name.clone())
+    } else {
+        None
+    };
+
+    Ok(Json(SeriesPage {
+        items: std::mem::take(&mut items),
+        next_cursor,
+    }))
 }

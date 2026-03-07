@@ -14,9 +14,9 @@ export const metadata: Metadata = {
 };
 
 type NavItem = {
-  href: "/" | "/books" | "/libraries" | "/jobs" | "/tokens";
+  href: "/" | "/books" | "/libraries" | "/jobs" | "/tokens" | "/settings";
   label: string;
-  icon: "dashboard" | "books" | "libraries" | "jobs" | "tokens";
+  icon: "dashboard" | "books" | "libraries" | "jobs" | "tokens" | "settings";
 };
 
 const navItems: NavItem[] = [
@@ -25,6 +25,7 @@ const navItems: NavItem[] = [
   { href: "/libraries", label: "Libraries", icon: "libraries" },
   { href: "/jobs", label: "Jobs", icon: "jobs" },
   { href: "/tokens", label: "Tokens", icon: "tokens" },
+  { href: "/settings", label: "Settings", icon: "settings" },
 ];
 
 export default function RootLayout({ children }: { children: ReactNode }) {

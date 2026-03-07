@@ -1,6 +1,6 @@
 use std::{
-    io::Read,
-    path::Path,
+    io::{Read, Write},
+    path::{Path, PathBuf},
     sync::{atomic::Ordering, Arc},
     time::Duration,
 };
@@ -11,7 +11,7 @@ use axum::{
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
 };
-use image::{codecs::jpeg::JpegEncoder, codecs::png::PngEncoder, codecs::webp::WebPEncoder, ColorType, ImageEncoder};
+use image::{codecs::jpeg::JpegEncoder, codecs::png::PngEncoder, ColorType, ImageEncoder, ImageFormat};
 use serde::Deserialize;
 use utoipa::ToSchema;
 use sha2::{Digest, Sha256};
@@ -27,6 +27,43 @@ fn remap_libraries_path(path: &str) -> String {
         }
     }
     path.to_string()
+}
+
+fn get_image_cache_dir() -> PathBuf {
+    std::env::var("IMAGE_CACHE_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/tmp/stripstream-image-cache"))
+}
+
+fn get_cache_key(abs_path: &str, page: u32, format: &str, quality: u8, width: u32) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(abs_path.as_bytes());
+    hasher.update(page.to_le_bytes());
+    hasher.update(format.as_bytes());
+    hasher.update(quality.to_le_bytes());
+    hasher.update(width.to_le_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+fn get_cache_path(cache_key: &str, format: &OutputFormat) -> PathBuf {
+    let cache_dir = get_image_cache_dir();
+    let prefix = &cache_key[..2];
+    let ext = format.extension();
+    cache_dir.join(prefix).join(format!("{}.{}", cache_key, ext))
+}
+
+fn read_from_disk_cache(cache_path: &Path) -> Option<Vec<u8>> {
+    std::fs::read(cache_path).ok()
+}
+
+fn write_to_disk_cache(cache_path: &Path, data: &[u8]) -> Result<(), std::io::Error> {
+    if let Some(parent) = cache_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut file = std::fs::File::create(cache_path)?;
+    file.write_all(data)?;
+    file.sync_data()?;
+    Ok(())
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -109,10 +146,11 @@ pub async fn get_page(
         return Err(ApiError::bad_request("width must be <= 2160"));
     }
 
-    let cache_key = format!("{book_id}:{n}:{}:{quality}:{width}", format.extension());
-    if let Some(cached) = state.page_cache.lock().await.get(&cache_key).cloned() {
+    let memory_cache_key = format!("{book_id}:{n}:{}:{quality}:{width}", format.extension());
+    
+    if let Some(cached) = state.page_cache.lock().await.get(&memory_cache_key).cloned() {
         state.metrics.page_cache_hits.fetch_add(1, Ordering::Relaxed);
-        return Ok(image_response(cached, format.content_type()));
+        return Ok(image_response(cached, format.content_type(), None));
     }
     state.metrics.page_cache_misses.fetch_add(1, Ordering::Relaxed);
 
@@ -131,9 +169,17 @@ pub async fn get_page(
 
     let row = row.ok_or_else(|| ApiError::not_found("book file not found"))?;
     let abs_path: String = row.get("abs_path");
-    // Remap /libraries to LIBRARIES_ROOT_PATH for local development
     let abs_path = remap_libraries_path(&abs_path);
     let input_format: String = row.get("format");
+
+    let disk_cache_key = get_cache_key(&abs_path, n, format.extension(), quality, width);
+    let cache_path = get_cache_path(&disk_cache_key, &format);
+    
+    if let Some(cached_bytes) = read_from_disk_cache(&cache_path) {
+        let bytes = Arc::new(cached_bytes);
+        state.page_cache.lock().await.put(memory_cache_key, bytes.clone());
+        return Ok(image_response(bytes, format.content_type(), Some(&disk_cache_key)));
+    }
 
     let _permit = state
         .page_render_limit
@@ -142,27 +188,39 @@ pub async fn get_page(
         .await
         .map_err(|_| ApiError::internal("render limiter unavailable"))?;
 
+    let abs_path_clone = abs_path.clone();
+    let format_clone = format;
     let bytes = tokio::time::timeout(
         Duration::from_secs(12),
-        tokio::task::spawn_blocking(move || render_page(&abs_path, &input_format, n, &format, quality, width)),
+        tokio::task::spawn_blocking(move || {
+            render_page(&abs_path_clone, &input_format, n, &format_clone, quality, width)
+        }),
     )
     .await
     .map_err(|_| ApiError::internal("page rendering timeout"))?
     .map_err(|e| ApiError::internal(format!("render task failed: {e}")))??;
 
-    let bytes = Arc::new(bytes);
-    state.page_cache.lock().await.put(cache_key, bytes.clone());
+    let _ = write_to_disk_cache(&cache_path, &bytes);
 
-    Ok(image_response(bytes, format.content_type()))
+    let bytes = Arc::new(bytes);
+    state.page_cache.lock().await.put(memory_cache_key, bytes.clone());
+
+    Ok(image_response(bytes, format.content_type(), Some(&disk_cache_key)))
 }
 
-fn image_response(bytes: Arc<Vec<u8>>, content_type: &str) -> Response {
+fn image_response(bytes: Arc<Vec<u8>>, content_type: &str, etag_suffix: Option<&str>) -> Response {
     let mut headers = HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(content_type).unwrap_or(HeaderValue::from_static("application/octet-stream")));
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=300"));
-    let mut hasher = Sha256::new();
-    hasher.update(&*bytes);
-    let etag = format!("\"{:x}\"", hasher.finalize());
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable"));
+    
+    let etag = if let Some(suffix) = etag_suffix {
+        format!("\"{}\"", suffix)
+    } else {
+        let mut hasher = Sha256::new();
+        hasher.update(&*bytes);
+        format!("\"{:x}\"", hasher.finalize())
+    };
+    
     if let Ok(v) = HeaderValue::from_str(&etag) {
         headers.insert(header::ETAG, v);
     }
@@ -271,6 +329,13 @@ fn render_pdf_page(abs_path: &str, page_number: u32, width: u32) -> Result<Vec<u
 }
 
 fn transcode_image(input: &[u8], out_format: &OutputFormat, quality: u8, width: u32) -> Result<Vec<u8>, ApiError> {
+    let source_format = image::guess_format(input).ok();
+    let needs_transcode = source_format.map(|f| !format_matches(&f, out_format)).unwrap_or(true);
+    
+    if width == 0 && !needs_transcode {
+        return Ok(input.to_vec());
+    }
+
     let mut image = image::load_from_memory(input).map_err(|e| ApiError::internal(format!("invalid source image: {e}")))?;
     if width > 0 {
         image = image.resize(width, u32::MAX, image::imageops::FilterType::Lanczos3);
@@ -293,13 +358,25 @@ fn transcode_image(input: &[u8], out_format: &OutputFormat, quality: u8, width: 
                 .map_err(|e| ApiError::internal(format!("png encode failed: {e}")))?;
         }
         OutputFormat::Webp => {
-            let encoder = WebPEncoder::new_lossless(&mut out);
-            encoder
-                .write_image(&rgba, w, h, ColorType::Rgba8.into())
-                .map_err(|e| ApiError::internal(format!("webp encode failed: {e}")))?;
+            let rgb_data: Vec<u8> = rgba
+                .pixels()
+                .flat_map(|p| [p[0], p[1], p[2]])
+                .collect();
+            let webp_data = webp::Encoder::new(&rgb_data, webp::PixelLayout::Rgb, w, h)
+                .encode(f32::max(quality as f32, 85.0));
+            out.extend_from_slice(&webp_data);
         }
     }
     Ok(out)
+}
+
+fn format_matches(source: &ImageFormat, target: &OutputFormat) -> bool {
+    match (source, target) {
+        (ImageFormat::Jpeg, OutputFormat::Jpeg) => true,
+        (ImageFormat::Png, OutputFormat::Png) => true,
+        (ImageFormat::WebP, OutputFormat::Webp) => true,
+        _ => false,
+    }
 }
 
 fn is_image_name(name: &str) -> bool {
