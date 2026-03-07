@@ -6,7 +6,7 @@ import "./globals.css";
 import { ThemeProvider } from "./theme-provider";
 import { ThemeToggle } from "./theme-toggle";
 import { JobsIndicator } from "./components/JobsIndicator";
-import { NavIcon } from "./components/ui";
+import { NavIcon, Icon } from "./components/ui";
 
 export const metadata: Metadata = {
   title: "StripStream Backoffice",
@@ -25,7 +25,6 @@ const navItems: NavItem[] = [
   { href: "/libraries", label: "Libraries", icon: "libraries" },
   { href: "/jobs", label: "Jobs", icon: "jobs" },
   { href: "/tokens", label: "Tokens", icon: "tokens" },
-  { href: "/settings", label: "Settings", icon: "settings" },
 ];
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -72,6 +71,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 {/* Actions */}
                 <div className="flex items-center gap-1 pl-4 ml-2 border-l border-border/60">
                   <JobsIndicator />
+                  <Link 
+                    href="/settings"
+                    className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                    title="Settings"
+                  >
+                    <Icon name="settings" size="md" />
+                  </Link>
                   <ThemeToggle />
                 </div>
               </div>

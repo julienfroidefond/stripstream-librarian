@@ -17,5 +17,5 @@ export {
   FormField, FormLabel, FormInput, FormSelect, FormRow, 
   FormSection, FormError, FormDescription 
 } from "./Form";
-export { PageIcon, NavIcon } from "./Icon";
+export { PageIcon, NavIcon, Icon } from "./Icon";
 export { CursorPagination, OffsetPagination } from "./Pagination";

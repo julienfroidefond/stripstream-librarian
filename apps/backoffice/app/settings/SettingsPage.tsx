@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, FormRow } from "../components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, FormRow, Icon } from "../components/ui";
 import { Settings, CacheStats, ClearCacheResponse } from "../../lib/api";
 
 interface SettingsPageProps {
@@ -63,10 +63,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats }: Set
     <>
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
-          <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
+          <Icon name="settings" size="xl" />
           Settings
         </h1>
       </div>
@@ -82,7 +79,10 @@ export default function SettingsPage({ initialSettings, initialCacheStats }: Set
       {/* Image Processing Settings */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Image Processing</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Icon name="image" size="md" />
+            Image Processing
+          </CardTitle>
           <CardDescription>Configure how images are processed and compressed</CardDescription>
         </CardHeader>
         <CardContent>
@@ -158,7 +158,10 @@ export default function SettingsPage({ initialSettings, initialCacheStats }: Set
       {/* Cache Settings */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Cache</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Icon name="cache" size="md" />
+            Cache
+          </CardTitle>
           <CardDescription>Manage the image cache and storage</CardDescription>
         </CardHeader>
         <CardContent>
@@ -218,17 +221,12 @@ export default function SettingsPage({ initialSettings, initialCacheStats }: Set
             >
               {isClearing ? (
                 <>
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
+                  <Icon name="spinner" size="sm" className="animate-spin -ml-1 mr-2" />
                   Clearing...
                 </>
               ) : (
                 <>
-                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
+                  <Icon name="trash" size="sm" className="mr-2" />
                   Clear Cache
                 </>
               )}
@@ -240,7 +238,10 @@ export default function SettingsPage({ initialSettings, initialCacheStats }: Set
       {/* Limits Settings */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Performance Limits</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Icon name="performance" size="md" />
+            Performance Limits
+          </CardTitle>
           <CardDescription>Configure API performance and rate limiting</CardDescription>
         </CardHeader>
         <CardContent>

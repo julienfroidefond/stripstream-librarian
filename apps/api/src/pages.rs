@@ -16,6 +16,7 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 use sha2::{Digest, Sha256};
 use sqlx::Row;
+use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::{error::ApiError, AppState};
@@ -66,7 +67,7 @@ fn write_to_disk_cache(cache_path: &Path, data: &[u8]) -> Result<(), std::io::Er
     Ok(())
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize, ToSchema, Debug)]
 pub struct PageQuery {
     #[schema(value_type = Option<String>, example = "webp")]
     pub format: Option<String>,
@@ -76,7 +77,7 @@ pub struct PageQuery {
     pub width: Option<u32>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum OutputFormat {
     Jpeg,
     Png,
@@ -130,12 +131,16 @@ impl OutputFormat {
     ),
     security(("Bearer" = []))
 )]
+#[instrument(skip(state), fields(book_id = %book_id, page = n))]
 pub async fn get_page(
     State(state): State<AppState>,
     AxumPath((book_id, n)): AxumPath<(Uuid, u32)>,
     Query(query): Query<PageQuery>,
 ) -> Result<Response, ApiError> {
+    info!("Processing image request");
+    
     if n == 0 {
+        warn!("Invalid page number: 0");
         return Err(ApiError::bad_request("page index starts at 1"));
     }
 
@@ -143,6 +148,7 @@ pub async fn get_page(
     let quality = query.quality.unwrap_or(80).clamp(1, 100);
     let width = query.width.unwrap_or(0);
     if width > 2160 {
+        warn!("Invalid width: {}", width);
         return Err(ApiError::bad_request("width must be <= 2160"));
     }
 
@@ -150,9 +156,11 @@ pub async fn get_page(
     
     if let Some(cached) = state.page_cache.lock().await.get(&memory_cache_key).cloned() {
         state.metrics.page_cache_hits.fetch_add(1, Ordering::Relaxed);
+        debug!("Memory cache hit for key: {}", memory_cache_key);
         return Ok(image_response(cached, format.content_type(), None));
     }
     state.metrics.page_cache_misses.fetch_add(1, Ordering::Relaxed);
+    debug!("Memory cache miss for key: {}", memory_cache_key);
 
     let row = sqlx::query(
         r#"
@@ -165,31 +173,52 @@ pub async fn get_page(
     )
     .bind(book_id)
     .fetch_optional(&state.pool)
-    .await?;
+    .await
+    .map_err(|e| {
+        error!("Database error fetching book file for book_id {}: {}", book_id, e);
+        e
+    })?;
 
-    let row = row.ok_or_else(|| ApiError::not_found("book file not found"))?;
+    let row = match row {
+        Some(r) => r,
+        None => {
+            error!("Book file not found for book_id: {}", book_id);
+            return Err(ApiError::not_found("book file not found"));
+        }
+    };
+    
     let abs_path: String = row.get("abs_path");
     let abs_path = remap_libraries_path(&abs_path);
     let input_format: String = row.get("format");
+    
+    info!("Processing book file: {} (format: {})", abs_path, input_format);
 
     let disk_cache_key = get_cache_key(&abs_path, n, format.extension(), quality, width);
     let cache_path = get_cache_path(&disk_cache_key, &format);
     
     if let Some(cached_bytes) = read_from_disk_cache(&cache_path) {
+        info!("Disk cache hit for: {}", cache_path.display());
         let bytes = Arc::new(cached_bytes);
         state.page_cache.lock().await.put(memory_cache_key, bytes.clone());
         return Ok(image_response(bytes, format.content_type(), Some(&disk_cache_key)));
     }
+    debug!("Disk cache miss for: {}", cache_path.display());
 
     let _permit = state
         .page_render_limit
         .clone()
         .acquire_owned()
         .await
-        .map_err(|_| ApiError::internal("render limiter unavailable"))?;
+        .map_err(|e| {
+            error!("Failed to acquire render permit: {}", e);
+            ApiError::internal("render limiter unavailable")
+        })?;
 
+    info!("Rendering page {} from {}", n, abs_path);
     let abs_path_clone = abs_path.clone();
     let format_clone = format;
+    let start_time = std::time::Instant::now();
+    
     let bytes = tokio::time::timeout(
         Duration::from_secs(12),
         tokio::task::spawn_blocking(move || {
@@ -197,15 +226,37 @@ pub async fn get_page(
         }),
     )
     .await
-    .map_err(|_| ApiError::internal("page rendering timeout"))?
-    .map_err(|e| ApiError::internal(format!("render task failed: {e}")))??;
+    .map_err(|_| {
+        error!("Page rendering timeout for {} page {}", abs_path, n);
+        ApiError::internal("page rendering timeout")
+    })?
+    .map_err(|e| {
+        error!("Render task panicked for {} page {}: {}", abs_path, n, e);
+        ApiError::internal(format!("render task failed: {e}"))
+    })?;
+    
+    let duration = start_time.elapsed();
+    
+    match bytes {
+        Ok(data) => {
+            info!("Successfully rendered page {} in {:?}", n, duration);
+            
+            if let Err(e) = write_to_disk_cache(&cache_path, &data) {
+                warn!("Failed to write to disk cache: {}", e);
+            } else {
+                info!("Cached rendered image to: {}", cache_path.display());
+            }
 
-    let _ = write_to_disk_cache(&cache_path, &bytes);
+            let bytes = Arc::new(data);
+            state.page_cache.lock().await.put(memory_cache_key, bytes.clone());
 
-    let bytes = Arc::new(bytes);
-    state.page_cache.lock().await.put(memory_cache_key, bytes.clone());
-
-    Ok(image_response(bytes, format.content_type(), Some(&disk_cache_key)))
+            Ok(image_response(bytes, format.content_type(), Some(&disk_cache_key)))
+        }
+        Err(e) => {
+            error!("Failed to render page {} from {}: {:?}", n, abs_path, e);
+            Err(e)
+        }
+    }
 }
 
 fn image_response(bytes: Arc<Vec<u8>>, content_type: &str, etag_suffix: Option<&str>) -> Response {
@@ -246,34 +297,63 @@ fn render_page(
 }
 
 fn extract_cbz_page(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiError> {
-    let file = std::fs::File::open(abs_path).map_err(|e| ApiError::internal(format!("cannot open cbz: {e}")))?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|e| ApiError::internal(format!("invalid cbz: {e}")))?;
+    debug!("Opening CBZ archive: {}", abs_path);
+    let file = std::fs::File::open(abs_path).map_err(|e| {
+        error!("Cannot open CBZ file {}: {}", abs_path, e);
+        ApiError::internal(format!("cannot open cbz: {e}"))
+    })?;
+    
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| {
+        error!("Invalid CBZ archive {}: {}", abs_path, e);
+        ApiError::internal(format!("invalid cbz: {e}"))
+    })?;
 
     let mut image_names: Vec<String> = Vec::new();
     for i in 0..archive.len() {
-        let entry = archive.by_index(i).map_err(|e| ApiError::internal(format!("cbz entry read failed: {e}")))?;
+        let entry = archive.by_index(i).map_err(|e| {
+            error!("Failed to read CBZ entry {} in {}: {}", i, abs_path, e);
+            ApiError::internal(format!("cbz entry read failed: {e}"))
+        })?;
         let name = entry.name().to_ascii_lowercase();
         if is_image_name(&name) {
             image_names.push(entry.name().to_string());
         }
     }
     image_names.sort();
+    debug!("Found {} images in CBZ {}", image_names.len(), abs_path);
 
     let index = page_number as usize - 1;
-    let selected = image_names.get(index).ok_or_else(|| ApiError::not_found("page out of range"))?;
-    let mut entry = archive.by_name(selected).map_err(|e| ApiError::internal(format!("cbz page read failed: {e}")))?;
+    let selected = image_names.get(index).ok_or_else(|| {
+        error!("Page {} out of range in {} (total: {})", page_number, abs_path, image_names.len());
+        ApiError::not_found("page out of range")
+    })?;
+    
+    debug!("Extracting page {} ({}) from {}", page_number, selected, abs_path);
+    let mut entry = archive.by_name(selected).map_err(|e| {
+        error!("Failed to read CBZ page {} from {}: {}", selected, abs_path, e);
+        ApiError::internal(format!("cbz page read failed: {e}"))
+    })?;
     let mut buf = Vec::new();
-    entry.read_to_end(&mut buf).map_err(|e| ApiError::internal(format!("cbz page load failed: {e}")))?;
+    entry.read_to_end(&mut buf).map_err(|e| {
+        error!("Failed to load CBZ page {} from {}: {}", selected, abs_path, e);
+        ApiError::internal(format!("cbz page load failed: {e}"))
+    })?;
     Ok(buf)
 }
 
 fn extract_cbr_page(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiError> {
+    debug!("Listing CBR archive: {}", abs_path);
     let list_output = std::process::Command::new("unrar")
         .arg("lb")
         .arg(abs_path)
         .output()
-        .map_err(|e| ApiError::internal(format!("unrar list failed: {e}")))?;
+        .map_err(|e| {
+            error!("unrar list command failed for {}: {}", abs_path, e);
+            ApiError::internal(format!("unrar list failed: {e}"))
+        })?;
     if !list_output.status.success() {
+        let stderr = String::from_utf8_lossy(&list_output.stderr);
+        error!("unrar could not list archive {}: {}", abs_path, stderr);
         return Err(ApiError::internal("unrar could not list archive"));
     }
 
@@ -283,25 +363,41 @@ fn extract_cbr_page(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiErro
         .map(|s| s.to_string())
         .collect();
     entries.sort();
-    let index = page_number as usize - 1;
-    let selected = entries.get(index).ok_or_else(|| ApiError::not_found("page out of range"))?;
+    debug!("Found {} images in CBR {}", entries.len(), abs_path);
 
+    let index = page_number as usize - 1;
+    let selected = entries.get(index).ok_or_else(|| {
+        error!("Page {} out of range in {} (total: {})", page_number, abs_path, entries.len());
+        ApiError::not_found("page out of range")
+    })?;
+
+    debug!("Extracting page {} ({}) from {}", page_number, selected, abs_path);
     let page_output = std::process::Command::new("unrar")
         .arg("p")
         .arg("-inul")
         .arg(abs_path)
         .arg(selected)
         .output()
-        .map_err(|e| ApiError::internal(format!("unrar extract failed: {e}")))?;
+        .map_err(|e| {
+            error!("unrar extract command failed for {} page {}: {}", abs_path, selected, e);
+            ApiError::internal(format!("unrar extract failed: {e}"))
+        })?;
     if !page_output.status.success() {
+        let stderr = String::from_utf8_lossy(&page_output.stderr);
+        error!("unrar could not extract page {} from {}: {}", selected, abs_path, stderr);
         return Err(ApiError::internal("unrar could not extract page"));
     }
+    debug!("Successfully extracted {} bytes from CBR page {}", page_output.stdout.len(), page_number);
     Ok(page_output.stdout)
 }
 
 fn render_pdf_page(abs_path: &str, page_number: u32, width: u32) -> Result<Vec<u8>, ApiError> {
     let tmp_dir = std::env::temp_dir().join(format!("stripstream-pdf-{}", Uuid::new_v4()));
-    std::fs::create_dir_all(&tmp_dir).map_err(|e| ApiError::internal(format!("cannot create temp dir: {e}")))?;
+    debug!("Creating temp dir for PDF rendering: {}", tmp_dir.display());
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| {
+        error!("Cannot create temp dir {}: {}", tmp_dir.display(), e);
+        ApiError::internal(format!("cannot create temp dir: {e}"))
+    })?;
     let output_prefix = tmp_dir.join("page");
 
     let mut cmd = std::process::Command::new("pdftoppm");
@@ -314,35 +410,58 @@ fn render_pdf_page(abs_path: &str, page_number: u32, width: u32) -> Result<Vec<u
     }
     cmd.arg(abs_path).arg(&output_prefix);
 
+    debug!("Running pdftoppm for page {} of {} (width: {})", page_number, abs_path, width);
     let output = cmd
         .output()
-        .map_err(|e| ApiError::internal(format!("pdf render failed: {e}")))?;
+        .map_err(|e| {
+            error!("pdftoppm command failed for {} page {}: {}", abs_path, page_number, e);
+            ApiError::internal(format!("pdf render failed: {e}"))
+        })?;
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         let _ = std::fs::remove_dir_all(&tmp_dir);
+        error!("pdftoppm failed for {} page {}: {}", abs_path, page_number, stderr);
         return Err(ApiError::internal("pdf render command failed"));
     }
 
     let image_path = output_prefix.with_extension("png");
-    let bytes = std::fs::read(&image_path).map_err(|e| ApiError::internal(format!("render output missing: {e}")))?;
+    debug!("Reading rendered PDF page from: {}", image_path.display());
+    let bytes = std::fs::read(&image_path).map_err(|e| {
+        error!("Failed to read rendered PDF output {}: {}", image_path.display(), e);
+        ApiError::internal(format!("render output missing: {e}"))
+    })?;
     let _ = std::fs::remove_dir_all(&tmp_dir);
+    debug!("Successfully rendered PDF page {} to {} bytes", page_number, bytes.len());
     Ok(bytes)
 }
 
 fn transcode_image(input: &[u8], out_format: &OutputFormat, quality: u8, width: u32) -> Result<Vec<u8>, ApiError> {
+    debug!("Transcoding image: {} bytes, format: {:?}, quality: {}, width: {}", input.len(), out_format, quality, width);
     let source_format = image::guess_format(input).ok();
+    debug!("Source format detected: {:?}", source_format);
     let needs_transcode = source_format.map(|f| !format_matches(&f, out_format)).unwrap_or(true);
     
     if width == 0 && !needs_transcode {
+        debug!("No transcoding needed, returning original");
         return Ok(input.to_vec());
     }
 
-    let mut image = image::load_from_memory(input).map_err(|e| ApiError::internal(format!("invalid source image: {e}")))?;
+    debug!("Loading image from memory...");
+    let mut image = image::load_from_memory(input).map_err(|e| {
+        error!("Failed to load image from memory: {} (input size: {} bytes)", e, input.len());
+        ApiError::internal(format!("invalid source image: {e}"))
+    })?;
+    
     if width > 0 {
+        debug!("Resizing image to width: {}", width);
         image = image.resize(width, u32::MAX, image::imageops::FilterType::Lanczos3);
     }
 
+    debug!("Converting to RGBA...");
     let rgba = image.to_rgba8();
     let (w, h) = rgba.dimensions();
+    debug!("Image dimensions: {}x{}", w, h);
+    
     let mut out = Vec::new();
     match out_format {
         OutputFormat::Jpeg => {
