@@ -137,8 +137,74 @@ async fn run_checkup(state: AppState, job_id: Uuid) {
         }
     };
 
-    // Regenerate: clear existing thumbnails in scope so they get regenerated
-    if job_type == "thumbnail_regenerate" {
+    // Regenerate or full_rebuild: clear existing thumbnails in scope so they get regenerated
+    if job_type == "thumbnail_regenerate" || job_type == "full_rebuild" {
+        let config = load_thumbnail_config(pool).await;
+        
+        if job_type == "full_rebuild" {
+            // For full_rebuild: delete orphaned thumbnail files (books were deleted, new ones have new UUIDs)
+            // Get all existing book IDs to keep their thumbnails
+            let existing_book_ids: std::collections::HashSet<Uuid> = sqlx::query_scalar(
+                r#"SELECT id FROM books WHERE (library_id = $1 OR $1 IS NULL)"#,
+            )
+            .bind(library_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+
+            // Delete thumbnail files that don't correspond to existing books
+            let thumbnail_dir = Path::new(&config.directory);
+            if thumbnail_dir.exists() {
+                let mut deleted_count = 0;
+                if let Ok(entries) = std::fs::read_dir(thumbnail_dir) {
+                    for entry in entries.flatten() {
+                        if let Some(file_name) = entry.file_name().to_str() {
+                            if file_name.ends_with(".webp") {
+                                if let Some(book_id_str) = file_name.strip_suffix(".webp") {
+                                    if let Ok(book_id) = Uuid::parse_str(book_id_str) {
+                                        if !existing_book_ids.contains(&book_id) {
+                                            if let Err(e) = std::fs::remove_file(entry.path()) {
+                                                warn!("Failed to delete orphaned thumbnail {}: {}", entry.path().display(), e);
+                                            } else {
+                                                deleted_count += 1;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                info!("thumbnails full_rebuild: deleted {} orphaned thumbnail files", deleted_count);
+            }
+        } else {
+            // For regenerate: delete thumbnail files for books with thumbnails
+            let book_ids_to_clear: Vec<Uuid> = sqlx::query_scalar(
+                r#"SELECT id FROM books WHERE (library_id = $1 OR $1 IS NULL) AND thumbnail_path IS NOT NULL"#,
+            )
+            .bind(library_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+            let mut deleted_count = 0;
+            for book_id in &book_ids_to_clear {
+                let filename = format!("{}.webp", book_id);
+                let thumbnail_path = Path::new(&config.directory).join(&filename);
+                if thumbnail_path.exists() {
+                    if let Err(e) = std::fs::remove_file(&thumbnail_path) {
+                        warn!("Failed to delete thumbnail file {}: {}", thumbnail_path.display(), e);
+                    } else {
+                        deleted_count += 1;
+                    }
+                }
+            }
+            info!("thumbnails regenerate: deleted {} thumbnail files", deleted_count);
+        }
+
+        // Clear thumbnail_path in database
         let cleared = sqlx::query(
             r#"UPDATE books SET thumbnail_path = NULL WHERE (library_id = $1 OR $1 IS NULL)"#,
         )
@@ -146,7 +212,7 @@ async fn run_checkup(state: AppState, job_id: Uuid) {
         .execute(pool)
         .await;
         if let Ok(res) = cleared {
-            info!("thumbnails regenerate: cleared {} books", res.rows_affected());
+            info!("thumbnails {}: cleared {} books in database", job_type, res.rows_affected());
         }
     }
 
@@ -185,6 +251,7 @@ async fn run_checkup(state: AppState, job_id: Uuid) {
     let config_clone = config.clone();
     let state_clone = state.clone();
 
+    let total_clone = total;
     stream::iter(book_ids)
         .for_each_concurrent(concurrency, |book_id| {
             let processed_count = processed_count.clone();
@@ -192,7 +259,7 @@ async fn run_checkup(state: AppState, job_id: Uuid) {
             let job_id = job_id_clone;
             let config = config_clone.clone();
             let state = state_clone.clone();
-            let total = total;
+            let total = total_clone;
 
             async move {
                 match pages::render_book_page_1(&state, book_id, config.width, config.quality).await {

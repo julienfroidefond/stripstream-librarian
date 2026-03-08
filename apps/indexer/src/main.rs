@@ -9,7 +9,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::{postgres::PgPoolOptions, Row};
 use std::{collections::HashMap, path::Path, time::Duration};
-use stripstream_core::config::{IndexerConfig, ThumbnailConfig};
+use stripstream_core::config::IndexerConfig;
 use tokio::sync::mpsc;
 use tracing::{error, info, trace, warn};
 use uuid::Uuid;
@@ -38,7 +38,6 @@ struct AppState {
     pool: sqlx::PgPool,
     meili_url: String,
     meili_master_key: String,
-    thumbnail_config: ThumbnailConfig,
     api_base_url: String,
     api_bootstrap_token: String,
 }
@@ -69,7 +68,6 @@ async fn main() -> anyhow::Result<()> {
         pool,
         meili_url: config.meili_url.clone(),
         meili_master_key: config.meili_master_key.clone(),
-        thumbnail_config: config.thumbnail_config.clone(),
         api_base_url: config.api_base_url.clone(),
         api_bootstrap_token: config.api_bootstrap_token.clone(),
     };
