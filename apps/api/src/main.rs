@@ -117,6 +117,7 @@ async fn main() -> anyhow::Result<()> {
     let read_routes = Router::new()
         .route("/books", get(books::list_books))
         .route("/books/:id", get(books::get_book))
+        .route("/books/:id/thumbnail", get(books::get_thumbnail))
         .route("/books/:id/pages/:n", get(pages::get_page))
         .route("/libraries/:library_id/series", get(books::list_series))
         .route("/search", get(search::search_books))

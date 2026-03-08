@@ -20,6 +20,7 @@ base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 lru = "0.12"
+rayon = "1.10"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }

@@ -8,4 +8,6 @@ license.workspace = true
 anyhow.workspace = true
 lopdf = "0.35"
 regex = "1"
+uuid.workspace = true
+walkdir.workspace = true
 zip = { version = "2.2", default-features = false, features = ["deflate"] }

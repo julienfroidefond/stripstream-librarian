@@ -27,12 +27,20 @@ pub struct CacheStats {
     pub directory: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThumbnailStats {
+    pub total_size_mb: f64,
+    pub file_count: u64,
+    pub directory: String,
+}
+
 pub fn settings_routes() -> Router<AppState> {
     Router::new()
         .route("/settings", get(get_settings))
         .route("/settings/:key", get(get_setting).post(update_setting))
         .route("/settings/cache/clear", post(clear_cache))
         .route("/settings/cache/stats", get(get_cache_stats))
+        .route("/settings/thumbnail/stats", get(get_thumbnail_stats))
 }
 
 async fn get_settings(State(state): State<AppState>) -> Result<Json<Value>, ApiError> {
@@ -168,6 +176,75 @@ async fn get_cache_stats(State(_state): State<AppState>) -> Result<Json<CacheSta
     })
     .await
     .map_err(|e| ApiError::internal(format!("cache stats failed: {}", e)))?;
+
+    Ok(Json(stats))
+}
+
+fn compute_dir_stats(path: &std::path::Path) -> (u64, u64) {
+    let mut total_size: u64 = 0;
+    let mut file_count: u64 = 0;
+
+    fn visit_dirs(
+        dir: &std::path::Path,
+        total_size: &mut u64,
+        file_count: &mut u64,
+    ) -> std::io::Result<()> {
+        if dir.is_dir() {
+            for entry in std::fs::read_dir(dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() {
+                    visit_dirs(&path, total_size, file_count)?;
+                } else {
+                    *total_size += entry.metadata()?.len();
+                    *file_count += 1;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    let _ = visit_dirs(path, &mut total_size, &mut file_count);
+    (total_size, file_count)
+}
+
+async fn get_thumbnail_stats(State(_state): State<AppState>) -> Result<Json<ThumbnailStats>, ApiError> {
+    let settings = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'thumbnail'"#)
+        .fetch_optional(&_state.pool)
+        .await?;
+
+    let directory = match settings {
+        Some(row) => {
+            let value: serde_json::Value = row.get("value");
+            value.get("directory")
+                .and_then(|v| v.as_str())
+                .unwrap_or("/data/thumbnails")
+                .to_string()
+        }
+        None => "/data/thumbnails".to_string(),
+    };
+
+    let directory_clone = directory.clone();
+    let stats = tokio::task::spawn_blocking(move || {
+        let path = std::path::Path::new(&directory_clone);
+        if !path.exists() {
+            return ThumbnailStats {
+                total_size_mb: 0.0,
+                file_count: 0,
+                directory: directory_clone,
+            };
+        }
+
+        let (total_size, file_count) = compute_dir_stats(path);
+
+        ThumbnailStats {
+            total_size_mb: total_size as f64 / 1024.0 / 1024.0,
+            file_count,
+            directory: directory_clone,
+        }
+    })
+    .await
+    .map_err(|e| ApiError::internal(format!("thumbnail stats failed: {}", e)))?;
 
     Ok(Json(stats))
 }

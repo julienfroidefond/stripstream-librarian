@@ -34,6 +34,7 @@ pub struct BookItem {
     pub volume: Option<i32>,
     pub language: Option<String>,
     pub page_count: Option<i32>,
+    pub thumbnail_url: Option<String>,
     #[schema(value_type = String)]
     pub updated_at: DateTime<Utc>,
 }
@@ -58,6 +59,7 @@ pub struct BookDetails {
     pub volume: Option<i32>,
     pub language: Option<String>,
     pub page_count: Option<i32>,
+    pub thumbnail_url: Option<String>,
     pub file_path: Option<String>,
     pub file_format: Option<String>,
     pub file_parse_status: Option<String>,
@@ -96,7 +98,7 @@ pub async fn list_books(
     
     let sql = format!(
         r#"
-        SELECT id, library_id, kind, title, author, series, volume, language, page_count, updated_at
+        SELECT id, library_id, kind, title, author, series, volume, language, page_count, thumbnail_path, updated_at
         FROM books
         WHERE ($1::uuid IS NULL OR library_id = $1)
           AND ($2::text IS NULL OR kind = $2)
@@ -135,17 +137,21 @@ pub async fn list_books(
     let mut items: Vec<BookItem> = rows
         .iter()
         .take(limit as usize)
-        .map(|row| BookItem {
-            id: row.get("id"),
-            library_id: row.get("library_id"),
-            kind: row.get("kind"),
-            title: row.get("title"),
-            author: row.get("author"),
-            series: row.get("series"),
-            volume: row.get("volume"),
-            language: row.get("language"),
-            page_count: row.get("page_count"),
-            updated_at: row.get("updated_at"),
+        .map(|row| {
+            let thumbnail_path: Option<String> = row.get("thumbnail_path");
+            BookItem {
+                id: row.get("id"),
+                library_id: row.get("library_id"),
+                kind: row.get("kind"),
+                title: row.get("title"),
+                author: row.get("author"),
+                series: row.get("series"),
+                volume: row.get("volume"),
+                language: row.get("language"),
+                page_count: row.get("page_count"),
+                thumbnail_url: thumbnail_path.map(|_p| format!("/books/{}/thumbnail", row.get::<Uuid, _>("id"))),
+                updated_at: row.get("updated_at"),
+            }
         })
         .collect();
 
@@ -182,7 +188,7 @@ pub async fn get_book(
 ) -> Result<Json<BookDetails>, ApiError> {
     let row = sqlx::query(
         r#"
-        SELECT b.id, b.library_id, b.kind, b.title, b.author, b.series, b.volume, b.language, b.page_count,
+        SELECT b.id, b.library_id, b.kind, b.title, b.author, b.series, b.volume, b.language, b.page_count, b.thumbnail_path,
                bf.abs_path, bf.format, bf.parse_status
         FROM books b
         LEFT JOIN LATERAL (
@@ -200,6 +206,7 @@ pub async fn get_book(
     .await?;
 
     let row = row.ok_or_else(|| ApiError::not_found("book not found"))?;
+    let thumbnail_path: Option<String> = row.get("thumbnail_path");
     Ok(Json(BookDetails {
         id: row.get("id"),
         library_id: row.get("library_id"),
@@ -210,6 +217,7 @@ pub async fn get_book(
         volume: row.get("volume"),
         language: row.get("language"),
         page_count: row.get("page_count"),
+        thumbnail_url: thumbnail_path.map(|_| format!("/books/{}/thumbnail", id)),
         file_path: row.get("abs_path"),
         file_format: row.get("format"),
         file_parse_status: row.get("parse_status"),
@@ -331,4 +339,37 @@ pub async fn list_series(
         items: std::mem::take(&mut items),
         next_cursor,
     }))
+}
+
+use axum::{
+    body::Body,
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    response::IntoResponse,
+};
+
+pub async fn get_thumbnail(
+    State(state): State<AppState>,
+    Path(book_id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    let row = sqlx::query(
+        "SELECT thumbnail_path FROM books WHERE id = $1"
+    )
+    .bind(book_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| ApiError::internal(e.to_string()))?;
+
+    let row = row.ok_or_else(|| ApiError::not_found("book not found"))?;
+    let thumbnail_path: Option<String> = row.get("thumbnail_path");
+
+    let path = thumbnail_path.ok_or_else(|| ApiError::not_found("thumbnail not found"))?;
+
+    let data = std::fs::read(&path)
+        .map_err(|e| ApiError::internal(format!("cannot read thumbnail: {}", e)))?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/webp"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable"));
+
+    Ok((StatusCode::OK, headers, Body::from(data)))
 }

@@ -2,16 +2,21 @@
 
 import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, FormRow, Icon } from "../components/ui";
-import { Settings, CacheStats, ClearCacheResponse } from "../../lib/api";
+import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats } from "../../lib/api";
 
 interface SettingsPageProps {
   initialSettings: Settings;
   initialCacheStats: CacheStats;
+  initialThumbnailStats: ThumbnailStats;
 }
 
-export default function SettingsPage({ initialSettings, initialCacheStats }: SettingsPageProps) {
-  const [settings, setSettings] = useState<Settings>(initialSettings);
+export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats }: SettingsPageProps) {
+  const [settings, setSettings] = useState<Settings>({
+    ...initialSettings,
+    thumbnail: initialSettings.thumbnail || { enabled: true, width: 300, height: 400, quality: 80, format: "webp", directory: "/data/thumbnails" }
+  });
   const [cacheStats, setCacheStats] = useState<CacheStats>(initialCacheStats);
+  const [thumbnailStats, setThumbnailStats] = useState<ThumbnailStats>(initialThumbnailStats);
   const [isClearing, setIsClearing] = useState(false);
   const [clearResult, setClearResult] = useState<ClearCacheResponse | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -295,6 +300,131 @@ export default function SettingsPage({ initialSettings, initialCacheStats }: Set
             </FormRow>
             <p className="text-sm text-muted-foreground">
               Note: Changes to limits require a server restart to take effect.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Thumbnail Settings */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Icon name="image" size="md" />
+            Thumbnails
+          </CardTitle>
+          <CardDescription>Configure thumbnail generation during indexing</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <FormRow>
+              <FormField className="flex-1">
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">Enable Thumbnails</label>
+                <FormSelect 
+                  value={settings.thumbnail.enabled ? "true" : "false"}
+                  onChange={(e) => {
+                    const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, enabled: e.target.value === "true" } };
+                    setSettings(newSettings);
+                    handleUpdateSetting("thumbnail", newSettings.thumbnail);
+                  }}
+                >
+                  <option value="true">Enabled</option>
+                  <option value="false">Disabled</option>
+                </FormSelect>
+              </FormField>
+              <FormField className="flex-1">
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">Output Format</label>
+                <FormSelect 
+                  value={settings.thumbnail.format}
+                  onChange={(e) => {
+                    const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, format: e.target.value } };
+                    setSettings(newSettings);
+                    handleUpdateSetting("thumbnail", newSettings.thumbnail);
+                  }}
+                >
+                  <option value="webp">WebP (Recommended)</option>
+                  <option value="jpeg">JPEG</option>
+                  <option value="png">PNG</option>
+                </FormSelect>
+              </FormField>
+            </FormRow>
+            <FormRow>
+              <FormField className="flex-1">
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">Width (px)</label>
+                <FormInput 
+                  type="number" 
+                  min={50} 
+                  max={600}
+                  value={settings.thumbnail.width}
+                  onChange={(e) => {
+                    const width = parseInt(e.target.value) || 300;
+                    const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, width } };
+                    setSettings(newSettings);
+                  }}
+                  onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
+                />
+              </FormField>
+              <FormField className="flex-1">
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">Height (px)</label>
+                <FormInput 
+                  type="number" 
+                  min={50} 
+                  max={800}
+                  value={settings.thumbnail.height}
+                  onChange={(e) => {
+                    const height = parseInt(e.target.value) || 400;
+                    const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, height } };
+                    setSettings(newSettings);
+                  }}
+                  onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
+                />
+              </FormField>
+              <FormField className="flex-1">
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">Quality (1-100)</label>
+                <FormInput 
+                  type="number" 
+                  min={1} 
+                  max={100}
+                  value={settings.thumbnail.quality}
+                  onChange={(e) => {
+                    const quality = parseInt(e.target.value) || 80;
+                    const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, quality } };
+                    setSettings(newSettings);
+                  }}
+                  onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
+                />
+              </FormField>
+            </FormRow>
+            <FormRow>
+              <FormField className="flex-1">
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">Thumbnail Directory</label>
+                <FormInput 
+                  value={settings.thumbnail.directory}
+                  onChange={(e) => {
+                    const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, directory: e.target.value } };
+                    setSettings(newSettings);
+                  }}
+                  onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
+                />
+              </FormField>
+            </FormRow>
+
+            <div className="grid grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg">
+              <div>
+                <p className="text-sm text-muted-foreground">Total Size</p>
+                <p className="text-2xl font-semibold">{thumbnailStats.total_size_mb.toFixed(2)} MB</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Files</p>
+                <p className="text-2xl font-semibold">{thumbnailStats.file_count}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Directory</p>
+                <p className="text-sm font-mono truncate" title={thumbnailStats.directory}>{thumbnailStats.directory}</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-muted-foreground">
+              Note: Thumbnail settings are used during indexing. Existing thumbnails will not be regenerated automatically.
             </p>
           </div>
         </CardContent>

@@ -98,7 +98,10 @@ function config() {
   return { baseUrl: baseUrl.replace(/\/$/, ""), token };
 }
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+export async function apiFetch<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
   const { baseUrl, token } = config();
   const headers = new Headers(init?.headers || {});
   headers.set("Authorization", `Bearer ${token}`);
@@ -109,7 +112,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const res = await fetch(`${baseUrl}${path}`, {
     ...init,
     headers,
-    cache: "no-store"
+    cache: "no-store",
   });
 
   if (!res.ok) {
@@ -130,7 +133,7 @@ export async function fetchLibraries() {
 export async function createLibrary(name: string, rootPath: string) {
   return apiFetch<LibraryDto>("/libraries", {
     method: "POST",
-    body: JSON.stringify({ name, root_path: rootPath })
+    body: JSON.stringify({ name, root_path: rootPath }),
   });
 }
 
@@ -143,12 +146,21 @@ export async function scanLibrary(libraryId: string, full?: boolean) {
   if (full) body.full = true;
   return apiFetch<IndexJobDto>(`/libraries/${libraryId}/scan`, {
     method: "POST",
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
 }
 
-export async function updateLibraryMonitoring(libraryId: string, monitorEnabled: boolean, scanMode: string, watcherEnabled?: boolean) {
-  const body: { monitor_enabled: boolean; scan_mode: string; watcher_enabled?: boolean } = {
+export async function updateLibraryMonitoring(
+  libraryId: string,
+  monitorEnabled: boolean,
+  scanMode: string,
+  watcherEnabled?: boolean,
+) {
+  const body: {
+    monitor_enabled: boolean;
+    scan_mode: string;
+    watcher_enabled?: boolean;
+  } = {
     monitor_enabled: monitorEnabled,
     scan_mode: scanMode,
   };
@@ -157,7 +169,7 @@ export async function updateLibraryMonitoring(libraryId: string, monitorEnabled:
   }
   return apiFetch<LibraryDto>(`/libraries/${libraryId}/monitoring`, {
     method: "PATCH",
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
 }
 
@@ -171,7 +183,7 @@ export async function rebuildIndex(libraryId?: string, full?: boolean) {
   if (full) body.full = true;
   return apiFetch<IndexJobDto>("/index/rebuild", {
     method: "POST",
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
 }
 
@@ -191,7 +203,7 @@ export async function listTokens() {
 export async function createToken(name: string, scope: string) {
   return apiFetch<{ token: string }>("/admin/tokens", {
     method: "POST",
-    body: JSON.stringify({ name, scope })
+    body: JSON.stringify({ name, scope }),
   });
 }
 
@@ -199,13 +211,18 @@ export async function revokeToken(id: string) {
   return apiFetch<void>(`/admin/tokens/${id}`, { method: "DELETE" });
 }
 
-export async function fetchBooks(libraryId?: string, series?: string, cursor?: string, limit: number = 50): Promise<BooksPageDto> {
+export async function fetchBooks(
+  libraryId?: string,
+  series?: string,
+  cursor?: string,
+  limit: number = 50,
+): Promise<BooksPageDto> {
   const params = new URLSearchParams();
   if (libraryId) params.set("library_id", libraryId);
   if (series) params.set("series", series);
   if (cursor) params.set("cursor", cursor);
   params.set("limit", limit.toString());
-  
+
   return apiFetch<BooksPageDto>(`/books?${params.toString()}`);
 }
 
@@ -214,27 +231,35 @@ export type SeriesPageDto = {
   next_cursor: string | null;
 };
 
-export async function fetchSeries(libraryId: string, cursor?: string, limit: number = 50): Promise<SeriesPageDto> {
+export async function fetchSeries(
+  libraryId: string,
+  cursor?: string,
+  limit: number = 50,
+): Promise<SeriesPageDto> {
   const params = new URLSearchParams();
   if (cursor) params.set("cursor", cursor);
   params.set("limit", limit.toString());
-  
-  return apiFetch<SeriesPageDto>(`/libraries/${libraryId}/series?${params.toString()}`);
+
+  return apiFetch<SeriesPageDto>(
+    `/libraries/${libraryId}/series?${params.toString()}`,
+  );
 }
 
-export async function searchBooks(query: string, libraryId?: string, limit: number = 20): Promise<SearchResponseDto> {
+export async function searchBooks(
+  query: string,
+  libraryId?: string,
+  limit: number = 20,
+): Promise<SearchResponseDto> {
   const params = new URLSearchParams();
   params.set("q", query);
   if (libraryId) params.set("library_id", libraryId);
   params.set("limit", limit.toString());
-  
+
   return apiFetch<SearchResponseDto>(`/search?${params.toString()}`);
 }
 
 export function getBookCoverUrl(bookId: string): string {
-  // Utiliser une route API locale pour éviter les problèmes CORS
-  // Le navigateur ne peut pas accéder à http://api:8080 (hostname Docker interne)
-  return `/api/books/${bookId}/pages/1?format=webp&width=200`;
+  return `/api/books/${bookId}/thumbnail`;
 }
 
 export type Settings = {
@@ -254,6 +279,14 @@ export type Settings = {
     timeout_seconds: number;
     rate_limit_per_second: number;
   };
+  thumbnail: {
+    enabled: boolean;
+    width: number;
+    height: number;
+    quality: number;
+    format: string;
+    directory: string;
+  };
 };
 
 export type CacheStats = {
@@ -267,6 +300,12 @@ export type ClearCacheResponse = {
   message: string;
 };
 
+export type ThumbnailStats = {
+  total_size_mb: number;
+  file_count: number;
+  directory: string;
+};
+
 export async function getSettings() {
   return apiFetch<Settings>("/settings");
 }
@@ -274,7 +313,7 @@ export async function getSettings() {
 export async function updateSetting(key: string, value: unknown) {
   return apiFetch<unknown>(`/settings/${key}`, {
     method: "POST",
-    body: JSON.stringify({ value })
+    body: JSON.stringify({ value }),
   });
 }
 
@@ -283,5 +322,11 @@ export async function getCacheStats() {
 }
 
 export async function clearCache() {
-  return apiFetch<ClearCacheResponse>("/settings/cache/clear", { method: "POST" });
+  return apiFetch<ClearCacheResponse>("/settings/cache/clear", {
+    method: "POST",
+  });
+}
+
+export async function getThumbnailStats() {
+  return apiFetch<ThumbnailStats>("/settings/thumbnail/stats");
 }

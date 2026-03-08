@@ -1,5 +1,9 @@
 use anyhow::{Context, Result};
+use std::io::Read;
 use std::path::Path;
+use std::process::Command;
+use uuid::Uuid;
+use walkdir::WalkDir;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BookFormat {
@@ -239,4 +243,106 @@ fn is_image_name(name: &str) -> bool {
         || name.ends_with(".png")
         || name.ends_with(".webp")
         || name.ends_with(".avif")
+}
+
+pub fn extract_first_page(path: &Path, format: BookFormat) -> Result<Vec<u8>> {
+    match format {
+        BookFormat::Cbz => extract_cbz_first_page(path),
+        BookFormat::Cbr => extract_cbr_first_page(path),
+        BookFormat::Pdf => extract_pdf_first_page(path),
+    }
+}
+
+fn extract_cbz_first_page(path: &Path) -> Result<Vec<u8>> {
+    let file = std::fs::File::open(path)
+        .with_context(|| format!("cannot open cbz: {}", path.display()))?;
+    let mut archive = zip::ZipArchive::new(file).context("invalid cbz archive")?;
+
+    let mut image_names: Vec<String> = Vec::new();
+    for i in 0..archive.len() {
+        let entry = archive.by_index(i).context("cannot read cbz entry")?;
+        let name = entry.name().to_ascii_lowercase();
+        if is_image_name(&name) {
+            image_names.push(entry.name().to_string());
+        }
+    }
+    image_names.sort();
+
+    let first_image = image_names.first().context("no images found in cbz")?;
+
+    let mut entry = archive
+        .by_name(first_image)
+        .context("cannot read first image")?;
+    let mut buf = Vec::new();
+    entry.read_to_end(&mut buf)?;
+    Ok(buf)
+}
+
+fn extract_cbr_first_page(path: &Path) -> Result<Vec<u8>> {
+    let tmp_dir = std::env::temp_dir().join(format!("stripstream-cbr-thumb-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&tmp_dir).context("cannot create temp dir")?;
+
+    // Use env command like the API does
+    let output = std::process::Command::new("env")
+        .args(["LC_ALL=en_US.UTF-8", "LANG=en_US.UTF-8", "unar", "-o"])
+        .arg(&tmp_dir)
+        .arg(path)
+        .output()
+        .context("unar failed")?;
+
+    if !output.status.success() {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err(anyhow::anyhow!(
+            "unar extract failed: {:?}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    // Use WalkDir for recursive search (CBR can have subdirectories)
+    let mut image_files: Vec<_> = WalkDir::new(&tmp_dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().to_lowercase();
+            is_image_name(&name)
+        })
+        .collect();
+
+    image_files.sort_by_key(|e| e.path().to_string_lossy().to_lowercase());
+
+    let first_image = image_files.first().context("no images found in cbr")?;
+
+    let data = std::fs::read(first_image.path())?;
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    Ok(data)
+}
+
+fn extract_pdf_first_page(path: &Path) -> Result<Vec<u8>> {
+    let tmp_dir = std::env::temp_dir().join(format!("stripstream-pdf-thumb-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&tmp_dir)?;
+    let output_prefix = tmp_dir.join("page");
+
+    let output = Command::new("pdftoppm")
+        .args([
+            "-f",
+            "1",
+            "-singlefile",
+            "-png",
+            "-scale-to",
+            "800",
+            path.to_str().unwrap(),
+            output_prefix.to_str().unwrap(),
+        ])
+        .output()
+        .context("pdftoppm failed")?;
+
+    if !output.status.success() {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err(anyhow::anyhow!("pdftoppm failed"));
+    }
+
+    let image_path = output_prefix.with_extension("png");
+    let data = std::fs::read(&image_path)?;
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    Ok(data)
 }

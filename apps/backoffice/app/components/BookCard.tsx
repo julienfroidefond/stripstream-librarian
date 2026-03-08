@@ -38,7 +38,7 @@ function BookImage({ src, alt }: { src: string; alt: string }) {
 }
 
 export function BookCard({ book }: BookCardProps) {
-  const coverUrl = book.coverUrl || `/api/books/${book.id}/pages/1?format=webp&width=200`;
+  const coverUrl = book.coverUrl || `/api/books/${book.id}/thumbnail`;
   
   return (
     <Link 

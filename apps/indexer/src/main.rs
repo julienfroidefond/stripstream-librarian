@@ -2,13 +2,15 @@ use anyhow::Context;
 use axum::{extract::State, routing::get, Json, Router};
 use chrono::{DateTime, Utc};
 use axum::http::StatusCode;
+use image::GenericImageView;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
-use parsers::{detect_format, parse_metadata, BookFormat};
+use parsers::{detect_format, parse_metadata, BookFormat, extract_first_page};
+use rayon::prelude::*;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::{postgres::PgPoolOptions, Row};
 use std::{collections::HashMap, path::Path, time::Duration};
-use stripstream_core::config::IndexerConfig;
+use stripstream_core::config::{IndexerConfig, ThumbnailConfig};
 use tokio::sync::mpsc;
 use tracing::{error, info, trace, warn};
 use uuid::Uuid;
@@ -37,6 +39,7 @@ struct AppState {
     pool: sqlx::PgPool,
     meili_url: String,
     meili_master_key: String,
+    thumbnail_config: ThumbnailConfig,
 }
 
 #[derive(Serialize)]
@@ -65,6 +68,7 @@ async fn main() -> anyhow::Result<()> {
         pool,
         meili_url: config.meili_url.clone(),
         meili_master_key: config.meili_master_key.clone(),
+        thumbnail_config: config.thumbnail_config.clone(),
     };
 
     tokio::spawn(run_worker(state.clone(), config.scan_interval_seconds));
@@ -411,7 +415,11 @@ async fn claim_next_job(pool: &sqlx::PgPool) -> anyhow::Result<Option<(Uuid, Opt
 
 async fn process_job(state: &AppState, job_id: Uuid, target_library_id: Option<Uuid>) -> anyhow::Result<()> {
     info!("[JOB] Processing {} library={:?}", job_id, target_library_id);
-    
+
+    // Load thumbnail config from database (fallback to env/default)
+    let thumbnail_config = load_thumbnail_config(&state.pool, &state.thumbnail_config).await;
+    info!("[THUMB] Config: enabled={}, dir={}", thumbnail_config.enabled, thumbnail_config.directory);
+
     // Get job type to check if it's a full rebuild
     let job_type: String = sqlx::query_scalar("SELECT type FROM index_jobs WHERE id = $1")
         .bind(job_id)
@@ -423,6 +431,35 @@ async fn process_job(state: &AppState, job_id: Uuid, target_library_id: Option<U
     // For full rebuilds, delete existing data first
     if is_full_rebuild {
         info!("[JOB] Full rebuild: deleting existing data");
+        
+        // Clean thumbnail directory - only for affected books
+        let thumb_dir = Path::new(&thumbnail_config.directory);
+        if thumb_dir.exists() {
+            if let Some(library_id) = target_library_id {
+                // Get book IDs for this library to delete their thumbnails
+                let book_ids: Vec<Uuid> = sqlx::query_scalar(
+                    "SELECT id FROM books WHERE library_id = $1"
+                )
+                .bind(target_library_id)
+                .fetch_all(&state.pool)
+                .await?;
+                
+                for book_id in &book_ids {
+                    let thumb_path = thumb_dir.join(format!("{}.webp", book_id));
+                    let _ = std::fs::remove_file(thumb_path);
+                }
+                info!("[JOB] Cleaned {} thumbnails for library {}", book_ids.len(), library_id);
+            } else {
+                // Delete all thumbnails
+                if let Ok(entries) = std::fs::read_dir(thumb_dir) {
+                    for entry in entries.flatten() {
+                        let _ = std::fs::remove_file(entry.path());
+                    }
+                }
+                info!("[JOB] Cleaned all thumbnails");
+            }
+        }
+        
         if let Some(library_id) = target_library_id {
             // Delete books and files for specific library
             sqlx::query("DELETE FROM book_files WHERE book_id IN (SELECT id FROM books WHERE library_id = $1)")
@@ -453,17 +490,20 @@ async fn process_job(state: &AppState, job_id: Uuid, target_library_id: Option<U
             .await?
     };
 
-    // First pass: count total files for progress estimation
-    let mut total_files = 0usize;
-    for library in &libraries {
-        let root_path: String = library.get("root_path");
-        let root_path = remap_libraries_path(&root_path);
-        for entry in WalkDir::new(&root_path).into_iter().filter_map(Result::ok) {
-            if entry.file_type().is_file() && detect_format(entry.path()).is_some() {
-                total_files += 1;
-            }
-        }
-    }
+    // First pass: count total files for progress estimation (parallel)
+    let library_paths: Vec<String> = libraries.iter()
+        .map(|library| remap_libraries_path(&library.get::<String, _>("root_path")))
+        .collect();
+    
+    let total_files: usize = library_paths.par_iter()
+        .map(|root_path| {
+            WalkDir::new(root_path)
+                .into_iter()
+                .filter_map(Result::ok)
+                .filter(|entry| entry.file_type().is_file() && detect_format(entry.path()).is_some())
+                .count()
+        })
+        .sum();
 
     info!("[JOB] Found {} libraries, {} total files to index", libraries.len(), total_files);
     
@@ -488,7 +528,7 @@ async fn process_job(state: &AppState, job_id: Uuid, target_library_id: Option<U
         let library_id: Uuid = library.get("id");
         let root_path: String = library.get("root_path");
         let root_path = remap_libraries_path(&root_path);
-        match scan_library(state, job_id, library_id, Path::new(&root_path), &mut stats, &mut total_processed_count, total_files, is_full_rebuild).await {
+        match scan_library(state, job_id, library_id, Path::new(&root_path), &mut stats, &mut total_processed_count, total_files, is_full_rebuild, thumbnail_config.clone()).await {
             Ok(()) => {}
             Err(err) => {
                 stats.errors += 1;
@@ -544,6 +584,7 @@ struct BookInsert {
     series: Option<String>,
     volume: Option<i32>,
     page_count: Option<i32>,
+    thumbnail_path: Option<String>,
 }
 
 struct FileInsert {
@@ -661,12 +702,13 @@ async fn flush_all_batches(
         let series: Vec<Option<String>> = books_insert.iter().map(|b| b.series.clone()).collect();
         let volumes: Vec<Option<i32>> = books_insert.iter().map(|b| b.volume).collect();
         let page_counts: Vec<Option<i32>> = books_insert.iter().map(|b| b.page_count).collect();
+        let thumbnail_paths: Vec<Option<String>> = books_insert.iter().map(|b| b.thumbnail_path.clone()).collect();
         
         sqlx::query(
             r#"
-            INSERT INTO books (id, library_id, kind, title, series, volume, page_count)
-            SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::text[], $6::int[], $7::int[])
-            AS t(id, library_id, kind, title, series, volume, page_count)
+            INSERT INTO books (id, library_id, kind, title, series, volume, page_count, thumbnail_path)
+            SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::text[], $6::int[], $7::int[], $8::text[])
+            AS t(id, library_id, kind, title, series, volume, page_count, thumbnail_path)
             "#
         )
         .bind(&book_ids)
@@ -676,6 +718,7 @@ async fn flush_all_batches(
         .bind(&series)
         .bind(&volumes)
         .bind(&page_counts)
+        .bind(&thumbnail_paths)
         .execute(&mut *tx)
         .await?;
         
@@ -765,6 +808,7 @@ async fn scan_library(
     total_processed_count: &mut i32,
     total_files: usize,
     is_full_rebuild: bool,
+    thumbnail_config: ThumbnailConfig,
 ) -> anyhow::Result<()> {
     info!("[SCAN] Starting scan of library {} at path: {} (full_rebuild={})", library_id, root.display(), is_full_rebuild);
     
@@ -884,6 +928,36 @@ async fn scan_library(
 
             info!("[PROCESS] Updating existing file: {} (full_rebuild={}, fingerprint_match={})", file_name, is_full_rebuild, old_fingerprint == fingerprint);
 
+            // Generate thumbnail for existing files if enabled and fingerprint changed
+            let thumbnail_path = if thumbnail_config.enabled && fingerprint != old_fingerprint {
+                info!("[THUMB] Generating thumbnail for updated file: {}", file_name);
+                match extract_first_page(path, format) {
+                    Ok(page_bytes) => {
+                        match generate_thumbnail(&page_bytes, &thumbnail_config) {
+                            Ok(thumb_bytes) => {
+                                match save_thumbnail(book_id, &thumb_bytes, &thumbnail_config) {
+                                    Ok(path) => Some(path),
+                                    Err(e) => {
+                                        warn!("[THUMB] Failed to save thumbnail for {}: {}", file_name, e);
+                                        None
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                warn!("[THUMB] Failed to generate thumbnail for {}: {}", file_name, e);
+                                None
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!("[THUMB] Failed to extract first page for {}: {}", file_name, e);
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
             match parse_metadata(path, format, root) {
                 Ok(parsed) => {
                     books_to_update.push(BookUpdate {
@@ -902,6 +976,17 @@ async fn scan_library(
                         mtime,
                         fingerprint,
                     });
+
+                    // Update thumbnail_path if we generated one
+                    if let Some(thumb_path) = thumbnail_path {
+                        let book_id_for_update = book_id;
+                        let thumb_path_clone = thumb_path.clone();
+                        sqlx::query("UPDATE books SET thumbnail_path = $1 WHERE id = $2")
+                            .bind(thumb_path_clone)
+                            .bind(book_id_for_update)
+                            .execute(&state.pool)
+                            .await?;
+                    }
 
                     stats.indexed_files += 1;
                 }
@@ -944,11 +1029,49 @@ async fn scan_library(
 
         // New file
         info!("[PROCESS] Inserting new file: {}", file_name);
+        
+        // Generate book_id early for thumbnail naming
+        let book_id = Uuid::new_v4();
+        
+        let thumbnail_path = if thumbnail_config.enabled {
+            info!("[THUMB] Generating thumbnail for {} (enabled={}, dir={})", file_name, thumbnail_config.enabled, thumbnail_config.directory);
+            match extract_first_page(path, format) {
+                Ok(page_bytes) => {
+                    info!("[THUMB] Extracted first page: {} bytes", page_bytes.len());
+                    match generate_thumbnail(&page_bytes, &thumbnail_config) {
+                        Ok(thumb_bytes) => {
+                            info!("[THUMB] Generated thumbnail: {} bytes", thumb_bytes.len());
+                            match save_thumbnail(book_id, &thumb_bytes, &thumbnail_config) {
+                                Ok(path) => {
+                                    info!("[THUMB] Saved thumbnail to {}", path);
+                                    Some(path)
+                                },
+                                Err(e) => {
+                                    warn!("[THUMB] Failed to save thumbnail for {}: {}", file_name, e);
+                                    None
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!("[THUMB] Failed to generate thumbnail for {}: {}", file_name, e);
+                            None
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("[THUMB] Failed to extract first page for {}: {}", file_name, e);
+                    None
+                }
+            }
+        } else {
+            info!("[THUMB] Skipping thumbnail (disabled)");
+            None
+        };
+
         match parse_metadata(path, format, root) {
             Ok(parsed) => {
-                let book_id = Uuid::new_v4();
                 let file_id = Uuid::new_v4();
-                
+
                 books_to_insert.push(BookInsert {
                     book_id,
                     library_id,
@@ -957,6 +1080,7 @@ async fn scan_library(
                     series: parsed.series,
                     volume: parsed.volume,
                     page_count: parsed.page_count,
+                    thumbnail_path,
                 });
 
                 files_to_insert.push(FileInsert {
@@ -987,6 +1111,7 @@ async fn scan_library(
                     series: None,
                     volume: None,
                     page_count: None,
+                    thumbnail_path: None,
                 });
 
                 files_to_insert.push(FileInsert {
@@ -1063,6 +1188,30 @@ fn compute_fingerprint(path: &Path, size: u64, mtime: &DateTime<Utc>) -> anyhow:
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+async fn load_thumbnail_config(pool: &sqlx::PgPool, fallback: &ThumbnailConfig) -> ThumbnailConfig {
+    let row = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'thumbnail'"#)
+        .fetch_optional(pool)
+        .await;
+
+    match row {
+        Ok(Some(row)) => {
+            let value: serde_json::Value = row.get("value");
+            ThumbnailConfig {
+                enabled: value.get("enabled").and_then(|v| v.as_bool()).unwrap_or(fallback.enabled),
+                width: value.get("width").and_then(|v| v.as_u64()).map(|v| v as u32).unwrap_or(fallback.width),
+                height: value.get("height").and_then(|v| v.as_u64()).map(|v| v as u32).unwrap_or(fallback.height),
+                quality: value.get("quality").and_then(|v| v.as_u64()).map(|v| v as u8).unwrap_or(fallback.quality),
+                format: value.get("format").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_else(|| fallback.format.clone()),
+                directory: value.get("directory").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_else(|| fallback.directory.clone()),
+            }
+        }
+        _ => {
+            warn!("[THUMB] Could not load thumbnail config from DB, using fallback");
+            fallback.clone()
+        }
+    }
+}
+
 fn kind_from_format(format: BookFormat) -> &'static str {
     match format {
         BookFormat::Pdf => "ebook",
@@ -1074,6 +1223,50 @@ fn file_display_name(path: &Path) -> String {
     path.file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "Untitled".to_string())
+}
+
+fn generate_thumbnail(image_bytes: &[u8], config: &ThumbnailConfig) -> anyhow::Result<Vec<u8>> {
+    let img = image::load_from_memory(image_bytes)
+        .context("failed to load image")?;
+
+    let (orig_w, orig_h) = img.dimensions();
+    let target_w = config.width;
+    let target_h = config.height;
+
+    let ratio_w = target_w as f32 / orig_w as f32;
+    let ratio_h = target_h as f32 / orig_h as f32;
+    let ratio = ratio_w.min(ratio_h);
+
+    let new_w = (orig_w as f32 * ratio) as u32;
+    let new_h = (orig_h as f32 * ratio) as u32;
+
+    let resized = img.resize(new_w, new_h, image::imageops::FilterType::Lanczos3);
+
+    let rgba = resized.to_rgba8();
+    let (w, h) = rgba.dimensions();
+
+    let rgb_data: Vec<u8> = rgba
+        .pixels()
+        .flat_map(|p| [p[0], p[1], p[2]])
+        .collect();
+
+    let quality = f32::max(config.quality as f32, 85.0);
+    let webp_data = webp::Encoder::new(&rgb_data, webp::PixelLayout::Rgb, w, h)
+        .encode(quality);
+
+    Ok(webp_data.to_vec())
+}
+
+fn save_thumbnail(book_id: Uuid, thumbnail_bytes: &[u8], config: &ThumbnailConfig) -> anyhow::Result<String> {
+    let dir = Path::new(&config.directory);
+    std::fs::create_dir_all(dir)?;
+    
+    let filename = format!("{}.webp", book_id);
+    let path = dir.join(&filename);
+    
+    std::fs::write(&path, thumbnail_bytes)?;
+    
+    Ok(path.to_string_lossy().to_string())
 }
 
 #[derive(Serialize)]
