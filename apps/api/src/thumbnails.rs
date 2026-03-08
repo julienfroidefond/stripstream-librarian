@@ -1,4 +1,6 @@
 use std::path::Path;
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::Arc;
 
 use anyhow::Context;
 use axum::{
@@ -6,6 +8,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use futures::stream::{self, StreamExt};
 use image::GenericImageView;
 use serde::Deserialize;
 use sqlx::Row;
@@ -22,6 +25,25 @@ struct ThumbnailConfig {
     height: u32,
     quality: u8,
     directory: String,
+}
+
+async fn load_thumbnail_concurrency(pool: &sqlx::PgPool) -> usize {
+    let default_concurrency = 4;
+    let row = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'limits'"#)
+        .fetch_optional(pool)
+        .await;
+
+    match row {
+        Ok(Some(row)) => {
+            let value: serde_json::Value = row.get("value");
+            value
+                .get("concurrent_renders")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or(default_concurrency)
+        }
+        _ => default_concurrency,
+    }
 }
 
 async fn load_thumbnail_config(pool: &sqlx::PgPool) -> ThumbnailConfig {
@@ -156,38 +178,56 @@ async fn run_checkup(state: AppState, job_id: Uuid) {
     .execute(pool)
     .await;
 
-    for (i, &book_id) in book_ids.iter().enumerate() {
-        match pages::render_book_page_1(&state, book_id, config.width, config.quality).await {
-            Ok(page_bytes) => {
-                match generate_thumbnail(&page_bytes, &config) {
-                    Ok(thumb_bytes) => {
-                        if let Ok(path) = save_thumbnail(book_id, &thumb_bytes, &config) {
-                            if sqlx::query("UPDATE books SET thumbnail_path = $1 WHERE id = $2")
-                                .bind(&path)
-                                .bind(book_id)
-                                .execute(pool)
-                                .await
-                                .is_ok()
-                            {
-                                let processed = (i + 1) as i32;
-                                let percent = ((i + 1) as f64 / total as f64 * 100.0) as i32;
-                                let _ = sqlx::query(
-                                    "UPDATE index_jobs SET processed_files = $2, progress_percent = $3 WHERE id = $1",
-                                )
-                                .bind(job_id)
-                                .bind(processed)
-                                .bind(percent)
-                                .execute(pool)
-                                .await;
+    let concurrency = load_thumbnail_concurrency(pool).await;
+    let processed_count = Arc::new(AtomicI32::new(0));
+    let pool_clone = pool.clone();
+    let job_id_clone = job_id;
+    let config_clone = config.clone();
+    let state_clone = state.clone();
+
+    stream::iter(book_ids)
+        .for_each_concurrent(concurrency, |book_id| {
+            let processed_count = processed_count.clone();
+            let pool = pool_clone.clone();
+            let job_id = job_id_clone;
+            let config = config_clone.clone();
+            let state = state_clone.clone();
+            let total = total;
+
+            async move {
+                match pages::render_book_page_1(&state, book_id, config.width, config.quality).await {
+                    Ok(page_bytes) => {
+                        match generate_thumbnail(&page_bytes, &config) {
+                            Ok(thumb_bytes) => {
+                                if let Ok(path) = save_thumbnail(book_id, &thumb_bytes, &config) {
+                                    if sqlx::query("UPDATE books SET thumbnail_path = $1 WHERE id = $2")
+                                        .bind(&path)
+                                        .bind(book_id)
+                                        .execute(&pool)
+                                        .await
+                                        .is_ok()
+                                    {
+                                        let processed = processed_count.fetch_add(1, Ordering::Relaxed) + 1;
+                                        let percent = (processed as f64 / total as f64 * 100.0) as i32;
+                                        let _ = sqlx::query(
+                                            "UPDATE index_jobs SET processed_files = $2, progress_percent = $3 WHERE id = $1",
+                                        )
+                                        .bind(job_id)
+                                        .bind(processed)
+                                        .bind(percent)
+                                        .execute(&pool)
+                                        .await;
+                                    }
+                                }
                             }
+                            Err(e) => warn!("thumbnail generate failed for book {}: {:?}", book_id, e),
                         }
                     }
-                    Err(e) => warn!("thumbnail generate failed for book {}: {:?}", book_id, e),
+                    Err(e) => warn!("render page 1 failed for book {}: {:?}", book_id, e),
                 }
             }
-            Err(e) => warn!("render page 1 failed for book {}: {:?}", book_id, e),
-        }
-    }
+        })
+        .await;
 
     let _ = sqlx::query(
         "UPDATE index_jobs SET status = 'success', finished_at = NOW(), progress_percent = 100, current_file = NULL WHERE id = $1",

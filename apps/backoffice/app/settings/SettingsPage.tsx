@@ -247,7 +247,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             <Icon name="performance" size="md" />
             Performance Limits
           </CardTitle>
-          <CardDescription>Configure API performance and rate limiting</CardDescription>
+          <CardDescription>Configure API performance, rate limiting, and thumbnail generation concurrency</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -266,6 +266,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   }}
                   onBlur={() => handleUpdateSetting("limits", settings.limits)}
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Maximum number of page renders and thumbnail generations running in parallel
+                </p>
               </FormField>
               <FormField className="flex-1">
                 <label className="text-sm font-medium text-muted-foreground mb-1 block">Timeout (seconds)</label>
@@ -299,7 +302,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               </FormField>
             </FormRow>
             <p className="text-sm text-muted-foreground">
-              Note: Changes to limits require a server restart to take effect.
+              Note: Changes to limits require a server restart to take effect. The "Concurrent Renders" setting controls both page rendering and thumbnail generation parallelism.
             </p>
           </div>
         </CardContent>
@@ -424,7 +427,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             </div>
 
             <p className="text-sm text-muted-foreground">
-              Note: Thumbnail settings are used during indexing. Existing thumbnails will not be regenerated automatically.
+              Note: Thumbnail settings are used during indexing. Existing thumbnails will not be regenerated automatically. The concurrency for thumbnail generation is controlled by the "Concurrent Renders" setting in Performance Limits above.
             </p>
           </div>
         </CardContent>

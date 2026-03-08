@@ -32,6 +32,8 @@ use stripstream_core::config::ApiConfig;
 use sqlx::postgres::PgPoolOptions;
 use tokio::sync::{Mutex, Semaphore};
 use tracing::info;
+use sqlx::{Pool, Postgres, Row};
+use serde_json::Value;
 
 #[derive(Clone)]
 struct AppState {
@@ -66,6 +68,25 @@ impl Metrics {
     }
 }
 
+async fn load_concurrent_renders(pool: &Pool<Postgres>) -> usize {
+    let default_concurrency = 8;
+    let row = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'limits'"#)
+        .fetch_optional(pool)
+        .await;
+
+    match row {
+        Ok(Some(row)) => {
+            let value: Value = row.get("value");
+            value
+                .get("concurrent_renders")
+                .and_then(|v: &Value| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or(default_concurrency)
+        }
+        _ => default_concurrency,
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -80,13 +101,17 @@ async fn main() -> anyhow::Result<()> {
         .connect(&config.database_url)
         .await?;
 
+    // Load concurrent_renders from settings, default to 8
+    let concurrent_renders = load_concurrent_renders(&pool).await;
+    info!("Using concurrent_renders limit: {}", concurrent_renders);
+
     let state = AppState {
         pool,
         bootstrap_token: Arc::from(config.api_bootstrap_token),
         meili_url: Arc::from(config.meili_url),
         meili_master_key: Arc::from(config.meili_master_key),
         page_cache: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(512).expect("non-zero")))),
-        page_render_limit: Arc::new(Semaphore::new(8)),
+        page_render_limit: Arc::new(Semaphore::new(concurrent_renders)),
         metrics: Arc::new(Metrics::new()),
         read_rate_limit: Arc::new(Mutex::new(ReadRateLimit {
             window_started_at: Instant::now(),
