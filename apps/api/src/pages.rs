@@ -20,7 +20,7 @@ use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::{error::ApiError, AppState};
+use crate::{error::ApiError, state::AppState};
 
 fn remap_libraries_path(path: &str) -> String {
     if let Ok(root) = std::env::var("LIBRARIES_ROOT_PATH") {

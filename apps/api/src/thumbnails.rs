@@ -16,7 +16,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 use utoipa::ToSchema;
 
-use crate::{error::ApiError, index_jobs, pages, AppState};
+use crate::{error::ApiError, index_jobs, pages, state::AppState};
 
 #[derive(Clone)]
 struct ThumbnailConfig {

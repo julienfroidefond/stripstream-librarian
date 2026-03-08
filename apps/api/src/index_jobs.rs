@@ -8,7 +8,7 @@ use tokio_stream::Stream;
 use uuid::Uuid;
 use utoipa::ToSchema;
 
-use crate::{error::ApiError, AppState};
+use crate::{error::ApiError, state::AppState};
 
 #[derive(Deserialize, ToSchema)]
 pub struct RebuildRequest {

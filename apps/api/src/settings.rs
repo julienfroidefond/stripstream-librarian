@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::Row;
 
-use crate::{error::ApiError, AppState};
+use crate::{error::ApiError, state::AppState};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateSettingRequest {

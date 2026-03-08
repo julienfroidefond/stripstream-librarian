@@ -2,7 +2,7 @@ use axum::{extract::{Query, State}, Json};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{error::ApiError, AppState};
+use crate::{error::ApiError, state::AppState};
 
 #[derive(Deserialize, ToSchema)]
 pub struct SearchQuery {

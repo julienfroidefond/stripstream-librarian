@@ -8,7 +8,7 @@ use axum::{
 use chrono::Utc;
 use sqlx::Row;
 
-use crate::{error::ApiError, AppState};
+use crate::{error::ApiError, state::AppState};
 
 #[derive(Clone, Debug)]
 pub enum Scope {
