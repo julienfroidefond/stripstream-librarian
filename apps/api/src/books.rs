@@ -351,25 +351,29 @@ pub async fn get_thumbnail(
     State(state): State<AppState>,
     Path(book_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let row = sqlx::query(
-        "SELECT thumbnail_path FROM books WHERE id = $1"
-    )
-    .bind(book_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| ApiError::internal(e.to_string()))?;
+    let row = sqlx::query("SELECT thumbnail_path FROM books WHERE id = $1")
+        .bind(book_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
 
     let row = row.ok_or_else(|| ApiError::not_found("book not found"))?;
     let thumbnail_path: Option<String> = row.get("thumbnail_path");
 
-    let path = thumbnail_path.ok_or_else(|| ApiError::not_found("thumbnail not found"))?;
-
-    let data = std::fs::read(&path)
-        .map_err(|e| ApiError::internal(format!("cannot read thumbnail: {}", e)))?;
+    let data = if let Some(ref path) = thumbnail_path {
+        std::fs::read(path)
+            .map_err(|e| ApiError::internal(format!("cannot read thumbnail: {}", e)))?
+    } else {
+        // Fallback: render page 1 on the fly (same as pages logic)
+        crate::pages::render_book_page_1(&state, book_id, 300, 80).await?
+    };
 
     let mut headers = HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/webp"));
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable"));
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=31536000, immutable"),
+    );
 
     Ok((StatusCode::OK, headers, Body::from(data)))
 }

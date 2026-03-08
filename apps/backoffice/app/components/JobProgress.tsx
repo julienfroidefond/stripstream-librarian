@@ -87,6 +87,8 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
   const percent = progress.progress_percent ?? 0;
   const processed = progress.processed_files ?? 0;
   const total = progress.total_files ?? 0;
+  const isThumbnailsPhase = progress.status === "generating_thumbnails";
+  const unitLabel = isThumbnailsPhase ? "thumbnails" : "files";
 
   return (
     <div className="p-4 bg-card rounded-lg border border-border">
@@ -100,7 +102,7 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
       <ProgressBar value={percent} showLabel size="lg" className="mb-3" />
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground mb-3">
-        <span>{processed} / {total} files</span>
+        <span>{processed} / {total} {unitLabel}</span>
         {progress.current_file && (
           <span className="truncate max-w-md" title={progress.current_file}>
             Current: {progress.current_file.length > 40 
@@ -110,7 +112,7 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
         )}
       </div>
 
-      {progress.stats_json && (
+      {progress.stats_json && !isThumbnailsPhase && (
         <div className="flex flex-wrap gap-3 text-xs">
           <Badge variant="primary">Scanned: {progress.stats_json.scanned_files}</Badge>
           <Badge variant="success">Indexed: {progress.stats_json.indexed_files}</Badge>

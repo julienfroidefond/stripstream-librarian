@@ -95,6 +95,12 @@ La recupération des thumbnail est fait par une route page/1.
 En fait l'indexer pourrait appeler l'api pour qu'il fasse les vignettes et c'est l'api qui est responsable des images et des lectures ebooks. Je préfère que chaque domaine soit bien respecté. A la fin d'une build, on appelle l'api pour faire le checkup des thumbnails. 
 Il faudra que coté backoffice on voit partout ou on peut voir le traitement live des jobs, une phase ou on voit en sse le traitement des thumbnails. Coté api, si on a pas de thumbnail on passe par le code actuel de pages.
 
+- [x] Migration `0010_index_job_thumbnails_phase.sql`: status `generating_thumbnails` dans index_jobs
+- [x] API: `get_thumbnail` fallback sur page 1 si pas de thumbnail_path (via `pages::render_book_page_1`)
+- [x] API: module `thumbnails.rs`, POST `/index/jobs/:id/thumbnails/checkup` (admin), lance la génération en tâche de fond et met à jour la job
+- [x] Indexer: plus de génération de thumbnails; en fin de build: status = `generating_thumbnails`, puis appel API checkup; config `api_base_url` + `api_bootstrap_token` (core)
+- [x] Backoffice: StatusBadge "Thumbnails" pour `generating_thumbnails`; JobProgress/JobRow/JobsIndicator/page job détail: phase thumbnails visible en SSE (X/Y thumbnails, barre de progression)
+
 ---
 
 ## 6. Settings API

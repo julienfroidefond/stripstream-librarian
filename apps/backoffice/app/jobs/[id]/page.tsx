@@ -171,19 +171,19 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
         </Card>
 
         {/* Progress Card */}
-        {(job.status === "running" || job.status === "success" || job.status === "failed") && (
+        {(job.status === "running" || job.status === "generating_thumbnails" || job.status === "success" || job.status === "failed") && (
           <Card>
             <CardHeader>
-              <CardTitle>Progress</CardTitle>
+              <CardTitle>{job.status === "generating_thumbnails" ? "Thumbnails" : "Progress"}</CardTitle>
             </CardHeader>
             <CardContent>
-              {job.total_files && job.total_files > 0 && (
+              {job.total_files != null && job.total_files > 0 && (
                 <>
                   <ProgressBar value={job.progress_percent || 0} showLabel size="lg" className="mb-4" />
                   <div className="grid grid-cols-3 gap-4">
-                    <StatBox value={job.processed_files || 0} label="Processed" variant="primary" />
-                    <StatBox value={job.total_files} label="Total" />
-                    <StatBox value={job.total_files - (job.processed_files || 0)} label="Remaining" variant="warning" />
+                    <StatBox value={job.processed_files ?? 0} label="Processed" variant="primary" />
+                    <StatBox value={job.total_files} label={job.status === "generating_thumbnails" ? "Total thumbnails" : "Total"} />
+                    <StatBox value={job.total_files - (job.processed_files ?? 0)} label="Remaining" variant="warning" />
                   </div>
                 </>
               )}

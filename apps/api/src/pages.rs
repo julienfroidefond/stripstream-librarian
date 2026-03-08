@@ -279,6 +279,54 @@ fn image_response(bytes: Arc<Vec<u8>>, content_type: &str, etag_suffix: Option<&
     (StatusCode::OK, headers, Body::from((*bytes).clone())).into_response()
 }
 
+/// Render page 1 of a book (for thumbnail fallback or thumbnail checkup). Uses thumbnail dimensions by default.
+pub async fn render_book_page_1(
+    state: &AppState,
+    book_id: Uuid,
+    width: u32,
+    quality: u8,
+) -> Result<Vec<u8>, ApiError> {
+    let row = sqlx::query(
+        r#"SELECT abs_path, format FROM book_files WHERE book_id = $1 ORDER BY updated_at DESC LIMIT 1"#,
+    )
+    .bind(book_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| ApiError::internal(e.to_string()))?;
+
+    let row = row.ok_or_else(|| ApiError::not_found("book file not found"))?;
+    let abs_path: String = row.get("abs_path");
+    let abs_path = remap_libraries_path(&abs_path);
+    let input_format: String = row.get("format");
+
+    let _permit = state
+        .page_render_limit
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|_| ApiError::internal("render limiter unavailable"))?;
+
+    let abs_path_clone = abs_path.clone();
+    let bytes = tokio::time::timeout(
+        Duration::from_secs(60),
+        tokio::task::spawn_blocking(move || {
+            render_page(
+                &abs_path_clone,
+                &input_format,
+                1,
+                &OutputFormat::Webp,
+                quality,
+                width,
+            )
+        }),
+    )
+    .await
+    .map_err(|_| ApiError::internal("page rendering timeout"))?
+    .map_err(|e| ApiError::internal(format!("render task failed: {e}")))?;
+
+    bytes
+}
+
 fn render_page(
     abs_path: &str,
     input_format: &str,

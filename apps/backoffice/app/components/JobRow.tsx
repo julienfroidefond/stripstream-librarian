@@ -33,9 +33,8 @@ interface JobRowProps {
 }
 
 export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, formatDuration }: JobRowProps) {
-  const [showProgress, setShowProgress] = useState(
-    highlighted || job.status === "running" || job.status === "pending"
-  );
+  const isActive = job.status === "running" || job.status === "pending" || job.status === "generating_thumbnails";
+  const [showProgress, setShowProgress] = useState(highlighted || isActive);
 
   const handleComplete = () => {
     setShowProgress(false);
@@ -53,12 +52,32 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
   const removed = job.stats_json?.removed_files ?? 0;
   const errors = job.stats_json?.errors ?? 0;
 
-  // Format files display
-  const filesDisplay = job.status === "running" && job.total_files
-    ? `${job.processed_files || 0}/${job.total_files}`
-    : scanned > 0 
-      ? `${scanned} scanned`
-      : "-";
+  const isThumbnailPhase = job.status === "generating_thumbnails";
+  const isThumbnailJob = job.type === "thumbnail_rebuild" || job.type === "thumbnail_regenerate";
+  const hasThumbnailPhase = isThumbnailPhase || isThumbnailJob;
+
+  // Files column: index-phase stats only
+  const filesDisplay =
+    job.status === "running" && !isThumbnailPhase
+      ? job.total_files != null
+        ? `${job.processed_files ?? 0}/${job.total_files}`
+        : scanned > 0
+          ? `${scanned} scanned`
+          : "-"
+      : job.status === "success" && (indexed > 0 || removed > 0 || errors > 0)
+        ? null // rendered below as ✓ / − / ⚠
+        : scanned > 0
+          ? `${scanned} scanned`
+          : "—";
+
+  // Thumbnails column
+  const thumbInProgress = hasThumbnailPhase && (job.status === "running" || isThumbnailPhase);
+  const thumbDisplay =
+    thumbInProgress && job.total_files != null
+      ? `${job.processed_files ?? 0}/${job.total_files}`
+      : job.status === "success" && job.total_files != null && hasThumbnailPhase
+        ? `✓ ${job.total_files}`
+        : "—";
 
   return (
     <>
@@ -86,7 +105,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
                 !
               </span>
             )}
-            {(job.status === "running" || job.status === "pending") && (
+            {isActive && (
               <button 
                 className="text-xs text-primary hover:text-primary/80 hover:underline"
                 onClick={() => setShowProgress(!showProgress)}
@@ -98,20 +117,25 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
         </td>
         <td className="px-4 py-3">
           <div className="flex flex-col gap-1">
-            <span className="text-sm text-foreground">{filesDisplay}</span>
-            {job.status === "running" && job.total_files && (
-              <MiniProgressBar 
-                value={job.processed_files || 0} 
-                max={job.total_files}
-                className="w-24"
-              />
-            )}
-            {job.status === "success" && (
+            {filesDisplay !== null ? (
+              <span className="text-sm text-foreground">{filesDisplay}</span>
+            ) : (
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-success">✓ {indexed}</span>
                 {removed > 0 && <span className="text-warning">− {removed}</span>}
                 {errors > 0 && <span className="text-error">⚠ {errors}</span>}
               </div>
+            )}
+            {job.status === "running" && !isThumbnailPhase && job.total_files != null && (
+              <MiniProgressBar value={job.processed_files ?? 0} max={job.total_files} className="w-24" />
+            )}
+          </div>
+        </td>
+        <td className="px-4 py-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-sm text-foreground">{thumbDisplay}</span>
+            {thumbInProgress && job.total_files != null && (
+              <MiniProgressBar value={job.processed_files ?? 0} max={job.total_files} className="w-24" />
             )}
           </div>
         </td>
@@ -129,7 +153,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
             >
               View
             </Link>
-            {(job.status === "pending" || job.status === "running") && (
+            {(job.status === "pending" || job.status === "running" || job.status === "generating_thumbnails") && (
               <Button 
                 variant="danger" 
                 size="sm"
@@ -141,9 +165,9 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
           </div>
         </td>
       </tr>
-      {showProgress && (job.status === "running" || job.status === "pending") && (
+      {showProgress && isActive && (
         <tr>
-          <td colSpan={8} className="px-4 py-3 bg-muted/50">
+          <td colSpan={9} className="px-4 py-3 bg-muted/50">
             <JobProgress 
               jobId={job.id}
               onComplete={handleComplete}

@@ -78,7 +78,7 @@ export function JobsIndicator() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const runningJobs = activeJobs.filter(j => j.status === "running");
+  const runningJobs = activeJobs.filter(j => j.status === "running" || j.status === "generating_thumbnails");
   const pendingJobs = activeJobs.filter(j => j.status === "pending");
   const totalCount = activeJobs.length;
 
@@ -210,19 +210,19 @@ export function JobsIndicator() {
                     >
                       <div className="flex items-start gap-3">
                         <div className="mt-0.5">
-                          {job.status === "running" && <span className="animate-spin inline-block">⏳</span>}
+                          {(job.status === "running" || job.status === "generating_thumbnails") && <span className="animate-spin inline-block">⏳</span>}
                           {job.status === "pending" && <span>⏸</span>}
                         </div>
                         
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <code className="text-xs px-1.5 py-0.5 bg-muted rounded font-mono">{job.id.slice(0, 8)}</code>
-                            <Badge variant={job.type === 'rebuild' ? 'primary' : 'secondary'} className="text-[10px]">
-                              {job.type}
+                            <Badge variant={job.type === 'rebuild' ? 'primary' : job.type === 'thumbnail_regenerate' ? 'warning' : 'secondary'} className="text-[10px]">
+                              {job.type === 'thumbnail_rebuild' ? 'Thumbnails' : job.type === 'thumbnail_regenerate' ? 'Regenerate' : job.type}
                             </Badge>
                           </div>
                           
-                          {job.status === "running" && job.progress_percent !== null && (
+                          {(job.status === "running" || job.status === "generating_thumbnails") && job.progress_percent != null && (
                             <div className="flex items-center gap-2 mt-2">
                               <MiniProgressBar value={job.progress_percent} />
                               <span className="text-xs font-medium text-muted-foreground">{job.progress_percent}%</span>

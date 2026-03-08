@@ -7,6 +7,7 @@ mod openapi;
 mod pages;
 mod search;
 mod settings;
+mod thumbnails;
 mod tokens;
 
 use std::{
@@ -99,10 +100,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/libraries/:id/scan", axum::routing::post(libraries::scan_library))
         .route("/libraries/:id/monitoring", axum::routing::patch(libraries::update_monitoring))
         .route("/index/rebuild", axum::routing::post(index_jobs::enqueue_rebuild))
+        .route("/index/thumbnails/rebuild", axum::routing::post(thumbnails::start_thumbnails_rebuild))
+        .route("/index/thumbnails/regenerate", axum::routing::post(thumbnails::start_thumbnails_regenerate))
         .route("/index/status", get(index_jobs::list_index_jobs))
         .route("/index/jobs/active", get(index_jobs::get_active_jobs))
         .route("/index/jobs/:id", get(index_jobs::get_job_details))
         .route("/index/jobs/:id/stream", get(index_jobs::stream_job_progress))
+        .route("/index/jobs/:id/thumbnails/checkup", axum::routing::post(thumbnails::start_checkup))
         .route("/index/jobs/:id/errors", get(index_jobs::get_job_errors))
         .route("/index/cancel/:id", axum::routing::post(index_jobs::cancel_job))
         .route("/folders", get(index_jobs::list_folders))

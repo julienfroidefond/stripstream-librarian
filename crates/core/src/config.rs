@@ -32,6 +32,10 @@ pub struct IndexerConfig {
     pub meili_master_key: String,
     pub scan_interval_seconds: u64,
     pub thumbnail_config: ThumbnailConfig,
+    /// API base URL for thumbnail checkup at end of build (e.g. http://api:8080)
+    pub api_base_url: String,
+    /// Token to call API (e.g. API_BOOTSTRAP_TOKEN)
+    pub api_bootstrap_token: String,
 }
 
 #[derive(Debug, Clone)]
@@ -93,6 +97,10 @@ impl IndexerConfig {
                 .and_then(|v| v.parse::<u64>().ok())
                 .unwrap_or(5),
             thumbnail_config,
+            api_base_url: std::env::var("API_BASE_URL")
+                .unwrap_or_else(|_| "http://api:8080".to_string()),
+            api_bootstrap_token: std::env::var("API_BOOTSTRAP_TOKEN")
+                .context("API_BOOTSTRAP_TOKEN is required for thumbnail checkup")?,
         })
     }
 }

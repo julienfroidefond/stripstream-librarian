@@ -187,6 +187,24 @@ export async function rebuildIndex(libraryId?: string, full?: boolean) {
   });
 }
 
+export async function rebuildThumbnails(libraryId?: string) {
+  const body: { library_id?: string } = {};
+  if (libraryId) body.library_id = libraryId;
+  return apiFetch<IndexJobDto>("/index/thumbnails/rebuild", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function regenerateThumbnails(libraryId?: string) {
+  const body: { library_id?: string } = {};
+  if (libraryId) body.library_id = libraryId;
+  return apiFetch<IndexJobDto>("/index/thumbnails/regenerate", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export async function cancelJob(id: string) {
   return apiFetch<IndexJobDto>(`/index/cancel/${id}`, { method: "POST" });
 }

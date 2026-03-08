@@ -60,6 +60,7 @@ export function Badge({ children, variant = "default", className = "" }: BadgePr
 // Status badge for jobs/tasks
 const statusVariants: Record<string, BadgeVariant> = {
   running: "in-progress",
+  generating_thumbnails: "in-progress",
   success: "completed",
   completed: "completed",
   failed: "error",
@@ -68,20 +69,33 @@ const statusVariants: Record<string, BadgeVariant> = {
   unread: "unread",
 };
 
+const statusLabels: Record<string, string> = {
+  generating_thumbnails: "Thumbnails",
+};
+
 interface StatusBadgeProps {
   status: string;
   className?: string;
 }
 
 export function StatusBadge({ status, className = "" }: StatusBadgeProps) {
-  const variant = statusVariants[status.toLowerCase()] || "default";
-  return <Badge variant={variant} className={className}>{status}</Badge>;
+  const key = status.toLowerCase();
+  const variant = statusVariants[key] || "default";
+  const label = statusLabels[key] ?? status;
+  return <Badge variant={variant} className={className}>{label}</Badge>;
 }
 
 // Job type badge
 const jobTypeVariants: Record<string, BadgeVariant> = {
   rebuild: "primary",
   full_rebuild: "warning",
+  thumbnail_rebuild: "secondary",
+  thumbnail_regenerate: "warning",
+};
+
+const jobTypeLabels: Record<string, string> = {
+  thumbnail_rebuild: "Thumbnails",
+  thumbnail_regenerate: "Regenerate",
 };
 
 interface JobTypeBadgeProps {
@@ -90,8 +104,10 @@ interface JobTypeBadgeProps {
 }
 
 export function JobTypeBadge({ type, className = "" }: JobTypeBadgeProps) {
-  const variant = jobTypeVariants[type.toLowerCase()] || "default";
-  return <Badge variant={variant} className={className}>{type}</Badge>;
+  const key = type.toLowerCase();
+  const variant = jobTypeVariants[key] || "default";
+  const label = jobTypeLabels[key] ?? type;
+  return <Badge variant={variant} className={className}>{label}</Badge>;
 }
 
 // Progress badge (shows percentage)
