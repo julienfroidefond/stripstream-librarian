@@ -1,16 +1,9 @@
 import { NextRequest } from "next/server";
+import { config } from "@/lib/api";
 
 export async function GET(request: NextRequest) {
-  const apiBaseUrl = process.env.API_BASE_URL || "http://api:7080";
-  const apiToken = process.env.API_BOOTSTRAP_TOKEN;
-  
-  if (!apiToken) {
-    return new Response(
-      `data: ${JSON.stringify({ error: "API token not configured" })}\n\n`,
-      { status: 500, headers: { "Content-Type": "text/event-stream" } }
-    );
-  }
-  
+  const { baseUrl, token } = config();
+
   const stream = new ReadableStream({
     async start(controller) {
       controller.enqueue(new TextEncoder().encode(""));
@@ -22,10 +15,8 @@ export async function GET(request: NextRequest) {
         if (!isActive) return;
         
         try {
-          const response = await fetch(`${apiBaseUrl}/index/status`, {
-            headers: {
-              Authorization: `Bearer ${apiToken}`,
-            },
+          const response = await fetch(`${baseUrl}/index/status`, {
+            headers: { Authorization: `Bearer ${token}` },
           });
           
           if (response.ok && isActive) {

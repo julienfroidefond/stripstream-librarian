@@ -1,24 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { getCacheStats } from "@/lib/api";
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    const baseUrl = process.env.API_BASE_URL || "http://api:7080";
-    const token = process.env.API_BOOTSTRAP_TOKEN;
-    
-    const response = await fetch(`${baseUrl}/settings/cache/stats`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      cache: "no-store"
-    });
-
-    if (!response.ok) {
-      return NextResponse.json({ error: "Failed to fetch cache stats" }, { status: response.status });
-    }
-
-    const data = await response.json();
+    const data = await getCacheStats();
     return NextResponse.json(data);
   } catch (error) {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch cache stats" }, { status: 500 });
   }
 }

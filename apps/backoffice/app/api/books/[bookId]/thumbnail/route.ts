@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { config } from "@/lib/api";
 
 export async function GET(
   request: NextRequest,
@@ -6,19 +7,10 @@ export async function GET(
 ) {
   const { bookId } = await params;
   
-  const apiBaseUrl = process.env.API_BASE_URL || "http://api:7080";
-  const apiUrl = `${apiBaseUrl}/books/${bookId}/thumbnail`;
-  
-  const token = process.env.API_BOOTSTRAP_TOKEN;
-  if (!token) {
-    return new NextResponse("API token not configured", { status: 500 });
-  }
-  
   try {
-    const response = await fetch(apiUrl, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+    const { baseUrl, token } = config();
+    const response = await fetch(`${baseUrl}/books/${bookId}/thumbnail`, {
+      headers: { Authorization: `Bearer ${token}` },
     });
     
     if (!response.ok) {

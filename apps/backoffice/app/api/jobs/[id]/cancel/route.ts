@@ -1,36 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cancelJob } from "@/lib/api";
 
 export async function POST(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const apiBaseUrl = process.env.API_BASE_URL || "http://api:7080";
-  const apiToken = process.env.API_BOOTSTRAP_TOKEN;
-  
-  if (!apiToken) {
-    return NextResponse.json({ error: "API token not configured" }, { status: 500 });
-  }
-  
   try {
-    const response = await fetch(`${apiBaseUrl}/index/cancel/${id}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-      },
-    });
-    
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: `API error: ${response.status}` },
-        { status: response.status }
-      );
-    }
-    
-    const data = await response.json();
+    const data = await cancelJob(id);
     return NextResponse.json(data);
   } catch (error) {
-    console.error("Proxy error:", error);
     return NextResponse.json({ error: "Failed to cancel job" }, { status: 500 });
   }
 }

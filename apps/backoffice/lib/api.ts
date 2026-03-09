@@ -89,7 +89,7 @@ export type SeriesDto = {
   first_book_id: string;
 };
 
-function config() {
+export function config() {
   const baseUrl = process.env.API_BASE_URL || "http://api:7080";
   const token = process.env.API_BOOTSTRAP_TOKEN;
   if (!token) {

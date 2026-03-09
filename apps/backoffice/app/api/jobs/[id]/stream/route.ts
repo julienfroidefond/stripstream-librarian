@@ -1,20 +1,13 @@
 import { NextRequest } from "next/server";
+import { config } from "@/lib/api";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const apiBaseUrl = process.env.API_BASE_URL || "http://api:7080";
-  const apiToken = process.env.API_BOOTSTRAP_TOKEN;
-  
-  if (!apiToken) {
-    return new Response(
-      `data: ${JSON.stringify({ error: "API token not configured" })}\n\n`,
-      { status: 500, headers: { "Content-Type": "text/event-stream" } }
-    );
-  }
-  
+  const { baseUrl, token } = config();
+
   const stream = new ReadableStream({
     async start(controller) {
       // Send initial headers for SSE
@@ -27,10 +20,8 @@ export async function GET(
         if (!isActive) return;
         
         try {
-          const response = await fetch(`${apiBaseUrl}/index/jobs/${id}`, {
-            headers: {
-              Authorization: `Bearer ${apiToken}`,
-            },
+          const response = await fetch(`${baseUrl}/index/jobs/${id}`, {
+            headers: { Authorization: `Bearer ${token}` },
           });
           
           if (response.ok && isActive) {

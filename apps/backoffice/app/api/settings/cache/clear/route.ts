@@ -1,25 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { clearCache } from "@/lib/api";
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
-    const baseUrl = process.env.API_BASE_URL || "http://api:7080";
-    const token = process.env.API_BOOTSTRAP_TOKEN;
-    
-    const response = await fetch(`${baseUrl}/settings/cache/clear`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      cache: "no-store"
-    });
-
-    if (!response.ok) {
-      return NextResponse.json({ error: "Failed to clear cache" }, { status: response.status });
-    }
-
-    const data = await response.json();
+    const data = await clearCache();
     return NextResponse.json(data);
   } catch (error) {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to clear cache" }, { status: 500 });
   }
 }

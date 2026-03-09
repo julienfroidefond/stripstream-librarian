@@ -1,29 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiFetch, updateSetting } from "@/lib/api";
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ key: string }> }
 ) {
+  const { key } = await params;
   try {
-    const { key } = await params;
-    const baseUrl = process.env.API_BASE_URL || "http://api:7080";
-    const token = process.env.API_BOOTSTRAP_TOKEN;
-    
-    const response = await fetch(`${baseUrl}/settings/${key}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      cache: "no-store"
-    });
-
-    if (!response.ok) {
-      return NextResponse.json({ error: "Failed to fetch setting" }, { status: response.status });
-    }
-
-    const data = await response.json();
+    const data = await apiFetch<unknown>(`/settings/${key}`);
     return NextResponse.json(data);
   } catch (error) {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch setting" }, { status: 500 });
   }
 }
 
@@ -31,29 +18,12 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ key: string }> }
 ) {
+  const { key } = await params;
   try {
-    const { key } = await params;
-    const baseUrl = process.env.API_BASE_URL || "http://api:7080";
-    const token = process.env.API_BOOTSTRAP_TOKEN;
-    const body = await request.json();
-    
-    const response = await fetch(`${baseUrl}/settings/${key}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-      cache: "no-store"
-    });
-
-    if (!response.ok) {
-      return NextResponse.json({ error: "Failed to update setting" }, { status: response.status });
-    }
-
-    const data = await response.json();
+    const { value } = await request.json();
+    const data = await updateSetting(key, value);
     return NextResponse.json(data);
   } catch (error) {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to update setting" }, { status: 500 });
   }
 }
