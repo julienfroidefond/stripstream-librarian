@@ -18,6 +18,7 @@ pub struct LibraryResponse {
     pub book_count: i64,
     pub monitor_enabled: bool,
     pub scan_mode: String,
+    #[schema(value_type = Option<String>)]
     pub next_scan_at: Option<chrono::DateTime<chrono::Utc>>,
     pub watcher_enabled: bool,
 }

@@ -6,7 +6,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 use utoipa::ToSchema;
 
-use crate::{error::ApiError, index_jobs, state::AppState};
+use crate::{error::ApiError, index_jobs::{self, IndexJobResponse}, state::AppState};
 
 #[derive(Deserialize, ToSchema)]
 pub struct ThumbnailsRebuildRequest {
@@ -21,7 +21,7 @@ pub struct ThumbnailsRebuildRequest {
     tag = "indexing",
     request_body = Option<ThumbnailsRebuildRequest>,
     responses(
-        (status = 200, body = index_jobs::IndexJobResponse),
+        (status = 200, body = IndexJobResponse),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden - Admin scope required"),
     ),
@@ -55,7 +55,7 @@ pub async fn start_thumbnails_rebuild(
     tag = "indexing",
     request_body = Option<ThumbnailsRebuildRequest>,
     responses(
-        (status = 200, body = index_jobs::IndexJobResponse),
+        (status = 200, body = IndexJobResponse),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden - Admin scope required"),
     ),

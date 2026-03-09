@@ -42,6 +42,7 @@ use utoipa::OpenApi;
             crate::books::BooksPage,
             crate::books::BookDetails,
             crate::books::SeriesItem,
+            crate::books::SeriesPage,
             crate::pages::PageQuery,
             crate::search::SearchQuery,
             crate::search::SearchResponse,
@@ -118,15 +119,24 @@ mod tests {
             .to_pretty_json()
             .expect("Failed to serialize OpenAPI");
 
-        // Check that there are no references to non-existent schemas
-        assert!(
-            !json.contains("\"/components/schemas/Uuid\""),
-            "Uuid schema should not be referenced"
-        );
-        assert!(
-            !json.contains("\"/components/schemas/DateTime\""),
-            "DateTime schema should not be referenced"
-        );
+        // Check that all $ref targets exist in components/schemas
+        let doc: serde_json::Value =
+            serde_json::from_str(&json).expect("OpenAPI JSON should be valid");
+        let empty = serde_json::Map::new();
+        let schemas = doc["components"]["schemas"]
+            .as_object()
+            .unwrap_or(&empty);
+        let prefix = "#/components/schemas/";
+        let mut broken: Vec<String> = Vec::new();
+        for part in json.split(prefix).skip(1) {
+            if let Some(name) = part.split('"').next() {
+                if !schemas.contains_key(name) {
+                    broken.push(name.to_string());
+                }
+            }
+        }
+        broken.dedup();
+        assert!(broken.is_empty(), "Unresolved schema refs: {:?}", broken);
 
         // Save to file for inspection
         std::fs::write("/tmp/openapi.json", &json).expect("Failed to write file");
