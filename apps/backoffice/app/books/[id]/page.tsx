@@ -1,4 +1,5 @@
 import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch } from "../../../lib/api";
+import { BookPreview } from "../../components/BookPreview";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -157,6 +158,12 @@ export default async function BookDetailPage({
           </div>
         </div>
       </div>
+
+      {book.page_count && book.page_count > 0 && (
+        <div className="mt-8">
+          <BookPreview bookId={book.id} pageCount={book.page_count} />
+        </div>
+      )}
     </>
   );
 }
