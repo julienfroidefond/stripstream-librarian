@@ -6,6 +6,7 @@ use utoipa::OpenApi;
     paths(
         crate::books::list_books,
         crate::books::get_book,
+        crate::books::get_thumbnail,
         crate::books::list_series,
         crate::pages::get_page,
         crate::search::search_books,
@@ -27,6 +28,12 @@ use utoipa::OpenApi;
         crate::tokens::list_tokens,
         crate::tokens::create_token,
         crate::tokens::revoke_token,
+        crate::settings::get_settings,
+        crate::settings::get_setting,
+        crate::settings::update_setting,
+        crate::settings::clear_cache,
+        crate::settings::get_cache_stats,
+        crate::settings::get_thumbnail_stats,
     ),
     components(
         schemas(
@@ -51,6 +58,10 @@ use utoipa::OpenApi;
             crate::tokens::CreateTokenRequest,
             crate::tokens::TokenResponse,
             crate::tokens::CreatedTokenResponse,
+            crate::settings::UpdateSettingRequest,
+            crate::settings::ClearCacheResponse,
+            crate::settings::CacheStats,
+            crate::settings::ThumbnailStats,
             ErrorResponse,
         )
     ),
@@ -62,6 +73,7 @@ use utoipa::OpenApi;
         (name = "libraries", description = "Library management endpoints (Admin only)"),
         (name = "indexing", description = "Search index management and job control (Admin only)"),
         (name = "tokens", description = "API token management (Admin only)"),
+        (name = "settings", description = "Application settings and cache management (Admin only)"),
     ),
     modifiers(&SecurityAddon)
 )]

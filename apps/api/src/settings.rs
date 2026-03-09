@@ -6,28 +6,29 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::Row;
+use utoipa::ToSchema;
 
 use crate::{error::ApiError, state::AppState};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UpdateSettingRequest {
     pub value: Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ClearCacheResponse {
     pub success: bool,
     pub message: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CacheStats {
     pub total_size_mb: f64,
     pub file_count: u64,
     pub directory: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ThumbnailStats {
     pub total_size_mb: f64,
     pub file_count: u64,
@@ -43,7 +44,18 @@ pub fn settings_routes() -> Router<AppState> {
         .route("/settings/thumbnail/stats", get(get_thumbnail_stats))
 }
 
-async fn get_settings(State(state): State<AppState>) -> Result<Json<Value>, ApiError> {
+/// List all settings
+#[utoipa::path(
+    get,
+    path = "/settings",
+    tag = "settings",
+    responses(
+        (status = 200, description = "All settings as key/value object"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn get_settings(State(state): State<AppState>) -> Result<Json<Value>, ApiError> {
     let rows = sqlx::query(r#"SELECT key, value FROM app_settings"#)
         .fetch_all(&state.pool)
         .await?;
@@ -58,7 +70,20 @@ async fn get_settings(State(state): State<AppState>) -> Result<Json<Value>, ApiE
     Ok(Json(Value::Object(settings)))
 }
 
-async fn get_setting(
+/// Get a single setting by key
+#[utoipa::path(
+    get,
+    path = "/settings/{key}",
+    tag = "settings",
+    params(("key" = String, Path, description = "Setting key")),
+    responses(
+        (status = 200, description = "Setting value"),
+        (status = 404, description = "Setting not found"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn get_setting(
     State(state): State<AppState>,
     axum::extract::Path(key): axum::extract::Path<String>,
 ) -> Result<Json<Value>, ApiError> {
@@ -76,7 +101,20 @@ async fn get_setting(
     }
 }
 
-async fn update_setting(
+/// Create or update a setting
+#[utoipa::path(
+    post,
+    path = "/settings/{key}",
+    tag = "settings",
+    params(("key" = String, Path, description = "Setting key")),
+    request_body = UpdateSettingRequest,
+    responses(
+        (status = 200, description = "Updated setting value"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn update_setting(
     State(state): State<AppState>,
     axum::extract::Path(key): axum::extract::Path<String>,
     Json(body): Json<UpdateSettingRequest>,
@@ -99,7 +137,18 @@ async fn update_setting(
     Ok(Json(value))
 }
 
-async fn clear_cache(State(_state): State<AppState>) -> Result<Json<ClearCacheResponse>, ApiError> {
+/// Clear the image page cache
+#[utoipa::path(
+    post,
+    path = "/settings/cache/clear",
+    tag = "settings",
+    responses(
+        (status = 200, body = ClearCacheResponse),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn clear_cache(State(_state): State<AppState>) -> Result<Json<ClearCacheResponse>, ApiError> {
     let cache_dir = std::env::var("IMAGE_CACHE_DIR")
         .unwrap_or_else(|_| "/tmp/stripstream-image-cache".to_string());
 
@@ -128,7 +177,18 @@ async fn clear_cache(State(_state): State<AppState>) -> Result<Json<ClearCacheRe
     Ok(Json(result))
 }
 
-async fn get_cache_stats(State(_state): State<AppState>) -> Result<Json<CacheStats>, ApiError> {
+/// Get image page cache statistics
+#[utoipa::path(
+    get,
+    path = "/settings/cache/stats",
+    tag = "settings",
+    responses(
+        (status = 200, body = CacheStats),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn get_cache_stats(State(_state): State<AppState>) -> Result<Json<CacheStats>, ApiError> {
     let cache_dir = std::env::var("IMAGE_CACHE_DIR")
         .unwrap_or_else(|_| "/tmp/stripstream-image-cache".to_string());
 
@@ -208,7 +268,18 @@ fn compute_dir_stats(path: &std::path::Path) -> (u64, u64) {
     (total_size, file_count)
 }
 
-async fn get_thumbnail_stats(State(_state): State<AppState>) -> Result<Json<ThumbnailStats>, ApiError> {
+/// Get thumbnail storage statistics
+#[utoipa::path(
+    get,
+    path = "/settings/thumbnail/stats",
+    tag = "settings",
+    responses(
+        (status = 200, body = ThumbnailStats),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn get_thumbnail_stats(State(_state): State<AppState>) -> Result<Json<ThumbnailStats>, ApiError> {
     let settings = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'thumbnail'"#)
         .fetch_optional(&_state.pool)
         .await?;

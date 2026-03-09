@@ -347,6 +347,21 @@ use axum::{
     response::IntoResponse,
 };
 
+/// Get book thumbnail image
+#[utoipa::path(
+    get,
+    path = "/books/{id}/thumbnail",
+    tag = "books",
+    params(
+        ("id" = String, Path, description = "Book UUID"),
+    ),
+    responses(
+        (status = 200, description = "WebP thumbnail image", content_type = "image/webp"),
+        (status = 404, description = "Book not found or thumbnail not available"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
 pub async fn get_thumbnail(
     State(state): State<AppState>,
     Path(book_id): Path<Uuid>,
