@@ -6,7 +6,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 use utoipa::ToSchema;
 
-use crate::{error::ApiError, index_jobs::{self, IndexJobResponse}, state::AppState};
+use crate::{error::ApiError, index_jobs, state::AppState};
 
 #[derive(Deserialize, ToSchema)]
 pub struct ThumbnailsRebuildRequest {

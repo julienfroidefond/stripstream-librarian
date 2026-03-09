@@ -8,7 +8,7 @@ use serde_json::Value;
 use sqlx::Row;
 use utoipa::ToSchema;
 
-use crate::{error::ApiError, state::AppState};
+use crate::{error::ApiError, state::{AppState, load_dynamic_settings}};
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UpdateSettingRequest {
@@ -134,6 +134,13 @@ pub async fn update_setting(
     .await?;
 
     let value: Value = row.get("value");
+
+    // Rechargement des settings dynamiques si la clé affecte le comportement runtime
+    if key == "limits" || key == "image_processing" || key == "cache" {
+        let new_settings = load_dynamic_settings(&state.pool).await;
+        *state.settings.write().await = new_settings;
+    }
+
     Ok(Json(value))
 }
 
@@ -148,9 +155,8 @@ pub async fn update_setting(
     ),
     security(("Bearer" = []))
 )]
-pub async fn clear_cache(State(_state): State<AppState>) -> Result<Json<ClearCacheResponse>, ApiError> {
-    let cache_dir = std::env::var("IMAGE_CACHE_DIR")
-        .unwrap_or_else(|_| "/tmp/stripstream-image-cache".to_string());
+pub async fn clear_cache(State(state): State<AppState>) -> Result<Json<ClearCacheResponse>, ApiError> {
+    let cache_dir = state.settings.read().await.cache_directory.clone();
 
     let result = tokio::task::spawn_blocking(move || {
         if std::path::Path::new(&cache_dir).exists() {
@@ -188,9 +194,8 @@ pub async fn clear_cache(State(_state): State<AppState>) -> Result<Json<ClearCac
     ),
     security(("Bearer" = []))
 )]
-pub async fn get_cache_stats(State(_state): State<AppState>) -> Result<Json<CacheStats>, ApiError> {
-    let cache_dir = std::env::var("IMAGE_CACHE_DIR")
-        .unwrap_or_else(|_| "/tmp/stripstream-image-cache".to_string());
+pub async fn get_cache_stats(State(state): State<AppState>) -> Result<Json<CacheStats>, ApiError> {
+    let cache_dir = state.settings.read().await.cache_directory.clone();
 
     let cache_dir_clone = cache_dir.clone();
     let stats = tokio::task::spawn_blocking(move || {

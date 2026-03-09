@@ -28,7 +28,8 @@ pub async fn read_rate_limit(
         limiter.requests_in_window = 0;
     }
 
-    if limiter.requests_in_window >= 120 {
+    let rate_limit = state.settings.read().await.rate_limit_per_second;
+    if limiter.requests_in_window >= rate_limit {
         return (
             axum::http::StatusCode::TOO_MANY_REQUESTS,
             "rate limit exceeded",

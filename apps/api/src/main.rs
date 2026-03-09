@@ -27,10 +27,10 @@ use lru::LruCache;
 use std::num::NonZeroUsize;
 use stripstream_core::config::ApiConfig;
 use sqlx::postgres::PgPoolOptions;
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::{Mutex, RwLock, Semaphore};
 use tracing::info;
 
-use crate::state::{load_concurrent_renders, AppState, Metrics, ReadRateLimit};
+use crate::state::{load_concurrent_renders, load_dynamic_settings, AppState, Metrics, ReadRateLimit};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -50,6 +50,18 @@ async fn main() -> anyhow::Result<()> {
     let concurrent_renders = load_concurrent_renders(&pool).await;
     info!("Using concurrent_renders limit: {}", concurrent_renders);
 
+    let dynamic_settings = load_dynamic_settings(&pool).await;
+    info!(
+        "Dynamic settings: rate_limit={}, timeout={}s, format={}, quality={}, filter={}, max_width={}, cache_dir={}",
+        dynamic_settings.rate_limit_per_second,
+        dynamic_settings.timeout_seconds,
+        dynamic_settings.image_format,
+        dynamic_settings.image_quality,
+        dynamic_settings.image_filter,
+        dynamic_settings.image_max_width,
+        dynamic_settings.cache_directory,
+    );
+
     let state = AppState {
         pool,
         bootstrap_token: Arc::from(config.api_bootstrap_token),
@@ -62,6 +74,7 @@ async fn main() -> anyhow::Result<()> {
             window_started_at: Instant::now(),
             requests_in_window: 0,
         })),
+        settings: Arc::new(RwLock::new(dynamic_settings)),
     };
 
     let admin_routes = Router::new()

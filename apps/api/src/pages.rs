@@ -31,10 +31,12 @@ fn remap_libraries_path(path: &str) -> String {
     path.to_string()
 }
 
-fn get_image_cache_dir() -> PathBuf {
-    std::env::var("IMAGE_CACHE_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/tmp/stripstream-image-cache"))
+fn parse_filter(s: &str) -> image::imageops::FilterType {
+    match s {
+        "triangle" => image::imageops::FilterType::Triangle,
+        "nearest" => image::imageops::FilterType::Nearest,
+        _ => image::imageops::FilterType::Lanczos3,
+    }
 }
 
 fn get_cache_key(abs_path: &str, page: u32, format: &str, quality: u8, width: u32) -> String {
@@ -47,8 +49,7 @@ fn get_cache_key(abs_path: &str, page: u32, format: &str, quality: u8, width: u3
     format!("{:x}", hasher.finalize())
 }
 
-fn get_cache_path(cache_key: &str, format: &OutputFormat) -> PathBuf {
-    let cache_dir = get_image_cache_dir();
+fn get_cache_path(cache_key: &str, format: &OutputFormat, cache_dir: &Path) -> PathBuf {
     let prefix = &cache_key[..2];
     let ext = format.extension();
     cache_dir.join(prefix).join(format!("{}.{}", cache_key, ext))
@@ -145,13 +146,21 @@ pub async fn get_page(
         return Err(ApiError::bad_request("page index starts at 1"));
     }
 
-    let format = OutputFormat::parse(query.format.as_deref())?;
-    let quality = query.quality.unwrap_or(80).clamp(1, 100);
+    let (default_format, default_quality, max_width, filter_str, timeout_secs, cache_dir) = {
+        let s = state.settings.read().await;
+        (s.image_format.clone(), s.image_quality, s.image_max_width, s.image_filter.clone(), s.timeout_seconds, s.cache_directory.clone())
+    };
+
+    let format_str = query.format.as_deref().unwrap_or(default_format.as_str());
+    let format = OutputFormat::parse(Some(format_str))?;
+    let quality = query.quality.unwrap_or(default_quality).clamp(1, 100);
     let width = query.width.unwrap_or(0);
-    if width > 2160 {
+    if width > max_width {
         warn!("Invalid width: {}", width);
-        return Err(ApiError::bad_request("width must be <= 2160"));
+        return Err(ApiError::bad_request(format!("width must be <= {}", max_width)));
     }
+    let filter = parse_filter(&filter_str);
+    let cache_dir_path = std::path::PathBuf::from(&cache_dir);
 
     let memory_cache_key = format!("{book_id}:{n}:{}:{quality}:{width}", format.extension());
     
@@ -195,7 +204,7 @@ pub async fn get_page(
     info!("Processing book file: {} (format: {})", abs_path, input_format);
 
     let disk_cache_key = get_cache_key(&abs_path, n, format.extension(), quality, width);
-    let cache_path = get_cache_path(&disk_cache_key, &format);
+    let cache_path = get_cache_path(&disk_cache_key, &format, &cache_dir_path);
     
     if let Some(cached_bytes) = read_from_disk_cache(&cache_path) {
         info!("Disk cache hit for: {}", cache_path.display());
@@ -221,9 +230,9 @@ pub async fn get_page(
     let start_time = std::time::Instant::now();
     
     let bytes = tokio::time::timeout(
-        Duration::from_secs(60),
+        Duration::from_secs(timeout_secs),
         tokio::task::spawn_blocking(move || {
-            render_page(&abs_path_clone, &input_format, n, &format_clone, quality, width)
+            render_page(&abs_path_clone, &input_format, n, &format_clone, quality, width, filter)
         }),
     )
     .await
@@ -306,9 +315,15 @@ pub async fn render_book_page_1(
         .await
         .map_err(|_| ApiError::internal("render limiter unavailable"))?;
 
+    let (timeout_secs, filter_str) = {
+        let s = state.settings.read().await;
+        (s.timeout_seconds, s.image_filter.clone())
+    };
+    let filter = parse_filter(&filter_str);
+
     let abs_path_clone = abs_path.clone();
     let bytes = tokio::time::timeout(
-        Duration::from_secs(60),
+        Duration::from_secs(timeout_secs),
         tokio::task::spawn_blocking(move || {
             render_page(
                 &abs_path_clone,
@@ -317,6 +332,7 @@ pub async fn render_book_page_1(
                 &OutputFormat::Webp,
                 quality,
                 width,
+                filter,
             )
         }),
     )
@@ -334,6 +350,7 @@ fn render_page(
     out_format: &OutputFormat,
     quality: u8,
     width: u32,
+    filter: image::imageops::FilterType,
 ) -> Result<Vec<u8>, ApiError> {
     let page_bytes = match input_format {
         "cbz" => extract_cbz_page(abs_path, page_number)?,
@@ -342,7 +359,7 @@ fn render_page(
         _ => return Err(ApiError::bad_request("unsupported source format")),
     };
 
-    transcode_image(&page_bytes, out_format, quality, width)
+    transcode_image(&page_bytes, out_format, quality, width, filter)
 }
 
 fn extract_cbz_page(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiError> {
@@ -495,12 +512,12 @@ fn render_pdf_page(abs_path: &str, page_number: u32, width: u32) -> Result<Vec<u
     Ok(bytes)
 }
 
-fn transcode_image(input: &[u8], out_format: &OutputFormat, quality: u8, width: u32) -> Result<Vec<u8>, ApiError> {
+fn transcode_image(input: &[u8], out_format: &OutputFormat, quality: u8, width: u32, filter: image::imageops::FilterType) -> Result<Vec<u8>, ApiError> {
     debug!("Transcoding image: {} bytes, format: {:?}, quality: {}, width: {}", input.len(), out_format, quality, width);
     let source_format = image::guess_format(input).ok();
     debug!("Source format detected: {:?}", source_format);
     let needs_transcode = source_format.map(|f| !format_matches(&f, out_format)).unwrap_or(true);
-    
+
     if width == 0 && !needs_transcode {
         debug!("No transcoding needed, returning original");
         return Ok(input.to_vec());
@@ -511,10 +528,10 @@ fn transcode_image(input: &[u8], out_format: &OutputFormat, quality: u8, width: 
         error!("Failed to load image from memory: {} (input size: {} bytes)", e, input.len());
         ApiError::internal(format!("invalid source image: {e}"))
     })?;
-    
+
     if width > 0 {
         debug!("Resizing image to width: {}", width);
-        image = image.resize(width, u32::MAX, image::imageops::FilterType::Lanczos3);
+        image = image.resize(width, u32::MAX, filter);
     }
 
     debug!("Converting to RGBA...");
