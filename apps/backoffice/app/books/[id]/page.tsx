@@ -1,5 +1,6 @@
 import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch } from "../../../lib/api";
 import { BookPreview } from "../../components/BookPreview";
+import { ConvertButton } from "../../components/ConvertButton";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -115,7 +116,10 @@ export default async function BookDetailPage({
               {book.file_format && (
                 <div className="flex items-center justify-between py-2 border-b border-border">
                   <span className="text-sm text-muted-foreground">File Format:</span>
-                  <span className="text-sm text-foreground">{book.file_format.toUpperCase()}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-foreground">{book.file_format.toUpperCase()}</span>
+                    {book.file_format === "cbr" && <ConvertButton bookId={book.id} />}
+                  </div>
                 </div>
               )}
 

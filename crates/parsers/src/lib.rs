@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use std::io::Read;
-use std::path::Path;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 use uuid::Uuid;
@@ -443,6 +443,141 @@ fn extract_pdf_first_page(path: &Path) -> Result<Vec<u8>> {
     let data = std::fs::read(&image_path)?;
     let _ = std::fs::remove_dir_all(&tmp_dir);
     Ok(data)
+}
+
+/// Convert a CBR file to CBZ in-place (same directory, same stem).
+///
+/// The conversion is safe: a `.cbz.tmp` file is written first, verified, then
+/// atomically renamed to `.cbz`. The original CBR is **not** deleted by this
+/// function — the caller is responsible for removing it after a successful DB
+/// update.
+///
+/// Returns the path of the newly created `.cbz` file.
+///
+/// # Errors
+/// - Returns an error if a `.cbz` file with the same stem already exists.
+/// - Returns an error if extraction, packing, or verification fails.
+/// - Returns an error if `cbr_path` has no parent directory or no file stem.
+pub fn convert_cbr_to_cbz(cbr_path: &Path) -> Result<PathBuf> {
+    let parent = cbr_path
+        .parent()
+        .with_context(|| format!("no parent directory for {}", cbr_path.display()))?;
+    let stem = cbr_path
+        .file_stem()
+        .with_context(|| format!("no file stem for {}", cbr_path.display()))?;
+
+    let cbz_path = parent.join(format!("{}.cbz", stem.to_string_lossy()));
+    let tmp_path = parent.join(format!("{}.cbz.tmp", stem.to_string_lossy()));
+
+    // Refuse if target CBZ already exists
+    if cbz_path.exists() {
+        return Err(anyhow::anyhow!(
+            "CBZ file already exists: {}",
+            cbz_path.display()
+        ));
+    }
+
+    // Extract CBR to a temp dir
+    let tmp_dir =
+        std::env::temp_dir().join(format!("stripstream-cbr-convert-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&tmp_dir).context("cannot create temp dir")?;
+
+    let output = std::process::Command::new("env")
+        .args(["LC_ALL=en_US.UTF-8", "LANG=en_US.UTF-8", "unar", "-o"])
+        .arg(&tmp_dir)
+        .arg(cbr_path)
+        .output()
+        .context("unar failed to start")?;
+
+    if !output.status.success() {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err(anyhow::anyhow!(
+            "unar extraction failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    // Collect and sort image files
+    let mut image_files: Vec<_> = WalkDir::new(&tmp_dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().to_lowercase();
+            is_image_name(&name)
+        })
+        .collect();
+    image_files.sort_by_key(|e| e.path().to_string_lossy().to_lowercase());
+
+    let image_count = image_files.len();
+    if image_count == 0 {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err(anyhow::anyhow!(
+            "no images found in CBR: {}",
+            cbr_path.display()
+        ));
+    }
+
+    // Pack images into the .cbz.tmp file
+    let pack_result = (|| -> Result<()> {
+        let cbz_file = std::fs::File::create(&tmp_path)
+            .with_context(|| format!("cannot create {}", tmp_path.display()))?;
+        let mut zip = zip::ZipWriter::new(cbz_file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        for entry in &image_files {
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            zip.start_file(&file_name, options)
+                .with_context(|| format!("cannot add file {} to zip", file_name))?;
+            let data = std::fs::read(entry.path())
+                .with_context(|| format!("cannot read {}", entry.path().display()))?;
+            zip.write_all(&data)
+                .with_context(|| format!("cannot write {} to zip", file_name))?;
+        }
+        zip.finish().context("cannot finalize zip")?;
+        Ok(())
+    })();
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+
+    if let Err(err) = pack_result {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(err);
+    }
+
+    // Verify the CBZ contains the expected number of images
+    let verify_result = (|| -> Result<()> {
+        let file = std::fs::File::open(&tmp_path)
+            .with_context(|| format!("cannot open {}", tmp_path.display()))?;
+        let archive = zip::ZipArchive::new(file).context("invalid zip archive")?;
+        let packed_count = (0..archive.len())
+            .filter(|&i| {
+                archive
+                    .name_for_index(i)
+                    .map(|n| is_image_name(&n.to_ascii_lowercase()))
+                    .unwrap_or(false)
+            })
+            .count();
+        if packed_count != image_count {
+            return Err(anyhow::anyhow!(
+                "CBZ verification failed: expected {} images, found {}",
+                image_count,
+                packed_count
+            ));
+        }
+        Ok(())
+    })();
+
+    if let Err(err) = verify_result {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(err);
+    }
+
+    // Atomic rename .cbz.tmp → .cbz
+    std::fs::rename(&tmp_path, &cbz_path)
+        .with_context(|| format!("cannot rename {} to {}", tmp_path.display(), cbz_path.display()))?;
+
+    Ok(cbz_path)
 }
 
 #[allow(dead_code)]

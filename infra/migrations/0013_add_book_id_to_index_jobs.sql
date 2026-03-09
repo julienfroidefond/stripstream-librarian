@@ -1,0 +1,2 @@
+ALTER TABLE index_jobs
+    ADD COLUMN book_id UUID NULL REFERENCES books(id) ON DELETE SET NULL;

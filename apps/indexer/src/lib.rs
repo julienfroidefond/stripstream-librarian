@@ -1,6 +1,7 @@
 pub mod analyzer;
 pub mod api;
 pub mod batch;
+pub mod converter;
 pub mod job;
 pub mod meili;
 pub mod scheduler;

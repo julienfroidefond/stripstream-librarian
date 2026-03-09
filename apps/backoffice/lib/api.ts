@@ -13,6 +13,7 @@ export type LibraryDto = {
 export type IndexJobDto = {
   id: string;
   library_id: string | null;
+  book_id: string | null;
   type: string;
   status: string;
   started_at: string | null;
@@ -347,4 +348,8 @@ export async function clearCache() {
 
 export async function getThumbnailStats() {
   return apiFetch<ThumbnailStats>("/settings/thumbnail/stats");
+}
+
+export async function convertBook(bookId: string) {
+  return apiFetch<IndexJobDto>(`/books/${bookId}/convert`, { method: "POST" });
 }

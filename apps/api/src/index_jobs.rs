@@ -24,6 +24,8 @@ pub struct IndexJobResponse {
     pub id: Uuid,
     #[schema(value_type = Option<String>)]
     pub library_id: Option<Uuid>,
+    #[schema(value_type = Option<String>)]
+    pub book_id: Option<Uuid>,
     pub r#type: String,
     pub status: String,
     #[schema(value_type = Option<String>)]
@@ -122,7 +124,7 @@ pub async fn enqueue_rebuild(
     .await?;
 
     let row = sqlx::query(
-        "SELECT id, library_id, type, status, started_at, finished_at, stats_json, error_opt, created_at FROM index_jobs WHERE id = $1",
+        "SELECT id, library_id, book_id, type, status, started_at, finished_at, stats_json, error_opt, created_at FROM index_jobs WHERE id = $1",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -145,7 +147,7 @@ pub async fn enqueue_rebuild(
 )]
 pub async fn list_index_jobs(State(state): State<AppState>) -> Result<Json<Vec<IndexJobResponse>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT id, library_id, type, status, started_at, finished_at, stats_json, error_opt, created_at, progress_percent, processed_files, total_files FROM index_jobs ORDER BY created_at DESC LIMIT 100",
+        "SELECT id, library_id, book_id, type, status, started_at, finished_at, stats_json, error_opt, created_at, progress_percent, processed_files, total_files FROM index_jobs ORDER BY created_at DESC LIMIT 100",
     )
     .fetch_all(&state.pool)
     .await?;
@@ -185,7 +187,7 @@ pub async fn cancel_job(
     }
 
     let row = sqlx::query(
-        "SELECT id, library_id, type, status, started_at, finished_at, stats_json, error_opt, created_at, progress_percent, processed_files, total_files FROM index_jobs WHERE id = $1",
+        "SELECT id, library_id, book_id, type, status, started_at, finished_at, stats_json, error_opt, created_at, progress_percent, processed_files, total_files FROM index_jobs WHERE id = $1",
     )
     .bind(id.0)
     .fetch_one(&state.pool)
@@ -294,6 +296,7 @@ pub fn map_row(row: sqlx::postgres::PgRow) -> IndexJobResponse {
     IndexJobResponse {
         id: row.get("id"),
         library_id: row.get("library_id"),
+        book_id: row.try_get("book_id").ok().flatten(),
         r#type: row.get("type"),
         status: row.get("status"),
         started_at: row.get("started_at"),
@@ -339,9 +342,9 @@ fn map_row_detail(row: sqlx::postgres::PgRow) -> IndexJobDetailResponse {
 )]
 pub async fn get_active_jobs(State(state): State<AppState>) -> Result<Json<Vec<IndexJobResponse>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT id, library_id, type, status, started_at, finished_at, stats_json, error_opt, created_at, progress_percent, processed_files, total_files
-         FROM index_jobs 
-         WHERE status IN ('pending', 'running', 'generating_thumbnails') 
+        "SELECT id, library_id, book_id, type, status, started_at, finished_at, stats_json, error_opt, created_at, progress_percent, processed_files, total_files
+         FROM index_jobs
+         WHERE status IN ('pending', 'running', 'generating_thumbnails')
          ORDER BY created_at ASC"
     )
     .fetch_all(&state.pool)

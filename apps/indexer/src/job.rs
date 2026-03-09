@@ -4,7 +4,7 @@ use sqlx::{PgPool, Row};
 use tracing::{error, info};
 use uuid::Uuid;
 
-use crate::{analyzer, meili, scanner, AppState};
+use crate::{analyzer, converter, meili, scanner, AppState};
 
 pub async fn cleanup_stale_jobs(pool: &PgPool) -> Result<()> {
     let result = sqlx::query(
@@ -137,10 +137,22 @@ pub async fn process_job(
 ) -> Result<()> {
     info!("[JOB] Processing {} library={:?}", job_id, target_library_id);
 
-    let job_type: String = sqlx::query_scalar("SELECT type FROM index_jobs WHERE id = $1")
-        .bind(job_id)
-        .fetch_one(&state.pool)
-        .await?;
+    let (job_type, book_id): (String, Option<Uuid>) = {
+        let row = sqlx::query("SELECT type, book_id FROM index_jobs WHERE id = $1")
+            .bind(job_id)
+            .fetch_one(&state.pool)
+            .await?;
+        (row.get("type"), row.get("book_id"))
+    };
+
+    // CBR to CBZ conversion
+    if job_type == "cbr_to_cbz" {
+        let book_id = book_id.ok_or_else(|| {
+            anyhow::anyhow!("cbr_to_cbz job {} has no book_id", job_id)
+        })?;
+        converter::convert_book(state, job_id, book_id).await?;
+        return Ok(());
+    }
 
     // Thumbnail rebuild: generate thumbnails for books missing them
     if job_type == "thumbnail_rebuild" {

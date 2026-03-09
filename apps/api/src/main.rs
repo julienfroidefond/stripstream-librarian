@@ -69,6 +69,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/libraries/:id", delete(libraries::delete_library))
         .route("/libraries/:id/scan", axum::routing::post(libraries::scan_library))
         .route("/libraries/:id/monitoring", axum::routing::patch(libraries::update_monitoring))
+        .route("/books/:id/convert", axum::routing::post(books::convert_book))
         .route("/index/rebuild", axum::routing::post(index_jobs::enqueue_rebuild))
         .route("/index/thumbnails/rebuild", axum::routing::post(thumbnails::start_thumbnails_rebuild))
         .route("/index/thumbnails/regenerate", axum::routing::post(thumbnails::start_thumbnails_regenerate))

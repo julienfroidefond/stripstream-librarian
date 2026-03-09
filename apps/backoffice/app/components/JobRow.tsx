@@ -93,7 +93,9 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
         <td className="px-4 py-3 text-sm text-foreground">
           {job.library_id ? libraryName || job.library_id.slice(0, 8) : "—"}
         </td>
-        <td className="px-4 py-3 text-sm text-foreground">{job.type}</td>
+        <td className="px-4 py-3 text-sm text-foreground">
+          {job.type === "cbr_to_cbz" ? "CBR → CBZ" : job.type}
+        </td>
         <td className="px-4 py-3">
           <div className="flex items-center gap-2 flex-wrap">
             <StatusBadge status={job.status} />

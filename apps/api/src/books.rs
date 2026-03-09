@@ -5,7 +5,7 @@ use sqlx::Row;
 use uuid::Uuid;
 use utoipa::ToSchema;
 
-use crate::{error::ApiError, state::AppState};
+use crate::{error::ApiError, index_jobs::IndexJobResponse, state::AppState};
 
 #[derive(Deserialize, ToSchema)]
 pub struct ListBooksQuery {
@@ -339,6 +339,113 @@ pub async fn list_series(
         items: std::mem::take(&mut items),
         next_cursor,
     }))
+}
+
+fn remap_libraries_path(path: &str) -> String {
+    if let Ok(root) = std::env::var("LIBRARIES_ROOT_PATH") {
+        if path.starts_with("/libraries/") {
+            return path.replacen("/libraries", &root, 1);
+        }
+    }
+    path.to_string()
+}
+
+fn unmap_libraries_path(path: &str) -> String {
+    if let Ok(root) = std::env::var("LIBRARIES_ROOT_PATH") {
+        if path.starts_with(&root) {
+            return path.replacen(&root, "/libraries", 1);
+        }
+    }
+    path.to_string()
+}
+
+/// Enqueue a CBR → CBZ conversion job for a single book
+#[utoipa::path(
+    post,
+    path = "/books/{id}/convert",
+    tag = "books",
+    params(
+        ("id" = String, Path, description = "Book UUID"),
+    ),
+    responses(
+        (status = 200, body = IndexJobResponse),
+        (status = 404, description = "Book not found"),
+        (status = 409, description = "Book is not CBR, or target CBZ already exists"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn convert_book(
+    State(state): State<AppState>,
+    Path(book_id): Path<Uuid>,
+) -> Result<Json<IndexJobResponse>, ApiError> {
+    // Fetch book file info
+    let row = sqlx::query(
+        r#"
+        SELECT b.id, bf.abs_path, bf.format
+        FROM books b
+        LEFT JOIN LATERAL (
+            SELECT abs_path, format
+            FROM book_files
+            WHERE book_id = b.id
+            ORDER BY updated_at DESC
+            LIMIT 1
+        ) bf ON TRUE
+        WHERE b.id = $1
+        "#,
+    )
+    .bind(book_id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let row = row.ok_or_else(|| ApiError::not_found("book not found"))?;
+    let abs_path: Option<String> = row.get("abs_path");
+    let format: Option<String> = row.get("format");
+
+    if format.as_deref() != Some("cbr") {
+        return Err(ApiError {
+            status: axum::http::StatusCode::CONFLICT,
+            message: "book is not in CBR format".to_string(),
+        });
+    }
+
+    let abs_path = abs_path.ok_or_else(|| ApiError::not_found("book file path not found"))?;
+
+    // Check for existing CBZ with same stem
+    let physical_path = remap_libraries_path(&abs_path);
+    let cbr_path = std::path::Path::new(&physical_path);
+    if let (Some(parent), Some(stem)) = (cbr_path.parent(), cbr_path.file_stem()) {
+        let cbz_path = parent.join(format!("{}.cbz", stem.to_string_lossy()));
+        if cbz_path.exists() {
+            return Err(ApiError {
+                status: axum::http::StatusCode::CONFLICT,
+                message: format!(
+                    "CBZ file already exists: {}",
+                    unmap_libraries_path(&cbz_path.to_string_lossy())
+                ),
+            });
+        }
+    }
+
+    // Create the conversion job
+    let job_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO index_jobs (id, book_id, type, status) VALUES ($1, $2, 'cbr_to_cbz', 'pending')",
+    )
+    .bind(job_id)
+    .bind(book_id)
+    .execute(&state.pool)
+    .await?;
+
+    let job_row = sqlx::query(
+        "SELECT id, library_id, book_id, type, status, started_at, finished_at, stats_json, error_opt, created_at, progress_percent, processed_files, total_files FROM index_jobs WHERE id = $1",
+    )
+    .bind(job_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(crate::index_jobs::map_row(job_row)))
 }
 
 use axum::{

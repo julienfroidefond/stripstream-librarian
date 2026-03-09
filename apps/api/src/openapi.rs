@@ -8,6 +8,7 @@ use utoipa::OpenApi;
         crate::books::get_book,
         crate::books::get_thumbnail,
         crate::books::list_series,
+        crate::books::convert_book,
         crate::pages::get_page,
         crate::search::search_books,
         crate::index_jobs::enqueue_rebuild,
