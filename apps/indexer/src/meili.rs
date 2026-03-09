@@ -100,7 +100,7 @@ pub async fn sync_meili(pool: &PgPool, meili_url: &str, meili_master_key: &str) 
     const MEILI_BATCH_SIZE: usize = 1000;
     for (i, chunk) in docs.chunks(MEILI_BATCH_SIZE).enumerate() {
         let batch_num = i + 1;
-        info!("[MEILI] Sending batch {}/{} ({} docs)", batch_num, (doc_count + MEILI_BATCH_SIZE - 1) / MEILI_BATCH_SIZE, chunk.len());
+        info!("[MEILI] Sending batch {}/{} ({} docs)", batch_num, doc_count.div_ceil(MEILI_BATCH_SIZE), chunk.len());
         
         let response = client
             .post(format!("{base}/indexes/books/documents"))

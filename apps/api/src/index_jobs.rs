@@ -247,7 +247,7 @@ pub async fn list_folders(
     }
     
     let mut folders = Vec::new();
-    let depth = if params.get("path").is_some() {
+    let depth = if params.contains_key("path") {
         canonical_target.strip_prefix(&canonical_base)
             .map(|p| p.components().count())
             .unwrap_or(0)

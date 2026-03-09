@@ -7,15 +7,16 @@ Service background sur le port **7081**. Voir `AGENTS.md` racine pour les conven
 | Fichier | Rôle |
 |---------|------|
 | `main.rs` | Point d'entrée, initialisation, lancement du worker |
-| `lib.rs` | `AppState` (pool, meili, api_base_url) |
+| `lib.rs` | `AppState` (pool, meili_url, meili_master_key) |
 | `worker.rs` | Boucle principale : claim job → process → cleanup stale |
 | `job.rs` | `claim_next_job`, `process_job`, `fail_job`, `cleanup_stale_jobs` |
-| `scanner.rs` | Scan filesystem, parsing parallèle (rayon), batching DB |
+| `scanner.rs` | Phase 1 discovery : WalkDir + `parse_metadata_fast` (zéro I/O archive), skip dossiers inchangés via mtime, batching DB |
+| `analyzer.rs` | Phase 2 analysis : ouvre chaque archive une fois (`analyze_book`), génère page_count + thumbnail WebP |
 | `batch.rs` | `flush_all_batches` avec UNNEST, structures `BookInsert/Update/FileInsert/Update/ErrorInsert` |
 | `scheduler.rs` | Auto-scan : vérifie toutes les 60s les bibliothèques à monitorer |
 | `watcher.rs` | File watcher temps réel |
 | `meili.rs` | Indexation/sync Meilisearch |
-| `api.rs` | Appels HTTP vers l'API (pour checkup thumbnails) |
+| `api.rs` | Endpoints HTTP de l'indexer (/health, /ready) |
 | `utils.rs` | `remap_libraries_path`, `unmap_libraries_path`, `compute_fingerprint`, `kind_from_format` |
 
 ## Cycle de vie d'un job
@@ -23,10 +24,21 @@ Service background sur le port **7081**. Voir `AGENTS.md` racine pour les conven
 ```
 claim_next_job (UPDATE ... RETURNING, status pending→running)
   └─ process_job
-       ├─ scanner::scan_library  (rayon par_iter pour le parsing)
-       │    └─ flush_all_batches toutes les BATCH_SIZE=100 itérations
-       └─ meili sync
-            └─ api checkup thumbnails (POST /index/jobs/:id/thumbnails/checkup)
+       ├─ Phase 1 : scanner::scan_library_discovery
+       │    ├─ WalkDir + parse_metadata_fast (zéro I/O archive)
+       │    ├─ skip dossiers via directory_mtimes (table DB)
+       │    └─ INSERT books (page_count=NULL) → livres visibles immédiatement
+       ├─ meili::sync_meili
+       ├─ analyzer::cleanup_orphaned_thumbnails (full_rebuild uniquement)
+       └─ Phase 2 : analyzer::analyze_library_books
+            ├─ SELECT books WHERE page_count IS NULL
+            ├─ parsers::analyze_book → (page_count, first_page_bytes)
+            ├─ generate_thumbnail (WebP, Lanczos3)
+            └─ UPDATE books SET page_count, thumbnail_path
+
+Jobs spéciaux :
+  thumbnail_rebuild   → analyze_library_books(thumbnail_only=true)
+  thumbnail_regenerate → regenerate_thumbnails (clear + re-analyze)
 ```
 
 - Annulation : `is_job_cancelled` vérifié toutes les 10 fichiers ou 1s — retourne `Err("Job cancelled")`
@@ -49,14 +61,28 @@ if books_to_insert.len() >= BATCH_SIZE {
 
 Toutes les opérations du flush sont dans une seule transaction.
 
-## Scan filesystem (scanner.rs)
+## Scan filesystem — architecture 2 phases
 
-Pipeline en 3 étapes :
-1. **Collect** : WalkDir → filtrer par format (CBZ/CBR/PDF)
-2. **Parse** : `file_infos.into_par_iter().map(parse_metadata)` (rayon)
-3. **Process** : séquentiel pour les inserts/updates DB
+### Phase 1 : Discovery (`scanner.rs`)
 
-Fingerprint = SHA256(taille + mtime) pour détecter les changements sans relire le fichier.
+Pipeline allégé — **zéro ouverture d'archive** :
+1. Charger `directory_mtimes` depuis la DB
+2. WalkDir : pour chaque dossier, comparer mtime filesystem vs mtime stocké → skip si inchangé
+3. Pour chaque fichier : `parse_metadata_fast` (title/series/volume depuis filename uniquement)
+4. INSERT/UPDATE avec `page_count = NULL` — les livres sont visibles immédiatement
+5. Upsert `directory_mtimes` en fin de scan
+
+Fingerprint = SHA256(taille + mtime + filename) pour détecter les changements sans relire le fichier.
+
+### Phase 2 : Analysis (`analyzer.rs`)
+
+Traitement progressif en background :
+- Query `WHERE page_count IS NULL` (ou `thumbnail_path IS NULL` pour thumbnail jobs)
+- Concurrence bornée (`futures::stream::for_each_concurrent`, défaut 4)
+- Par livre : `parsers::analyze_book(path, format)` → `(page_count, first_page_bytes)`
+- Génération thumbnail : resize Lanczos3 + encode WebP
+- UPDATE `books SET page_count, thumbnail_path`
+- Config lue depuis `app_settings` (clés `'thumbnail'` et `'limits'`)
 
 ## Path remapping
 
@@ -69,7 +95,10 @@ utils::unmap_libraries_path(&local_path) // filesystem local → DB
 
 ## Gotchas
 
-- **Thumbnails** : générés par l'API après handoff, pas par l'indexer directement. L'indexer appelle `/index/jobs/:id/thumbnails/checkup` via `api.rs`.
-- **full_rebuild** : si `true`, ignore les fingerprints → tous les fichiers sont retraités.
+- **Thumbnails** : générés **directement par l'indexer** (phase 2, `analyzer.rs`). L'API ne gère plus la génération — elle crée juste les jobs en DB.
+- **page_count = NULL** : après la phase discovery, tous les nouveaux livres ont `page_count = NULL`. La phase analysis les remplit progressivement. Ne pas confondre avec une erreur.
+- **directory_mtimes** : table DB qui stocke le mtime de chaque dossier scanné. Vidée au full_rebuild, mise à jour après chaque scan. Permet de skipper les dossiers inchangés en scan incrémental.
+- **full_rebuild** : supprime toutes les données puis re-insère. Ignore les fingerprints et les directory_mtimes.
 - **Annulation** : vérifier `is_job_cancelled` régulièrement pour respecter les annulations utilisateur.
 - **Watcher + scheduler** : tournent en tâches tokio séparées dans `worker.rs`, en parallèle de la boucle principale.
+- **spawn_blocking** : l'ouverture d'archive (`analyze_book`) et la génération de thumbnail sont des opérations bloquantes — toujours les wrapper dans `tokio::task::spawn_blocking`.

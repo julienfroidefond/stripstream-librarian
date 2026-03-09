@@ -1146,6 +1146,8 @@ dependencies = [
  "anyhow",
  "axum",
  "chrono",
+ "futures",
+ "image",
  "notify",
  "parsers",
  "rand 0.8.5",
@@ -1161,6 +1163,7 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "walkdir",
+ "webp",
 ]
 
 [[package]]

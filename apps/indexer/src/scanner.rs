@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use parsers::{detect_format, parse_metadata, BookFormat, ParsedMetadata};
-use rayon::prelude::*;
+use parsers::{detect_format, parse_metadata_fast};
 use serde::Serialize;
 use sqlx::Row;
 use std::{collections::HashMap, path::Path, time::Duration};
@@ -26,7 +25,11 @@ pub struct JobStats {
 
 const BATCH_SIZE: usize = 100;
 
-pub async fn scan_library(
+/// Phase 1 — Discovery: walk filesystem, extract metadata from filenames only (no archive I/O).
+/// New books are inserted with page_count = NULL so the analyzer phase can fill them in.
+/// Updated books (fingerprint changed) get page_count/thumbnail reset.
+#[allow(clippy::too_many_arguments)]
+pub async fn scan_library_discovery(
     state: &AppState,
     job_id: Uuid,
     library_id: Uuid,
@@ -36,8 +39,14 @@ pub async fn scan_library(
     total_files: usize,
     is_full_rebuild: bool,
 ) -> Result<()> {
-    info!("[SCAN] Starting scan of library {} at path: {} (full_rebuild={})", library_id, root.display(), is_full_rebuild);
-    
+    info!(
+        "[SCAN] Starting discovery scan of library {} at path: {} (full_rebuild={})",
+        library_id,
+        root.display(),
+        is_full_rebuild
+    );
+
+    // Load existing files from DB
     let existing_rows = sqlx::query(
         r#"
         SELECT bf.id AS file_id, bf.book_id, bf.abs_path, bf.fingerprint
@@ -60,15 +69,46 @@ pub async fn scan_library(
                 (row.get("file_id"), row.get("book_id"), row.get("fingerprint")),
             );
         }
-        info!("[SCAN] Found {} existing files in database for library {}", existing.len(), library_id);
+        info!(
+            "[SCAN] Found {} existing files in database for library {}",
+            existing.len(),
+            library_id
+        );
     } else {
-        info!("[SCAN] Full rebuild: skipping existing files lookup (all will be treated as new)");
+        info!("[SCAN] Full rebuild: skipping existing files lookup");
+        // Delete stale directory mtime records for full rebuild
+        let _ = sqlx::query("DELETE FROM directory_mtimes WHERE library_id = $1")
+            .bind(library_id)
+            .execute(&state.pool)
+            .await;
     }
+
+    // Load stored directory mtimes for incremental skip
+    let dir_mtimes: HashMap<String, DateTime<Utc>> = if !is_full_rebuild {
+        let rows = sqlx::query(
+            "SELECT dir_path, mtime FROM directory_mtimes WHERE library_id = $1",
+        )
+        .bind(library_id)
+        .fetch_all(&state.pool)
+        .await
+        .unwrap_or_default();
+
+        rows.into_iter()
+            .map(|row| {
+                let db_path: String = row.get("dir_path");
+                let local_path = utils::remap_libraries_path(&db_path);
+                let mtime: DateTime<Utc> = row.get("mtime");
+                (local_path, mtime)
+            })
+            .collect()
+    } else {
+        HashMap::new()
+    };
 
     let mut seen: HashMap<String, bool> = HashMap::new();
     let mut library_processed_count = 0i32;
     let mut last_progress_update = std::time::Instant::now();
-    
+
     // Batching buffers
     let mut books_to_update: Vec<BookUpdate> = Vec::with_capacity(BATCH_SIZE);
     let mut files_to_update: Vec<FileUpdate> = Vec::with_capacity(BATCH_SIZE);
@@ -76,37 +116,85 @@ pub async fn scan_library(
     let mut files_to_insert: Vec<FileInsert> = Vec::with_capacity(BATCH_SIZE);
     let mut errors_to_insert: Vec<ErrorInsert> = Vec::with_capacity(BATCH_SIZE);
 
-    // Step 1: Collect all book files first
-    #[derive(Clone)]
-    struct FileInfo {
-        path: std::path::PathBuf,
-        format: BookFormat,
-        abs_path: String,
-        file_name: String,
-        metadata: std::fs::Metadata,
-        mtime: DateTime<Utc>,
-        fingerprint: String,
-        lookup_path: String,
-    }
+    // Track discovered directory mtimes for upsert after scan
+    let mut new_dir_mtimes: Vec<(String, DateTime<Utc>)> = Vec::new();
 
-    let mut file_infos: Vec<FileInfo> = Vec::new();
+    // Prefixes (with trailing "/") of directories whose mtime hasn't changed.
+    // Files under these prefixes are added to `seen` but not reprocessed.
+    let mut skipped_dir_prefixes: Vec<String> = Vec::new();
+
     for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
+        let path = entry.path().to_path_buf();
+        let local_path = path.to_string_lossy().to_string();
+
+        if entry.file_type().is_dir() {
+            if entry.depth() == 0 {
+                continue; // skip root itself
+            }
+
+            // Check if parent dir is already skipped (propagate skip to subdirs)
+            let already_under_skipped = skipped_dir_prefixes
+                .iter()
+                .any(|p| local_path.starts_with(p.as_str()));
+
+            if let Ok(meta) = entry.metadata() {
+                if let Ok(sys_mtime) = meta.modified() {
+                    let mtime_utc: DateTime<Utc> = DateTime::from(sys_mtime);
+
+                    // Only record mtimes for non-skipped dirs (to avoid polluting DB)
+                    if !already_under_skipped {
+                        new_dir_mtimes.push((local_path.clone(), mtime_utc));
+                    }
+
+                    // Skip if mtime unchanged (incremental only, not already skipped subtree)
+                    if !is_full_rebuild && !already_under_skipped {
+                        if let Some(&stored_mtime) = dir_mtimes.get(&local_path) {
+                            if mtime_utc <= stored_mtime {
+                                trace!("[SCAN] Skipping unchanged dir: {}", local_path);
+                                // Add trailing slash so starts_with check is exact per-segment
+                                skipped_dir_prefixes.push(format!("{}/", local_path));
+                            }
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+
         if !entry.file_type().is_file() {
             continue;
         }
 
-        let path = entry.path().to_path_buf();
+        // Check if this file is under a skipped dir
+        let under_skipped = skipped_dir_prefixes
+            .iter()
+            .any(|p| local_path.starts_with(p.as_str()));
+
+        if under_skipped {
+            // Dir unchanged — just mark file as seen so it's not deleted
+            let abs_path_local = local_path.clone();
+            let abs_path = utils::unmap_libraries_path(&abs_path_local);
+            let lookup_path = utils::remap_libraries_path(&abs_path);
+            seen.insert(lookup_path, true);
+            continue;
+        }
+
         let Some(format) = detect_format(&path) else {
             trace!("[SCAN] Skipping non-book file: {}", path.display());
             continue;
         };
 
-        info!("[SCAN] Found book file: {} (format: {:?})", path.display(), format);
+        info!(
+            "[SCAN] Found book file: {} (format: {:?})",
+            path.display(),
+            format
+        );
         stats.scanned_files += 1;
-        
+
         let abs_path_local = path.to_string_lossy().to_string();
         let abs_path = utils::unmap_libraries_path(&abs_path_local);
-        let file_name = path.file_name()
+        let file_name = path
+            .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| abs_path.clone());
 
@@ -119,38 +207,12 @@ pub async fn scan_library(
         let fingerprint = utils::compute_fingerprint(&path, metadata.len(), &mtime)?;
         let lookup_path = utils::remap_libraries_path(&abs_path);
 
-        file_infos.push(FileInfo {
-            path,
-            format,
-            abs_path,
-            file_name,
-            metadata,
-            mtime,
-            fingerprint,
-            lookup_path,
-        });
-    }
-
-    info!("[SCAN] Collected {} files, starting parallel parsing", file_infos.len());
-
-    // Step 2: Parse metadata in parallel
-    let parsed_results: Vec<(FileInfo, Result<ParsedMetadata>)> = file_infos
-        .into_par_iter()
-        .map(|file_info| {
-            let parse_result = parse_metadata(&file_info.path, file_info.format, root);
-            (file_info, parse_result)
-        })
-        .collect();
-
-    info!("[SCAN] Completed parallel parsing, processing {} results", parsed_results.len());
-
-    // Step 3: Process results sequentially for batch inserts
-    for (file_info, parse_result) in parsed_results {
         library_processed_count += 1;
         *total_processed_count += 1;
 
-        // Update progress in DB every 1 second or every 10 files
-        let should_update_progress = last_progress_update.elapsed() > Duration::from_secs(1) || library_processed_count % 10 == 0;
+        // Progress update
+        let should_update_progress = last_progress_update.elapsed() > Duration::from_secs(1)
+            || library_processed_count % 10 == 0;
         if should_update_progress {
             let progress_percent = if total_files > 0 {
                 ((*total_processed_count as f64 / total_files as f64) * 100.0) as i32
@@ -159,10 +221,10 @@ pub async fn scan_library(
             };
 
             sqlx::query(
-                "UPDATE index_jobs SET current_file = $2, processed_files = $3, progress_percent = $4 WHERE id = $1"
+                "UPDATE index_jobs SET current_file = $2, processed_files = $3, progress_percent = $4 WHERE id = $1",
             )
             .bind(job_id)
-            .bind(&file_info.file_name)
+            .bind(&file_name)
             .bind(*total_processed_count)
             .bind(progress_percent)
             .execute(&state.pool)
@@ -171,189 +233,210 @@ pub async fn scan_library(
                 error!("[BDD] Failed to update progress for job {}: {}", job_id, e);
                 e
             })?;
-            
+
             last_progress_update = std::time::Instant::now();
-            
-            // Check if job has been cancelled
+
             if is_job_cancelled(&state.pool, job_id).await? {
                 info!("[JOB] Job {} cancelled by user, stopping...", job_id);
-                // Flush any pending batches before exiting
-                flush_all_batches(&state.pool, &mut books_to_update, &mut files_to_update, &mut books_to_insert, &mut files_to_insert, &mut errors_to_insert).await?;
+                flush_all_batches(
+                    &state.pool,
+                    &mut books_to_update,
+                    &mut files_to_update,
+                    &mut books_to_insert,
+                    &mut files_to_insert,
+                    &mut errors_to_insert,
+                )
+                .await?;
                 return Err(anyhow::anyhow!("Job cancelled by user"));
             }
         }
 
-        let seen_key = utils::remap_libraries_path(&file_info.abs_path);
-        seen.insert(seen_key.clone(), true);
+        seen.insert(lookup_path.clone(), true);
 
-        if let Some((file_id, book_id, old_fingerprint)) = existing.get(&file_info.lookup_path).cloned() {
-            if !is_full_rebuild && old_fingerprint == file_info.fingerprint {
-                trace!("[PROCESS] Skipping unchanged file: {}", file_info.file_name);
+        // Fast metadata extraction — no archive I/O
+        let parsed = parse_metadata_fast(&path, format, root);
+
+        if let Some((file_id, book_id, old_fingerprint)) =
+            existing.get(&lookup_path).cloned()
+        {
+            if !is_full_rebuild && old_fingerprint == fingerprint {
+                trace!("[PROCESS] Skipping unchanged file: {}", file_name);
                 continue;
             }
 
-            info!("[PROCESS] Updating existing file: {} (full_rebuild={}, fingerprint_match={})", file_info.file_name, is_full_rebuild, old_fingerprint == file_info.fingerprint);
+            info!(
+                "[PROCESS] Updating existing file: {} (fingerprint_changed={})",
+                file_name,
+                old_fingerprint != fingerprint
+            );
 
-            match parse_result {
-                Ok(parsed) => {
-                    books_to_update.push(BookUpdate {
-                        book_id,
-                        title: parsed.title,
-                        kind: utils::kind_from_format(file_info.format).to_string(),
-                        series: parsed.series,
-                        volume: parsed.volume,
-                        page_count: parsed.page_count,
-                    });
+            books_to_update.push(BookUpdate {
+                book_id,
+                title: parsed.title,
+                kind: utils::kind_from_format(format).to_string(),
+                series: parsed.series,
+                volume: parsed.volume,
+                // Reset page_count so analyzer re-processes this book
+                page_count: None,
+            });
 
-                    files_to_update.push(FileUpdate {
-                        file_id,
-                        format: file_info.format.as_str().to_string(),
-                        size_bytes: file_info.metadata.len() as i64,
-                        mtime: file_info.mtime,
-                        fingerprint: file_info.fingerprint,
-                    });
+            files_to_update.push(FileUpdate {
+                file_id,
+                format: format.as_str().to_string(),
+                size_bytes: metadata.len() as i64,
+                mtime,
+                fingerprint,
+            });
 
-                    stats.indexed_files += 1;
-                }
-                Err(err) => {
-                    warn!("[PARSER] Failed to parse {}: {}", file_info.file_name, err);
-                    stats.errors += 1;
-                    
-                    files_to_update.push(FileUpdate {
-                        file_id,
-                        format: file_info.format.as_str().to_string(),
-                        size_bytes: file_info.metadata.len() as i64,
-                        mtime: file_info.mtime,
-                        fingerprint: file_info.fingerprint.clone(),
-                    });
-                    
-                    errors_to_insert.push(ErrorInsert {
-                        job_id,
-                        file_path: file_info.abs_path.clone(),
-                        error_message: err.to_string(),
-                    });
-                    
-                    // Also need to mark file as error - we'll do this separately
-                    sqlx::query(
-                        "UPDATE book_files SET parse_status = 'error', parse_error_opt = $2 WHERE id = $1"
-                    )
-                    .bind(file_id)
-                    .bind(err.to_string())
-                    .execute(&state.pool)
-                    .await?;
-                }
+            // Also clear thumbnail so it gets regenerated
+            if let Err(e) = sqlx::query(
+                "UPDATE books SET thumbnail_path = NULL WHERE id = $1",
+            )
+            .bind(book_id)
+            .execute(&state.pool)
+            .await
+            {
+                warn!(
+                    "[BDD] Failed to clear thumbnail for book {}: {}",
+                    book_id, e
+                );
             }
 
-            // Flush if batch is full
+            stats.indexed_files += 1;
+
             if books_to_update.len() >= BATCH_SIZE || files_to_update.len() >= BATCH_SIZE {
-                flush_all_batches(&state.pool, &mut books_to_update, &mut files_to_update, &mut books_to_insert, &mut files_to_insert, &mut errors_to_insert).await?;
+                flush_all_batches(
+                    &state.pool,
+                    &mut books_to_update,
+                    &mut files_to_update,
+                    &mut books_to_insert,
+                    &mut files_to_insert,
+                    &mut errors_to_insert,
+                )
+                .await?;
             }
-            
+
             continue;
         }
 
-        // New file (thumbnails generated by API after job handoff)
-        info!("[PROCESS] Inserting new file: {}", file_info.file_name);
+        // New file — insert with page_count = NULL (analyzer fills it in)
+        info!("[PROCESS] Inserting new file: {}", file_name);
         let book_id = Uuid::new_v4();
+        let file_id = Uuid::new_v4();
 
-        match parse_result {
-            Ok(parsed) => {
-                let file_id = Uuid::new_v4();
+        books_to_insert.push(BookInsert {
+            book_id,
+            library_id,
+            kind: utils::kind_from_format(format).to_string(),
+            title: parsed.title,
+            series: parsed.series,
+            volume: parsed.volume,
+            page_count: None,
+            thumbnail_path: None,
+        });
 
-                books_to_insert.push(BookInsert {
-                    book_id,
-                    library_id,
-                    kind: utils::kind_from_format(file_info.format).to_string(),
-                    title: parsed.title,
-                    series: parsed.series,
-                    volume: parsed.volume,
-                    page_count: parsed.page_count,
-                    thumbnail_path: None,
-                });
+        files_to_insert.push(FileInsert {
+            file_id,
+            book_id,
+            format: format.as_str().to_string(),
+            abs_path: abs_path.clone(),
+            size_bytes: metadata.len() as i64,
+            mtime,
+            fingerprint,
+            parse_status: "ok".to_string(),
+            parse_error: None,
+        });
 
-                files_to_insert.push(FileInsert {
-                    file_id,
-                    book_id,
-                    format: file_info.format.as_str().to_string(),
-                    abs_path: file_info.abs_path.clone(),
-                    size_bytes: file_info.metadata.len() as i64,
-                    mtime: file_info.mtime,
-                    fingerprint: file_info.fingerprint,
-                    parse_status: "ok".to_string(),
-                    parse_error: None,
-                });
+        stats.indexed_files += 1;
 
-                stats.indexed_files += 1;
-            }
-            Err(err) => {
-                warn!("[PARSER] Failed to parse {}: {}", file_info.file_name, err);
-                stats.errors += 1;
-                let book_id = Uuid::new_v4();
-                let file_id = Uuid::new_v4();
-                
-                books_to_insert.push(BookInsert {
-                    book_id,
-                    library_id,
-                    kind: utils::kind_from_format(file_info.format).to_string(),
-                    title: utils::file_display_name(&file_info.path),
-                    series: None,
-                    volume: None,
-                    page_count: None,
-                    thumbnail_path: None,
-                });
-
-                files_to_insert.push(FileInsert {
-                    file_id,
-                    book_id,
-                    format: file_info.format.as_str().to_string(),
-                    abs_path: file_info.abs_path.clone(),
-                    size_bytes: file_info.metadata.len() as i64,
-                    mtime: file_info.mtime,
-                    fingerprint: file_info.fingerprint,
-                    parse_status: "error".to_string(),
-                    parse_error: Some(err.to_string()),
-                });
-
-                errors_to_insert.push(ErrorInsert {
-                    job_id,
-                    file_path: file_info.abs_path,
-                    error_message: err.to_string(),
-                });
-            }
-        }
-
-        // Flush if batch is full
         if books_to_insert.len() >= BATCH_SIZE || files_to_insert.len() >= BATCH_SIZE {
-            flush_all_batches(&state.pool, &mut books_to_update, &mut files_to_update, &mut books_to_insert, &mut files_to_insert, &mut errors_to_insert).await?;
+            flush_all_batches(
+                &state.pool,
+                &mut books_to_update,
+                &mut files_to_update,
+                &mut books_to_insert,
+                &mut files_to_insert,
+                &mut errors_to_insert,
+            )
+            .await?;
         }
     }
 
-    // Final flush of any remaining items
-    flush_all_batches(&state.pool, &mut books_to_update, &mut files_to_update, &mut books_to_insert, &mut files_to_insert, &mut errors_to_insert).await?;
+    // Flush remaining batches
+    flush_all_batches(
+        &state.pool,
+        &mut books_to_update,
+        &mut files_to_update,
+        &mut books_to_insert,
+        &mut files_to_insert,
+        &mut errors_to_insert,
+    )
+    .await?;
 
-    info!("[SCAN] Library {} scan complete: {} files scanned, {} indexed, {} errors", 
-          library_id, library_processed_count, stats.indexed_files, stats.errors);
+    if !skipped_dir_prefixes.is_empty() {
+        info!(
+            "[SCAN] Skipped {} unchanged directories",
+            skipped_dir_prefixes.len()
+        );
+    }
+
+    info!(
+        "[SCAN] Library {} discovery complete: {} files scanned, {} indexed, {} errors",
+        library_id, library_processed_count, stats.indexed_files, stats.errors
+    );
 
     // Handle deletions
     let mut removed_count = 0usize;
-    for (abs_path, (file_id, book_id, _)) in existing {
-        if seen.contains_key(&abs_path) {
+    for (abs_path, (file_id, book_id, _)) in &existing {
+        if seen.contains_key(abs_path) {
             continue;
         }
         sqlx::query("DELETE FROM book_files WHERE id = $1")
             .bind(file_id)
             .execute(&state.pool)
             .await?;
-        sqlx::query("DELETE FROM books WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM book_files WHERE book_id = $1)")
-            .bind(book_id)
-            .execute(&state.pool)
-            .await?;
+        sqlx::query(
+            "DELETE FROM books WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM book_files WHERE book_id = $1)",
+        )
+        .bind(book_id)
+        .execute(&state.pool)
+        .await?;
         stats.removed_files += 1;
         removed_count += 1;
     }
-    
+
     if removed_count > 0 {
-        info!("[SCAN] Removed {} stale files from database", removed_count);
+        info!(
+            "[SCAN] Removed {} stale files from database",
+            removed_count
+        );
+    }
+
+    // Upsert directory mtimes for next incremental scan
+    if !new_dir_mtimes.is_empty() {
+        let dir_paths_db: Vec<String> = new_dir_mtimes
+            .iter()
+            .map(|(local, _)| utils::unmap_libraries_path(local))
+            .collect();
+        let mtimes: Vec<DateTime<Utc>> = new_dir_mtimes.iter().map(|(_, m)| *m).collect();
+        let library_ids: Vec<Uuid> = vec![library_id; new_dir_mtimes.len()];
+
+        if let Err(e) = sqlx::query(
+            r#"
+            INSERT INTO directory_mtimes (library_id, dir_path, mtime)
+            SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::timestamptz[])
+            AS t(library_id, dir_path, mtime)
+            ON CONFLICT (library_id, dir_path) DO UPDATE SET mtime = EXCLUDED.mtime
+            "#,
+        )
+        .bind(&library_ids)
+        .bind(&dir_paths_db)
+        .bind(&mtimes)
+        .execute(&state.pool)
+        .await
+        {
+            warn!("[SCAN] Failed to upsert directory mtimes: {}", e);
+        }
     }
 
     Ok(())

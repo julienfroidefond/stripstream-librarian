@@ -21,7 +21,11 @@ RUN --mount=type=cache,target=/sccache \
     cargo build --release -p indexer
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget unrar-free && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates wget \
+    unrar-free unar \
+    poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/indexer /usr/local/bin/indexer
 EXPOSE 7081
 CMD ["/usr/local/bin/indexer"]

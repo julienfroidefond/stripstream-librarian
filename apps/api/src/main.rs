@@ -76,7 +76,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/index/jobs/active", get(index_jobs::get_active_jobs))
         .route("/index/jobs/:id", get(index_jobs::get_job_details))
         .route("/index/jobs/:id/stream", get(index_jobs::stream_job_progress))
-        .route("/index/jobs/:id/thumbnails/checkup", axum::routing::post(thumbnails::start_checkup))
         .route("/index/jobs/:id/errors", get(index_jobs::get_job_errors))
         .route("/index/cancel/:id", axum::routing::post(index_jobs::cancel_job))
         .route("/folders", get(index_jobs::list_folders))

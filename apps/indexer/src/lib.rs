@@ -1,3 +1,4 @@
+pub mod analyzer;
 pub mod api;
 pub mod batch;
 pub mod job;
@@ -15,6 +16,4 @@ pub struct AppState {
     pub pool: PgPool,
     pub meili_url: String,
     pub meili_master_key: String,
-    pub api_base_url: String,
-    pub api_bootstrap_token: String,
 }

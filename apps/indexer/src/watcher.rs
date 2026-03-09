@@ -138,7 +138,7 @@ fn setup_watcher(
     })?;
 
     // Actually watch the library directories
-    for (_, root_path) in &libraries {
+    for root_path in libraries.values() {
         info!("[WATCHER] Watching directory: {}", root_path);
         watcher.watch(std::path::Path::new(root_path), RecursiveMode::Recursive)?;
     }

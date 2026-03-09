@@ -22,8 +22,6 @@ async fn main() -> anyhow::Result<()> {
         pool,
         meili_url: config.meili_url.clone(),
         meili_master_key: config.meili_master_key.clone(),
-        api_base_url: config.api_base_url.clone(),
-        api_bootstrap_token: config.api_bootstrap_token.clone(),
     };
 
     tokio::spawn(indexer::worker::run_worker(state.clone(), config.scan_interval_seconds));

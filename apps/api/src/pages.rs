@@ -550,12 +550,12 @@ fn transcode_image(input: &[u8], out_format: &OutputFormat, quality: u8, width: 
 }
 
 fn format_matches(source: &ImageFormat, target: &OutputFormat) -> bool {
-    match (source, target) {
-        (ImageFormat::Jpeg, OutputFormat::Jpeg) => true,
-        (ImageFormat::Png, OutputFormat::Png) => true,
-        (ImageFormat::WebP, OutputFormat::Webp) => true,
-        _ => false,
-    }
+    matches!(
+        (source, target),
+        (ImageFormat::Jpeg, OutputFormat::Jpeg)
+            | (ImageFormat::Png, OutputFormat::Png)
+            | (ImageFormat::WebP, OutputFormat::Webp)
+    )
 }
 
 fn is_image_name(name: &str) -> bool {
