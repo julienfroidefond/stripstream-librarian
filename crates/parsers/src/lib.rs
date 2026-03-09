@@ -200,8 +200,8 @@ fn list_cbr_images(path: &Path) -> Result<Vec<String>> {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let images: Vec<String> = stdout
             .lines()
+            .map(|l| l.trim().to_string())
             .filter(|line| is_image_name(&line.to_ascii_lowercase()))
-            .map(|l| l.to_string())
             .collect();
         if !images.is_empty() {
             return Ok(images);
@@ -254,8 +254,8 @@ fn analyze_cbr(path: &Path) -> Result<(i32, Vec<u8>)> {
     match p_output {
         Ok(out) if out.status.success() && looks_like_image(&out.stdout) => Ok((count, out.stdout)),
         _ => {
-            // Fallback: full extraction with unar (handles special chars, encoding issues)
-            let image_bytes = extract_cbr_first_page(path)?;
+            // Fallback: targeted extraction with unar (handles special chars, encoding issues)
+            let image_bytes = extract_cbr_first_page(path, first_name)?;
             Ok((count, image_bytes))
         }
     }
@@ -348,7 +348,12 @@ fn is_image_name(name: &str) -> bool {
 pub fn extract_first_page(path: &Path, format: BookFormat) -> Result<Vec<u8>> {
     match format {
         BookFormat::Cbz => extract_cbz_first_page(path),
-        BookFormat::Cbr => extract_cbr_first_page(path),
+        BookFormat::Cbr => {
+            let mut image_names = list_cbr_images(path)?;
+            image_names.sort();
+            let first_name = image_names.into_iter().next().context("no images found in cbr")?;
+            extract_cbr_first_page(path, &first_name)
+        }
         BookFormat::Pdf => extract_pdf_first_page(path),
     }
 }
@@ -378,7 +383,7 @@ fn extract_cbz_first_page(path: &Path) -> Result<Vec<u8>> {
     Ok(buf)
 }
 
-fn extract_cbr_first_page(path: &Path) -> Result<Vec<u8>> {
+fn extract_cbr_first_page(path: &Path, first_name: &str) -> Result<Vec<u8>> {
     let tmp_dir = std::env::temp_dir().join(format!("stripstream-cbr-thumb-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&tmp_dir).context("cannot create temp dir")?;
 

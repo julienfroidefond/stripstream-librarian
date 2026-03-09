@@ -67,7 +67,7 @@ async fn load_thumbnail_config(pool: &sqlx::PgPool) -> ThumbnailConfig {
 }
 
 async fn load_thumbnail_concurrency(pool: &sqlx::PgPool) -> usize {
-    let default_concurrency = 4;
+    let default_concurrency = 2;
     let row = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'limits'"#)
         .fetch_optional(pool)
         .await;
@@ -94,11 +94,11 @@ fn generate_thumbnail(image_bytes: &[u8], config: &ThumbnailConfig) -> anyhow::R
     let ratio = ratio_w.min(ratio_h);
     let new_w = (orig_w as f32 * ratio) as u32;
     let new_h = (orig_h as f32 * ratio) as u32;
-    let resized = img.resize(new_w, new_h, image::imageops::FilterType::Lanczos3);
+    let resized = img.resize(new_w, new_h, image::imageops::FilterType::Triangle);
     let rgba = resized.to_rgba8();
     let (w, h) = rgba.dimensions();
     let rgb_data: Vec<u8> = rgba.pixels().flat_map(|p| [p[0], p[1], p[2]]).collect();
-    let quality = f32::max(config.quality as f32, 85.0);
+    let quality = config.quality as f32;
     let webp_data = webp::Encoder::new(&rgb_data, webp::PixelLayout::Rgb, w, h).encode(quality);
     Ok(webp_data.to_vec())
 }
