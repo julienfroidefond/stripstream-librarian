@@ -146,15 +146,27 @@ export function JobsIndicator() {
         />
       </button>
 
+      {/* Backdrop mobile */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-40 sm:hidden bg-background/60 backdrop-blur-sm"
+          onClick={() => setIsOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* Popin/Dropdown with glassmorphism */}
       {isOpen && (
         <div className="
-          absolute right-0 top-full mt-2 w-96 
+          fixed sm:absolute
+          inset-x-3 sm:inset-x-auto
+          top-[4.5rem] sm:top-full sm:mt-2
+          sm:w-96
           bg-popover/95 backdrop-blur-md
-          rounded-xl 
-          shadow-elevation-2 
-          border border-border/60 
-          overflow-hidden 
+          rounded-xl
+          shadow-elevation-2
+          border border-border/60
+          overflow-hidden
           z-50
           animate-scale-in
         ">

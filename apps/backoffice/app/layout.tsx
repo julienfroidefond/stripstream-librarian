@@ -7,6 +7,7 @@ import { ThemeProvider } from "./theme-provider";
 import { ThemeToggle } from "./theme-toggle";
 import { JobsIndicator } from "./components/JobsIndicator";
 import { NavIcon, Icon } from "./components/ui";
+import { MobileNav } from "./components/MobileNav";
 
 export const metadata: Metadata = {
   title: "StripStream Backoffice",
@@ -61,17 +62,17 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <div className="flex items-center gap-2">
                 <div className="hidden md:flex items-center gap-1">
                   {navItems.map((item) => (
-                    <NavLink key={item.href} href={item.href}>
-                      <NavIcon name={item.icon} /> 
-                      <span className="ml-2">{item.label}</span>
+                    <NavLink key={item.href} href={item.href} title={item.label}>
+                      <NavIcon name={item.icon} />
+                      <span className="ml-2 hidden lg:inline">{item.label}</span>
                     </NavLink>
                   ))}
                 </div>
-                
+
                 {/* Actions */}
                 <div className="flex items-center gap-1 pl-4 ml-2 border-l border-border/60">
                   <JobsIndicator />
-                  <Link 
+                  <Link
                     href="/settings"
                     className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                     title="Settings"
@@ -79,6 +80,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                     <Icon name="settings" size="md" />
                   </Link>
                   <ThemeToggle />
+                  <MobileNav navItems={navItems} />
                 </div>
               </div>
             </nav>
@@ -95,18 +97,19 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 }
 
 // Navigation Link Component
-function NavLink({ href, children }: { href: NavItem["href"]; children: React.ReactNode }) {
+function NavLink({ href, title, children }: { href: NavItem["href"]; title?: string; children: React.ReactNode }) {
   return (
-    <Link 
+    <Link
       href={href}
+      title={title}
       className="
-        flex items-center 
-        px-3 py-2 
-        rounded-lg 
-        text-sm font-medium 
-        text-muted-foreground 
-        hover:text-foreground 
-        hover:bg-accent 
+        flex items-center
+        px-2 lg:px-3 py-2
+        rounded-lg
+        text-sm font-medium
+        text-muted-foreground
+        hover:text-foreground
+        hover:bg-accent
         transition-colors duration-200
         active:scale-[0.98]
       "
