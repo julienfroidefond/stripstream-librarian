@@ -13,7 +13,7 @@ impl ApiConfig {
     pub fn from_env() -> Result<Self> {
         Ok(Self {
             listen_addr: std::env::var("API_LISTEN_ADDR")
-                .unwrap_or_else(|_| "0.0.0.0:8080".to_string()),
+                .unwrap_or_else(|_| "0.0.0.0:7080".to_string()),
             database_url: std::env::var("DATABASE_URL").context("DATABASE_URL is required")?,
             meili_url: std::env::var("MEILI_URL").context("MEILI_URL is required")?,
             meili_master_key: std::env::var("MEILI_MASTER_KEY")
@@ -32,7 +32,7 @@ pub struct IndexerConfig {
     pub meili_master_key: String,
     pub scan_interval_seconds: u64,
     pub thumbnail_config: ThumbnailConfig,
-    /// API base URL for thumbnail checkup at end of build (e.g. http://api:8080)
+    /// API base URL for thumbnail checkup at end of build (e.g. http://api:7080)
     pub api_base_url: String,
     /// Token to call API (e.g. API_BOOTSTRAP_TOKEN)
     pub api_bootstrap_token: String,
@@ -87,7 +87,7 @@ impl IndexerConfig {
 
         Ok(Self {
             listen_addr: std::env::var("INDEXER_LISTEN_ADDR")
-                .unwrap_or_else(|_| "0.0.0.0:8081".to_string()),
+                .unwrap_or_else(|_| "0.0.0.0:7081".to_string()),
             database_url: std::env::var("DATABASE_URL").context("DATABASE_URL is required")?,
             meili_url: std::env::var("MEILI_URL").context("MEILI_URL is required")?,
             meili_master_key: std::env::var("MEILI_MASTER_KEY")
@@ -98,7 +98,7 @@ impl IndexerConfig {
                 .unwrap_or(5),
             thumbnail_config,
             api_base_url: std::env::var("API_BASE_URL")
-                .unwrap_or_else(|_| "http://api:8080".to_string()),
+                .unwrap_or_else(|_| "http://api:7080".to_string()),
             api_bootstrap_token: std::env::var("API_BOOTSTRAP_TOKEN")
                 .context("API_BOOTSTRAP_TOKEN is required for thumbnail checkup")?,
         })
@@ -116,9 +116,9 @@ impl AdminUiConfig {
     pub fn from_env() -> Result<Self> {
         Ok(Self {
             listen_addr: std::env::var("ADMIN_UI_LISTEN_ADDR")
-                .unwrap_or_else(|_| "0.0.0.0:8082".to_string()),
+                .unwrap_or_else(|_| "0.0.0.0:7082".to_string()),
             api_base_url: std::env::var("API_BASE_URL")
-                .unwrap_or_else(|_| "http://api:8080".to_string()),
+                .unwrap_or_else(|_| "http://api:7080".to_string()),
             api_token: std::env::var("API_BOOTSTRAP_TOKEN")
                 .context("API_BOOTSTRAP_TOKEN is required")?,
         })

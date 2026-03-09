@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_API="${BASE_API:-http://127.0.0.1:8080}"
-BASE_INDEXER="${BASE_INDEXER:-http://127.0.0.1:8081}"
-BASE_BACKOFFICE="${BASE_BACKOFFICE:-${BASE_ADMIN:-http://127.0.0.1:8082}}"
+BASE_API="${BASE_API:-http://127.0.0.1:7080}"
+BASE_INDEXER="${BASE_INDEXER:-http://127.0.0.1:7081}"
+BASE_BACKOFFICE="${BASE_BACKOFFICE:-${BASE_ADMIN:-http://127.0.0.1:7082}}"
 TOKEN="${API_TOKEN:-stripstream-dev-bootstrap-token}"
 
 echo "[smoke] health checks"

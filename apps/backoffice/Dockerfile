@@ -12,11 +12,11 @@ RUN npm run build
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-ENV PORT=8082
+ENV PORT=7082
 ENV HOST=0.0.0.0
 RUN apk add --no-cache wget
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
-EXPOSE 8082
+EXPOSE 7082
 CMD ["node", "server.js"]

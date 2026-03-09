@@ -6,7 +6,7 @@ export async function GET(
 ) {
   try {
     const { key } = await params;
-    const baseUrl = process.env.API_BASE_URL || "http://api:8080";
+    const baseUrl = process.env.API_BASE_URL || "http://api:7080";
     const token = process.env.API_BOOTSTRAP_TOKEN;
     
     const response = await fetch(`${baseUrl}/settings/${key}`, {
@@ -33,7 +33,7 @@ export async function POST(
 ) {
   try {
     const { key } = await params;
-    const baseUrl = process.env.API_BASE_URL || "http://api:8080";
+    const baseUrl = process.env.API_BASE_URL || "http://api:7080";
     const token = process.env.API_BOOTSTRAP_TOKEN;
     const body = await request.json();
     

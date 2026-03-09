@@ -13,7 +13,7 @@ export async function GET(
   const quality = searchParams.get("quality") || "";
   
   // Construire l'URL vers l'API backend
-  const apiBaseUrl = process.env.API_BASE_URL || "http://api:8080";
+  const apiBaseUrl = process.env.API_BASE_URL || "http://api:7080";
   const apiUrl = new URL(`${apiBaseUrl}/books/${bookId}/pages/${pageNum}`);
   apiUrl.searchParams.set("format", format);
   if (width) apiUrl.searchParams.set("width", width);

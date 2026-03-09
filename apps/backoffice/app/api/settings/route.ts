@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
   try {
-    const baseUrl = process.env.API_BASE_URL || "http://api:8080";
+    const baseUrl = process.env.API_BASE_URL || "http://api:7080";
     const token = process.env.API_BOOTSTRAP_TOKEN;
     
     const response = await fetch(`${baseUrl}/settings`, {

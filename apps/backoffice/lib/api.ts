@@ -90,7 +90,7 @@ export type SeriesDto = {
 };
 
 function config() {
-  const baseUrl = process.env.API_BASE_URL || "http://api:8080";
+  const baseUrl = process.env.API_BASE_URL || "http://api:7080";
   const token = process.env.API_BOOTSTRAP_TOKEN;
   if (!token) {
     throw new Error("API_BOOTSTRAP_TOKEN is required for backoffice");

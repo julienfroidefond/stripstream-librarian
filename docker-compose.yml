@@ -54,7 +54,7 @@ services:
     env_file:
       - .env
     ports:
-      - "7080:8080"
+      - "7080:7080"
     volumes:
       - ${LIBRARIES_HOST_PATH:-./libraries}:/libraries
       - ${THUMBNAILS_HOST_PATH:-./data/thumbnails}:/data/thumbnails
@@ -66,7 +66,7 @@ services:
       meilisearch:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:7080/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -78,7 +78,7 @@ services:
     env_file:
       - .env
     ports:
-      - "7081:8081"
+      - "7081:7081"
     volumes:
       - ${LIBRARIES_HOST_PATH:-./libraries}:/libraries
       - ${THUMBNAILS_HOST_PATH:-./data/thumbnails}:/data/thumbnails
@@ -90,7 +90,7 @@ services:
       meilisearch:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8081/health"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:7081/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -102,15 +102,15 @@ services:
     env_file:
       - .env
     environment:
-      - PORT=8082
+      - PORT=7082
       - HOST=0.0.0.0
     ports:
-      - "7082:8082"
+      - "7082:7082"
     depends_on:
       api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8082/health"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:7082/health"]
       interval: 10s
       timeout: 5s
       retries: 5

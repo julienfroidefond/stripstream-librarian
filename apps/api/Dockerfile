@@ -26,5 +26,5 @@ RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
 COPY --from=builder /app/target/release/api /usr/local/bin/api
-EXPOSE 8080
+EXPOSE 7080
 CMD ["/usr/local/bin/api"]

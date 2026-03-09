@@ -38,16 +38,16 @@ docker compose up -d
 ```
 
 This will start:
-- PostgreSQL (port 5432)
-- Meilisearch (port 7700)  
-- API service (port 8080)
-- Indexer service (port 8081)
-- Backoffice web UI (port 8082)
+- PostgreSQL (port 6432)
+- Meilisearch (port 7700)
+- API service (port 7080)
+- Indexer service (port 7081)
+- Backoffice web UI (port 7082)
 
 ### Accessing the Application
 
-- **Backoffice**: http://localhost:8082
-- **API**: http://localhost:8080
+- **Backoffice**: http://localhost:7082
+- **API**: http://localhost:7080
 - **Meilisearch**: http://localhost:7700
 
 ### Default Credentials
@@ -113,9 +113,9 @@ The backoffice will be available at http://localhost:3000
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `API_LISTEN_ADDR` | API service bind address | `0.0.0.0:8080` |
-| `INDEXER_LISTEN_ADDR` | Indexer service bind address | `0.0.0.0:8081` |
-| `BACKOFFICE_PORT` | Backoffice web UI port | `8082` |
+| `API_LISTEN_ADDR` | API service bind address | `0.0.0.0:7080` |
+| `INDEXER_LISTEN_ADDR` | Indexer service bind address | `0.0.0.0:7081` |
+| `BACKOFFICE_PORT` | Backoffice web UI port | `7082` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgres://stripstream:stripstream@postgres:5432/stripstream` |
 | `MEILI_URL` | Meilisearch connection URL | `http://meilisearch:7700` |
 | `MEILI_MASTER_KEY` | Meilisearch master key (required) | - |
@@ -128,7 +128,7 @@ The backoffice will be available at http://localhost:3000
 The API is documented with OpenAPI/Swagger. When running locally, access the docs at:
 
 ```
-http://localhost:8080/api-docs
+http://localhost:7080/swagger-ui
 ```
 
 ## Project Structure

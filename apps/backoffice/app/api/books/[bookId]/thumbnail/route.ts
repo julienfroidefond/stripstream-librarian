@@ -6,7 +6,7 @@ export async function GET(
 ) {
   const { bookId } = await params;
   
-  const apiBaseUrl = process.env.API_BASE_URL || "http://api:8080";
+  const apiBaseUrl = process.env.API_BASE_URL || "http://api:7080";
   const apiUrl = `${apiBaseUrl}/books/${bookId}/thumbnail`;
   
   const token = process.env.API_BOOTSTRAP_TOKEN;
