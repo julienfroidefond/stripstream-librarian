@@ -20,6 +20,7 @@ export function LibraryActions({
 }: LibraryActionsProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [saveError, setSaveError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -33,11 +34,12 @@ export function LibraryActions({
   }, []);
 
   const handleSubmit = (formData: FormData) => {
+    setSaveError(null);
     startTransition(async () => {
       const monitorEnabled = formData.get("monitor_enabled") === "true";
       const watcherEnabled = formData.get("watcher_enabled") === "true";
       const scanMode = formData.get("scan_mode") as string;
-      
+
       try {
         const response = await fetch(`/api/libraries/${libraryId}/monitoring`, {
           method: "PATCH",
@@ -48,17 +50,20 @@ export function LibraryActions({
             watcher_enabled: watcherEnabled,
           }),
         });
-        
+
         if (response.ok) {
           setIsOpen(false);
           window.location.reload();
         } else {
-          console.error("Failed to save settings:", response.statusText);
-          alert("Failed to save settings. Please try again.");
+          const body = await response.json().catch(() => ({}));
+          const msg = body?.error || `HTTP ${response.status}`;
+          console.error("Failed to save settings:", msg);
+          setSaveError(msg);
         }
       } catch (error) {
-        console.error("Failed to save settings:", error);
-        alert("Failed to save settings. Please try again.");
+        const msg = error instanceof Error ? error.message : "Network error";
+        console.error("Failed to save settings:", msg);
+        setSaveError(msg);
       }
     });
   };
@@ -121,9 +126,15 @@ export function LibraryActions({
                 </select>
               </div>
 
-              <Button 
-                type="submit" 
-                size="sm" 
+              {saveError && (
+                <p className="text-xs text-destructive bg-destructive/10 px-2 py-1.5 rounded-lg break-all">
+                  {saveError}
+                </p>
+              )}
+
+              <Button
+                type="submit"
+                size="sm"
                 className="w-full"
                 disabled={isPending}
               >

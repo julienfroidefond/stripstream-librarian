@@ -2,7 +2,7 @@ target/
 .env
 .DS_Store
 tmp/
-libraries/
+/libraries/
 node_modules/
 .next/
 data/thumbnails
