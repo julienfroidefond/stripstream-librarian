@@ -388,16 +388,14 @@ pub async fn regenerate_thumbnails(
 }
 
 /// Delete orphaned thumbnail files (books deleted in full_rebuild get new UUIDs).
-pub async fn cleanup_orphaned_thumbnails(
-    state: &AppState,
-    library_id: Option<Uuid>,
-) -> Result<()> {
+pub async fn cleanup_orphaned_thumbnails(state: &AppState) -> Result<()> {
     let config = load_thumbnail_config(&state.pool).await;
 
+    // Load ALL book IDs across all libraries — we need the complete set to avoid
+    // deleting thumbnails that belong to other libraries during a per-library rebuild.
     let existing_book_ids: std::collections::HashSet<Uuid> = sqlx::query_scalar(
-        r#"SELECT id FROM books WHERE (library_id = $1 OR $1 IS NULL)"#,
+        r#"SELECT id FROM books"#,
     )
-    .bind(library_id)
     .fetch_all(&state.pool)
     .await
     .unwrap_or_default()

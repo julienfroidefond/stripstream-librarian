@@ -315,7 +315,7 @@ pub async fn process_job(
 
     // For full rebuild: clean up orphaned thumbnail files (old UUIDs)
     if is_full_rebuild {
-        analyzer::cleanup_orphaned_thumbnails(state, target_library_id).await?;
+        analyzer::cleanup_orphaned_thumbnails(state).await?;
     }
 
     // Phase 2: Analysis (extract page_count + thumbnails for new/updated books)

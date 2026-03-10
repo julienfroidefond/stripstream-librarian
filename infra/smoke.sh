@@ -122,6 +122,62 @@ else
   exit 1
 fi
 
+# ─── full_rebuild par library ne casse pas les thumbnails des autres ──────────
+#
+# Régression : cleanup_orphaned_thumbnails chargeait uniquement les book IDs
+# de la library en cours de rebuild, supprimant les thumbnails des autres.
+#
+# Ce test nécessite au moins 2 libraries activées avec des livres indexés.
+
+echo "[smoke] test: full_rebuild per-library does not destroy other libraries thumbnails"
+LIBRARIES_JSON="$(auth "$BASE_API/libraries")"
+LIBRARY_COUNT="$(LIBRARIES_JSON="$LIBRARIES_JSON" python3 -c "import json,os; libs=json.loads(os.environ['LIBRARIES_JSON']); print(len(libs) if isinstance(libs,list) else 0)")"
+
+if [ "${LIBRARY_COUNT:-0}" -lt 2 ]; then
+  echo "[smoke] SKIP: need at least 2 libraries (found ${LIBRARY_COUNT:-0})"
+else
+  # Extraire les 2 premiers IDs de library
+  LIB_A="$(LIBRARIES_JSON="$LIBRARIES_JSON" python3 -c "import json,os; libs=json.loads(os.environ['LIBRARIES_JSON']); print(libs[0]['id'])")"
+  LIB_B="$(LIBRARIES_JSON="$LIBRARIES_JSON" python3 -c "import json,os; libs=json.loads(os.environ['LIBRARIES_JSON']); print(libs[1]['id'])")"
+  echo "[smoke] library A = $LIB_A, library B = $LIB_B"
+
+  # Compter les thumbnails de library B avant le rebuild de A
+  BOOKS_B_BEFORE="$(auth "$BASE_API/books?library_id=$LIB_B")"
+  THUMBS_BEFORE="$(BOOKS_B_BEFORE="$BOOKS_B_BEFORE" python3 -c "
+import json, os
+items = json.loads(os.environ['BOOKS_B_BEFORE']).get('items') or []
+print(sum(1 for b in items if b.get('thumbnail_url')))
+")"
+  echo "[smoke] library B: $THUMBS_BEFORE book(s) with thumbnail before rebuild of A"
+
+  if [ "${THUMBS_BEFORE:-0}" -eq 0 ]; then
+    echo "[smoke] SKIP: library B has no thumbnails to protect, test not meaningful"
+  else
+    # Lancer un full_rebuild sur library A uniquement
+    REBUILD_A_ID="$(auth -X POST -H "Content-Type: application/json" \
+      -d "{\"library_id\":\"$LIB_A\",\"full\":true}" \
+      "$BASE_API/index/rebuild" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")"
+    echo "[smoke] full_rebuild library A job id: $REBUILD_A_ID"
+    wait_job "$REBUILD_A_ID" "full_rebuild library A"
+
+    # Vérifier que les thumbnails de library B sont intacts
+    BOOKS_B_AFTER="$(auth "$BASE_API/books?library_id=$LIB_B")"
+    THUMBS_AFTER="$(BOOKS_B_AFTER="$BOOKS_B_AFTER" python3 -c "
+import json, os
+items = json.loads(os.environ['BOOKS_B_AFTER']).get('items') or []
+print(sum(1 for b in items if b.get('thumbnail_url')))
+")"
+    echo "[smoke] library B: $THUMBS_AFTER book(s) with thumbnail after rebuild of A"
+
+    if [ "$THUMBS_AFTER" -lt "$THUMBS_BEFORE" ]; then
+      echo "[smoke] FAIL: full_rebuild of library A destroyed thumbnails of library B ($THUMBS_BEFORE → $THUMBS_AFTER)"
+      exit 1
+    else
+      echo "[smoke] OK: library B thumbnails preserved ($THUMBS_BEFORE → $THUMBS_AFTER)"
+    fi
+  fi
+fi
+
 # ─── metrics ─────────────────────────────────────────────────────────────────
 
 echo "[smoke] metrics"
