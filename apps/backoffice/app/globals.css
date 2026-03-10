@@ -248,6 +248,29 @@ body::after {
   overflow: hidden;
 }
 
+/* Reading progress badge variants */
+.badge-unread {
+  background: hsl(var(--color-muted) / 0.6);
+  color: hsl(var(--color-muted-foreground));
+  border-color: hsl(var(--color-border));
+}
+
+.badge-in-progress {
+  background: hsl(38 92% 50% / 0.15);
+  color: hsl(38 92% 40%);
+  border-color: hsl(38 92% 50% / 0.3);
+}
+
+.dark .badge-in-progress {
+  color: hsl(38 92% 65%);
+}
+
+.badge-completed {
+  background: hsl(var(--color-success) / 0.15);
+  color: hsl(var(--color-success));
+  border-color: hsl(var(--color-success) / 0.3);
+}
+
 /* Hide scrollbar */
 .scrollbar-hide {
   -ms-overflow-style: none;

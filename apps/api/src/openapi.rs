@@ -6,6 +6,8 @@ use utoipa::OpenApi;
     paths(
         crate::books::list_books,
         crate::books::get_book,
+        crate::reading_progress::get_reading_progress,
+        crate::reading_progress::update_reading_progress,
         crate::books::get_thumbnail,
         crate::books::list_series,
         crate::books::convert_book,
@@ -42,6 +44,8 @@ use utoipa::OpenApi;
             crate::books::BookItem,
             crate::books::BooksPage,
             crate::books::BookDetails,
+            crate::reading_progress::ReadingProgressResponse,
+            crate::reading_progress::UpdateReadingProgressRequest,
             crate::books::SeriesItem,
             crate::books::SeriesPage,
             crate::pages::PageQuery,
@@ -72,6 +76,7 @@ use utoipa::OpenApi;
     ),
     tags(
         (name = "books", description = "Read-only endpoints for browsing and searching books"),
+        (name = "reading-progress", description = "Reading progress tracking per book"),
         (name = "libraries", description = "Library management endpoints (Admin only)"),
         (name = "indexing", description = "Search index management and job control (Admin only)"),
         (name = "tokens", description = "API token management (Admin only)"),

@@ -1,4 +1,4 @@
-import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch } from "../../../lib/api";
+import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch, ReadingStatus } from "../../../lib/api";
 import { BookPreview } from "../../components/BookPreview";
 import { ConvertButton } from "../../components/ConvertButton";
 import Image from "next/image";
@@ -6,6 +6,37 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
+
+const readingStatusConfig: Record<ReadingStatus, { label: string; className: string }> = {
+  unread: { label: "Non lu", className: "bg-muted/60 text-muted-foreground border border-border" },
+  reading: { label: "En cours", className: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30" },
+  read: { label: "Lu", className: "bg-green-500/15 text-green-600 dark:text-green-400 border border-green-500/30" },
+};
+
+function ReadingStatusBadge({
+  status,
+  currentPage,
+  lastReadAt,
+}: {
+  status: ReadingStatus;
+  currentPage: number | null;
+  lastReadAt: string | null;
+}) {
+  const { label, className } = readingStatusConfig[status];
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${className}`}>
+        {label}
+        {status === "reading" && currentPage != null && ` · p. ${currentPage}`}
+      </span>
+      {lastReadAt && (
+        <span className="text-xs text-muted-foreground">
+          {new Date(lastReadAt).toLocaleDateString()}
+        </span>
+      )}
+    </div>
+  );
+}
 
 async function fetchBook(bookId: string): Promise<BookDto | null> {
   try {
@@ -71,6 +102,17 @@ export default async function BookDetailPage({
             )}
 
             <div className="space-y-3">
+              {book.reading_status && (
+                <div className="flex items-center justify-between py-2 border-b border-border">
+                  <span className="text-sm text-muted-foreground">Lecture :</span>
+                  <ReadingStatusBadge
+                    status={book.reading_status}
+                    currentPage={book.reading_current_page ?? null}
+                    lastReadAt={book.reading_last_read_at ?? null}
+                  />
+                </div>
+              )}
+
               <div className="flex items-center justify-between py-2 border-b border-border">
                 <span className="text-sm text-muted-foreground">Format:</span>
                 <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${

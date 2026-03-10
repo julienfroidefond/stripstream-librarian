@@ -63,6 +63,11 @@ pub struct BookDetails {
     pub file_path: Option<String>,
     pub file_format: Option<String>,
     pub file_parse_status: Option<String>,
+    /// Reading status: "unread", "reading", or "read"
+    pub reading_status: String,
+    pub reading_current_page: Option<i32>,
+    #[schema(value_type = Option<String>)]
+    pub reading_last_read_at: Option<DateTime<Utc>>,
 }
 
 /// List books with optional filtering and pagination
@@ -189,7 +194,10 @@ pub async fn get_book(
     let row = sqlx::query(
         r#"
         SELECT b.id, b.library_id, b.kind, b.title, b.author, b.series, b.volume, b.language, b.page_count, b.thumbnail_path,
-               bf.abs_path, bf.format, bf.parse_status
+               bf.abs_path, bf.format, bf.parse_status,
+               COALESCE(brp.status, 'unread') AS reading_status,
+               brp.current_page AS reading_current_page,
+               brp.last_read_at AS reading_last_read_at
         FROM books b
         LEFT JOIN LATERAL (
           SELECT abs_path, format, parse_status
@@ -198,6 +206,7 @@ pub async fn get_book(
           ORDER BY updated_at DESC
           LIMIT 1
         ) bf ON TRUE
+        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
         WHERE b.id = $1
         "#,
     )
@@ -221,6 +230,9 @@ pub async fn get_book(
         file_path: row.get("abs_path"),
         file_format: row.get("format"),
         file_parse_status: row.get("parse_status"),
+        reading_status: row.get("reading_status"),
+        reading_current_page: row.get("reading_current_page"),
+        reading_last_read_at: row.get("reading_last_read_at"),
     }))
 }
 

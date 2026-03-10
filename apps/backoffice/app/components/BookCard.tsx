@@ -3,10 +3,17 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { BookDto } from "../../lib/api";
+import { BookDto, ReadingStatus } from "../../lib/api";
+
+const readingStatusOverlay: Record<ReadingStatus, { label: string; className: string } | null> = {
+  unread: null,
+  reading: { label: "En cours", className: "bg-amber-500/90 text-white" },
+  read: { label: "Lu", className: "bg-green-600/90 text-white" },
+};
 
 interface BookCardProps {
   book: BookDto & { coverUrl?: string };
+  readingStatus?: ReadingStatus;
 }
 
 function BookImage({ src, alt }: { src: string; alt: string }) {
@@ -37,18 +44,27 @@ function BookImage({ src, alt }: { src: string; alt: string }) {
   );
 }
 
-export function BookCard({ book }: BookCardProps) {
+export function BookCard({ book, readingStatus }: BookCardProps) {
   const coverUrl = book.coverUrl || `/api/books/${book.id}/thumbnail`;
-  
+  const status = readingStatus ?? book.reading_status;
+  const overlay = status ? readingStatusOverlay[status] : null;
+
   return (
-    <Link 
-      href={`/books/${book.id}`} 
+    <Link
+      href={`/books/${book.id}`}
       className="group block bg-card rounded-xl border border-border/60 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-200 overflow-hidden"
     >
-      <BookImage 
-        src={coverUrl}
-        alt={`Cover of ${book.title}`}
-      />
+      <div className="relative">
+        <BookImage
+          src={coverUrl}
+          alt={`Cover of ${book.title}`}
+        />
+        {overlay && (
+          <span className={`absolute bottom-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide ${overlay.className}`}>
+            {overlay.label}
+          </span>
+        )}
+      </div>
       
       {/* Book Info */}
       <div className="p-4">

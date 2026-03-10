@@ -46,6 +46,14 @@ export type FolderItem = {
   has_children: boolean;
 };
 
+export type ReadingStatus = "unread" | "reading" | "read";
+
+export type ReadingProgressDto = {
+  status: ReadingStatus;
+  current_page: number | null;
+  last_read_at: string | null;
+};
+
 export type BookDto = {
   id: string;
   library_id: string;
@@ -60,6 +68,10 @@ export type BookDto = {
   file_format: string | null;
   file_parse_status: string | null;
   updated_at: string;
+  // Présents uniquement sur GET /books/:id (pas dans la liste)
+  reading_status?: ReadingStatus;
+  reading_current_page?: number | null;
+  reading_last_read_at?: string | null;
 };
 
 export type BooksPageDto = {
@@ -352,4 +364,19 @@ export async function getThumbnailStats() {
 
 export async function convertBook(bookId: string) {
   return apiFetch<IndexJobDto>(`/books/${bookId}/convert`, { method: "POST" });
+}
+
+export async function fetchReadingProgress(bookId: string) {
+  return apiFetch<ReadingProgressDto>(`/books/${bookId}/progress`);
+}
+
+export async function updateReadingProgress(
+  bookId: string,
+  status: ReadingStatus,
+  currentPage?: number,
+) {
+  return apiFetch<ReadingProgressDto>(`/books/${bookId}/progress`, {
+    method: "PATCH",
+    body: JSON.stringify({ status, current_page: currentPage ?? null }),
+  });
 }
