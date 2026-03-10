@@ -55,12 +55,16 @@ pub struct IndexJobDetailResponse {
     pub id: Uuid,
     #[schema(value_type = Option<String>)]
     pub library_id: Option<Uuid>,
+    #[schema(value_type = Option<String>)]
+    pub book_id: Option<Uuid>,
     pub r#type: String,
     pub status: String,
     #[schema(value_type = Option<String>)]
     pub started_at: Option<DateTime<Utc>>,
     #[schema(value_type = Option<String>)]
     pub finished_at: Option<DateTime<Utc>>,
+    #[schema(value_type = Option<String>)]
+    pub phase2_started_at: Option<DateTime<Utc>>,
     pub stats_json: Option<serde_json::Value>,
     pub error_opt: Option<String>,
     #[schema(value_type = String)]
@@ -314,10 +318,12 @@ fn map_row_detail(row: sqlx::postgres::PgRow) -> IndexJobDetailResponse {
     IndexJobDetailResponse {
         id: row.get("id"),
         library_id: row.get("library_id"),
+        book_id: row.try_get("book_id").ok().flatten(),
         r#type: row.get("type"),
         status: row.get("status"),
         started_at: row.get("started_at"),
         finished_at: row.get("finished_at"),
+        phase2_started_at: row.try_get("phase2_started_at").ok().flatten(),
         stats_json: row.get("stats_json"),
         error_opt: row.get("error_opt"),
         created_at: row.get("created_at"),
@@ -374,8 +380,8 @@ pub async fn get_job_details(
     id: axum::extract::Path<Uuid>,
 ) -> Result<Json<IndexJobDetailResponse>, ApiError> {
     let row = sqlx::query(
-        "SELECT id, library_id, type, status, started_at, finished_at, stats_json, error_opt, created_at,
-                current_file, progress_percent, total_files, processed_files
+        "SELECT id, library_id, book_id, type, status, started_at, finished_at, phase2_started_at,
+                stats_json, error_opt, created_at, current_file, progress_percent, total_files, processed_files
          FROM index_jobs WHERE id = $1"
     )
     .bind(id.0)

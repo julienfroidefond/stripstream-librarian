@@ -157,7 +157,7 @@ pub async fn process_job(
     // Thumbnail rebuild: generate thumbnails for books missing them
     if job_type == "thumbnail_rebuild" {
         sqlx::query(
-            "UPDATE index_jobs SET status = 'generating_thumbnails', started_at = NOW() WHERE id = $1",
+            "UPDATE index_jobs SET status = 'generating_thumbnails', started_at = NOW(), phase2_started_at = NOW() WHERE id = $1",
         )
         .bind(job_id)
         .execute(&state.pool)
@@ -178,7 +178,7 @@ pub async fn process_job(
     // Thumbnail regenerate: clear all thumbnails then re-generate
     if job_type == "thumbnail_regenerate" {
         sqlx::query(
-            "UPDATE index_jobs SET status = 'generating_thumbnails', started_at = NOW() WHERE id = $1",
+            "UPDATE index_jobs SET status = 'generating_thumbnails', started_at = NOW(), phase2_started_at = NOW() WHERE id = $1",
         )
         .bind(job_id)
         .execute(&state.pool)
@@ -320,7 +320,7 @@ pub async fn process_job(
 
     // Phase 2: Analysis (extract page_count + thumbnails for new/updated books)
     sqlx::query(
-        "UPDATE index_jobs SET status = 'generating_thumbnails', stats_json = $2, current_file = NULL, processed_files = $3 WHERE id = $1",
+        "UPDATE index_jobs SET status = 'generating_thumbnails', phase2_started_at = NOW(), stats_json = $2, current_file = NULL, processed_files = $3 WHERE id = $1",
     )
     .bind(job_id)
     .bind(serde_json::to_value(&stats)?)

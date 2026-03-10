@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { apiFetch } from "../../../lib/api";
-import { 
+import {
   Card, CardHeader, CardTitle, CardDescription, CardContent,
-  StatusBadge, JobTypeBadge, StatBox, ProgressBar 
+  StatusBadge, JobTypeBadge, StatBox, ProgressBar
 } from "../../components/ui";
 
 interface JobDetailPageProps {
@@ -13,11 +13,13 @@ interface JobDetailPageProps {
 interface JobDetails {
   id: string;
   library_id: string | null;
+  book_id: string | null;
   type: string;
   status: string;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+  phase2_started_at: string | null;
   current_file: string | null;
   progress_percent: number | null;
   processed_files: number | null;
@@ -37,6 +39,34 @@ interface JobError {
   error_message: string;
   created_at: string;
 }
+
+const JOB_TYPE_INFO: Record<string, { label: string; description: string; isThumbnailOnly: boolean }> = {
+  rebuild: {
+    label: "Incremental index",
+    description: "Scans for new/modified files, analyzes them and generates missing thumbnails.",
+    isThumbnailOnly: false,
+  },
+  full_rebuild: {
+    label: "Full re-index",
+    description: "Clears all existing data then performs a complete re-scan, re-analysis and thumbnail generation.",
+    isThumbnailOnly: false,
+  },
+  thumbnail_rebuild: {
+    label: "Thumbnail rebuild",
+    description: "Generates thumbnails only for books that are missing one. Existing thumbnails are preserved.",
+    isThumbnailOnly: true,
+  },
+  thumbnail_regenerate: {
+    label: "Thumbnail regeneration",
+    description: "Regenerates all thumbnails from scratch, replacing existing ones.",
+    isThumbnailOnly: true,
+  },
+  cbr_to_cbz: {
+    label: "CBR → CBZ conversion",
+    description: "Converts a CBR archive to the open CBZ format.",
+    isThumbnailOnly: false,
+  },
+};
 
 async function getJobDetails(jobId: string): Promise<JobDetails | null> {
   try {
@@ -58,16 +88,15 @@ function formatDuration(start: string, end: string | null): string {
   const startDate = new Date(start);
   const endDate = end ? new Date(end) : new Date();
   const diff = endDate.getTime() - startDate.getTime();
-  
+
   if (diff < 60000) return `${Math.floor(diff / 1000)}s`;
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ${Math.floor((diff % 60000) / 1000)}s`;
   return `${Math.floor(diff / 3600000)}h ${Math.floor((diff % 3600000) / 60000)}m`;
 }
 
-function formatSpeed(stats: { scanned_files: number } | null, duration: number): string {
-  if (!stats || duration === 0) return "-";
-  const filesPerSecond = stats.scanned_files / (duration / 1000);
-  return `${filesPerSecond.toFixed(1)} f/s`;
+function formatSpeed(count: number, durationMs: number): string {
+  if (durationMs === 0 || count === 0) return "-";
+  return `${(count / (durationMs / 1000)).toFixed(1)}/s`;
 }
 
 export default async function JobDetailPage({ params }: JobDetailPageProps) {
@@ -81,15 +110,49 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     notFound();
   }
 
-  const duration = job.started_at 
+  const typeInfo = JOB_TYPE_INFO[job.type] ?? {
+    label: job.type,
+    description: null,
+    isThumbnailOnly: false,
+  };
+
+  const durationMs = job.started_at
     ? new Date(job.finished_at || new Date()).getTime() - new Date(job.started_at).getTime()
     : 0;
+
+  const isCompleted = job.status === "success";
+  const isFailed = job.status === "failed";
+  const isCancelled = job.status === "cancelled";
+  const isThumbnailPhase = job.status === "generating_thumbnails";
+  const { isThumbnailOnly } = typeInfo;
+
+  // Which label to use for the progress card
+  const progressTitle = isThumbnailOnly
+    ? "Thumbnails"
+    : isThumbnailPhase
+      ? "Phase 2 — Thumbnails"
+      : "Phase 1 — Discovery";
+
+  const progressDescription = isThumbnailOnly
+    ? undefined
+    : isThumbnailPhase
+      ? "Generating thumbnails for the analyzed books"
+      : "Scanning and indexing files in the library";
+
+  // Speed metric: thumbnail count for thumbnail jobs, scanned files for index jobs
+  const speedCount = isThumbnailOnly
+    ? (job.processed_files ?? 0)
+    : (job.stats_json?.scanned_files ?? 0);
+
+  const showProgressCard =
+    (isCompleted || isFailed || job.status === "running" || isThumbnailPhase) &&
+    (job.total_files != null || !!job.current_file);
 
   return (
     <>
       <div className="mb-6">
-        <Link 
-          href="/jobs" 
+        <Link
+          href="/jobs"
           className="inline-flex items-center text-sm text-muted-foreground hover:text-primary transition-colors duration-200"
         >
           <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -100,11 +163,72 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
         <h1 className="text-3xl font-bold text-foreground mt-2">Job Details</h1>
       </div>
 
+      {/* Summary banner — completed */}
+      {isCompleted && job.started_at && (
+        <div className="mb-6 p-4 rounded-xl bg-success/10 border border-success/30 flex items-start gap-3">
+          <svg className="w-5 h-5 text-success mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div className="text-sm text-success">
+            <span className="font-semibold">Completed in {formatDuration(job.started_at, job.finished_at)}</span>
+            {job.stats_json && (
+              <span className="ml-2 text-success/80">
+                — {job.stats_json.scanned_files} scanned, {job.stats_json.indexed_files} indexed
+                {job.stats_json.removed_files > 0 && `, ${job.stats_json.removed_files} removed`}
+                {job.stats_json.errors > 0 && `, ${job.stats_json.errors} errors`}
+                {job.total_files != null && job.total_files > 0 && `, ${job.total_files} thumbnails`}
+              </span>
+            )}
+            {!job.stats_json && isThumbnailOnly && job.total_files != null && (
+              <span className="ml-2 text-success/80">
+                — {job.processed_files ?? job.total_files} thumbnails generated
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Summary banner — failed */}
+      {isFailed && (
+        <div className="mb-6 p-4 rounded-xl bg-destructive/10 border border-destructive/30 flex items-start gap-3">
+          <svg className="w-5 h-5 text-destructive mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div className="text-sm text-destructive">
+            <span className="font-semibold">Job failed</span>
+            {job.started_at && (
+              <span className="ml-2 text-destructive/80">after {formatDuration(job.started_at, job.finished_at)}</span>
+            )}
+            {job.error_opt && (
+              <p className="mt-1 text-destructive/70 font-mono text-xs break-all">{job.error_opt}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Summary banner — cancelled */}
+      {isCancelled && (
+        <div className="mb-6 p-4 rounded-xl bg-muted border border-border flex items-start gap-3">
+          <svg className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+          </svg>
+          <span className="text-sm text-muted-foreground">
+            <span className="font-semibold">Cancelled</span>
+            {job.started_at && (
+              <span className="ml-2">after {formatDuration(job.started_at, job.finished_at)}</span>
+            )}
+          </span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Overview Card */}
         <Card>
           <CardHeader>
             <CardTitle>Overview</CardTitle>
+            {typeInfo.description && (
+              <CardDescription>{typeInfo.description}</CardDescription>
+            )}
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between py-2 border-b border-border/60">
@@ -113,16 +237,38 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
             </div>
             <div className="flex items-center justify-between py-2 border-b border-border/60">
               <span className="text-sm text-muted-foreground">Type</span>
-              <JobTypeBadge type={job.type} />
+              <div className="flex items-center gap-2">
+                <JobTypeBadge type={job.type} />
+                <span className="text-sm text-muted-foreground">{typeInfo.label}</span>
+              </div>
             </div>
             <div className="flex items-center justify-between py-2 border-b border-border/60">
               <span className="text-sm text-muted-foreground">Status</span>
               <StatusBadge status={job.status} />
             </div>
-            <div className="flex items-center justify-between py-2">
+            <div className={`flex items-center justify-between py-2 ${(job.book_id || job.started_at) ? "border-b border-border/60" : ""}`}>
               <span className="text-sm text-muted-foreground">Library</span>
               <span className="text-sm text-foreground">{job.library_id || "All libraries"}</span>
             </div>
+            {job.book_id && (
+              <div className={`flex items-center justify-between py-2 ${job.started_at ? "border-b border-border/60" : ""}`}>
+                <span className="text-sm text-muted-foreground">Book</span>
+                <Link
+                  href={`/books/${job.book_id}`}
+                  className="text-sm text-primary hover:text-primary/80 font-mono hover:underline"
+                >
+                  {job.book_id.slice(0, 8)}…
+                </Link>
+              </div>
+            )}
+            {job.started_at && (
+              <div className="flex items-center justify-between py-2">
+                <span className="text-sm text-muted-foreground">Duration</span>
+                <span className="text-sm font-semibold text-foreground">
+                  {formatDuration(job.started_at, job.finished_at)}
+                </span>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -131,101 +277,194 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
           <CardHeader>
             <CardTitle>Timeline</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-start gap-4">
-              <div className={`w-2 h-2 rounded-full mt-2 ${job.created_at ? 'bg-success' : 'bg-muted'}`} />
-              <div className="flex-1">
-                <span className="text-sm font-medium text-foreground">Created</span>
-                <p className="text-sm text-muted-foreground">{new Date(job.created_at).toLocaleString()}</p>
+          <CardContent>
+            <div className="relative">
+              {/* Vertical line */}
+              <div className="absolute left-[7px] top-2 bottom-2 w-px bg-border" />
+
+              <div className="space-y-5">
+                {/* Created */}
+                <div className="flex items-start gap-4">
+                  <div className="w-3.5 h-3.5 rounded-full mt-0.5 bg-muted border-2 border-border shrink-0 z-10" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium text-foreground">Created</span>
+                    <p className="text-xs text-muted-foreground">{new Date(job.created_at).toLocaleString()}</p>
+                  </div>
+                </div>
+
+                {/* Phase 1 start — for index jobs that have two phases */}
+                {job.started_at && job.phase2_started_at && (
+                  <div className="flex items-start gap-4">
+                    <div className="w-3.5 h-3.5 rounded-full mt-0.5 bg-primary shrink-0 z-10" />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-foreground">Phase 1 — Discovery</span>
+                      <p className="text-xs text-muted-foreground">{new Date(job.started_at).toLocaleString()}</p>
+                      <p className="text-xs text-primary/80 font-medium mt-0.5">
+                        Duration: {formatDuration(job.started_at, job.phase2_started_at)}
+                        {job.stats_json && (
+                          <span className="text-muted-foreground font-normal ml-1">
+                            · {job.stats_json.scanned_files} scanned, {job.stats_json.indexed_files} indexed
+                            {job.stats_json.removed_files > 0 && `, ${job.stats_json.removed_files} removed`}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Phase 2 start — for index jobs that have two phases */}
+                {job.phase2_started_at && (
+                  <div className="flex items-start gap-4">
+                    <div className={`w-3.5 h-3.5 rounded-full mt-0.5 shrink-0 z-10 ${
+                      job.finished_at ? "bg-primary" : "bg-primary animate-pulse"
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-foreground">
+                        {isThumbnailOnly ? "Thumbnails" : "Phase 2 — Thumbnails"}
+                      </span>
+                      <p className="text-xs text-muted-foreground">{new Date(job.phase2_started_at).toLocaleString()}</p>
+                      {job.finished_at && (
+                        <p className="text-xs text-primary/80 font-medium mt-0.5">
+                          Duration: {formatDuration(job.phase2_started_at, job.finished_at)}
+                          {job.total_files != null && job.total_files > 0 && (
+                            <span className="text-muted-foreground font-normal ml-1">
+                              · {job.processed_files ?? job.total_files} thumbnails
+                            </span>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Started — for jobs without phase2 (cbr_to_cbz, or no phase yet) */}
+                {job.started_at && !job.phase2_started_at && (
+                  <div className="flex items-start gap-4">
+                    <div className={`w-3.5 h-3.5 rounded-full mt-0.5 shrink-0 z-10 ${
+                      job.finished_at ? "bg-primary" : "bg-primary animate-pulse"
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-foreground">Started</span>
+                      <p className="text-xs text-muted-foreground">{new Date(job.started_at).toLocaleString()}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Pending — not started yet */}
+                {!job.started_at && (
+                  <div className="flex items-start gap-4">
+                    <div className="w-3.5 h-3.5 rounded-full mt-0.5 bg-warning shrink-0 z-10" />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-foreground">Waiting to start…</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Finished */}
+                {job.finished_at && (
+                  <div className="flex items-start gap-4">
+                    <div className={`w-3.5 h-3.5 rounded-full mt-0.5 shrink-0 z-10 ${
+                      isCompleted ? "bg-success" : isFailed ? "bg-destructive" : "bg-muted"
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-foreground">
+                        {isCompleted ? "Completed" : isFailed ? "Failed" : "Cancelled"}
+                      </span>
+                      <p className="text-xs text-muted-foreground">{new Date(job.finished_at).toLocaleString()}</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-            <div className="flex items-start gap-4">
-              <div className={`w-2 h-2 rounded-full mt-2 ${job.started_at ? 'bg-success' : job.created_at ? 'bg-warning' : 'bg-muted'}`} />
-              <div className="flex-1">
-                <span className="text-sm font-medium text-foreground">Started</span>
-                <p className="text-sm text-muted-foreground">
-                  {job.started_at ? new Date(job.started_at).toLocaleString() : "Pending..."}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start gap-4">
-              <div className={`w-2 h-2 rounded-full mt-2 ${job.finished_at ? 'bg-success' : job.started_at ? 'bg-primary animate-pulse' : 'bg-muted'}`} />
-              <div className="flex-1">
-                <span className="text-sm font-medium text-foreground">Finished</span>
-                <p className="text-sm text-muted-foreground">
-                  {job.finished_at 
-                    ? new Date(job.finished_at).toLocaleString()
-                    : job.started_at 
-                      ? "Running..."
-                      : "Waiting..."
-                  }
-                </p>
-              </div>
-            </div>
-            {job.started_at && (
-              <div className="mt-4 inline-flex items-center px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-sm font-medium">
-                Duration: {formatDuration(job.started_at, job.finished_at)}
-              </div>
-            )}
           </CardContent>
         </Card>
 
         {/* Progress Card */}
-        {(job.status === "running" || job.status === "generating_thumbnails" || job.status === "success" || job.status === "failed") && (
+        {showProgressCard && (
           <Card>
             <CardHeader>
-              <CardTitle>{job.status === "generating_thumbnails" ? "Thumbnails" : "Progress"}</CardTitle>
+              <CardTitle>{progressTitle}</CardTitle>
+              {progressDescription && <CardDescription>{progressDescription}</CardDescription>}
             </CardHeader>
             <CardContent>
               {job.total_files != null && job.total_files > 0 && (
                 <>
                   <ProgressBar value={job.progress_percent || 0} showLabel size="lg" className="mb-4" />
                   <div className="grid grid-cols-3 gap-4">
-                    <StatBox value={job.processed_files ?? 0} label="Processed" variant="primary" />
-                    <StatBox value={job.total_files} label={job.status === "generating_thumbnails" ? "Total thumbnails" : "Total"} />
-                    <StatBox value={job.total_files - (job.processed_files ?? 0)} label="Remaining" variant="warning" />
+                    <StatBox
+                      value={job.processed_files ?? 0}
+                      label={isThumbnailOnly || isThumbnailPhase ? "Generated" : "Processed"}
+                      variant="primary"
+                    />
+                    <StatBox value={job.total_files} label="Total" />
+                    <StatBox
+                      value={Math.max(0, job.total_files - (job.processed_files ?? 0))}
+                      label="Remaining"
+                      variant={isCompleted ? "default" : "warning"}
+                    />
                   </div>
                 </>
               )}
               {job.current_file && (
                 <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-                  <span className="text-sm text-muted-foreground">Current file:</span>
-                  <code className="block mt-1 text-xs font-mono text-foreground truncate">{job.current_file}</code>
+                  <span className="text-xs text-muted-foreground uppercase tracking-wide">Current file</span>
+                  <code className="block mt-1 text-xs font-mono text-foreground break-all">{job.current_file}</code>
                 </div>
               )}
             </CardContent>
           </Card>
         )}
 
-        {/* Statistics Card */}
-        {job.stats_json && (
+        {/* Index Statistics — index jobs only */}
+        {job.stats_json && !isThumbnailOnly && (
           <Card>
             <CardHeader>
-              <CardTitle>Statistics</CardTitle>
+              <CardTitle>Index statistics</CardTitle>
+              {job.started_at && (
+                <CardDescription>
+                  {formatDuration(job.started_at, job.finished_at)}
+                  {speedCount > 0 && ` · ${formatSpeed(speedCount, durationMs)} scan rate`}
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <StatBox value={job.stats_json.scanned_files} label="Scanned" variant="success" />
                 <StatBox value={job.stats_json.indexed_files} label="Indexed" variant="primary" />
                 <StatBox value={job.stats_json.removed_files} label="Removed" variant="warning" />
                 <StatBox value={job.stats_json.errors} label="Errors" variant={job.stats_json.errors > 0 ? "error" : "default"} />
               </div>
-              {job.started_at && (
-                <div className="flex items-center justify-between py-2 border-t border-border/60">
-                  <span className="text-sm text-muted-foreground">Speed:</span>
-                  <span className="text-sm font-medium text-foreground">{formatSpeed(job.stats_json, duration)}</span>
-                </div>
-              )}
             </CardContent>
           </Card>
         )}
 
-        {/* Errors Card */}
+        {/* Thumbnail statistics — thumbnail-only jobs, completed */}
+        {isThumbnailOnly && isCompleted && job.total_files != null && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Thumbnail statistics</CardTitle>
+              {job.started_at && (
+                <CardDescription>
+                  {formatDuration(job.started_at, job.finished_at)}
+                  {speedCount > 0 && ` · ${formatSpeed(speedCount, durationMs)} thumbnails/s`}
+                </CardDescription>
+              )}
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-4">
+                <StatBox value={job.processed_files ?? job.total_files} label="Generated" variant="success" />
+                <StatBox value={job.total_files} label="Total" />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* File errors */}
         {errors.length > 0 && (
           <Card className="lg:col-span-2">
             <CardHeader>
-              <CardTitle>Errors ({errors.length})</CardTitle>
-              <CardDescription>Errors encountered during job execution</CardDescription>
+              <CardTitle>File errors ({errors.length})</CardTitle>
+              <CardDescription>Errors encountered while processing individual files</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2 max-h-80 overflow-y-auto">
               {errors.map((error) => (
@@ -235,19 +474,6 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
                   <span className="text-xs text-muted-foreground">{new Date(error.created_at).toLocaleString()}</span>
                 </div>
               ))}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Error Message */}
-        {job.error_opt && (
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle>Error</CardTitle>
-              <CardDescription>Job failed with error</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <pre className="p-4 bg-destructive/10 rounded-lg text-sm text-destructive overflow-x-auto border border-destructive/20">{job.error_opt}</pre>
             </CardContent>
           </Card>
         )}

@@ -94,8 +94,11 @@ const jobTypeVariants: Record<string, BadgeVariant> = {
 };
 
 const jobTypeLabels: Record<string, string> = {
+  rebuild: "Index",
+  full_rebuild: "Full Index",
   thumbnail_rebuild: "Thumbnails",
-  thumbnail_regenerate: "Regenerate",
+  thumbnail_regenerate: "Regen. Thumbnails",
+  cbr_to_cbz: "CBR → CBZ",
 };
 
 interface JobTypeBadgeProps {
