@@ -17,8 +17,8 @@ pub struct ListBooksQuery {
     pub series: Option<String>,
     #[schema(value_type = Option<String>, example = "unread,reading")]
     pub reading_status: Option<String>,
-    #[schema(value_type = Option<String>)]
-    pub cursor: Option<Uuid>,
+    #[schema(value_type = Option<i64>, example = 1)]
+    pub page: Option<i64>,
     #[schema(value_type = Option<i64>, example = 50)]
     pub limit: Option<i64>,
 }
@@ -49,9 +49,9 @@ pub struct BookItem {
 #[derive(Serialize, ToSchema)]
 pub struct BooksPage {
     pub items: Vec<BookItem>,
-    #[schema(value_type = Option<String>)]
-    pub next_cursor: Option<Uuid>,
     pub total: i64,
+    pub page: i64,
+    pub limit: i64,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -88,8 +88,8 @@ pub struct BookDetails {
         ("kind" = Option<String>, Query, description = "Filter by book kind (cbz, cbr, pdf)"),
         ("series" = Option<String>, Query, description = "Filter by series name (use 'unclassified' for books without series)"),
         ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
-        ("cursor" = Option<String>, Query, description = "Cursor for pagination"),
-        ("limit" = Option<i64>, Query, description = "Max items to return (max 200)"),
+        ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
+        ("limit" = Option<i64>, Query, description = "Items per page (max 200, default 50)"),
     ),
     responses(
         (status = 200, body = BooksPage),
@@ -102,21 +102,23 @@ pub async fn list_books(
     Query(query): Query<ListBooksQuery>,
 ) -> Result<Json<BooksPage>, ApiError> {
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let page = query.page.unwrap_or(1).max(1);
+    let offset = (page - 1) * limit;
 
     // Parse reading_status CSV → Vec<String>
     let reading_statuses: Option<Vec<String>> = query.reading_status.as_deref().map(|s| {
         s.split(',').map(|v| v.trim().to_string()).filter(|v| !v.is_empty()).collect()
     });
 
-    // COUNT query: $1=library_id $2=kind, then optional series/reading_status
-    let mut cp: usize = 2;
-    let count_series_cond = match query.series.as_deref() {
+    // Conditions partagées COUNT et DATA — $1=library_id $2=kind, puis optionnels
+    let mut p: usize = 2;
+    let series_cond = match query.series.as_deref() {
         Some("unclassified") => "AND (b.series IS NULL OR b.series = '')".to_string(),
-        Some(_) => { cp += 1; format!("AND b.series = ${cp}") }
+        Some(_) => { p += 1; format!("AND b.series = ${p}") }
         None => String::new(),
     };
-    let count_rs_cond = if reading_statuses.is_some() {
-        cp += 1; format!("AND COALESCE(brp.status, 'unread') = ANY(${cp})")
+    let rs_cond = if reading_statuses.is_some() {
+        p += 1; format!("AND COALESCE(brp.status, 'unread') = ANY(${p})")
     } else { String::new() };
 
     let count_sql = format!(
@@ -124,31 +126,13 @@ pub async fn list_books(
            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
            WHERE ($1::uuid IS NULL OR b.library_id = $1)
              AND ($2::text IS NULL OR b.kind = $2)
-             {count_series_cond}
-             {count_rs_cond}"#
+             {series_cond}
+             {rs_cond}"#
     );
 
-    let mut count_builder = sqlx::query(&count_sql)
-        .bind(query.library_id)
-        .bind(query.kind.as_deref());
-    if let Some(s) = query.series.as_deref() {
-        if s != "unclassified" { count_builder = count_builder.bind(s); }
-    }
-    if let Some(ref statuses) = reading_statuses {
-        count_builder = count_builder.bind(statuses.clone());
-    }
-
-    // DATA query: $1=library_id $2=kind $3=cursor $4=limit, then optional series/reading_status
-    let mut dp: usize = 4;
-    let series_condition = match query.series.as_deref() {
-        Some("unclassified") => "AND (b.series IS NULL OR b.series = '')".to_string(),
-        Some(_) => { dp += 1; format!("AND b.series = ${dp}") }
-        None => String::new(),
-    };
-    let reading_status_condition = if reading_statuses.is_some() {
-        dp += 1; format!("AND COALESCE(brp.status, 'unread') = ANY(${dp})")
-    } else { String::new() };
-
+    // DATA: mêmes params filtre, puis $N+1=limit $N+2=offset
+    let limit_p = p + 1;
+    let offset_p = p + 2;
     let data_sql = format!(
         r#"
         SELECT b.id, b.library_id, b.kind, b.title, b.author, b.series, b.volume, b.language, b.page_count, b.thumbnail_path, b.updated_at,
@@ -159,9 +143,8 @@ pub async fn list_books(
         LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
         WHERE ($1::uuid IS NULL OR b.library_id = $1)
           AND ($2::text IS NULL OR b.kind = $2)
-          AND ($3::uuid IS NULL OR b.id > $3)
-          {series_condition}
-          {reading_status_condition}
+          {series_cond}
+          {rs_cond}
         ORDER BY
             REGEXP_REPLACE(LOWER(b.title), '[0-9]+', '', 'g'),
             COALESCE(
@@ -169,21 +152,29 @@ pub async fn list_books(
                 0
             ),
             b.title ASC
-        LIMIT $4
+        LIMIT ${limit_p} OFFSET ${offset_p}
         "#
     );
 
+    let mut count_builder = sqlx::query(&count_sql)
+        .bind(query.library_id)
+        .bind(query.kind.as_deref());
     let mut data_builder = sqlx::query(&data_sql)
         .bind(query.library_id)
-        .bind(query.kind.as_deref())
-        .bind(query.cursor)
-        .bind(limit + 1);
+        .bind(query.kind.as_deref());
+
     if let Some(s) = query.series.as_deref() {
-        if s != "unclassified" { data_builder = data_builder.bind(s); }
+        if s != "unclassified" {
+            count_builder = count_builder.bind(s);
+            data_builder = data_builder.bind(s);
+        }
     }
     if let Some(ref statuses) = reading_statuses {
+        count_builder = count_builder.bind(statuses.clone());
         data_builder = data_builder.bind(statuses.clone());
     }
+
+    data_builder = data_builder.bind(limit).bind(offset);
 
     let (count_row, rows) = tokio::try_join!(
         count_builder.fetch_one(&state.pool),
@@ -193,7 +184,6 @@ pub async fn list_books(
 
     let mut items: Vec<BookItem> = rows
         .iter()
-        .take(limit as usize)
         .map(|row| {
             let thumbnail_path: Option<String> = row.get("thumbnail_path");
             BookItem {
@@ -215,16 +205,11 @@ pub async fn list_books(
         })
         .collect();
 
-    let next_cursor = if rows.len() > limit as usize {
-        items.last().map(|b| b.id)
-    } else {
-        None
-    };
-
     Ok(Json(BooksPage {
         items: std::mem::take(&mut items),
-        next_cursor,
         total,
+        page,
+        limit,
     }))
 }
 
@@ -304,17 +289,19 @@ pub struct SeriesItem {
 #[derive(Serialize, ToSchema)]
 pub struct SeriesPage {
     pub items: Vec<SeriesItem>,
-    #[schema(value_type = Option<String>)]
-    pub next_cursor: Option<String>,
     pub total: i64,
+    pub page: i64,
+    pub limit: i64,
 }
 
 #[derive(Deserialize, ToSchema)]
 pub struct ListSeriesQuery {
+    #[schema(value_type = Option<String>, example = "dragon")]
+    pub q: Option<String>,
     #[schema(value_type = Option<String>, example = "unread,reading")]
     pub reading_status: Option<String>,
-    #[schema(value_type = Option<String>)]
-    pub cursor: Option<String>,
+    #[schema(value_type = Option<i64>, example = 1)]
+    pub page: Option<i64>,
     #[schema(value_type = Option<i64>, example = 50)]
     pub limit: Option<i64>,
 }
@@ -326,9 +313,10 @@ pub struct ListSeriesQuery {
     tag = "books",
     params(
         ("library_id" = String, Path, description = "Library UUID"),
+        ("q" = Option<String>, Query, description = "Filter by series name (case-insensitive, partial match)"),
         ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
-        ("cursor" = Option<String>, Query, description = "Cursor for pagination (series name)"),
-        ("limit" = Option<i64>, Query, description = "Max items to return (max 200)"),
+        ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
+        ("limit" = Option<i64>, Query, description = "Items per page (max 200, default 50)"),
     ),
     responses(
         (status = 200, body = SeriesPage),
@@ -342,26 +330,31 @@ pub async fn list_series(
     Query(query): Query<ListSeriesQuery>,
 ) -> Result<Json<SeriesPage>, ApiError> {
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let page = query.page.unwrap_or(1).max(1);
+    let offset = (page - 1) * limit;
 
     let reading_statuses: Option<Vec<String>> = query.reading_status.as_deref().map(|s| {
         s.split(',').map(|v| v.trim().to_string()).filter(|v| !v.is_empty()).collect()
     });
 
-    // Le CTE series_counts est partagé — on dérive le statut de lecture de la série
-    // à partir de books_read_count / book_count.
     let series_status_expr = r#"CASE
               WHEN sc.books_read_count = sc.book_count THEN 'read'
               WHEN sc.books_read_count = 0 THEN 'unread'
               ELSE 'reading'
            END"#;
 
-    // COUNT query: $1=library_id, then optional reading_status ($2)
-    let count_rs_cond = if reading_statuses.is_some() {
-        format!("AND {series_status_expr} = ANY($2)")
-    } else {
-        String::new()
-    };
+    // Paramètres dynamiques — $1 = library_id fixe, puis optionnels dans l'ordre
+    let mut p: usize = 1;
 
+    let q_cond = if query.q.is_some() {
+        p += 1; format!("AND sc.name ILIKE ${p}")
+    } else { String::new() };
+
+    let count_rs_cond = if reading_statuses.is_some() {
+        p += 1; format!("AND {series_status_expr} = ANY(${p})")
+    } else { String::new() };
+
+    // q_cond et count_rs_cond partagent le même p — le count_sql les réutilise directement
     let count_sql = format!(
         r#"
         WITH sorted_books AS (
@@ -376,21 +369,13 @@ pub async fn list_series(
             LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
             GROUP BY sb.name
         )
-        SELECT COUNT(*) FROM series_counts sc WHERE TRUE {count_rs_cond}
+        SELECT COUNT(*) FROM series_counts sc WHERE TRUE {q_cond} {count_rs_cond}
         "#
     );
 
-    let mut count_builder = sqlx::query(&count_sql).bind(library_id);
-    if let Some(ref statuses) = reading_statuses {
-        count_builder = count_builder.bind(statuses.clone());
-    }
-
-    // DATA query: $1=library_id $2=cursor $3=limit, then optional reading_status ($4)
-    let data_rs_cond = if reading_statuses.is_some() {
-        format!("AND {series_status_expr} = ANY($4)")
-    } else {
-        String::new()
-    };
+    // DATA: mêmes params dans le même ordre, puis limit/offset à la fin
+    let limit_p = p + 1;
+    let offset_p = p + 2;
 
     let data_sql = format!(
         r#"
@@ -424,8 +409,9 @@ pub async fn list_series(
             sb.id as first_book_id
         FROM series_counts sc
         JOIN sorted_books sb ON sb.name = sc.name AND sb.rn = 1
-        WHERE ($2::text IS NULL OR sc.name > $2)
-          {data_rs_cond}
+        WHERE TRUE
+          {q_cond}
+          {count_rs_cond}
         ORDER BY
             REGEXP_REPLACE(LOWER(sc.name), '[0-9]+', '', 'g'),
             COALESCE(
@@ -433,17 +419,25 @@ pub async fn list_series(
                 0
             ),
             sc.name ASC
-        LIMIT $3
+        LIMIT ${limit_p} OFFSET ${offset_p}
         "#
     );
 
-    let mut data_builder = sqlx::query(&data_sql)
-        .bind(library_id)
-        .bind(query.cursor.as_deref())
-        .bind(limit + 1);
+    let q_pattern = query.q.as_deref().map(|q| format!("%{}%", q));
+
+    let mut count_builder = sqlx::query(&count_sql).bind(library_id);
+    let mut data_builder = sqlx::query(&data_sql).bind(library_id);
+
+    if let Some(ref pat) = q_pattern {
+        count_builder = count_builder.bind(pat);
+        data_builder = data_builder.bind(pat);
+    }
     if let Some(ref statuses) = reading_statuses {
+        count_builder = count_builder.bind(statuses.clone());
         data_builder = data_builder.bind(statuses.clone());
     }
+
+    data_builder = data_builder.bind(limit).bind(offset);
 
     let (count_row, rows) = tokio::try_join!(
         count_builder.fetch_one(&state.pool),
@@ -453,7 +447,6 @@ pub async fn list_series(
 
     let mut items: Vec<SeriesItem> = rows
         .iter()
-        .take(limit as usize)
         .map(|row| SeriesItem {
             name: row.get("name"),
             book_count: row.get("book_count"),
@@ -462,16 +455,11 @@ pub async fn list_series(
         })
         .collect();
 
-    let next_cursor = if rows.len() > limit as usize {
-        items.last().map(|s| s.name.clone())
-    } else {
-        None
-    };
-
     Ok(Json(SeriesPage {
         items: std::mem::take(&mut items),
         total,
-        next_cursor,
+        page,
+        limit,
     }))
 }
 

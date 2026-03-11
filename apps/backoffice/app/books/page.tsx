@@ -1,6 +1,6 @@
 import { fetchBooks, searchBooks, fetchLibraries, BookDto, LibraryDto, getBookCoverUrl } from "../../lib/api";
 import { BooksGrid, EmptyState } from "../components/BookCard";
-import { Card, CardContent, Button, FormField, FormInput, FormSelect, FormRow, CursorPagination } from "../components/ui";
+import { Card, CardContent, Button, FormField, FormInput, FormSelect, FormRow, OffsetPagination } from "../components/ui";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -13,15 +13,15 @@ export default async function BooksPage({
   const searchParamsAwaited = await searchParams;
   const libraryId = typeof searchParamsAwaited.library === "string" ? searchParamsAwaited.library : undefined;
   const searchQuery = typeof searchParamsAwaited.q === "string" ? searchParamsAwaited.q : "";
-  const cursor = typeof searchParamsAwaited.cursor === "string" ? searchParamsAwaited.cursor : undefined;
+  const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 20;
-  
+
   const [libraries] = await Promise.all([
     fetchLibraries().catch(() => [] as LibraryDto[])
   ]);
 
   let books: BookDto[] = [];
-  let nextCursor: string | null = null;
+  let total = 0;
   let searchResults: BookDto[] | null = null;
   let totalHits: number | null = null;
 
@@ -41,18 +41,22 @@ export default async function BooksPage({
         file_path: null,
         file_format: null,
         file_parse_status: null,
-        updated_at: ""
+        updated_at: "",
+        reading_status: "unread" as const,
+        reading_current_page: null,
+        reading_last_read_at: null,
       }));
       totalHits = searchResponse.estimated_total_hits;
     }
   } else {
-    const booksPage = await fetchBooks(libraryId, undefined, cursor, limit).catch(() => ({ 
-      items: [] as BookDto[], 
-      next_cursor: null,
-      prev_cursor: null 
+    const booksPage = await fetchBooks(libraryId, undefined, page, limit).catch(() => ({
+      items: [] as BookDto[],
+      total: 0,
+      page: 1,
+      limit,
     }));
     books = booksPage.items;
-    nextCursor = booksPage.next_cursor;
+    total = booksPage.total;
   }
 
   const displayBooks = (searchResults || books).map(book => ({
@@ -60,8 +64,7 @@ export default async function BooksPage({
     coverUrl: getBookCoverUrl(book.id)
   }));
 
-  const hasNextPage = !!nextCursor;
-  const hasPrevPage = !!cursor;
+  const totalPages = Math.ceil(total / limit);
 
   return (
     <>
@@ -142,12 +145,11 @@ export default async function BooksPage({
           <BooksGrid books={displayBooks} />
           
           {!searchQuery && (
-            <CursorPagination
-              hasNextPage={hasNextPage}
-              hasPrevPage={hasPrevPage}
+            <OffsetPagination
+              currentPage={page}
+              totalPages={totalPages}
               pageSize={limit}
-              currentCount={displayBooks.length}
-              nextCursor={nextCursor}
+              totalItems={total}
             />
           )}
         </>

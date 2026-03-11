@@ -1,5 +1,5 @@
 import { fetchLibraries, fetchSeries, getBookCoverUrl, LibraryDto, SeriesDto, SeriesPageDto } from "../../../../lib/api";
-import { CursorPagination } from "../../../components/ui";
+import { OffsetPagination } from "../../../components/ui";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -16,12 +16,12 @@ export default async function LibrarySeriesPage({
 }) {
   const { id } = await params;
   const searchParamsAwaited = await searchParams;
-  const cursor = typeof searchParamsAwaited.cursor === "string" ? searchParamsAwaited.cursor : undefined;
+  const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 20;
-  
+
   const [library, seriesPage] = await Promise.all([
     fetchLibraries().then(libs => libs.find(l => l.id === id)),
-    fetchSeries(id, cursor, limit).catch(() => ({ items: [] as SeriesDto[], next_cursor: null }) as SeriesPageDto)
+    fetchSeries(id, page, limit).catch(() => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }) as SeriesPageDto)
   ]);
 
   if (!library) {
@@ -29,9 +29,7 @@ export default async function LibrarySeriesPage({
   }
 
   const series = seriesPage.items;
-  const nextCursor = seriesPage.next_cursor;
-  const hasNextPage = !!nextCursor;
-  const hasPrevPage = !!cursor;
+  const totalPages = Math.ceil(seriesPage.total / limit);
 
   return (
     <div className="space-y-6">
@@ -78,12 +76,11 @@ export default async function LibrarySeriesPage({
             ))}
           </div>
           
-          <CursorPagination
-            hasNextPage={hasNextPage}
-            hasPrevPage={hasPrevPage}
+          <OffsetPagination
+            currentPage={page}
+            totalPages={totalPages}
             pageSize={limit}
-            currentCount={series.length}
-            nextCursor={nextCursor}
+            totalItems={seriesPage.total}
           />
         </>
       ) : (

@@ -1,7 +1,7 @@
 import { fetchLibraries, fetchBooks, getBookCoverUrl, LibraryDto, BookDto } from "../../../../lib/api";
 import { BooksGrid, EmptyState } from "../../../components/BookCard";
 import { LibrarySubPageHeader } from "../../../components/LibrarySubPageHeader";
-import { CursorPagination } from "../../../components/ui";
+import { OffsetPagination } from "../../../components/ui";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -15,15 +15,17 @@ export default async function LibraryBooksPage({
 }) {
   const { id } = await params;
   const searchParamsAwaited = await searchParams;
-  const cursor = typeof searchParamsAwaited.cursor === "string" ? searchParamsAwaited.cursor : undefined;
+  const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const series = typeof searchParamsAwaited.series === "string" ? searchParamsAwaited.series : undefined;
   const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 20;
-  
+
   const [library, booksPage] = await Promise.all([
     fetchLibraries().then(libs => libs.find(l => l.id === id)),
-    fetchBooks(id, series, cursor, limit).catch(() => ({ 
-      items: [] as BookDto[], 
-      next_cursor: null 
+    fetchBooks(id, series, page, limit).catch(() => ({
+      items: [] as BookDto[],
+      total: 0,
+      page: 1,
+      limit,
     }))
   ]);
 
@@ -35,11 +37,9 @@ export default async function LibraryBooksPage({
     ...book,
     coverUrl: getBookCoverUrl(book.id)
   }));
-  const nextCursor = booksPage.next_cursor;
-  
+
   const seriesDisplayName = series === "unclassified" ? "Unclassified" : series;
-  const hasNextPage = !!nextCursor;
-  const hasPrevPage = !!cursor;
+  const totalPages = Math.ceil(booksPage.total / limit);
 
   return (
     <div className="space-y-6">
@@ -63,12 +63,11 @@ export default async function LibraryBooksPage({
         <>
           <BooksGrid books={books} />
           
-          <CursorPagination
-            hasNextPage={hasNextPage}
-            hasPrevPage={hasPrevPage}
+          <OffsetPagination
+            currentPage={page}
+            totalPages={totalPages}
             pageSize={limit}
-            currentCount={books.length}
-            nextCursor={nextCursor}
+            totalItems={booksPage.total}
           />
         </>
       ) : (

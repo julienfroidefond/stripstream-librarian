@@ -68,15 +68,16 @@ export type BookDto = {
   file_format: string | null;
   file_parse_status: string | null;
   updated_at: string;
-  // Présents uniquement sur GET /books/:id (pas dans la liste)
-  reading_status?: ReadingStatus;
-  reading_current_page?: number | null;
-  reading_last_read_at?: string | null;
+  reading_status: ReadingStatus;
+  reading_current_page: number | null;
+  reading_last_read_at: string | null;
 };
 
 export type BooksPageDto = {
   items: BookDto[];
-  next_cursor: string | null;
+  total: number;
+  page: number;
+  limit: number;
 };
 
 export type SearchHitDto = {
@@ -99,6 +100,7 @@ export type SearchResponseDto = {
 export type SeriesDto = {
   name: string;
   book_count: number;
+  books_read_count: number;
   first_book_id: string;
 };
 
@@ -245,13 +247,13 @@ export async function revokeToken(id: string) {
 export async function fetchBooks(
   libraryId?: string,
   series?: string,
-  cursor?: string,
+  page: number = 1,
   limit: number = 50,
 ): Promise<BooksPageDto> {
   const params = new URLSearchParams();
   if (libraryId) params.set("library_id", libraryId);
   if (series) params.set("series", series);
-  if (cursor) params.set("cursor", cursor);
+  params.set("page", page.toString());
   params.set("limit", limit.toString());
 
   return apiFetch<BooksPageDto>(`/books?${params.toString()}`);
@@ -259,16 +261,18 @@ export async function fetchBooks(
 
 export type SeriesPageDto = {
   items: SeriesDto[];
-  next_cursor: string | null;
+  total: number;
+  page: number;
+  limit: number;
 };
 
 export async function fetchSeries(
   libraryId: string,
-  cursor?: string,
+  page: number = 1,
   limit: number = 50,
 ): Promise<SeriesPageDto> {
   const params = new URLSearchParams();
-  if (cursor) params.set("cursor", cursor);
+  params.set("page", page.toString());
   params.set("limit", limit.toString());
 
   return apiFetch<SeriesPageDto>(
