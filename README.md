@@ -146,6 +146,81 @@ stripstream-librarian/
 └── .env                  # Environment configuration
 ```
 
+## Docker Registry
+
+Images are built and pushed to Docker Hub with the naming convention `docker.io/{owner}/stripstream-{service}`.
+
+### Publishing Images (Maintainers)
+
+To build and push all service images to the registry:
+
+```bash
+# Login to Docker Hub first
+docker login -u julienfroidefond32
+
+# Build and push all images
+./scripts/docker-push.sh
+```
+
+This script will:
+- Build images for `api`, `indexer`, and `backoffice`
+- Tag them with the current version (from `Cargo.toml`) and `latest`
+- Push to the registry
+
+### Using Published Images
+
+To use the pre-built images in your own `docker-compose.yml`:
+
+```yaml
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: stripstream
+      POSTGRES_USER: stripstream
+      POSTGRES_PASSWORD: stripstream
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+
+  api:
+    image: julienfroidefond32/stripstream-api:latest
+    env_file:
+      - .env
+    ports:
+      - "7080:7080"
+    volumes:
+      - ${LIBRARIES_HOST_PATH:-./libraries}:/libraries
+      - ${THUMBNAILS_HOST_PATH:-./data/thumbnails}:/data/thumbnails
+
+  indexer:
+    image: julienfroidefond32/stripstream-indexer:latest
+    env_file:
+      - .env
+    ports:
+      - "7081:7081"
+    volumes:
+      - ${LIBRARIES_HOST_PATH:-./libraries}:/libraries
+      - ${THUMBNAILS_HOST_PATH:-./data/thumbnails}:/data/thumbnails
+
+  backoffice:
+    image: julienfroidefond32/stripstream-backoffice:latest
+    env_file:
+      - .env
+    environment:
+      - PORT=7082
+      - HOST=0.0.0.0
+    ports:
+      - "7082:7082"
+
+volumes:
+  postgres_data:
+```
+
 ## License
 
 [Your License Here]
