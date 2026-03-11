@@ -18,7 +18,6 @@ use sha2::{Digest, Sha256};
 use sqlx::Row;
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
-use walkdir::WalkDir;
 
 use crate::{error::ApiError, state::AppState};
 
@@ -389,7 +388,7 @@ fn extract_cbz_page(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiErro
             image_names.push(entry.name().to_string());
         }
     }
-    image_names.sort();
+    image_names.sort_by(|a, b| natord::compare(a, b));
     debug!("Found {} images in CBZ {}", image_names.len(), abs_path);
 
     let index = page_number as usize - 1;
@@ -413,107 +412,94 @@ fn extract_cbz_page(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiErro
 
 fn extract_cbr_page(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiError> {
     info!("Opening CBR archive: {}", abs_path);
-    
     let index = page_number as usize - 1;
-    let tmp_dir = std::env::temp_dir().join(format!("stripstream-cbr-{}", Uuid::new_v4()));
-    debug!("Creating temp dir for CBR extraction: {}", tmp_dir.display());
-    
-    std::fs::create_dir_all(&tmp_dir).map_err(|e| {
-        error!("Cannot create temp dir: {}", e);
-        ApiError::internal(format!("temp dir error: {}", e))
-    })?;
 
-    // Extract directly - skip listing which fails on UTF-16 encoded filenames
-    let extract_output = std::process::Command::new("env")
-        .args(["LC_ALL=en_US.UTF-8", "LANG=en_US.UTF-8", "unar", "-o"])
-        .arg(&tmp_dir)
-        .arg(abs_path)
-        .output()
-        .map_err(|e| {
-            let _ = std::fs::remove_dir_all(&tmp_dir);
-            error!("unar extract failed: {}", e);
-            ApiError::internal(format!("unar extract failed: {e}"))
-        })?;
+    // Pass 1: list all image names (in-process, no subprocess)
+    let mut image_names: Vec<String> = {
+        let archive = unrar::Archive::new(abs_path)
+            .open_for_listing()
+            .map_err(|e| ApiError::internal(format!("unrar listing failed: {}", e)))?;
+        let mut names = Vec::new();
+        for entry in archive {
+            let entry = entry.map_err(|e| ApiError::internal(format!("unrar entry error: {}", e)))?;
+            let name = entry.filename.to_string_lossy().to_string();
+            if is_image_name(&name.to_ascii_lowercase()) {
+                names.push(name);
+            }
+        }
+        names
+    };
 
-    if !extract_output.status.success() {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-        let stderr = String::from_utf8_lossy(&extract_output.stderr);
-        error!("unar extract failed {}: {}", abs_path, stderr);
-        return Err(ApiError::internal("unar extract failed"));
+    image_names.sort_by(|a, b| natord::compare(a, b));
+
+    let target = image_names
+        .get(index)
+        .ok_or_else(|| {
+            error!("Page {} out of range (total: {})", page_number, image_names.len());
+            ApiError::not_found("page out of range")
+        })?
+        .clone();
+
+    // Pass 2: extract only the target page to memory
+    let mut archive = unrar::Archive::new(abs_path)
+        .open_for_processing()
+        .map_err(|e| ApiError::internal(format!("unrar processing failed: {}", e)))?;
+
+    while let Some(header) = archive
+        .read_header()
+        .map_err(|e| ApiError::internal(format!("unrar read header: {}", e)))?
+    {
+        let entry_name = header.entry().filename.to_string_lossy().to_string();
+        if entry_name == target {
+            let (data, _) = header
+                .read()
+                .map_err(|e| ApiError::internal(format!("unrar read: {}", e)))?;
+            info!("Extracted CBR page {} ({} bytes)", page_number, data.len());
+            return Ok(data);
+        }
+        archive = header
+            .skip()
+            .map_err(|e| ApiError::internal(format!("unrar skip: {}", e)))?;
     }
 
-    // Find and read the requested image (recursive search for CBR files with subdirectories)
-    let mut image_files: Vec<_> = WalkDir::new(&tmp_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy().to_lowercase();
-            is_image_name(&name)
-        })
-        .collect();
-    
-    image_files.sort_by_key(|e| e.path().to_string_lossy().to_lowercase());
-
-    let selected = image_files.get(index).ok_or_else(|| {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-        error!("Page {} not found (total: {})", page_number, image_files.len());
-        ApiError::not_found("page out of range")
-    })?;
-
-    let data = std::fs::read(selected.path()).map_err(|e| {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-        error!("read failed: {}", e);
-        ApiError::internal(format!("read error: {}", e))
-    })?;
-
-    let _ = std::fs::remove_dir_all(&tmp_dir);
-    
-    info!("Successfully extracted CBR page {} ({} bytes)", page_number, data.len());
-    Ok(data)
+    Err(ApiError::not_found("page not found in archive"))
 }
 
 fn render_pdf_page(abs_path: &str, page_number: u32, width: u32) -> Result<Vec<u8>, ApiError> {
-    let tmp_dir = std::env::temp_dir().join(format!("stripstream-pdf-{}", Uuid::new_v4()));
-    debug!("Creating temp dir for PDF rendering: {}", tmp_dir.display());
-    std::fs::create_dir_all(&tmp_dir).map_err(|e| {
-        error!("Cannot create temp dir {}: {}", tmp_dir.display(), e);
-        ApiError::internal(format!("cannot create temp dir: {e}"))
-    })?;
-    let output_prefix = tmp_dir.join("page");
+    use pdfium_render::prelude::*;
 
-    let mut cmd = std::process::Command::new("pdftoppm");
-    cmd.arg("-f")
-        .arg(page_number.to_string())
-        .arg("-singlefile")
-        .arg("-png");
-    if width > 0 {
-        cmd.arg("-scale-to-x").arg(width.to_string()).arg("-scale-to-y").arg("-1");
-    }
-    cmd.arg(abs_path).arg(&output_prefix);
+    debug!("Rendering PDF page {} of {} (width: {})", page_number, abs_path, width);
 
-    debug!("Running pdftoppm for page {} of {} (width: {})", page_number, abs_path, width);
-    let output = cmd
-        .output()
-        .map_err(|e| {
-            error!("pdftoppm command failed for {} page {}: {}", abs_path, page_number, e);
-            ApiError::internal(format!("pdf render failed: {e}"))
-        })?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-        error!("pdftoppm failed for {} page {}: {}", abs_path, page_number, stderr);
-        return Err(ApiError::internal("pdf render command failed"));
-    }
+    let pdfium = Pdfium::new(
+        Pdfium::bind_to_system_library()
+            .map_err(|e| ApiError::internal(format!("pdfium not available: {:?}", e)))?,
+    );
 
-    let image_path = output_prefix.with_extension("png");
-    debug!("Reading rendered PDF page from: {}", image_path.display());
-    let bytes = std::fs::read(&image_path).map_err(|e| {
-        error!("Failed to read rendered PDF output {}: {}", image_path.display(), e);
-        ApiError::internal(format!("render output missing: {e}"))
-    })?;
-    let _ = std::fs::remove_dir_all(&tmp_dir);
-    debug!("Successfully rendered PDF page {} to {} bytes", page_number, bytes.len());
-    Ok(bytes)
+    let document = pdfium
+        .load_pdf_from_file(abs_path, None)
+        .map_err(|e| ApiError::internal(format!("pdf load failed: {:?}", e)))?;
+
+    let page_index = (page_number - 1) as u16;
+    let page = document
+        .pages()
+        .get(page_index)
+        .map_err(|_| ApiError::not_found("page out of range"))?;
+
+    let render_width = if width > 0 { width as i32 } else { 1200 };
+    let config = PdfRenderConfig::new().set_target_width(render_width);
+
+    let bitmap = page
+        .render_with_config(&config)
+        .map_err(|e| ApiError::internal(format!("pdf render failed: {:?}", e)))?;
+
+    let image = bitmap.as_image();
+    let mut buf = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut buf, image::ImageFormat::Png)
+        .map_err(|e| ApiError::internal(format!("png encode failed: {}", e)))?;
+
+    debug!("Rendered PDF page {} ({} bytes)", page_number, buf.get_ref().len());
+    Ok(buf.into_inner())
 }
 
 fn transcode_image(input: &[u8], out_format: &OutputFormat, quality: u8, width: u32, filter: image::imageops::FilterType) -> Result<Vec<u8>, ApiError> {
