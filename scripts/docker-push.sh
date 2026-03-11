@@ -17,17 +17,17 @@ echo ""
 for service in "${SERVICES[@]}"; do
     echo "Building $service..."
     docker build -f apps/$service/Dockerfile -t $service:latest .
-    
+
     echo "Tagging $service..."
     docker tag $service:latest $REGISTRY/$OWNER/stripstream-$service:$VERSION
     docker tag $service:latest $REGISTRY/$OWNER/stripstream-$service:latest
-    
+
     echo "Pushing stripstream-$service:$VERSION..."
     docker push $REGISTRY/$OWNER/stripstream-$service:$VERSION
-    
+
     echo "Pushing stripstream-$service:latest..."
     docker push $REGISTRY/$OWNER/stripstream-$service:latest
-    
+
     echo "✓ $service pushed successfully"
     echo ""
 done

@@ -29,24 +29,6 @@ services:
       timeout: 5s
       retries: 5
 
-  migrate:
-    image: postgres:16-alpine
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      POSTGRES_USER: stripstream
-      POSTGRES_PASSWORD: stripstream
-      POSTGRES_DB: stripstream
-    volumes:
-      - ./infra/migrations:/migrations:ro
-    command:
-      [
-        "sh",
-        "-c",
-        "export PGPASSWORD=$$POSTGRES_PASSWORD; for f in /migrations/*.sql; do echo \"Applying migration: $$f\"; psql -h postgres -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\" -f \"$$f\" || exit 1; done",
-      ]
-
   api:
     build:
       context: .
@@ -59,8 +41,6 @@ services:
       - ${LIBRARIES_HOST_PATH:-./libraries}:/libraries
       - ${THUMBNAILS_HOST_PATH:-./data/thumbnails}:/data/thumbnails
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       meilisearch:
@@ -83,8 +63,8 @@ services:
       - ${LIBRARIES_HOST_PATH:-./libraries}:/libraries
       - ${THUMBNAILS_HOST_PATH:-./data/thumbnails}:/data/thumbnails
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      api:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       meilisearch:
