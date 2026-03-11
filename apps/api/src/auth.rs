@@ -94,11 +94,15 @@ async fn authenticate(state: &AppState, token: &str) -> Result<Scope, ApiError> 
 }
 
 fn parse_prefix(token: &str) -> Option<&str> {
-    let mut parts = token.split('_');
-    let namespace = parts.next()?;
-    let prefix = parts.next()?;
-    let secret = parts.next()?;
-    if namespace != "stl" || secret.is_empty() || prefix.len() < 6 {
+    // Format: stl_{8-char prefix}_{secret}
+    // Base64 URL_SAFE peut contenir '_', donc on ne peut pas splitter aveuglément
+    let rest = token.strip_prefix("stl_")?;
+    if rest.len() < 10 {
+        // 8 (prefix) + 1 ('_') + 1 (secret min)
+        return None;
+    }
+    let prefix = &rest[..8];
+    if rest.as_bytes().get(8) != Some(&b'_') {
         return None;
     }
     Some(prefix)

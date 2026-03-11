@@ -15,6 +15,8 @@ pub struct ListBooksQuery {
     pub kind: Option<String>,
     #[schema(value_type = Option<String>)]
     pub series: Option<String>,
+    #[schema(value_type = Option<String>, example = "unread,reading")]
+    pub reading_status: Option<String>,
     #[schema(value_type = Option<String>)]
     pub cursor: Option<Uuid>,
     #[schema(value_type = Option<i64>, example = 50)]
@@ -37,6 +39,11 @@ pub struct BookItem {
     pub thumbnail_url: Option<String>,
     #[schema(value_type = String)]
     pub updated_at: DateTime<Utc>,
+    /// Reading status: "unread", "reading", or "read"
+    pub reading_status: String,
+    pub reading_current_page: Option<i32>,
+    #[schema(value_type = Option<String>)]
+    pub reading_last_read_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -44,6 +51,7 @@ pub struct BooksPage {
     pub items: Vec<BookItem>,
     #[schema(value_type = Option<String>)]
     pub next_cursor: Option<Uuid>,
+    pub total: i64,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -79,6 +87,7 @@ pub struct BookDetails {
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),
         ("kind" = Option<String>, Query, description = "Filter by book kind (cbz, cbr, pdf)"),
         ("series" = Option<String>, Query, description = "Filter by series name (use 'unclassified' for books without series)"),
+        ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
         ("cursor" = Option<String>, Query, description = "Cursor for pagination"),
         ("limit" = Option<i64>, Query, description = "Max items to return (max 200)"),
     ),
@@ -93,51 +102,94 @@ pub async fn list_books(
     Query(query): Query<ListBooksQuery>,
 ) -> Result<Json<BooksPage>, ApiError> {
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
-    
-    // Build series filter condition
-    let series_condition = match query.series.as_deref() {
-        Some("unclassified") => "AND (series IS NULL OR series = '')",
-        Some(_series_name) => "AND series = $5",
-        None => "",
+
+    // Parse reading_status CSV → Vec<String>
+    let reading_statuses: Option<Vec<String>> = query.reading_status.as_deref().map(|s| {
+        s.split(',').map(|v| v.trim().to_string()).filter(|v| !v.is_empty()).collect()
+    });
+
+    // COUNT query: $1=library_id $2=kind, then optional series/reading_status
+    let mut cp: usize = 2;
+    let count_series_cond = match query.series.as_deref() {
+        Some("unclassified") => "AND (b.series IS NULL OR b.series = '')".to_string(),
+        Some(_) => { cp += 1; format!("AND b.series = ${cp}") }
+        None => String::new(),
     };
-    
-    let sql = format!(
+    let count_rs_cond = if reading_statuses.is_some() {
+        cp += 1; format!("AND COALESCE(brp.status, 'unread') = ANY(${cp})")
+    } else { String::new() };
+
+    let count_sql = format!(
+        r#"SELECT COUNT(*) FROM books b
+           LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+           WHERE ($1::uuid IS NULL OR b.library_id = $1)
+             AND ($2::text IS NULL OR b.kind = $2)
+             {count_series_cond}
+             {count_rs_cond}"#
+    );
+
+    let mut count_builder = sqlx::query(&count_sql)
+        .bind(query.library_id)
+        .bind(query.kind.as_deref());
+    if let Some(s) = query.series.as_deref() {
+        if s != "unclassified" { count_builder = count_builder.bind(s); }
+    }
+    if let Some(ref statuses) = reading_statuses {
+        count_builder = count_builder.bind(statuses.clone());
+    }
+
+    // DATA query: $1=library_id $2=kind $3=cursor $4=limit, then optional series/reading_status
+    let mut dp: usize = 4;
+    let series_condition = match query.series.as_deref() {
+        Some("unclassified") => "AND (b.series IS NULL OR b.series = '')".to_string(),
+        Some(_) => { dp += 1; format!("AND b.series = ${dp}") }
+        None => String::new(),
+    };
+    let reading_status_condition = if reading_statuses.is_some() {
+        dp += 1; format!("AND COALESCE(brp.status, 'unread') = ANY(${dp})")
+    } else { String::new() };
+
+    let data_sql = format!(
         r#"
-        SELECT id, library_id, kind, title, author, series, volume, language, page_count, thumbnail_path, updated_at
-        FROM books
-        WHERE ($1::uuid IS NULL OR library_id = $1)
-          AND ($2::text IS NULL OR kind = $2)
-          AND ($3::uuid IS NULL OR id > $3)
-          {}
-        ORDER BY 
-            -- Extract text part before numbers (case insensitive)
-            REGEXP_REPLACE(LOWER(title), '[0-9]+', '', 'g'),
-            -- Extract first number group and convert to integer for numeric sort
+        SELECT b.id, b.library_id, b.kind, b.title, b.author, b.series, b.volume, b.language, b.page_count, b.thumbnail_path, b.updated_at,
+               COALESCE(brp.status, 'unread') AS reading_status,
+               brp.current_page AS reading_current_page,
+               brp.last_read_at AS reading_last_read_at
+        FROM books b
+        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+        WHERE ($1::uuid IS NULL OR b.library_id = $1)
+          AND ($2::text IS NULL OR b.kind = $2)
+          AND ($3::uuid IS NULL OR b.id > $3)
+          {series_condition}
+          {reading_status_condition}
+        ORDER BY
+            REGEXP_REPLACE(LOWER(b.title), '[0-9]+', '', 'g'),
             COALESCE(
-                (REGEXP_MATCH(LOWER(title), '\d+'))[1]::int,
+                (REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int,
                 0
             ),
-            -- Then by full title as fallback
-            title ASC
+            b.title ASC
         LIMIT $4
-        "#,
-        series_condition
+        "#
     );
-    
-    let mut query_builder = sqlx::query(&sql)
+
+    let mut data_builder = sqlx::query(&data_sql)
         .bind(query.library_id)
         .bind(query.kind.as_deref())
         .bind(query.cursor)
         .bind(limit + 1);
-    
-    // Bind series parameter if it's not unclassified
-    if let Some(series) = query.series.as_deref() {
-        if series != "unclassified" {
-            query_builder = query_builder.bind(series);
-        }
+    if let Some(s) = query.series.as_deref() {
+        if s != "unclassified" { data_builder = data_builder.bind(s); }
     }
-    
-    let rows = query_builder.fetch_all(&state.pool).await?;
+    if let Some(ref statuses) = reading_statuses {
+        data_builder = data_builder.bind(statuses.clone());
+    }
+
+    let (count_row, rows) = tokio::try_join!(
+        count_builder.fetch_one(&state.pool),
+        data_builder.fetch_all(&state.pool),
+    )?;
+    let total: i64 = count_row.get(0);
 
     let mut items: Vec<BookItem> = rows
         .iter()
@@ -156,6 +208,9 @@ pub async fn list_books(
                 page_count: row.get("page_count"),
                 thumbnail_url: thumbnail_path.map(|_p| format!("/books/{}/thumbnail", row.get::<Uuid, _>("id"))),
                 updated_at: row.get("updated_at"),
+                reading_status: row.get("reading_status"),
+                reading_current_page: row.get("reading_current_page"),
+                reading_last_read_at: row.get("reading_last_read_at"),
             }
         })
         .collect();
@@ -169,6 +224,7 @@ pub async fn list_books(
     Ok(Json(BooksPage {
         items: std::mem::take(&mut items),
         next_cursor,
+        total,
     }))
 }
 
@@ -240,6 +296,7 @@ pub async fn get_book(
 pub struct SeriesItem {
     pub name: String,
     pub book_count: i64,
+    pub books_read_count: i64,
     #[schema(value_type = String)]
     pub first_book_id: Uuid,
 }
@@ -249,10 +306,13 @@ pub struct SeriesPage {
     pub items: Vec<SeriesItem>,
     #[schema(value_type = Option<String>)]
     pub next_cursor: Option<String>,
+    pub total: i64,
 }
 
 #[derive(Deserialize, ToSchema)]
 pub struct ListSeriesQuery {
+    #[schema(value_type = Option<String>, example = "unread,reading")]
+    pub reading_status: Option<String>,
     #[schema(value_type = Option<String>)]
     pub cursor: Option<String>,
     #[schema(value_type = Option<i64>, example = 50)]
@@ -266,6 +326,7 @@ pub struct ListSeriesQuery {
     tag = "books",
     params(
         ("library_id" = String, Path, description = "Library UUID"),
+        ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
         ("cursor" = Option<String>, Query, description = "Cursor for pagination (series name)"),
         ("limit" = Option<i64>, Query, description = "Max items to return (max 200)"),
     ),
@@ -282,16 +343,64 @@ pub async fn list_series(
 ) -> Result<Json<SeriesPage>, ApiError> {
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
 
-    let rows = sqlx::query(
+    let reading_statuses: Option<Vec<String>> = query.reading_status.as_deref().map(|s| {
+        s.split(',').map(|v| v.trim().to_string()).filter(|v| !v.is_empty()).collect()
+    });
+
+    // Le CTE series_counts est partagé — on dérive le statut de lecture de la série
+    // à partir de books_read_count / book_count.
+    let series_status_expr = r#"CASE
+              WHEN sc.books_read_count = sc.book_count THEN 'read'
+              WHEN sc.books_read_count = 0 THEN 'unread'
+              ELSE 'reading'
+           END"#;
+
+    // COUNT query: $1=library_id, then optional reading_status ($2)
+    let count_rs_cond = if reading_statuses.is_some() {
+        format!("AND {series_status_expr} = ANY($2)")
+    } else {
+        String::new()
+    };
+
+    let count_sql = format!(
         r#"
         WITH sorted_books AS (
-            SELECT 
+            SELECT COALESCE(NULLIF(series, ''), 'unclassified') as name, id
+            FROM books WHERE library_id = $1
+        ),
+        series_counts AS (
+            SELECT sb.name,
+                COUNT(*) as book_count,
+                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
+            FROM sorted_books sb
+            LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
+            GROUP BY sb.name
+        )
+        SELECT COUNT(*) FROM series_counts sc WHERE TRUE {count_rs_cond}
+        "#
+    );
+
+    let mut count_builder = sqlx::query(&count_sql).bind(library_id);
+    if let Some(ref statuses) = reading_statuses {
+        count_builder = count_builder.bind(statuses.clone());
+    }
+
+    // DATA query: $1=library_id $2=cursor $3=limit, then optional reading_status ($4)
+    let data_rs_cond = if reading_statuses.is_some() {
+        format!("AND {series_status_expr} = ANY($4)")
+    } else {
+        String::new()
+    };
+
+    let data_sql = format!(
+        r#"
+        WITH sorted_books AS (
+            SELECT
                 COALESCE(NULLIF(series, ''), 'unclassified') as name,
                 id,
-                -- Natural sort order for books within series
                 ROW_NUMBER() OVER (
-                    PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified') 
-                    ORDER BY 
+                    PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified')
+                    ORDER BY
                         REGEXP_REPLACE(LOWER(title), '[0-9]+', '', 'g'),
                         COALESCE((REGEXP_MATCH(LOWER(title), '\d+'))[1]::int, 0),
                         title ASC
@@ -300,36 +409,47 @@ pub async fn list_series(
             WHERE library_id = $1
         ),
         series_counts AS (
-            SELECT 
-                name,
-                COUNT(*) as book_count
-            FROM sorted_books
-            GROUP BY name
+            SELECT
+                sb.name,
+                COUNT(*) as book_count,
+                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
+            FROM sorted_books sb
+            LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
+            GROUP BY sb.name
         )
-        SELECT 
+        SELECT
             sc.name,
             sc.book_count,
+            sc.books_read_count,
             sb.id as first_book_id
         FROM series_counts sc
         JOIN sorted_books sb ON sb.name = sc.name AND sb.rn = 1
         WHERE ($2::text IS NULL OR sc.name > $2)
-        ORDER BY 
-            -- Natural sort: extract text part before numbers
+          {data_rs_cond}
+        ORDER BY
             REGEXP_REPLACE(LOWER(sc.name), '[0-9]+', '', 'g'),
-            -- Extract first number group and convert to integer
             COALESCE(
                 (REGEXP_MATCH(LOWER(sc.name), '\d+'))[1]::int,
                 0
             ),
             sc.name ASC
         LIMIT $3
-        "#,
-    )
-    .bind(library_id)
-    .bind(query.cursor.as_deref())
-    .bind(limit + 1)
-    .fetch_all(&state.pool)
-    .await?;
+        "#
+    );
+
+    let mut data_builder = sqlx::query(&data_sql)
+        .bind(library_id)
+        .bind(query.cursor.as_deref())
+        .bind(limit + 1);
+    if let Some(ref statuses) = reading_statuses {
+        data_builder = data_builder.bind(statuses.clone());
+    }
+
+    let (count_row, rows) = tokio::try_join!(
+        count_builder.fetch_one(&state.pool),
+        data_builder.fetch_all(&state.pool),
+    )?;
+    let total: i64 = count_row.get(0);
 
     let mut items: Vec<SeriesItem> = rows
         .iter()
@@ -337,6 +457,7 @@ pub async fn list_series(
         .map(|row| SeriesItem {
             name: row.get("name"),
             book_count: row.get("book_count"),
+            books_read_count: row.get("books_read_count"),
             first_book_id: row.get("first_book_id"),
         })
         .collect();
@@ -349,6 +470,7 @@ pub async fn list_series(
 
     Ok(Json(SeriesPage {
         items: std::mem::take(&mut items),
+        total,
         next_cursor,
     }))
 }
