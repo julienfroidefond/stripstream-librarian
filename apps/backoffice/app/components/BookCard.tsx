@@ -18,16 +18,27 @@ interface BookCardProps {
 
 function BookImage({ src, alt }: { src: string; alt: string }) {
   const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  if (hasError) {
+    return (
+      <div className="relative aspect-[2/3] overflow-hidden bg-muted flex items-center justify-center">
+        <svg className="w-10 h-10 text-muted-foreground/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+        </svg>
+      </div>
+    );
+  }
 
   return (
     <div className="relative aspect-[2/3] overflow-hidden bg-muted">
       {/* Skeleton */}
-      <div 
+      <div
         className={`absolute inset-0 bg-muted/50 animate-pulse transition-opacity duration-300 ${
           isLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'
         }`}
       />
-      
+
       {/* Image */}
       <Image
         src={src}
@@ -38,6 +49,7 @@ function BookImage({ src, alt }: { src: string; alt: string }) {
         }`}
         sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 16vw"
         onLoad={() => setIsLoaded(true)}
+        onError={() => setHasError(true)}
         unoptimized
       />
     </div>

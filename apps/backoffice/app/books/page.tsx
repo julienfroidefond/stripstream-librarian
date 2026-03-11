@@ -1,7 +1,8 @@
-import { fetchBooks, searchBooks, fetchLibraries, BookDto, LibraryDto, getBookCoverUrl } from "../../lib/api";
+import { fetchBooks, searchBooks, fetchLibraries, BookDto, LibraryDto, SeriesHitDto, getBookCoverUrl } from "../../lib/api";
 import { BooksGrid, EmptyState } from "../components/BookCard";
 import { Card, CardContent, Button, FormField, FormInput, FormSelect, FormRow, OffsetPagination } from "../components/ui";
 import Link from "next/link";
+import Image from "next/image";
 
 export const dynamic = "force-dynamic";
 
@@ -23,11 +24,13 @@ export default async function BooksPage({
   let books: BookDto[] = [];
   let total = 0;
   let searchResults: BookDto[] | null = null;
+  let seriesHits: SeriesHitDto[] = [];
   let totalHits: number | null = null;
 
   if (searchQuery) {
     const searchResponse = await searchBooks(searchQuery, libraryId, limit).catch(() => null);
     if (searchResponse) {
+      seriesHits = searchResponse.series_hits ?? [];
       searchResults = searchResponse.hits.map(hit => ({
         id: hit.id,
         library_id: hit.library_id,
@@ -139,9 +142,46 @@ export default async function BooksPage({
         </p>
       )}
 
+      {/* Séries matchantes */}
+      {seriesHits.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-lg font-semibold text-foreground mb-3">Series</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {seriesHits.map((s) => (
+              <Link
+                key={`${s.library_id}-${s.name}`}
+                href={`/libraries/${s.library_id}/books?series=${encodeURIComponent(s.name)}`}
+                className="group"
+              >
+                <div className="bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden hover:shadow-md transition-shadow duration-200">
+                  <div className="aspect-[2/3] relative bg-muted/50">
+                    <Image
+                      src={getBookCoverUrl(s.first_book_id)}
+                      alt={`Cover of ${s.name}`}
+                      fill
+                      className="object-cover"
+                      unoptimized
+                    />
+                  </div>
+                  <div className="p-2">
+                    <h3 className="font-medium text-foreground truncate text-sm" title={s.name}>
+                      {s.name === "unclassified" ? "Unclassified" : s.name}
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {s.book_count} book{s.book_count !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Grille de livres */}
       {displayBooks.length > 0 ? (
         <>
+          {searchQuery && <h2 className="text-lg font-semibold text-foreground mb-3">Books</h2>}
           <BooksGrid books={displayBooks} />
           
           {!searchQuery && (

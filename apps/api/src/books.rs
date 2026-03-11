@@ -605,10 +605,15 @@ pub async fn get_thumbnail(
     let thumbnail_path: Option<String> = row.get("thumbnail_path");
 
     let data = if let Some(ref path) = thumbnail_path {
-        std::fs::read(path)
-            .map_err(|e| ApiError::internal(format!("cannot read thumbnail: {}", e)))?
+        match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                // File missing on disk (e.g. different mount in dev) — fall back to live render
+                crate::pages::render_book_page_1(&state, book_id, 300, 80).await?
+            }
+        }
     } else {
-        // Fallback: render page 1 on the fly (same as pages logic)
+        // No stored thumbnail yet — render page 1 on the fly
         crate::pages::render_book_page_1(&state, book_id, 300, 80).await?
     };
 

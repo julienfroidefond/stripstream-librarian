@@ -91,8 +91,17 @@ export type SearchHitDto = {
   language: string | null;
 };
 
+export type SeriesHitDto = {
+  library_id: string;
+  name: string;
+  book_count: number;
+  books_read_count: number;
+  first_book_id: string;
+};
+
 export type SearchResponseDto = {
   hits: SearchHitDto[];
+  series_hits: SeriesHitDto[];
   estimated_total_hits: number | null;
   processing_time_ms: number | null;
 };

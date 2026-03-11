@@ -51,6 +51,7 @@ use utoipa::OpenApi;
             crate::pages::PageQuery,
             crate::search::SearchQuery,
             crate::search::SearchResponse,
+            crate::search::SeriesHit,
             crate::index_jobs::RebuildRequest,
             crate::thumbnails::ThumbnailsRebuildRequest,
             crate::index_jobs::IndexJobResponse,

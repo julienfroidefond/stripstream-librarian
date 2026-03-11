@@ -145,8 +145,13 @@ pub async fn sync_meili(pool: &PgPool, meili_url: &str, meili_master_key: &str) 
         
         if let Ok(response) = meili_response {
             if response.status().is_success() {
-                if let Ok(meili_docs) = response.json::<Vec<serde_json::Value>>().await {
-                    let meili_ids: std::collections::HashSet<String> = meili_docs
+                // Meilisearch returns { "results": [...], "offset": ..., "total": ... }
+                if let Ok(payload) = response.json::<serde_json::Value>().await {
+                    let docs = payload.get("results")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    let meili_ids: std::collections::HashSet<String> = docs
                         .into_iter()
                         .filter_map(|doc| doc.get("id").and_then(|id| id.as_str()).map(|s| s.to_string()))
                         .collect();

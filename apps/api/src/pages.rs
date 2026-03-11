@@ -365,8 +365,12 @@ fn render_page(
 fn extract_cbz_page(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiError> {
     debug!("Opening CBZ archive: {}", abs_path);
     let file = std::fs::File::open(abs_path).map_err(|e| {
-        error!("Cannot open CBZ file {}: {}", abs_path, e);
-        ApiError::internal(format!("cannot open cbz: {e}"))
+        if e.kind() == std::io::ErrorKind::NotFound {
+            ApiError::not_found("book file not accessible")
+        } else {
+            error!("Cannot open CBZ file {}: {}", abs_path, e);
+            ApiError::internal(format!("cannot open cbz: {e}"))
+        }
     })?;
     
     let mut archive = zip::ZipArchive::new(file).map_err(|e| {
