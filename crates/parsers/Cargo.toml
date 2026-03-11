@@ -6,9 +6,10 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-natord.workspace = true
+image.workspace = true
 lopdf = "0.35"
+natord.workspace = true
+pdfium-render.workspace = true
 regex = "1"
-uuid.workspace = true
-walkdir.workspace = true
+unrar.workspace = true
 zip = { version = "2.2", default-features = false, features = ["deflate"] }

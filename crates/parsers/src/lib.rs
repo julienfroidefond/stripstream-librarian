@@ -1,10 +1,7 @@
 use anyhow::{Context, Result};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::OnceLock;
-use uuid::Uuid;
-use walkdir::WalkDir;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BookFormat {
@@ -152,8 +149,7 @@ pub fn parse_metadata(
 }
 
 /// Open an archive once and return (page_count, first_page_bytes).
-/// This is more efficient than calling parse_metadata + extract_first_page separately.
-/// `pdf_render_scale`: max dimension (width or height) used by pdftoppm; 0 means use default (400).
+/// `pdf_render_scale`: max dimension used for PDF rasterization; 0 means use default (400).
 pub fn analyze_book(path: &Path, format: BookFormat, pdf_render_scale: u32) -> Result<(i32, Vec<u8>)> {
     match format {
         BookFormat::Cbz => analyze_cbz(path),
@@ -189,105 +185,98 @@ fn analyze_cbz(path: &Path) -> Result<(i32, Vec<u8>)> {
     Ok((count, buf))
 }
 
-fn list_cbr_images(path: &Path) -> Result<Vec<String>> {
-    // Try unrar lb first (fast)
-    let output = std::process::Command::new("unrar")
-        .arg("lb")
-        .arg(path)
-        .output()
-        .with_context(|| format!("failed to execute unrar lb for {}", path.display()))?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut images: Vec<String> = stdout
-            .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|line| is_image_name(&line.to_ascii_lowercase()))
-            .collect();
-        if !images.is_empty() {
-            images.sort_by(|a, b| natord::compare(a, b));
-            return Ok(images);
-        }
-    }
-
-    // Fallback: lsar (from unar package) handles UTF-16BE encoded filenames
-    let lsar_output = std::process::Command::new("lsar")
-        .arg(path)
-        .output()
-        .with_context(|| format!("failed to execute lsar for {}", path.display()))?;
-
-    if !lsar_output.status.success() {
-        return Err(anyhow::anyhow!(
-            "both unrar lb and lsar failed for {}",
-            path.display()
-        ));
-    }
-
-    let stdout = String::from_utf8_lossy(&lsar_output.stdout);
-    // lsar output: first line is archive info, then one file per line (indented)
-    let mut images: Vec<String> = stdout
-        .lines()
-        .skip(1) // skip the archive header line
-        .map(|l| l.trim().to_string())
-        .filter(|line| is_image_name(&line.to_ascii_lowercase()))
-        .collect();
-    images.sort_by(|a, b| natord::compare(a, b));
-
-    Ok(images)
-}
-
 fn analyze_cbr(path: &Path) -> Result<(i32, Vec<u8>)> {
-    let mut image_names = list_cbr_images(path)?;
-    image_names.sort();
+    // Pass 1: list all image names via unrar (in-process, no subprocess)
+    let mut image_names: Vec<String> = {
+        let archive = unrar::Archive::new(path)
+            .open_for_listing()
+            .map_err(|e| anyhow::anyhow!("unrar listing failed for {}: {}", path.display(), e))?;
+        let mut names = Vec::new();
+        for entry in archive {
+            let entry = entry.map_err(|e| anyhow::anyhow!("unrar entry error: {}", e))?;
+            let name = entry.filename.to_string_lossy().to_string();
+            if is_image_name(&name.to_ascii_lowercase()) {
+                names.push(name);
+            }
+        }
+        names
+    };
 
-    let count = image_names.len() as i32;
-    if count == 0 {
+    if image_names.is_empty() {
         return Err(anyhow::anyhow!("no images found in cbr: {}", path.display()));
     }
 
-    let first_name = &image_names[0];
+    image_names.sort_by(|a, b| natord::compare(a, b));
+    let count = image_names.len() as i32;
+    let first_name = image_names[0].clone();
 
-    // Try unrar p to extract first image to stdout (faster — no temp dir)
-    let p_output = std::process::Command::new("unrar")
-        .args(["p", "-inul"])
-        .arg(path)
-        .arg(first_name)
-        .output();
+    // Pass 2: extract first image to memory
+    let mut archive = unrar::Archive::new(path)
+        .open_for_processing()
+        .map_err(|e| anyhow::anyhow!("unrar open for processing failed for {}: {}", path.display(), e))?;
 
-    match p_output {
-        Ok(out) if out.status.success() && looks_like_image(&out.stdout) => Ok((count, out.stdout)),
-        _ => {
-            // Fallback: targeted extraction with unar (handles special chars, encoding issues)
-            let image_bytes = extract_cbr_first_page(path, first_name)?;
-            Ok((count, image_bytes))
+    while let Some(header) = archive
+        .read_header()
+        .map_err(|e| anyhow::anyhow!("unrar read header: {}", e))?
+    {
+        let entry_name = header.entry().filename.to_string_lossy().to_string();
+        if entry_name == first_name {
+            let (data, _) = header
+                .read()
+                .map_err(|e| anyhow::anyhow!("unrar read data: {}", e))?;
+            return Ok((count, data));
         }
+        archive = header
+            .skip()
+            .map_err(|e| anyhow::anyhow!("unrar skip: {}", e))?;
     }
-}
 
-/// Check image magic bytes to validate that bytes are a real image before decoding.
-fn looks_like_image(bytes: &[u8]) -> bool {
-    if bytes.len() < 12 {
-        return false;
-    }
-    // JPEG: FF D8 FF
-    if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
-        return true;
-    }
-    // PNG: 89 50 4E 47 0D 0A 1A 0A
-    if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
-        return true;
-    }
-    // WebP: RIFF....WEBP
-    if &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
-        return true;
-    }
-    false
+    Err(anyhow::anyhow!(
+        "could not find '{}' in {}",
+        first_name,
+        path.display()
+    ))
 }
 
 fn analyze_pdf(path: &Path, pdf_render_scale: u32) -> Result<(i32, Vec<u8>)> {
-    let count = parse_pdf_page_count(path)?;
-    let image_bytes = extract_pdf_first_page(path, pdf_render_scale)?;
-    Ok((count, image_bytes))
+    use pdfium_render::prelude::*;
+
+    // Open PDF once — get page count and render first page in a single pass
+    let pdfium = Pdfium::new(
+        Pdfium::bind_to_system_library()
+            .map_err(|e| anyhow::anyhow!("pdfium library not available: {:?}", e))?,
+    );
+
+    let document = pdfium
+        .load_pdf_from_file(path, None)
+        .map_err(|e| anyhow::anyhow!("pdfium load failed for {}: {:?}", path.display(), e))?;
+
+    let count = document.pages().len() as i32;
+    if count == 0 {
+        return Err(anyhow::anyhow!("PDF has no pages: {}", path.display()));
+    }
+
+    let scale = if pdf_render_scale == 0 { 400 } else { pdf_render_scale } as i32;
+    let config = PdfRenderConfig::new()
+        .set_target_width(scale)
+        .set_maximum_height(scale);
+
+    let page = document
+        .pages()
+        .get(0)
+        .map_err(|e| anyhow::anyhow!("cannot get first page of {}: {:?}", path.display(), e))?;
+
+    let bitmap = page
+        .render_with_config(&config)
+        .map_err(|e| anyhow::anyhow!("pdfium render failed for {}: {:?}", path.display(), e))?;
+
+    let image = bitmap.as_image();
+    let mut buf = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut buf, image::ImageFormat::Png)
+        .context("failed to encode rendered PDF page as PNG")?;
+
+    Ok((count, buf.into_inner()))
 }
 
 fn parse_cbz_page_count(path: &Path) -> Result<i32> {
@@ -306,34 +295,23 @@ fn parse_cbz_page_count(path: &Path) -> Result<i32> {
 }
 
 fn parse_cbr_page_count(path: &Path) -> Result<i32> {
-    let images = list_cbr_images(path)?;
-    Ok(images.len() as i32)
+    let archive = unrar::Archive::new(path)
+        .open_for_listing()
+        .map_err(|e| anyhow::anyhow!("unrar listing failed for {}: {}", path.display(), e))?;
+    let count = archive
+        .filter(|r| {
+            r.as_ref()
+                .map(|e| is_image_name(&e.filename.to_string_lossy().to_ascii_lowercase()))
+                .unwrap_or(false)
+        })
+        .count() as i32;
+    Ok(count)
 }
 
 fn parse_pdf_page_count(path: &Path) -> Result<i32> {
-    let output = std::process::Command::new("pdfinfo")
-        .arg(path)
-        .output()
-        .with_context(|| format!("failed to execute pdfinfo for {}", path.display()))?;
-
-    if !output.status.success() {
-        return Err(anyhow::anyhow!("pdfinfo failed for {}", path.display()));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        if line.starts_with("Pages:") {
-            if let Some(pages_str) = line.split_whitespace().nth(1) {
-                return pages_str
-                    .parse::<i32>()
-                    .with_context(|| format!("cannot parse page count: {}", pages_str));
-            }
-        }
-    }
-
-    Err(anyhow::anyhow!(
-        "could not find page count in pdfinfo output"
-    ))
+    let doc = lopdf::Document::load(path)
+        .with_context(|| format!("cannot open pdf: {}", path.display()))?;
+    Ok(doc.get_pages().len() as i32)
 }
 
 fn is_image_name(name: &str) -> bool {
@@ -351,13 +329,8 @@ fn is_image_name(name: &str) -> bool {
 pub fn extract_first_page(path: &Path, format: BookFormat) -> Result<Vec<u8>> {
     match format {
         BookFormat::Cbz => extract_cbz_first_page(path),
-        BookFormat::Cbr => {
-            let mut image_names = list_cbr_images(path)?;
-            image_names.sort();
-            let first_name = image_names.into_iter().next().context("no images found in cbr")?;
-            extract_cbr_first_page(path, &first_name)
-        }
-        BookFormat::Pdf => extract_pdf_first_page(path, 0),
+        BookFormat::Cbr => analyze_cbr(path).map(|(_, bytes)| bytes),
+        BookFormat::Pdf => analyze_pdf(path, 0).map(|(_, bytes)| bytes),
     }
 }
 
@@ -386,98 +359,13 @@ fn extract_cbz_first_page(path: &Path) -> Result<Vec<u8>> {
     Ok(buf)
 }
 
-fn extract_cbr_first_page(path: &Path, _first_name: &str) -> Result<Vec<u8>> {
-    let work_dir = std::env::temp_dir().join(format!("stripstream-cbr-thumb-{}", Uuid::new_v4()));
-    let extract_dir = work_dir.join("out");
-    std::fs::create_dir_all(&extract_dir).context("cannot create temp dir")?;
-
-    // unar constructs internal regexes from (archive_path + "/" + internal_path).
-    // Archive filenames containing regex special chars like `[`, `]`, `(`, `)` cause
-    // XADRegexException. Work around by giving unar a safe symlink name.
-    let safe_path = work_dir.join("archive.cbr");
-    if std::os::unix::fs::symlink(path, &safe_path).is_err() {
-        // Cross-filesystem fallback: copy (slower but safe)
-        std::fs::copy(path, &safe_path).context("cannot copy cbr to temp dir")?;
-    }
-
-    let output = std::process::Command::new("env")
-        .args(["LC_ALL=en_US.UTF-8", "LANG=en_US.UTF-8", "unar", "-o"])
-        .arg(&extract_dir)
-        .arg(&safe_path)
-        .output()
-        .context("unar failed")?;
-
-    if !output.status.success() {
-        let _ = std::fs::remove_dir_all(&work_dir);
-        return Err(anyhow::anyhow!(
-            "unar extract failed: {:?}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    let mut image_files: Vec<_> = WalkDir::new(&extract_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy().to_lowercase();
-            is_image_name(&name)
-        })
-        .collect();
-
-    image_files.sort_by(|a, b| natord::compare(&a.path().to_string_lossy(), &b.path().to_string_lossy()));
-
-    let first_image = image_files.first().context("no images found in cbr")?;
-
-    let data = std::fs::read(first_image.path())?;
-    let _ = std::fs::remove_dir_all(&work_dir);
-    Ok(data)
-}
-
-fn extract_pdf_first_page(path: &Path, pdf_render_scale: u32) -> Result<Vec<u8>> {
-    let tmp_dir = std::env::temp_dir().join(format!("stripstream-pdf-thumb-{}", Uuid::new_v4()));
-    std::fs::create_dir_all(&tmp_dir)?;
-    let output_prefix = tmp_dir.join("page");
-    let scale = if pdf_render_scale == 0 { 400 } else { pdf_render_scale };
-    let scale_str = scale.to_string();
-
-    let output = Command::new("pdftoppm")
-        .args([
-            "-f",
-            "1",
-            "-singlefile",
-            "-png",
-            "-scale-to",
-            &scale_str,
-            path.to_str().unwrap(),
-            output_prefix.to_str().unwrap(),
-        ])
-        .output()
-        .context("pdftoppm failed")?;
-
-    if !output.status.success() {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-        return Err(anyhow::anyhow!("pdftoppm failed"));
-    }
-
-    let image_path = output_prefix.with_extension("png");
-    let data = std::fs::read(&image_path)?;
-    let _ = std::fs::remove_dir_all(&tmp_dir);
-    Ok(data)
-}
-
 /// Convert a CBR file to CBZ in-place (same directory, same stem).
 ///
 /// The conversion is safe: a `.cbz.tmp` file is written first, verified, then
 /// atomically renamed to `.cbz`. The original CBR is **not** deleted by this
-/// function — the caller is responsible for removing it after a successful DB
-/// update.
+/// function — the caller is responsible for removing it after a successful DB update.
 ///
 /// Returns the path of the newly created `.cbz` file.
-///
-/// # Errors
-/// - Returns an error if a `.cbz` file with the same stem already exists.
-/// - Returns an error if extraction, packing, or verification fails.
-/// - Returns an error if `cbr_path` has no parent directory or no file stem.
 pub fn convert_cbr_to_cbz(cbr_path: &Path) -> Result<PathBuf> {
     let parent = cbr_path
         .parent()
@@ -489,7 +377,6 @@ pub fn convert_cbr_to_cbz(cbr_path: &Path) -> Result<PathBuf> {
     let cbz_path = parent.join(format!("{}.cbz", stem.to_string_lossy()));
     let tmp_path = parent.join(format!("{}.cbz.tmp", stem.to_string_lossy()));
 
-    // Refuse if target CBZ already exists
     if cbz_path.exists() {
         return Err(anyhow::anyhow!(
             "CBZ file already exists: {}",
@@ -497,45 +384,44 @@ pub fn convert_cbr_to_cbz(cbr_path: &Path) -> Result<PathBuf> {
         ));
     }
 
-    // Extract CBR to a temp dir
-    let tmp_dir =
-        std::env::temp_dir().join(format!("stripstream-cbr-convert-{}", Uuid::new_v4()));
-    std::fs::create_dir_all(&tmp_dir).context("cannot create temp dir")?;
+    // Extract all images from CBR into memory using unrar crate (no subprocess)
+    let mut images: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut archive = unrar::Archive::new(cbr_path)
+        .open_for_processing()
+        .map_err(|e| anyhow::anyhow!("unrar open failed for {}: {}", cbr_path.display(), e))?;
 
-    let output = std::process::Command::new("env")
-        .args(["LC_ALL=en_US.UTF-8", "LANG=en_US.UTF-8", "unar", "-o"])
-        .arg(&tmp_dir)
-        .arg(cbr_path)
-        .output()
-        .context("unar failed to start")?;
+    while let Some(header) = archive
+        .read_header()
+        .map_err(|e| anyhow::anyhow!("unrar read header: {}", e))?
+    {
+        let entry_name = header.entry().filename.to_string_lossy().to_string();
+        let file_name = Path::new(&entry_name)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| entry_name.clone());
 
-    if !output.status.success() {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-        return Err(anyhow::anyhow!(
-            "unar extraction failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
+        if is_image_name(&entry_name.to_ascii_lowercase()) {
+            let (data, next) = header
+                .read()
+                .map_err(|e| anyhow::anyhow!("unrar read: {}", e))?;
+            images.push((file_name, data));
+            archive = next;
+        } else {
+            archive = header
+                .skip()
+                .map_err(|e| anyhow::anyhow!("unrar skip: {}", e))?;
+        }
     }
 
-    // Collect and sort image files
-    let mut image_files: Vec<_> = WalkDir::new(&tmp_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy().to_lowercase();
-            is_image_name(&name)
-        })
-        .collect();
-    image_files.sort_by(|a, b| natord::compare(&a.path().to_string_lossy(), &b.path().to_string_lossy()));
-
-    let image_count = image_files.len();
-    if image_count == 0 {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
+    if images.is_empty() {
         return Err(anyhow::anyhow!(
             "no images found in CBR: {}",
             cbr_path.display()
         ));
     }
+
+    images.sort_by(|(a, _), (b, _)| natord::compare(a, b));
+    let image_count = images.len();
 
     // Pack images into the .cbz.tmp file
     let pack_result = (|| -> Result<()> {
@@ -545,20 +431,15 @@ pub fn convert_cbr_to_cbz(cbr_path: &Path) -> Result<PathBuf> {
         let options = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated);
 
-        for entry in &image_files {
-            let file_name = entry.file_name().to_string_lossy().to_string();
-            zip.start_file(&file_name, options)
+        for (file_name, data) in &images {
+            zip.start_file(file_name, options)
                 .with_context(|| format!("cannot add file {} to zip", file_name))?;
-            let data = std::fs::read(entry.path())
-                .with_context(|| format!("cannot read {}", entry.path().display()))?;
-            zip.write_all(&data)
+            zip.write_all(data)
                 .with_context(|| format!("cannot write {} to zip", file_name))?;
         }
         zip.finish().context("cannot finalize zip")?;
         Ok(())
     })();
-
-    let _ = std::fs::remove_dir_all(&tmp_dir);
 
     if let Err(err) = pack_result {
         let _ = std::fs::remove_file(&tmp_path);
@@ -593,7 +474,6 @@ pub fn convert_cbr_to_cbz(cbr_path: &Path) -> Result<PathBuf> {
         return Err(err);
     }
 
-    // Atomic rename .cbz.tmp → .cbz
     std::fs::rename(&tmp_path, &cbz_path)
         .with_context(|| format!("cannot rename {} to {}", tmp_path.display(), cbz_path.display()))?;
 
