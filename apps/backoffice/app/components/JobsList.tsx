@@ -85,18 +85,14 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
   }, []);
 
   const handleCancel = async (id: string) => {
-    try {
-      const response = await fetch(`/api/jobs/${id}/cancel`, {
-        method: "POST",
-      });
-
-      if (response.ok) {
-        setJobs(jobs.map(job => 
-          job.id === id ? { ...job, status: "cancelled" } : job
-        ));
-      }
-    } catch (error) {
-      console.error("Failed to cancel job:", error);
+    const response = await fetch(`/api/jobs/${id}/cancel`, { method: "POST" });
+    if (response.ok) {
+      setJobs(jobs.map(job =>
+        job.id === id ? { ...job, status: "cancelled" } : job
+      ));
+    } else {
+      const data = await response.json().catch(() => ({}));
+      console.error("Failed to cancel job:", data?.error ?? response.status);
     }
   };
 
