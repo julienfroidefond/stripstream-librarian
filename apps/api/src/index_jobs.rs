@@ -65,6 +65,8 @@ pub struct IndexJobDetailResponse {
     pub finished_at: Option<DateTime<Utc>>,
     #[schema(value_type = Option<String>)]
     pub phase2_started_at: Option<DateTime<Utc>>,
+    #[schema(value_type = Option<String>)]
+    pub generating_thumbnails_started_at: Option<DateTime<Utc>>,
     pub stats_json: Option<serde_json::Value>,
     pub error_opt: Option<String>,
     #[schema(value_type = String)]
@@ -324,6 +326,7 @@ fn map_row_detail(row: sqlx::postgres::PgRow) -> IndexJobDetailResponse {
         started_at: row.get("started_at"),
         finished_at: row.get("finished_at"),
         phase2_started_at: row.try_get("phase2_started_at").ok().flatten(),
+        generating_thumbnails_started_at: row.try_get("generating_thumbnails_started_at").ok().flatten(),
         stats_json: row.get("stats_json"),
         error_opt: row.get("error_opt"),
         created_at: row.get("created_at"),
@@ -350,7 +353,7 @@ pub async fn get_active_jobs(State(state): State<AppState>) -> Result<Json<Vec<I
     let rows = sqlx::query(
         "SELECT id, library_id, book_id, type, status, started_at, finished_at, stats_json, error_opt, created_at, progress_percent, processed_files, total_files
          FROM index_jobs
-         WHERE status IN ('pending', 'running', 'generating_thumbnails')
+         WHERE status IN ('pending', 'running', 'extracting_pages', 'generating_thumbnails')
          ORDER BY created_at ASC"
     )
     .fetch_all(&state.pool)
@@ -380,7 +383,7 @@ pub async fn get_job_details(
     id: axum::extract::Path<Uuid>,
 ) -> Result<Json<IndexJobDetailResponse>, ApiError> {
     let row = sqlx::query(
-        "SELECT id, library_id, book_id, type, status, started_at, finished_at, phase2_started_at,
+        "SELECT id, library_id, book_id, type, status, started_at, finished_at, phase2_started_at, generating_thumbnails_started_at,
                 stats_json, error_opt, created_at, current_file, progress_percent, total_files, processed_files
          FROM index_jobs WHERE id = $1"
     )

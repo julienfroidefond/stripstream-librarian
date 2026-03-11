@@ -60,6 +60,7 @@ export function Badge({ children, variant = "default", className = "" }: BadgePr
 // Status badge for jobs/tasks
 const statusVariants: Record<string, BadgeVariant> = {
   running: "in-progress",
+  extracting_pages: "in-progress",
   generating_thumbnails: "in-progress",
   success: "completed",
   completed: "completed",
@@ -70,6 +71,7 @@ const statusVariants: Record<string, BadgeVariant> = {
 };
 
 const statusLabels: Record<string, string> = {
+  extracting_pages: "Extracting pages",
   generating_thumbnails: "Thumbnails",
 };
 

@@ -103,17 +103,32 @@ fn generate_thumbnail(image_bytes: &[u8], config: &ThumbnailConfig) -> anyhow::R
     Ok(webp_data.to_vec())
 }
 
-fn save_thumbnail(
+/// Save raw image bytes (as extracted from the archive) without any processing.
+fn save_raw_image(book_id: Uuid, raw_bytes: &[u8], directory: &str) -> anyhow::Result<String> {
+    let dir = Path::new(directory);
+    std::fs::create_dir_all(dir)?;
+    let path = dir.join(format!("{}.raw", book_id));
+    std::fs::write(&path, raw_bytes)?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Resize the raw image and save it as a WebP thumbnail, overwriting the raw file.
+fn resize_raw_to_webp(
     book_id: Uuid,
-    thumbnail_bytes: &[u8],
+    raw_path: &str,
     config: &ThumbnailConfig,
 ) -> anyhow::Result<String> {
-    let dir = Path::new(&config.directory);
-    std::fs::create_dir_all(dir)?;
-    let filename = format!("{}.webp", book_id);
-    let path = dir.join(&filename);
-    std::fs::write(&path, thumbnail_bytes)?;
-    Ok(path.to_string_lossy().to_string())
+    let raw_bytes = std::fs::read(raw_path)
+        .map_err(|e| anyhow::anyhow!("failed to read raw image {}: {}", raw_path, e))?;
+    let webp_bytes = generate_thumbnail(&raw_bytes, config)?;
+
+    let webp_path = Path::new(&config.directory).join(format!("{}.webp", book_id));
+    std::fs::write(&webp_path, &webp_bytes)?;
+
+    // Delete the raw file now that the WebP is written
+    let _ = std::fs::remove_file(raw_path);
+
+    Ok(webp_path.to_string_lossy().to_string())
 }
 
 fn book_format_from_str(s: &str) -> Option<BookFormat> {
@@ -125,7 +140,14 @@ fn book_format_from_str(s: &str) -> Option<BookFormat> {
     }
 }
 
-/// Phase 2 — Analysis: open each unanalyzed archive once, extract page_count + thumbnail.
+/// Phase 2 — Two-sub-phase analysis:
+///
+/// **Sub-phase A (extracting_pages)**: open each archive once, extract (page_count, raw_image_bytes),
+/// save the raw bytes to `{directory}/{book_id}.raw`. I/O bound — runs at `concurrent_renders`.
+///
+/// **Sub-phase B (generating_thumbnails)**: load each `.raw` file, resize and encode as WebP,
+/// overwrite as `{directory}/{book_id}.webp`. CPU bound — runs at `concurrent_renders`.
+///
 /// `thumbnail_only` = true: only process books missing thumbnail (page_count may already be set).
 /// `thumbnail_only` = false: process books missing page_count.
 pub async fn analyze_library_books(
@@ -143,7 +165,6 @@ pub async fn analyze_library_books(
 
     let concurrency = load_thumbnail_concurrency(&state.pool).await;
 
-    // Query books that need analysis
     let query_filter = if thumbnail_only {
         "b.thumbnail_path IS NULL"
     } else {
@@ -177,19 +198,7 @@ pub async fn analyze_library_books(
         total, thumbnail_only, concurrency
     );
 
-    // Update job status
-    let _ = sqlx::query(
-        "UPDATE index_jobs SET status = 'generating_thumbnails', total_files = $2, processed_files = 0, current_file = NULL WHERE id = $1",
-    )
-    .bind(job_id)
-    .bind(total)
-    .execute(&state.pool)
-    .await;
-
-    let processed_count = Arc::new(AtomicI32::new(0));
     let cancelled_flag = Arc::new(AtomicBool::new(false));
-
-    // Background task: poll DB every 2s to detect cancellation
     let cancel_pool = state.pool.clone();
     let cancel_flag_for_poller = cancelled_flag.clone();
     let cancel_handle = tokio::spawn(async move {
@@ -221,43 +230,56 @@ pub async fn analyze_library_books(
         })
         .collect();
 
-    stream::iter(tasks)
-        .for_each_concurrent(concurrency, |task| {
-            let processed_count = processed_count.clone();
+    // -------------------------------------------------------------------------
+    // Sub-phase A: extract first page from each archive and store raw image
+    // I/O bound — limited by HDD throughput, runs at `concurrency`
+    // -------------------------------------------------------------------------
+    let phase_a_start = std::time::Instant::now();
+    let _ = sqlx::query(
+        "UPDATE index_jobs SET status = 'extracting_pages', total_files = $2, processed_files = 0, current_file = NULL WHERE id = $1",
+    )
+    .bind(job_id)
+    .bind(total)
+    .execute(&state.pool)
+    .await;
+
+    let extracted_count = Arc::new(AtomicI32::new(0));
+
+    // Collected results: (book_id, raw_path, page_count)
+    let extracted: Vec<(Uuid, String, i32)> = stream::iter(tasks)
+        .map(|task| {
             let pool = state.pool.clone();
             let config = config.clone();
             let cancelled = cancelled_flag.clone();
+            let extracted_count = extracted_count.clone();
 
             async move {
                 if cancelled.load(Ordering::Relaxed) {
-                    return;
+                    return None;
                 }
 
                 let local_path = utils::remap_libraries_path(&task.abs_path);
-                let path = Path::new(&local_path);
+                let path = std::path::Path::new(&local_path);
+                let book_id = task.book_id;
 
                 let format = match book_format_from_str(&task.format) {
                     Some(f) => f,
                     None => {
-                        warn!("[ANALYZER] Unknown format '{}' for book {}", task.format, task.book_id);
-                        return;
+                        warn!("[ANALYZER] Unknown format '{}' for book {}", task.format, book_id);
+                        return None;
                     }
                 };
 
-                // Run blocking archive I/O on a thread pool
-                let book_id = task.book_id;
-                let path_owned = path.to_path_buf();
                 let pdf_scale = config.width.max(config.height);
-                let analyze_result = tokio::task::spawn_blocking(move || {
-                    analyze_book(&path_owned, format, pdf_scale)
-                })
-                .await;
+                let path_owned = path.to_path_buf();
+                let analyze_result =
+                    tokio::task::spawn_blocking(move || analyze_book(&path_owned, format, pdf_scale))
+                        .await;
 
-                let (page_count, image_bytes) = match analyze_result {
+                let (page_count, raw_bytes) = match analyze_result {
                     Ok(Ok(result)) => result,
                     Ok(Err(e)) => {
                         warn!("[ANALYZER] analyze_book failed for book {}: {}", book_id, e);
-                        // Mark parse_status = error in book_files
                         let _ = sqlx::query(
                             "UPDATE book_files SET parse_status = 'error', parse_error_opt = $2 WHERE book_id = $1",
                         )
@@ -265,66 +287,125 @@ pub async fn analyze_library_books(
                         .bind(e.to_string())
                         .execute(&pool)
                         .await;
-                        return;
+                        return None;
                     }
                     Err(e) => {
                         warn!("[ANALYZER] spawn_blocking error for book {}: {}", book_id, e);
-                        return;
+                        return None;
                     }
                 };
 
-                // Generate thumbnail
-                let thumb_result = tokio::task::spawn_blocking({
-                    let config = config.clone();
-                    move || generate_thumbnail(&image_bytes, &config)
+                // Save raw bytes to disk (no resize, no encode)
+                let raw_path = match tokio::task::spawn_blocking({
+                    let dir = config.directory.clone();
+                    let bytes = raw_bytes.clone();
+                    move || save_raw_image(book_id, &bytes, &dir)
+                })
+                .await
+                {
+                    Ok(Ok(p)) => p,
+                    Ok(Err(e)) => {
+                        warn!("[ANALYZER] save_raw_image failed for book {}: {}", book_id, e);
+                        return None;
+                    }
+                    Err(e) => {
+                        warn!("[ANALYZER] spawn_blocking save_raw error for book {}: {}", book_id, e);
+                        return None;
+                    }
+                };
+
+                // Update page_count in DB
+                if let Err(e) = sqlx::query("UPDATE books SET page_count = $1 WHERE id = $2")
+                    .bind(page_count)
+                    .bind(book_id)
+                    .execute(&pool)
+                    .await
+                {
+                    warn!("[ANALYZER] DB page_count update failed for book {}: {}", book_id, e);
+                    return None;
+                }
+
+                let processed = extracted_count.fetch_add(1, Ordering::Relaxed) + 1;
+                let percent = (processed as f64 / total as f64 * 50.0) as i32; // first 50%
+                let _ = sqlx::query(
+                    "UPDATE index_jobs SET processed_files = $2, progress_percent = $3 WHERE id = $1",
+                )
+                .bind(job_id)
+                .bind(processed)
+                .bind(percent)
+                .execute(&pool)
+                .await;
+
+                Some((book_id, raw_path, page_count))
+            }
+        })
+        .buffer_unordered(concurrency)
+        .filter_map(|x| async move { x })
+        .collect()
+        .await;
+
+    if cancelled_flag.load(Ordering::Relaxed) {
+        cancel_handle.abort();
+        info!("[ANALYZER] Job {} cancelled during extraction phase", job_id);
+        return Err(anyhow::anyhow!("Job cancelled by user"));
+    }
+
+    let extracted_total = extracted.len() as i32;
+    let phase_a_elapsed = phase_a_start.elapsed();
+    info!(
+        "[ANALYZER] Sub-phase A complete: {}/{} books extracted in {:.1}s ({:.0} ms/book)",
+        extracted_total,
+        total,
+        phase_a_elapsed.as_secs_f64(),
+        if extracted_total > 0 { phase_a_elapsed.as_millis() as f64 / extracted_total as f64 } else { 0.0 }
+    );
+
+    // -------------------------------------------------------------------------
+    // Sub-phase B: resize raw images and encode as WebP
+    // CPU bound — can run at higher concurrency than I/O phase
+    // -------------------------------------------------------------------------
+    let phase_b_start = std::time::Instant::now();
+    let _ = sqlx::query(
+        "UPDATE index_jobs SET status = 'generating_thumbnails', generating_thumbnails_started_at = NOW(), total_files = $2, processed_files = 0, current_file = NULL WHERE id = $1",
+    )
+    .bind(job_id)
+    .bind(extracted_total)
+    .execute(&state.pool)
+    .await;
+
+    let resize_count = Arc::new(AtomicI32::new(0));
+
+    stream::iter(extracted)
+        .for_each_concurrent(concurrency, |(book_id, raw_path, page_count)| {
+            let pool = state.pool.clone();
+            let config = config.clone();
+            let cancelled = cancelled_flag.clone();
+            let resize_count = resize_count.clone();
+
+            async move {
+                if cancelled.load(Ordering::Relaxed) {
+                    return;
+                }
+
+                let raw_path_clone = raw_path.clone();
+                let thumb_result = tokio::task::spawn_blocking(move || {
+                    resize_raw_to_webp(book_id, &raw_path_clone, &config)
                 })
                 .await;
 
-                let thumb_bytes = match thumb_result {
-                    Ok(Ok(b)) => b,
-                    Ok(Err(e)) => {
-                        warn!("[ANALYZER] thumbnail generation failed for book {}: {}", book_id, e);
-                        // Still update page_count even if thumbnail fails
-                        let _ = sqlx::query(
-                            "UPDATE books SET page_count = $1 WHERE id = $2",
-                        )
-                        .bind(page_count)
-                        .bind(book_id)
-                        .execute(&pool)
-                        .await;
-                        return;
-                    }
-                    Err(e) => {
-                        warn!("[ANALYZER] spawn_blocking thumbnail error for book {}: {}", book_id, e);
-                        return;
-                    }
-                };
-
-                // Save thumbnail file
-                let save_result = {
-                    let config = config.clone();
-                    tokio::task::spawn_blocking(move || save_thumbnail(book_id, &thumb_bytes, &config))
-                        .await
-                };
-
-                let thumb_path = match save_result {
+                let thumb_path = match thumb_result {
                     Ok(Ok(p)) => p,
                     Ok(Err(e)) => {
-                        warn!("[ANALYZER] save_thumbnail failed for book {}: {}", book_id, e);
-                        let _ = sqlx::query("UPDATE books SET page_count = $1 WHERE id = $2")
-                            .bind(page_count)
-                            .bind(book_id)
-                            .execute(&pool)
-                            .await;
+                        warn!("[ANALYZER] resize_raw_to_webp failed for book {}: {}", book_id, e);
+                        // page_count is already set; thumbnail stays NULL
                         return;
                     }
                     Err(e) => {
-                        warn!("[ANALYZER] spawn_blocking save error for book {}: {}", book_id, e);
+                        warn!("[ANALYZER] spawn_blocking resize error for book {}: {}", book_id, e);
                         return;
                     }
                 };
 
-                // Update DB
                 if let Err(e) = sqlx::query(
                     "UPDATE books SET page_count = $1, thumbnail_path = $2 WHERE id = $3",
                 )
@@ -334,12 +415,13 @@ pub async fn analyze_library_books(
                 .execute(&pool)
                 .await
                 {
-                    warn!("[ANALYZER] DB update failed for book {}: {}", book_id, e);
+                    warn!("[ANALYZER] DB thumbnail update failed for book {}: {}", book_id, e);
                     return;
                 }
 
-                let processed = processed_count.fetch_add(1, Ordering::Relaxed) + 1;
-                let percent = (processed as f64 / total as f64 * 100.0) as i32;
+                let processed = resize_count.fetch_add(1, Ordering::Relaxed) + 1;
+                let percent =
+                    50 + (processed as f64 / extracted_total as f64 * 50.0) as i32; // last 50%
                 let _ = sqlx::query(
                     "UPDATE index_jobs SET processed_files = $2, progress_percent = $3 WHERE id = $1",
                 )
@@ -355,14 +437,24 @@ pub async fn analyze_library_books(
     cancel_handle.abort();
 
     if cancelled_flag.load(Ordering::Relaxed) {
-        info!("[ANALYZER] Job {} cancelled by user, stopping analysis", job_id);
+        info!("[ANALYZER] Job {} cancelled during resize phase", job_id);
         return Err(anyhow::anyhow!("Job cancelled by user"));
     }
 
-    let final_count = processed_count.load(Ordering::Relaxed);
+    let final_count = resize_count.load(Ordering::Relaxed);
+    let phase_b_elapsed = phase_b_start.elapsed();
     info!(
-        "[ANALYZER] Analysis complete: {}/{} books processed",
-        final_count, total
+        "[ANALYZER] Sub-phase B complete: {}/{} thumbnails generated in {:.1}s ({:.0} ms/book)",
+        final_count,
+        extracted_total,
+        phase_b_elapsed.as_secs_f64(),
+        if final_count > 0 { phase_b_elapsed.as_millis() as f64 / final_count as f64 } else { 0.0 }
+    );
+    info!(
+        "[ANALYZER] Total: {:.1}s (extraction {:.1}s + resize {:.1}s)",
+        (phase_a_elapsed + phase_b_elapsed).as_secs_f64(),
+        phase_a_elapsed.as_secs_f64(),
+        phase_b_elapsed.as_secs_f64(),
     );
 
     Ok(())
@@ -376,7 +468,6 @@ pub async fn regenerate_thumbnails(
 ) -> Result<()> {
     let config = load_thumbnail_config(&state.pool).await;
 
-    // Delete thumbnail files for all books in scope
     let book_ids_to_clear: Vec<Uuid> = sqlx::query_scalar(
         r#"SELECT id FROM books WHERE (library_id = $1 OR $1 IS NULL) AND thumbnail_path IS NOT NULL"#,
     )
@@ -387,34 +478,26 @@ pub async fn regenerate_thumbnails(
 
     let mut deleted_count = 0usize;
     for book_id in &book_ids_to_clear {
-        let filename = format!("{}.webp", book_id);
-        let thumbnail_path = Path::new(&config.directory).join(&filename);
-        if thumbnail_path.exists() {
-            if let Err(e) = std::fs::remove_file(&thumbnail_path) {
-                warn!(
-                    "[ANALYZER] Failed to delete thumbnail {}: {}",
-                    thumbnail_path.display(),
-                    e
-                );
+        // Delete WebP thumbnail
+        let webp_path = Path::new(&config.directory).join(format!("{}.webp", book_id));
+        if webp_path.exists() {
+            if let Err(e) = std::fs::remove_file(&webp_path) {
+                warn!("[ANALYZER] Failed to delete thumbnail {}: {}", webp_path.display(), e);
             } else {
                 deleted_count += 1;
             }
         }
+        // Delete raw file if it exists (interrupted previous run)
+        let raw_path = Path::new(&config.directory).join(format!("{}.raw", book_id));
+        let _ = std::fs::remove_file(&raw_path);
     }
-    info!(
-        "[ANALYZER] Deleted {} thumbnail files for regeneration",
-        deleted_count
-    );
+    info!("[ANALYZER] Deleted {} thumbnail files for regeneration", deleted_count);
 
-    // Clear thumbnail_path in DB
-    sqlx::query(
-        r#"UPDATE books SET thumbnail_path = NULL WHERE (library_id = $1 OR $1 IS NULL)"#,
-    )
-    .bind(library_id)
-    .execute(&state.pool)
-    .await?;
+    sqlx::query(r#"UPDATE books SET thumbnail_path = NULL WHERE (library_id = $1 OR $1 IS NULL)"#)
+        .bind(library_id)
+        .execute(&state.pool)
+        .await?;
 
-    // Re-analyze all books (now thumbnail_path IS NULL for all)
     analyze_library_books(state, job_id, library_id, true).await
 }
 
@@ -422,16 +505,13 @@ pub async fn regenerate_thumbnails(
 pub async fn cleanup_orphaned_thumbnails(state: &AppState) -> Result<()> {
     let config = load_thumbnail_config(&state.pool).await;
 
-    // Load ALL book IDs across all libraries — we need the complete set to avoid
-    // deleting thumbnails that belong to other libraries during a per-library rebuild.
-    let existing_book_ids: std::collections::HashSet<Uuid> = sqlx::query_scalar(
-        r#"SELECT id FROM books"#,
-    )
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_default()
-    .into_iter()
-    .collect();
+    let existing_book_ids: std::collections::HashSet<Uuid> =
+        sqlx::query_scalar(r#"SELECT id FROM books"#)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
 
     let thumbnail_dir = Path::new(&config.directory);
     if !thumbnail_dir.exists() {
@@ -441,21 +521,23 @@ pub async fn cleanup_orphaned_thumbnails(state: &AppState) -> Result<()> {
     let mut deleted_count = 0usize;
     if let Ok(entries) = std::fs::read_dir(thumbnail_dir) {
         for entry in entries.flatten() {
-            if let Some(file_name) = entry.file_name().to_str() {
-                if file_name.ends_with(".webp") {
-                    if let Some(book_id_str) = file_name.strip_suffix(".webp") {
-                        if let Ok(book_id) = Uuid::parse_str(book_id_str) {
-                            if !existing_book_ids.contains(&book_id) {
-                                if let Err(e) = std::fs::remove_file(entry.path()) {
-                                    warn!(
-                                        "Failed to delete orphaned thumbnail {}: {}",
-                                        entry.path().display(),
-                                        e
-                                    );
-                                } else {
-                                    deleted_count += 1;
-                                }
-                            }
+            let file_name = entry.file_name();
+            let file_name = file_name.to_string_lossy();
+            // Clean up both .webp and orphaned .raw files
+            let stem = if let Some(s) = file_name.strip_suffix(".webp") {
+                Some(s.to_string())
+            } else if let Some(s) = file_name.strip_suffix(".raw") {
+                Some(s.to_string())
+            } else {
+                None
+            };
+            if let Some(book_id_str) = stem {
+                if let Ok(book_id) = Uuid::parse_str(&book_id_str) {
+                    if !existing_book_ids.contains(&book_id) {
+                        if let Err(e) = std::fs::remove_file(entry.path()) {
+                            warn!("Failed to delete orphaned file {}: {}", entry.path().display(), e);
+                        } else {
+                            deleted_count += 1;
                         }
                     }
                 }
@@ -463,9 +545,6 @@ pub async fn cleanup_orphaned_thumbnails(state: &AppState) -> Result<()> {
         }
     }
 
-    info!(
-        "[ANALYZER] Deleted {} orphaned thumbnail files",
-        deleted_count
-    );
+    info!("[ANALYZER] Deleted {} orphaned thumbnail files", deleted_count);
     Ok(())
 }

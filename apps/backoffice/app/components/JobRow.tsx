@@ -33,7 +33,7 @@ interface JobRowProps {
 }
 
 export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, formatDuration }: JobRowProps) {
-  const isActive = job.status === "running" || job.status === "pending" || job.status === "generating_thumbnails";
+  const isActive = job.status === "running" || job.status === "pending" || job.status === "extracting_pages" || job.status === "generating_thumbnails";
   const [showProgress, setShowProgress] = useState(highlighted || isActive);
 
   const handleComplete = () => {
@@ -52,13 +52,14 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
   const removed = job.stats_json?.removed_files ?? 0;
   const errors = job.stats_json?.errors ?? 0;
 
+  const isPhase2 = job.status === "extracting_pages" || job.status === "generating_thumbnails";
   const isThumbnailPhase = job.status === "generating_thumbnails";
   const isThumbnailJob = job.type === "thumbnail_rebuild" || job.type === "thumbnail_regenerate";
-  const hasThumbnailPhase = isThumbnailPhase || isThumbnailJob;
+  const hasThumbnailPhase = isPhase2 || isThumbnailJob;
 
-  // Files column: index-phase stats only
+  // Files column: index-phase stats only (Phase 1 discovery)
   const filesDisplay =
-    job.status === "running" && !isThumbnailPhase
+    job.status === "running" && !isPhase2
       ? job.total_files != null
         ? `${job.processed_files ?? 0}/${job.total_files}`
         : scanned > 0
@@ -70,8 +71,8 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
           ? `${scanned} scanned`
           : "—";
 
-  // Thumbnails column
-  const thumbInProgress = hasThumbnailPhase && (job.status === "running" || isThumbnailPhase);
+  // Thumbnails column (Phase 2: extracting_pages + generating_thumbnails)
+  const thumbInProgress = hasThumbnailPhase && (job.status === "running" || isPhase2);
   const thumbDisplay =
     thumbInProgress && job.total_files != null
       ? `${job.processed_files ?? 0}/${job.total_files}`
@@ -128,7 +129,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
                 {errors > 0 && <span className="text-error">⚠ {errors}</span>}
               </div>
             )}
-            {job.status === "running" && !isThumbnailPhase && job.total_files != null && (
+            {job.status === "running" && !isPhase2 && job.total_files != null && (
               <MiniProgressBar value={job.processed_files ?? 0} max={job.total_files} className="w-24" />
             )}
           </div>
@@ -155,7 +156,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
             >
               View
             </Link>
-            {(job.status === "pending" || job.status === "running" || job.status === "generating_thumbnails") && (
+            {(job.status === "pending" || job.status === "running" || job.status === "extracting_pages" || job.status === "generating_thumbnails") && (
               <Button 
                 variant="danger" 
                 size="sm"

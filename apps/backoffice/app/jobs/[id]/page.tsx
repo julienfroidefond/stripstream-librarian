@@ -20,6 +20,7 @@ interface JobDetails {
   started_at: string | null;
   finished_at: string | null;
   phase2_started_at: string | null;
+  generating_thumbnails_started_at: string | null;
   current_file: string | null;
   progress_percent: number | null;
   processed_files: number | null;
@@ -123,21 +124,27 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
   const isCompleted = job.status === "success";
   const isFailed = job.status === "failed";
   const isCancelled = job.status === "cancelled";
+  const isExtractingPages = job.status === "extracting_pages";
   const isThumbnailPhase = job.status === "generating_thumbnails";
+  const isPhase2 = isExtractingPages || isThumbnailPhase;
   const { isThumbnailOnly } = typeInfo;
 
   // Which label to use for the progress card
   const progressTitle = isThumbnailOnly
     ? "Thumbnails"
-    : isThumbnailPhase
-      ? "Phase 2 — Thumbnails"
-      : "Phase 1 — Discovery";
+    : isExtractingPages
+      ? "Phase 2 — Extracting pages"
+      : isThumbnailPhase
+        ? "Phase 2 — Thumbnails"
+        : "Phase 1 — Discovery";
 
   const progressDescription = isThumbnailOnly
     ? undefined
-    : isThumbnailPhase
-      ? "Generating thumbnails for the analyzed books"
-      : "Scanning and indexing files in the library";
+    : isExtractingPages
+      ? "Extracting first page from each archive (page count + raw image)"
+      : isThumbnailPhase
+        ? "Generating thumbnails for the analyzed books"
+        : "Scanning and indexing files in the library";
 
   // Speed metric: thumbnail count for thumbnail jobs, scanned files for index jobs
   const speedCount = isThumbnailOnly
@@ -145,7 +152,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     : (job.stats_json?.scanned_files ?? 0);
 
   const showProgressCard =
-    (isCompleted || isFailed || job.status === "running" || isThumbnailPhase) &&
+    (isCompleted || isFailed || job.status === "running" || isPhase2) &&
     (job.total_files != null || !!job.current_file);
 
   return (
@@ -312,26 +319,53 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
                   </div>
                 )}
 
-                {/* Phase 2 start — for index jobs that have two phases */}
-                {job.phase2_started_at && (
+                {/* Phase 2a — Extracting pages (index jobs with phase2) */}
+                {job.phase2_started_at && !isThumbnailOnly && (
+                  <div className="flex items-start gap-4">
+                    <div className={`w-3.5 h-3.5 rounded-full mt-0.5 shrink-0 z-10 ${
+                      job.generating_thumbnails_started_at || job.finished_at ? "bg-primary" : "bg-primary animate-pulse"
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-foreground">Phase 2a — Extracting pages</span>
+                      <p className="text-xs text-muted-foreground">{new Date(job.phase2_started_at).toLocaleString()}</p>
+                      <p className="text-xs text-primary/80 font-medium mt-0.5">
+                        Duration: {formatDuration(job.phase2_started_at, job.generating_thumbnails_started_at ?? job.finished_at ?? null)}
+                        {!job.generating_thumbnails_started_at && !job.finished_at && isExtractingPages && (
+                          <span className="text-muted-foreground font-normal ml-1">· in progress</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Phase 2b — Generating thumbnails */}
+                {(job.generating_thumbnails_started_at || (job.phase2_started_at && isThumbnailOnly)) && (
                   <div className="flex items-start gap-4">
                     <div className={`w-3.5 h-3.5 rounded-full mt-0.5 shrink-0 z-10 ${
                       job.finished_at ? "bg-primary" : "bg-primary animate-pulse"
                     }`} />
                     <div className="flex-1 min-w-0">
                       <span className="text-sm font-medium text-foreground">
-                        {isThumbnailOnly ? "Thumbnails" : "Phase 2 — Thumbnails"}
+                        {isThumbnailOnly ? "Thumbnails" : "Phase 2b — Generating thumbnails"}
                       </span>
-                      <p className="text-xs text-muted-foreground">{new Date(job.phase2_started_at).toLocaleString()}</p>
-                      {job.finished_at && (
+                      <p className="text-xs text-muted-foreground">
+                        {(job.generating_thumbnails_started_at ? new Date(job.generating_thumbnails_started_at) : job.phase2_started_at ? new Date(job.phase2_started_at) : null)?.toLocaleString()}
+                      </p>
+                      {(job.generating_thumbnails_started_at || job.finished_at) && (
                         <p className="text-xs text-primary/80 font-medium mt-0.5">
-                          Duration: {formatDuration(job.phase2_started_at, job.finished_at)}
+                          Duration: {formatDuration(
+                            job.generating_thumbnails_started_at ?? job.phase2_started_at!,
+                            job.finished_at ?? null
+                          )}
                           {job.total_files != null && job.total_files > 0 && (
                             <span className="text-muted-foreground font-normal ml-1">
                               · {job.processed_files ?? job.total_files} thumbnails
                             </span>
                           )}
                         </p>
+                      )}
+                      {!job.finished_at && isThumbnailPhase && (
+                        <span className="text-xs text-muted-foreground">in progress</span>
                       )}
                     </div>
                   </div>
@@ -393,7 +427,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
                   <div className="grid grid-cols-3 gap-4">
                     <StatBox
                       value={job.processed_files ?? 0}
-                      label={isThumbnailOnly || isThumbnailPhase ? "Generated" : "Processed"}
+                      label={isThumbnailOnly || isPhase2 ? "Generated" : "Processed"}
                       variant="primary"
                     />
                     <StatBox value={job.total_files} label="Total" />

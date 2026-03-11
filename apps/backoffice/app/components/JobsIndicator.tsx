@@ -78,7 +78,7 @@ export function JobsIndicator() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const runningJobs = activeJobs.filter(j => j.status === "running" || j.status === "generating_thumbnails");
+  const runningJobs = activeJobs.filter(j => j.status === "running" || j.status === "extracting_pages" || j.status === "generating_thumbnails");
   const pendingJobs = activeJobs.filter(j => j.status === "pending");
   const totalCount = activeJobs.length;
 
@@ -222,7 +222,7 @@ export function JobsIndicator() {
                     >
                       <div className="flex items-start gap-3">
                         <div className="mt-0.5">
-                          {(job.status === "running" || job.status === "generating_thumbnails") && <span className="animate-spin inline-block">⏳</span>}
+                          {(job.status === "running" || job.status === "extracting_pages" || job.status === "generating_thumbnails") && <span className="animate-spin inline-block">⏳</span>}
                           {job.status === "pending" && <span>⏸</span>}
                         </div>
                         
@@ -234,7 +234,7 @@ export function JobsIndicator() {
                             </Badge>
                           </div>
                           
-                          {(job.status === "running" || job.status === "generating_thumbnails") && job.progress_percent != null && (
+                          {(job.status === "running" || job.status === "extracting_pages" || job.status === "generating_thumbnails") && job.progress_percent != null && (
                             <div className="flex items-center gap-2 mt-2">
                               <MiniProgressBar value={job.progress_percent} />
                               <span className="text-xs font-medium text-muted-foreground">{job.progress_percent}%</span>

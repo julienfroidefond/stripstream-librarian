@@ -87,8 +87,8 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
   const percent = progress.progress_percent ?? 0;
   const processed = progress.processed_files ?? 0;
   const total = progress.total_files ?? 0;
-  const isThumbnailsPhase = progress.status === "generating_thumbnails";
-  const unitLabel = isThumbnailsPhase ? "thumbnails" : "files";
+  const isPhase2 = progress.status === "extracting_pages" || progress.status === "generating_thumbnails";
+  const unitLabel = progress.status === "extracting_pages" ? "pages" : progress.status === "generating_thumbnails" ? "thumbnails" : "files";
 
   return (
     <div className="p-4 bg-card rounded-lg border border-border">
@@ -112,7 +112,7 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
         )}
       </div>
 
-      {progress.stats_json && !isThumbnailsPhase && (
+      {progress.stats_json && !isPhase2 && (
         <div className="flex flex-wrap gap-3 text-xs">
           <Badge variant="primary">Scanned: {progress.stats_json.scanned_files}</Badge>
           <Badge variant="success">Indexed: {progress.stats_json.indexed_files}</Badge>
