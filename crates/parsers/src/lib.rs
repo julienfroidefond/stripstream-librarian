@@ -153,11 +153,12 @@ pub fn parse_metadata(
 
 /// Open an archive once and return (page_count, first_page_bytes).
 /// This is more efficient than calling parse_metadata + extract_first_page separately.
-pub fn analyze_book(path: &Path, format: BookFormat) -> Result<(i32, Vec<u8>)> {
+/// `pdf_render_scale`: max dimension (width or height) used by pdftoppm; 0 means use default (400).
+pub fn analyze_book(path: &Path, format: BookFormat, pdf_render_scale: u32) -> Result<(i32, Vec<u8>)> {
     match format {
         BookFormat::Cbz => analyze_cbz(path),
         BookFormat::Cbr => analyze_cbr(path),
-        BookFormat::Pdf => analyze_pdf(path),
+        BookFormat::Pdf => analyze_pdf(path, pdf_render_scale),
     }
 }
 
@@ -174,7 +175,7 @@ fn analyze_cbz(path: &Path) -> Result<(i32, Vec<u8>)> {
             image_names.push(entry.name().to_string());
         }
     }
-    image_names.sort();
+    image_names.sort_by(|a, b| natord::compare(a, b));
 
     let count = image_names.len() as i32;
     let first_image = image_names.first().context("no images found in cbz")?;
@@ -198,12 +199,13 @@ fn list_cbr_images(path: &Path) -> Result<Vec<String>> {
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let images: Vec<String> = stdout
+        let mut images: Vec<String> = stdout
             .lines()
             .map(|l| l.trim().to_string())
             .filter(|line| is_image_name(&line.to_ascii_lowercase()))
             .collect();
         if !images.is_empty() {
+            images.sort_by(|a, b| natord::compare(a, b));
             return Ok(images);
         }
     }
@@ -223,12 +225,13 @@ fn list_cbr_images(path: &Path) -> Result<Vec<String>> {
 
     let stdout = String::from_utf8_lossy(&lsar_output.stdout);
     // lsar output: first line is archive info, then one file per line (indented)
-    let images: Vec<String> = stdout
+    let mut images: Vec<String> = stdout
         .lines()
         .skip(1) // skip the archive header line
         .map(|l| l.trim().to_string())
         .filter(|line| is_image_name(&line.to_ascii_lowercase()))
         .collect();
+    images.sort_by(|a, b| natord::compare(a, b));
 
     Ok(images)
 }
@@ -281,9 +284,9 @@ fn looks_like_image(bytes: &[u8]) -> bool {
     false
 }
 
-fn analyze_pdf(path: &Path) -> Result<(i32, Vec<u8>)> {
+fn analyze_pdf(path: &Path, pdf_render_scale: u32) -> Result<(i32, Vec<u8>)> {
     let count = parse_pdf_page_count(path)?;
-    let image_bytes = extract_pdf_first_page(path)?;
+    let image_bytes = extract_pdf_first_page(path, pdf_render_scale)?;
     Ok((count, image_bytes))
 }
 
@@ -354,7 +357,7 @@ pub fn extract_first_page(path: &Path, format: BookFormat) -> Result<Vec<u8>> {
             let first_name = image_names.into_iter().next().context("no images found in cbr")?;
             extract_cbr_first_page(path, &first_name)
         }
-        BookFormat::Pdf => extract_pdf_first_page(path),
+        BookFormat::Pdf => extract_pdf_first_page(path, 0),
     }
 }
 
@@ -371,7 +374,7 @@ fn extract_cbz_first_page(path: &Path) -> Result<Vec<u8>> {
             image_names.push(entry.name().to_string());
         }
     }
-    image_names.sort();
+    image_names.sort_by(|a, b| natord::compare(a, b));
 
     let first_image = image_names.first().context("no images found in cbz")?;
 
@@ -383,26 +386,36 @@ fn extract_cbz_first_page(path: &Path) -> Result<Vec<u8>> {
     Ok(buf)
 }
 
-fn extract_cbr_first_page(path: &Path, first_name: &str) -> Result<Vec<u8>> {
-    let tmp_dir = std::env::temp_dir().join(format!("stripstream-cbr-thumb-{}", Uuid::new_v4()));
-    std::fs::create_dir_all(&tmp_dir).context("cannot create temp dir")?;
+fn extract_cbr_first_page(path: &Path, _first_name: &str) -> Result<Vec<u8>> {
+    let work_dir = std::env::temp_dir().join(format!("stripstream-cbr-thumb-{}", Uuid::new_v4()));
+    let extract_dir = work_dir.join("out");
+    std::fs::create_dir_all(&extract_dir).context("cannot create temp dir")?;
+
+    // unar constructs internal regexes from (archive_path + "/" + internal_path).
+    // Archive filenames containing regex special chars like `[`, `]`, `(`, `)` cause
+    // XADRegexException. Work around by giving unar a safe symlink name.
+    let safe_path = work_dir.join("archive.cbr");
+    if std::os::unix::fs::symlink(path, &safe_path).is_err() {
+        // Cross-filesystem fallback: copy (slower but safe)
+        std::fs::copy(path, &safe_path).context("cannot copy cbr to temp dir")?;
+    }
 
     let output = std::process::Command::new("env")
         .args(["LC_ALL=en_US.UTF-8", "LANG=en_US.UTF-8", "unar", "-o"])
-        .arg(&tmp_dir)
-        .arg(path)
+        .arg(&extract_dir)
+        .arg(&safe_path)
         .output()
         .context("unar failed")?;
 
     if !output.status.success() {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
+        let _ = std::fs::remove_dir_all(&work_dir);
         return Err(anyhow::anyhow!(
             "unar extract failed: {:?}",
             String::from_utf8_lossy(&output.stderr)
         ));
     }
 
-    let mut image_files: Vec<_> = WalkDir::new(&tmp_dir)
+    let mut image_files: Vec<_> = WalkDir::new(&extract_dir)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| {
@@ -411,19 +424,21 @@ fn extract_cbr_first_page(path: &Path, first_name: &str) -> Result<Vec<u8>> {
         })
         .collect();
 
-    image_files.sort_by_key(|e| e.path().to_string_lossy().to_lowercase());
+    image_files.sort_by(|a, b| natord::compare(&a.path().to_string_lossy(), &b.path().to_string_lossy()));
 
     let first_image = image_files.first().context("no images found in cbr")?;
 
     let data = std::fs::read(first_image.path())?;
-    let _ = std::fs::remove_dir_all(&tmp_dir);
+    let _ = std::fs::remove_dir_all(&work_dir);
     Ok(data)
 }
 
-fn extract_pdf_first_page(path: &Path) -> Result<Vec<u8>> {
+fn extract_pdf_first_page(path: &Path, pdf_render_scale: u32) -> Result<Vec<u8>> {
     let tmp_dir = std::env::temp_dir().join(format!("stripstream-pdf-thumb-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&tmp_dir)?;
     let output_prefix = tmp_dir.join("page");
+    let scale = if pdf_render_scale == 0 { 400 } else { pdf_render_scale };
+    let scale_str = scale.to_string();
 
     let output = Command::new("pdftoppm")
         .args([
@@ -432,7 +447,7 @@ fn extract_pdf_first_page(path: &Path) -> Result<Vec<u8>> {
             "-singlefile",
             "-png",
             "-scale-to",
-            "800",
+            &scale_str,
             path.to_str().unwrap(),
             output_prefix.to_str().unwrap(),
         ])
@@ -511,7 +526,7 @@ pub fn convert_cbr_to_cbz(cbr_path: &Path) -> Result<PathBuf> {
             is_image_name(&name)
         })
         .collect();
-    image_files.sort_by_key(|e| e.path().to_string_lossy().to_lowercase());
+    image_files.sort_by(|a, b| natord::compare(&a.path().to_string_lossy(), &b.path().to_string_lossy()));
 
     let image_count = image_files.len();
     if image_count == 0 {

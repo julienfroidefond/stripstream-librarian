@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+natord.workspace = true
 lopdf = "0.35"
 regex = "1"
 uuid.workspace = true

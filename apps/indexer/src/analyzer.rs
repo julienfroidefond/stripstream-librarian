@@ -247,8 +247,9 @@ pub async fn analyze_library_books(
                 // Run blocking archive I/O on a thread pool
                 let book_id = task.book_id;
                 let path_owned = path.to_path_buf();
+                let pdf_scale = config.width.max(config.height);
                 let analyze_result = tokio::task::spawn_blocking(move || {
-                    analyze_book(&path_owned, format)
+                    analyze_book(&path_owned, format, pdf_scale)
                 })
                 .await;
 
