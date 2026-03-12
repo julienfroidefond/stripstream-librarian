@@ -62,8 +62,7 @@ services:
     volumes:
       - ${LIBRARIES_HOST_PATH:-./libraries}:/libraries
       - ${THUMBNAILS_HOST_PATH:-./data/thumbnails}:/data/thumbnails
-    sysctls:
-      - fs.inotify.max_user_watches=524288
+
     depends_on:
       api:
         condition: service_healthy
