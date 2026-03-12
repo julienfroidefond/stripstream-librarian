@@ -67,7 +67,10 @@ async fn load_thumbnail_config(pool: &sqlx::PgPool) -> ThumbnailConfig {
 }
 
 async fn load_thumbnail_concurrency(pool: &sqlx::PgPool) -> usize {
-    let default_concurrency = 2;
+    // Default: half the logical CPUs, clamped between 2 and 8.
+    // Archive extraction is I/O bound but benefits from moderate parallelism.
+    let cpus = num_cpus::get();
+    let default_concurrency = (cpus / 2).clamp(2, 8);
     let row = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'limits'"#)
         .fetch_optional(pool)
         .await;

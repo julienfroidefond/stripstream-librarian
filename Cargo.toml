@@ -33,6 +33,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1.12", features = ["serde", "v4"] }
 natord = "1.0"
+num_cpus = "1.16"
 pdfium-render = { version = "0.8", default-features = false, features = ["pdfium_latest", "image_latest", "thread_safe"] }
 unrar = "0.5"
 walkdir = "2.5"

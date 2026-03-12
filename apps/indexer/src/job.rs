@@ -238,27 +238,42 @@ pub async fn process_job(
             .await?
     };
 
-    // Count total files for progress estimation
-    let library_paths: Vec<String> = libraries
-        .iter()
-        .map(|library| {
-            crate::utils::remap_libraries_path(&library.get::<String, _>("root_path"))
-        })
-        .collect();
+    // Count total files for progress estimation.
+    // For incremental rebuilds, use the DB count (instant) — the filesystem will be walked
+    // once during discovery anyway, no need for a second full WalkDir pass.
+    // For full rebuilds, the DB is already cleared, so we must walk the filesystem.
+    let library_ids: Vec<uuid::Uuid> = libraries.iter().map(|r| r.get("id")).collect();
 
-    let total_files: usize = library_paths
-        .par_iter()
-        .map(|root_path| {
-            walkdir::WalkDir::new(root_path)
-                .into_iter()
-                .filter_map(Result::ok)
-                .filter(|entry| {
-                    entry.file_type().is_file()
-                        && parsers::detect_format(entry.path()).is_some()
-                })
-                .count()
-        })
-        .sum();
+    let total_files: usize = if !is_full_rebuild {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM book_files bf JOIN books b ON b.id = bf.book_id WHERE b.library_id = ANY($1)"
+        )
+        .bind(&library_ids)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap_or(0);
+        count as usize
+    } else {
+        let library_paths: Vec<String> = libraries
+            .iter()
+            .map(|library| {
+                crate::utils::remap_libraries_path(&library.get::<String, _>("root_path"))
+            })
+            .collect();
+        library_paths
+            .par_iter()
+            .map(|root_path| {
+                walkdir::WalkDir::new(root_path)
+                    .into_iter()
+                    .filter_map(Result::ok)
+                    .filter(|entry| {
+                        entry.file_type().is_file()
+                            && parsers::detect_format(entry.path()).is_some()
+                    })
+                    .count()
+            })
+            .sum()
+    };
 
     info!(
         "[JOB] Found {} libraries, {} total files to index",
