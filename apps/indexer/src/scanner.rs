@@ -165,6 +165,13 @@ pub async fn scan_library_discovery(
             continue;
         }
 
+        // Skip macOS Apple Double resource fork files (._*)
+        let file_name_raw = entry.file_name().to_string_lossy();
+        if file_name_raw.starts_with("._") {
+            trace!("[SCAN] Skipping macOS resource fork: {}", path.display());
+            continue;
+        }
+
         // Check if this file is under a skipped dir
         let under_skipped = skipped_dir_prefixes
             .iter()

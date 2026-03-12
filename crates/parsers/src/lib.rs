@@ -190,7 +190,25 @@ fn analyze_cbr(path: &Path) -> Result<(i32, Vec<u8>)> {
     let mut image_names: Vec<String> = {
         let archive = unrar::Archive::new(path)
             .open_for_listing()
-            .map_err(|e| anyhow::anyhow!("unrar listing failed for {}: {}", path.display(), e))?;
+            .map_err(|e| anyhow::anyhow!("unrar listing failed for {}: {}", path.display(), e));
+        // Some .cbr files are actually ZIP archives with wrong extension — fallback to CBZ parser
+        let archive = match archive {
+            Ok(a) => a,
+            Err(e) => {
+                let e_str = e.to_string();
+                if e_str.contains("Not a RAR archive") || e_str.contains("bad archive") {
+                    return analyze_cbz(path).map_err(|zip_err| {
+                        anyhow::anyhow!(
+                            "not a RAR archive and ZIP fallback also failed for {}: RAR={}, ZIP={}",
+                            path.display(),
+                            e_str,
+                            zip_err
+                        )
+                    });
+                }
+                return Err(e);
+            }
+        };
         let mut names = Vec::new();
         for entry in archive {
             let entry = entry.map_err(|e| anyhow::anyhow!("unrar entry error: {}", e))?;
@@ -297,7 +315,18 @@ fn parse_cbz_page_count(path: &Path) -> Result<i32> {
 fn parse_cbr_page_count(path: &Path) -> Result<i32> {
     let archive = unrar::Archive::new(path)
         .open_for_listing()
-        .map_err(|e| anyhow::anyhow!("unrar listing failed for {}: {}", path.display(), e))?;
+        .map_err(|e| anyhow::anyhow!("unrar listing failed for {}: {}", path.display(), e));
+    // Some .cbr files are actually ZIP archives with wrong extension — fallback to CBZ parser
+    let archive = match archive {
+        Ok(a) => a,
+        Err(e) => {
+            let e_str = e.to_string();
+            if e_str.contains("Not a RAR archive") || e_str.contains("bad archive") {
+                return parse_cbz_page_count(path);
+            }
+            return Err(e);
+        }
+    };
     let count = archive
         .filter(|r| {
             r.as_ref()
