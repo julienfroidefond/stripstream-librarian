@@ -152,27 +152,30 @@ pub fn parse_metadata(
 /// `pdf_render_scale`: max dimension used for PDF rasterization; 0 means use default (400).
 pub fn analyze_book(path: &Path, format: BookFormat, pdf_render_scale: u32) -> Result<(i32, Vec<u8>)> {
     match format {
-        BookFormat::Cbz => analyze_cbz(path),
-        BookFormat::Cbr => analyze_cbr(path),
+        BookFormat::Cbz => analyze_cbz(path, true),
+        BookFormat::Cbr => analyze_cbr(path, true),
         BookFormat::Pdf => analyze_pdf(path, pdf_render_scale),
     }
 }
 
-fn analyze_cbz(path: &Path) -> Result<(i32, Vec<u8>)> {
+fn analyze_cbz(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {
     let file = std::fs::File::open(path)
         .with_context(|| format!("cannot open cbz: {}", path.display()))?;
     let mut archive = match zip::ZipArchive::new(file) {
         Ok(a) => a,
         Err(e) => {
-            // Some .cbz files are actually RAR archives with the wrong extension — fallback to CBR parser
-            return analyze_cbr(path).map_err(|rar_err| {
-                anyhow::anyhow!(
-                    "invalid cbz archive and RAR fallback also failed for {}: ZIP={}, RAR={}",
-                    path.display(),
-                    e,
-                    rar_err
-                )
-            });
+            if allow_fallback {
+                // Some .cbz files are actually RAR archives with the wrong extension — fallback to CBR parser
+                return analyze_cbr(path, false).map_err(|rar_err| {
+                    anyhow::anyhow!(
+                        "invalid cbz archive and RAR fallback also failed for {}: ZIP={}, RAR={}",
+                        path.display(),
+                        e,
+                        rar_err
+                    )
+                });
+            }
+            return Err(anyhow::anyhow!("invalid cbz archive for {}: {}", path.display(), e));
         }
     };
 
@@ -198,7 +201,7 @@ fn analyze_cbz(path: &Path) -> Result<(i32, Vec<u8>)> {
     Ok((count, buf))
 }
 
-fn analyze_cbr(path: &Path) -> Result<(i32, Vec<u8>)> {
+fn analyze_cbr(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {
     // Pass 1: list all image names via unrar (in-process, no subprocess)
     let mut image_names: Vec<String> = {
         let archive = unrar::Archive::new(path)
@@ -209,8 +212,8 @@ fn analyze_cbr(path: &Path) -> Result<(i32, Vec<u8>)> {
             Ok(a) => a,
             Err(e) => {
                 let e_str = e.to_string();
-                if e_str.contains("Not a RAR archive") || e_str.contains("bad archive") {
-                    return analyze_cbz(path).map_err(|zip_err| {
+                if allow_fallback && (e_str.contains("Not a RAR archive") || e_str.contains("bad archive")) {
+                    return analyze_cbz(path, false).map_err(|zip_err| {
                         anyhow::anyhow!(
                             "not a RAR archive and ZIP fallback also failed for {}: RAR={}, ZIP={}",
                             path.display(),
@@ -371,7 +374,7 @@ fn is_image_name(name: &str) -> bool {
 pub fn extract_first_page(path: &Path, format: BookFormat) -> Result<Vec<u8>> {
     match format {
         BookFormat::Cbz => extract_cbz_first_page(path),
-        BookFormat::Cbr => analyze_cbr(path).map(|(_, bytes)| bytes),
+        BookFormat::Cbr => analyze_cbr(path, true).map(|(_, bytes)| bytes),
         BookFormat::Pdf => analyze_pdf(path, 0).map(|(_, bytes)| bytes),
     }
 }
