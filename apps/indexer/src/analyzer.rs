@@ -173,7 +173,7 @@ pub async fn analyze_library_books(
 
     let sql = format!(
         r#"
-        SELECT b.id AS book_id, bf.abs_path, bf.format
+        SELECT b.id AS book_id, bf.abs_path, bf.format, (b.thumbnail_path IS NULL) AS needs_thumbnail
         FROM books b
         JOIN book_files bf ON bf.book_id = b.id
         WHERE (b.library_id = $1 OR $1 IS NULL)
@@ -219,6 +219,7 @@ pub async fn analyze_library_books(
         book_id: Uuid,
         abs_path: String,
         format: String,
+        needs_thumbnail: bool,
     }
 
     let tasks: Vec<BookTask> = rows
@@ -227,6 +228,7 @@ pub async fn analyze_library_books(
             book_id: row.get("book_id"),
             abs_path: row.get("abs_path"),
             format: row.get("format"),
+            needs_thumbnail: row.get("needs_thumbnail"),
         })
         .collect();
 
@@ -245,7 +247,7 @@ pub async fn analyze_library_books(
 
     let extracted_count = Arc::new(AtomicI32::new(0));
 
-    // Collected results: (book_id, raw_path, page_count)
+    // Collected results: (book_id, raw_path, page_count) — only books that need thumbnail generation
     let extracted: Vec<(Uuid, String, i32)> = stream::iter(tasks)
         .map(|task| {
             let pool = state.pool.clone();
@@ -261,6 +263,28 @@ pub async fn analyze_library_books(
                 let local_path = utils::remap_libraries_path(&task.abs_path);
                 let path = std::path::Path::new(&local_path);
                 let book_id = task.book_id;
+                let needs_thumbnail = task.needs_thumbnail;
+
+                // Remove macOS Apple Double resource fork files (._*) that were indexed before the scanner filter was added
+                if path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.starts_with("._"))
+                    .unwrap_or(false)
+                {
+                    warn!("[ANALYZER] Removing macOS resource fork from DB: {}", local_path);
+                    let _ = sqlx::query("DELETE FROM book_files WHERE book_id = $1")
+                        .bind(book_id)
+                        .execute(&pool)
+                        .await;
+                    let _ = sqlx::query(
+                        "DELETE FROM books WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM book_files WHERE book_id = $1)",
+                    )
+                    .bind(book_id)
+                    .execute(&pool)
+                    .await;
+                    return None;
+                }
 
                 let format = match book_format_from_str(&task.format) {
                     Some(f) => f,
@@ -294,6 +318,29 @@ pub async fn analyze_library_books(
                         return None;
                     }
                 };
+
+                // If thumbnail already exists, just update page_count and skip thumbnail generation
+                if !needs_thumbnail {
+                    if let Err(e) = sqlx::query("UPDATE books SET page_count = $1 WHERE id = $2")
+                        .bind(page_count)
+                        .bind(book_id)
+                        .execute(&pool)
+                        .await
+                    {
+                        warn!("[ANALYZER] DB page_count update failed for book {}: {}", book_id, e);
+                    }
+                    let processed = extracted_count.fetch_add(1, Ordering::Relaxed) + 1;
+                    let percent = (processed as f64 / total as f64 * 50.0) as i32;
+                    let _ = sqlx::query(
+                        "UPDATE index_jobs SET processed_files = $2, progress_percent = $3 WHERE id = $1",
+                    )
+                    .bind(job_id)
+                    .bind(processed)
+                    .bind(percent)
+                    .execute(&pool)
+                    .await;
+                    return None; // don't enqueue for thumbnail sub-phase
+                }
 
                 // Save raw bytes to disk (no resize, no encode)
                 let raw_path = match tokio::task::spawn_blocking({

@@ -13,7 +13,7 @@ pub async fn cleanup_stale_jobs(pool: &PgPool) -> Result<()> {
         SET status = 'failed',
             finished_at = NOW(),
             error_opt = 'Job interrupted by indexer restart'
-        WHERE status = 'running'
+        WHERE status IN ('running', 'extracting_pages', 'generating_thumbnails')
           AND started_at < NOW() - INTERVAL '5 minutes'
         RETURNING id
         "#,

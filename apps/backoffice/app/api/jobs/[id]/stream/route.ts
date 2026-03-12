@@ -15,19 +15,21 @@ export async function GET(
       
       let lastData: string | null = null;
       let isActive = true;
-      
+      let consecutiveErrors = 0;
+
       const fetchJob = async () => {
         if (!isActive) return;
-        
+
         try {
           const response = await fetch(`${baseUrl}/index/jobs/${id}`, {
             headers: { Authorization: `Bearer ${token}` },
           });
-          
+
           if (response.ok && isActive) {
+            consecutiveErrors = 0;
             const data = await response.json();
             const dataStr = JSON.stringify(data);
-            
+
             // Only send if data changed
             if (dataStr !== lastData && isActive) {
               lastData = dataStr;
@@ -40,7 +42,7 @@ export async function GET(
                 isActive = false;
                 return;
               }
-              
+
               // Stop polling if job is complete
               if (data.status === "success" || data.status === "failed" || data.status === "cancelled") {
                 isActive = false;
@@ -54,7 +56,11 @@ export async function GET(
           }
         } catch (error) {
           if (isActive) {
-            console.error("SSE fetch error:", error);
+            consecutiveErrors++;
+            // Only log first failure and every 60th to avoid spam
+            if (consecutiveErrors === 1 || consecutiveErrors % 60 === 0) {
+              console.warn(`SSE fetch error (${consecutiveErrors} consecutive):`, error);
+            }
           }
         }
       };

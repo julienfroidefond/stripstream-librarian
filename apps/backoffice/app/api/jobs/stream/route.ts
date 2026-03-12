@@ -10,19 +10,21 @@ export async function GET(request: NextRequest) {
       
       let lastData: string | null = null;
       let isActive = true;
-      
+      let consecutiveErrors = 0;
+
       const fetchJobs = async () => {
         if (!isActive) return;
-        
+
         try {
           const response = await fetch(`${baseUrl}/index/status`, {
             headers: { Authorization: `Bearer ${token}` },
           });
-          
+
           if (response.ok && isActive) {
+            consecutiveErrors = 0;
             const data = await response.json();
             const dataStr = JSON.stringify(data);
-            
+
             // Send if data changed
             if (dataStr !== lastData && isActive) {
               lastData = dataStr;
@@ -38,7 +40,11 @@ export async function GET(request: NextRequest) {
           }
         } catch (error) {
           if (isActive) {
-            console.error("SSE fetch error:", error);
+            consecutiveErrors++;
+            // Only log first failure and every 30th to avoid spam
+            if (consecutiveErrors === 1 || consecutiveErrors % 30 === 0) {
+              console.warn(`SSE fetch error (${consecutiveErrors} consecutive):`, error);
+            }
           }
         }
       };

@@ -182,7 +182,7 @@ pub async fn cancel_job(
     id: axum::extract::Path<Uuid>,
 ) -> Result<Json<IndexJobResponse>, ApiError> {
     let rows_affected = sqlx::query(
-        "UPDATE index_jobs SET status = 'cancelled' WHERE id = $1 AND status IN ('pending', 'running', 'generating_thumbnails')",
+        "UPDATE index_jobs SET status = 'cancelled' WHERE id = $1 AND status IN ('pending', 'running', 'extracting_pages', 'generating_thumbnails')",
     )
     .bind(id.0)
     .execute(&state.pool)
