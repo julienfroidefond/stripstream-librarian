@@ -163,19 +163,19 @@ fn analyze_cbz(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {
         .with_context(|| format!("cannot open cbz: {}", path.display()))?;
     let mut archive = match zip::ZipArchive::new(file) {
         Ok(a) => a,
-        Err(e) => {
+        Err(zip_err) => {
             if allow_fallback {
-                // Some .cbz files are actually RAR archives with the wrong extension — fallback to CBR parser
-                return analyze_cbr(path, false).map_err(|rar_err| {
-                    anyhow::anyhow!(
-                        "invalid cbz archive and RAR fallback also failed for {}: ZIP={}, RAR={}",
-                        path.display(),
-                        e,
-                        rar_err
-                    )
-                });
+                // Try RAR fallback first (file might be a RAR with .cbz extension)
+                if let Ok(result) = analyze_cbr(path, false) {
+                    return Ok(result);
+                }
+                // Try streaming fallback: read local file headers without central directory
+                // (handles ZIP files with NTFS extra fields that confuse the central dir parser)
+                if let Ok(result) = analyze_cbz_streaming(path) {
+                    return Ok(result);
+                }
             }
-            return Err(anyhow::anyhow!("invalid cbz archive for {}: {}", path.display(), e));
+            return Err(anyhow::anyhow!("invalid cbz archive for {}: {}", path.display(), zip_err));
         }
     };
 
@@ -199,6 +199,47 @@ fn analyze_cbz(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {
     entry.read_to_end(&mut buf)?;
 
     Ok((count, buf))
+}
+
+/// Fallback for ZIP files whose central directory can't be parsed (e.g. NTFS extra fields).
+/// Reads local file headers sequentially without relying on the central directory.
+fn analyze_cbz_streaming(path: &Path) -> Result<(i32, Vec<u8>)> {
+    let file = std::fs::File::open(path)
+        .with_context(|| format!("cannot open cbz for streaming: {}", path.display()))?;
+    let mut reader = std::io::BufReader::new(file);
+
+    let mut all_images: Vec<(String, Vec<u8>)> = Vec::new();
+
+    loop {
+        match zip::read::read_zipfile_from_stream(&mut reader) {
+            Ok(Some(mut entry)) => {
+                let name = entry.name().to_string();
+                if is_image_name(&name.to_ascii_lowercase()) {
+                    let mut buf = Vec::new();
+                    entry.read_to_end(&mut buf)?;
+                    all_images.push((name, buf));
+                } else {
+                    std::io::copy(&mut entry, &mut std::io::sink())?;
+                }
+            }
+            Ok(None) => break,
+            Err(_) => {
+                if !all_images.is_empty() {
+                    break; // Partial read — use what we have
+                }
+                return Err(anyhow::anyhow!("streaming ZIP read failed for {}", path.display()));
+            }
+        }
+    }
+
+    if all_images.is_empty() {
+        return Err(anyhow::anyhow!("no images found in streaming cbz: {}", path.display()));
+    }
+
+    all_images.sort_by(|(a, _), (b, _)| natord::compare(a, b));
+    let count = all_images.len() as i32;
+    let (_, first_bytes) = all_images.remove(0);
+    Ok((count, first_bytes))
 }
 
 fn analyze_cbr(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {

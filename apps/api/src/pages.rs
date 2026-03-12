@@ -376,8 +376,13 @@ fn extract_cbz_page(abs_path: &str, page_number: u32, allow_fallback: bool) -> R
         Ok(a) => a,
         Err(zip_err) => {
             if allow_fallback {
-                warn!("CBZ open failed for {}, trying RAR fallback: {}", abs_path, zip_err);
-                return extract_cbr_page(abs_path, page_number, false);
+                // Try RAR fallback (file might be a RAR with .cbz extension)
+                if let Ok(data) = extract_cbr_page(abs_path, page_number, false) {
+                    return Ok(data);
+                }
+                // Streaming fallback: read local file headers without central directory
+                warn!("CBZ central dir failed for {}, trying streaming: {}", abs_path, zip_err);
+                return extract_cbz_page_streaming(abs_path, page_number);
             }
             error!("Invalid CBZ archive {}: {}", abs_path, zip_err);
             return Err(ApiError::internal(format!("invalid cbz: {zip_err}")));
@@ -415,6 +420,69 @@ fn extract_cbz_page(abs_path: &str, page_number: u32, allow_fallback: bool) -> R
         ApiError::internal(format!("cbz page load failed: {e}"))
     })?;
     Ok(buf)
+}
+
+fn extract_cbz_page_streaming(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiError> {
+    let file = std::fs::File::open(abs_path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            ApiError::not_found("book file not accessible")
+        } else {
+            ApiError::internal(format!("cannot open cbz: {e}"))
+        }
+    })?;
+    let mut reader = std::io::BufReader::new(file);
+    let mut image_names: Vec<String> = Vec::new();
+
+    loop {
+        match zip::read::read_zipfile_from_stream(&mut reader) {
+            Ok(Some(mut entry)) => {
+                let name = entry.name().to_string();
+                if is_image_name(&name.to_ascii_lowercase()) {
+                    image_names.push(name);
+                }
+                std::io::copy(&mut entry, &mut std::io::sink())
+                    .map_err(|e| ApiError::internal(format!("cbz stream skip: {e}")))?;
+            }
+            Ok(None) => break,
+            Err(_) => {
+                if !image_names.is_empty() {
+                    break;
+                }
+                return Err(ApiError::internal("cbz streaming read failed".to_string()));
+            }
+        }
+    }
+
+    image_names.sort_by(|a, b| natord::compare(a, b));
+    let target = image_names
+        .get(page_number as usize - 1)
+        .ok_or_else(|| ApiError::not_found("page out of range"))?
+        .clone();
+
+    // Second pass: extract the target page
+    let file2 = std::fs::File::open(abs_path)
+        .map_err(|e| ApiError::internal(format!("cannot reopen cbz: {e}")))?;
+    let mut reader2 = std::io::BufReader::new(file2);
+
+    loop {
+        match zip::read::read_zipfile_from_stream(&mut reader2) {
+            Ok(Some(mut entry)) => {
+                if entry.name() == target {
+                    let mut buf = Vec::new();
+                    entry
+                        .read_to_end(&mut buf)
+                        .map_err(|e| ApiError::internal(format!("cbz stream read: {e}")))?;
+                    return Ok(buf);
+                }
+                std::io::copy(&mut entry, &mut std::io::sink())
+                    .map_err(|e| ApiError::internal(format!("cbz stream skip: {e}")))?;
+            }
+            Ok(None) => break,
+            Err(_) => break,
+        }
+    }
+
+    Err(ApiError::not_found("page not found in archive"))
 }
 
 fn extract_cbr_page(abs_path: &str, page_number: u32, allow_fallback: bool) -> Result<Vec<u8>, ApiError> {
