@@ -31,7 +31,7 @@ uuid.workspace = true
 natord.workspace = true
 pdfium-render.workspace = true
 unrar.workspace = true
-zip = { version = "2.2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 utoipa.workspace = true
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }
 webp.workspace = true
