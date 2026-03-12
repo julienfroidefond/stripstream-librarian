@@ -161,7 +161,20 @@ pub fn analyze_book(path: &Path, format: BookFormat, pdf_render_scale: u32) -> R
 fn analyze_cbz(path: &Path) -> Result<(i32, Vec<u8>)> {
     let file = std::fs::File::open(path)
         .with_context(|| format!("cannot open cbz: {}", path.display()))?;
-    let mut archive = zip::ZipArchive::new(file).context("invalid cbz archive")?;
+    let mut archive = match zip::ZipArchive::new(file) {
+        Ok(a) => a,
+        Err(e) => {
+            // Some .cbz files are actually RAR archives with the wrong extension — fallback to CBR parser
+            return analyze_cbr(path).map_err(|rar_err| {
+                anyhow::anyhow!(
+                    "invalid cbz archive and RAR fallback also failed for {}: ZIP={}, RAR={}",
+                    path.display(),
+                    e,
+                    rar_err
+                )
+            });
+        }
+    };
 
     let mut image_names: Vec<String> = Vec::new();
     for i in 0..archive.len() {
