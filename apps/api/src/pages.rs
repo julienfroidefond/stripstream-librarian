@@ -352,8 +352,8 @@ fn render_page(
     filter: image::imageops::FilterType,
 ) -> Result<Vec<u8>, ApiError> {
     let page_bytes = match input_format {
-        "cbz" => extract_cbz_page(abs_path, page_number)?,
-        "cbr" => extract_cbr_page(abs_path, page_number)?,
+        "cbz" => extract_cbz_page(abs_path, page_number, true)?,
+        "cbr" => extract_cbr_page(abs_path, page_number, true)?,
         "pdf" => render_pdf_page(abs_path, page_number, width)?,
         _ => return Err(ApiError::bad_request("unsupported source format")),
     };
@@ -361,7 +361,7 @@ fn render_page(
     transcode_image(&page_bytes, out_format, quality, width, filter)
 }
 
-fn extract_cbz_page(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiError> {
+fn extract_cbz_page(abs_path: &str, page_number: u32, allow_fallback: bool) -> Result<Vec<u8>, ApiError> {
     debug!("Opening CBZ archive: {}", abs_path);
     let file = std::fs::File::open(abs_path).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
@@ -371,11 +371,18 @@ fn extract_cbz_page(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiErro
             ApiError::internal(format!("cannot open cbz: {e}"))
         }
     })?;
-    
-    let mut archive = zip::ZipArchive::new(file).map_err(|e| {
-        error!("Invalid CBZ archive {}: {}", abs_path, e);
-        ApiError::internal(format!("invalid cbz: {e}"))
-    })?;
+
+    let mut archive = match zip::ZipArchive::new(file) {
+        Ok(a) => a,
+        Err(zip_err) => {
+            if allow_fallback {
+                warn!("CBZ open failed for {}, trying RAR fallback: {}", abs_path, zip_err);
+                return extract_cbr_page(abs_path, page_number, false);
+            }
+            error!("Invalid CBZ archive {}: {}", abs_path, zip_err);
+            return Err(ApiError::internal(format!("invalid cbz: {zip_err}")));
+        }
+    };
 
     let mut image_names: Vec<String> = Vec::new();
     for i in 0..archive.len() {
@@ -410,15 +417,22 @@ fn extract_cbz_page(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiErro
     Ok(buf)
 }
 
-fn extract_cbr_page(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiError> {
+fn extract_cbr_page(abs_path: &str, page_number: u32, allow_fallback: bool) -> Result<Vec<u8>, ApiError> {
     info!("Opening CBR archive: {}", abs_path);
     let index = page_number as usize - 1;
 
     // Pass 1: list all image names (in-process, no subprocess)
     let mut image_names: Vec<String> = {
-        let archive = unrar::Archive::new(abs_path)
-            .open_for_listing()
-            .map_err(|e| ApiError::internal(format!("unrar listing failed: {}", e)))?;
+        let archive = match unrar::Archive::new(abs_path).open_for_listing() {
+            Ok(a) => a,
+            Err(e) => {
+                if allow_fallback {
+                    warn!("CBR open failed for {}, trying ZIP fallback: {}", abs_path, e);
+                    return extract_cbz_page(abs_path, page_number, false);
+                }
+                return Err(ApiError::internal(format!("unrar listing failed: {}", e)));
+            }
+        };
         let mut names = Vec::new();
         for entry in archive {
             let entry = entry.map_err(|e| ApiError::internal(format!("unrar entry error: {}", e)))?;
