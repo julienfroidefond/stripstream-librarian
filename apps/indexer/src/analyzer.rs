@@ -18,6 +18,7 @@ struct ThumbnailConfig {
     height: u32,
     quality: u8,
     directory: String,
+    timeout_secs: u64,
 }
 
 async fn load_thumbnail_config(pool: &sqlx::PgPool) -> ThumbnailConfig {
@@ -27,12 +28,22 @@ async fn load_thumbnail_config(pool: &sqlx::PgPool) -> ThumbnailConfig {
         height: 400,
         quality: 80,
         directory: "/data/thumbnails".to_string(),
+        timeout_secs: 120,
     };
-    let row = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'thumbnail'"#)
+    let thumb_row = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'thumbnail'"#)
+        .fetch_optional(pool)
+        .await;
+    let limits_row = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'limits'"#)
         .fetch_optional(pool)
         .await;
 
-    match row {
+    let timeout_secs = limits_row
+        .ok()
+        .flatten()
+        .and_then(|r| r.get::<serde_json::Value, _>("value").get("timeout_seconds").and_then(|v| v.as_u64()))
+        .unwrap_or(fallback.timeout_secs);
+
+    match thumb_row {
         Ok(Some(row)) => {
             let value: serde_json::Value = row.get("value");
             ThumbnailConfig {
@@ -60,9 +71,10 @@ async fn load_thumbnail_config(pool: &sqlx::PgPool) -> ThumbnailConfig {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| fallback.directory.clone()),
+                timeout_secs,
             }
         }
-        _ => fallback,
+        _ => ThumbnailConfig { timeout_secs, ..fallback },
     }
 }
 
@@ -299,13 +311,16 @@ pub async fn analyze_library_books(
 
                 let pdf_scale = config.width.max(config.height);
                 let path_owned = path.to_path_buf();
-                let analyze_result =
-                    tokio::task::spawn_blocking(move || analyze_book(&path_owned, format, pdf_scale))
-                        .await;
+                let timeout_secs = config.timeout_secs;
+                let analyze_result = tokio::time::timeout(
+                    std::time::Duration::from_secs(timeout_secs),
+                    tokio::task::spawn_blocking(move || analyze_book(&path_owned, format, pdf_scale)),
+                )
+                .await;
 
                 let (page_count, raw_bytes) = match analyze_result {
-                    Ok(Ok(result)) => result,
-                    Ok(Err(e)) => {
+                    Ok(Ok(Ok(result))) => result,
+                    Ok(Ok(Err(e))) => {
                         warn!("[ANALYZER] analyze_book failed for book {}: {}", book_id, e);
                         let _ = sqlx::query(
                             "UPDATE book_files SET parse_status = 'error', parse_error_opt = $2 WHERE book_id = $1",
@@ -316,8 +331,19 @@ pub async fn analyze_library_books(
                         .await;
                         return None;
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         warn!("[ANALYZER] spawn_blocking error for book {}: {}", book_id, e);
+                        return None;
+                    }
+                    Err(_) => {
+                        warn!("[ANALYZER] analyze_book timed out after {}s for book {}: {}", timeout_secs, book_id, local_path);
+                        let _ = sqlx::query(
+                            "UPDATE book_files SET parse_status = 'error', parse_error_opt = $2 WHERE book_id = $1",
+                        )
+                        .bind(book_id)
+                        .bind(format!("analyze_book timed out after {}s", timeout_secs))
+                        .execute(&pool)
+                        .await;
                         return None;
                     }
                 };
