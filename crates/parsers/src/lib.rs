@@ -523,6 +523,187 @@ pub fn is_image_name(name: &str) -> bool {
         || name.ends_with(".tiff")
 }
 
+/// Returns the sorted list of image entry names in a CBZ or CBR archive.
+/// Intended to be cached by the caller; pass the result to `extract_image_by_name`.
+pub fn list_archive_images(path: &Path, format: BookFormat) -> Result<Vec<String>> {
+    match format {
+        BookFormat::Cbz => list_cbz_images(path),
+        BookFormat::Cbr => list_cbr_images(path),
+        BookFormat::Pdf => Err(anyhow::anyhow!("list_archive_images not applicable for PDF")),
+    }
+}
+
+fn list_cbz_images(path: &Path) -> Result<Vec<String>> {
+    let file = std::fs::File::open(path)
+        .with_context(|| format!("cannot open cbz: {}", path.display()))?;
+    let mut archive = match zip::ZipArchive::new(file) {
+        Ok(a) => a,
+        Err(zip_err) => {
+            // Try RAR fallback
+            if let Ok(names) = list_cbr_images(path) {
+                return Ok(names);
+            }
+            // Try streaming fallback
+            return list_cbz_images_streaming(path).map_err(|_| {
+                anyhow::anyhow!("invalid cbz for {}: {}", path.display(), zip_err)
+            });
+        }
+    };
+
+    let mut names: Vec<String> = Vec::new();
+    for i in 0..archive.len() {
+        let entry = match archive.by_index(i) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let lower = entry.name().to_ascii_lowercase();
+        if is_image_name(&lower) {
+            names.push(entry.name().to_string());
+        }
+    }
+    names.sort_by(|a, b| natord::compare(a, b));
+    Ok(names)
+}
+
+fn list_cbz_images_streaming(path: &Path) -> Result<Vec<String>> {
+    let file = std::fs::File::open(path)
+        .with_context(|| format!("cannot open cbz for streaming: {}", path.display()))?;
+    let mut reader = std::io::BufReader::new(file);
+    let mut names: Vec<String> = Vec::new();
+
+    loop {
+        match zip::read::read_zipfile_from_stream(&mut reader) {
+            Ok(Some(mut entry)) => {
+                let name = entry.name().to_string();
+                if is_image_name(&name.to_ascii_lowercase()) {
+                    names.push(name);
+                }
+                std::io::copy(&mut entry, &mut std::io::sink())?;
+            }
+            Ok(None) => break,
+            Err(_) => {
+                if !names.is_empty() {
+                    break;
+                }
+                return Err(anyhow::anyhow!(
+                    "streaming ZIP listing failed for {}",
+                    path.display()
+                ));
+            }
+        }
+    }
+    names.sort_by(|a, b| natord::compare(a, b));
+    Ok(names)
+}
+
+fn list_cbr_images(path: &Path) -> Result<Vec<String>> {
+    let archive = unrar::Archive::new(path)
+        .open_for_listing()
+        .map_err(|e| anyhow::anyhow!("unrar listing failed for {}: {}", path.display(), e));
+    let archive = match archive {
+        Ok(a) => a,
+        Err(e) => {
+            let e_str = e.to_string();
+            if e_str.contains("Not a RAR archive") || e_str.contains("bad archive") {
+                return list_cbz_images(path);
+            }
+            return Err(e);
+        }
+    };
+    let mut names: Vec<String> = Vec::new();
+    for entry in archive {
+        let entry = entry.map_err(|e| anyhow::anyhow!("unrar entry error: {}", e))?;
+        let name = entry.filename.to_string_lossy().to_string();
+        if is_image_name(&name.to_ascii_lowercase()) {
+            names.push(name);
+        }
+    }
+    names.sort_by(|a, b| natord::compare(a, b));
+    Ok(names)
+}
+
+/// Extract a specific image entry by name from a CBZ or CBR archive.
+/// Use in combination with `list_archive_images` to avoid re-enumerating entries.
+pub fn extract_image_by_name(path: &Path, format: BookFormat, image_name: &str) -> Result<Vec<u8>> {
+    match format {
+        BookFormat::Cbz => extract_cbz_by_name(path, image_name),
+        BookFormat::Cbr => extract_cbr_by_name(path, image_name),
+        BookFormat::Pdf => Err(anyhow::anyhow!("use extract_page for PDF")),
+    }
+}
+
+fn extract_cbz_by_name(path: &Path, image_name: &str) -> Result<Vec<u8>> {
+    let file = std::fs::File::open(path)
+        .with_context(|| format!("cannot open cbz: {}", path.display()))?;
+    let mut archive = match zip::ZipArchive::new(file) {
+        Ok(a) => a,
+        Err(_) => return extract_cbz_by_name_streaming(path, image_name),
+    };
+    let mut entry = archive
+        .by_name(image_name)
+        .with_context(|| format!("entry '{}' not found in {}", image_name, path.display()))?;
+    let mut buf = Vec::new();
+    entry.read_to_end(&mut buf)?;
+    Ok(buf)
+}
+
+fn extract_cbz_by_name_streaming(path: &Path, image_name: &str) -> Result<Vec<u8>> {
+    let file = std::fs::File::open(path)
+        .with_context(|| format!("cannot open cbz for streaming: {}", path.display()))?;
+    let mut reader = std::io::BufReader::new(file);
+    loop {
+        match zip::read::read_zipfile_from_stream(&mut reader) {
+            Ok(Some(mut entry)) => {
+                if entry.name() == image_name {
+                    let mut buf = Vec::new();
+                    entry.read_to_end(&mut buf)?;
+                    return Ok(buf);
+                }
+                std::io::copy(&mut entry, &mut std::io::sink())?;
+            }
+            Ok(None) => break,
+            Err(_) => break,
+        }
+    }
+    Err(anyhow::anyhow!(
+        "entry '{}' not found in streaming cbz: {}",
+        image_name,
+        path.display()
+    ))
+}
+
+fn extract_cbr_by_name(path: &Path, image_name: &str) -> Result<Vec<u8>> {
+    let mut archive = unrar::Archive::new(path)
+        .open_for_processing()
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "unrar open for processing failed for {}: {}",
+                path.display(),
+                e
+            )
+        })?;
+    while let Some(header) = archive
+        .read_header()
+        .map_err(|e| anyhow::anyhow!("unrar read header: {}", e))?
+    {
+        let entry_name = header.entry().filename.to_string_lossy().to_string();
+        if entry_name == image_name {
+            let (data, _) = header
+                .read()
+                .map_err(|e| anyhow::anyhow!("unrar read data: {}", e))?;
+            return Ok(data);
+        }
+        archive = header
+            .skip()
+            .map_err(|e| anyhow::anyhow!("unrar skip: {}", e))?;
+    }
+    Err(anyhow::anyhow!(
+        "entry '{}' not found in cbr: {}",
+        image_name,
+        path.display()
+    ))
+}
+
 /// Extract a specific page (1-indexed) from a book archive.
 /// Returns raw image bytes (original format, not transcoded).
 /// `render_width` is only used for PDF; 0 means default (1200px).

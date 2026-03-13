@@ -1,6 +1,7 @@
 use std::sync::{
     atomic::AtomicU64,
     Arc,
+    Mutex as StdMutex,
 };
 use std::time::Instant;
 
@@ -19,6 +20,9 @@ pub struct AppState {
     pub metrics: Arc<Metrics>,
     pub read_rate_limit: Arc<Mutex<ReadRateLimit>>,
     pub settings: Arc<RwLock<DynamicSettings>>,
+    /// Sorted image name list per archive path — avoids re-enumerating entries on every cold render.
+    /// Uses StdMutex (not tokio) so it's accessible from spawn_blocking.
+    pub archive_index_cache: Arc<StdMutex<LruCache<String, Arc<Vec<String>>>>>,
 }
 
 #[derive(Clone)]
