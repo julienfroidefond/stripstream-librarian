@@ -181,7 +181,10 @@ fn analyze_cbz(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {
 
     let mut image_names: Vec<String> = Vec::new();
     for i in 0..archive.len() {
-        let entry = archive.by_index(i).context("cannot read cbz entry")?;
+        let entry = match archive.by_index(i) {
+            Ok(e) => e,
+            Err(_) => continue, // skip corrupted entries
+        };
         let name = entry.name().to_ascii_lowercase();
         if is_image_name(&name) {
             image_names.push(entry.name().to_string());
@@ -189,16 +192,22 @@ fn analyze_cbz(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {
     }
     image_names.sort_by(|a, b| natord::compare(a, b));
 
+    if image_names.is_empty() {
+        return Err(anyhow::anyhow!("no images found in cbz: {}", path.display()));
+    }
+
+    // Try images in order until one reads successfully (first pages can be corrupted too)
     let count = image_names.len() as i32;
-    let first_image = image_names.first().context("no images found in cbz")?;
+    for first_image in &image_names {
+        if let Ok(mut entry) = archive.by_name(first_image) {
+            let mut buf = Vec::new();
+            if entry.read_to_end(&mut buf).is_ok() && !buf.is_empty() {
+                return Ok((count, buf));
+            }
+        }
+    }
 
-    let mut entry = archive
-        .by_name(first_image)
-        .context("cannot read first image")?;
-    let mut buf = Vec::new();
-    entry.read_to_end(&mut buf)?;
-
-    Ok((count, buf))
+    Err(anyhow::anyhow!("all entries unreadable in cbz: {}", path.display()))
 }
 
 /// Fallback for ZIP files whose central directory can't be parsed (e.g. NTFS extra fields).

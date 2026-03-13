@@ -391,10 +391,13 @@ fn extract_cbz_page(abs_path: &str, page_number: u32, allow_fallback: bool) -> R
 
     let mut image_names: Vec<String> = Vec::new();
     for i in 0..archive.len() {
-        let entry = archive.by_index(i).map_err(|e| {
-            error!("Failed to read CBZ entry {} in {}: {}", i, abs_path, e);
-            ApiError::internal(format!("cbz entry read failed: {e}"))
-        })?;
+        let entry = match archive.by_index(i) {
+            Ok(e) => e,
+            Err(e) => {
+                warn!("Skipping corrupted CBZ entry {} in {}: {}", i, abs_path, e);
+                continue;
+            }
+        };
         let name = entry.name().to_ascii_lowercase();
         if is_image_name(&name) {
             image_names.push(entry.name().to_string());
