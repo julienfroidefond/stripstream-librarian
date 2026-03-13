@@ -19,6 +19,7 @@ interface Job {
     scanned_files: number;
     indexed_files: number;
     errors: number;
+    warnings: number;
   } | null;
 }
 
@@ -261,8 +262,11 @@ export function JobsIndicator() {
                         {job.stats_json && (
                           <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
                             <span>✓ {job.stats_json.indexed_files}</span>
+                            {(job.stats_json.warnings ?? 0) > 0 && (
+                              <span className="text-warning">⚠ {job.stats_json.warnings}</span>
+                            )}
                             {job.stats_json.errors > 0 && (
-                              <span className="text-destructive">⚠ {job.stats_json.errors}</span>
+                              <span className="text-destructive">✕ {job.stats_json.errors}</span>
                             )}
                           </div>
                         )}

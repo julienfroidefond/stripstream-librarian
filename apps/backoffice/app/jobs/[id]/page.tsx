@@ -30,6 +30,7 @@ interface JobDetails {
     indexed_files: number;
     removed_files: number;
     errors: number;
+    warnings: number;
   } | null;
   error_opt: string | null;
 }
@@ -182,6 +183,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
               <span className="ml-2 text-success/80">
                 — {job.stats_json.scanned_files} scanned, {job.stats_json.indexed_files} indexed
                 {job.stats_json.removed_files > 0 && `, ${job.stats_json.removed_files} removed`}
+                {(job.stats_json.warnings ?? 0) > 0 && `, ${job.stats_json.warnings} warnings`}
                 {job.stats_json.errors > 0 && `, ${job.stats_json.errors} errors`}
                 {job.total_files != null && job.total_files > 0 && `, ${job.total_files} thumbnails`}
               </span>
@@ -312,6 +314,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
                           <span className="text-muted-foreground font-normal ml-1">
                             · {job.stats_json.scanned_files} scanned, {job.stats_json.indexed_files} indexed
                             {job.stats_json.removed_files > 0 && `, ${job.stats_json.removed_files} removed`}
+                            {(job.stats_json.warnings ?? 0) > 0 && `, ${job.stats_json.warnings} warn`}
                           </span>
                         )}
                       </p>
@@ -462,10 +465,11 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
               )}
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
                 <StatBox value={job.stats_json.scanned_files} label="Scanned" variant="success" />
                 <StatBox value={job.stats_json.indexed_files} label="Indexed" variant="primary" />
                 <StatBox value={job.stats_json.removed_files} label="Removed" variant="warning" />
+                <StatBox value={job.stats_json.warnings ?? 0} label="Warnings" variant={(job.stats_json.warnings ?? 0) > 0 ? "warning" : "default"} />
                 <StatBox value={job.stats_json.errors} label="Errors" variant={job.stats_json.errors > 0 ? "error" : "default"} />
               </div>
             </CardContent>

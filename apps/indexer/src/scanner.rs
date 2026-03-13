@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use parsers::{detect_format, parse_metadata_fast};
 use serde::Serialize;
@@ -21,6 +21,7 @@ pub struct JobStats {
     pub indexed_files: usize,
     pub removed_files: usize,
     pub errors: usize,
+    pub warnings: usize,
 }
 
 const BATCH_SIZE: usize = 100;
@@ -205,8 +206,14 @@ pub async fn scan_library_discovery(
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| abs_path.clone());
 
-        let metadata = std::fs::metadata(&path)
-            .with_context(|| format!("cannot stat {}", path.display()))?;
+        let metadata = match std::fs::metadata(&path) {
+            Ok(m) => m,
+            Err(e) => {
+                warn!("[SCAN] cannot stat {}, skipping: {}", path.display(), e);
+                stats.warnings += 1;
+                continue;
+            }
+        };
         let mtime: DateTime<Utc> = metadata
             .modified()
             .map(DateTime::<Utc>::from)
