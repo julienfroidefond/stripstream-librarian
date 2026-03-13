@@ -507,7 +507,7 @@ fn parse_pdf_page_count(path: &Path) -> Result<i32> {
     Ok(doc.get_pages().len() as i32)
 }
 
-fn is_image_name(name: &str) -> bool {
+pub fn is_image_name(name: &str) -> bool {
     // Skip macOS metadata entries (__MACOSX/ prefix or AppleDouble ._* files)
     if name.starts_with("__macosx/") || name.contains("/._") || name.starts_with("._") {
         return false;
@@ -517,6 +517,257 @@ fn is_image_name(name: &str) -> bool {
         || name.ends_with(".png")
         || name.ends_with(".webp")
         || name.ends_with(".avif")
+        || name.ends_with(".gif")
+        || name.ends_with(".bmp")
+        || name.ends_with(".tif")
+        || name.ends_with(".tiff")
+}
+
+/// Extract a specific page (1-indexed) from a book archive.
+/// Returns raw image bytes (original format, not transcoded).
+/// `render_width` is only used for PDF; 0 means default (1200px).
+/// Error message contains "out of range" when the page doesn't exist.
+pub fn extract_page(path: &Path, format: BookFormat, page_number: u32, render_width: u32) -> Result<Vec<u8>> {
+    match format {
+        BookFormat::Cbz => extract_cbz_page_n(path, page_number, true),
+        BookFormat::Cbr => extract_cbr_page_n(path, page_number, true),
+        BookFormat::Pdf => extract_pdf_page_n(path, page_number, render_width),
+    }
+}
+
+fn extract_cbz_page_n(path: &Path, page_number: u32, allow_fallback: bool) -> Result<Vec<u8>> {
+    let file = std::fs::File::open(path)
+        .with_context(|| format!("cannot open cbz: {}", path.display()))?;
+    let mut archive = match zip::ZipArchive::new(file) {
+        Ok(a) => a,
+        Err(zip_err) => {
+            if allow_fallback {
+                if let Ok(data) = extract_cbr_page_n(path, page_number, false) {
+                    return Ok(data);
+                }
+                return extract_cbz_page_n_streaming(path, page_number);
+            }
+            return Err(anyhow::anyhow!("invalid cbz for {}: {}", path.display(), zip_err));
+        }
+    };
+
+    let mut image_names: Vec<String> = Vec::new();
+    for i in 0..archive.len() {
+        let entry = match archive.by_index(i) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let name = entry.name().to_ascii_lowercase();
+        if is_image_name(&name) {
+            image_names.push(entry.name().to_string());
+        }
+    }
+    image_names.sort_by(|a, b| natord::compare(a, b));
+
+    let index = page_number as usize - 1;
+    let selected = image_names
+        .get(index)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "page {} out of range (total: {})",
+                page_number,
+                image_names.len()
+            )
+        })?
+        .clone();
+
+    let mut entry = archive
+        .by_name(&selected)
+        .with_context(|| format!("cannot open entry {} in {}", selected, path.display()))?;
+    let mut buf = Vec::new();
+    entry
+        .read_to_end(&mut buf)
+        .with_context(|| format!("cannot read entry {} in {}", selected, path.display()))?;
+    Ok(buf)
+}
+
+fn extract_cbz_page_n_streaming(path: &Path, page_number: u32) -> Result<Vec<u8>> {
+    // Pass 1: collect image names via local file headers (no central directory needed)
+    let file = std::fs::File::open(path)
+        .with_context(|| format!("cannot open cbz for streaming: {}", path.display()))?;
+    let mut reader = std::io::BufReader::new(file);
+    let mut image_names: Vec<String> = Vec::new();
+
+    loop {
+        match zip::read::read_zipfile_from_stream(&mut reader) {
+            Ok(Some(mut entry)) => {
+                let name = entry.name().to_string();
+                if is_image_name(&name.to_ascii_lowercase()) {
+                    image_names.push(name);
+                }
+                std::io::copy(&mut entry, &mut std::io::sink())?;
+            }
+            Ok(None) => break,
+            Err(_) => {
+                if !image_names.is_empty() {
+                    break;
+                }
+                return Err(anyhow::anyhow!(
+                    "cbz streaming read failed for {}",
+                    path.display()
+                ));
+            }
+        }
+    }
+
+    image_names.sort_by(|a, b| natord::compare(a, b));
+    let index = page_number as usize - 1;
+    let target = image_names
+        .get(index)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "page {} out of range (total: {})",
+                page_number,
+                image_names.len()
+            )
+        })?
+        .clone();
+
+    // Pass 2: extract the target page
+    let file2 = std::fs::File::open(path)
+        .with_context(|| format!("cannot reopen cbz: {}", path.display()))?;
+    let mut reader2 = std::io::BufReader::new(file2);
+
+    loop {
+        match zip::read::read_zipfile_from_stream(&mut reader2) {
+            Ok(Some(mut entry)) => {
+                if entry.name() == target {
+                    let mut buf = Vec::new();
+                    entry.read_to_end(&mut buf)?;
+                    return Ok(buf);
+                }
+                std::io::copy(&mut entry, &mut std::io::sink())?;
+            }
+            Ok(None) => break,
+            Err(_) => break,
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "page {} not found in streaming cbz: {}",
+        page_number,
+        path.display()
+    ))
+}
+
+fn extract_cbr_page_n(path: &Path, page_number: u32, allow_fallback: bool) -> Result<Vec<u8>> {
+    let index = page_number as usize - 1;
+
+    // Pass 1: list all image names
+    let mut image_names: Vec<String> = {
+        let archive = unrar::Archive::new(path)
+            .open_for_listing()
+            .map_err(|e| anyhow::anyhow!("unrar listing failed for {}: {}", path.display(), e));
+        let archive = match archive {
+            Ok(a) => a,
+            Err(e) => {
+                let e_str = e.to_string();
+                if allow_fallback
+                    && (e_str.contains("Not a RAR archive") || e_str.contains("bad archive"))
+                {
+                    return extract_cbz_page_n(path, page_number, false);
+                }
+                return Err(e);
+            }
+        };
+        let mut names = Vec::new();
+        for entry in archive {
+            let entry = entry.map_err(|e| anyhow::anyhow!("unrar entry error: {}", e))?;
+            let name = entry.filename.to_string_lossy().to_string();
+            if is_image_name(&name.to_ascii_lowercase()) {
+                names.push(name);
+            }
+        }
+        names
+    };
+
+    image_names.sort_by(|a, b| natord::compare(a, b));
+    let target = image_names
+        .get(index)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "page {} out of range (total: {})",
+                page_number,
+                image_names.len()
+            )
+        })?
+        .clone();
+
+    // Pass 2: extract only the target page
+    let mut archive = unrar::Archive::new(path)
+        .open_for_processing()
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "unrar open for processing failed for {}: {}",
+                path.display(),
+                e
+            )
+        })?;
+
+    while let Some(header) = archive
+        .read_header()
+        .map_err(|e| anyhow::anyhow!("unrar read header: {}", e))?
+    {
+        let entry_name = header.entry().filename.to_string_lossy().to_string();
+        if entry_name == target {
+            let (data, _) = header
+                .read()
+                .map_err(|e| anyhow::anyhow!("unrar read data: {}", e))?;
+            return Ok(data);
+        }
+        archive = header
+            .skip()
+            .map_err(|e| anyhow::anyhow!("unrar skip: {}", e))?;
+    }
+
+    Err(anyhow::anyhow!(
+        "page {} not found in cbr: {}",
+        page_number,
+        path.display()
+    ))
+}
+
+fn extract_pdf_page_n(path: &Path, page_number: u32, render_width: u32) -> Result<Vec<u8>> {
+    use pdfium_render::prelude::*;
+
+    let pdfium = Pdfium::new(
+        Pdfium::bind_to_system_library()
+            .map_err(|e| anyhow::anyhow!("pdfium library not available: {:?}", e))?,
+    );
+
+    let document = pdfium
+        .load_pdf_from_file(path, None)
+        .map_err(|e| anyhow::anyhow!("pdfium load failed for {}: {:?}", path.display(), e))?;
+
+    let page_index = (page_number - 1) as u16;
+    let page = document
+        .pages()
+        .get(page_index)
+        .map_err(|_| anyhow::anyhow!("page {} out of range", page_number))?;
+
+    let w = if render_width > 0 {
+        render_width as i32
+    } else {
+        1200
+    };
+    let config = PdfRenderConfig::new().set_target_width(w);
+
+    let bitmap = page
+        .render_with_config(&config)
+        .map_err(|e| anyhow::anyhow!("pdfium render failed for {}: {:?}", path.display(), e))?;
+
+    let image = bitmap.as_image();
+    let mut buf = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut buf, image::ImageFormat::Png)
+        .context("failed to encode rendered PDF page as PNG")?;
+
+    Ok(buf.into_inner())
 }
 
 pub fn extract_first_page(path: &Path, format: BookFormat) -> Result<Vec<u8>> {
