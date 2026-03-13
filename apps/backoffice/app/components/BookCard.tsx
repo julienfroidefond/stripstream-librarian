@@ -102,14 +102,16 @@ export function BookCard({ book, readingStatus }: BookCardProps) {
         
         {/* Meta Tags */}
         <div className="flex items-center gap-2 mt-2">
-          <span className={`
-            px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full
-            ${book.kind === 'cbz' ? 'bg-success/10 text-success' : ''}
-            ${book.kind === 'cbr' ? 'bg-warning/10 text-warning' : ''}
-            ${book.kind === 'pdf' ? 'bg-destructive/10 text-destructive' : ''}
-          `}>
-            {book.kind}
-          </span>
+          {(book.format ?? book.kind) && (
+            <span className={`
+              px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full
+              ${(book.format ?? book.kind) === 'cbz' ? 'bg-success/10 text-success' : ''}
+              ${(book.format ?? book.kind) === 'cbr' ? 'bg-warning/10 text-warning' : ''}
+              ${(book.format ?? book.kind) === 'pdf' ? 'bg-destructive/10 text-destructive' : ''}
+            `}>
+              {book.format ?? book.kind}
+            </span>
+          )}
           {book.language && (
             <span className="px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider rounded-full bg-primary/10 text-primary">
               {book.language}

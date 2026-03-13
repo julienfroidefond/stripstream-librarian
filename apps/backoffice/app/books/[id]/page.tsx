@@ -120,9 +120,12 @@ export default async function BookDetailPage({
               <div className="flex items-center justify-between py-2 border-b border-border">
                 <span className="text-sm text-muted-foreground">Format:</span>
                 <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${
-                  book.kind === 'epub' ? 'bg-primary/10 text-primary' : 'bg-muted/50 text-muted-foreground'
+                  (book.format ?? book.kind) === 'cbz' ? 'bg-success/10 text-success' :
+                  (book.format ?? book.kind) === 'cbr' ? 'bg-warning/10 text-warning' :
+                  (book.format ?? book.kind) === 'pdf' ? 'bg-destructive/10 text-destructive' :
+                  'bg-muted/50 text-muted-foreground'
                 }`}>
-                  {book.kind.toUpperCase()}
+                  {(book.format ?? book.kind).toUpperCase()}
                 </span>
               </div>
               

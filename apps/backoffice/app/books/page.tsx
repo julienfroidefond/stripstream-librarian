@@ -44,6 +44,7 @@ export default async function BooksPage({
         volume: hit.volume,
         language: hit.language,
         page_count: null,
+        format: null,
         file_path: null,
         file_format: null,
         file_parse_status: null,

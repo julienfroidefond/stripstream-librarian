@@ -59,6 +59,7 @@ export type BookDto = {
   id: string;
   library_id: string;
   kind: string;
+  format: string | null;
   title: string;
   author: string | null;
   series: string | null;
