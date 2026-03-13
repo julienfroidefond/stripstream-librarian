@@ -281,6 +281,7 @@ pub async fn scan_library_discovery(
                 book_id,
                 title: parsed.title,
                 kind: utils::kind_from_format(format).to_string(),
+                format: format.as_str().to_string(),
                 series: parsed.series,
                 volume: parsed.volume,
                 // Reset page_count so analyzer re-processes this book
@@ -335,6 +336,7 @@ pub async fn scan_library_discovery(
             book_id,
             library_id,
             kind: utils::kind_from_format(format).to_string(),
+            format: format.as_str().to_string(),
             title: parsed.title,
             series: parsed.series,
             volume: parsed.volume,

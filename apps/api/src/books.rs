@@ -13,6 +13,8 @@ pub struct ListBooksQuery {
     pub library_id: Option<Uuid>,
     #[schema(value_type = Option<String>)]
     pub kind: Option<String>,
+    #[schema(value_type = Option<String>, example = "cbz")]
+    pub format: Option<String>,
     #[schema(value_type = Option<String>)]
     pub series: Option<String>,
     #[schema(value_type = Option<String>, example = "unread,reading")]
@@ -30,6 +32,7 @@ pub struct BookItem {
     #[schema(value_type = String)]
     pub library_id: Uuid,
     pub kind: String,
+    pub format: Option<String>,
     pub title: String,
     pub author: Option<String>,
     pub series: Option<String>,
@@ -110,8 +113,8 @@ pub async fn list_books(
         s.split(',').map(|v| v.trim().to_string()).filter(|v| !v.is_empty()).collect()
     });
 
-    // Conditions partagées COUNT et DATA — $1=library_id $2=kind, puis optionnels
-    let mut p: usize = 2;
+    // Conditions partagées COUNT et DATA — $1=library_id $2=kind $3=format, puis optionnels
+    let mut p: usize = 3;
     let series_cond = match query.series.as_deref() {
         Some("unclassified") => "AND (b.series IS NULL OR b.series = '')".to_string(),
         Some(_) => { p += 1; format!("AND b.series = ${p}") }
@@ -126,6 +129,7 @@ pub async fn list_books(
            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
            WHERE ($1::uuid IS NULL OR b.library_id = $1)
              AND ($2::text IS NULL OR b.kind = $2)
+             AND ($3::text IS NULL OR b.format = $3)
              {series_cond}
              {rs_cond}"#
     );
@@ -135,7 +139,7 @@ pub async fn list_books(
     let offset_p = p + 2;
     let data_sql = format!(
         r#"
-        SELECT b.id, b.library_id, b.kind, b.title, b.author, b.series, b.volume, b.language, b.page_count, b.thumbnail_path, b.updated_at,
+        SELECT b.id, b.library_id, b.kind, b.format, b.title, b.author, b.series, b.volume, b.language, b.page_count, b.thumbnail_path, b.updated_at,
                COALESCE(brp.status, 'unread') AS reading_status,
                brp.current_page AS reading_current_page,
                brp.last_read_at AS reading_last_read_at
@@ -143,6 +147,7 @@ pub async fn list_books(
         LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
         WHERE ($1::uuid IS NULL OR b.library_id = $1)
           AND ($2::text IS NULL OR b.kind = $2)
+          AND ($3::text IS NULL OR b.format = $3)
           {series_cond}
           {rs_cond}
         ORDER BY
@@ -158,10 +163,12 @@ pub async fn list_books(
 
     let mut count_builder = sqlx::query(&count_sql)
         .bind(query.library_id)
-        .bind(query.kind.as_deref());
+        .bind(query.kind.as_deref())
+        .bind(query.format.as_deref());
     let mut data_builder = sqlx::query(&data_sql)
         .bind(query.library_id)
-        .bind(query.kind.as_deref());
+        .bind(query.kind.as_deref())
+        .bind(query.format.as_deref());
 
     if let Some(s) = query.series.as_deref() {
         if s != "unclassified" {
@@ -190,6 +197,7 @@ pub async fn list_books(
                 id: row.get("id"),
                 library_id: row.get("library_id"),
                 kind: row.get("kind"),
+                format: row.get("format"),
                 title: row.get("title"),
                 author: row.get("author"),
                 series: row.get("series"),
