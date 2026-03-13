@@ -1,5 +1,5 @@
 use std::{
-    io::{Read, Write},
+    io::Write,
     path::{Path, PathBuf},
     sync::{atomic::Ordering, Arc},
     time::Duration,
@@ -351,241 +351,28 @@ fn render_page(
     width: u32,
     filter: image::imageops::FilterType,
 ) -> Result<Vec<u8>, ApiError> {
-    let page_bytes = match input_format {
-        "cbz" => extract_cbz_page(abs_path, page_number, true)?,
-        "cbr" => extract_cbr_page(abs_path, page_number, true)?,
-        "pdf" => render_pdf_page(abs_path, page_number, width)?,
+    let format = match input_format {
+        "cbz" => parsers::BookFormat::Cbz,
+        "cbr" => parsers::BookFormat::Cbr,
+        "pdf" => parsers::BookFormat::Pdf,
         _ => return Err(ApiError::bad_request("unsupported source format")),
     };
+
+    let pdf_render_width = if width > 0 { width } else { 1200 };
+    let page_bytes = parsers::extract_page(
+        std::path::Path::new(abs_path),
+        format,
+        page_number,
+        pdf_render_width,
+    )
+    .map_err(|e| {
+        error!("Failed to extract page {} from {}: {}", page_number, abs_path, e);
+        ApiError::internal(format!("page extraction failed: {e}"))
+    })?;
 
     transcode_image(&page_bytes, out_format, quality, width, filter)
 }
 
-fn extract_cbz_page(abs_path: &str, page_number: u32, allow_fallback: bool) -> Result<Vec<u8>, ApiError> {
-    debug!("Opening CBZ archive: {}", abs_path);
-    let file = std::fs::File::open(abs_path).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            ApiError::not_found("book file not accessible")
-        } else {
-            error!("Cannot open CBZ file {}: {}", abs_path, e);
-            ApiError::internal(format!("cannot open cbz: {e}"))
-        }
-    })?;
-
-    let mut archive = match zip::ZipArchive::new(file) {
-        Ok(a) => a,
-        Err(zip_err) => {
-            if allow_fallback {
-                // Try RAR fallback (file might be a RAR with .cbz extension)
-                if let Ok(data) = extract_cbr_page(abs_path, page_number, false) {
-                    return Ok(data);
-                }
-                // Streaming fallback: read local file headers without central directory
-                warn!("CBZ central dir failed for {}, trying streaming: {}", abs_path, zip_err);
-                return extract_cbz_page_streaming(abs_path, page_number);
-            }
-            error!("Invalid CBZ archive {}: {}", abs_path, zip_err);
-            return Err(ApiError::internal(format!("invalid cbz: {zip_err}")));
-        }
-    };
-
-    let mut image_names: Vec<String> = Vec::new();
-    for i in 0..archive.len() {
-        let entry = match archive.by_index(i) {
-            Ok(e) => e,
-            Err(e) => {
-                warn!("Skipping corrupted CBZ entry {} in {}: {}", i, abs_path, e);
-                continue;
-            }
-        };
-        let name = entry.name().to_ascii_lowercase();
-        if is_image_name(&name) {
-            image_names.push(entry.name().to_string());
-        }
-    }
-    image_names.sort_by(|a, b| natord::compare(a, b));
-    debug!("Found {} images in CBZ {}", image_names.len(), abs_path);
-
-    let index = page_number as usize - 1;
-    let selected = image_names.get(index).ok_or_else(|| {
-        error!("Page {} out of range in {} (total: {})", page_number, abs_path, image_names.len());
-        ApiError::not_found("page out of range")
-    })?;
-    
-    debug!("Extracting page {} ({}) from {}", page_number, selected, abs_path);
-    let mut entry = archive.by_name(selected).map_err(|e| {
-        error!("Failed to read CBZ page {} from {}: {}", selected, abs_path, e);
-        ApiError::internal(format!("cbz page read failed: {e}"))
-    })?;
-    let mut buf = Vec::new();
-    entry.read_to_end(&mut buf).map_err(|e| {
-        error!("Failed to load CBZ page {} from {}: {}", selected, abs_path, e);
-        ApiError::internal(format!("cbz page load failed: {e}"))
-    })?;
-    Ok(buf)
-}
-
-fn extract_cbz_page_streaming(abs_path: &str, page_number: u32) -> Result<Vec<u8>, ApiError> {
-    let file = std::fs::File::open(abs_path).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            ApiError::not_found("book file not accessible")
-        } else {
-            ApiError::internal(format!("cannot open cbz: {e}"))
-        }
-    })?;
-    let mut reader = std::io::BufReader::new(file);
-    let mut image_names: Vec<String> = Vec::new();
-
-    loop {
-        match zip::read::read_zipfile_from_stream(&mut reader) {
-            Ok(Some(mut entry)) => {
-                let name = entry.name().to_string();
-                if is_image_name(&name.to_ascii_lowercase()) {
-                    image_names.push(name);
-                }
-                std::io::copy(&mut entry, &mut std::io::sink())
-                    .map_err(|e| ApiError::internal(format!("cbz stream skip: {e}")))?;
-            }
-            Ok(None) => break,
-            Err(_) => {
-                if !image_names.is_empty() {
-                    break;
-                }
-                return Err(ApiError::internal("cbz streaming read failed".to_string()));
-            }
-        }
-    }
-
-    image_names.sort_by(|a, b| natord::compare(a, b));
-    let target = image_names
-        .get(page_number as usize - 1)
-        .ok_or_else(|| ApiError::not_found("page out of range"))?
-        .clone();
-
-    // Second pass: extract the target page
-    let file2 = std::fs::File::open(abs_path)
-        .map_err(|e| ApiError::internal(format!("cannot reopen cbz: {e}")))?;
-    let mut reader2 = std::io::BufReader::new(file2);
-
-    loop {
-        match zip::read::read_zipfile_from_stream(&mut reader2) {
-            Ok(Some(mut entry)) => {
-                if entry.name() == target {
-                    let mut buf = Vec::new();
-                    entry
-                        .read_to_end(&mut buf)
-                        .map_err(|e| ApiError::internal(format!("cbz stream read: {e}")))?;
-                    return Ok(buf);
-                }
-                std::io::copy(&mut entry, &mut std::io::sink())
-                    .map_err(|e| ApiError::internal(format!("cbz stream skip: {e}")))?;
-            }
-            Ok(None) => break,
-            Err(_) => break,
-        }
-    }
-
-    Err(ApiError::not_found("page not found in archive"))
-}
-
-fn extract_cbr_page(abs_path: &str, page_number: u32, allow_fallback: bool) -> Result<Vec<u8>, ApiError> {
-    info!("Opening CBR archive: {}", abs_path);
-    let index = page_number as usize - 1;
-
-    // Pass 1: list all image names (in-process, no subprocess)
-    let mut image_names: Vec<String> = {
-        let archive = match unrar::Archive::new(abs_path).open_for_listing() {
-            Ok(a) => a,
-            Err(e) => {
-                if allow_fallback {
-                    warn!("CBR open failed for {}, trying ZIP fallback: {}", abs_path, e);
-                    return extract_cbz_page(abs_path, page_number, false);
-                }
-                return Err(ApiError::internal(format!("unrar listing failed: {}", e)));
-            }
-        };
-        let mut names = Vec::new();
-        for entry in archive {
-            let entry = entry.map_err(|e| ApiError::internal(format!("unrar entry error: {}", e)))?;
-            let name = entry.filename.to_string_lossy().to_string();
-            if is_image_name(&name.to_ascii_lowercase()) {
-                names.push(name);
-            }
-        }
-        names
-    };
-
-    image_names.sort_by(|a, b| natord::compare(a, b));
-
-    let target = image_names
-        .get(index)
-        .ok_or_else(|| {
-            error!("Page {} out of range (total: {})", page_number, image_names.len());
-            ApiError::not_found("page out of range")
-        })?
-        .clone();
-
-    // Pass 2: extract only the target page to memory
-    let mut archive = unrar::Archive::new(abs_path)
-        .open_for_processing()
-        .map_err(|e| ApiError::internal(format!("unrar processing failed: {}", e)))?;
-
-    while let Some(header) = archive
-        .read_header()
-        .map_err(|e| ApiError::internal(format!("unrar read header: {}", e)))?
-    {
-        let entry_name = header.entry().filename.to_string_lossy().to_string();
-        if entry_name == target {
-            let (data, _) = header
-                .read()
-                .map_err(|e| ApiError::internal(format!("unrar read: {}", e)))?;
-            info!("Extracted CBR page {} ({} bytes)", page_number, data.len());
-            return Ok(data);
-        }
-        archive = header
-            .skip()
-            .map_err(|e| ApiError::internal(format!("unrar skip: {}", e)))?;
-    }
-
-    Err(ApiError::not_found("page not found in archive"))
-}
-
-fn render_pdf_page(abs_path: &str, page_number: u32, width: u32) -> Result<Vec<u8>, ApiError> {
-    use pdfium_render::prelude::*;
-
-    debug!("Rendering PDF page {} of {} (width: {})", page_number, abs_path, width);
-
-    let pdfium = Pdfium::new(
-        Pdfium::bind_to_system_library()
-            .map_err(|e| ApiError::internal(format!("pdfium not available: {:?}", e)))?,
-    );
-
-    let document = pdfium
-        .load_pdf_from_file(abs_path, None)
-        .map_err(|e| ApiError::internal(format!("pdf load failed: {:?}", e)))?;
-
-    let page_index = (page_number - 1) as u16;
-    let page = document
-        .pages()
-        .get(page_index)
-        .map_err(|_| ApiError::not_found("page out of range"))?;
-
-    let render_width = if width > 0 { width as i32 } else { 1200 };
-    let config = PdfRenderConfig::new().set_target_width(render_width);
-
-    let bitmap = page
-        .render_with_config(&config)
-        .map_err(|e| ApiError::internal(format!("pdf render failed: {:?}", e)))?;
-
-    let image = bitmap.as_image();
-    let mut buf = std::io::Cursor::new(Vec::new());
-    image
-        .write_to(&mut buf, image::ImageFormat::Png)
-        .map_err(|e| ApiError::internal(format!("png encode failed: {}", e)))?;
-
-    debug!("Rendered PDF page {} ({} bytes)", page_number, buf.get_ref().len());
-    Ok(buf.into_inner())
-}
 
 fn transcode_image(input: &[u8], out_format: &OutputFormat, quality: u8, width: u32, filter: image::imageops::FilterType) -> Result<Vec<u8>, ApiError> {
     debug!("Transcoding image: {} bytes, format: {:?}, quality: {}, width: {}", input.len(), out_format, quality, width);
@@ -650,20 +437,3 @@ fn format_matches(source: &ImageFormat, target: &OutputFormat) -> bool {
     )
 }
 
-fn is_image_name(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    lower.ends_with(".jpg")
-        || lower.ends_with(".jpeg")
-        || lower.ends_with(".png")
-        || lower.ends_with(".webp")
-        || lower.ends_with(".avif")
-        || lower.ends_with(".gif")
-        || lower.ends_with(".tif")
-        || lower.ends_with(".tiff")
-        || lower.ends_with(".bmp")
-}
-
-#[allow(dead_code)]
-fn _is_absolute_path(value: &str) -> bool {
-    Path::new(value).is_absolute()
-}

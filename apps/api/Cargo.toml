@@ -15,6 +15,7 @@ futures = "0.3"
 image.workspace = true
 lru.workspace = true
 stripstream-core = { path = "../../crates/core" }
+parsers = { path = "../../crates/parsers" }
 rand.workspace = true
 tokio-stream = "0.1"
 reqwest.workspace = true
@@ -28,10 +29,6 @@ tower-http = { version = "0.6", features = ["cors"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
-natord.workspace = true
-pdfium-render.workspace = true
-unrar.workspace = true
-zip = { version = "8", default-features = false, features = ["deflate"] }
 utoipa.workspace = true
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }
 webp.workspace = true

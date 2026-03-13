@@ -117,59 +117,69 @@ pub async fn sync_meili(pool: &PgPool, meili_url: &str, meili_master_key: &str) 
         }
     }
 
-    // Handle deletions: get all book IDs from DB and remove from MeiliSearch any that don't exist
-    // This is expensive, so we only do it periodically (every 10 syncs) or on full syncs
-    if is_full_sync || rand::random::<u8>() < 26 { // ~10% chance
-        info!("[MEILI] Checking for documents to delete");
-        
-        // Get all book IDs from database
+    // Clean up stale documents: remove from Meilisearch any IDs that no longer exist in DB.
+    // Runs on every sync — the cost is minimal (single fetch of IDs only).
+    {
         let db_ids: Vec<String> = sqlx::query_scalar("SELECT id::text FROM books")
             .fetch_all(pool)
             .await?;
-        
-        // Get all document IDs from MeiliSearch (this requires fetching all documents)
-        // For efficiency, we'll just delete by query for documents that might be stale
-        // A better approach would be to track deletions in a separate table
-        
-        // For now, we'll do a simple approach: fetch all Meili docs and compare
-        // Note: This could be slow for large collections
-        let meili_response = client
-            .post(format!("{base}/indexes/books/documents/fetch"))
-            .header("Authorization", format!("Bearer {meili_master_key}"))
-            .json(&serde_json::json!({
-                "fields": ["id"],
-                "limit": 100000
-            }))
-            .send()
-            .await;
-        
-        if let Ok(response) = meili_response {
-            if response.status().is_success() {
-                // Meilisearch returns { "results": [...], "offset": ..., "total": ... }
-                if let Ok(payload) = response.json::<serde_json::Value>().await {
-                    let docs = payload.get("results")
-                        .and_then(|v| v.as_array())
-                        .cloned()
-                        .unwrap_or_default();
-                    let meili_ids: std::collections::HashSet<String> = docs
-                        .into_iter()
-                        .filter_map(|doc| doc.get("id").and_then(|id| id.as_str()).map(|s| s.to_string()))
-                        .collect();
-                    
-                    let db_ids_set: std::collections::HashSet<String> = db_ids.into_iter().collect();
-                    let to_delete: Vec<String> = meili_ids.difference(&db_ids_set).cloned().collect();
-                    
-                    if !to_delete.is_empty() {
-                        info!("[MEILI] Deleting {} stale documents", to_delete.len());
-                        let _ = client
-                            .post(format!("{base}/indexes/books/documents/delete-batch"))
-                            .header("Authorization", format!("Bearer {meili_master_key}"))
-                            .json(&to_delete)
-                            .send()
-                            .await;
-                    }
+
+        // Fetch all document IDs from Meilisearch (paginated to handle large collections)
+        let mut meili_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut offset: usize = 0;
+        const PAGE_SIZE: usize = 10000;
+
+        loop {
+            let response = client
+                .post(format!("{base}/indexes/books/documents/fetch"))
+                .header("Authorization", format!("Bearer {meili_master_key}"))
+                .json(&serde_json::json!({
+                    "fields": ["id"],
+                    "limit": PAGE_SIZE,
+                    "offset": offset
+                }))
+                .send()
+                .await;
+
+            let response = match response {
+                Ok(r) if r.status().is_success() => r,
+                _ => break,
+            };
+
+            let payload: serde_json::Value = match response.json().await {
+                Ok(v) => v,
+                Err(_) => break,
+            };
+
+            let results = payload.get("results")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+
+            let page_count = results.len();
+            for doc in results {
+                if let Some(id) = doc.get("id").and_then(|v| v.as_str()) {
+                    meili_ids.insert(id.to_string());
                 }
             }
+
+            if page_count < PAGE_SIZE {
+                break; // Last page
+            }
+            offset += PAGE_SIZE;
+        }
+
+        let db_ids_set: std::collections::HashSet<String> = db_ids.into_iter().collect();
+        let to_delete: Vec<String> = meili_ids.difference(&db_ids_set).cloned().collect();
+
+        if !to_delete.is_empty() {
+            info!("[MEILI] Deleting {} stale documents", to_delete.len());
+            let _ = client
+                .post(format!("{base}/indexes/books/documents/delete-batch"))
+                .header("Authorization", format!("Bearer {meili_master_key}"))
+                .json(&to_delete)
+                .send()
+                .await;
         }
     }
 

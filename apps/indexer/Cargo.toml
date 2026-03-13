@@ -15,7 +15,6 @@ image.workspace = true
 notify = "8"
 num_cpus.workspace = true
 parsers = { path = "../../crates/parsers" }
-rand.workspace = true
 rayon.workspace = true
 reqwest.workspace = true
 serde.workspace = true
