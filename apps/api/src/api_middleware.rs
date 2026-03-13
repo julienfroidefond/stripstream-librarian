@@ -5,6 +5,7 @@ use axum::{
 };
 use std::time::Duration;
 use std::sync::atomic::Ordering;
+use tracing::info;
 
 use crate::state::AppState;
 
@@ -14,7 +15,14 @@ pub async fn request_counter(
     next: Next,
 ) -> Response {
     state.metrics.requests_total.fetch_add(1, Ordering::Relaxed);
-    next.run(req).await
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+    let start = std::time::Instant::now();
+    let response = next.run(req).await;
+    let status = response.status().as_u16();
+    let elapsed = start.elapsed();
+    info!("{} {} {} {}ms", method, uri.path(), status, elapsed.as_millis());
+    response
 }
 
 pub async fn read_rate_limit(
