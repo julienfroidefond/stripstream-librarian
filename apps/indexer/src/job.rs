@@ -37,8 +37,39 @@ pub async fn cleanup_stale_jobs(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
+/// Job types that modify book/thumbnail data and must not run concurrently.
+const EXCLUSIVE_JOB_TYPES: &[&str] = &[
+    "rebuild",
+    "full_rebuild",
+    "scan",
+    "thumbnail_rebuild",
+    "thumbnail_regenerate",
+];
+
+/// Active statuses (job is still in progress, not just queued).
+const ACTIVE_STATUSES: &[&str] = &[
+    "running",
+    "extracting_pages",
+    "generating_thumbnails",
+];
+
 pub async fn claim_next_job(pool: &PgPool) -> Result<Option<(Uuid, Option<Uuid>)>> {
     let mut tx = pool.begin().await?;
+
+    // Check if any exclusive job is currently active
+    let has_active_exclusive: bool = sqlx::query_scalar(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM index_jobs
+            WHERE status = ANY($1)
+              AND type = ANY($2)
+        )
+        "#,
+    )
+    .bind(ACTIVE_STATUSES)
+    .bind(EXCLUSIVE_JOB_TYPES)
+    .fetch_one(&mut *tx)
+    .await?;
 
     let row = sqlx::query(
         r#"
@@ -46,18 +77,17 @@ pub async fn claim_next_job(pool: &PgPool) -> Result<Option<(Uuid, Option<Uuid>)
         FROM index_jobs j
         WHERE j.status = 'pending'
           AND (
-            (j.type IN ('rebuild', 'full_rebuild') AND NOT EXISTS (
-                SELECT 1 FROM index_jobs
-                WHERE status = 'running'
-                  AND type IN ('rebuild', 'full_rebuild')
-            ))
+            -- Exclusive jobs: only if no other exclusive job is active
+            (j.type = ANY($1) AND NOT $2::bool)
             OR
-            j.type NOT IN ('rebuild', 'full_rebuild')
+            -- Non-exclusive jobs (cbr_to_cbz): can always run
+            j.type != ALL($1)
           )
         ORDER BY
             CASE j.type
                 WHEN 'full_rebuild' THEN 1
                 WHEN 'rebuild' THEN 2
+                WHEN 'scan' THEN 2
                 ELSE 3
             END,
             j.created_at ASC
@@ -65,6 +95,8 @@ pub async fn claim_next_job(pool: &PgPool) -> Result<Option<(Uuid, Option<Uuid>)
         LIMIT 1
         "#,
     )
+    .bind(EXCLUSIVE_JOB_TYPES)
+    .bind(has_active_exclusive)
     .fetch_optional(&mut *tx)
     .await?;
 
@@ -74,29 +106,7 @@ pub async fn claim_next_job(pool: &PgPool) -> Result<Option<(Uuid, Option<Uuid>)
     };
 
     let id: Uuid = row.get("id");
-    let job_type: String = row.get("type");
     let library_id: Option<Uuid> = row.get("library_id");
-
-    if job_type == "rebuild" || job_type == "full_rebuild" {
-        let has_running_rebuild: bool = sqlx::query_scalar(
-            r#"
-            SELECT EXISTS(
-                SELECT 1 FROM index_jobs
-                WHERE status = 'running'
-                  AND type IN ('rebuild', 'full_rebuild')
-                  AND id != $1
-            )
-            "#,
-        )
-        .bind(id)
-        .fetch_one(&mut *tx)
-        .await?;
-
-        if has_running_rebuild {
-            tx.rollback().await?;
-            return Ok(None);
-        }
-    }
 
     sqlx::query(
         "UPDATE index_jobs SET status = 'running', started_at = NOW(), error_opt = NULL WHERE id = $1",

@@ -246,9 +246,9 @@ pub async fn list_folders(
         base_path.to_path_buf()
     };
     
-    // Ensure the path is within the libraries root
-    let canonical_target = target_path.canonicalize().unwrap_or(target_path.clone());
-    let canonical_base = base_path.canonicalize().unwrap_or(base_path.to_path_buf());
+    // Ensure the path is within the libraries root (avoid canonicalize — burns fd on Docker mounts)
+    let canonical_target = target_path.clone();
+    let canonical_base = base_path.to_path_buf();
     
     if !canonical_target.starts_with(&canonical_base) {
         return Err(ApiError::bad_request("Path is outside libraries root"));
@@ -263,19 +263,31 @@ pub async fn list_folders(
         0
     };
 
-    if let Ok(entries) = std::fs::read_dir(&canonical_target) {
-        for entry in entries.flatten() {
-            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+    let entries = std::fs::read_dir(&canonical_target)
+        .map_err(|e| ApiError::internal(format!("cannot read directory {}: {}", canonical_target.display(), e)))?;
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!("[FOLDERS] entry error in {}: {}", canonical_target.display(), e);
+                continue;
+            }
+        };
+        let is_dir = match entry.file_type() {
+            Ok(ft) => ft.is_dir(),
+            Err(e) => {
+                tracing::warn!("[FOLDERS] cannot stat {}: {}", entry.path().display(), e);
+                continue;
+            }
+        };
+        if is_dir {
                 let name = entry.file_name().to_string_lossy().to_string();
-                
-                // Check if this folder has children
-                let has_children = if let Ok(sub_entries) = std::fs::read_dir(entry.path()) {
-                    sub_entries.flatten().any(|e| {
-                        e.file_type().map(|ft| ft.is_dir()).unwrap_or(false)
-                    })
-                } else {
-                    false
-                };
+
+                // Check if this folder has children (best-effort, default to true on error)
+                let has_children = std::fs::read_dir(entry.path())
+                    .map(|sub| sub.flatten().any(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false)))
+                    .unwrap_or(true);
                 
                 // Calculate the full path relative to libraries root
                 let full_path = if let Ok(relative) = entry.path().strip_prefix(&canonical_base) {
@@ -290,7 +302,6 @@ pub async fn list_folders(
                     depth,
                     has_children,
                 });
-            }
         }
     }
 

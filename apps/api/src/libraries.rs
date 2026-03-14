@@ -156,14 +156,19 @@ fn canonicalize_library_root(root_path: &str) -> Result<PathBuf, ApiError> {
         return Err(ApiError::bad_request("root_path must be absolute"));
     }
 
-    let canonical = std::fs::canonicalize(path)
-        .map_err(|_| ApiError::bad_request("root_path does not exist or is inaccessible"))?;
-
-    if !canonical.is_dir() {
+    // Avoid fs::canonicalize — it opens extra file descriptors to resolve symlinks
+    // and can fail on Docker volume mounts (ro, cached) when fd limits are low.
+    if !path.exists() {
+        return Err(ApiError::bad_request(format!(
+            "root_path does not exist: {}",
+            root_path
+        )));
+    }
+    if !path.is_dir() {
         return Err(ApiError::bad_request("root_path must point to a directory"));
     }
 
-    Ok(canonical)
+    Ok(path.to_path_buf())
 }
 
 use crate::index_jobs::{IndexJobResponse, RebuildRequest};

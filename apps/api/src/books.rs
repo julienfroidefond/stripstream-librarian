@@ -584,6 +584,17 @@ use axum::{
     response::IntoResponse,
 };
 
+/// Detect content type from thumbnail file extension.
+fn detect_thumbnail_content_type(path: &str) -> &'static str {
+    if path.ends_with(".jpg") || path.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if path.ends_with(".png") {
+        "image/png"
+    } else {
+        "image/webp"
+    }
+}
+
 /// Get book thumbnail image
 #[utoipa::path(
     get,
@@ -612,9 +623,12 @@ pub async fn get_thumbnail(
     let row = row.ok_or_else(|| ApiError::not_found("book not found"))?;
     let thumbnail_path: Option<String> = row.get("thumbnail_path");
 
-    let data = if let Some(ref path) = thumbnail_path {
+    let (data, content_type) = if let Some(ref path) = thumbnail_path {
         match std::fs::read(path) {
-            Ok(bytes) => bytes,
+            Ok(bytes) => {
+                let ct = detect_thumbnail_content_type(path);
+                (bytes, ct)
+            }
             Err(_) => {
                 // File missing on disk (e.g. different mount in dev) — fall back to live render
                 crate::pages::render_book_page_1(&state, book_id, 300, 80).await?
@@ -626,7 +640,7 @@ pub async fn get_thumbnail(
     };
 
     let mut headers = HeaderMap::new();
-    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/webp"));
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
     headers.insert(
         header::CACHE_CONTROL,
         HeaderValue::from_static("public, max-age=31536000, immutable"),

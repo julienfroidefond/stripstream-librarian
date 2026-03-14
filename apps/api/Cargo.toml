@@ -13,6 +13,7 @@ async-stream = "0.3"
 chrono.workspace = true
 futures = "0.3"
 image.workspace = true
+jpeg-decoder.workspace = true
 lru.workspace = true
 stripstream-core = { path = "../../crates/core" }
 parsers = { path = "../../crates/parsers" }

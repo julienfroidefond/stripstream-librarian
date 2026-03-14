@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BookFormat {
@@ -527,6 +528,40 @@ pub fn extract_page(path: &Path, format: BookFormat, page_number: u32, pdf_rende
     }
 }
 
+/// Cache of sorted image names per archive path. Avoids re-listing and sorting on every page request.
+static CBZ_INDEX_CACHE: OnceLock<Mutex<HashMap<PathBuf, Vec<String>>>> = OnceLock::new();
+
+fn cbz_index_cache() -> &'static Mutex<HashMap<PathBuf, Vec<String>>> {
+    CBZ_INDEX_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Get sorted image names from cache, or list + sort + cache them.
+fn get_cbz_image_index(path: &Path, archive: &mut zip::ZipArchive<std::fs::File>) -> Vec<String> {
+    {
+        let cache = cbz_index_cache().lock().unwrap();
+        if let Some(names) = cache.get(path) {
+            return names.clone();
+        }
+    }
+    let mut image_names: Vec<String> = Vec::new();
+    for i in 0..archive.len() {
+        let entry = match archive.by_index(i) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let name = entry.name().to_ascii_lowercase();
+        if is_image_name(&name) {
+            image_names.push(entry.name().to_string());
+        }
+    }
+    image_names.sort_by(|a, b| natord::compare(a, b));
+    {
+        let mut cache = cbz_index_cache().lock().unwrap();
+        cache.insert(path.to_path_buf(), image_names.clone());
+    }
+    image_names
+}
+
 fn extract_cbz_page(path: &Path, page_number: u32, allow_fallback: bool) -> Result<Vec<u8>> {
     let file = std::fs::File::open(path)
         .with_context(|| format!("cannot open cbz: {}", path.display()))?;
@@ -534,18 +569,7 @@ fn extract_cbz_page(path: &Path, page_number: u32, allow_fallback: bool) -> Resu
 
     match zip::ZipArchive::new(file) {
         Ok(mut archive) => {
-            let mut image_names: Vec<String> = Vec::new();
-            for i in 0..archive.len() {
-                let entry = match archive.by_index(i) {
-                    Ok(e) => e,
-                    Err(_) => continue,
-                };
-                let name = entry.name().to_ascii_lowercase();
-                if is_image_name(&name) {
-                    image_names.push(entry.name().to_string());
-                }
-            }
-            image_names.sort_by(|a, b| natord::compare(a, b));
+            let image_names = get_cbz_image_index(path, &mut archive);
 
             let selected = image_names
                 .get(index)

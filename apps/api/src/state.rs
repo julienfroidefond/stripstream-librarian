@@ -39,7 +39,7 @@ impl Default for DynamicSettings {
             timeout_seconds: 12,
             image_format: "webp".to_string(),
             image_quality: 85,
-            image_filter: "lanczos3".to_string(),
+            image_filter: "triangle".to_string(),
             image_max_width: 2160,
             cache_directory: std::env::var("IMAGE_CACHE_DIR")
                 .unwrap_or_else(|_| "/tmp/stripstream-image-cache".to_string()),

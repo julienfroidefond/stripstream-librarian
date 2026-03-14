@@ -88,14 +88,14 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             <Icon name="image" size="md" />
             Image Processing
           </CardTitle>
-          <CardDescription>Configure how images are processed and compressed</CardDescription>
+          <CardDescription>These settings only apply when a client explicitly requests format conversion via the API (e.g. <code className="text-xs bg-muted px-1 rounded">?format=webp&amp;width=800</code>). Pages served without parameters are delivered as-is from the archive, with no processing.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <FormRow>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Output Format</label>
-                <FormSelect 
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">Default Output Format</label>
+                <FormSelect
                   value={settings.image_processing.format}
                   onChange={(e) => {
                     const newSettings = { ...settings, image_processing: { ...settings.image_processing, format: e.target.value } };
@@ -103,13 +103,13 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                     handleUpdateSetting("image_processing", newSettings.image_processing);
                   }}
                 >
-                  <option value="webp">WebP (Recommended)</option>
+                  <option value="webp">WebP</option>
                   <option value="jpeg">JPEG</option>
                   <option value="png">PNG</option>
                 </FormSelect>
               </FormField>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Quality (1-100)</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">Default Quality (1-100)</label>
                 <FormInput 
                   type="number" 
                   min={1} 
@@ -126,7 +126,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             </FormRow>
             <FormRow>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Resize Filter</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">Default Resize Filter</label>
                 <FormSelect 
                   value={settings.image_processing.filter}
                   onChange={(e) => {
@@ -141,7 +141,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                 </FormSelect>
               </FormField>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Max Width (px)</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">Max Allowed Width (px)</label>
                 <FormInput 
                   type="number" 
                   min={100} 
@@ -344,10 +344,16 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                     handleUpdateSetting("thumbnail", newSettings.thumbnail);
                   }}
                 >
-                  <option value="webp">WebP (Recommended)</option>
+                  <option value="original">Original (No Re-encoding)</option>
+                  <option value="webp">WebP</option>
                   <option value="jpeg">JPEG</option>
                   <option value="png">PNG</option>
                 </FormSelect>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {settings.thumbnail.format === "original"
+                    ? "Resizes to target dimensions, keeps source format (JPEG→JPEG). Much faster generation."
+                    : "Resizes and re-encodes to selected format."}
+                </p>
               </FormField>
             </FormRow>
             <FormRow>

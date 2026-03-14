@@ -1,6 +1,6 @@
 use anyhow::Result;
 use futures::stream::{self, StreamExt};
-use image::GenericImageView;
+use image::{GenericImageView, ImageEncoder};
 use parsers::{analyze_book, BookFormat};
 use sqlx::Row;
 use std::path::Path;
@@ -14,6 +14,7 @@ use crate::{job::is_job_cancelled, utils, AppState};
 #[derive(Clone)]
 struct ThumbnailConfig {
     enabled: bool,
+    format: Option<String>,
     width: u32,
     height: u32,
     quality: u8,
@@ -24,6 +25,7 @@ struct ThumbnailConfig {
 async fn load_thumbnail_config(pool: &sqlx::PgPool) -> ThumbnailConfig {
     let fallback = ThumbnailConfig {
         enabled: true,
+        format: Some("webp".to_string()),
         width: 300,
         height: 400,
         quality: 80,
@@ -51,6 +53,11 @@ async fn load_thumbnail_config(pool: &sqlx::PgPool) -> ThumbnailConfig {
                     .get("enabled")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(fallback.enabled),
+                format: value
+                    .get("format")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .or_else(|| fallback.format.clone()),
                 width: value
                     .get("width")
                     .and_then(|v| v.as_u64())
@@ -100,22 +107,143 @@ async fn load_thumbnail_concurrency(pool: &sqlx::PgPool) -> usize {
     }
 }
 
+/// Detect the image format from raw bytes and return the corresponding file extension.
+fn detect_image_ext(data: &[u8]) -> &'static str {
+    match image::guess_format(data) {
+        Ok(image::ImageFormat::Png) => "png",
+        Ok(image::ImageFormat::WebP) => "webp",
+        _ => "jpg", // JPEG is the most common in comic archives
+    }
+}
+
+/// Fast JPEG decode with DCT scaling: decodes directly at reduced resolution (1/8, 1/4, 1/2).
+/// Returns (DynamicImage, original_width, original_height) or None if not JPEG / decode fails.
+fn fast_jpeg_decode(image_bytes: &[u8], target_w: u32, target_h: u32) -> Option<(image::DynamicImage, u32, u32)> {
+    // Only attempt for JPEG
+    if image::guess_format(image_bytes).ok()? != image::ImageFormat::Jpeg {
+        return None;
+    }
+
+    let mut decoder = jpeg_decoder::Decoder::new(std::io::Cursor::new(image_bytes));
+    // Read header to get original dimensions
+    decoder.read_info().ok()?;
+    let info = decoder.info()?;
+    let orig_w = info.width as u32;
+    let orig_h = info.height as u32;
+
+    // Request DCT-scaled decode (picks smallest scale >= requested size)
+    decoder.scale(target_w as u16, target_h as u16).ok()?;
+
+    let pixels = decoder.decode().ok()?;
+    let info = decoder.info()?;
+    let dec_w = info.width as u32;
+    let dec_h = info.height as u32;
+
+    let img = match info.pixel_format {
+        jpeg_decoder::PixelFormat::RGB24 => {
+            let buf = image::RgbImage::from_raw(dec_w, dec_h, pixels)?;
+            image::DynamicImage::ImageRgb8(buf)
+        }
+        jpeg_decoder::PixelFormat::L8 => {
+            let buf = image::GrayImage::from_raw(dec_w, dec_h, pixels)?;
+            image::DynamicImage::ImageLuma8(buf)
+        }
+        _ => return None,
+    };
+    Some((img, orig_w, orig_h))
+}
+
 fn generate_thumbnail(image_bytes: &[u8], config: &ThumbnailConfig) -> anyhow::Result<Vec<u8>> {
-    let img = image::load_from_memory(image_bytes)
-        .map_err(|e| anyhow::anyhow!("failed to load image: {}", e))?;
-    let (orig_w, orig_h) = img.dimensions();
-    let ratio_w = config.width as f32 / orig_w as f32;
-    let ratio_h = config.height as f32 / orig_h as f32;
-    let ratio = ratio_w.min(ratio_h);
-    let new_w = (orig_w as f32 * ratio) as u32;
-    let new_h = (orig_h as f32 * ratio) as u32;
-    let resized = img.resize(new_w, new_h, image::imageops::FilterType::Triangle);
-    let rgba = resized.to_rgba8();
-    let (w, h) = rgba.dimensions();
-    let rgb_data: Vec<u8> = rgba.pixels().flat_map(|p| [p[0], p[1], p[2]]).collect();
-    let quality = config.quality as f32;
-    let webp_data = webp::Encoder::new(&rgb_data, webp::PixelLayout::Rgb, w, h).encode(quality);
-    Ok(webp_data.to_vec())
+    let t0 = std::time::Instant::now();
+
+    // Try fast JPEG DCT-scaled decode first (decodes directly at ~target size)
+    let (img, orig_w, orig_h) = if let Some(result) = fast_jpeg_decode(image_bytes, config.width, config.height) {
+        result
+    } else {
+        // Fallback for PNG/WebP/other formats
+        let img = image::load_from_memory(image_bytes)
+            .map_err(|e| anyhow::anyhow!("failed to load image: {}", e))?;
+        let (ow, oh) = img.dimensions();
+        (img, ow, oh)
+    };
+    let t_decode = t0.elapsed();
+
+    // Don't upscale — clamp to original size
+    let target_w = config.width.min(orig_w);
+    let target_h = config.height.min(orig_h);
+
+    let t1 = std::time::Instant::now();
+    // thumbnail() is optimized for large downscale ratios (uses fast sampling)
+    let resized = img.thumbnail(target_w, target_h);
+    let (w, h) = resized.dimensions();
+    let t_resize = t1.elapsed();
+
+    let format = config.format.as_deref().unwrap_or("webp");
+    info!(
+        "[THUMBNAIL] {}x{} -> {}x{}  decode={:.0}ms  resize={:.0}ms  encode_format={}",
+        orig_w, orig_h, w, h,
+        t_decode.as_secs_f64() * 1000.0,
+        t_resize.as_secs_f64() * 1000.0,
+        format,
+    );
+
+    let t2 = std::time::Instant::now();
+    let result = match format {
+        "original" => {
+            // Re-encode in source format (fast JPEG encode instead of slow WebP)
+            let source_format = image::guess_format(image_bytes).unwrap_or(image::ImageFormat::Jpeg);
+            match source_format {
+                image::ImageFormat::Png => {
+                    let rgba = resized.to_rgba8();
+                    let mut buf = Vec::new();
+                    let encoder = image::codecs::png::PngEncoder::new(&mut buf);
+                    encoder.write_image(&rgba, w, h, image::ColorType::Rgba8.into())
+                        .map_err(|e| anyhow::anyhow!("png encode failed: {}", e))?;
+                    Ok(buf)
+                }
+                _ => {
+                    let rgb = resized.to_rgb8();
+                    let mut buf = Vec::new();
+                    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, config.quality);
+                    encoder.encode(&rgb, w, h, image::ColorType::Rgb8.into())
+                        .map_err(|e| anyhow::anyhow!("jpeg encode failed: {}", e))?;
+                    Ok(buf)
+                }
+            }
+        }
+        "jpeg" | "jpg" => {
+            let rgb = resized.to_rgb8();
+            let mut buf = Vec::new();
+            let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, config.quality);
+            encoder.encode(&rgb, w, h, image::ColorType::Rgb8.into())
+                .map_err(|e| anyhow::anyhow!("jpeg encode failed: {}", e))?;
+            Ok(buf)
+        }
+        "png" => {
+            let rgba = resized.to_rgba8();
+            let mut buf = Vec::new();
+            let encoder = image::codecs::png::PngEncoder::new(&mut buf);
+            encoder.write_image(&rgba, w, h, image::ColorType::Rgba8.into())
+                .map_err(|e| anyhow::anyhow!("png encode failed: {}", e))?;
+            Ok(buf)
+        }
+        _ => {
+            // WebP (default)
+            let rgb = resized.to_rgb8();
+            let rgb_data: &[u8] = rgb.as_raw();
+            let quality = config.quality as f32;
+            let webp_data = webp::Encoder::new(rgb_data, webp::PixelLayout::Rgb, w, h).encode(quality);
+            Ok(webp_data.to_vec())
+        }
+    };
+    let t_encode = t2.elapsed();
+    info!(
+        "[THUMBNAIL] encode={:.0}ms  total={:.0}ms  output_size={}KB",
+        t_encode.as_secs_f64() * 1000.0,
+        t0.elapsed().as_secs_f64() * 1000.0,
+        result.as_ref().map(|b| b.len() / 1024).unwrap_or(0),
+    );
+    result
 }
 
 /// Save raw image bytes (as extracted from the archive) without any processing.
@@ -127,23 +255,32 @@ fn save_raw_image(book_id: Uuid, raw_bytes: &[u8], directory: &str) -> anyhow::R
     Ok(path.to_string_lossy().to_string())
 }
 
-/// Resize the raw image and save it as a WebP thumbnail, overwriting the raw file.
-fn resize_raw_to_webp(
+/// Resize the raw image and save it as a thumbnail, overwriting the raw file.
+fn resize_raw_to_thumbnail(
     book_id: Uuid,
     raw_path: &str,
     config: &ThumbnailConfig,
 ) -> anyhow::Result<String> {
     let raw_bytes = std::fs::read(raw_path)
         .map_err(|e| anyhow::anyhow!("failed to read raw image {}: {}", raw_path, e))?;
-    let webp_bytes = generate_thumbnail(&raw_bytes, config)?;
+    info!("[THUMBNAIL] book={} raw_size={}KB", book_id, raw_bytes.len() / 1024);
+    let thumb_bytes = generate_thumbnail(&raw_bytes, config)?;
 
-    let webp_path = Path::new(&config.directory).join(format!("{}.webp", book_id));
-    std::fs::write(&webp_path, &webp_bytes)?;
+    let format = config.format.as_deref().unwrap_or("webp");
+    let ext = match format {
+        "original" => detect_image_ext(&raw_bytes),
+        "jpeg" | "jpg" => "jpg",
+        "png" => "png",
+        _ => "webp",
+    };
 
-    // Delete the raw file now that the WebP is written
+    let thumb_path = Path::new(&config.directory).join(format!("{}.{}", book_id, ext));
+    std::fs::write(&thumb_path, &thumb_bytes)?;
+
+    // Delete the raw file now that the thumbnail is written
     let _ = std::fs::remove_file(raw_path);
 
-    Ok(webp_path.to_string_lossy().to_string())
+    Ok(thumb_path.to_string_lossy().to_string())
 }
 
 fn book_format_from_str(s: &str) -> Option<BookFormat> {
@@ -465,7 +602,7 @@ pub async fn analyze_library_books(
 
                 let raw_path_clone = raw_path.clone();
                 let thumb_result = tokio::task::spawn_blocking(move || {
-                    resize_raw_to_webp(book_id, &raw_path_clone, &config)
+                    resize_raw_to_thumbnail(book_id, &raw_path_clone, &config)
                 })
                 .await;
 
@@ -554,18 +691,17 @@ pub async fn regenerate_thumbnails(
 
     let mut deleted_count = 0usize;
     for book_id in &book_ids_to_clear {
-        // Delete WebP thumbnail
-        let webp_path = Path::new(&config.directory).join(format!("{}.webp", book_id));
-        if webp_path.exists() {
-            if let Err(e) = std::fs::remove_file(&webp_path) {
-                warn!("[ANALYZER] Failed to delete thumbnail {}: {}", webp_path.display(), e);
-            } else {
-                deleted_count += 1;
+        // Delete thumbnail in any format (webp, jpg, png) + raw
+        for ext in &["webp", "jpg", "png", "raw"] {
+            let path = Path::new(&config.directory).join(format!("{}.{}", book_id, ext));
+            if path.exists() {
+                if let Err(e) = std::fs::remove_file(&path) {
+                    warn!("[ANALYZER] Failed to delete thumbnail {}: {}", path.display(), e);
+                } else if *ext != "raw" {
+                    deleted_count += 1;
+                }
             }
         }
-        // Delete raw file if it exists (interrupted previous run)
-        let raw_path = Path::new(&config.directory).join(format!("{}.raw", book_id));
-        let _ = std::fs::remove_file(&raw_path);
     }
     info!("[ANALYZER] Deleted {} thumbnail files for regeneration", deleted_count);
 
@@ -599,14 +735,10 @@ pub async fn cleanup_orphaned_thumbnails(state: &AppState) -> Result<()> {
         for entry in entries.flatten() {
             let file_name = entry.file_name();
             let file_name = file_name.to_string_lossy();
-            // Clean up both .webp and orphaned .raw files
-            let stem = if let Some(s) = file_name.strip_suffix(".webp") {
-                Some(s.to_string())
-            } else if let Some(s) = file_name.strip_suffix(".raw") {
-                Some(s.to_string())
-            } else {
-                None
-            };
+            // Clean up all thumbnail formats and orphaned .raw files
+            let stem = [".webp", ".jpg", ".png", ".raw"]
+                .iter()
+                .find_map(|ext| file_name.strip_suffix(ext).map(|s| s.to_string()));
             if let Some(book_id_str) = stem {
                 if let Ok(book_id) = Uuid::parse_str(&book_id_str) {
                     if !existing_book_ids.contains(&book_id) {

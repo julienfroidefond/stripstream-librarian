@@ -90,7 +90,7 @@ interface FormRowProps {
 }
 
 export function FormRow({ children, className = "" }: FormRowProps) {
-  return <div className={`flex flex-wrap items-end gap-4 ${className}`}>{children}</div>;
+  return <div className={`flex flex-wrap items-start gap-4 ${className}`}>{children}</div>;
 }
 
 // Form Section
