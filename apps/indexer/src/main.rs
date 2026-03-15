@@ -4,8 +4,18 @@ use sqlx::postgres::PgPoolOptions;
 use stripstream_core::config::IndexerConfig;
 use tracing::info;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
+    // Limit blocking thread pool to 8 threads (default 512).
+    // Each spawn_blocking call (archive extraction, image save) gets a thread.
+    // With thousands of books, unlimited threads cause OOM via stack memory (~8MB each).
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .max_blocking_threads(8)
+        .build()?;
+    runtime.block_on(async_main())
+}
+
+async fn async_main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             std::env::var("RUST_LOG").unwrap_or_else(|_| {
