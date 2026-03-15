@@ -265,11 +265,13 @@ export async function fetchBooks(
   page: number = 1,
   limit: number = 50,
   readingStatus?: string,
+  sort?: string,
 ): Promise<BooksPageDto> {
   const params = new URLSearchParams();
   if (libraryId) params.set("library_id", libraryId);
   if (series) params.set("series", series);
   if (readingStatus) params.set("reading_status", readingStatus);
+  if (sort) params.set("sort", sort);
   params.set("page", page.toString());
   params.set("limit", limit.toString());
 
@@ -303,11 +305,13 @@ export async function fetchAllSeries(
   readingStatus?: string,
   page: number = 1,
   limit: number = 50,
+  sort?: string,
 ): Promise<SeriesPageDto> {
   const params = new URLSearchParams();
   if (libraryId) params.set("library_id", libraryId);
   if (q) params.set("q", q);
   if (readingStatus) params.set("reading_status", readingStatus);
+  if (sort) params.set("sort", sort);
   params.set("page", page.toString());
   params.set("limit", limit.toString());
 

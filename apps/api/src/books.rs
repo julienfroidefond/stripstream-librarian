@@ -23,6 +23,9 @@ pub struct ListBooksQuery {
     pub page: Option<i64>,
     #[schema(value_type = Option<i64>, example = 50)]
     pub limit: Option<i64>,
+    /// Sort order: "title" (default) or "latest" (most recently added first)
+    #[schema(value_type = Option<String>, example = "latest")]
+    pub sort: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -93,6 +96,7 @@ pub struct BookDetails {
         ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
         ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
         ("limit" = Option<i64>, Query, description = "Items per page (max 200, default 50)"),
+        ("sort" = Option<String>, Query, description = "Sort order: 'title' (default) or 'latest' (most recently added first)"),
     ),
     responses(
         (status = 200, body = BooksPage),
@@ -134,6 +138,12 @@ pub async fn list_books(
              {rs_cond}"#
     );
 
+    let order_clause = if query.sort.as_deref() == Some("latest") {
+        "b.updated_at DESC".to_string()
+    } else {
+        "REGEXP_REPLACE(LOWER(b.title), '[0-9]+', '', 'g'), COALESCE((REGEXP_MATCH(LOWER(b.title), '\\d+'))[1]::int, 0), b.title ASC".to_string()
+    };
+
     // DATA: mêmes params filtre, puis $N+1=limit $N+2=offset
     let limit_p = p + 1;
     let offset_p = p + 2;
@@ -150,13 +160,7 @@ pub async fn list_books(
           AND ($3::text IS NULL OR b.format = $3)
           {series_cond}
           {rs_cond}
-        ORDER BY
-            REGEXP_REPLACE(LOWER(b.title), '[0-9]+', '', 'g'),
-            COALESCE(
-                (REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int,
-                0
-            ),
-            b.title ASC
+        ORDER BY {order_clause}
         LIMIT ${limit_p} OFFSET ${offset_p}
         "#
     );
@@ -486,6 +490,9 @@ pub struct ListAllSeriesQuery {
     pub page: Option<i64>,
     #[schema(value_type = Option<i64>, example = 50)]
     pub limit: Option<i64>,
+    /// Sort order: "title" (default) or "latest" (most recently added first)
+    #[schema(value_type = Option<String>, example = "latest")]
+    pub sort: Option<String>,
 }
 
 /// List all series across libraries with optional filtering and pagination
@@ -499,6 +506,7 @@ pub struct ListAllSeriesQuery {
         ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
         ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
         ("limit" = Option<i64>, Query, description = "Items per page (max 200, default 50)"),
+        ("sort" = Option<String>, Query, description = "Sort order: 'title' (default) or 'latest' (most recently added first)"),
     ),
     responses(
         (status = 200, body = SeriesPage),
@@ -558,6 +566,12 @@ pub async fn list_all_series(
         "#
     );
 
+    let series_order_clause = if query.sort.as_deref() == Some("latest") {
+        "sc.latest_updated_at DESC".to_string()
+    } else {
+        "REGEXP_REPLACE(LOWER(sc.name), '[0-9]+', '', 'g'), COALESCE((REGEXP_MATCH(LOWER(sc.name), '\\d+'))[1]::int, 0), sc.name ASC".to_string()
+    };
+
     let limit_p = p + 1;
     let offset_p = p + 2;
 
@@ -568,6 +582,7 @@ pub async fn list_all_series(
                 COALESCE(NULLIF(series, ''), 'unclassified') as name,
                 id,
                 library_id,
+                updated_at,
                 ROW_NUMBER() OVER (
                     PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified')
                     ORDER BY
@@ -582,7 +597,8 @@ pub async fn list_all_series(
             SELECT
                 sb.name,
                 COUNT(*) as book_count,
-                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
+                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count,
+                MAX(sb.updated_at) as latest_updated_at
             FROM sorted_books sb
             LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
             GROUP BY sb.name
@@ -598,13 +614,7 @@ pub async fn list_all_series(
         WHERE TRUE
           {q_cond}
           {rs_cond}
-        ORDER BY
-            REGEXP_REPLACE(LOWER(sc.name), '[0-9]+', '', 'g'),
-            COALESCE(
-                (REGEXP_MATCH(LOWER(sc.name), '\d+'))[1]::int,
-                0
-            ),
-            sc.name ASC
+        ORDER BY {series_order_clause}
         LIMIT ${limit_p} OFFSET ${offset_p}
         "#
     );

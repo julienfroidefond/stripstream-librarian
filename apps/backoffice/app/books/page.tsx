@@ -16,6 +16,7 @@ export default async function BooksPage({
   const libraryId = typeof searchParamsAwaited.library === "string" ? searchParamsAwaited.library : undefined;
   const searchQuery = typeof searchParamsAwaited.q === "string" ? searchParamsAwaited.q : "";
   const readingStatus = typeof searchParamsAwaited.status === "string" ? searchParamsAwaited.status : undefined;
+  const sort = typeof searchParamsAwaited.sort === "string" ? searchParamsAwaited.sort : undefined;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 20;
 
@@ -54,7 +55,7 @@ export default async function BooksPage({
       totalHits = searchResponse.estimated_total_hits;
     }
   } else {
-    const booksPage = await fetchBooks(libraryId, undefined, page, limit, readingStatus).catch(() => ({
+    const booksPage = await fetchBooks(libraryId, undefined, page, limit, readingStatus, sort).catch(() => ({
       items: [] as BookDto[],
       total: 0,
       page: 1,
@@ -83,7 +84,12 @@ export default async function BooksPage({
     { value: "read", label: "Read" },
   ];
 
-  const hasFilters = searchQuery || libraryId || readingStatus;
+  const sortOptions = [
+    { value: "", label: "Title" },
+    { value: "latest", label: "Latest added" },
+  ];
+
+  const hasFilters = searchQuery || libraryId || readingStatus || sort;
 
   return (
     <>
@@ -104,6 +110,7 @@ export default async function BooksPage({
               { name: "q", type: "text", label: "Search", placeholder: "Search by title, author, series...", className: "flex-1 w-full" },
               { name: "library", type: "select", label: "Library", options: libraryOptions, className: "w-full sm:w-48" },
               { name: "status", type: "select", label: "Status", options: statusOptions, className: "w-full sm:w-40" },
+              { name: "sort", type: "select", label: "Sort", options: sortOptions, className: "w-full sm:w-40" },
             ]}
           />
         </CardContent>

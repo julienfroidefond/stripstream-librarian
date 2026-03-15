@@ -16,19 +16,25 @@ export default async function SeriesPage({
   const libraryId = typeof searchParamsAwaited.library === "string" ? searchParamsAwaited.library : undefined;
   const searchQuery = typeof searchParamsAwaited.q === "string" ? searchParamsAwaited.q : "";
   const readingStatus = typeof searchParamsAwaited.status === "string" ? searchParamsAwaited.status : undefined;
+  const sort = typeof searchParamsAwaited.sort === "string" ? searchParamsAwaited.sort : undefined;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 20;
 
   const [libraries, seriesPage] = await Promise.all([
     fetchLibraries().catch(() => [] as LibraryDto[]),
-    fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit).catch(
+    fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit, sort).catch(
       () => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }) as SeriesPageDto
     ),
   ]);
 
   const series = seriesPage.items;
   const totalPages = Math.ceil(seriesPage.total / limit);
-  const hasFilters = searchQuery || libraryId || readingStatus;
+  const sortOptions = [
+    { value: "", label: "Title" },
+    { value: "latest", label: "Latest added" },
+  ];
+
+  const hasFilters = searchQuery || libraryId || readingStatus || sort;
 
   const libraryOptions = [
     { value: "", label: "All libraries" },
@@ -61,6 +67,7 @@ export default async function SeriesPage({
               { name: "q", type: "text", label: "Search", placeholder: "Search by series name...", className: "flex-1 w-full" },
               { name: "library", type: "select", label: "Library", options: libraryOptions, className: "w-full sm:w-48" },
               { name: "status", type: "select", label: "Status", options: statusOptions, className: "w-full sm:w-40" },
+              { name: "sort", type: "select", label: "Sort", options: sortOptions, className: "w-full sm:w-40" },
             ]}
           />
         </CardContent>
