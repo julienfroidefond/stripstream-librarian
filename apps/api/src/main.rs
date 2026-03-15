@@ -105,11 +105,13 @@ async fn main() -> anyhow::Result<()> {
 
     let read_routes = Router::new()
         .route("/books", get(books::list_books))
+        .route("/books/ongoing", get(books::ongoing_books))
         .route("/books/:id", get(books::get_book))
         .route("/books/:id/thumbnail", get(books::get_thumbnail))
         .route("/books/:id/pages/:n", get(pages::get_page))
         .route("/books/:id/progress", get(reading_progress::get_reading_progress).patch(reading_progress::update_reading_progress))
         .route("/libraries/:library_id/series", get(books::list_series))
+        .route("/series/ongoing", get(books::ongoing_series))
         .route("/search", get(search::search_books))
         .route_layer(middleware::from_fn_with_state(state.clone(), api_middleware::read_rate_limit))
         .route_layer(middleware::from_fn_with_state(

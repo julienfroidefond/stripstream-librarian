@@ -471,6 +471,175 @@ pub async fn list_series(
     }))
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct OngoingQuery {
+    #[schema(value_type = Option<i64>, example = 10)]
+    pub limit: Option<i64>,
+}
+
+/// List ongoing series (partially read, sorted by most recent activity)
+#[utoipa::path(
+    get,
+    path = "/series/ongoing",
+    tag = "books",
+    params(
+        ("limit" = Option<i64>, Query, description = "Max items to return (default 10, max 50)"),
+    ),
+    responses(
+        (status = 200, body = Vec<SeriesItem>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn ongoing_series(
+    State(state): State<AppState>,
+    Query(query): Query<OngoingQuery>,
+) -> Result<Json<Vec<SeriesItem>>, ApiError> {
+    let limit = query.limit.unwrap_or(10).clamp(1, 50);
+
+    let rows = sqlx::query(
+        r#"
+        WITH series_stats AS (
+            SELECT
+                COALESCE(NULLIF(b.series, ''), 'unclassified') AS name,
+                COUNT(*) AS book_count,
+                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') AS books_read_count,
+                MAX(brp.last_read_at) AS last_read_at
+            FROM books b
+            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+            GROUP BY COALESCE(NULLIF(b.series, ''), 'unclassified')
+            HAVING (
+                COUNT(brp.book_id) FILTER (WHERE brp.status IN ('read', 'reading')) > 0
+                AND COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') < COUNT(*)
+            )
+        ),
+        first_books AS (
+            SELECT
+                COALESCE(NULLIF(series, ''), 'unclassified') AS name,
+                id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified')
+                    ORDER BY
+                        REGEXP_REPLACE(LOWER(title), '[0-9]+', '', 'g'),
+                        COALESCE((REGEXP_MATCH(LOWER(title), '\d+'))[1]::int, 0),
+                        title ASC
+                ) AS rn
+            FROM books
+        )
+        SELECT ss.name, ss.book_count, ss.books_read_count, fb.id AS first_book_id
+        FROM series_stats ss
+        JOIN first_books fb ON fb.name = ss.name AND fb.rn = 1
+        ORDER BY ss.last_read_at DESC NULLS LAST
+        LIMIT $1
+        "#,
+    )
+    .bind(limit)
+    .fetch_all(&state.pool)
+    .await?;
+
+    let items: Vec<SeriesItem> = rows
+        .iter()
+        .map(|row| SeriesItem {
+            name: row.get("name"),
+            book_count: row.get("book_count"),
+            books_read_count: row.get("books_read_count"),
+            first_book_id: row.get("first_book_id"),
+        })
+        .collect();
+
+    Ok(Json(items))
+}
+
+/// List next unread book for each ongoing series (sorted by most recent activity)
+#[utoipa::path(
+    get,
+    path = "/books/ongoing",
+    tag = "books",
+    params(
+        ("limit" = Option<i64>, Query, description = "Max items to return (default 10, max 50)"),
+    ),
+    responses(
+        (status = 200, body = Vec<BookItem>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn ongoing_books(
+    State(state): State<AppState>,
+    Query(query): Query<OngoingQuery>,
+) -> Result<Json<Vec<BookItem>>, ApiError> {
+    let limit = query.limit.unwrap_or(10).clamp(1, 50);
+
+    let rows = sqlx::query(
+        r#"
+        WITH ongoing_series AS (
+            SELECT
+                COALESCE(NULLIF(b.series, ''), 'unclassified') AS name,
+                MAX(brp.last_read_at) AS series_last_read_at
+            FROM books b
+            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+            GROUP BY COALESCE(NULLIF(b.series, ''), 'unclassified')
+            HAVING (
+                COUNT(brp.book_id) FILTER (WHERE brp.status IN ('read', 'reading')) > 0
+                AND COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') < COUNT(*)
+            )
+        ),
+        next_books AS (
+            SELECT
+                b.id, b.library_id, b.kind, b.format, b.title, b.author, b.series, b.volume,
+                b.language, b.page_count, b.thumbnail_path, b.updated_at,
+                COALESCE(brp.status, 'unread') AS reading_status,
+                brp.current_page AS reading_current_page,
+                brp.last_read_at AS reading_last_read_at,
+                os.series_last_read_at,
+                ROW_NUMBER() OVER (
+                    PARTITION BY COALESCE(NULLIF(b.series, ''), 'unclassified')
+                    ORDER BY b.volume NULLS LAST, b.title
+                ) AS rn
+            FROM books b
+            JOIN ongoing_series os ON COALESCE(NULLIF(b.series, ''), 'unclassified') = os.name
+            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+            WHERE COALESCE(brp.status, 'unread') != 'read'
+        )
+        SELECT id, library_id, kind, format, title, author, series, volume, language, page_count,
+               thumbnail_path, updated_at, reading_status, reading_current_page, reading_last_read_at
+        FROM next_books
+        WHERE rn = 1
+        ORDER BY series_last_read_at DESC NULLS LAST
+        LIMIT $1
+        "#,
+    )
+    .bind(limit)
+    .fetch_all(&state.pool)
+    .await?;
+
+    let items: Vec<BookItem> = rows
+        .iter()
+        .map(|row| {
+            let thumbnail_path: Option<String> = row.get("thumbnail_path");
+            BookItem {
+                id: row.get("id"),
+                library_id: row.get("library_id"),
+                kind: row.get("kind"),
+                format: row.get("format"),
+                title: row.get("title"),
+                author: row.get("author"),
+                series: row.get("series"),
+                volume: row.get("volume"),
+                language: row.get("language"),
+                page_count: row.get("page_count"),
+                thumbnail_url: thumbnail_path.map(|_| format!("/books/{}/thumbnail", row.get::<Uuid, _>("id"))),
+                updated_at: row.get("updated_at"),
+                reading_status: row.get("reading_status"),
+                reading_current_page: row.get("reading_current_page"),
+                reading_last_read_at: row.get("reading_last_read_at"),
+            }
+        })
+        .collect();
+
+    Ok(Json(items))
+}
+
 fn remap_libraries_path(path: &str) -> String {
     if let Ok(root) = std::env::var("LIBRARIES_ROOT_PATH") {
         if path.starts_with("/libraries/") {
