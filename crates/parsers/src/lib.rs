@@ -166,13 +166,30 @@ fn analyze_cbz(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {
         Ok(a) => a,
         Err(zip_err) => {
             if allow_fallback {
-                // Try RAR fallback first (file might be a RAR with .cbz extension)
-                if let Ok(result) = analyze_cbr(path, false) {
-                    return Ok(result);
+                tracing::debug!(target: "extraction", "[EXTRACTION] ZipArchive::new failed for {}: {} — trying fallbacks", path.display(), zip_err);
+
+                // Check magic bytes to avoid expensive RAR probe on ZIP files
+                let is_zip_magic = std::fs::File::open(path)
+                    .and_then(|mut f| {
+                        let mut magic = [0u8; 4];
+                        std::io::Read::read_exact(&mut f, &mut magic)?;
+                        Ok(magic[0] == b'P' && magic[1] == b'K')
+                    })
+                    .unwrap_or(false);
+
+                if !is_zip_magic {
+                    // Try RAR fallback (file might be a RAR with .cbz extension)
+                    if let Ok(result) = analyze_cbr(path, false) {
+                        tracing::debug!(target: "extraction", "[EXTRACTION] RAR fallback succeeded for {}", path.display());
+                        return Ok(result);
+                    }
                 }
+
                 // Try streaming fallback: read local file headers without central directory
                 // (handles ZIP files with NTFS extra fields that confuse the central dir parser)
+                let t0 = std::time::Instant::now();
                 if let Ok(result) = analyze_cbz_streaming(path) {
+                    tracing::debug!(target: "extraction", "[EXTRACTION] Streaming fallback succeeded for {} — {} pages in {:.0}ms", path.display(), result.0, t0.elapsed().as_secs_f64() * 1000.0);
                     return Ok(result);
                 }
             }
@@ -180,17 +197,11 @@ fn analyze_cbz(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {
         }
     };
 
-    let mut image_names: Vec<String> = Vec::new();
-    for i in 0..archive.len() {
-        let entry = match archive.by_index(i) {
-            Ok(e) => e,
-            Err(_) => continue, // skip corrupted entries
-        };
-        let name = entry.name().to_ascii_lowercase();
-        if is_image_name(&name) {
-            image_names.push(entry.name().to_string());
-        }
-    }
+    let mut image_names: Vec<String> = archive
+        .file_names()
+        .filter(|name| is_image_name(&name.to_ascii_lowercase()))
+        .map(|name| name.to_string())
+        .collect::<Vec<_>>();
     image_names.sort_by(|a, b| natord::compare(a, b));
 
     if image_names.is_empty() {

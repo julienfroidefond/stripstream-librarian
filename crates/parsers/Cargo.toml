@@ -14,3 +14,4 @@ regex = "1"
 unrar.workspace = true
 zip = { version = "8", default-features = false, features = ["deflate"] }
 flate2 = "1"
+tracing.workspace = true
