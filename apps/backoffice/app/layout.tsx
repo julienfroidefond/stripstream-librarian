@@ -15,14 +15,15 @@ export const metadata: Metadata = {
 };
 
 type NavItem = {
-  href: "/" | "/books" | "/libraries" | "/jobs" | "/tokens" | "/settings";
+  href: "/" | "/books" | "/series" | "/libraries" | "/jobs" | "/tokens" | "/settings";
   label: string;
-  icon: "dashboard" | "books" | "libraries" | "jobs" | "tokens" | "settings";
+  icon: "dashboard" | "books" | "series" | "libraries" | "jobs" | "tokens" | "settings";
 };
 
 const navItems: NavItem[] = [
   { href: "/", label: "Dashboard", icon: "dashboard" },
   { href: "/books", label: "Books", icon: "books" },
+  { href: "/series", label: "Series", icon: "series" },
   { href: "/libraries", label: "Libraries", icon: "libraries" },
   { href: "/jobs", label: "Jobs", icon: "jobs" },
   { href: "/tokens", label: "Tokens", icon: "tokens" },

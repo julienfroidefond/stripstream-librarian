@@ -112,6 +112,7 @@ export type SeriesDto = {
   book_count: number;
   books_read_count: number;
   first_book_id: string;
+  library_id: string;
 };
 
 export function config() {
@@ -263,10 +264,12 @@ export async function fetchBooks(
   series?: string,
   page: number = 1,
   limit: number = 50,
+  readingStatus?: string,
 ): Promise<BooksPageDto> {
   const params = new URLSearchParams();
   if (libraryId) params.set("library_id", libraryId);
   if (series) params.set("series", series);
+  if (readingStatus) params.set("reading_status", readingStatus);
   params.set("page", page.toString());
   params.set("limit", limit.toString());
 
@@ -292,6 +295,23 @@ export async function fetchSeries(
   return apiFetch<SeriesPageDto>(
     `/libraries/${libraryId}/series?${params.toString()}`,
   );
+}
+
+export async function fetchAllSeries(
+  libraryId?: string,
+  q?: string,
+  readingStatus?: string,
+  page: number = 1,
+  limit: number = 50,
+): Promise<SeriesPageDto> {
+  const params = new URLSearchParams();
+  if (libraryId) params.set("library_id", libraryId);
+  if (q) params.set("q", q);
+  if (readingStatus) params.set("reading_status", readingStatus);
+  params.set("page", page.toString());
+  params.set("limit", limit.toString());
+
+  return apiFetch<SeriesPageDto>(`/series?${params.toString()}`);
 }
 
 export async function searchBooks(
@@ -396,5 +416,12 @@ export async function updateReadingProgress(
   return apiFetch<ReadingProgressDto>(`/books/${bookId}/progress`, {
     method: "PATCH",
     body: JSON.stringify({ status, current_page: currentPage ?? null }),
+  });
+}
+
+export async function markSeriesRead(seriesName: string, status: "read" | "unread" = "read") {
+  return apiFetch<{ updated: number }>("/series/mark-read", {
+    method: "POST",
+    body: JSON.stringify({ series: seriesName, status }),
   });
 }

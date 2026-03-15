@@ -6,9 +6,9 @@ import Link from "next/link";
 import { NavIcon } from "./ui";
 
 type NavItem = {
-  href: "/" | "/books" | "/libraries" | "/jobs" | "/tokens" | "/settings";
+  href: "/" | "/books" | "/series" | "/libraries" | "/jobs" | "/tokens" | "/settings";
   label: string;
-  icon: "dashboard" | "books" | "libraries" | "jobs" | "tokens" | "settings";
+  icon: "dashboard" | "books" | "series" | "libraries" | "jobs" | "tokens" | "settings";
 };
 
 const HamburgerIcon = () => (

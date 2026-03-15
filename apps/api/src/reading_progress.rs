@@ -165,3 +165,83 @@ pub async fn update_reading_progress(
         last_read_at: row.get("last_read_at"),
     }))
 }
+
+#[derive(Deserialize, ToSchema)]
+pub struct MarkSeriesReadRequest {
+    /// Series name (use "unclassified" for books without series)
+    pub series: String,
+    /// Status to set: "read" or "unread"
+    pub status: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct MarkSeriesReadResponse {
+    pub updated: i64,
+}
+
+/// Mark all books in a series as read or unread
+#[utoipa::path(
+    post,
+    path = "/series/mark-read",
+    tag = "reading-progress",
+    request_body = MarkSeriesReadRequest,
+    responses(
+        (status = 200, body = MarkSeriesReadResponse),
+        (status = 422, description = "Invalid status"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn mark_series_read(
+    State(state): State<AppState>,
+    Json(body): Json<MarkSeriesReadRequest>,
+) -> Result<Json<MarkSeriesReadResponse>, ApiError> {
+    if !["read", "unread"].contains(&body.status.as_str()) {
+        return Err(ApiError::bad_request(
+            "status must be 'read' or 'unread'",
+        ));
+    }
+
+    let series_filter = if body.series == "unclassified" {
+        "(series IS NULL OR series = '')"
+    } else {
+        "series = $1"
+    };
+
+    let sql = if body.status == "unread" {
+        // Delete progress records to reset to unread
+        format!(
+            r#"
+            WITH target_books AS (
+                SELECT id FROM books WHERE {series_filter}
+            )
+            DELETE FROM book_reading_progress
+            WHERE book_id IN (SELECT id FROM target_books)
+            "#
+        )
+    } else {
+        format!(
+            r#"
+            INSERT INTO book_reading_progress (book_id, status, current_page, last_read_at, updated_at)
+            SELECT id, 'read', NULL, NOW(), NOW()
+            FROM books
+            WHERE {series_filter}
+            ON CONFLICT (book_id) DO UPDATE
+              SET status = 'read',
+                  current_page = NULL,
+                  last_read_at = NOW(),
+                  updated_at = NOW()
+            "#
+        )
+    };
+
+    let result = if body.series == "unclassified" {
+        sqlx::query(&sql).execute(&state.pool).await?
+    } else {
+        sqlx::query(&sql).bind(&body.series).execute(&state.pool).await?
+    };
+
+    Ok(Json(MarkSeriesReadResponse {
+        updated: result.rows_affected() as i64,
+    }))
+}

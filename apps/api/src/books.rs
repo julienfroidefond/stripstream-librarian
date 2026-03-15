@@ -292,6 +292,8 @@ pub struct SeriesItem {
     pub books_read_count: i64,
     #[schema(value_type = String)]
     pub first_book_id: Uuid,
+    #[schema(value_type = String)]
+    pub library_id: Uuid,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -460,11 +462,192 @@ pub async fn list_series(
             book_count: row.get("book_count"),
             books_read_count: row.get("books_read_count"),
             first_book_id: row.get("first_book_id"),
+            library_id,
         })
         .collect();
 
     Ok(Json(SeriesPage {
         items: std::mem::take(&mut items),
+        total,
+        page,
+        limit,
+    }))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ListAllSeriesQuery {
+    #[schema(value_type = Option<String>, example = "dragon")]
+    pub q: Option<String>,
+    #[schema(value_type = Option<String>)]
+    pub library_id: Option<Uuid>,
+    #[schema(value_type = Option<String>, example = "unread,reading")]
+    pub reading_status: Option<String>,
+    #[schema(value_type = Option<i64>, example = 1)]
+    pub page: Option<i64>,
+    #[schema(value_type = Option<i64>, example = 50)]
+    pub limit: Option<i64>,
+}
+
+/// List all series across libraries with optional filtering and pagination
+#[utoipa::path(
+    get,
+    path = "/series",
+    tag = "books",
+    params(
+        ("q" = Option<String>, Query, description = "Filter by series name (case-insensitive, partial match)"),
+        ("library_id" = Option<String>, Query, description = "Filter by library ID"),
+        ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
+        ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
+        ("limit" = Option<i64>, Query, description = "Items per page (max 200, default 50)"),
+    ),
+    responses(
+        (status = 200, body = SeriesPage),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn list_all_series(
+    State(state): State<AppState>,
+    Query(query): Query<ListAllSeriesQuery>,
+) -> Result<Json<SeriesPage>, ApiError> {
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let page = query.page.unwrap_or(1).max(1);
+    let offset = (page - 1) * limit;
+
+    let reading_statuses: Option<Vec<String>> = query.reading_status.as_deref().map(|s| {
+        s.split(',').map(|v| v.trim().to_string()).filter(|v| !v.is_empty()).collect()
+    });
+
+    let series_status_expr = r#"CASE
+              WHEN sc.books_read_count = sc.book_count THEN 'read'
+              WHEN sc.books_read_count = 0 THEN 'unread'
+              ELSE 'reading'
+           END"#;
+
+    let mut p: usize = 0;
+
+    let lib_cond = if query.library_id.is_some() {
+        p += 1; format!("WHERE library_id = ${p}")
+    } else {
+        "WHERE TRUE".to_string()
+    };
+
+    let q_cond = if query.q.is_some() {
+        p += 1; format!("AND sc.name ILIKE ${p}")
+    } else { String::new() };
+
+    let rs_cond = if reading_statuses.is_some() {
+        p += 1; format!("AND {series_status_expr} = ANY(${p})")
+    } else { String::new() };
+
+    let count_sql = format!(
+        r#"
+        WITH sorted_books AS (
+            SELECT COALESCE(NULLIF(series, ''), 'unclassified') as name, id
+            FROM books {lib_cond}
+        ),
+        series_counts AS (
+            SELECT sb.name,
+                COUNT(*) as book_count,
+                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
+            FROM sorted_books sb
+            LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
+            GROUP BY sb.name
+        )
+        SELECT COUNT(*) FROM series_counts sc WHERE TRUE {q_cond} {rs_cond}
+        "#
+    );
+
+    let limit_p = p + 1;
+    let offset_p = p + 2;
+
+    let data_sql = format!(
+        r#"
+        WITH sorted_books AS (
+            SELECT
+                COALESCE(NULLIF(series, ''), 'unclassified') as name,
+                id,
+                library_id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified')
+                    ORDER BY
+                        REGEXP_REPLACE(LOWER(title), '[0-9]+', '', 'g'),
+                        COALESCE((REGEXP_MATCH(LOWER(title), '\d+'))[1]::int, 0),
+                        title ASC
+                ) as rn
+            FROM books
+            {lib_cond}
+        ),
+        series_counts AS (
+            SELECT
+                sb.name,
+                COUNT(*) as book_count,
+                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
+            FROM sorted_books sb
+            LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
+            GROUP BY sb.name
+        )
+        SELECT
+            sc.name,
+            sc.book_count,
+            sc.books_read_count,
+            sb.id as first_book_id,
+            sb.library_id
+        FROM series_counts sc
+        JOIN sorted_books sb ON sb.name = sc.name AND sb.rn = 1
+        WHERE TRUE
+          {q_cond}
+          {rs_cond}
+        ORDER BY
+            REGEXP_REPLACE(LOWER(sc.name), '[0-9]+', '', 'g'),
+            COALESCE(
+                (REGEXP_MATCH(LOWER(sc.name), '\d+'))[1]::int,
+                0
+            ),
+            sc.name ASC
+        LIMIT ${limit_p} OFFSET ${offset_p}
+        "#
+    );
+
+    let q_pattern = query.q.as_deref().map(|q| format!("%{}%", q));
+
+    let mut count_builder = sqlx::query(&count_sql);
+    let mut data_builder = sqlx::query(&data_sql);
+
+    if let Some(lib_id) = query.library_id {
+        count_builder = count_builder.bind(lib_id);
+        data_builder = data_builder.bind(lib_id);
+    }
+    if let Some(ref pat) = q_pattern {
+        count_builder = count_builder.bind(pat);
+        data_builder = data_builder.bind(pat);
+    }
+    if let Some(ref statuses) = reading_statuses {
+        count_builder = count_builder.bind(statuses.clone());
+        data_builder = data_builder.bind(statuses.clone());
+    }
+
+    data_builder = data_builder.bind(limit).bind(offset);
+
+    let (count_row, rows) = tokio::try_join!(
+        count_builder.fetch_one(&state.pool),
+        data_builder.fetch_all(&state.pool),
+    )?;
+    let total: i64 = count_row.get(0);
+
+    let items: Vec<SeriesItem> = rows
+        .iter()
+        .map(|row| SeriesItem {
+            name: row.get("name"),
+            book_count: row.get("book_count"),
+            books_read_count: row.get("books_read_count"),
+            first_book_id: row.get("first_book_id"),
+            library_id: row.get("library_id"),
+        })
+        .collect();
+
+    Ok(Json(SeriesPage {
+        items,
         total,
         page,
         limit,
@@ -517,6 +700,7 @@ pub async fn ongoing_series(
             SELECT
                 COALESCE(NULLIF(series, ''), 'unclassified') AS name,
                 id,
+                library_id,
                 ROW_NUMBER() OVER (
                     PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified')
                     ORDER BY
@@ -526,7 +710,7 @@ pub async fn ongoing_series(
                 ) AS rn
             FROM books
         )
-        SELECT ss.name, ss.book_count, ss.books_read_count, fb.id AS first_book_id
+        SELECT ss.name, ss.book_count, ss.books_read_count, fb.id AS first_book_id, fb.library_id
         FROM series_stats ss
         JOIN first_books fb ON fb.name = ss.name AND fb.rn = 1
         ORDER BY ss.last_read_at DESC NULLS LAST
@@ -544,6 +728,7 @@ pub async fn ongoing_series(
             book_count: row.get("book_count"),
             books_read_count: row.get("books_read_count"),
             first_book_id: row.get("first_book_id"),
+            library_id: row.get("library_id"),
         })
         .collect();
 

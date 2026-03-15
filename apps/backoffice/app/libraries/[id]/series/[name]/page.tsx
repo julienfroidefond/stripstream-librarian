@@ -1,0 +1,138 @@
+import { fetchLibraries, fetchBooks, getBookCoverUrl, BookDto } from "../../../../../lib/api";
+import { BooksGrid, EmptyState } from "../../../../components/BookCard";
+import { MarkSeriesReadButton } from "../../../../components/MarkSeriesReadButton";
+import { MarkBookReadButton } from "../../../../components/MarkBookReadButton";
+import { OffsetPagination } from "../../../../components/ui";
+import Image from "next/image";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+
+export const dynamic = "force-dynamic";
+
+export default async function SeriesDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string; name: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const { id, name } = await params;
+  const searchParamsAwaited = await searchParams;
+  const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
+  const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 50;
+
+  const seriesName = decodeURIComponent(name);
+
+  const [library, booksPage] = await Promise.all([
+    fetchLibraries().then((libs) => libs.find((l) => l.id === id)),
+    fetchBooks(id, seriesName, page, limit).catch(() => ({
+      items: [] as BookDto[],
+      total: 0,
+      page: 1,
+      limit,
+    })),
+  ]);
+
+  if (!library) {
+    notFound();
+  }
+
+  const books = booksPage.items.map((book) => ({
+    ...book,
+    coverUrl: getBookCoverUrl(book.id),
+  }));
+
+  const totalPages = Math.ceil(booksPage.total / limit);
+  const booksReadCount = booksPage.items.filter((b) => b.reading_status === "read").length;
+  const displayName = seriesName === "unclassified" ? "Non classifié" : seriesName;
+
+  // Use first book cover as series cover
+  const coverBookId = booksPage.items[0]?.id;
+
+  return (
+    <div className="space-y-6">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-sm">
+        <Link
+          href="/libraries"
+          className="text-muted-foreground hover:text-primary transition-colors"
+        >
+          Libraries
+        </Link>
+        <span className="text-muted-foreground">/</span>
+        <Link
+          href={`/libraries/${id}/series`}
+          className="text-muted-foreground hover:text-primary transition-colors"
+        >
+          {library.name}
+        </Link>
+        <span className="text-muted-foreground">/</span>
+        <span className="text-foreground font-medium">{displayName}</span>
+      </div>
+
+      {/* Series Header */}
+      <div className="flex flex-col sm:flex-row gap-6">
+        {coverBookId && (
+          <div className="flex-shrink-0">
+            <div className="w-40 aspect-[2/3] relative rounded-xl overflow-hidden shadow-card border border-border">
+              <Image
+                src={getBookCoverUrl(coverBookId)}
+                alt={`Cover of ${displayName}`}
+                fill
+                className="object-cover"
+                unoptimized
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="flex-1 space-y-4">
+          <h1 className="text-3xl font-bold text-foreground">{displayName}</h1>
+
+          <div className="flex flex-wrap items-center gap-4 text-sm">
+            <span className="text-muted-foreground">
+              <span className="font-semibold text-foreground">{booksPage.total}</span> livre{booksPage.total !== 1 ? "s" : ""}
+            </span>
+            <span className="w-px h-4 bg-border" />
+            <span className="text-muted-foreground">
+              <span className="font-semibold text-foreground">{booksReadCount}</span>/{booksPage.total} lu{booksPage.total !== 1 ? "s" : ""}
+            </span>
+
+            {/* Progress bar */}
+            <div className="flex items-center gap-2 flex-1 min-w-[120px] max-w-[200px]">
+              <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-green-500 rounded-full transition-all"
+                  style={{ width: `${booksPage.total > 0 ? (booksReadCount / booksPage.total) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <MarkSeriesReadButton
+              seriesName={seriesName}
+              bookCount={booksPage.total}
+              booksReadCount={booksReadCount}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Books Grid */}
+      {books.length > 0 ? (
+        <>
+          <BooksGrid books={books} />
+          <OffsetPagination
+            currentPage={page}
+            totalPages={totalPages}
+            pageSize={limit}
+            totalItems={booksPage.total}
+          />
+        </>
+      ) : (
+        <EmptyState message="Aucun livre dans cette série" />
+      )}
+    </div>
+  );
+}

@@ -1,6 +1,7 @@
 import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch, ReadingStatus } from "../../../lib/api";
 import { BookPreview } from "../../components/BookPreview";
 import { ConvertButton } from "../../components/ConvertButton";
+import { MarkBookReadButton } from "../../components/MarkBookReadButton";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -105,11 +106,14 @@ export default async function BookDetailPage({
               {book.reading_status && (
                 <div className="flex items-center justify-between py-2 border-b border-border">
                   <span className="text-sm text-muted-foreground">Lecture :</span>
-                  <ReadingStatusBadge
-                    status={book.reading_status}
-                    currentPage={book.reading_current_page ?? null}
-                    lastReadAt={book.reading_last_read_at ?? null}
-                  />
+                  <div className="flex items-center gap-3">
+                    <ReadingStatusBadge
+                      status={book.reading_status}
+                      currentPage={book.reading_current_page ?? null}
+                      lastReadAt={book.reading_last_read_at ?? null}
+                    />
+                    <MarkBookReadButton bookId={book.id} currentStatus={book.reading_status} />
+                  </div>
                 </div>
               )}
 

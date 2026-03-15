@@ -1,6 +1,7 @@
 import { fetchBooks, searchBooks, fetchLibraries, BookDto, LibraryDto, SeriesHitDto, getBookCoverUrl } from "../../lib/api";
 import { BooksGrid, EmptyState } from "../components/BookCard";
-import { Card, CardContent, Button, FormField, FormInput, FormSelect, FormRow, OffsetPagination } from "../components/ui";
+import { LiveSearchForm } from "../components/LiveSearchForm";
+import { Card, CardContent, OffsetPagination } from "../components/ui";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -14,6 +15,7 @@ export default async function BooksPage({
   const searchParamsAwaited = await searchParams;
   const libraryId = typeof searchParamsAwaited.library === "string" ? searchParamsAwaited.library : undefined;
   const searchQuery = typeof searchParamsAwaited.q === "string" ? searchParamsAwaited.q : "";
+  const readingStatus = typeof searchParamsAwaited.status === "string" ? searchParamsAwaited.status : undefined;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 20;
 
@@ -52,7 +54,7 @@ export default async function BooksPage({
       totalHits = searchResponse.estimated_total_hits;
     }
   } else {
-    const booksPage = await fetchBooks(libraryId, undefined, page, limit).catch(() => ({
+    const booksPage = await fetchBooks(libraryId, undefined, page, limit, readingStatus).catch(() => ({
       items: [] as BookDto[],
       total: 0,
       page: 1,
@@ -69,6 +71,20 @@ export default async function BooksPage({
 
   const totalPages = Math.ceil(total / limit);
 
+  const libraryOptions = [
+    { value: "", label: "All libraries" },
+    ...libraries.map((lib) => ({ value: lib.id, label: lib.name })),
+  ];
+
+  const statusOptions = [
+    { value: "", label: "All" },
+    { value: "unread", label: "Unread" },
+    { value: "reading", label: "In progress" },
+    { value: "read", label: "Read" },
+  ];
+
+  const hasFilters = searchQuery || libraryId || readingStatus;
+
   return (
     <>
       <div className="mb-6">
@@ -79,66 +95,28 @@ export default async function BooksPage({
           Books
         </h1>
       </div>
-      
-      {/* Search Bar - Style compact et propre */}
+
       <Card className="mb-6">
         <CardContent className="pt-6">
-          <form className="flex flex-col sm:flex-row gap-3 items-start sm:items-end">
-            <FormField className="flex-1 w-full">
-              <label className="block text-sm font-medium text-foreground mb-1.5">Search</label>
-              <FormInput 
-                name="q" 
-                placeholder="Search by title, author, series..." 
-                defaultValue={searchQuery}
-                className="w-full"
-              />
-            </FormField>
-            <FormField className="w-full sm:w-48">
-              <label className="block text-sm font-medium text-foreground mb-1.5">Library</label>
-              <FormSelect name="library" defaultValue={libraryId || ""}>
-                <option value="">All libraries</option>
-                {libraries.map((lib) => (
-                  <option key={lib.id} value={lib.id}>
-                    {lib.name}
-                  </option>
-                ))}
-              </FormSelect>
-            </FormField>
-            <div className="flex gap-2 w-full sm:w-auto">
-              <Button type="submit" className="flex-1 sm:flex-none">
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                Search
-              </Button>
-              {searchQuery && (
-                <Link 
-                  href="/books" 
-                  className="
-                    inline-flex items-center justify-center
-                    h-10 px-4
-                    border border-input
-                    text-sm font-medium
-                    text-muted-foreground
-                    bg-background
-                    rounded-md
-                    hover:bg-accent hover:text-accent-foreground
-                    transition-colors duration-200
-                    flex-1 sm:flex-none
-                  "
-                >
-                  Clear
-                </Link>
-              )}
-            </div>
-          </form>
+          <LiveSearchForm
+            basePath="/books"
+            fields={[
+              { name: "q", type: "text", label: "Search", placeholder: "Search by title, author, series...", className: "flex-1 w-full" },
+              { name: "library", type: "select", label: "Library", options: libraryOptions, className: "w-full sm:w-48" },
+              { name: "status", type: "select", label: "Status", options: statusOptions, className: "w-full sm:w-40" },
+            ]}
+          />
         </CardContent>
       </Card>
 
       {/* Résultats */}
-      {searchQuery && totalHits !== null && (
+      {searchQuery && totalHits !== null ? (
         <p className="text-sm text-muted-foreground mb-4">
           Found {totalHits} result{totalHits !== 1 ? 's' : ''} for &quot;{searchQuery}&quot;
+        </p>
+      ) : !searchQuery && (
+        <p className="text-sm text-muted-foreground mb-4">
+          {total} book{total !== 1 ? 's' : ''}
         </p>
       )}
 
@@ -150,7 +128,7 @@ export default async function BooksPage({
             {seriesHits.map((s) => (
               <Link
                 key={`${s.library_id}-${s.name}`}
-                href={`/libraries/${s.library_id}/books?series=${encodeURIComponent(s.name)}`}
+                href={`/libraries/${s.library_id}/series/${encodeURIComponent(s.name)}`}
                 className="group"
               >
                 <div className="bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden hover:shadow-md transition-shadow duration-200">
@@ -183,7 +161,7 @@ export default async function BooksPage({
         <>
           {searchQuery && <h2 className="text-lg font-semibold text-foreground mb-3">Books</h2>}
           <BooksGrid books={displayBooks} />
-          
+
           {!searchQuery && (
             <OffsetPagination
               currentPage={page}
