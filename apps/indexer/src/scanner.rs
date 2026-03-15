@@ -4,7 +4,7 @@ use parsers::{detect_format, parse_metadata_fast};
 use serde::Serialize;
 use sqlx::Row;
 use std::{collections::HashMap, path::Path, time::Duration};
-use tracing::{error, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
@@ -124,7 +124,37 @@ pub async fn scan_library_discovery(
     // Files under these prefixes are added to `seen` but not reprocessed.
     let mut skipped_dir_prefixes: Vec<String> = Vec::new();
 
-    for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
+    // Track consecutive IO errors to detect fd exhaustion (ENFILE)
+    let mut consecutive_io_errors: usize = 0;
+    const MAX_CONSECUTIVE_IO_ERRORS: usize = 10;
+
+    for result in WalkDir::new(root).max_open(20).into_iter() {
+        let entry = match result {
+            Ok(e) => {
+                consecutive_io_errors = 0;
+                e
+            }
+            Err(e) => {
+                consecutive_io_errors += 1;
+                let is_enfile = e
+                    .io_error()
+                    .map(|io| io.raw_os_error() == Some(23) || io.raw_os_error() == Some(24))
+                    .unwrap_or(false);
+                if is_enfile || consecutive_io_errors >= MAX_CONSECUTIVE_IO_ERRORS {
+                    error!(
+                        "[SCAN] Too many IO errors ({} consecutive) scanning library {} — \
+                         fd limit likely exhausted. Aborting scan for this library.",
+                        consecutive_io_errors, library_id
+                    );
+                    stats.warnings += 1;
+                    break;
+                }
+                warn!("[SCAN] walkdir error: {}", e);
+                stats.warnings += 1;
+                continue;
+            }
+        };
+
         let path = entry.path().to_path_buf();
         let local_path = path.to_string_lossy().to_string();
 
@@ -192,7 +222,8 @@ pub async fn scan_library_discovery(
             continue;
         };
 
-        info!(
+        debug!(
+            target: "scan",
             "[SCAN] Found book file: {} (format: {:?})",
             path.display(),
             format
@@ -209,6 +240,17 @@ pub async fn scan_library_discovery(
         let metadata = match std::fs::metadata(&path) {
             Ok(m) => m,
             Err(e) => {
+                let is_enfile = e.raw_os_error() == Some(23) || e.raw_os_error() == Some(24);
+                if is_enfile {
+                    consecutive_io_errors += 1;
+                }
+                if consecutive_io_errors >= MAX_CONSECUTIVE_IO_ERRORS {
+                    error!(
+                        "[SCAN] fd limit exhausted while stat'ing files in library {}. Aborting.",
+                        library_id
+                    );
+                    break;
+                }
                 warn!("[SCAN] cannot stat {}, skipping: {}", path.display(), e);
                 stats.warnings += 1;
                 continue;
@@ -278,8 +320,9 @@ pub async fn scan_library_discovery(
                 continue;
             }
 
-            info!(
-                "[PROCESS] Updating existing file: {} (fingerprint_changed={})",
+            debug!(
+                target: "scan",
+                "[SCAN] Updating: {} (fingerprint_changed={})",
                 file_name,
                 old_fingerprint != fingerprint
             );
@@ -335,7 +378,7 @@ pub async fn scan_library_discovery(
         }
 
         // New file — insert with page_count = NULL (analyzer fills it in)
-        info!("[PROCESS] Inserting new file: {}", file_name);
+        debug!(target: "scan", "[SCAN] Inserting: {}", file_name);
         let book_id = Uuid::new_v4();
         let file_id = Uuid::new_v4();
 
@@ -401,31 +444,53 @@ pub async fn scan_library_discovery(
         library_id, library_processed_count, stats.indexed_files, stats.errors
     );
 
-    // Handle deletions
-    let mut removed_count = 0usize;
-    for (abs_path, (file_id, book_id, _)) in &existing {
-        if seen.contains_key(abs_path) {
-            continue;
-        }
-        sqlx::query("DELETE FROM book_files WHERE id = $1")
-            .bind(file_id)
+    // Handle deletions — with safety check against volume mount failures
+    let existing_count = existing.len();
+    let seen_count = seen.len();
+    let stale_count = existing.iter().filter(|(p, _)| !seen.contains_key(p.as_str())).count();
+
+    // Safety: if the library root is not accessible, or if we found zero files
+    // but the DB had many, the volume is probably not mounted correctly.
+    // Do NOT delete anything in that case.
+    let root_accessible = root.is_dir() && std::fs::read_dir(root).is_ok();
+    let skip_deletions = !root_accessible
+        || (seen_count == 0 && existing_count > 0)
+        || (stale_count > 0 && stale_count == existing_count);
+
+    if skip_deletions && stale_count > 0 {
+        warn!(
+            "[SCAN] Skipping deletion of {} stale files for library {} — \
+             root accessible={}, seen={}, existing={}. \
+             Volume may not be mounted correctly.",
+            stale_count, library_id, root_accessible, seen_count, existing_count
+        );
+        stats.warnings += stale_count;
+    } else {
+        let mut removed_count = 0usize;
+        for (abs_path, (file_id, book_id, _)) in &existing {
+            if seen.contains_key(abs_path) {
+                continue;
+            }
+            sqlx::query("DELETE FROM book_files WHERE id = $1")
+                .bind(file_id)
+                .execute(&state.pool)
+                .await?;
+            sqlx::query(
+                "DELETE FROM books WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM book_files WHERE book_id = $1)",
+            )
+            .bind(book_id)
             .execute(&state.pool)
             .await?;
-        sqlx::query(
-            "DELETE FROM books WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM book_files WHERE book_id = $1)",
-        )
-        .bind(book_id)
-        .execute(&state.pool)
-        .await?;
-        stats.removed_files += 1;
-        removed_count += 1;
-    }
+            stats.removed_files += 1;
+            removed_count += 1;
+        }
 
-    if removed_count > 0 {
-        info!(
-            "[SCAN] Removed {} stale files from database",
-            removed_count
-        );
+        if removed_count > 0 {
+            info!(
+                "[SCAN] Removed {} stale files from database",
+                removed_count
+            );
+        }
     }
 
     // Upsert directory mtimes for next incremental scan

@@ -52,7 +52,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                   <span className="text-xl font-bold tracking-tight text-foreground">
                     StripStream
                   </span>
-                  <span className="text-sm text-muted-foreground font-medium">
+                  <span className="text-sm text-muted-foreground font-medium hidden md:inline">
                     backoffice
                   </span>
                 </div>
@@ -74,7 +74,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                   <JobsIndicator />
                   <Link
                     href="/settings"
-                    className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                    className="hidden md:flex p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                     title="Settings"
                   >
                     <Icon name="settings" size="md" />

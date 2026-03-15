@@ -8,7 +8,9 @@ use tracing::info;
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "indexer=info,axum=info".to_string()),
+            std::env::var("RUST_LOG").unwrap_or_else(|_| {
+                "indexer=info,axum=info,scan=info,extraction=info,thumbnail=warn,watcher=info".to_string()
+            }),
         )
         .init();
 

@@ -6,7 +6,7 @@ use sqlx::Row;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::{job::is_job_cancelled, utils, AppState};
@@ -179,7 +179,8 @@ fn generate_thumbnail(image_bytes: &[u8], config: &ThumbnailConfig) -> anyhow::R
     let t_resize = t1.elapsed();
 
     let format = config.format.as_deref().unwrap_or("webp");
-    info!(
+    debug!(
+        target: "thumbnail",
         "[THUMBNAIL] {}x{} -> {}x{}  decode={:.0}ms  resize={:.0}ms  encode_format={}",
         orig_w, orig_h, w, h,
         t_decode.as_secs_f64() * 1000.0,
@@ -237,7 +238,8 @@ fn generate_thumbnail(image_bytes: &[u8], config: &ThumbnailConfig) -> anyhow::R
         }
     };
     let t_encode = t2.elapsed();
-    info!(
+    debug!(
+        target: "thumbnail",
         "[THUMBNAIL] encode={:.0}ms  total={:.0}ms  output_size={}KB",
         t_encode.as_secs_f64() * 1000.0,
         t0.elapsed().as_secs_f64() * 1000.0,
@@ -263,7 +265,7 @@ fn resize_raw_to_thumbnail(
 ) -> anyhow::Result<String> {
     let raw_bytes = std::fs::read(raw_path)
         .map_err(|e| anyhow::anyhow!("failed to read raw image {}: {}", raw_path, e))?;
-    info!("[THUMBNAIL] book={} raw_size={}KB", book_id, raw_bytes.len() / 1024);
+    debug!(target: "thumbnail", "[THUMBNAIL] book={} raw_size={}KB", book_id, raw_bytes.len() / 1024);
     let thumb_bytes = generate_thumbnail(&raw_bytes, config)?;
 
     let format = config.format.as_deref().unwrap_or("webp");
@@ -449,6 +451,13 @@ pub async fn analyze_library_books(
                 let pdf_scale = config.width.max(config.height);
                 let path_owned = path.to_path_buf();
                 let timeout_secs = config.timeout_secs;
+                let file_name = path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| local_path.clone());
+
+                debug!(target: "extraction", "[EXTRACTION] Starting: {} ({})", file_name, task.format);
+                let extract_start = std::time::Instant::now();
+
                 let analyze_result = tokio::time::timeout(
                     std::time::Duration::from_secs(timeout_secs),
                     tokio::task::spawn_blocking(move || analyze_book(&path_owned, format, pdf_scale)),
@@ -458,7 +467,7 @@ pub async fn analyze_library_books(
                 let (page_count, raw_bytes) = match analyze_result {
                     Ok(Ok(Ok(result))) => result,
                     Ok(Ok(Err(e))) => {
-                        warn!("[ANALYZER] analyze_book failed for book {}: {}", book_id, e);
+                        warn!(target: "extraction", "[EXTRACTION] Failed: {} — {}", file_name, e);
                         let _ = sqlx::query(
                             "UPDATE book_files SET parse_status = 'error', parse_error_opt = $2 WHERE book_id = $1",
                         )
@@ -469,11 +478,11 @@ pub async fn analyze_library_books(
                         return None;
                     }
                     Ok(Err(e)) => {
-                        warn!("[ANALYZER] spawn_blocking error for book {}: {}", book_id, e);
+                        warn!(target: "extraction", "[EXTRACTION] spawn error: {} — {}", file_name, e);
                         return None;
                     }
                     Err(_) => {
-                        warn!("[ANALYZER] analyze_book timed out after {}s for book {}: {}", timeout_secs, book_id, local_path);
+                        warn!(target: "extraction", "[EXTRACTION] Timeout ({}s): {}", timeout_secs, file_name);
                         let _ = sqlx::query(
                             "UPDATE book_files SET parse_status = 'error', parse_error_opt = $2 WHERE book_id = $1",
                         )
@@ -485,15 +494,24 @@ pub async fn analyze_library_books(
                     }
                 };
 
+                let extract_elapsed = extract_start.elapsed();
+                debug!(
+                    target: "extraction",
+                    "[EXTRACTION] Done: {} — {} pages, image={}KB in {:.0}ms",
+                    file_name, page_count, raw_bytes.len() / 1024,
+                    extract_elapsed.as_secs_f64() * 1000.0,
+                );
+
                 // If thumbnail already exists, just update page_count and skip thumbnail generation
                 if !needs_thumbnail {
+                    debug!(target: "extraction", "[EXTRACTION] Page count only: {} — {} pages", file_name, page_count);
                     if let Err(e) = sqlx::query("UPDATE books SET page_count = $1 WHERE id = $2")
                         .bind(page_count)
                         .bind(book_id)
                         .execute(&pool)
                         .await
                     {
-                        warn!("[ANALYZER] DB page_count update failed for book {}: {}", book_id, e);
+                        warn!(target: "extraction", "[EXTRACTION] DB page_count update failed for {}: {}", file_name, e);
                     }
                     let processed = extracted_count.fetch_add(1, Ordering::Relaxed) + 1;
                     let percent = (processed as f64 / total as f64 * 50.0) as i32;
@@ -505,6 +523,14 @@ pub async fn analyze_library_books(
                     .bind(percent)
                     .execute(&pool)
                     .await;
+
+                    if processed % 25 == 0 || processed == total {
+                        info!(
+                            target: "extraction",
+                            "[EXTRACTION] Progress: {}/{} books extracted ({}%)",
+                            processed, total, percent
+                        );
+                    }
                     return None; // don't enqueue for thumbnail sub-phase
                 }
 
@@ -548,6 +574,14 @@ pub async fn analyze_library_books(
                 .bind(percent)
                 .execute(&pool)
                 .await;
+
+                if processed % 25 == 0 || processed == total {
+                    info!(
+                        target: "extraction",
+                        "[EXTRACTION] Progress: {}/{} books extracted ({}%)",
+                        processed, total, percent
+                    );
+                }
 
                 Some((book_id, raw_path, page_count))
             }
@@ -643,6 +677,14 @@ pub async fn analyze_library_books(
                 .bind(percent)
                 .execute(&pool)
                 .await;
+
+                if processed % 25 == 0 || processed == extracted_total {
+                    info!(
+                        target: "thumbnail",
+                        "[THUMBNAIL] Progress: {}/{} thumbnails generated ({}%)",
+                        processed, extracted_total, percent
+                    );
+                }
             }
         })
         .await;

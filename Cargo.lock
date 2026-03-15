@@ -1132,7 +1132,6 @@ dependencies = [
  "jpeg-decoder",
  "num_cpus",
  "parsers",
- "rayon",
  "reqwest",
  "serde",
  "serde_json",

@@ -68,6 +68,17 @@ export function MobileNav({ navItems }: { navItems: NavItem[] }) {
               <span className="font-medium">{item.label}</span>
             </Link>
           ))}
+
+          <div className="border-t border-border/40 mt-2 pt-2">
+            <Link
+              href="/settings"
+              className="flex items-center gap-3 px-3 py-3 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-200 active:scale-[0.98]"
+              onClick={() => setIsOpen(false)}
+            >
+              <NavIcon name="settings" />
+              <span className="font-medium">Settings</span>
+            </Link>
+          </div>
         </nav>
       </div>
     </>

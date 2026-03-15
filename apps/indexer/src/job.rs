@@ -1,5 +1,4 @@
 use anyhow::Result;
-use rayon::prelude::*;
 use sqlx::{PgPool, Row};
 use tracing::{error, info};
 use uuid::Uuid;
@@ -270,10 +269,12 @@ pub async fn process_job(
                 crate::utils::remap_libraries_path(&library.get::<String, _>("root_path"))
             })
             .collect();
+        // Count sequentially with limited open fds to avoid ENFILE exhaustion
         library_paths
-            .par_iter()
+            .iter()
             .map(|root_path| {
                 walkdir::WalkDir::new(root_path)
+                    .max_open(20)
                     .into_iter()
                     .filter_map(Result::ok)
                     .filter(|entry| {

@@ -3,7 +3,7 @@ use sqlx::Row;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::Duration;
-use tracing::{error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
@@ -29,6 +29,7 @@ fn snapshot_library(root_path: &str) -> LibrarySnapshot {
     let mut files = HashSet::new();
     let walker = WalkDir::new(root_path)
         .follow_links(true)
+        .max_open(10)
         .into_iter()
         .filter_map(|e| e.ok());
 
@@ -54,7 +55,7 @@ pub async fn run_file_watcher(state: AppState) -> Result<()> {
 
         // Skip if any job is active — avoid competing for file descriptors
         if has_active_jobs(&pool).await {
-            trace!("[WATCHER] Skipping poll — job active");
+            debug!(target: "watcher", "[WATCHER] Skipping poll — job active");
             continue;
         }
 
@@ -113,7 +114,7 @@ pub async fn run_file_watcher(state: AppState) -> Result<()> {
 
             // Re-check between libraries in case a job was created
             if has_active_jobs(&pool).await {
-                trace!("[WATCHER] Job became active during poll, stopping");
+                debug!(target: "watcher", "[WATCHER] Job became active during poll, stopping");
                 break;
             }
 
@@ -126,7 +127,8 @@ pub async fn run_file_watcher(state: AppState) -> Result<()> {
                 Some(old_snapshot) => *old_snapshot != new_snapshot,
                 None => {
                     // First scan — store baseline, don't trigger a job
-                    trace!(
+                    debug!(
+                        target: "watcher",
                         "[WATCHER] Initial snapshot for library {}: {} files",
                         library_id,
                         new_snapshot.len()
@@ -168,7 +170,7 @@ pub async fn run_file_watcher(state: AppState) -> Result<()> {
                         Err(err) => error!("[WATCHER] Failed to create job: {}", err),
                     }
                 } else {
-                    trace!("[WATCHER] Job already active for library {}, skipping", library_id);
+                    debug!(target: "watcher", "[WATCHER] Job already active for library {}, skipping", library_id);
                 }
             }
 
