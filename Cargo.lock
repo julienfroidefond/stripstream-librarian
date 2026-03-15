@@ -51,7 +51,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "api"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "argon2",
@@ -1122,7 +1122,7 @@ dependencies = [
 
 [[package]]
 name = "indexer"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -1624,7 +1624,7 @@ dependencies = [
 
 [[package]]
 name = "parsers"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "flate2",
@@ -1633,6 +1633,7 @@ dependencies = [
  "natord",
  "pdfium-render",
  "regex",
+ "tracing",
  "unrar",
  "zip 8.2.0",
 ]
@@ -2625,7 +2626,7 @@ dependencies = [
 
 [[package]]
 name = "stripstream-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "serde",
