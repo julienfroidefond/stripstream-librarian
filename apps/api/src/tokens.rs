@@ -170,3 +170,35 @@ pub async fn revoke_token(
 
     Ok(Json(serde_json::json!({"revoked": true, "id": id})))
 }
+
+/// Permanently delete a revoked API token
+#[utoipa::path(
+    post,
+    path = "/admin/tokens/{id}/delete",
+    tag = "tokens",
+    params(
+        ("id" = String, Path, description = "Token UUID"),
+    ),
+    responses(
+        (status = 200, description = "Token permanently deleted"),
+        (status = 404, description = "Token not found or not revoked"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn delete_token(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let result = sqlx::query("DELETE FROM api_tokens WHERE id = $1 AND revoked_at IS NOT NULL")
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(ApiError::not_found("token not found or not revoked"));
+    }
+
+    Ok(Json(serde_json::json!({"deleted": true, "id": id})))
+}

@@ -254,6 +254,10 @@ export async function revokeToken(id: string) {
   return apiFetch<void>(`/admin/tokens/${id}`, { method: "DELETE" });
 }
 
+export async function deleteToken(id: string) {
+  return apiFetch<void>(`/admin/tokens/${id}/delete`, { method: "POST" });
+}
+
 export async function fetchBooks(
   libraryId?: string,
   series?: string,

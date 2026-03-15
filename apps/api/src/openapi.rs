@@ -31,6 +31,7 @@ use utoipa::OpenApi;
         crate::tokens::list_tokens,
         crate::tokens::create_token,
         crate::tokens::revoke_token,
+        crate::tokens::delete_token,
         crate::settings::get_settings,
         crate::settings::get_setting,
         crate::settings::update_setting,
