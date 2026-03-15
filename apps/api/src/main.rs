@@ -11,6 +11,7 @@ mod reading_progress;
 mod search;
 mod settings;
 mod state;
+mod stats;
 mod thumbnails;
 mod tokens;
 
@@ -114,6 +115,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/series", get(books::list_all_series))
         .route("/series/ongoing", get(books::ongoing_series))
         .route("/series/mark-read", axum::routing::post(reading_progress::mark_series_read))
+        .route("/stats", get(stats::get_stats))
         .route("/search", get(search::search_books))
         .route_layer(middleware::from_fn_with_state(state.clone(), api_middleware::read_rate_limit))
         .route_layer(middleware::from_fn_with_state(

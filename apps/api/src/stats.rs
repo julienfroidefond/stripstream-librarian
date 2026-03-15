@@ -1,0 +1,273 @@
+use axum::{extract::State, Json};
+use serde::Serialize;
+use sqlx::Row;
+use utoipa::ToSchema;
+
+use crate::{error::ApiError, state::AppState};
+
+#[derive(Serialize, ToSchema)]
+pub struct StatsOverview {
+    pub total_books: i64,
+    pub total_series: i64,
+    pub total_libraries: i64,
+    pub total_pages: i64,
+    pub total_size_bytes: i64,
+    pub total_authors: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ReadingStatusStats {
+    pub unread: i64,
+    pub reading: i64,
+    pub read: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct FormatCount {
+    pub format: String,
+    pub count: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct LanguageCount {
+    pub language: Option<String>,
+    pub count: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct LibraryStats {
+    pub library_name: String,
+    pub book_count: i64,
+    pub size_bytes: i64,
+    pub read_count: i64,
+    pub reading_count: i64,
+    pub unread_count: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TopSeries {
+    pub series: String,
+    pub book_count: i64,
+    pub read_count: i64,
+    pub total_pages: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct MonthlyAdditions {
+    pub month: String,
+    pub books_added: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct StatsResponse {
+    pub overview: StatsOverview,
+    pub reading_status: ReadingStatusStats,
+    pub by_format: Vec<FormatCount>,
+    pub by_language: Vec<LanguageCount>,
+    pub by_library: Vec<LibraryStats>,
+    pub top_series: Vec<TopSeries>,
+    pub additions_over_time: Vec<MonthlyAdditions>,
+}
+
+/// Get collection statistics for the dashboard
+#[utoipa::path(
+    get,
+    path = "/stats",
+    tag = "books",
+    responses(
+        (status = 200, body = StatsResponse),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn get_stats(
+    State(state): State<AppState>,
+) -> Result<Json<StatsResponse>, ApiError> {
+    // Overview + reading status in one query
+    let overview_row = sqlx::query(
+        r#"
+        SELECT
+            COUNT(*) AS total_books,
+            COUNT(DISTINCT NULLIF(series, '')) AS total_series,
+            COUNT(DISTINCT library_id) AS total_libraries,
+            COALESCE(SUM(page_count), 0)::BIGINT AS total_pages,
+            COUNT(DISTINCT author) FILTER (WHERE author IS NOT NULL AND author != '') AS total_authors,
+            COUNT(*) FILTER (WHERE COALESCE(brp.status, 'unread') = 'unread') AS unread,
+            COUNT(*) FILTER (WHERE brp.status = 'reading') AS reading,
+            COUNT(*) FILTER (WHERE brp.status = 'read') AS read
+        FROM books b
+        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+        "#,
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    // Total size from book_files
+    let size_row = sqlx::query(
+        r#"
+        SELECT COALESCE(SUM(bf.size_bytes), 0)::BIGINT AS total_size_bytes
+        FROM (
+            SELECT DISTINCT ON (book_id) size_bytes
+            FROM book_files
+            ORDER BY book_id, updated_at DESC
+        ) bf
+        "#,
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    let overview = StatsOverview {
+        total_books: overview_row.get("total_books"),
+        total_series: overview_row.get("total_series"),
+        total_libraries: overview_row.get("total_libraries"),
+        total_pages: overview_row.get("total_pages"),
+        total_size_bytes: size_row.get("total_size_bytes"),
+        total_authors: overview_row.get("total_authors"),
+    };
+
+    let reading_status = ReadingStatusStats {
+        unread: overview_row.get("unread"),
+        reading: overview_row.get("reading"),
+        read: overview_row.get("read"),
+    };
+
+    // By format
+    let format_rows = sqlx::query(
+        r#"
+        SELECT COALESCE(bf.format, b.kind) AS fmt, COUNT(*) AS count
+        FROM books b
+        LEFT JOIN LATERAL (
+            SELECT format FROM book_files WHERE book_id = b.id ORDER BY updated_at DESC LIMIT 1
+        ) bf ON TRUE
+        GROUP BY fmt
+        ORDER BY count DESC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let by_format: Vec<FormatCount> = format_rows
+        .iter()
+        .map(|r| FormatCount {
+            format: r.get::<Option<String>, _>("fmt").unwrap_or_else(|| "unknown".to_string()),
+            count: r.get("count"),
+        })
+        .collect();
+
+    // By language
+    let lang_rows = sqlx::query(
+        r#"
+        SELECT language, COUNT(*) AS count
+        FROM books
+        GROUP BY language
+        ORDER BY count DESC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let by_language: Vec<LanguageCount> = lang_rows
+        .iter()
+        .map(|r| LanguageCount {
+            language: r.get("language"),
+            count: r.get("count"),
+        })
+        .collect();
+
+    // By library
+    let lib_rows = sqlx::query(
+        r#"
+        SELECT
+            l.name AS library_name,
+            COUNT(b.id) AS book_count,
+            COALESCE(SUM(bf.size_bytes), 0)::BIGINT AS size_bytes,
+            COUNT(*) FILTER (WHERE brp.status = 'read') AS read_count,
+            COUNT(*) FILTER (WHERE brp.status = 'reading') AS reading_count,
+            COUNT(*) FILTER (WHERE COALESCE(brp.status, 'unread') = 'unread') AS unread_count
+        FROM libraries l
+        LEFT JOIN books b ON b.library_id = l.id
+        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+        LEFT JOIN LATERAL (
+            SELECT size_bytes FROM book_files WHERE book_id = b.id ORDER BY updated_at DESC LIMIT 1
+        ) bf ON TRUE
+        GROUP BY l.id, l.name
+        ORDER BY book_count DESC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let by_library: Vec<LibraryStats> = lib_rows
+        .iter()
+        .map(|r| LibraryStats {
+            library_name: r.get("library_name"),
+            book_count: r.get("book_count"),
+            size_bytes: r.get("size_bytes"),
+            read_count: r.get("read_count"),
+            reading_count: r.get("reading_count"),
+            unread_count: r.get("unread_count"),
+        })
+        .collect();
+
+    // Top series (by book count)
+    let series_rows = sqlx::query(
+        r#"
+        SELECT
+            b.series,
+            COUNT(*) AS book_count,
+            COUNT(*) FILTER (WHERE brp.status = 'read') AS read_count,
+            COALESCE(SUM(b.page_count), 0)::BIGINT AS total_pages
+        FROM books b
+        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+        WHERE b.series IS NOT NULL AND b.series != ''
+        GROUP BY b.series
+        ORDER BY book_count DESC
+        LIMIT 10
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let top_series: Vec<TopSeries> = series_rows
+        .iter()
+        .map(|r| TopSeries {
+            series: r.get("series"),
+            book_count: r.get("book_count"),
+            read_count: r.get("read_count"),
+            total_pages: r.get("total_pages"),
+        })
+        .collect();
+
+    // Additions over time (last 12 months)
+    let additions_rows = sqlx::query(
+        r#"
+        SELECT
+            TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') AS month,
+            COUNT(*) AS books_added
+        FROM books
+        WHERE created_at >= DATE_TRUNC('month', NOW()) - INTERVAL '11 months'
+        GROUP BY DATE_TRUNC('month', created_at)
+        ORDER BY month ASC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let additions_over_time: Vec<MonthlyAdditions> = additions_rows
+        .iter()
+        .map(|r| MonthlyAdditions {
+            month: r.get("month"),
+            books_added: r.get("books_added"),
+        })
+        .collect();
+
+    Ok(Json(StatsResponse {
+        overview,
+        reading_status,
+        by_format,
+        by_language,
+        by_library,
+        top_series,
+        additions_over_time,
+    }))
+}

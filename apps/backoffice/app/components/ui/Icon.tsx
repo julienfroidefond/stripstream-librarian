@@ -90,7 +90,7 @@ const colorClasses: Partial<Record<IconName, string>> = {
   libraries: "text-primary",
   jobs: "text-warning",
   tokens: "text-error",
-  series: "text-primary",
+  series: "text-warning",
   settings: "text-muted-foreground",
   image: "text-primary",
   cache: "text-warning",

@@ -419,6 +419,66 @@ export async function updateReadingProgress(
   });
 }
 
+export type StatsOverview = {
+  total_books: number;
+  total_series: number;
+  total_libraries: number;
+  total_pages: number;
+  total_size_bytes: number;
+  total_authors: number;
+};
+
+export type ReadingStatusStats = {
+  unread: number;
+  reading: number;
+  read: number;
+};
+
+export type FormatCount = {
+  format: string;
+  count: number;
+};
+
+export type LanguageCount = {
+  language: string | null;
+  count: number;
+};
+
+export type LibraryStatsItem = {
+  library_name: string;
+  book_count: number;
+  size_bytes: number;
+  read_count: number;
+  reading_count: number;
+  unread_count: number;
+};
+
+export type TopSeriesItem = {
+  series: string;
+  book_count: number;
+  read_count: number;
+  total_pages: number;
+};
+
+export type MonthlyAdditions = {
+  month: string;
+  books_added: number;
+};
+
+export type StatsResponse = {
+  overview: StatsOverview;
+  reading_status: ReadingStatusStats;
+  by_format: FormatCount[];
+  by_language: LanguageCount[];
+  by_library: LibraryStatsItem[];
+  top_series: TopSeriesItem[];
+  additions_over_time: MonthlyAdditions[];
+};
+
+export async function fetchStats() {
+  return apiFetch<StatsResponse>("/stats");
+}
+
 export async function markSeriesRead(seriesName: string, status: "read" | "unread" = "read") {
   return apiFetch<{ updated: number }>("/series/mark-read", {
     method: "POST",
