@@ -1,7 +1,8 @@
-import { fetchLibraries, fetchBooks, getBookCoverUrl, BookDto } from "../../../../../lib/api";
+import { fetchLibraries, fetchBooks, fetchSeriesMetadata, getBookCoverUrl, BookDto, SeriesMetadataDto } from "../../../../../lib/api";
 import { BooksGrid, EmptyState } from "../../../../components/BookCard";
 import { MarkSeriesReadButton } from "../../../../components/MarkSeriesReadButton";
 import { MarkBookReadButton } from "../../../../components/MarkBookReadButton";
+import { EditSeriesForm } from "../../../../components/EditSeriesForm";
 import { OffsetPagination } from "../../../../components/ui";
 import Image from "next/image";
 import Link from "next/link";
@@ -23,7 +24,7 @@ export default async function SeriesDetailPage({
 
   const seriesName = decodeURIComponent(name);
 
-  const [library, booksPage] = await Promise.all([
+  const [library, booksPage, seriesMeta] = await Promise.all([
     fetchLibraries().then((libs) => libs.find((l) => l.id === id)),
     fetchBooks(id, seriesName, page, limit).catch(() => ({
       items: [] as BookDto[],
@@ -31,6 +32,7 @@ export default async function SeriesDetailPage({
       page: 1,
       limit,
     })),
+    fetchSeriesMetadata(id, seriesName).catch(() => null as SeriesMetadataDto | null),
   ]);
 
   if (!library) {
@@ -89,7 +91,24 @@ export default async function SeriesDetailPage({
         <div className="flex-1 space-y-4">
           <h1 className="text-3xl font-bold text-foreground">{displayName}</h1>
 
+          {seriesMeta && seriesMeta.authors.length > 0 && (
+            <p className="text-base text-muted-foreground">{seriesMeta.authors.join(", ")}</p>
+          )}
+
+          {seriesMeta?.description && (
+            <p className="text-sm text-muted-foreground leading-relaxed">{seriesMeta.description}</p>
+          )}
+
           <div className="flex flex-wrap items-center gap-4 text-sm">
+            {seriesMeta && seriesMeta.publishers.length > 0 && (
+              <span className="text-muted-foreground">
+                <span className="font-semibold text-foreground">{seriesMeta.publishers.join(", ")}</span>
+              </span>
+            )}
+            {seriesMeta?.start_year && (
+              <span className="text-muted-foreground">{seriesMeta.start_year}</span>
+            )}
+            {((seriesMeta && seriesMeta.publishers.length > 0) || seriesMeta?.start_year) && <span className="w-px h-4 bg-border" />}
             <span className="text-muted-foreground">
               <span className="font-semibold text-foreground">{booksPage.total}</span> livre{booksPage.total !== 1 ? "s" : ""}
             </span>
@@ -109,11 +128,21 @@ export default async function SeriesDetailPage({
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <MarkSeriesReadButton
               seriesName={seriesName}
               bookCount={booksPage.total}
               booksReadCount={booksReadCount}
+            />
+            <EditSeriesForm
+              libraryId={id}
+              seriesName={seriesName}
+              currentAuthors={seriesMeta?.authors ?? []}
+              currentPublishers={seriesMeta?.publishers ?? []}
+              currentBookAuthor={seriesMeta?.book_author ?? booksPage.items[0]?.author ?? null}
+              currentBookLanguage={seriesMeta?.book_language ?? booksPage.items[0]?.language ?? null}
+              currentDescription={seriesMeta?.description ?? null}
+              currentStartYear={seriesMeta?.start_year ?? null}
             />
           </div>
         </div>

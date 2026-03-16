@@ -38,6 +38,7 @@ pub struct BookItem {
     pub format: Option<String>,
     pub title: String,
     pub author: Option<String>,
+    pub authors: Vec<String>,
     pub series: Option<String>,
     pub volume: Option<i32>,
     pub language: Option<String>,
@@ -69,6 +70,7 @@ pub struct BookDetails {
     pub kind: String,
     pub title: String,
     pub author: Option<String>,
+    pub authors: Vec<String>,
     pub series: Option<String>,
     pub volume: Option<i32>,
     pub language: Option<String>,
@@ -149,7 +151,7 @@ pub async fn list_books(
     let offset_p = p + 2;
     let data_sql = format!(
         r#"
-        SELECT b.id, b.library_id, b.kind, b.format, b.title, b.author, b.series, b.volume, b.language, b.page_count, b.thumbnail_path, b.updated_at,
+        SELECT b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, b.series, b.volume, b.language, b.page_count, b.thumbnail_path, b.updated_at,
                COALESCE(brp.status, 'unread') AS reading_status,
                brp.current_page AS reading_current_page,
                brp.last_read_at AS reading_last_read_at
@@ -204,6 +206,7 @@ pub async fn list_books(
                 format: row.get("format"),
                 title: row.get("title"),
                 author: row.get("author"),
+                authors: row.get::<Vec<String>, _>("authors"),
                 series: row.get("series"),
                 volume: row.get("volume"),
                 language: row.get("language"),
@@ -246,7 +249,7 @@ pub async fn get_book(
 ) -> Result<Json<BookDetails>, ApiError> {
     let row = sqlx::query(
         r#"
-        SELECT b.id, b.library_id, b.kind, b.title, b.author, b.series, b.volume, b.language, b.page_count, b.thumbnail_path,
+        SELECT b.id, b.library_id, b.kind, b.title, b.author, b.authors, b.series, b.volume, b.language, b.page_count, b.thumbnail_path,
                bf.abs_path, bf.format, bf.parse_status,
                COALESCE(brp.status, 'unread') AS reading_status,
                brp.current_page AS reading_current_page,
@@ -275,6 +278,7 @@ pub async fn get_book(
         kind: row.get("kind"),
         title: row.get("title"),
         author: row.get("author"),
+        authors: row.get::<Vec<String>, _>("authors"),
         series: row.get("series"),
         volume: row.get("volume"),
         language: row.get("language"),
@@ -784,7 +788,7 @@ pub async fn ongoing_books(
         ),
         next_books AS (
             SELECT
-                b.id, b.library_id, b.kind, b.format, b.title, b.author, b.series, b.volume,
+                b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, b.series, b.volume,
                 b.language, b.page_count, b.thumbnail_path, b.updated_at,
                 COALESCE(brp.status, 'unread') AS reading_status,
                 brp.current_page AS reading_current_page,
@@ -799,7 +803,7 @@ pub async fn ongoing_books(
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
             WHERE COALESCE(brp.status, 'unread') != 'read'
         )
-        SELECT id, library_id, kind, format, title, author, series, volume, language, page_count,
+        SELECT id, library_id, kind, format, title, author, authors, series, volume, language, page_count,
                thumbnail_path, updated_at, reading_status, reading_current_page, reading_last_read_at
         FROM next_books
         WHERE rn = 1
@@ -822,6 +826,7 @@ pub async fn ongoing_books(
                 format: row.get("format"),
                 title: row.get("title"),
                 author: row.get("author"),
+                authors: row.get::<Vec<String>, _>("authors"),
                 series: row.get("series"),
                 volume: row.get("volume"),
                 language: row.get("language"),
@@ -943,6 +948,305 @@ pub async fn convert_book(
     .await?;
 
     Ok(Json(crate::index_jobs::map_row(job_row)))
+}
+
+// ─── Metadata editing ─────────────────────────────────────────────────────────
+
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateBookRequest {
+    pub title: String,
+    pub author: Option<String>,
+    #[serde(default)]
+    pub authors: Vec<String>,
+    pub series: Option<String>,
+    pub volume: Option<i32>,
+    pub language: Option<String>,
+}
+
+/// Update metadata for a specific book
+#[utoipa::path(
+    patch,
+    path = "/books/{id}",
+    tag = "books",
+    params(("id" = String, Path, description = "Book UUID")),
+    request_body = UpdateBookRequest,
+    responses(
+        (status = 200, body = BookDetails),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "Book not found"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn update_book(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<UpdateBookRequest>,
+) -> Result<Json<BookDetails>, ApiError> {
+    let title = body.title.trim().to_string();
+    if title.is_empty() {
+        return Err(ApiError::bad_request("title cannot be empty"));
+    }
+    let author = body.author.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let authors: Vec<String> = body.authors.iter()
+        .map(|a| a.trim().to_string())
+        .filter(|a| !a.is_empty())
+        .collect();
+    let series = body.series.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let language = body.language.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+
+    let row = sqlx::query(
+        r#"
+        UPDATE books
+        SET title = $2, author = $3, authors = $4, series = $5, volume = $6, language = $7, updated_at = NOW()
+        WHERE id = $1
+        RETURNING id, library_id, kind, title, author, authors, series, volume, language, page_count, thumbnail_path,
+                  COALESCE((SELECT status FROM book_reading_progress WHERE book_id = $1), 'unread') AS reading_status,
+                  (SELECT current_page FROM book_reading_progress WHERE book_id = $1) AS reading_current_page,
+                  (SELECT last_read_at FROM book_reading_progress WHERE book_id = $1) AS reading_last_read_at
+        "#,
+    )
+    .bind(id)
+    .bind(&title)
+    .bind(&author)
+    .bind(&authors)
+    .bind(&series)
+    .bind(body.volume)
+    .bind(&language)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let row = row.ok_or_else(|| ApiError::not_found("book not found"))?;
+    let thumbnail_path: Option<String> = row.get("thumbnail_path");
+
+    Ok(Json(BookDetails {
+        id: row.get("id"),
+        library_id: row.get("library_id"),
+        kind: row.get("kind"),
+        title: row.get("title"),
+        author: row.get("author"),
+        authors: row.get::<Vec<String>, _>("authors"),
+        series: row.get("series"),
+        volume: row.get("volume"),
+        language: row.get("language"),
+        page_count: row.get("page_count"),
+        thumbnail_url: thumbnail_path.map(|_| format!("/books/{}/thumbnail", id)),
+        file_path: None,
+        file_format: None,
+        file_parse_status: None,
+        reading_status: row.get("reading_status"),
+        reading_current_page: row.get("reading_current_page"),
+        reading_last_read_at: row.get("reading_last_read_at"),
+    }))
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SeriesMetadata {
+    /// Authors of the series (series-level metadata, distinct from per-book author field)
+    pub authors: Vec<String>,
+    pub description: Option<String>,
+    pub publishers: Vec<String>,
+    pub start_year: Option<i32>,
+    /// Convenience: author from first book (for pre-filling the per-book apply section)
+    pub book_author: Option<String>,
+    pub book_language: Option<String>,
+}
+
+/// Get metadata for a specific series
+#[utoipa::path(
+    get,
+    path = "/libraries/{library_id}/series/{name}/metadata",
+    tag = "books",
+    params(
+        ("library_id" = String, Path, description = "Library UUID"),
+        ("name" = String, Path, description = "Series name"),
+    ),
+    responses(
+        (status = 200, body = SeriesMetadata),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn get_series_metadata(
+    State(state): State<AppState>,
+    Path((library_id, name)): Path<(Uuid, String)>,
+) -> Result<Json<SeriesMetadata>, ApiError> {
+    // author/language from first book of series
+    let books_row = if name == "unclassified" {
+        sqlx::query("SELECT author, language FROM books WHERE library_id = $1 AND (series IS NULL OR series = '') LIMIT 1")
+            .bind(library_id)
+            .fetch_optional(&state.pool)
+            .await?
+    } else {
+        sqlx::query("SELECT author, language FROM books WHERE library_id = $1 AND series = $2 LIMIT 1")
+            .bind(library_id)
+            .bind(&name)
+            .fetch_optional(&state.pool)
+            .await?
+    };
+
+    let meta_row = sqlx::query(
+        "SELECT authors, description, publishers, start_year FROM series_metadata WHERE library_id = $1 AND name = $2"
+    )
+    .bind(library_id)
+    .bind(&name)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    Ok(Json(SeriesMetadata {
+        authors: meta_row.as_ref().map(|r| r.get::<Vec<String>, _>("authors")).unwrap_or_default(),
+        description: meta_row.as_ref().and_then(|r| r.get("description")),
+        publishers: meta_row.as_ref().map(|r| r.get::<Vec<String>, _>("publishers")).unwrap_or_default(),
+        start_year: meta_row.as_ref().and_then(|r| r.get("start_year")),
+        book_author: books_row.as_ref().and_then(|r| r.get("author")),
+        book_language: books_row.as_ref().and_then(|r| r.get("language")),
+    }))
+}
+
+/// `author` and `language` are wrapped in an extra Option so we can distinguish
+/// "absent from JSON" (keep books unchanged) from "present as null" (clear the field).
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateSeriesRequest {
+    pub new_name: String,
+    /// Series-level authors list (stored in series_metadata)
+    #[serde(default)]
+    pub authors: Vec<String>,
+    /// Per-book author propagation: absent = keep books unchanged, present = overwrite all books
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<Option<String>>,
+    /// Per-book language propagation: absent = keep books unchanged, present = overwrite all books
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<Option<String>>,
+    pub description: Option<String>,
+    #[serde(default)]
+    pub publishers: Vec<String>,
+    pub start_year: Option<i32>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct UpdateSeriesResponse {
+    pub updated: u64,
+}
+
+/// Update metadata for all books in a series
+#[utoipa::path(
+    patch,
+    path = "/libraries/{library_id}/series/{name}",
+    tag = "books",
+    params(
+        ("library_id" = String, Path, description = "Library UUID"),
+        ("name" = String, Path, description = "Series name (use 'unclassified' for books without series)"),
+    ),
+    request_body = UpdateSeriesRequest,
+    responses(
+        (status = 200, body = UpdateSeriesResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn update_series(
+    State(state): State<AppState>,
+    Path((library_id, name)): Path<(Uuid, String)>,
+    Json(body): Json<UpdateSeriesRequest>,
+) -> Result<Json<UpdateSeriesResponse>, ApiError> {
+    let new_name = body.new_name.trim().to_string();
+    if new_name.is_empty() {
+        return Err(ApiError::bad_request("series name cannot be empty"));
+    }
+    // author/language: None = absent (keep books unchanged), Some(v) = apply to all books
+    let apply_author = body.author.is_some();
+    let author_value = body.author.flatten().as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let apply_language = body.language.is_some();
+    let language_value = body.language.flatten().as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let description = body.description.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let publishers: Vec<String> = body.publishers.iter()
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .collect();
+    let new_series_value: Option<String> = if new_name == "unclassified" { None } else { Some(new_name.clone()) };
+
+    // 1. Update books: always update series name; author/language only if opted-in
+    // $1=library_id, $2=new_series_value, $3=apply_author, $4=author_value,
+    // $5=apply_language, $6=language_value, [$7=old_name]
+    let result = if name == "unclassified" {
+        sqlx::query(
+            "UPDATE books \
+             SET series = $2, \
+                 author = CASE WHEN $3 THEN $4 ELSE author END, \
+                 language = CASE WHEN $5 THEN $6 ELSE language END, \
+                 updated_at = NOW() \
+             WHERE library_id = $1 AND (series IS NULL OR series = '')"
+        )
+        .bind(library_id)
+        .bind(&new_series_value)
+        .bind(apply_author)
+        .bind(&author_value)
+        .bind(apply_language)
+        .bind(&language_value)
+        .execute(&state.pool)
+        .await?
+    } else {
+        sqlx::query(
+            "UPDATE books \
+             SET series = $2, \
+                 author = CASE WHEN $3 THEN $4 ELSE author END, \
+                 language = CASE WHEN $5 THEN $6 ELSE language END, \
+                 updated_at = NOW() \
+             WHERE library_id = $1 AND series = $7"
+        )
+        .bind(library_id)
+        .bind(&new_series_value)
+        .bind(apply_author)
+        .bind(&author_value)
+        .bind(apply_language)
+        .bind(&language_value)
+        .bind(&name)
+        .execute(&state.pool)
+        .await?
+    };
+
+    // 2. Upsert series_metadata (keyed by new_name)
+    let meta_name = new_series_value.as_deref().unwrap_or("unclassified");
+    let authors: Vec<String> = body.authors.iter()
+        .map(|a| a.trim().to_string())
+        .filter(|a| !a.is_empty())
+        .collect();
+    sqlx::query(
+        r#"
+        INSERT INTO series_metadata (library_id, name, authors, description, publishers, start_year, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        ON CONFLICT (library_id, name) DO UPDATE
+          SET authors     = EXCLUDED.authors,
+              description = EXCLUDED.description,
+              publishers  = EXCLUDED.publishers,
+              start_year  = EXCLUDED.start_year,
+              updated_at  = NOW()
+        "#
+    )
+    .bind(library_id)
+    .bind(meta_name)
+    .bind(&authors)
+    .bind(&description)
+    .bind(&publishers)
+    .bind(body.start_year)
+    .execute(&state.pool)
+    .await?;
+
+    // 3. If renamed, move series_metadata from old name to new name
+    if name != "unclassified" && new_name != name {
+        sqlx::query(
+            "DELETE FROM series_metadata WHERE library_id = $1 AND name = $2"
+        )
+        .bind(library_id)
+        .bind(&name)
+        .execute(&state.pool)
+        .await?;
+    }
+
+    Ok(Json(UpdateSeriesResponse { updated: result.rows_affected() }))
 }
 
 use axum::{

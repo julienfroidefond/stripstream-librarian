@@ -62,6 +62,7 @@ export type BookDto = {
   format: string | null;
   title: string;
   author: string | null;
+  authors: string[];
   series: string | null;
   volume: number | null;
   language: string | null;
@@ -482,6 +483,54 @@ export type StatsResponse = {
 
 export async function fetchStats() {
   return apiFetch<StatsResponse>("/stats");
+}
+
+export type UpdateBookRequest = {
+  title: string;
+  author: string | null;
+  authors: string[];
+  series: string | null;
+  volume: number | null;
+  language: string | null;
+};
+
+export async function updateBook(bookId: string, data: UpdateBookRequest) {
+  return apiFetch<BookDto>(`/books/${bookId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export type SeriesMetadataDto = {
+  authors: string[];
+  description: string | null;
+  publishers: string[];
+  start_year: number | null;
+  book_author: string | null;
+  book_language: string | null;
+};
+
+export async function fetchSeriesMetadata(libraryId: string, seriesName: string) {
+  return apiFetch<SeriesMetadataDto>(
+    `/libraries/${libraryId}/series/${encodeURIComponent(seriesName)}/metadata`
+  );
+}
+
+export type UpdateSeriesRequest = {
+  new_name: string;
+  authors: string[];
+  author?: string | null;
+  language?: string | null;
+  description: string | null;
+  publishers: string[];
+  start_year: number | null;
+};
+
+export async function updateSeries(libraryId: string, seriesName: string, data: UpdateSeriesRequest) {
+  return apiFetch<{ updated: number }>(`/libraries/${libraryId}/series/${encodeURIComponent(seriesName)}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
 }
 
 export async function markSeriesRead(seriesName: string, status: "read" | "unread" = "read") {

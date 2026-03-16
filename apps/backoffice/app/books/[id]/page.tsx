@@ -2,6 +2,7 @@ import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch, ReadingStatus } fro
 import { BookPreview } from "../../components/BookPreview";
 import { ConvertButton } from "../../components/ConvertButton";
 import { MarkBookReadButton } from "../../components/MarkBookReadButton";
+import { EditBookForm } from "../../components/EditBookForm";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -89,7 +90,10 @@ export default async function BookDetailPage({
 
         <div className="flex-1">
           <div className="bg-card rounded-xl shadow-sm border border-border p-6">
-            <h1 className="text-3xl font-bold text-foreground mb-2">{book.title}</h1>
+            <div className="flex items-start justify-between gap-4 mb-2">
+              <h1 className="text-3xl font-bold text-foreground">{book.title}</h1>
+              <EditBookForm book={book} />
+            </div>
             
             {book.author && (
               <p className="text-lg text-muted-foreground mb-4">by {book.author}</p>

@@ -40,6 +40,7 @@ export default async function BooksPage({
         kind: hit.kind,
         title: hit.title,
         author: hit.author,
+        authors: [],
         series: hit.series,
         volume: hit.volume,
         language: hit.language,
