@@ -83,3 +83,9 @@ impl From<std::io::Error> for ApiError {
         Self::internal(format!("IO error: {err}"))
     }
 }
+
+impl From<reqwest::Error> for ApiError {
+    fn from(err: reqwest::Error) -> Self {
+        Self::internal(format!("HTTP client error: {err}"))
+    }
+}
