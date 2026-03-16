@@ -91,7 +91,11 @@ pub async fn get_stats(
             COUNT(DISTINCT NULLIF(series, '')) AS total_series,
             COUNT(DISTINCT library_id) AS total_libraries,
             COALESCE(SUM(page_count), 0)::BIGINT AS total_pages,
-            COUNT(DISTINCT author) FILTER (WHERE author IS NOT NULL AND author != '') AS total_authors,
+            (SELECT COUNT(DISTINCT a) FROM (
+                SELECT DISTINCT UNNEST(authors) AS a FROM books WHERE authors != '{}'
+                UNION
+                SELECT DISTINCT author FROM books WHERE author IS NOT NULL AND author != ''
+            ) sub) AS total_authors,
             COUNT(*) FILTER (WHERE COALESCE(brp.status, 'unread') = 'unread') AS unread,
             COUNT(*) FILTER (WHERE brp.status = 'reading') AS reading,
             COUNT(*) FILTER (WHERE brp.status = 'read') AS read
