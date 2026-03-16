@@ -30,7 +30,6 @@ use std::num::NonZeroUsize;
 use stripstream_core::config::ApiConfig;
 use sqlx::postgres::PgPoolOptions;
 use tokio::sync::{Mutex, RwLock, Semaphore};
-use std::sync::Mutex as StdMutex;
 use tracing::info;
 
 use crate::state::{load_concurrent_renders, load_dynamic_settings, AppState, Metrics, ReadRateLimit};
@@ -78,7 +77,6 @@ async fn main() -> anyhow::Result<()> {
             requests_in_window: 0,
         })),
         settings: Arc::new(RwLock::new(dynamic_settings)),
-        archive_index_cache: Arc::new(StdMutex::new(LruCache::new(NonZeroUsize::new(256).expect("non-zero")))),
     };
 
     let admin_routes = Router::new()

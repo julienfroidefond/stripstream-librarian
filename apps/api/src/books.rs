@@ -141,7 +141,7 @@ pub async fn list_books(
     let order_clause = if query.sort.as_deref() == Some("latest") {
         "b.updated_at DESC".to_string()
     } else {
-        "REGEXP_REPLACE(LOWER(b.title), '[0-9]+', '', 'g'), COALESCE((REGEXP_MATCH(LOWER(b.title), '\\d+'))[1]::int, 0), b.title ASC".to_string()
+        "b.volume NULLS LAST, REGEXP_REPLACE(LOWER(b.title), '[0-9]+', '', 'g'), COALESCE((REGEXP_MATCH(LOWER(b.title), '\\d+'))[1]::int, 0), b.title ASC".to_string()
     };
 
     // DATA: mêmes params filtre, puis $N+1=limit $N+2=offset
@@ -400,6 +400,7 @@ pub async fn list_series(
                 ROW_NUMBER() OVER (
                     PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified')
                     ORDER BY
+                        volume NULLS LAST,
                         REGEXP_REPLACE(LOWER(title), '[0-9]+', '', 'g'),
                         COALESCE((REGEXP_MATCH(LOWER(title), '\d+'))[1]::int, 0),
                         title ASC
@@ -586,6 +587,7 @@ pub async fn list_all_series(
                 ROW_NUMBER() OVER (
                     PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified')
                     ORDER BY
+                        volume NULLS LAST,
                         REGEXP_REPLACE(LOWER(title), '[0-9]+', '', 'g'),
                         COALESCE((REGEXP_MATCH(LOWER(title), '\d+'))[1]::int, 0),
                         title ASC
@@ -714,6 +716,7 @@ pub async fn ongoing_series(
                 ROW_NUMBER() OVER (
                     PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified')
                     ORDER BY
+                        volume NULLS LAST,
                         REGEXP_REPLACE(LOWER(title), '[0-9]+', '', 'g'),
                         COALESCE((REGEXP_MATCH(LOWER(title), '\d+'))[1]::int, 0),
                         title ASC
