@@ -141,7 +141,7 @@ pub async fn list_books(
     let order_clause = if query.sort.as_deref() == Some("latest") {
         "b.updated_at DESC".to_string()
     } else {
-        "b.volume NULLS LAST, REGEXP_REPLACE(LOWER(b.title), '[0-9]+', '', 'g'), COALESCE((REGEXP_MATCH(LOWER(b.title), '\\d+'))[1]::int, 0), b.title ASC".to_string()
+        "b.volume NULLS LAST, REGEXP_REPLACE(LOWER(b.title), '[0-9].*$', ''), COALESCE((REGEXP_MATCH(LOWER(b.title), '\\d+'))[1]::int, 0), b.title ASC".to_string()
     };
 
     // DATA: mêmes params filtre, puis $N+1=limit $N+2=offset
@@ -401,7 +401,7 @@ pub async fn list_series(
                     PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified')
                     ORDER BY
                         volume NULLS LAST,
-                        REGEXP_REPLACE(LOWER(title), '[0-9]+', '', 'g'),
+                        REGEXP_REPLACE(LOWER(title), '[0-9].*$', ''),
                         COALESCE((REGEXP_MATCH(LOWER(title), '\d+'))[1]::int, 0),
                         title ASC
                 ) as rn
@@ -428,7 +428,7 @@ pub async fn list_series(
           {q_cond}
           {count_rs_cond}
         ORDER BY
-            REGEXP_REPLACE(LOWER(sc.name), '[0-9]+', '', 'g'),
+            REGEXP_REPLACE(LOWER(sc.name), '[0-9].*$', ''),
             COALESCE(
                 (REGEXP_MATCH(LOWER(sc.name), '\d+'))[1]::int,
                 0
@@ -570,7 +570,7 @@ pub async fn list_all_series(
     let series_order_clause = if query.sort.as_deref() == Some("latest") {
         "sc.latest_updated_at DESC".to_string()
     } else {
-        "REGEXP_REPLACE(LOWER(sc.name), '[0-9]+', '', 'g'), COALESCE((REGEXP_MATCH(LOWER(sc.name), '\\d+'))[1]::int, 0), sc.name ASC".to_string()
+        "REGEXP_REPLACE(LOWER(sc.name), '[0-9].*$', ''), COALESCE((REGEXP_MATCH(LOWER(sc.name), '\\d+'))[1]::int, 0), sc.name ASC".to_string()
     };
 
     let limit_p = p + 1;
@@ -588,7 +588,7 @@ pub async fn list_all_series(
                     PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified')
                     ORDER BY
                         volume NULLS LAST,
-                        REGEXP_REPLACE(LOWER(title), '[0-9]+', '', 'g'),
+                        REGEXP_REPLACE(LOWER(title), '[0-9].*$', ''),
                         COALESCE((REGEXP_MATCH(LOWER(title), '\d+'))[1]::int, 0),
                         title ASC
                 ) as rn
@@ -717,7 +717,7 @@ pub async fn ongoing_series(
                     PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified')
                     ORDER BY
                         volume NULLS LAST,
-                        REGEXP_REPLACE(LOWER(title), '[0-9]+', '', 'g'),
+                        REGEXP_REPLACE(LOWER(title), '[0-9].*$', ''),
                         COALESCE((REGEXP_MATCH(LOWER(title), '\d+'))[1]::int, 0),
                         title ASC
                 ) AS rn
