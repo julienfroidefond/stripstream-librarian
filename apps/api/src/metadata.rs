@@ -829,12 +829,17 @@ async fn sync_books_metadata(
     let mut matched_count: i64 = 0;
     let mut book_reports: Vec<BookSyncReport> = Vec::new();
 
-    // Pre-fetch all local books for this series to enable flexible matching
+    // Pre-fetch all local books for this series, sorted like the backoffice
+    // (volume ASC NULLS LAST, then natural title sort)
     let local_books: Vec<(Uuid, Option<i32>, String)> = sqlx::query_as(
         r#"
         SELECT id, volume, title FROM books
         WHERE library_id = $1
           AND COALESCE(NULLIF(series, ''), 'unclassified') = $2
+        ORDER BY volume NULLS LAST,
+                 REGEXP_REPLACE(LOWER(title), '[0-9].*$', ''),
+                 COALESCE((REGEXP_MATCH(LOWER(title), '\d+'))[1]::int, 0),
+                 title ASC
         "#,
     )
     .bind(library_id)
@@ -842,24 +847,30 @@ async fn sync_books_metadata(
     .fetch_all(&state.pool)
     .await?;
 
+    // Build effective position for each local book: use volume if set, otherwise 1-based sort order
+    let local_books_with_pos: Vec<(Uuid, i32, String)> = local_books
+        .iter()
+        .enumerate()
+        .map(|(idx, (id, vol, title))| (*id, vol.unwrap_or((idx + 1) as i32), title.clone()))
+        .collect();
+
     // Track which local books have already been matched to avoid double-matching
     let mut matched_local_ids = std::collections::HashSet::new();
 
-    for book in &books {
-        // Strategy 1: Match by volume number
-        let mut local_book_id: Option<Uuid> = if let Some(vol) = book.volume_number {
-            local_books
-                .iter()
-                .find(|(id, v, _)| *v == Some(vol) && !matched_local_ids.contains(id))
-                .map(|(id, _, _)| *id)
-        } else {
-            None
-        };
+    for (ext_idx, book) in books.iter().enumerate() {
+        // Effective volume for the external book: provider volume_number, or 1-based position
+        let ext_vol = book.volume_number.unwrap_or((ext_idx + 1) as i32);
+
+        // Strategy 1: Match by effective volume number
+        let mut local_book_id: Option<Uuid> = local_books_with_pos
+            .iter()
+            .find(|(id, v, _)| *v == ext_vol && !matched_local_ids.contains(id))
+            .map(|(id, _, _)| *id);
 
         // Strategy 2: External title contained in local title or vice-versa (case-insensitive)
         if local_book_id.is_none() {
             let ext_title_lower = book.title.to_lowercase();
-            local_book_id = local_books.iter().find(|(id, _, local_title)| {
+            local_book_id = local_books_with_pos.iter().find(|(id, _, local_title)| {
                 if matched_local_ids.contains(id) {
                     return false;
                 }
