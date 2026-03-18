@@ -100,9 +100,27 @@ export default async function SeriesDetailPage({
         <div className="flex-1 space-y-4">
           <h1 className="text-3xl font-bold text-foreground">{displayName}</h1>
 
-          {seriesMeta && seriesMeta.authors.length > 0 && (
-            <p className="text-base text-muted-foreground">{seriesMeta.authors.join(", ")}</p>
-          )}
+          <div className="flex flex-wrap items-center gap-3">
+            {seriesMeta && seriesMeta.authors.length > 0 && (
+              <p className="text-base text-muted-foreground">{seriesMeta.authors.join(", ")}</p>
+            )}
+            {seriesMeta?.status && (
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                seriesMeta.status === "ongoing" ? "bg-blue-500/15 text-blue-600" :
+                seriesMeta.status === "ended" ? "bg-green-500/15 text-green-600" :
+                seriesMeta.status === "hiatus" ? "bg-amber-500/15 text-amber-600" :
+                seriesMeta.status === "cancelled" ? "bg-red-500/15 text-red-600" :
+                "bg-muted text-muted-foreground"
+              }`}>
+                {seriesMeta.status === "ongoing" ? "En cours" :
+                 seriesMeta.status === "ended" ? "Terminée" :
+                 seriesMeta.status === "hiatus" ? "Hiatus" :
+                 seriesMeta.status === "cancelled" ? "Annulée" :
+                 seriesMeta.status === "upcoming" ? "À paraître" :
+                 seriesMeta.status}
+              </span>
+            )}
+          </div>
 
           {seriesMeta?.description && (
             <SafeHtml html={seriesMeta.description} className="text-sm text-muted-foreground leading-relaxed" />
@@ -153,6 +171,7 @@ export default async function SeriesDetailPage({
               currentDescription={seriesMeta?.description ?? null}
               currentStartYear={seriesMeta?.start_year ?? null}
               currentTotalVolumes={seriesMeta?.total_volumes ?? null}
+              currentStatus={seriesMeta?.status ?? null}
               currentLockedFields={seriesMeta?.locked_fields ?? {}}
             />
             <MetadataSearchModal

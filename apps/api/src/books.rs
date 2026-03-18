@@ -1079,6 +1079,8 @@ pub struct SeriesMetadata {
     pub publishers: Vec<String>,
     pub start_year: Option<i32>,
     pub total_volumes: Option<i32>,
+    /// Series status: "ongoing", "ended", "hiatus", "cancelled", or null
+    pub status: Option<String>,
     /// Convenience: author from first book (for pre-filling the per-book apply section)
     pub book_author: Option<String>,
     pub book_language: Option<String>,
@@ -1120,7 +1122,7 @@ pub async fn get_series_metadata(
     };
 
     let meta_row = sqlx::query(
-        "SELECT authors, description, publishers, start_year, total_volumes, locked_fields FROM series_metadata WHERE library_id = $1 AND name = $2"
+        "SELECT authors, description, publishers, start_year, total_volumes, status, locked_fields FROM series_metadata WHERE library_id = $1 AND name = $2"
     )
     .bind(library_id)
     .bind(&name)
@@ -1133,6 +1135,7 @@ pub async fn get_series_metadata(
         publishers: meta_row.as_ref().map(|r| r.get::<Vec<String>, _>("publishers")).unwrap_or_default(),
         start_year: meta_row.as_ref().and_then(|r| r.get("start_year")),
         total_volumes: meta_row.as_ref().and_then(|r| r.get("total_volumes")),
+        status: meta_row.as_ref().and_then(|r| r.get("status")),
         book_author: books_row.as_ref().and_then(|r| r.get("author")),
         book_language: books_row.as_ref().and_then(|r| r.get("language")),
         locked_fields: meta_row.as_ref().map(|r| r.get::<serde_json::Value, _>("locked_fields")).unwrap_or(serde_json::json!({})),
@@ -1158,6 +1161,8 @@ pub struct UpdateSeriesRequest {
     pub publishers: Vec<String>,
     pub start_year: Option<i32>,
     pub total_volumes: Option<i32>,
+    /// Series status: "ongoing", "ended", "hiatus", "cancelled", or null
+    pub status: Option<String>,
     /// Fields locked from external metadata sync
     #[serde(default)]
     pub locked_fields: Option<serde_json::Value>,
@@ -1256,14 +1261,15 @@ pub async fn update_series(
     let locked_fields = body.locked_fields.clone().unwrap_or(serde_json::json!({}));
     sqlx::query(
         r#"
-        INSERT INTO series_metadata (library_id, name, authors, description, publishers, start_year, total_volumes, locked_fields, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+        INSERT INTO series_metadata (library_id, name, authors, description, publishers, start_year, total_volumes, status, locked_fields, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
         ON CONFLICT (library_id, name) DO UPDATE
           SET authors     = EXCLUDED.authors,
               description = EXCLUDED.description,
               publishers  = EXCLUDED.publishers,
               start_year  = EXCLUDED.start_year,
               total_volumes = EXCLUDED.total_volumes,
+              status      = EXCLUDED.status,
               locked_fields = EXCLUDED.locked_fields,
               updated_at  = NOW()
         "#
@@ -1275,6 +1281,7 @@ pub async fn update_series(
     .bind(&publishers)
     .bind(body.start_year)
     .bind(body.total_volumes)
+    .bind(&body.status)
     .bind(&locked_fields)
     .execute(&state.pool)
     .await?;

@@ -516,6 +516,7 @@ export type SeriesMetadataDto = {
   publishers: string[];
   start_year: number | null;
   total_volumes: number | null;
+  status: string | null;
   book_author: string | null;
   book_language: string | null;
   locked_fields: Record<string, boolean>;
@@ -657,6 +658,7 @@ export type SyncReport = {
   books: BookSyncReport[];
   books_matched: number;
   books_unmatched: number;
+  books_message?: string;
 };
 
 export type MissingBooksDto = {

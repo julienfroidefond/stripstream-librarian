@@ -109,6 +109,8 @@ pub struct SyncReport {
     pub books: Vec<BookSyncReport>,
     pub books_matched: i64,
     pub books_unmatched: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub books_message: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -351,6 +353,14 @@ pub async fn approve_metadata(
         report.books_matched = matched;
         report.books = book_reports;
         report.books_unmatched = unmatched;
+
+        if matched == 0 && unmatched == 0 {
+            report.books_message = Some(
+                "This provider does not have volume-level data for this series. \
+                 Series metadata was synced, but book matching is not available."
+                    .to_string(),
+            );
+        }
 
         // Update synced_at
         sqlx::query("UPDATE external_metadata_links SET synced_at = NOW(), updated_at = NOW() WHERE id = $1")
@@ -683,10 +693,14 @@ async fn sync_series_metadata(
         .get("start_year")
         .and_then(|y| y.as_i64())
         .map(|y| y as i32);
+    let status = metadata_json
+        .get("status")
+        .and_then(|s| s.as_str())
+        .map(normalize_series_status);
 
     // Fetch existing state before upsert
     let existing = sqlx::query(
-        r#"SELECT description, publishers, start_year, total_volumes, authors, locked_fields
+        r#"SELECT description, publishers, start_year, total_volumes, status, authors, locked_fields
            FROM series_metadata WHERE library_id = $1 AND name = $2"#,
     )
     .bind(library_id)
@@ -697,8 +711,8 @@ async fn sync_series_metadata(
     // Respect locked_fields: only update fields that are NOT locked
     sqlx::query(
         r#"
-        INSERT INTO series_metadata (library_id, name, description, publishers, start_year, total_volumes, authors, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+        INSERT INTO series_metadata (library_id, name, description, publishers, start_year, total_volumes, status, authors, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
         ON CONFLICT (library_id, name)
         DO UPDATE SET
             description = CASE
@@ -718,6 +732,10 @@ async fn sync_series_metadata(
                 WHEN (series_metadata.locked_fields->>'total_volumes')::boolean IS TRUE THEN series_metadata.total_volumes
                 ELSE COALESCE(EXCLUDED.total_volumes, series_metadata.total_volumes)
             END,
+            status = CASE
+                WHEN (series_metadata.locked_fields->>'status')::boolean IS TRUE THEN series_metadata.status
+                ELSE COALESCE(EXCLUDED.status, series_metadata.status)
+            END,
             authors = CASE
                 WHEN (series_metadata.locked_fields->>'authors')::boolean IS TRUE THEN series_metadata.authors
                 WHEN array_length(EXCLUDED.authors, 1) > 0 THEN EXCLUDED.authors
@@ -732,6 +750,7 @@ async fn sync_series_metadata(
     .bind(&publishers)
     .bind(start_year)
     .bind(total_volumes)
+    .bind(&status)
     .bind(&authors)
     .execute(&state.pool)
     .await?;
@@ -779,6 +798,11 @@ async fn sync_series_metadata(
             old: existing.as_ref().and_then(|r| r.get::<Option<i32>, _>("total_volumes")).map(|y| serde_json::json!(y)),
             new: total_volumes.map(|y| serde_json::json!(y)),
         },
+        FieldDef {
+            name: "status",
+            old: existing.as_ref().and_then(|r| r.get::<Option<String>, _>("status")).map(|s| serde_json::Value::String(s)),
+            new: status.as_ref().map(|s| serde_json::Value::String(s.clone())),
+        },
     ];
 
     for f in fields {
@@ -799,6 +823,27 @@ async fn sync_series_metadata(
     }
 
     Ok(report)
+}
+
+/// Normalize provider-specific status strings to a standard set:
+/// "ongoing", "ended", "hiatus", "cancelled", or the original lowercase value
+fn normalize_series_status(raw: &str) -> String {
+    let lower = raw.to_lowercase();
+    match lower.as_str() {
+        // AniList
+        "finished" => "ended".to_string(),
+        "releasing" => "ongoing".to_string(),
+        "not_yet_released" => "upcoming".to_string(),
+        "cancelled" => "cancelled".to_string(),
+        "hiatus" => "hiatus".to_string(),
+        // Bédéthèque
+        _ if lower.contains("finie") || lower.contains("terminée") => "ended".to_string(),
+        _ if lower.contains("en cours") => "ongoing".to_string(),
+        _ if lower.contains("hiatus") || lower.contains("suspendue") => "hiatus".to_string(),
+        _ if lower.contains("annulée") || lower.contains("arrêtée") => "cancelled".to_string(),
+        // Fallback
+        _ => lower,
+    }
 }
 
 async fn sync_books_metadata(

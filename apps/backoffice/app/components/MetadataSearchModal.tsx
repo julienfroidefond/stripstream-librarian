@@ -13,6 +13,7 @@ const FIELD_LABELS: Record<string, string> = {
   publishers: "Éditeurs",
   start_year: "Année",
   total_volumes: "Nb volumes",
+  status: "Statut",
   summary: "Résumé",
   isbn: "ISBN",
   publish_date: "Date de publication",
@@ -338,7 +339,14 @@ export function MetadataSearchModal({
                                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                   {c.publishers.length > 0 && <span>{c.publishers[0]}</span>}
                                   {c.start_year != null && <span>{c.start_year}</span>}
-                                  {c.total_volumes != null && <span>{c.total_volumes} vol.</span>}
+                                  {c.total_volumes != null && (
+                                    <span>
+                                      {c.total_volumes} {c.metadata_json?.volume_source === "chapters" ? "ch." : "vol."}
+                                    </span>
+                                  )}
+                                  {c.metadata_json?.status === "RELEASING" && (
+                                    <span className="italic text-amber-500">en cours</span>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -366,8 +374,11 @@ export function MetadataSearchModal({
                           {selectedCandidate.authors.length > 0 && (
                             <p className="text-sm text-muted-foreground">{selectedCandidate.authors.join(", ")}</p>
                           )}
-                          {selectedCandidate.total_volumes && (
-                            <p className="text-sm text-muted-foreground">{selectedCandidate.total_volumes} volumes</p>
+                          {selectedCandidate.total_volumes != null && (
+                            <p className="text-sm text-muted-foreground">
+                              {selectedCandidate.total_volumes} {selectedCandidate.metadata_json?.volume_source === "chapters" ? "chapitres" : "volumes"}
+                              {selectedCandidate.metadata_json?.status === "RELEASING" && <span className="italic text-amber-500 ml-1">(en cours)</span>}
+                            </p>
                           )}
                           <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1">
                             via <ProviderIcon provider={selectedCandidate.provider} size={12} /> <span className="font-medium">{providerLabel(selectedCandidate.provider)}</span>
@@ -458,8 +469,15 @@ export function MetadataSearchModal({
                           </div>
                         )}
 
+                        {/* Books message (e.g. provider has no volume data) */}
+                        {syncReport.books_message && (
+                          <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                            <p className="text-xs text-amber-600">{syncReport.books_message}</p>
+                          </div>
+                        )}
+
                         {/* Books report */}
-                        {(syncReport.books.length > 0 || syncReport.books_unmatched > 0) && (
+                        {!syncReport.books_message && (syncReport.books.length > 0 || syncReport.books_unmatched > 0) && (
                           <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
                             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
                               Livres — {syncReport.books_matched} matched{syncReport.books_unmatched > 0 && `, ${syncReport.books_unmatched} unmatched`}

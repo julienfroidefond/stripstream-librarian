@@ -41,6 +41,7 @@ query ($search: String) {
       description(asHtml: false)
       coverImage { large medium }
       startDate { year }
+      status
       volumes
       chapters
       staff { edges { node { name { full } } role } }
@@ -59,6 +60,7 @@ query ($id: Int) {
     description(asHtml: false)
     coverImage { large medium }
     startDate { year }
+    status
     volumes
     chapters
     staff { edges { node { name { full } } role } }
@@ -157,6 +159,17 @@ async fn search_series_impl(
                 .and_then(|v| v.as_i64())
                 .map(|v| v as i32);
 
+            let chapters = m
+                .get("chapters")
+                .and_then(|v| v.as_i64())
+                .map(|v| v as i32);
+
+            let status = m
+                .get("status")
+                .and_then(|s| s.as_str())
+                .unwrap_or("UNKNOWN")
+                .to_string();
+
             let site_url = m
                 .get("siteUrl")
                 .and_then(|u| u.as_str())
@@ -166,6 +179,15 @@ async fn search_series_impl(
 
             let confidence = compute_confidence(&title, &query_lower);
 
+            // Use volumes if known, otherwise fall back to chapters count
+            let (total_volumes, volume_source) = match volumes {
+                Some(v) => (Some(v), "volumes"),
+                None => match chapters {
+                    Some(c) => (Some(c), "chapters"),
+                    None => (None, "unknown"),
+                },
+            };
+
             Some(SeriesCandidate {
                 external_id: id.to_string(),
                 title,
@@ -173,11 +195,16 @@ async fn search_series_impl(
                 description,
                 publishers: vec![],
                 start_year,
-                total_volumes: volumes,
+                total_volumes,
                 cover_url,
                 external_url: site_url,
                 confidence,
-                metadata_json: serde_json::json!({}),
+                metadata_json: serde_json::json!({
+                    "status": status,
+                    "chapters": chapters,
+                    "volumes": volumes,
+                    "volume_source": volume_source,
+                }),
             })
         })
         .collect();
@@ -225,6 +252,14 @@ async fn get_series_books_impl(
         .and_then(|v| v.as_i64())
         .map(|v| v as i32);
 
+    let chapters = media
+        .get("chapters")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32);
+
+    // Use volumes if known, otherwise fall back to chapters count
+    let total = volumes.or(chapters);
+
     let cover_url = media
         .get("coverImage")
         .and_then(|ci| ci.get("large").or_else(|| ci.get("medium")))
@@ -238,9 +273,9 @@ async fn get_series_books_impl(
 
     let authors = extract_authors(media);
 
-    // AniList doesn't have per-volume data — generate volume entries if volumes count is known
+    // AniList doesn't have per-volume data — generate entries from volumes count (or chapters as fallback)
     let mut books = Vec::new();
-    if let Some(total) = volumes {
+    if let Some(total) = total {
         for vol in 1..=total {
             books.push(BookCandidate {
                 external_book_id: format!("{}-vol-{}", external_id, vol),
@@ -256,21 +291,6 @@ async fn get_series_books_impl(
                 metadata_json: serde_json::json!({}),
             });
         }
-    } else {
-        // Single entry for the whole manga
-        books.push(BookCandidate {
-            external_book_id: external_id.to_string(),
-            title,
-            volume_number: Some(1),
-            authors,
-            isbn: None,
-            summary: description,
-            cover_url,
-            page_count: None,
-            language: Some("ja".to_string()),
-            publish_date: None,
-            metadata_json: serde_json::json!({}),
-        });
     }
 
     Ok(books)

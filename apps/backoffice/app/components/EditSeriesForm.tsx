@@ -39,6 +39,15 @@ function LockButton({
   );
 }
 
+const SERIES_STATUSES = [
+  { value: "", label: "Non défini" },
+  { value: "ongoing", label: "En cours" },
+  { value: "ended", label: "Terminée" },
+  { value: "hiatus", label: "Hiatus" },
+  { value: "cancelled", label: "Annulée" },
+  { value: "upcoming", label: "À paraître" },
+] as const;
+
 interface EditSeriesFormProps {
   libraryId: string;
   seriesName: string;
@@ -49,6 +58,7 @@ interface EditSeriesFormProps {
   currentDescription: string | null;
   currentStartYear: number | null;
   currentTotalVolumes: number | null;
+  currentStatus: string | null;
   currentLockedFields: Record<string, boolean>;
 }
 
@@ -62,6 +72,7 @@ export function EditSeriesForm({
   currentDescription,
   currentStartYear,
   currentTotalVolumes,
+  currentStatus,
   currentLockedFields,
 }: EditSeriesFormProps) {
   const router = useRouter();
@@ -80,6 +91,7 @@ export function EditSeriesForm({
   const [description, setDescription] = useState(currentDescription ?? "");
   const [startYear, setStartYear] = useState(currentStartYear?.toString() ?? "");
   const [totalVolumes, setTotalVolumes] = useState(currentTotalVolumes?.toString() ?? "");
+  const [status, setStatus] = useState(currentStatus ?? "");
 
   // Lock states
   const [lockedFields, setLockedFields] = useState<Record<string, boolean>>(currentLockedFields);
@@ -142,6 +154,7 @@ export function EditSeriesForm({
     setDescription(currentDescription ?? "");
     setStartYear(currentStartYear?.toString() ?? "");
     setTotalVolumes(currentTotalVolumes?.toString() ?? "");
+    setStatus(currentStatus ?? "");
     setLockedFields(currentLockedFields);
     setShowApplyToBooks(false);
     setBookAuthor(currentBookAuthor ?? "");
@@ -182,6 +195,7 @@ export function EditSeriesForm({
           description: description.trim() || null,
           start_year: startYear.trim() ? parseInt(startYear.trim(), 10) : null,
           total_volumes: totalVolumes.trim() ? parseInt(totalVolumes.trim(), 10) : null,
+          status: status || null,
           locked_fields: lockedFields,
         };
         if (showApplyToBooks) {
@@ -283,6 +297,23 @@ export function EditSeriesForm({
                   disabled={isPending}
                   placeholder="ex : 12"
                 />
+              </FormField>
+
+              <FormField>
+                <div className="flex items-center gap-1">
+                  <FormLabel>Statut</FormLabel>
+                  <LockButton locked={!!lockedFields.status} onToggle={() => toggleLock("status")} disabled={isPending} />
+                </div>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  disabled={isPending}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                >
+                  {SERIES_STATUSES.map((s) => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
               </FormField>
 
               {/* Auteurs — multi-valeur */}

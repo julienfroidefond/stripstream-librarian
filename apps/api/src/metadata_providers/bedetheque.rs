@@ -210,6 +210,10 @@ async fn search_series_impl(
                     "authors": c.authors,
                     "publishers": c.publishers,
                     "start_year": c.start_year,
+                    "genres": details.genres,
+                    "status": details.status,
+                    "origin": details.origin,
+                    "language": details.language,
                 });
             }
         }
@@ -235,6 +239,10 @@ struct SeriesDetails {
     publishers: Vec<String>,
     start_year: Option<i32>,
     album_count: Option<i32>,
+    genres: Vec<String>,
+    status: Option<String>,
+    origin: Option<String>,
+    language: Option<String>,
 }
 
 async fn fetch_series_details(
@@ -276,64 +284,109 @@ async fn fetch_series_details(
         publishers: vec![],
         start_year: None,
         album_count: None,
+        genres: vec![],
+        status: None,
+        origin: None,
+        language: None,
     };
 
-    // Description: look for #full-commentaire or .serie-info
-    if let Ok(sel) = Selector::parse("#full-commentaire") {
+    // Description from <meta name="description"> — format: "Tout sur la série {name} : {description}"
+    if let Ok(sel) = Selector::parse(r#"meta[name="description"]"#) {
         if let Some(el) = doc.select(&sel).next() {
-            let text = el.text().collect::<String>().trim().to_string();
-            if !text.is_empty() {
-                details.description = Some(text);
-            }
-        }
-    }
-
-    // Fallback description from span.infoedition
-    if details.description.is_none() {
-        if let Ok(sel) = Selector::parse("span.infoedition") {
-            if let Some(el) = doc.select(&sel).next() {
-                let text = el.text().collect::<String>().trim().to_string();
-                if !text.is_empty() {
-                    details.description = Some(text);
+            if let Some(content) = el.value().attr("content") {
+                let desc = content.trim().to_string();
+                // Strip the "Tout sur la série ... : " prefix
+                let cleaned = if let Some(pos) = desc.find(" : ") {
+                    desc[pos + 3..].trim().to_string()
+                } else {
+                    desc
+                };
+                if !cleaned.is_empty() {
+                    details.description = Some(cleaned);
                 }
             }
         }
     }
 
-    // Extract authors and publishers from album info blocks
-    if let Ok(sel) = Selector::parse(".infos li") {
+    // Extract authors from itemprop="author" and itemprop="illustrator" (deduplicated)
+    {
         let mut authors_set = std::collections::HashSet::new();
-        let mut publishers_set = std::collections::HashSet::new();
-
-        for li in doc.select(&sel) {
-            let text = li.text().collect::<String>();
-            let text = text.trim();
-
-            if let Some(val) = extract_info_value(text, "Scénario") {
-                for a in val.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-                    authors_set.insert(a.to_string());
-                }
-            }
-            if let Some(val) = extract_info_value(text, "Dessin") {
-                for a in val.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-                    authors_set.insert(a.to_string());
-                }
-            }
-            if let Some(val) = extract_info_value(text, "Editeur") {
-                for p in val.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-                    publishers_set.insert(p.to_string());
+        for attr in ["author", "illustrator"] {
+            if let Ok(sel) = Selector::parse(&format!(r#"[itemprop="{attr}"]"#)) {
+                for el in doc.select(&sel) {
+                    let name = el.text().collect::<String>().trim().to_string();
+                    // Names are "Last, First" — normalize to "First Last"
+                    let normalized = if let Some((last, first)) = name.split_once(',') {
+                        format!("{} {}", first.trim(), last.trim())
+                    } else {
+                        name
+                    };
+                    if !normalized.is_empty() && is_real_author(&normalized) {
+                        authors_set.insert(normalized);
+                    }
                 }
             }
         }
-
         details.authors = authors_set.into_iter().collect();
         details.authors.sort();
+    }
+
+    // Extract publishers from itemprop="publisher" (deduplicated)
+    {
+        let mut publishers_set = std::collections::HashSet::new();
+        if let Ok(sel) = Selector::parse(r#"[itemprop="publisher"]"#) {
+            for el in doc.select(&sel) {
+                let name = el.text().collect::<String>().trim().to_string();
+                if !name.is_empty() {
+                    publishers_set.insert(name);
+                }
+            }
+        }
         details.publishers = publishers_set.into_iter().collect();
         details.publishers.sort();
     }
 
-    // Album count from serie-info text (e.g. "Tomes : 8")
+    // Extract series-level info from <li><label>X :</label>value</li> blocks
+    // Genre: <li><label>Genre :</label><span class="style-serie">Animalier, Aventure, Humour</span></li>
+    if let Ok(sel) = Selector::parse("span.style-serie") {
+        if let Some(el) = doc.select(&sel).next() {
+            let text = el.text().collect::<String>();
+            details.genres = text
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+        }
+    }
+
+    // Parution: <li><label>Parution :</label><span class="parution-serie">Série finie</span></li>
+    if let Ok(sel) = Selector::parse("span.parution-serie") {
+        if let Some(el) = doc.select(&sel).next() {
+            let text = el.text().collect::<String>().trim().to_string();
+            if !text.is_empty() {
+                details.status = Some(text);
+            }
+        }
+    }
+
+    // Origine and Langue from page text (no dedicated CSS class)
     let page_text = doc.root_element().text().collect::<String>();
+
+    if let Some(val) = extract_info_value(&page_text, "Origine") {
+        let val = val.lines().next().unwrap_or(val).trim();
+        if !val.is_empty() {
+            details.origin = Some(val.to_string());
+        }
+    }
+
+    if let Some(val) = extract_info_value(&page_text, "Langue") {
+        let val = val.lines().next().unwrap_or(val).trim();
+        if !val.is_empty() {
+            details.language = Some(val.to_string());
+        }
+    }
+
+    // Album count from serie-info text (e.g. "Tomes : 8")
     if let Ok(re) = regex::Regex::new(r"Tomes?\s*:\s*(\d+)") {
         if let Some(caps) = re.captures(&page_text) {
             if let Ok(n) = caps[1].parse::<i32>() {
@@ -342,11 +395,16 @@ async fn fetch_series_details(
         }
     }
 
-    // Start year from first album date (Dépot légal)
-    if let Ok(re) = regex::Regex::new(r"[Dd][ée]p[ôo]t l[ée]gal\s*:\s*\d{2}/(\d{4})") {
-        if let Some(caps) = re.captures(&page_text) {
-            if let Ok(year) = caps[1].parse::<i32>() {
-                details.start_year = Some(year);
+    // Start year from first <meta itemprop="datePublished" content="YYYY-MM-DD">
+    if let Ok(sel) = Selector::parse(r#"[itemprop="datePublished"]"#) {
+        if let Some(el) = doc.select(&sel).next() {
+            if let Some(content) = el.value().attr("content") {
+                // content is "YYYY-MM-DD"
+                if let Some(year_str) = content.split('-').next() {
+                    if let Ok(year) = year_str.parse::<i32>() {
+                        details.start_year = Some(year);
+                    }
+                }
             }
         }
     }
@@ -424,79 +482,91 @@ async fn get_series_books_impl(
     let doc = Html::parse_document(&html);
     let mut books = Vec::new();
 
-    // Albums are in .album-main blocks
+    // Each album block starts before a .album-main div.
+    // The cover image (<img itemprop="image">) is OUTSIDE .album-main (sibling),
+    // so we iterate over a broader parent. But the simplest approach: parse all
+    // itemprop elements relative to each .album-main, plus pick covers separately.
     let album_sel = Selector::parse(".album-main").map_err(|e| format!("selector: {e}"))?;
 
-    for album_el in doc.select(&album_sel) {
-        let album_html = album_el.html();
-        let album_doc = Html::parse_fragment(&album_html);
+    // Pre-collect cover images — they appear in <img itemprop="image"> before each .album-main
+    // and link to an album URL containing the book ID
+    let cover_sel = Selector::parse(r#"img[itemprop="image"]"#).map_err(|e| format!("selector: {e}"))?;
+    let covers: Vec<String> = doc.select(&cover_sel)
+        .filter_map(|el| el.value().attr("src").map(|s| {
+            if s.starts_with("http") { s.to_string() } else { format!("https://www.bedetheque.com{}", s) }
+        }))
+        .collect();
 
-        // Title from .titre
-        let title = select_text(&album_doc, ".titre")
-            .or_else(|| {
-                Selector::parse(".titre a")
-                    .ok()
-                    .and_then(|s| album_doc.select(&s).next())
-                    .map(|el| el.text().collect::<String>().trim().to_string())
-            })
-            .unwrap_or_default();
+    for (idx, album_el) in doc.select(&album_sel).enumerate() {
+        // Title from <a class="titre" title="..."> — the title attribute is clean
+        let title_sel = Selector::parse("a.titre").ok();
+        let title_el = title_sel.as_ref().and_then(|s| album_el.select(s).next());
+        let title = title_el
+            .and_then(|el| el.value().attr("title"))
+            .unwrap_or("")
+            .trim()
+            .to_string();
 
         if title.is_empty() {
             continue;
         }
 
-        // Volume number from title or .num span
-        let volume_number = select_text(&album_doc, ".num")
-            .and_then(|s| {
-                s.trim_end_matches('.')
-                    .trim()
-                    .parse::<i32>()
-                    .ok()
-            })
-            .or_else(|| extract_volume_from_title(&title));
-
-        // Album URL
-        let album_url = Selector::parse("a[href*='/BD-']")
+        // External book ID from album URL (e.g. "...-1063.html")
+        let album_url = title_el.and_then(|el| el.value().attr("href")).unwrap_or("");
+        let external_book_id = regex::Regex::new(r"-(\d+)\.html")
             .ok()
-            .and_then(|s| album_doc.select(&s).next())
-            .and_then(|el| el.value().attr("href"))
-            .map(String::from);
-
-        // External book id from URL
-        let external_book_id = album_url
-            .as_deref()
-            .and_then(|u| {
-                regex::Regex::new(r"-(\d+)\.html")
-                    .ok()
-                    .and_then(|re| re.captures(u))
-                    .map(|c| c[1].to_string())
-            })
+            .and_then(|re| re.captures(album_url))
+            .map(|c| c[1].to_string())
             .unwrap_or_default();
 
-        // Cover
-        let cover_url = Selector::parse("img[src*='cache/thb_couv']")
+        // Volume number from URL pattern "Tome-{N}-" or from itemprop name
+        let volume_number = regex::Regex::new(r"(?i)Tome-(\d+)-")
             .ok()
-            .and_then(|s| album_doc.select(&s).next())
-            .and_then(|el| el.value().attr("src"))
-            .map(|s| {
-                if s.starts_with("http") {
-                    s.to_string()
-                } else {
-                    format!("https://www.bedetheque.com{}", s)
-                }
-            });
+            .and_then(|re| re.captures(album_url))
+            .and_then(|c| c[1].parse::<i32>().ok())
+            .or_else(|| extract_volume_from_title(&title));
 
-        // Extract info fields
-        let album_text = album_el.text().collect::<String>();
-        let authors = extract_all_authors(&album_text);
-        let isbn = extract_info_value(&album_text, "EAN/ISBN")
-            .or_else(|| extract_info_value(&album_text, "ISBN"))
-            .map(|s| s.trim().to_string());
-        let page_count = extract_info_value(&album_text, "Planches")
-            .and_then(|s| s.trim().parse::<i32>().ok());
-        let publish_date = extract_info_value(&album_text, "Dépot légal")
-            .or_else(|| extract_info_value(&album_text, "Depot legal"))
-            .map(|s| s.trim().to_string());
+        // Authors from itemprop="author" and itemprop="illustrator"
+        let mut authors = Vec::new();
+        let author_sel = Selector::parse(r#"[itemprop="author"]"#).ok();
+        let illustrator_sel = Selector::parse(r#"[itemprop="illustrator"]"#).ok();
+        for sel in [&author_sel, &illustrator_sel].into_iter().flatten() {
+            for el in album_el.select(sel) {
+                let name = el.text().collect::<String>().trim().to_string();
+                // Names are "Last, First" format — normalize to "First Last"
+                let normalized = if let Some((last, first)) = name.split_once(',') {
+                    format!("{} {}", first.trim(), last.trim())
+                } else {
+                    name
+                };
+                if !normalized.is_empty() && is_real_author(&normalized) && !authors.contains(&normalized) {
+                    authors.push(normalized);
+                }
+            }
+        }
+
+        // ISBN from <span itemprop="isbn">
+        let isbn = Selector::parse(r#"[itemprop="isbn"]"#)
+            .ok()
+            .and_then(|s| album_el.select(&s).next())
+            .map(|el| el.text().collect::<String>().trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        // Page count from <span itemprop="numberOfPages">
+        let page_count = Selector::parse(r#"[itemprop="numberOfPages"]"#)
+            .ok()
+            .and_then(|s| album_el.select(&s).next())
+            .and_then(|el| el.text().collect::<String>().trim().parse::<i32>().ok());
+
+        // Publish date from <meta itemprop="datePublished" content="YYYY-MM-DD">
+        let publish_date = Selector::parse(r#"[itemprop="datePublished"]"#)
+            .ok()
+            .and_then(|s| album_el.select(&s).next())
+            .and_then(|el| el.value().attr("content").map(|c| c.trim().to_string()))
+            .filter(|s| !s.is_empty());
+
+        // Cover from pre-collected covers (same index)
+        let cover_url = covers.get(idx).cloned();
 
         books.push(BookCandidate {
             external_book_id,
@@ -517,26 +587,9 @@ async fn get_series_books_impl(
     Ok(books)
 }
 
-fn select_text(doc: &Html, selector: &str) -> Option<String> {
-    Selector::parse(selector)
-        .ok()
-        .and_then(|s| doc.select(&s).next())
-        .map(|el| el.text().collect::<String>().trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
-fn extract_all_authors(text: &str) -> Vec<String> {
-    let mut authors = Vec::new();
-    for label in ["Scénario", "Scenario", "Dessin"] {
-        if let Some(val) = extract_info_value(text, label) {
-            for a in val.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-                if !authors.contains(&a.to_string()) {
-                    authors.push(a.to_string());
-                }
-            }
-        }
-    }
-    authors
+/// Filter out placeholder author names from Bédéthèque
+fn is_real_author(name: &str) -> bool {
+    !name.starts_with('<') && !name.ends_with('>') && name != "Collectif"
 }
 
 fn extract_volume_from_title(title: &str) -> Option<i32> {
