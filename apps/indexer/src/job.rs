@@ -36,6 +36,9 @@ pub async fn cleanup_stale_jobs(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
+/// Job types processed by the API, not the indexer.
+const API_ONLY_JOB_TYPES: &[&str] = &["metadata_batch"];
+
 /// Job types that modify book/thumbnail data and must not run concurrently.
 const EXCLUSIVE_JOB_TYPES: &[&str] = &[
     "rebuild",
@@ -75,6 +78,7 @@ pub async fn claim_next_job(pool: &PgPool) -> Result<Option<(Uuid, Option<Uuid>)
         SELECT j.id, j.type, j.library_id
         FROM index_jobs j
         WHERE j.status = 'pending'
+          AND j.type != ALL($3)
           AND (
             -- Exclusive jobs: only if no other exclusive job is active
             (j.type = ANY($1) AND NOT $2::bool)
@@ -96,6 +100,7 @@ pub async fn claim_next_job(pool: &PgPool) -> Result<Option<(Uuid, Option<Uuid>)
     )
     .bind(EXCLUSIVE_JOB_TYPES)
     .bind(has_active_exclusive)
+    .bind(API_ONLY_JOB_TYPES)
     .fetch_optional(&mut *tx)
     .await?;
 

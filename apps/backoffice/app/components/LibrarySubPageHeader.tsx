@@ -38,7 +38,7 @@ export function LibrarySubPageHeader({
             <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            Libraries
+            Bibliothèques
           </Link>
           <span className="text-muted-foreground">/</span>
           <span className="text-sm text-foreground font-medium">{library.name}</span>
@@ -74,7 +74,7 @@ export function LibrarySubPageHeader({
               </svg>
               <span className="text-foreground">
                 <span className="font-semibold">{library.book_count}</span>
-                <span className="text-muted-foreground ml-1">book{library.book_count !== 1 ? 's' : ''}</span>
+                <span className="text-muted-foreground ml-1">livre{library.book_count !== 1 ? 's' : ''}</span>
               </span>
             </div>
             
@@ -86,7 +86,7 @@ export function LibrarySubPageHeader({
               variant={library.enabled ? "success" : "muted"}
               className="text-xs"
             >
-              {library.enabled ? "Enabled" : "Disabled"}
+              {library.enabled ? "Activée" : "Désactivée"}
             </Badge>
           </div>
         </div>

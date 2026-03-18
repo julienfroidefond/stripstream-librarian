@@ -20,7 +20,7 @@ function formatNumber(n: number): string {
 // Donut chart via SVG
 function DonutChart({ data, colors }: { data: { label: string; value: number; color: string }[]; colors?: string[] }) {
   const total = data.reduce((sum, d) => sum + d.value, 0);
-  if (total === 0) return <p className="text-muted-foreground text-sm text-center py-8">No data</p>;
+  if (total === 0) return <p className="text-muted-foreground text-sm text-center py-8">Aucune donnée</p>;
 
   const radius = 40;
   const circumference = 2 * Math.PI * radius;
@@ -70,7 +70,7 @@ function DonutChart({ data, colors }: { data: { label: string; value: number; co
 // Bar chart via pure CSS
 function BarChart({ data, color = "var(--color-primary)" }: { data: { label: string; value: number }[]; color?: string }) {
   const max = Math.max(...data.map((d) => d.value), 1);
-  if (data.length === 0) return <p className="text-muted-foreground text-sm text-center py-8">No data</p>;
+  if (data.length === 0) return <p className="text-muted-foreground text-sm text-center py-8">Aucune donnée</p>;
 
   return (
     <div className="flex items-end gap-1.5 h-40">
@@ -126,7 +126,7 @@ export default async function DashboardPage() {
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold tracking-tight mb-4 text-foreground">StripStream Backoffice</h1>
-          <p className="text-lg text-muted-foreground">Unable to load statistics. Make sure the API is running.</p>
+          <p className="text-lg text-muted-foreground">Impossible de charger les statistiques. Vérifiez que l'API est en cours d'exécution.</p>
         </div>
         <QuickLinks />
       </div>
@@ -152,21 +152,21 @@ export default async function DashboardPage() {
           <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
           </svg>
-          Dashboard
+          Tableau de bord
         </h1>
         <p className="text-muted-foreground mt-2 max-w-2xl">
-          Overview of your comic collection. Manage your libraries, track your reading progress, and explore your books and series.
+          Aperçu de votre collection de bandes dessinées. Gérez vos bibliothèques, suivez votre progression de lecture et explorez vos livres et séries.
         </p>
       </div>
 
       {/* Overview stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <StatCard icon="book" label="Books" value={formatNumber(overview.total_books)} color="success" />
-        <StatCard icon="series" label="Series" value={formatNumber(overview.total_series)} color="primary" />
-        <StatCard icon="library" label="Libraries" value={formatNumber(overview.total_libraries)} color="warning" />
+        <StatCard icon="book" label="Livres" value={formatNumber(overview.total_books)} color="success" />
+        <StatCard icon="series" label="Séries" value={formatNumber(overview.total_series)} color="primary" />
+        <StatCard icon="library" label="Bibliothèques" value={formatNumber(overview.total_libraries)} color="warning" />
         <StatCard icon="pages" label="Pages" value={formatNumber(overview.total_pages)} color="primary" />
-        <StatCard icon="author" label="Authors" value={formatNumber(overview.total_authors)} color="success" />
-        <StatCard icon="size" label="Total Size" value={formatBytes(overview.total_size_bytes)} color="warning" />
+        <StatCard icon="author" label="Auteurs" value={formatNumber(overview.total_authors)} color="success" />
+        <StatCard icon="size" label="Taille totale" value={formatBytes(overview.total_size_bytes)} color="warning" />
       </div>
 
       {/* Charts row */}
@@ -174,14 +174,14 @@ export default async function DashboardPage() {
         {/* Reading status donut */}
         <Card hover={false}>
           <CardHeader>
-            <CardTitle className="text-base">Reading Status</CardTitle>
+            <CardTitle className="text-base">Statut de lecture</CardTitle>
           </CardHeader>
           <CardContent>
             <DonutChart
               data={[
-                { label: "Unread", value: reading_status.unread, color: readingColors[0] },
-                { label: "In Progress", value: reading_status.reading, color: readingColors[1] },
-                { label: "Read", value: reading_status.read, color: readingColors[2] },
+                { label: "Non lu", value: reading_status.unread, color: readingColors[0] },
+                { label: "En cours", value: reading_status.reading, color: readingColors[1] },
+                { label: "Lu", value: reading_status.read, color: readingColors[2] },
               ]}
             />
           </CardContent>
@@ -190,12 +190,12 @@ export default async function DashboardPage() {
         {/* By format donut */}
         <Card hover={false}>
           <CardHeader>
-            <CardTitle className="text-base">By Format</CardTitle>
+            <CardTitle className="text-base">Par format</CardTitle>
           </CardHeader>
           <CardContent>
             <DonutChart
               data={by_format.slice(0, 6).map((f, i) => ({
-                label: (f.format || "Unknown").toUpperCase(),
+                label: (f.format || "Inconnu").toUpperCase(),
                 value: f.count,
                 color: formatColors[i % formatColors.length],
               }))}
@@ -206,7 +206,7 @@ export default async function DashboardPage() {
         {/* By library donut */}
         <Card hover={false}>
           <CardHeader>
-            <CardTitle className="text-base">By Library</CardTitle>
+            <CardTitle className="text-base">Par bibliothèque</CardTitle>
           </CardHeader>
           <CardContent>
             <DonutChart
@@ -225,7 +225,7 @@ export default async function DashboardPage() {
         {/* Monthly additions bar chart */}
         <Card hover={false}>
           <CardHeader>
-            <CardTitle className="text-base">Books Added (Last 12 Months)</CardTitle>
+            <CardTitle className="text-base">Livres ajoutés (12 derniers mois)</CardTitle>
           </CardHeader>
           <CardContent>
             <BarChart
@@ -241,7 +241,7 @@ export default async function DashboardPage() {
         {/* Top series */}
         <Card hover={false}>
           <CardHeader>
-            <CardTitle className="text-base">Top Series</CardTitle>
+            <CardTitle className="text-base">Séries populaires</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -251,12 +251,12 @@ export default async function DashboardPage() {
                   label={s.series}
                   value={s.book_count}
                   max={top_series[0]?.book_count || 1}
-                  subLabel={`${s.read_count}/${s.book_count} read`}
+                  subLabel={`${s.read_count}/${s.book_count} lu`}
                   color="hsl(142 60% 45%)"
                 />
               ))}
               {top_series.length === 0 && (
-                <p className="text-muted-foreground text-sm text-center py-4">No series yet</p>
+                <p className="text-muted-foreground text-sm text-center py-4">Aucune série pour le moment</p>
               )}
             </div>
           </CardContent>
@@ -267,7 +267,7 @@ export default async function DashboardPage() {
       {by_library.length > 0 && (
         <Card hover={false}>
           <CardHeader>
-            <CardTitle className="text-base">Libraries</CardTitle>
+            <CardTitle className="text-base">Bibliothèques</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
@@ -281,23 +281,23 @@ export default async function DashboardPage() {
                     <div
                       className="h-full transition-all duration-500"
                       style={{ width: `${(lib.read_count / Math.max(lib.book_count, 1)) * 100}%`, backgroundColor: "hsl(142 60% 45%)" }}
-                      title={`Read: ${lib.read_count}`}
+                      title={`Lu : ${lib.read_count}`}
                     />
                     <div
                       className="h-full transition-all duration-500"
                       style={{ width: `${(lib.reading_count / Math.max(lib.book_count, 1)) * 100}%`, backgroundColor: "hsl(45 93% 47%)" }}
-                      title={`In progress: ${lib.reading_count}`}
+                      title={`En cours : ${lib.reading_count}`}
                     />
                     <div
                       className="h-full transition-all duration-500"
                       style={{ width: `${(lib.unread_count / Math.max(lib.book_count, 1)) * 100}%`, backgroundColor: "hsl(220 13% 70%)" }}
-                      title={`Unread: ${lib.unread_count}`}
+                      title={`Non lu : ${lib.unread_count}`}
                     />
                   </div>
                   <div className="flex gap-3 text-[11px] text-muted-foreground">
-                    <span>{lib.book_count} books</span>
-                    <span className="text-success">{lib.read_count} read</span>
-                    <span className="text-warning">{lib.reading_count} in progress</span>
+                    <span>{lib.book_count} livres</span>
+                    <span className="text-success">{lib.read_count} lu</span>
+                    <span className="text-warning">{lib.reading_count} en cours</span>
                   </div>
                 </div>
               ))}
@@ -347,10 +347,10 @@ function StatCard({ icon, label, value, color }: { icon: string; label: string; 
 
 function QuickLinks() {
   const links = [
-    { href: "/libraries", label: "Libraries", bg: "bg-primary/10", text: "text-primary", hoverBg: "group-hover:bg-primary", hoverText: "group-hover:text-primary-foreground", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /> },
-    { href: "/books", label: "Books", bg: "bg-success/10", text: "text-success", hoverBg: "group-hover:bg-success", hoverText: "group-hover:text-white", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /> },
-    { href: "/series", label: "Series", bg: "bg-warning/10", text: "text-warning", hoverBg: "group-hover:bg-warning", hoverText: "group-hover:text-white", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /> },
-    { href: "/jobs", label: "Jobs", bg: "bg-destructive/10", text: "text-destructive", hoverBg: "group-hover:bg-destructive", hoverText: "group-hover:text-destructive-foreground", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /> },
+    { href: "/libraries", label: "Bibliothèques", bg: "bg-primary/10", text: "text-primary", hoverBg: "group-hover:bg-primary", hoverText: "group-hover:text-primary-foreground", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /> },
+    { href: "/books", label: "Livres", bg: "bg-success/10", text: "text-success", hoverBg: "group-hover:bg-success", hoverText: "group-hover:text-white", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /> },
+    { href: "/series", label: "Séries", bg: "bg-warning/10", text: "text-warning", hoverBg: "group-hover:bg-warning", hoverText: "group-hover:text-white", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /> },
+    { href: "/jobs", label: "Tâches", bg: "bg-destructive/10", text: "text-destructive", hoverBg: "group-hover:bg-destructive", hoverText: "group-hover:text-destructive-foreground", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /> },
   ];
 
   return (

@@ -22,6 +22,7 @@ pub struct LibraryResponse {
     pub next_scan_at: Option<chrono::DateTime<chrono::Utc>>,
     pub watcher_enabled: bool,
     pub metadata_provider: Option<String>,
+    pub fallback_metadata_provider: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -46,7 +47,7 @@ pub struct CreateLibraryRequest {
 )]
 pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<LibraryResponse>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at, l.watcher_enabled, l.metadata_provider,
+        "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at, l.watcher_enabled, l.metadata_provider, l.fallback_metadata_provider,
                 (SELECT COUNT(*) FROM books b WHERE b.library_id = l.id) as book_count
          FROM libraries l ORDER BY l.created_at DESC"
     )
@@ -66,6 +67,7 @@ pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<Li
             next_scan_at: row.get("next_scan_at"),
             watcher_enabled: row.get("watcher_enabled"),
             metadata_provider: row.get("metadata_provider"),
+            fallback_metadata_provider: row.get("fallback_metadata_provider"),
         })
         .collect();
 
@@ -118,6 +120,7 @@ pub async fn create_library(
         next_scan_at: None,
         watcher_enabled: false,
         metadata_provider: None,
+        fallback_metadata_provider: None,
     }))
 }
 
@@ -284,7 +287,7 @@ pub async fn update_monitoring(
     let watcher_enabled = input.watcher_enabled.unwrap_or(false);
 
     let result = sqlx::query(
-        "UPDATE libraries SET monitor_enabled = $2, scan_mode = $3, next_scan_at = $4, watcher_enabled = $5 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider"
+        "UPDATE libraries SET monitor_enabled = $2, scan_mode = $3, next_scan_at = $4, watcher_enabled = $5 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider"
     )
     .bind(library_id)
     .bind(input.monitor_enabled)
@@ -314,12 +317,14 @@ pub async fn update_monitoring(
         next_scan_at: row.get("next_scan_at"),
         watcher_enabled: row.get("watcher_enabled"),
         metadata_provider: row.get("metadata_provider"),
+        fallback_metadata_provider: row.get("fallback_metadata_provider"),
     }))
 }
 
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateMetadataProviderRequest {
     pub metadata_provider: Option<String>,
+    pub fallback_metadata_provider: Option<String>,
 }
 
 /// Update the metadata provider for a library
@@ -345,12 +350,14 @@ pub async fn update_metadata_provider(
     Json(input): Json<UpdateMetadataProviderRequest>,
 ) -> Result<Json<LibraryResponse>, ApiError> {
     let provider = input.metadata_provider.as_deref().filter(|s| !s.is_empty());
+    let fallback = input.fallback_metadata_provider.as_deref().filter(|s| !s.is_empty());
 
     let result = sqlx::query(
-        "UPDATE libraries SET metadata_provider = $2 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider"
+        "UPDATE libraries SET metadata_provider = $2, fallback_metadata_provider = $3 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider"
     )
     .bind(library_id)
     .bind(provider)
+    .bind(fallback)
     .fetch_optional(&state.pool)
     .await?;
 
@@ -374,5 +381,6 @@ pub async fn update_metadata_provider(
         next_scan_at: row.get("next_scan_at"),
         watcher_enabled: row.get("watcher_enabled"),
         metadata_provider: row.get("metadata_provider"),
+        fallback_metadata_provider: row.get("fallback_metadata_provider"),
     }))
 }

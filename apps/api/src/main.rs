@@ -6,6 +6,7 @@ mod index_jobs;
 mod komga;
 mod libraries;
 mod metadata;
+mod metadata_batch;
 mod metadata_providers;
 mod api_middleware;
 mod openapi;
@@ -112,6 +113,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/metadata/links", get(metadata::get_metadata_links))
         .route("/metadata/missing/:id", get(metadata::get_missing_books))
         .route("/metadata/links/:id", delete(metadata::delete_metadata_link))
+        .route("/metadata/batch", axum::routing::post(metadata_batch::start_batch))
+        .route("/metadata/batch/:id/report", get(metadata_batch::get_batch_report))
+        .route("/metadata/batch/:id/results", get(metadata_batch::get_batch_results))
         .merge(settings::settings_routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
@@ -129,6 +133,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/libraries/:library_id/series/:name/metadata", get(books::get_series_metadata))
         .route("/series", get(books::list_all_series))
         .route("/series/ongoing", get(books::ongoing_series))
+        .route("/series/statuses", get(books::series_statuses))
         .route("/series/mark-read", axum::routing::post(reading_progress::mark_series_read))
         .route("/stats", get(stats::get_stats))
         .route("/search", get(search::search_books))

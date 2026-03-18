@@ -10,6 +10,7 @@ interface LibraryActionsProps {
   scanMode: string;
   watcherEnabled: boolean;
   metadataProvider: string | null;
+  fallbackMetadataProvider: string | null;
   onUpdate?: () => void;
 }
 
@@ -19,6 +20,7 @@ export function LibraryActions({
   scanMode,
   watcherEnabled,
   metadataProvider,
+  fallbackMetadataProvider,
   onUpdate
 }: LibraryActionsProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -43,6 +45,7 @@ export function LibraryActions({
       const watcherEnabled = formData.get("watcher_enabled") === "true";
       const scanMode = formData.get("scan_mode") as string;
       const newMetadataProvider = (formData.get("metadata_provider") as string) || null;
+      const newFallbackProvider = (formData.get("fallback_metadata_provider") as string) || null;
 
       try {
         const [response] = await Promise.all([
@@ -58,7 +61,7 @@ export function LibraryActions({
           fetch(`/api/libraries/${libraryId}/metadata-provider`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ metadata_provider: newMetadataProvider }),
+            body: JSON.stringify({ metadata_provider: newMetadataProvider, fallback_metadata_provider: newFallbackProvider }),
           }),
         ]);
 
@@ -106,7 +109,7 @@ export function LibraryActions({
                     defaultChecked={monitorEnabled}
                     className="w-4 h-4 rounded border-border text-primary focus:ring-ring"
                   />
-                  Auto Scan
+                  Scan auto
                 </label>
               </div>
 
@@ -119,35 +122,55 @@ export function LibraryActions({
                     defaultChecked={watcherEnabled}
                     className="w-4 h-4 rounded border-border text-primary focus:ring-ring"
                   />
-                  File Watcher ⚡
+                  Surveillance fichiers ⚡
                 </label>
               </div>
 
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-foreground">📅 Schedule</label>
+                <label className="text-sm font-medium text-foreground">📅 Planification</label>
                 <select 
                   name="scan_mode" 
                   defaultValue={scanMode}
                   className="text-sm border border-border rounded-lg px-2 py-1 bg-background"
                 >
-                  <option value="manual">Manual</option>
-                  <option value="hourly">Hourly</option>
-                  <option value="daily">Daily</option>
-                  <option value="weekly">Weekly</option>
+                  <option value="manual">Manuel</option>
+                  <option value="hourly">Toutes les heures</option>
+                  <option value="daily">Quotidien</option>
+                  <option value="weekly">Hebdomadaire</option>
                 </select>
               </div>
 
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
                   {metadataProvider && <ProviderIcon provider={metadataProvider} size={16} />}
-                  Metadata Provider
+                  Fournisseur
                 </label>
                 <select
                   name="metadata_provider"
                   defaultValue={metadataProvider || ""}
                   className="text-sm border border-border rounded-lg px-2 py-1 bg-background"
                 >
-                  <option value="">Default</option>
+                  <option value="">Par défaut</option>
+                  <option value="none">Aucun</option>
+                  <option value="google_books">Google Books</option>
+                  <option value="comicvine">ComicVine</option>
+                  <option value="open_library">Open Library</option>
+                  <option value="anilist">AniList</option>
+                  <option value="bedetheque">Bédéthèque</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                  {fallbackMetadataProvider && fallbackMetadataProvider !== "none" && <ProviderIcon provider={fallbackMetadataProvider} size={16} />}
+                  Secours
+                </label>
+                <select
+                  name="fallback_metadata_provider"
+                  defaultValue={fallbackMetadataProvider || ""}
+                  className="text-sm border border-border rounded-lg px-2 py-1 bg-background"
+                >
+                  <option value="">Aucun</option>
                   <option value="google_books">Google Books</option>
                   <option value="comicvine">ComicVine</option>
                   <option value="open_library">Open Library</option>
@@ -168,7 +191,7 @@ export function LibraryActions({
                 className="w-full"
                 disabled={isPending}
               >
-                {isPending ? "Saving..." : "Save Settings"}
+                {isPending ? "Enregistrement..." : "Enregistrer"}
               </Button>
             </div>
           </form>

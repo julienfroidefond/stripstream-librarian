@@ -48,7 +48,7 @@ export function CursorPagination({
     <div className="flex flex-col sm:flex-row items-center justify-between gap-6 mt-8 pt-8 border-t border-border/60">
       {/* Page size selector */}
       <div className="flex items-center gap-3">
-        <span className="text-sm text-muted-foreground">Show</span>
+        <span className="text-sm text-muted-foreground">Afficher</span>
         <select
           value={pageSize.toString()}
           onChange={(e) => changePageSize(Number(e.target.value))}
@@ -60,12 +60,12 @@ export function CursorPagination({
             </option>
           ))}
         </select>
-        <span className="text-sm text-muted-foreground">per page</span>
+        <span className="text-sm text-muted-foreground">par page</span>
       </div>
 
       {/* Count info */}
       <div className="text-sm text-muted-foreground">
-        Showing {currentCount} items
+        Affichage de {currentCount} éléments
       </div>
 
       {/* Navigation */}
@@ -79,7 +79,7 @@ export function CursorPagination({
           <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
           </svg>
-          First
+          Premier
         </Button>
 
         <Button
@@ -88,7 +88,7 @@ export function CursorPagination({
           onClick={goToNext}
           disabled={!hasNextPage}
         >
-          Next
+          Suivant
           <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
@@ -170,7 +170,7 @@ export function OffsetPagination({
     <div className="flex flex-col sm:flex-row items-center justify-between gap-6 mt-8 pt-8 border-t border-border/60">
       {/* Page size selector */}
       <div className="flex items-center gap-3">
-        <span className="text-sm text-muted-foreground">Show</span>
+        <span className="text-sm text-muted-foreground">Afficher</span>
         <select
           value={pageSize.toString()}
           onChange={(e) => changePageSize(Number(e.target.value))}
@@ -182,12 +182,12 @@ export function OffsetPagination({
             </option>
           ))}
         </select>
-        <span className="text-sm text-muted-foreground">per page</span>
+        <span className="text-sm text-muted-foreground">par page</span>
       </div>
 
       {/* Page info */}
       <div className="text-sm text-muted-foreground">
-        {startItem}-{endItem} of {totalItems}
+        {startItem}-{endItem} sur {totalItems}
       </div>
 
       {/* Page navigation */}
@@ -196,7 +196,7 @@ export function OffsetPagination({
           size="sm"
           onClick={() => goToPage(currentPage - 1)}
           disabled={currentPage <= 1}
-          title="Previous page"
+          title="Page précédente"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -224,7 +224,7 @@ export function OffsetPagination({
           size="sm"
           onClick={() => goToPage(currentPage + 1)}
           disabled={currentPage >= totalPages}
-          title="Next page"
+          title="Page suivante"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

@@ -23,22 +23,22 @@ export function ConvertButton({ bookId }: ConvertButtonProps) {
       const res = await fetch(`/api/books/${bookId}/convert`, { method: "POST" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: res.statusText }));
-        setState({ type: "error", message: body.error || "Conversion failed" });
+        setState({ type: "error", message: body.error || "Échec de la conversion" });
         return;
       }
       const job = await res.json();
       setState({ type: "success", jobId: job.id });
     } catch (err) {
-      setState({ type: "error", message: err instanceof Error ? err.message : "Unknown error" });
+      setState({ type: "error", message: err instanceof Error ? err.message : "Erreur inconnue" });
     }
   };
 
   if (state.type === "success") {
     return (
       <div className="flex items-center gap-2 text-sm text-success">
-        <span>Conversion started.</span>
+        <span>Conversion lancée.</span>
         <Link href={`/jobs/${state.jobId}`} className="text-primary hover:underline font-medium">
-          View job →
+          Voir la tâche →
         </Link>
       </div>
     );
@@ -52,7 +52,7 @@ export function ConvertButton({ bookId }: ConvertButtonProps) {
           className="text-xs text-muted-foreground hover:underline text-left"
           onClick={() => setState({ type: "idle" })}
         >
-          Dismiss
+          Fermer
         </button>
       </div>
     );
@@ -65,7 +65,7 @@ export function ConvertButton({ bookId }: ConvertButtonProps) {
       onClick={handleConvert}
       disabled={state.type === "loading"}
     >
-      {state.type === "loading" ? "Converting…" : "Convert to CBZ"}
+      {state.type === "loading" ? "Conversion…" : "Convertir en CBZ"}
     </Button>
   );
 }

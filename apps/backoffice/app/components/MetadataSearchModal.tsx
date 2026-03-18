@@ -62,6 +62,23 @@ export function MetadataSearchModal({
   // Provider selector: empty string = library default
   const [searchProvider, setSearchProvider] = useState("");
   const [activeProvider, setActiveProvider] = useState("");
+  const [hiddenProviders, setHiddenProviders] = useState<Set<string>>(new Set());
+
+  // Fetch metadata provider settings to hide providers without required API keys
+  useEffect(() => {
+    fetch("/api/settings/metadata_providers")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (!data) return;
+        const hidden = new Set<string>();
+        // ComicVine requires an API key
+        if (!data.comicvine?.api_key) hidden.add("comicvine");
+        setHiddenProviders(hidden);
+      })
+      .catch(() => {});
+  }, []);
+
+  const visibleProviders = PROVIDERS.filter((p) => !hiddenProviders.has(p.value));
 
   const handleOpen = useCallback(() => {
     setIsOpen(true);
@@ -109,7 +126,7 @@ export function MetadataSearchModal({
       });
       const data = await resp.json();
       if (!resp.ok) {
-        setError(data.error || "Search failed");
+        setError(data.error || "Échec de la recherche");
         setStep("results");
         return;
       }
@@ -121,7 +138,7 @@ export function MetadataSearchModal({
       }
       setStep("results");
     } catch {
-      setError("Network error");
+      setError("Erreur réseau");
       setStep("results");
     }
   }
@@ -160,7 +177,7 @@ export function MetadataSearchModal({
       });
       const matchData = await matchResp.json();
       if (!matchResp.ok) {
-        setError(matchData.error || "Failed to create match");
+        setError(matchData.error || "Échec de la création du lien");
         setStep("results");
         return;
       }
@@ -179,7 +196,7 @@ export function MetadataSearchModal({
       });
       const approveData = await approveResp.json();
       if (!approveResp.ok) {
-        setError(approveData.error || "Failed to approve");
+        setError(approveData.error || "Échec de l'approbation");
         setStep("results");
         return;
       }
@@ -201,7 +218,7 @@ export function MetadataSearchModal({
 
       setStep("done");
     } catch {
-      setError("Network error");
+      setError("Erreur réseau");
       setStep("results");
     }
   }
@@ -245,7 +262,7 @@ export function MetadataSearchModal({
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-muted/30 sticky top-0 z-10">
                 <h3 className="font-semibold text-foreground">
-                  {step === "linked" ? "Metadata Link" : "Search External Metadata"}
+                  {step === "linked" ? "Lien métadonnées" : "Rechercher les métadonnées externes"}
                 </h3>
                 <button type="button" onClick={handleClose}>
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-muted-foreground hover:text-foreground">
@@ -258,9 +275,9 @@ export function MetadataSearchModal({
                 {/* Provider selector — visible during searching & results */}
                 {(step === "searching" || step === "results") && (
                   <div className="flex items-center gap-2">
-                    <label className="text-sm text-muted-foreground whitespace-nowrap">Provider :</label>
+                    <label className="text-sm text-muted-foreground whitespace-nowrap">Fournisseur :</label>
                     <div className="flex gap-1 flex-wrap">
-                      {PROVIDERS.map((p) => (
+                      {visibleProviders.map((p) => (
                         <button
                           key={p.value}
                           type="button"
@@ -287,7 +304,7 @@ export function MetadataSearchModal({
                 {step === "searching" && (
                   <div className="flex items-center justify-center py-12">
                     <Icon name="spinner" size="lg" className="animate-spin text-primary" />
-                    <span className="ml-3 text-muted-foreground">Searching for &quot;{seriesName}&quot;...</span>
+                    <span className="ml-3 text-muted-foreground">Recherche de &quot;{seriesName}&quot;...</span>
                   </div>
                 )}
 
@@ -302,11 +319,11 @@ export function MetadataSearchModal({
                 {step === "results" && (
                   <>
                     {candidates.length === 0 && !error ? (
-                      <p className="text-muted-foreground text-center py-8">No results found.</p>
+                      <p className="text-muted-foreground text-center py-8">Aucun résultat trouvé.</p>
                     ) : (
                       <div className="space-y-2">
                         <p className="text-sm text-muted-foreground mb-2">
-                          {candidates.length} result{candidates.length !== 1 ? "s" : ""} found
+                          {candidates.length} résultat{candidates.length !== 1 ? "s" : ""} trouvé{candidates.length !== 1 ? "s" : ""}
                           {activeProvider && (
                             <span className="ml-1 text-xs inline-flex items-center gap-1">via <ProviderIcon provider={activeProvider} size={12} /> <span className="font-medium">{providerLabel(activeProvider)}</span></span>
                           )}
@@ -387,7 +404,7 @@ export function MetadataSearchModal({
                       </div>
                     </div>
 
-                    <p className="text-sm text-foreground font-medium">How would you like to sync?</p>
+                    <p className="text-sm text-foreground font-medium">Comment souhaitez-vous synchroniser ?</p>
 
                     <div className="flex flex-col gap-2">
                       <button
@@ -395,16 +412,16 @@ export function MetadataSearchModal({
                         onClick={() => handleApprove(true, false)}
                         className="w-full p-3 rounded-lg border border-border bg-card text-left hover:bg-muted/40 hover:border-primary/50 transition-colors"
                       >
-                        <p className="font-medium text-sm text-foreground">Sync series metadata only</p>
-                        <p className="text-xs text-muted-foreground">Update description, authors, publishers, and year</p>
+                        <p className="font-medium text-sm text-foreground">Synchroniser la série uniquement</p>
+                        <p className="text-xs text-muted-foreground">Mettre à jour la description, les auteurs, les éditeurs et l'année</p>
                       </button>
                       <button
                         type="button"
                         onClick={() => handleApprove(true, true)}
                         className="w-full p-3 rounded-lg border border-primary/50 bg-primary/5 text-left hover:bg-primary/10 transition-colors"
                       >
-                        <p className="font-medium text-sm text-foreground">Sync series + books</p>
-                        <p className="text-xs text-muted-foreground">Also fetch book list and show missing volumes</p>
+                        <p className="font-medium text-sm text-foreground">Synchroniser la série + les livres</p>
+                        <p className="text-xs text-muted-foreground">Récupérer aussi la liste des livres et afficher les tomes manquants</p>
                       </button>
                     </div>
 
@@ -413,7 +430,7 @@ export function MetadataSearchModal({
                       onClick={() => { setSelectedCandidate(null); setStep("results"); }}
                       className="text-sm text-muted-foreground hover:text-foreground"
                     >
-                      Back to results
+                      Retour aux résultats
                     </button>
                   </div>
                 )}
@@ -422,7 +439,7 @@ export function MetadataSearchModal({
                 {step === "syncing" && (
                   <div className="flex items-center justify-center py-12">
                     <Icon name="spinner" size="lg" className="animate-spin text-primary" />
-                    <span className="ml-3 text-muted-foreground">Syncing metadata...</span>
+                    <span className="ml-3 text-muted-foreground">Synchronisation des métadonnées...</span>
                   </div>
                 )}
 
@@ -430,7 +447,7 @@ export function MetadataSearchModal({
                 {step === "done" && (
                   <div className="space-y-4">
                     <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/30">
-                      <p className="font-medium text-green-600">Metadata synced successfully!</p>
+                      <p className="font-medium text-green-600">Métadonnées synchronisées avec succès !</p>
                     </div>
 
                     {/* Sync Report */}
@@ -461,7 +478,7 @@ export function MetadataSearchModal({
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                                     </svg>
                                     <span className="font-medium">{fieldLabel(f.field)}</span>
-                                    <span className="text-muted-foreground">locked</span>
+                                    <span className="text-muted-foreground">verrouillé</span>
                                   </div>
                                 ))}
                               </div>
@@ -480,7 +497,7 @@ export function MetadataSearchModal({
                         {!syncReport.books_message && (syncReport.books.length > 0 || syncReport.books_unmatched > 0) && (
                           <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
                             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                              Livres — {syncReport.books_matched} matched{syncReport.books_unmatched > 0 && `, ${syncReport.books_unmatched} unmatched`}
+                              Livres — {syncReport.books_matched} associé{syncReport.books_matched !== 1 ? "s" : ""}{syncReport.books_unmatched > 0 && `, ${syncReport.books_unmatched} non associé${syncReport.books_unmatched !== 1 ? "s" : ""}`}
                             </p>
                             {syncReport.books.length > 0 && (
                               <div className="space-y-2 max-h-48 overflow-y-auto">
@@ -503,7 +520,7 @@ export function MetadataSearchModal({
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                                           </svg>
                                           <span className="font-medium">{fieldLabel(f.field)}</span>
-                                          <span className="text-muted-foreground">locked</span>
+                                          <span className="text-muted-foreground">verrouillé</span>
                                         </p>
                                       ))}
                                     </div>
@@ -521,15 +538,15 @@ export function MetadataSearchModal({
                       <div className="space-y-3">
                         <div className="grid grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg">
                           <div>
-                            <p className="text-sm text-muted-foreground">External</p>
+                            <p className="text-sm text-muted-foreground">Externe</p>
                             <p className="text-2xl font-semibold">{missing.total_external}</p>
                           </div>
                           <div>
-                            <p className="text-sm text-muted-foreground">Local</p>
+                            <p className="text-sm text-muted-foreground">Locaux</p>
                             <p className="text-2xl font-semibold">{missing.total_local}</p>
                           </div>
                           <div>
-                            <p className="text-sm text-muted-foreground">Missing</p>
+                            <p className="text-sm text-muted-foreground">Manquants</p>
                             <p className="text-2xl font-semibold text-warning">{missing.missing_count}</p>
                           </div>
                         </div>
@@ -542,14 +559,14 @@ export function MetadataSearchModal({
                               className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
                             >
                               <Icon name={showMissingList ? "chevronDown" : "chevronRight"} size="sm" />
-                              {missing.missing_count} missing book{missing.missing_count !== 1 ? "s" : ""}
+                              {missing.missing_count} livre{missing.missing_count !== 1 ? "s" : ""} manquant{missing.missing_count !== 1 ? "s" : ""}
                             </button>
                             {showMissingList && (
                               <div className="mt-2 max-h-40 overflow-y-auto p-3 bg-muted/20 rounded-lg text-sm space-y-1">
                                 {missing.missing_books.map((b, i) => (
                                   <p key={i} className="text-muted-foreground truncate">
                                     {b.volume_number != null && <span className="font-mono mr-2">#{b.volume_number}</span>}
-                                    {b.title || "Unknown"}
+                                    {b.title || "Inconnu"}
                                   </p>
                                 ))}
                               </div>
@@ -564,7 +581,7 @@ export function MetadataSearchModal({
                       onClick={() => { handleClose(); router.refresh(); }}
                       className="w-full p-2.5 rounded-lg bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors"
                     >
-                      Close
+                      Fermer
                     </button>
                   </div>
                 )}
@@ -576,7 +593,7 @@ export function MetadataSearchModal({
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="font-medium text-foreground inline-flex items-center gap-1.5">
-                            Linked to <ProviderIcon provider={existingLink.provider} size={16} /> {providerLabel(existingLink.provider)}
+                            Lié à <ProviderIcon provider={existingLink.provider} size={16} /> {providerLabel(existingLink.provider)}
                           </p>
                           {existingLink.external_url && (
                             <a
@@ -585,7 +602,7 @@ export function MetadataSearchModal({
                               rel="noopener noreferrer"
                               className="block mt-1 text-xs text-primary hover:underline"
                             >
-                              View on external source
+                              Voir sur la source externe
                             </a>
                           )}
                         </div>
@@ -618,14 +635,14 @@ export function MetadataSearchModal({
                           className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
                         >
                           <Icon name={showMissingList ? "chevronDown" : "chevronRight"} size="sm" />
-                          {initialMissing.missing_count} missing book{initialMissing.missing_count !== 1 ? "s" : ""}
+                          {initialMissing.missing_count} livre{initialMissing.missing_count !== 1 ? "s" : ""} manquant{initialMissing.missing_count !== 1 ? "s" : ""}
                         </button>
                         {showMissingList && (
                           <div className="mt-2 max-h-40 overflow-y-auto p-3 bg-muted/20 rounded-lg text-sm space-y-1">
                             {initialMissing.missing_books.map((b, i) => (
                               <p key={i} className="text-muted-foreground truncate">
                                 {b.volume_number != null && <span className="font-mono mr-2">#{b.volume_number}</span>}
-                                {b.title || "Unknown"}
+                                {b.title || "Inconnu"}
                               </p>
                             ))}
                           </div>
@@ -639,14 +656,14 @@ export function MetadataSearchModal({
                         onClick={() => { doSearch(""); }}
                         className="flex-1 p-2.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
                       >
-                        Search again
+                        Rechercher à nouveau
                       </button>
                       <button
                         type="button"
                         onClick={handleUnlink}
                         className="p-2.5 rounded-lg border border-destructive/30 bg-destructive/5 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
                       >
-                        Unlink
+                        Dissocier
                       </button>
                     </div>
                   </div>
@@ -666,13 +683,13 @@ export function MetadataSearchModal({
         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
       >
         <Icon name="search" size="sm" />
-        {existingLink && existingLink.status === "approved" ? "Metadata" : "Search metadata"}
+        {existingLink && existingLink.status === "approved" ? "Métadonnées" : "Rechercher les métadonnées"}
       </button>
 
       {/* Inline badge when linked */}
       {existingLink && existingLink.status === "approved" && initialMissing && initialMissing.missing_count > 0 && (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-600 text-xs border border-yellow-500/30">
-          {initialMissing.missing_count} missing
+          {initialMissing.missing_count} manquant{initialMissing.missing_count !== 1 ? "s" : ""}
         </span>
       )}
 

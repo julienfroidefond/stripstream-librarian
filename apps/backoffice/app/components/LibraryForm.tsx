@@ -17,7 +17,7 @@ export function LibraryForm({ initialFolders, action }: LibraryFormProps) {
     <form action={action}>
       <FormRow>
         <FormField className="flex-1 min-w-48">
-          <FormInput name="name" placeholder="Library name" required />
+          <FormInput name="name" placeholder="Nom de la bibliothèque" required />
         </FormField>
         <FormField className="flex-1 min-w-64">
           <input type="hidden" name="root_path" value={selectedPath} />
@@ -30,7 +30,7 @@ export function LibraryForm({ initialFolders, action }: LibraryFormProps) {
       </FormRow>
       <div className="mt-4 flex justify-end">
         <Button type="submit" disabled={!selectedPath}>
-          Add Library
+          Ajouter une bibliothèque
         </Button>
       </div>
     </form>

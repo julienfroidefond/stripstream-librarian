@@ -120,7 +120,7 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
             w-full sm:w-auto
           "
         >
-          Clear
+          Effacer
         </button>
       )}
     </form>

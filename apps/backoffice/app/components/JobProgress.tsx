@@ -53,14 +53,14 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
           onComplete?.();
         }
       } catch (err) {
-        setError("Failed to parse SSE data");
+        setError("Échec de l'analyse des données SSE");
       }
     };
     
     eventSource.onerror = (err) => {
       console.error("SSE error:", err);
       eventSource.close();
-      setError("Connection lost");
+      setError("Connexion perdue");
     };
 
     return () => {
@@ -71,7 +71,7 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
   if (error) {
     return (
       <div className="p-4 bg-destructive/10 text-error rounded-lg text-sm">
-        Error: {error}
+        Erreur : {error}
       </div>
     );
   }
@@ -79,7 +79,7 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
   if (!progress) {
     return (
       <div className="p-4 text-muted-foreground text-sm">
-        Loading progress...
+        Chargement de la progression...
       </div>
     );
   }
@@ -88,14 +88,14 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
   const processed = progress.processed_files ?? 0;
   const total = progress.total_files ?? 0;
   const isPhase2 = progress.status === "extracting_pages" || progress.status === "generating_thumbnails";
-  const unitLabel = progress.status === "extracting_pages" ? "pages" : progress.status === "generating_thumbnails" ? "thumbnails" : "files";
+  const unitLabel = progress.status === "extracting_pages" ? "pages" : progress.status === "generating_thumbnails" ? "miniatures" : "fichiers";
 
   return (
     <div className="p-4 bg-card rounded-lg border border-border">
       <div className="flex items-center justify-between mb-3">
         <StatusBadge status={progress.status} />
         {isComplete && (
-          <Badge variant="success">Complete</Badge>
+          <Badge variant="success">Terminé</Badge>
         )}
       </div>
 
@@ -105,7 +105,7 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
         <span>{processed} / {total} {unitLabel}</span>
         {progress.current_file && (
           <span className="truncate max-w-md" title={progress.current_file}>
-            Current: {progress.current_file.length > 40 
+            En cours : {progress.current_file.length > 40
               ? progress.current_file.substring(0, 40) + "..." 
               : progress.current_file}
           </span>
@@ -114,11 +114,11 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
 
       {progress.stats_json && !isPhase2 && (
         <div className="flex flex-wrap gap-3 text-xs">
-          <Badge variant="primary">Scanned: {progress.stats_json.scanned_files}</Badge>
-          <Badge variant="success">Indexed: {progress.stats_json.indexed_files}</Badge>
-          <Badge variant="warning">Removed: {progress.stats_json.removed_files}</Badge>
+          <Badge variant="primary">Analysés : {progress.stats_json.scanned_files}</Badge>
+          <Badge variant="success">Indexés : {progress.stats_json.indexed_files}</Badge>
+          <Badge variant="warning">Supprimés : {progress.stats_json.removed_files}</Badge>
           {progress.stats_json.errors > 0 && (
-            <Badge variant="error">Errors: {progress.stats_json.errors}</Badge>
+            <Badge variant="error">Erreurs : {progress.stats_json.errors}</Badge>
           )}
         </div>
       )}

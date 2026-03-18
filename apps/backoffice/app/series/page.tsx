@@ -1,4 +1,4 @@
-import { fetchAllSeries, fetchLibraries, LibraryDto, SeriesDto, SeriesPageDto, getBookCoverUrl } from "../../lib/api";
+import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, LibraryDto, SeriesDto, SeriesPageDto, getBookCoverUrl } from "../../lib/api";
 import { MarkSeriesReadButton } from "../components/MarkSeriesReadButton";
 import { LiveSearchForm } from "../components/LiveSearchForm";
 import { Card, CardContent, OffsetPagination } from "../components/ui";
@@ -17,35 +17,55 @@ export default async function SeriesPage({
   const searchQuery = typeof searchParamsAwaited.q === "string" ? searchParamsAwaited.q : "";
   const readingStatus = typeof searchParamsAwaited.status === "string" ? searchParamsAwaited.status : undefined;
   const sort = typeof searchParamsAwaited.sort === "string" ? searchParamsAwaited.sort : undefined;
+  const seriesStatus = typeof searchParamsAwaited.series_status === "string" ? searchParamsAwaited.series_status : undefined;
+  const hasMissing = searchParamsAwaited.has_missing === "true";
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 20;
 
-  const [libraries, seriesPage] = await Promise.all([
+  const [libraries, seriesPage, dbStatuses] = await Promise.all([
     fetchLibraries().catch(() => [] as LibraryDto[]),
-    fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit, sort).catch(
+    fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit, sort, seriesStatus, hasMissing).catch(
       () => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }) as SeriesPageDto
     ),
+    fetchSeriesStatuses().catch(() => [] as string[]),
   ]);
 
   const series = seriesPage.items;
   const totalPages = Math.ceil(seriesPage.total / limit);
   const sortOptions = [
-    { value: "", label: "Title" },
-    { value: "latest", label: "Latest added" },
+    { value: "", label: "Titre" },
+    { value: "latest", label: "Ajout récent" },
   ];
 
-  const hasFilters = searchQuery || libraryId || readingStatus || sort;
+  const hasFilters = searchQuery || libraryId || readingStatus || sort || seriesStatus || hasMissing;
 
   const libraryOptions = [
-    { value: "", label: "All libraries" },
+    { value: "", label: "Toutes les bibliothèques" },
     ...libraries.map((lib) => ({ value: lib.id, label: lib.name })),
   ];
 
   const statusOptions = [
-    { value: "", label: "All" },
-    { value: "unread", label: "Unread" },
-    { value: "reading", label: "In progress" },
-    { value: "read", label: "Read" },
+    { value: "", label: "Tous" },
+    { value: "unread", label: "Non lu" },
+    { value: "reading", label: "En cours" },
+    { value: "read", label: "Lu" },
+  ];
+
+  const KNOWN_STATUSES: Record<string, string> = {
+    ongoing: "En cours",
+    ended: "Terminée",
+    hiatus: "Hiatus",
+    cancelled: "Annulée",
+    upcoming: "À paraître",
+  };
+  const seriesStatusOptions = [
+    { value: "", label: "Tous les statuts" },
+    ...dbStatuses.map((s) => ({ value: s, label: KNOWN_STATUSES[s] || s })),
+  ];
+
+  const missingOptions = [
+    { value: "", label: "Tous" },
+    { value: "true", label: "Livres manquants" },
   ];
 
   return (
@@ -55,7 +75,7 @@ export default async function SeriesPage({
           <svg className="w-8 h-8 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
           </svg>
-          Series
+          Séries
         </h1>
       </div>
 
@@ -64,10 +84,12 @@ export default async function SeriesPage({
           <LiveSearchForm
             basePath="/series"
             fields={[
-              { name: "q", type: "text", label: "Search", placeholder: "Search by series name...", className: "flex-1 w-full" },
-              { name: "library", type: "select", label: "Library", options: libraryOptions, className: "w-full sm:w-48" },
-              { name: "status", type: "select", label: "Status", options: statusOptions, className: "w-full sm:w-40" },
-              { name: "sort", type: "select", label: "Sort", options: sortOptions, className: "w-full sm:w-40" },
+              { name: "q", type: "text", label: "Rechercher", placeholder: "Rechercher par nom de série...", className: "flex-1 w-full" },
+              { name: "library", type: "select", label: "Bibliothèque", options: libraryOptions, className: "w-full sm:w-48" },
+              { name: "status", type: "select", label: "Lecture", options: statusOptions, className: "w-full sm:w-36" },
+              { name: "series_status", type: "select", label: "Statut", options: seriesStatusOptions, className: "w-full sm:w-36" },
+              { name: "has_missing", type: "select", label: "Manquant", options: missingOptions, className: "w-full sm:w-36" },
+              { name: "sort", type: "select", label: "Tri", options: sortOptions, className: "w-full sm:w-36" },
             ]}
           />
         </CardContent>
@@ -75,8 +97,8 @@ export default async function SeriesPage({
 
       {/* Results count */}
       <p className="text-sm text-muted-foreground mb-4">
-        {seriesPage.total} series
-        {searchQuery && <> matching &quot;{searchQuery}&quot;</>}
+        {seriesPage.total} séries
+        {searchQuery && <> correspondant à &quot;{searchQuery}&quot;</>}
       </p>
 
       {/* Series Grid */}
@@ -97,7 +119,7 @@ export default async function SeriesPage({
                   <div className="aspect-[2/3] relative bg-muted/50">
                     <Image
                       src={getBookCoverUrl(s.first_book_id)}
-                      alt={`Cover of ${s.name}`}
+                      alt={`Couverture de ${s.name}`}
                       fill
                       className="object-cover"
                       unoptimized
@@ -105,7 +127,7 @@ export default async function SeriesPage({
                   </div>
                   <div className="p-3">
                     <h3 className="font-medium text-foreground truncate text-sm" title={s.name}>
-                      {s.name === "unclassified" ? "Unclassified" : s.name}
+                      {s.name === "unclassified" ? "Non classé" : s.name}
                     </h3>
                     <div className="flex items-center justify-between mt-1">
                       <p className="text-xs text-muted-foreground">
@@ -116,6 +138,29 @@ export default async function SeriesPage({
                         bookCount={s.book_count}
                         booksReadCount={s.books_read_count}
                       />
+                    </div>
+                    <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                      {s.series_status && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                          s.series_status === "ongoing" ? "bg-blue-500/15 text-blue-600" :
+                          s.series_status === "ended" ? "bg-green-500/15 text-green-600" :
+                          s.series_status === "hiatus" ? "bg-amber-500/15 text-amber-600" :
+                          s.series_status === "cancelled" ? "bg-red-500/15 text-red-600" :
+                          "bg-muted text-muted-foreground"
+                        }`}>
+                          {s.series_status === "ongoing" ? "En cours" :
+                           s.series_status === "ended" ? "Terminée" :
+                           s.series_status === "hiatus" ? "Hiatus" :
+                           s.series_status === "cancelled" ? "Annulée" :
+                           s.series_status === "upcoming" ? "À paraître" :
+                           s.series_status}
+                        </span>
+                      )}
+                      {s.missing_count != null && s.missing_count > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-yellow-500/15 text-yellow-600">
+                          {s.missing_count} manquant{s.missing_count > 1 ? "s" : ""}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -138,7 +183,7 @@ export default async function SeriesPage({
             </svg>
           </div>
           <p className="text-muted-foreground text-lg">
-            {hasFilters ? "No series found matching your filters" : "No series available"}
+            {hasFilters ? "Aucune série trouvée correspondant à vos filtres" : "Aucune série disponible"}
           </p>
         </div>
       )}

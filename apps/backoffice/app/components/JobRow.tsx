@@ -63,12 +63,12 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
       ? job.total_files != null
         ? `${job.processed_files ?? 0}/${job.total_files}`
         : scanned > 0
-          ? `${scanned} scanned`
+          ? `${scanned} analysés`
           : "-"
       : job.status === "success" && (indexed > 0 || removed > 0 || errors > 0)
         ? null // rendered below as ✓ / − / ⚠
         : scanned > 0
-          ? `${scanned} scanned`
+          ? `${scanned} analysés`
           : "—";
 
   // Thumbnails column (Phase 2: extracting_pages + generating_thumbnails)
@@ -113,7 +113,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
                 className="text-xs text-primary hover:text-primary/80 hover:underline"
                 onClick={() => setShowProgress(!showProgress)}
               >
-                {showProgress ? "Hide" : "Show"} progress
+                {showProgress ? "Masquer" : "Afficher"} la progression
               </button>
             )}
           </div>
@@ -154,7 +154,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
               href={`/jobs/${job.id}`}
               className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
             >
-              View
+              Voir
             </Link>
             {(job.status === "pending" || job.status === "running" || job.status === "extracting_pages" || job.status === "generating_thumbnails") && (
               <Button 
@@ -162,7 +162,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
                 size="sm"
                 onClick={() => onCancel(job.id)}
               >
-                Cancel
+                Annuler
               </Button>
             )}
           </div>

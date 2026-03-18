@@ -76,7 +76,7 @@ export function MobileNav({ navItems }: { navItems: NavItem[] }) {
               onClick={() => setIsOpen(false)}
             >
               <NavIcon name="settings" />
-              <span className="font-medium">Settings</span>
+              <span className="font-medium">Paramètres</span>
             </Link>
           </div>
         </nav>
@@ -90,7 +90,7 @@ export function MobileNav({ navItems }: { navItems: NavItem[] }) {
       <button
         className="md:hidden p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
         onClick={() => setIsOpen(!isOpen)}
-        aria-label={isOpen ? "Close menu" : "Open menu"}
+        aria-label={isOpen ? "Fermer le menu" : "Ouvrir le menu"}
         aria-expanded={isOpen}
       >
         {isOpen ? <XIcon /> : <HamburgerIcon />}

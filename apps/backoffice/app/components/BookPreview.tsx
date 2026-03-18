@@ -16,7 +16,7 @@ export function BookPreview({ bookId, pageCount }: { bookId: string; pageCount: 
     <div className="bg-card rounded-xl border border-border p-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold text-foreground">
-          Preview
+          Aperçu
           <span className="ml-2 text-sm font-normal text-muted-foreground">
             pages {offset + 1}–{Math.min(offset + PAGE_SIZE, pageCount)} / {pageCount}
           </span>
@@ -27,14 +27,14 @@ export function BookPreview({ bookId, pageCount }: { bookId: string; pageCount: 
             disabled={offset === 0}
             className="px-3 py-1.5 text-sm rounded-lg border border-border bg-muted/50 text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            ← Prev
+            ← Préc.
           </button>
           <button
             onClick={() => setOffset((o) => Math.min(o + PAGE_SIZE, pageCount - 1))}
             disabled={offset + PAGE_SIZE >= pageCount}
             className="px-3 py-1.5 text-sm rounded-lg border border-border bg-muted/50 text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            Next →
+            Suiv. →
           </button>
         </div>
       </div>

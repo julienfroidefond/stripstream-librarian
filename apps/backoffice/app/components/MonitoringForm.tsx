@@ -67,7 +67,7 @@ export function MonitoringForm({ libraryId, monitorEnabled, scanMode, watcherEna
             disabled={isPending}
             className="w-3.5 h-3.5 rounded border-border text-warning focus:ring-warning"
           />
-          <span title="Real-time file watcher">⚡</span>
+          <span title="Surveillance des fichiers en temps réel">⚡</span>
         </label>
         
         <select
@@ -76,10 +76,10 @@ export function MonitoringForm({ libraryId, monitorEnabled, scanMode, watcherEna
           disabled={isPending}
           className="px-3 py-1.5 text-sm rounded-lg border border-border bg-card text-foreground focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50"
         >
-          <option value="manual">Manual</option>
-          <option value="hourly">Hourly</option>
-          <option value="daily">Daily</option>
-          <option value="weekly">Weekly</option>
+          <option value="manual">Manuel</option>
+          <option value="hourly">Toutes les heures</option>
+          <option value="daily">Quotidien</option>
+          <option value="weekly">Hebdomadaire</option>
         </select>
         
         <button 

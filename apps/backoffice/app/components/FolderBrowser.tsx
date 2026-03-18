@@ -173,7 +173,7 @@ export function FolderBrowser({ initialFolders, selectedPath, onSelect }: Folder
       <div className="max-h-80 overflow-y-auto">
         {tree.length === 0 ? (
           <div className="px-3 py-8 text-sm text-muted-foreground text-center">
-            No folders found
+            Aucun dossier trouvé
           </div>
         ) : (
           tree.map(node => renderNode(node))

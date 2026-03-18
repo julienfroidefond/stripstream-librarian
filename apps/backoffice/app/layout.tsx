@@ -11,7 +11,7 @@ import { MobileNav } from "./components/MobileNav";
 
 export const metadata: Metadata = {
   title: "StripStream Backoffice",
-  description: "Backoffice administration for StripStream Librarian"
+  description: "Administration backoffice pour StripStream Librarian"
 };
 
 type NavItem = {
@@ -21,17 +21,17 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
-  { href: "/", label: "Dashboard", icon: "dashboard" },
-  { href: "/books", label: "Books", icon: "books" },
-  { href: "/series", label: "Series", icon: "series" },
-  { href: "/libraries", label: "Libraries", icon: "libraries" },
-  { href: "/jobs", label: "Jobs", icon: "jobs" },
-  { href: "/tokens", label: "Tokens", icon: "tokens" },
+  { href: "/", label: "Tableau de bord", icon: "dashboard" },
+  { href: "/books", label: "Livres", icon: "books" },
+  { href: "/series", label: "Séries", icon: "series" },
+  { href: "/libraries", label: "Bibliothèques", icon: "libraries" },
+  { href: "/jobs", label: "Tâches", icon: "jobs" },
+  { href: "/tokens", label: "Jetons", icon: "tokens" },
 ];
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="fr" suppressHydrationWarning>
       <body className="min-h-screen bg-background text-foreground font-sans antialiased bg-grain">
         <ThemeProvider>
           {/* Header avec effet glassmorphism */}
@@ -76,7 +76,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                   <Link
                     href="/settings"
                     className="hidden md:flex p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                    title="Settings"
+                    title="Paramètres"
                   >
                     <Icon name="settings" size="md" />
                   </Link>

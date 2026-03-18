@@ -9,6 +9,7 @@ export type LibraryDto = {
   next_scan_at: string | null;
   watcher_enabled: boolean;
   metadata_provider: string | null;
+  fallback_metadata_provider: string | null;
 };
 
 export type IndexJobDto = {
@@ -120,6 +121,8 @@ export type SeriesDto = {
   books_read_count: number;
   first_book_id: string;
   library_id: string;
+  series_status: string | null;
+  missing_count: number | null;
 };
 
 export function config() {
@@ -296,10 +299,14 @@ export async function fetchSeries(
   libraryId: string,
   page: number = 1,
   limit: number = 50,
+  seriesStatus?: string,
+  hasMissing?: boolean,
 ): Promise<SeriesPageDto> {
   const params = new URLSearchParams();
   params.set("page", page.toString());
   params.set("limit", limit.toString());
+  if (seriesStatus) params.set("series_status", seriesStatus);
+  if (hasMissing) params.set("has_missing", "true");
 
   return apiFetch<SeriesPageDto>(
     `/libraries/${libraryId}/series?${params.toString()}`,
@@ -313,16 +320,24 @@ export async function fetchAllSeries(
   page: number = 1,
   limit: number = 50,
   sort?: string,
+  seriesStatus?: string,
+  hasMissing?: boolean,
 ): Promise<SeriesPageDto> {
   const params = new URLSearchParams();
   if (libraryId) params.set("library_id", libraryId);
   if (q) params.set("q", q);
   if (readingStatus) params.set("reading_status", readingStatus);
   if (sort) params.set("sort", sort);
+  if (seriesStatus) params.set("series_status", seriesStatus);
+  if (hasMissing) params.set("has_missing", "true");
   params.set("page", page.toString());
   params.set("limit", limit.toString());
 
   return apiFetch<SeriesPageDto>(`/series?${params.toString()}`);
+}
+
+export async function fetchSeriesStatuses(): Promise<string[]> {
+  return apiFetch<string[]>("/series/statuses");
 }
 
 export async function searchBooks(
@@ -726,9 +741,55 @@ export async function deleteMetadataLink(id: string) {
   });
 }
 
-export async function updateLibraryMetadataProvider(libraryId: string, provider: string | null) {
+export async function updateLibraryMetadataProvider(libraryId: string, provider: string | null, fallbackProvider?: string | null) {
   return apiFetch<LibraryDto>(`/libraries/${libraryId}/metadata-provider`, {
     method: "PATCH",
-    body: JSON.stringify({ metadata_provider: provider }),
+    body: JSON.stringify({ metadata_provider: provider, fallback_metadata_provider: fallbackProvider }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Batch Metadata
+// ---------------------------------------------------------------------------
+
+export type MetadataBatchReportDto = {
+  job_id: string;
+  status: string;
+  total_series: number;
+  processed: number;
+  auto_matched: number;
+  no_results: number;
+  too_many_results: number;
+  low_confidence: number;
+  already_linked: number;
+  errors: number;
+};
+
+export type MetadataBatchResultDto = {
+  id: string;
+  series_name: string;
+  status: string;
+  provider_used: string | null;
+  fallback_used: boolean;
+  candidates_count: number;
+  best_confidence: number | null;
+  best_candidate_json: Record<string, unknown> | null;
+  link_id: string | null;
+  error_message: string | null;
+};
+
+export async function startMetadataBatch(libraryId: string) {
+  return apiFetch<{ id: string; status: string }>("/metadata/batch", {
+    method: "POST",
+    body: JSON.stringify({ library_id: libraryId }),
+  });
+}
+
+export async function getMetadataBatchReport(jobId: string) {
+  return apiFetch<MetadataBatchReportDto>(`/metadata/batch/${jobId}/report`);
+}
+
+export async function getMetadataBatchResults(jobId: string, status?: string) {
+  const params = status ? `?status=${status}` : "";
+  return apiFetch<MetadataBatchResultDto[]>(`/metadata/batch/${jobId}/results${params}`);
 }

@@ -46,12 +46,12 @@ function formatDate(dateStr: string): string {
   
   if (diff < 3600000) {
     const mins = Math.floor(diff / 60000);
-    if (mins < 1) return "Just now";
-    return `${mins}m ago`;
+    if (mins < 1) return "À l'instant";
+    return `il y a ${mins}m`;
   }
   if (diff < 86400000) {
     const hours = Math.floor(diff / 3600000);
-    return `${hours}h ago`;
+    return `il y a ${hours}h`;
   }
   return date.toLocaleDateString();
 }
@@ -103,13 +103,13 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
           <thead>
             <tr className="border-b border-border/60 bg-muted/50">
               <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">ID</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Library</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Bibliothèque</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Type</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Files</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Thumbnails</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Duration</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Created</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Statut</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Fichiers</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Miniatures</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Durée</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Créé</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
             </tr>
           </thead>

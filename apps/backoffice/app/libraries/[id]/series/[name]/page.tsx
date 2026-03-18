@@ -55,7 +55,7 @@ export default async function SeriesDetailPage({
 
   const totalPages = Math.ceil(booksPage.total / limit);
   const booksReadCount = booksPage.items.filter((b) => b.reading_status === "read").length;
-  const displayName = seriesName === "unclassified" ? "Non classifié" : seriesName;
+  const displayName = seriesName === "unclassified" ? "Non classé" : seriesName;
 
   // Use first book cover as series cover
   const coverBookId = booksPage.items[0]?.id;
@@ -68,7 +68,7 @@ export default async function SeriesDetailPage({
           href="/libraries"
           className="text-muted-foreground hover:text-primary transition-colors"
         >
-          Libraries
+          Bibliothèques
         </Link>
         <span className="text-muted-foreground">/</span>
         <Link
@@ -88,7 +88,7 @@ export default async function SeriesDetailPage({
             <div className="w-40 aspect-[2/3] relative rounded-xl overflow-hidden shadow-card border border-border">
               <Image
                 src={getBookCoverUrl(coverBookId)}
-                alt={`Cover of ${displayName}`}
+                alt={`Couverture de ${displayName}`}
                 fill
                 className="object-cover"
                 unoptimized

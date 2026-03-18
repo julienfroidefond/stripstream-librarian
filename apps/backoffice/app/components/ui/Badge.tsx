@@ -71,8 +71,8 @@ const statusVariants: Record<string, BadgeVariant> = {
 };
 
 const statusLabels: Record<string, string> = {
-  extracting_pages: "Extracting pages",
-  generating_thumbnails: "Thumbnails",
+  extracting_pages: "Extraction des pages",
+  generating_thumbnails: "Miniatures",
 };
 
 interface StatusBadgeProps {
@@ -96,10 +96,10 @@ const jobTypeVariants: Record<string, BadgeVariant> = {
 };
 
 const jobTypeLabels: Record<string, string> = {
-  rebuild: "Index",
-  full_rebuild: "Full Index",
-  thumbnail_rebuild: "Thumbnails",
-  thumbnail_regenerate: "Regen. Thumbnails",
+  rebuild: "Indexation",
+  full_rebuild: "Indexation complète",
+  thumbnail_rebuild: "Miniatures",
+  thumbnail_regenerate: "Régén. miniatures",
   cbr_to_cbz: "CBR → CBZ",
 };
 

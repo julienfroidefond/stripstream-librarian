@@ -312,6 +312,8 @@ pub struct SeriesItem {
     pub first_book_id: Uuid,
     #[schema(value_type = String)]
     pub library_id: Uuid,
+    pub series_status: Option<String>,
+    pub missing_count: Option<i64>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -328,6 +330,12 @@ pub struct ListSeriesQuery {
     pub q: Option<String>,
     #[schema(value_type = Option<String>, example = "unread,reading")]
     pub reading_status: Option<String>,
+    /// Filter by series status (e.g. "ongoing", "ended")
+    #[schema(value_type = Option<String>, example = "ongoing")]
+    pub series_status: Option<String>,
+    /// Filter series with missing books: "true" to show only series with missing books
+    #[schema(value_type = Option<String>, example = "true")]
+    pub has_missing: Option<String>,
     #[schema(value_type = Option<i64>, example = 1)]
     pub page: Option<i64>,
     #[schema(value_type = Option<i64>, example = 50)]
@@ -371,6 +379,8 @@ pub async fn list_series(
               ELSE 'reading'
            END"#;
 
+    let has_missing = query.has_missing.as_deref() == Some("true");
+
     // Paramètres dynamiques — $1 = library_id fixe, puis optionnels dans l'ordre
     let mut p: usize = 1;
 
@@ -382,7 +392,27 @@ pub async fn list_series(
         p += 1; format!("AND {series_status_expr} = ANY(${p})")
     } else { String::new() };
 
-    // q_cond et count_rs_cond partagent le même p — le count_sql les réutilise directement
+    let ss_cond = if query.series_status.is_some() {
+        p += 1; format!("AND sm.status = ${p}")
+    } else { String::new() };
+
+    let missing_cond = if has_missing {
+        "AND mc.missing_count > 0".to_string()
+    } else { String::new() };
+
+    let missing_cte = format!(
+        r#"
+        missing_counts AS (
+            SELECT eml.series_name,
+                COUNT(ebm.id) FILTER (WHERE ebm.book_id IS NULL) as missing_count
+            FROM external_metadata_links eml
+            JOIN external_book_metadata ebm ON ebm.link_id = eml.id
+            WHERE eml.library_id = $1 AND eml.status = 'approved'
+            GROUP BY eml.series_name
+        )
+        "#
+    );
+
     let count_sql = format!(
         r#"
         WITH sorted_books AS (
@@ -396,12 +426,15 @@ pub async fn list_series(
             FROM sorted_books sb
             LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
             GROUP BY sb.name
-        )
-        SELECT COUNT(*) FROM series_counts sc WHERE TRUE {q_cond} {count_rs_cond}
+        ),
+        {missing_cte}
+        SELECT COUNT(*) FROM series_counts sc
+        LEFT JOIN series_metadata sm ON sm.library_id = $1 AND sm.name = sc.name
+        LEFT JOIN missing_counts mc ON mc.series_name = sc.name
+        WHERE TRUE {q_cond} {count_rs_cond} {ss_cond} {missing_cond}
         "#
     );
 
-    // DATA: mêmes params dans le même ordre, puis limit/offset à la fin
     let limit_p = p + 1;
     let offset_p = p + 2;
 
@@ -430,17 +463,24 @@ pub async fn list_series(
             FROM sorted_books sb
             LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
             GROUP BY sb.name
-        )
+        ),
+        {missing_cte}
         SELECT
             sc.name,
             sc.book_count,
             sc.books_read_count,
-            sb.id as first_book_id
+            sb.id as first_book_id,
+            sm.status as series_status,
+            mc.missing_count
         FROM series_counts sc
         JOIN sorted_books sb ON sb.name = sc.name AND sb.rn = 1
+        LEFT JOIN series_metadata sm ON sm.library_id = $1 AND sm.name = sc.name
+        LEFT JOIN missing_counts mc ON mc.series_name = sc.name
         WHERE TRUE
           {q_cond}
           {count_rs_cond}
+          {ss_cond}
+          {missing_cond}
         ORDER BY
             REGEXP_REPLACE(LOWER(sc.name), '[0-9].*$', ''),
             COALESCE(
@@ -465,6 +505,10 @@ pub async fn list_series(
         count_builder = count_builder.bind(statuses.clone());
         data_builder = data_builder.bind(statuses.clone());
     }
+    if let Some(ref ss) = query.series_status {
+        count_builder = count_builder.bind(ss);
+        data_builder = data_builder.bind(ss);
+    }
 
     data_builder = data_builder.bind(limit).bind(offset);
 
@@ -474,7 +518,7 @@ pub async fn list_series(
     )?;
     let total: i64 = count_row.get(0);
 
-    let mut items: Vec<SeriesItem> = rows
+    let items: Vec<SeriesItem> = rows
         .iter()
         .map(|row| SeriesItem {
             name: row.get("name"),
@@ -482,11 +526,13 @@ pub async fn list_series(
             books_read_count: row.get("books_read_count"),
             first_book_id: row.get("first_book_id"),
             library_id,
+            series_status: row.get("series_status"),
+            missing_count: row.get("missing_count"),
         })
         .collect();
 
     Ok(Json(SeriesPage {
-        items: std::mem::take(&mut items),
+        items,
         total,
         page,
         limit,
@@ -501,6 +547,12 @@ pub struct ListAllSeriesQuery {
     pub library_id: Option<Uuid>,
     #[schema(value_type = Option<String>, example = "unread,reading")]
     pub reading_status: Option<String>,
+    /// Filter by series status (e.g. "ongoing", "ended")
+    #[schema(value_type = Option<String>, example = "ongoing")]
+    pub series_status: Option<String>,
+    /// Filter series with missing books: "true" to show only series with missing books
+    #[schema(value_type = Option<String>, example = "true")]
+    pub has_missing: Option<String>,
     #[schema(value_type = Option<i64>, example = 1)]
     pub page: Option<i64>,
     #[schema(value_type = Option<i64>, example = 50)]
@@ -547,6 +599,8 @@ pub async fn list_all_series(
               ELSE 'reading'
            END"#;
 
+    let has_missing = query.has_missing.as_deref() == Some("true");
+
     let mut p: usize = 0;
 
     let lib_cond = if query.library_id.is_some() {
@@ -563,21 +617,60 @@ pub async fn list_all_series(
         p += 1; format!("AND {series_status_expr} = ANY(${p})")
     } else { String::new() };
 
+    let ss_cond = if query.series_status.is_some() {
+        p += 1; format!("AND sm.status = ${p}")
+    } else { String::new() };
+
+    let missing_cond = if has_missing {
+        "AND mc.missing_count > 0".to_string()
+    } else { String::new() };
+
+    // Missing counts CTE — needs library_id filter when filtering by library
+    let missing_cte = if query.library_id.is_some() {
+        format!(
+            r#"
+            missing_counts AS (
+                SELECT eml.series_name, eml.library_id,
+                    COUNT(ebm.id) FILTER (WHERE ebm.book_id IS NULL) as missing_count
+                FROM external_metadata_links eml
+                JOIN external_book_metadata ebm ON ebm.link_id = eml.id
+                WHERE eml.library_id = $1 AND eml.status = 'approved'
+                GROUP BY eml.series_name, eml.library_id
+            )
+            "#
+        )
+    } else {
+        r#"
+        missing_counts AS (
+            SELECT eml.series_name, eml.library_id,
+                COUNT(ebm.id) FILTER (WHERE ebm.book_id IS NULL) as missing_count
+            FROM external_metadata_links eml
+            JOIN external_book_metadata ebm ON ebm.link_id = eml.id
+            WHERE eml.status = 'approved'
+            GROUP BY eml.series_name, eml.library_id
+        )
+        "#.to_string()
+    };
+
     let count_sql = format!(
         r#"
         WITH sorted_books AS (
-            SELECT COALESCE(NULLIF(series, ''), 'unclassified') as name, id
+            SELECT COALESCE(NULLIF(series, ''), 'unclassified') as name, id, library_id
             FROM books {lib_cond}
         ),
         series_counts AS (
-            SELECT sb.name,
+            SELECT sb.name, sb.library_id,
                 COUNT(*) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
             FROM sorted_books sb
             LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
-            GROUP BY sb.name
-        )
-        SELECT COUNT(*) FROM series_counts sc WHERE TRUE {q_cond} {rs_cond}
+            GROUP BY sb.name, sb.library_id
+        ),
+        {missing_cte}
+        SELECT COUNT(*) FROM series_counts sc
+        LEFT JOIN series_metadata sm ON sm.library_id = sc.library_id AND sm.name = sc.name
+        LEFT JOIN missing_counts mc ON mc.series_name = sc.name AND mc.library_id = sc.library_id
+        WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond}
         "#
     );
 
@@ -612,24 +705,32 @@ pub async fn list_all_series(
         series_counts AS (
             SELECT
                 sb.name,
+                sb.library_id,
                 COUNT(*) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count,
                 MAX(sb.updated_at) as latest_updated_at
             FROM sorted_books sb
             LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
-            GROUP BY sb.name
-        )
+            GROUP BY sb.name, sb.library_id
+        ),
+        {missing_cte}
         SELECT
             sc.name,
             sc.book_count,
             sc.books_read_count,
             sb.id as first_book_id,
-            sb.library_id
+            sb.library_id,
+            sm.status as series_status,
+            mc.missing_count
         FROM series_counts sc
         JOIN sorted_books sb ON sb.name = sc.name AND sb.rn = 1
+        LEFT JOIN series_metadata sm ON sm.library_id = sc.library_id AND sm.name = sc.name
+        LEFT JOIN missing_counts mc ON mc.series_name = sc.name AND mc.library_id = sc.library_id
         WHERE TRUE
           {q_cond}
           {rs_cond}
+          {ss_cond}
+          {missing_cond}
         ORDER BY {series_order_clause}
         LIMIT ${limit_p} OFFSET ${offset_p}
         "#
@@ -652,6 +753,10 @@ pub async fn list_all_series(
         count_builder = count_builder.bind(statuses.clone());
         data_builder = data_builder.bind(statuses.clone());
     }
+    if let Some(ref ss) = query.series_status {
+        count_builder = count_builder.bind(ss);
+        data_builder = data_builder.bind(ss);
+    }
 
     data_builder = data_builder.bind(limit).bind(offset);
 
@@ -669,6 +774,8 @@ pub async fn list_all_series(
             books_read_count: row.get("books_read_count"),
             first_book_id: row.get("first_book_id"),
             library_id: row.get("library_id"),
+            series_status: row.get("series_status"),
+            missing_count: row.get("missing_count"),
         })
         .collect();
 
@@ -678,6 +785,28 @@ pub async fn list_all_series(
         page,
         limit,
     }))
+}
+
+/// List all distinct series status values present in the database
+#[utoipa::path(
+    get,
+    path = "/series/statuses",
+    tag = "books",
+    responses(
+        (status = 200, body = Vec<String>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn series_statuses(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<String>>, ApiError> {
+    let rows: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT status FROM series_metadata WHERE status IS NOT NULL ORDER BY status",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(rows))
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -756,6 +885,8 @@ pub async fn ongoing_series(
             books_read_count: row.get("books_read_count"),
             first_book_id: row.get("first_book_id"),
             library_id: row.get("library_id"),
+            series_status: None,
+            missing_count: None,
         })
         .collect();
 

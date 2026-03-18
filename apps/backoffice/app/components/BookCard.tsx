@@ -71,7 +71,7 @@ export function BookCard({ book, readingStatus }: BookCardProps) {
       <div className="relative">
         <BookImage
           src={coverUrl}
-          alt={`Cover of ${book.title}`}
+          alt={`Couverture de ${book.title}`}
         />
         {overlay && (
           <span className={`absolute bottom-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide ${overlay.className}`}>

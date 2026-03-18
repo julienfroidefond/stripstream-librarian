@@ -55,13 +55,13 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         body: JSON.stringify({ value })
       });
       if (response.ok) {
-        setSaveMessage("Settings saved successfully");
+        setSaveMessage("Paramètres enregistrés avec succès");
         setTimeout(() => setSaveMessage(null), 3000);
       } else {
-        setSaveMessage("Failed to save settings");
+        setSaveMessage("Échec de l'enregistrement des paramètres");
       }
     } catch (error) {
-      setSaveMessage("Error saving settings");
+      setSaveMessage("Erreur lors de l'enregistrement des paramètres");
     } finally {
       setIsSaving(false);
     }
@@ -81,7 +81,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         setCacheStats(stats);
       }
     } catch (error) {
-      setClearResult({ success: false, message: "Failed to clear cache" });
+      setClearResult({ success: false, message: "Échec du vidage du cache" });
     } finally {
       setIsClearing(false);
     }
@@ -150,8 +150,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
   const [activeTab, setActiveTab] = useState<"general" | "integrations">("general");
 
   const tabs = [
-    { id: "general" as const, label: "General", icon: "settings" as const },
-    { id: "integrations" as const, label: "Integrations", icon: "refresh" as const },
+    { id: "general" as const, label: "Général", icon: "settings" as const },
+    { id: "integrations" as const, label: "Intégrations", icon: "refresh" as const },
   ];
 
   return (
@@ -159,7 +159,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
           <Icon name="settings" size="xl" />
-          Settings
+          Paramètres
         </h1>
       </div>
 
@@ -195,15 +195,15 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Icon name="image" size="md" />
-            Image Processing
+            Traitement d&apos;images
           </CardTitle>
-          <CardDescription>These settings only apply when a client explicitly requests format conversion via the API (e.g. <code className="text-xs bg-muted px-1 rounded">?format=webp&amp;width=800</code>). Pages served without parameters are delivered as-is from the archive, with no processing.</CardDescription>
+          <CardDescription>Ces paramètres s&apos;appliquent uniquement lorsqu&apos;un client demande explicitement une conversion de format via l&apos;API (ex. <code className="text-xs bg-muted px-1 rounded">?format=webp&amp;width=800</code>). Les pages servies sans paramètres sont livrées telles quelles depuis l&apos;archive, sans traitement.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <FormRow>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Default Output Format</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">Format de sortie par défaut</label>
                 <FormSelect
                   value={settings.image_processing.format}
                   onChange={(e) => {
@@ -218,7 +218,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                 </FormSelect>
               </FormField>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Default Quality (1-100)</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">Qualité par défaut (1-100)</label>
                 <FormInput 
                   type="number" 
                   min={1} 
@@ -235,7 +235,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             </FormRow>
             <FormRow>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Default Resize Filter</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">Filtre de redimensionnement par défaut</label>
                 <FormSelect 
                   value={settings.image_processing.filter}
                   onChange={(e) => {

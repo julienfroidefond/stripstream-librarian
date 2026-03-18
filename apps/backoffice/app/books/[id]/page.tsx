@@ -53,7 +53,7 @@ export default async function BookDetailPage({
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm">
         <Link href="/libraries" className="text-muted-foreground hover:text-primary transition-colors">
-          Libraries
+          Bibliothèques
         </Link>
         <span className="text-muted-foreground">/</span>
         {library && (
@@ -88,7 +88,7 @@ export default async function BookDetailPage({
           <div className="w-48 aspect-[2/3] relative rounded-xl overflow-hidden shadow-card border border-border">
             <Image
               src={getBookCoverUrl(book.id)}
-              alt={`Cover of ${book.title}`}
+              alt={`Couverture de ${book.title}`}
               fill
               className="object-cover"
               unoptimized

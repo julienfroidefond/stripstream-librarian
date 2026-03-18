@@ -590,7 +590,7 @@ fn row_to_link_dto(row: &sqlx::postgres::PgRow) -> ExternalMetadataLinkDto {
     }
 }
 
-async fn get_provider_for_library(state: &AppState, library_id: Uuid) -> Result<String, ApiError> {
+pub(crate) async fn get_provider_for_library(state: &AppState, library_id: Uuid) -> Result<String, ApiError> {
     // Check library-level provider first
     let row = sqlx::query("SELECT metadata_provider FROM libraries WHERE id = $1")
         .bind(library_id)
@@ -623,7 +623,7 @@ async fn get_provider_for_library(state: &AppState, library_id: Uuid) -> Result<
     Ok("google_books".to_string())
 }
 
-async fn load_provider_config(
+pub(crate) async fn load_provider_config(
     state: &AppState,
     provider_name: &str,
 ) -> metadata_providers::ProviderConfig {
@@ -661,7 +661,7 @@ async fn load_provider_config(
     config
 }
 
-async fn sync_series_metadata(
+pub(crate) async fn sync_series_metadata(
     state: &AppState,
     library_id: Uuid,
     series_name: &str,
@@ -846,7 +846,7 @@ fn normalize_series_status(raw: &str) -> String {
     }
 }
 
-async fn sync_books_metadata(
+pub(crate) async fn sync_books_metadata(
     state: &AppState,
     link_id: Uuid,
     library_id: Uuid,
