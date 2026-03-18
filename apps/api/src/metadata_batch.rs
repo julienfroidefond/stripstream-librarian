@@ -632,7 +632,7 @@ enum SearchOutcome {
 
 async fn search_and_evaluate(
     pool: &PgPool,
-    _library_id: Uuid,
+    library_id: Uuid,
     series_name: &str,
     provider_name: &str,
 ) -> SearchOutcome {
@@ -660,7 +660,31 @@ async fn search_and_evaluate(
     // Check if best candidate has perfect confidence
     let best = candidates.into_iter().next().unwrap();
     if (best.confidence - 1.0).abs() < f32::EPSILON {
-        // Multiple results but best is 100% — still too many results
+        // Multiple results but best is 100% — check if book count matches to auto-match
+        if let Some(ext_total) = best.total_volumes {
+            let local_count: Option<i64> = sqlx::query_scalar(
+                r#"
+                SELECT COUNT(*) FROM books
+                WHERE library_id = $1
+                  AND COALESCE(NULLIF(series, ''), 'unclassified') = $2
+                "#,
+            )
+            .bind(library_id)
+            .bind(series_name)
+            .fetch_one(pool)
+            .await
+            .ok();
+
+            if let Some(count) = local_count {
+                if count == ext_total as i64 {
+                    info!(
+                        "[METADATA_BATCH] Auto-match by book count: series='{}' confidence=100% local_books={} external_volumes={}",
+                        series_name, count, ext_total
+                    );
+                    return SearchOutcome::AutoMatch(best);
+                }
+            }
+        }
         return SearchOutcome::TooManyResults(1, Some(best)); // count the 100% one
     }
 
