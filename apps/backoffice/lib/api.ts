@@ -494,6 +494,20 @@ export type MonthlyAdditions = {
   books_added: number;
 };
 
+export type ProviderCount = {
+  provider: string;
+  count: number;
+};
+
+export type MetadataStats = {
+  total_series: number;
+  series_linked: number;
+  series_unlinked: number;
+  books_with_summary: number;
+  books_with_isbn: number;
+  by_provider: ProviderCount[];
+};
+
 export type StatsResponse = {
   overview: StatsOverview;
   reading_status: ReadingStatusStats;
@@ -502,6 +516,7 @@ export type StatsResponse = {
   by_library: LibraryStatsItem[];
   top_series: TopSeriesItem[];
   additions_over_time: MonthlyAdditions[];
+  metadata: MetadataStats;
 };
 
 export async function fetchStats() {

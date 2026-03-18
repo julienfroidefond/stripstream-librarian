@@ -137,7 +137,7 @@ export default async function DashboardPage() {
     );
   }
 
-  const { overview, reading_status, by_format, by_language, by_library, top_series, additions_over_time } = stats;
+  const { overview, reading_status, by_format, by_language, by_library, top_series, additions_over_time, metadata } = stats;
 
   const readingColors = ["hsl(220 13% 70%)", "hsl(45 93% 47%)", "hsl(142 60% 45%)"];
   const formatColors = [
@@ -227,6 +227,69 @@ export default async function DashboardPage() {
                 color: formatColors[i % formatColors.length],
               }))}
             />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Metadata row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Series metadata coverage donut */}
+        <Card hover={false}>
+          <CardHeader>
+            <CardTitle className="text-base">{t("dashboard.metadataCoverage")}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <DonutChart
+              locale={locale}
+              noDataLabel={noDataLabel}
+              data={[
+                { label: t("dashboard.seriesLinked"), value: metadata.series_linked, color: "hsl(142 60% 45%)" },
+                { label: t("dashboard.seriesUnlinked"), value: metadata.series_unlinked, color: "hsl(220 13% 70%)" },
+              ]}
+            />
+          </CardContent>
+        </Card>
+
+        {/* By provider donut */}
+        <Card hover={false}>
+          <CardHeader>
+            <CardTitle className="text-base">{t("dashboard.byProvider")}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <DonutChart
+              locale={locale}
+              noDataLabel={noDataLabel}
+              data={metadata.by_provider.map((p, i) => ({
+                label: p.provider.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+                value: p.count,
+                color: formatColors[i % formatColors.length],
+              }))}
+            />
+          </CardContent>
+        </Card>
+
+        {/* Book metadata quality */}
+        <Card hover={false}>
+          <CardHeader>
+            <CardTitle className="text-base">{t("dashboard.bookMetadata")}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <HorizontalBar
+                label={t("dashboard.withSummary")}
+                value={metadata.books_with_summary}
+                max={overview.total_books}
+                subLabel={overview.total_books > 0 ? `${Math.round((metadata.books_with_summary / overview.total_books) * 100)}%` : "0%"}
+                color="hsl(198 78% 37%)"
+              />
+              <HorizontalBar
+                label={t("dashboard.withIsbn")}
+                value={metadata.books_with_isbn}
+                max={overview.total_books}
+                subLabel={overview.total_books > 0 ? `${Math.round((metadata.books_with_isbn / overview.total_books) * 100)}%` : "0%"}
+                color="hsl(280 60% 50%)"
+              />
+            </div>
           </CardContent>
         </Card>
       </div>

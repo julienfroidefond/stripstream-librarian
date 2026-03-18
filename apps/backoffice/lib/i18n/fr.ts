@@ -73,6 +73,13 @@ const fr = {
   "dashboard.noSeries": "Aucune série pour le moment",
   "dashboard.unknown": "Inconnu",
   "dashboard.readCount": "{{read}}/{{total}} lu",
+  "dashboard.metadataCoverage": "Couverture métadonnées",
+  "dashboard.seriesLinked": "Séries liées",
+  "dashboard.seriesUnlinked": "Séries non liées",
+  "dashboard.byProvider": "Par fournisseur",
+  "dashboard.bookMetadata": "Métadonnées livres",
+  "dashboard.withSummary": "Avec résumé",
+  "dashboard.withIsbn": "Avec ISBN",
 
   // Books page
   "books.title": "Livres",

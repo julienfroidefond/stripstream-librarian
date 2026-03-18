@@ -59,6 +59,22 @@ pub struct MonthlyAdditions {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct MetadataStats {
+    pub total_series: i64,
+    pub series_linked: i64,
+    pub series_unlinked: i64,
+    pub books_with_summary: i64,
+    pub books_with_isbn: i64,
+    pub by_provider: Vec<ProviderCount>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ProviderCount {
+    pub provider: String,
+    pub count: i64,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct StatsResponse {
     pub overview: StatsOverview,
     pub reading_status: ReadingStatusStats,
@@ -67,6 +83,7 @@ pub struct StatsResponse {
     pub by_library: Vec<LibraryStats>,
     pub top_series: Vec<TopSeries>,
     pub additions_over_time: Vec<MonthlyAdditions>,
+    pub metadata: MetadataStats,
 }
 
 /// Get collection statistics for the dashboard
@@ -265,6 +282,51 @@ pub async fn get_stats(
         })
         .collect();
 
+    // Metadata stats
+    let meta_row = sqlx::query(
+        r#"
+        SELECT
+            (SELECT COUNT(DISTINCT NULLIF(series, '')) FROM books) AS total_series,
+            (SELECT COUNT(DISTINCT series_name) FROM external_metadata_links WHERE status = 'approved') AS series_linked,
+            (SELECT COUNT(*) FROM books WHERE summary IS NOT NULL AND summary != '') AS books_with_summary,
+            (SELECT COUNT(*) FROM books WHERE isbn IS NOT NULL AND isbn != '') AS books_with_isbn
+        "#,
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    let meta_total_series: i64 = meta_row.get("total_series");
+    let meta_series_linked: i64 = meta_row.get("series_linked");
+
+    let provider_rows = sqlx::query(
+        r#"
+        SELECT provider, COUNT(DISTINCT series_name) AS count
+        FROM external_metadata_links
+        WHERE status = 'approved'
+        GROUP BY provider
+        ORDER BY count DESC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let by_provider: Vec<ProviderCount> = provider_rows
+        .iter()
+        .map(|r| ProviderCount {
+            provider: r.get("provider"),
+            count: r.get("count"),
+        })
+        .collect();
+
+    let metadata = MetadataStats {
+        total_series: meta_total_series,
+        series_linked: meta_series_linked,
+        series_unlinked: meta_total_series - meta_series_linked,
+        books_with_summary: meta_row.get("books_with_summary"),
+        books_with_isbn: meta_row.get("books_with_isbn"),
+        by_provider,
+    };
+
     Ok(Json(StatsResponse {
         overview,
         reading_status,
@@ -273,5 +335,6 @@ pub async fn get_stats(
         by_library,
         top_series,
         additions_over_time,
+        metadata,
     }))
 }

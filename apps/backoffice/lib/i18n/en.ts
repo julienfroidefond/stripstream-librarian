@@ -75,6 +75,13 @@ const en: Record<TranslationKey, string> = {
   "dashboard.noSeries": "No series yet",
   "dashboard.unknown": "Unknown",
   "dashboard.readCount": "{{read}}/{{total}} read",
+  "dashboard.metadataCoverage": "Metadata coverage",
+  "dashboard.seriesLinked": "Linked series",
+  "dashboard.seriesUnlinked": "Unlinked series",
+  "dashboard.byProvider": "By provider",
+  "dashboard.bookMetadata": "Book metadata",
+  "dashboard.withSummary": "With summary",
+  "dashboard.withIsbn": "With ISBN",
 
   // Books page
   "books.title": "Books",
