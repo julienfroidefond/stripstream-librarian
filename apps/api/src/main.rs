@@ -68,8 +68,6 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         pool,
         bootstrap_token: Arc::from(config.api_bootstrap_token),
-        meili_url: Arc::from(config.meili_url),
-        meili_master_key: Arc::from(config.meili_master_key),
         page_cache: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(512).expect("non-zero")))),
         page_render_limit: Arc::new(Semaphore::new(concurrent_renders)),
         metrics: Arc::new(Metrics::new()),

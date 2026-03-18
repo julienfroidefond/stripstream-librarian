@@ -39,13 +39,13 @@ pub struct SearchResponse {
     pub processing_time_ms: Option<u64>,
 }
 
-/// Search books across all libraries using Meilisearch
+/// Search books across all libraries
 #[utoipa::path(
     get,
     path = "/search",
     tag = "books",
     params(
-        ("q" = String, Query, description = "Search query (books via Meilisearch + series via ILIKE)"),
+        ("q" = String, Query, description = "Search query (books + series via PostgreSQL full-text)"),
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),
         ("type" = Option<String>, Query, description = "Filter by type (cbz, cbr, pdf)"),
         ("kind" = Option<String>, Query, description = "Filter by kind (alias for type)"),
@@ -65,34 +65,38 @@ pub async fn search_books(
         return Err(ApiError::bad_request("q is required"));
     }
 
-    let mut filters: Vec<String> = Vec::new();
-    if let Some(library_id) = query.library_id.as_deref() {
-        filters.push(format!("library_id = '{}'", library_id.replace('"', "")));
-    }
-    let kind_filter = query.r#type.as_deref().or(query.kind.as_deref());
-    if let Some(kind) = kind_filter {
-        filters.push(format!("kind = '{}'", kind.replace('"', "")));
-    }
-
-    let body = serde_json::json!({
-        "q": query.q,
-        "limit": query.limit.unwrap_or(20).clamp(1, 100),
-        "filter": if filters.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(filters.join(" AND ")) }
-    });
-
-    let limit_val = query.limit.unwrap_or(20).clamp(1, 100);
+    let limit_val = query.limit.unwrap_or(20).clamp(1, 100) as i64;
     let q_pattern = format!("%{}%", query.q);
-    let library_id_uuid: Option<uuid::Uuid> = query.library_id.as_deref()
+    let library_id_uuid: Option<Uuid> = query.library_id.as_deref()
         .and_then(|s| s.parse().ok());
+    let kind_filter: Option<&str> = query.r#type.as_deref().or(query.kind.as_deref());
 
-    // Recherche Meilisearch (books) + séries PG en parallèle
-    let client = reqwest::Client::new();
-    let url = format!("{}/indexes/books/search", state.meili_url.trim_end_matches('/'));
-    let meili_fut = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", state.meili_master_key))
-        .json(&body)
-        .send();
+    let start = std::time::Instant::now();
+
+    // Book search via PostgreSQL ILIKE on title, authors, series
+    let books_sql = r#"
+        SELECT b.id, b.library_id, b.kind, b.title,
+            COALESCE(b.authors, CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END) as authors,
+            b.series, b.volume, b.language
+        FROM books b
+        LEFT JOIN series_metadata sm
+            ON sm.library_id = b.library_id
+            AND sm.name = COALESCE(NULLIF(b.series, ''), 'unclassified')
+        WHERE (
+            b.title ILIKE $1
+            OR b.series ILIKE $1
+            OR EXISTS (SELECT 1 FROM unnest(
+                COALESCE(b.authors, CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END)
+                || COALESCE(sm.authors, ARRAY[]::text[])
+            ) AS a WHERE a ILIKE $1)
+        )
+        AND ($2::uuid IS NULL OR b.library_id = $2)
+        AND ($3::text IS NULL OR b.kind = $3)
+        ORDER BY
+            CASE WHEN b.title ILIKE $1 THEN 0 ELSE 1 END,
+            b.title ASC
+        LIMIT $4
+    "#;
 
     let series_sql = r#"
         WITH sorted_books AS (
@@ -108,7 +112,7 @@ pub async fn search_books(
                         title ASC
                 ) as rn
             FROM books
-            WHERE ($1::uuid IS NULL OR library_id = $1)
+            WHERE ($2::uuid IS NULL OR library_id = $2)
         ),
         series_counts AS (
             SELECT
@@ -123,39 +127,49 @@ pub async fn search_books(
         SELECT sc.library_id, sc.name, sc.book_count, sc.books_read_count, sb.id as first_book_id
         FROM series_counts sc
         JOIN sorted_books sb ON sb.library_id = sc.library_id AND sb.name = sc.name AND sb.rn = 1
-        WHERE sc.name ILIKE $2
+        WHERE sc.name ILIKE $1
         ORDER BY sc.name ASC
-        LIMIT $3
+        LIMIT $4
     "#;
 
-    let series_fut = sqlx::query(series_sql)
-        .bind(library_id_uuid)
-        .bind(&q_pattern)
-        .bind(limit_val as i64)
-        .fetch_all(&state.pool);
+    let (books_rows, series_rows) = tokio::join!(
+        sqlx::query(books_sql)
+            .bind(&q_pattern)
+            .bind(library_id_uuid)
+            .bind(kind_filter)
+            .bind(limit_val)
+            .fetch_all(&state.pool),
+        sqlx::query(series_sql)
+            .bind(&q_pattern)
+            .bind(library_id_uuid)
+            .bind(kind_filter) // unused in series query but keeps bind positions consistent
+            .bind(limit_val)
+            .fetch_all(&state.pool)
+    );
 
-    let (meili_resp, series_rows) = tokio::join!(meili_fut, series_fut);
+    let elapsed_ms = start.elapsed().as_millis() as u64;
 
-    // Traitement Meilisearch
-    let meili_resp = meili_resp.map_err(|e| ApiError::internal(format!("meili request failed: {e}")))?;
-    let (hits, estimated_total_hits, processing_time_ms) = if !meili_resp.status().is_success() {
-        let body = meili_resp.text().await.unwrap_or_default();
-        if body.contains("index_not_found") {
-            (serde_json::json!([]), Some(0u64), Some(0u64))
-        } else {
-            return Err(ApiError::internal(format!("meili error: {body}")));
-        }
-    } else {
-        let payload: serde_json::Value = meili_resp.json().await
-            .map_err(|e| ApiError::internal(format!("invalid meili response: {e}")))?;
-        (
-            payload.get("hits").cloned().unwrap_or_else(|| serde_json::json!([])),
-            payload.get("estimatedTotalHits").and_then(|v| v.as_u64()),
-            payload.get("processingTimeMs").and_then(|v| v.as_u64()),
-        )
-    };
+    // Build book hits as JSON array (same shape as before)
+    let books_rows = books_rows.map_err(|e| ApiError::internal(format!("book search failed: {e}")))?;
+    let hits: Vec<serde_json::Value> = books_rows
+        .iter()
+        .map(|row| {
+            serde_json::json!({
+                "id": row.get::<Uuid, _>("id").to_string(),
+                "library_id": row.get::<Uuid, _>("library_id").to_string(),
+                "kind": row.get::<String, _>("kind"),
+                "title": row.get::<String, _>("title"),
+                "authors": row.get::<Vec<String>, _>("authors"),
+                "series": row.get::<Option<String>, _>("series"),
+                "volume": row.get::<Option<i32>, _>("volume"),
+                "language": row.get::<Option<String>, _>("language"),
+            })
+        })
+        .collect();
 
-    // Traitement séries
+    let estimated_total_hits = hits.len() as u64;
+
+    // Series hits
     let series_hits: Vec<SeriesHit> = series_rows
         .unwrap_or_default()
         .iter()
@@ -169,9 +183,9 @@ pub async fn search_books(
         .collect();
 
     Ok(Json(SearchResponse {
-        hits,
+        hits: serde_json::Value::Array(hits),
         series_hits,
-        estimated_total_hits,
-        processing_time_ms,
+        estimated_total_hits: Some(estimated_total_hits),
+        processing_time_ms: Some(elapsed_ms),
     }))
 }

@@ -7,7 +7,7 @@ Service background sur le port **7081**. Voir `AGENTS.md` racine pour les conven
 | Fichier | Rôle |
 |---------|------|
 | `main.rs` | Point d'entrée, initialisation, lancement du worker |
-| `lib.rs` | `AppState` (pool, meili_url, meili_master_key) |
+| `lib.rs` | `AppState` (pool) |
 | `worker.rs` | Boucle principale : claim job → process → cleanup stale |
 | `job.rs` | `claim_next_job`, `process_job`, `fail_job`, `cleanup_stale_jobs` |
 | `scanner.rs` | Phase 1 discovery : WalkDir + `parse_metadata_fast` (zéro I/O archive), skip dossiers inchangés via mtime, batching DB |
@@ -15,7 +15,6 @@ Service background sur le port **7081**. Voir `AGENTS.md` racine pour les conven
 | `batch.rs` | `flush_all_batches` avec UNNEST, structures `BookInsert/Update/FileInsert/Update/ErrorInsert` |
 | `scheduler.rs` | Auto-scan : vérifie toutes les 60s les bibliothèques à monitorer |
 | `watcher.rs` | File watcher temps réel |
-| `meili.rs` | Indexation/sync Meilisearch |
 | `api.rs` | Endpoints HTTP de l'indexer (/health, /ready) |
 | `utils.rs` | `remap_libraries_path`, `unmap_libraries_path`, `compute_fingerprint`, `kind_from_format` |
 
@@ -28,7 +27,6 @@ claim_next_job (UPDATE ... RETURNING, status pending→running)
        │    ├─ WalkDir + parse_metadata_fast (zéro I/O archive)
        │    ├─ skip dossiers via directory_mtimes (table DB)
        │    └─ INSERT books (page_count=NULL) → livres visibles immédiatement
-       ├─ meili::sync_meili
        ├─ analyzer::cleanup_orphaned_thumbnails (full_rebuild uniquement)
        └─ Phase 2 : analyzer::analyze_library_books
             ├─ SELECT books WHERE page_count IS NULL

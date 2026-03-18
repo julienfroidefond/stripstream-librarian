@@ -15,20 +15,6 @@ services:
       timeout: 5s
       retries: 5
 
-  meilisearch:
-    image: getmeili/meilisearch:v1.12
-    env_file:
-      - .env
-    ports:
-      - "7700:7700"
-    volumes:
-      - meili_data:/meili_data
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:7700/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   api:
     build:
       context: .
@@ -42,8 +28,6 @@ services:
       - ${THUMBNAILS_HOST_PATH:-./data/thumbnails}:/data/thumbnails
     depends_on:
       postgres:
-        condition: service_healthy
-      meilisearch:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:7080/health"]
@@ -67,8 +51,6 @@ services:
       api:
         condition: service_healthy
       postgres:
-        condition: service_healthy
-      meilisearch:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:7081/health"]
@@ -98,4 +80,3 @@ services:
 
 volumes:
   postgres_data:
-  meili_data:

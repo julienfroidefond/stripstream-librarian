@@ -30,11 +30,7 @@ async fn async_main() -> anyhow::Result<()> {
         .connect(&config.database_url)
         .await?;
 
-    let state = AppState {
-        pool,
-        meili_url: config.meili_url.clone(),
-        meili_master_key: config.meili_master_key.clone(),
-    };
+    let state = AppState { pool };
 
     tokio::spawn(indexer::worker::run_worker(state.clone(), config.scan_interval_seconds));
 

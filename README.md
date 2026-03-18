@@ -9,7 +9,7 @@ The project consists of the following components:
 - **API** (`apps/api/`) - Rust-based REST API service
 - **Indexer** (`apps/indexer/`) - Rust-based background indexing service
 - **Backoffice** (`apps/backoffice/`) - Next.js web administration interface
-- **Infrastructure** (`infra/`) - Docker Compose setup with PostgreSQL and Meilisearch
+- **Infrastructure** (`infra/`) - Docker Compose setup with PostgreSQL
 
 ## Quick Start
 
@@ -27,19 +27,16 @@ The project consists of the following components:
    ```
 
 2. Edit `.env` and set secure values for:
-   - `MEILI_MASTER_KEY` - Master key for Meilisearch
    - `API_BOOTSTRAP_TOKEN` - Bootstrap token for initial API authentication
 
 ### Running with Docker
 
 ```bash
-cd infra
 docker compose up -d
 ```
 
 This will start:
 - PostgreSQL (port 6432)
-- Meilisearch (port 7700)
 - API service (port 7080)
 - Indexer service (port 7081)
 - Backoffice web UI (port 7082)
@@ -48,7 +45,6 @@ This will start:
 
 - **Backoffice**: http://localhost:7082
 - **API**: http://localhost:7080
-- **Meilisearch**: http://localhost:7700
 
 ### Default Credentials
 
@@ -62,8 +58,7 @@ The default bootstrap token is configured in your `.env` file. Use this for init
 
 ```bash
 # Start dependencies
-cd infra
-docker compose up -d postgres meilisearch
+docker compose up -d postgres
 
 # Run API
 cd apps/api
@@ -96,7 +91,7 @@ The backoffice will be available at http://localhost:7082
 - Support for CBZ, CBR, and PDF formats
 - Automatic metadata extraction
 - Series and volume detection
-- Full-text search with Meilisearch
+- Full-text search powered by PostgreSQL
 
 ### Jobs Monitoring
 - Real-time job progress tracking
@@ -118,8 +113,6 @@ Variables marquées **required** doivent être définies. Les autres ont une val
 | Variable | Description | Défaut |
 |----------|-------------|--------|
 | `DATABASE_URL` | **required** — Connexion PostgreSQL | — |
-| `MEILI_URL` | **required** — URL Meilisearch | — |
-| `MEILI_MASTER_KEY` | **required** — Clé maître Meilisearch | — |
 
 ### API
 
@@ -165,7 +158,6 @@ stripstream-librarian/
 │   ├── indexer/          # Rust background indexer
 │   └── backoffice/       # Next.js web UI
 ├── infra/
-│   ├── docker-compose.yml
 │   └── migrations/       # SQL database migrations
 ├── libraries/            # Book storage (mounted volume)
 └── .env                  # Environment configuration
@@ -207,11 +199,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  meilisearch:
-    image: getmeili/meilisearch:v1.12
-    environment:
-      MEILI_MASTER_KEY: your_meili_master_key   # required — change this
-
   api:
     image: julienfroidefond32/stripstream-api:latest
     ports:
@@ -222,8 +209,6 @@ services:
     environment:
       # --- Required ---
       DATABASE_URL: postgres://stripstream:stripstream@postgres:5432/stripstream
-      MEILI_URL: http://meilisearch:7700
-      MEILI_MASTER_KEY: your_meili_master_key   # must match meilisearch above
       API_BOOTSTRAP_TOKEN: your_bootstrap_token  # required — change this
       # --- Optional (defaults shown) ---
       # API_LISTEN_ADDR: 0.0.0.0:7080
@@ -238,8 +223,6 @@ services:
     environment:
       # --- Required ---
       DATABASE_URL: postgres://stripstream:stripstream@postgres:5432/stripstream
-      MEILI_URL: http://meilisearch:7700
-      MEILI_MASTER_KEY: your_meili_master_key   # must match meilisearch above
       # --- Optional (defaults shown) ---
       # INDEXER_LISTEN_ADDR: 0.0.0.0:7081
       # INDEXER_SCAN_INTERVAL_SECONDS: 5

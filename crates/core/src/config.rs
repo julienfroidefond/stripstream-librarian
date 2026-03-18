@@ -4,8 +4,6 @@ use anyhow::{Context, Result};
 pub struct ApiConfig {
     pub listen_addr: String,
     pub database_url: String,
-    pub meili_url: String,
-    pub meili_master_key: String,
     pub api_bootstrap_token: String,
 }
 
@@ -15,9 +13,6 @@ impl ApiConfig {
             listen_addr: std::env::var("API_LISTEN_ADDR")
                 .unwrap_or_else(|_| "0.0.0.0:7080".to_string()),
             database_url: std::env::var("DATABASE_URL").context("DATABASE_URL is required")?,
-            meili_url: std::env::var("MEILI_URL").context("MEILI_URL is required")?,
-            meili_master_key: std::env::var("MEILI_MASTER_KEY")
-                .context("MEILI_MASTER_KEY is required")?,
             api_bootstrap_token: std::env::var("API_BOOTSTRAP_TOKEN")
                 .context("API_BOOTSTRAP_TOKEN is required")?,
         })
@@ -28,8 +23,6 @@ impl ApiConfig {
 pub struct IndexerConfig {
     pub listen_addr: String,
     pub database_url: String,
-    pub meili_url: String,
-    pub meili_master_key: String,
     pub scan_interval_seconds: u64,
     pub thumbnail_config: ThumbnailConfig,
 }
@@ -85,9 +78,6 @@ impl IndexerConfig {
             listen_addr: std::env::var("INDEXER_LISTEN_ADDR")
                 .unwrap_or_else(|_| "0.0.0.0:7081".to_string()),
             database_url: std::env::var("DATABASE_URL").context("DATABASE_URL is required")?,
-            meili_url: std::env::var("MEILI_URL").context("MEILI_URL is required")?,
-            meili_master_key: std::env::var("MEILI_MASTER_KEY")
-                .context("MEILI_MASTER_KEY is required")?,
             scan_interval_seconds: std::env::var("INDEXER_SCAN_INTERVAL_SECONDS")
                 .ok()
                 .and_then(|v| v.parse::<u64>().ok())

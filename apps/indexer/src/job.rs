@@ -3,7 +3,7 @@ use sqlx::{PgPool, Row};
 use tracing::{error, info};
 use uuid::Uuid;
 
-use crate::{analyzer, converter, meili, scanner, AppState};
+use crate::{analyzer, converter, scanner, AppState};
 
 pub async fn cleanup_stale_jobs(pool: &PgPool) -> Result<()> {
     let result = sqlx::query(
@@ -336,9 +336,6 @@ pub async fn process_job(
             }
         }
     }
-
-    // Sync search index after discovery (books are visible immediately)
-    meili::sync_meili(&state.pool, &state.meili_url, &state.meili_master_key).await?;
 
     // For full rebuild: clean up orphaned thumbnail files (old UUIDs)
     if is_full_rebuild {

@@ -12,7 +12,7 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 - Backend/API: Rust (`axum`)
 - Indexation: service Rust dedie (`indexer`)
 - DB: PostgreSQL
-- Recherche: Meilisearch
+- Recherche: PostgreSQL full-text (ILIKE + pg_trgm)
 - Deploiement: Docker Compose
 - Auth: token bootstrap env + tokens admin en DB (creables/revocables)
 - Expiration tokens admin: aucune par defaut (revocation manuelle)
@@ -33,7 +33,7 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 **DoD:** Build des crates OK.
 
 ### T2 - Infra Docker Compose
-- [x] Definir services `postgres`, `meilisearch`, `api`, `indexer`
+- [x] Definir services `postgres`, `api`, `indexer`
 - [x] Volumes persistants
 - [x] Healthchecks
 
@@ -114,7 +114,7 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 **DoD:** Pagination/filtres fonctionnels.
 
 ### T13 - Recherche
-- [x] Projection vers Meilisearch
+- [x] Recherche full-text PostgreSQL
 - [x] `GET /search?q=...&library_id=...&type=...`
 - [x] Fuzzy + filtres
 
@@ -264,10 +264,10 @@ Construire un serveur ultra performant pour indexer et servir des bibliotheques 
 - Bootstrap token = break-glass (peut etre desactive plus tard)
 
 ## Journal
-- 2026-03-05: `docker compose up -d --build` valide, stack complete en healthy (`postgres`, `meilisearch`, `api`, `indexer`, `admin-ui`).
+- 2026-03-05: `docker compose up -d --build` valide, stack complete en healthy (`postgres`, `api`, `indexer`, `admin-ui`).
 - 2026-03-05: ajustements infra appliques pour demarrage stable (`unrar` -> `unrar-free`, image `rust:1-bookworm`, healthchecks `127.0.0.1`).
 - 2026-03-05: ajout d'un service `migrate` dans Compose pour executer automatiquement `infra/migrations/0001_init.sql` au demarrage.
-- 2026-03-05: Lot 2 termine (jobs, scan incremental, parsers `cbz/cbr/pdf`, API livres, sync + recherche Meilisearch).
+- 2026-03-05: Lot 2 termine (jobs, scan incremental, parsers `cbz/cbr/pdf`, API livres, recherche PostgreSQL).
 - 2026-03-05: verification de bout en bout OK sur une librairie de test (`/libraries/demo`) avec indexation, listing `/books` et recherche `/search` (1 CBZ detecte).
 - 2026-03-05: Lot 3 avancee: endpoint pages (`/books/:id/pages/:n`) actif avec cache LRU, ETag/Cache-Control, limite concurrence rendu et timeouts.
 - 2026-03-05: hardening API: readiness expose sans auth via `route_layer`, metriques simples `/metrics`, rate limiting lecture (120 req/s).

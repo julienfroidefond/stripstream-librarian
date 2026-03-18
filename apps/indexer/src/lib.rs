@@ -3,7 +3,6 @@ pub mod api;
 pub mod batch;
 pub mod converter;
 pub mod job;
-pub mod meili;
 pub mod scheduler;
 pub mod scanner;
 pub mod utils;
@@ -15,6 +14,4 @@ use sqlx::PgPool;
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
-    pub meili_url: String,
-    pub meili_master_key: String,
 }

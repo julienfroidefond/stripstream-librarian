@@ -10,7 +10,6 @@ Gestionnaire de bibliothèque de bandes dessinées/ebooks. Workspace Cargo multi
 | Indexer (background) | `apps/indexer/` | 7081 |
 | Backoffice (Next.js) | `apps/backoffice/` | 7082 |
 | PostgreSQL | infra | 6432 |
-| Meilisearch | infra | 7700 |
 
 Crates partagés : `crates/core` (config env), `crates/parsers` (CBZ/CBR/PDF).
 
@@ -31,7 +30,7 @@ cargo test
 cargo test -p parsers
 
 # Infra (dépendances uniquement) — docker-compose.yml est à la racine
-docker compose up -d postgres meilisearch
+docker compose up -d postgres
 
 # Backoffice dev
 cd apps/backoffice && npm install && npm run dev  # http://localhost:7082
@@ -46,7 +45,7 @@ sqlx migrate run  # DATABASE_URL doit être défini
 cp .env.example .env  # puis éditer les valeurs REQUIRED
 ```
 
-Variables **requises** au démarrage : `DATABASE_URL`, `MEILI_URL`, `MEILI_MASTER_KEY`, `API_BOOTSTRAP_TOKEN`.
+Variables **requises** au démarrage : `DATABASE_URL`, `API_BOOTSTRAP_TOKEN`.
 
 ## Gotchas
 
@@ -56,6 +55,7 @@ Variables **requises** au démarrage : `DATABASE_URL`, `MEILI_URL`, `MEILI_MASTE
 - **Thumbnails** : stockés dans `THUMBNAIL_DIRECTORY` (défaut `/data/thumbnails`), générés par **l'API** (pas l'indexer) — l'indexer déclenche un checkup via `POST /index/jobs/:id/thumbnails/checkup`.
 - **Workspace Cargo** : les dépendances externes sont définies dans le `Cargo.toml` racine, pas dans les crates individuels.
 - **Migrations** : dossier `infra/migrations/`, géré par sqlx. Toujours migrer avant de démarrer les services.
+- **Recherche** : full-text via PostgreSQL (`ILIKE` + `pg_trgm`), pas de moteur de recherche externe.
 
 ## Fichiers clés
 
@@ -64,6 +64,7 @@ Variables **requises** au démarrage : `DATABASE_URL`, `MEILI_URL`, `MEILI_MASTE
 | `crates/core/src/config.rs` | Config depuis env (API, Indexer, AdminUI) |
 | `crates/parsers/src/lib.rs` | Détection format, extraction métadonnées |
 | `apps/api/src/books.rs` | Endpoints CRUD livres |
+| `apps/api/src/search.rs` | Recherche full-text PostgreSQL |
 | `apps/api/src/pages.rs` | Rendu pages + cache LRU |
 | `apps/indexer/src/scanner.rs` | Scan filesystem |
 | `infra/migrations/*.sql` | Schéma DB |

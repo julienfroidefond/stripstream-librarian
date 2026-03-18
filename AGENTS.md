@@ -77,7 +77,7 @@ sqlx migrate add -r migration_name
 
 ```bash
 # Start infrastructure only
-docker compose up -d postgres meilisearch
+docker compose up -d postgres
 
 # Start full stack
 docker compose up -d

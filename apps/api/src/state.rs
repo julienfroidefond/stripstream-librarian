@@ -12,8 +12,6 @@ use tokio::sync::{Mutex, RwLock, Semaphore};
 pub struct AppState {
     pub pool: sqlx::PgPool,
     pub bootstrap_token: Arc<str>,
-    pub meili_url: Arc<str>,
-    pub meili_master_key: Arc<str>,
     pub page_cache: Arc<Mutex<LruCache<String, Arc<Vec<u8>>>>>,
     pub page_render_limit: Arc<Semaphore>,
     pub metrics: Arc<Metrics>,
