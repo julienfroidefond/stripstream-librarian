@@ -829,48 +829,48 @@ async fn sync_books_metadata(
     let mut matched_count: i64 = 0;
     let mut book_reports: Vec<BookSyncReport> = Vec::new();
 
+    // Pre-fetch all local books for this series to enable flexible matching
+    let local_books: Vec<(Uuid, Option<i32>, String)> = sqlx::query_as(
+        r#"
+        SELECT id, volume, title FROM books
+        WHERE library_id = $1
+          AND COALESCE(NULLIF(series, ''), 'unclassified') = $2
+        "#,
+    )
+    .bind(library_id)
+    .bind(series_name)
+    .fetch_all(&state.pool)
+    .await?;
+
+    // Track which local books have already been matched to avoid double-matching
+    let mut matched_local_ids = std::collections::HashSet::new();
+
     for book in &books {
-        // Try to match with local book by volume_number first, then title
-        let local_book_id: Option<Uuid> = if let Some(vol) = book.volume_number {
-            sqlx::query_scalar(
-                r#"
-                SELECT id FROM books
-                WHERE library_id = $1
-                  AND COALESCE(NULLIF(series, ''), 'unclassified') = $2
-                  AND volume = $3
-                LIMIT 1
-                "#,
-            )
-            .bind(library_id)
-            .bind(series_name)
-            .bind(vol)
-            .fetch_optional(&state.pool)
-            .await?
+        // Strategy 1: Match by volume number
+        let mut local_book_id: Option<Uuid> = if let Some(vol) = book.volume_number {
+            local_books
+                .iter()
+                .find(|(id, v, _)| *v == Some(vol) && !matched_local_ids.contains(id))
+                .map(|(id, _, _)| *id)
         } else {
             None
         };
 
-        let local_book_id = match local_book_id {
-            Some(id) => Some(id),
-            None => {
-                // Try matching by title
-                let pattern = format!("%{}%", book.title);
-                sqlx::query_scalar(
-                    r#"
-                    SELECT id FROM books
-                    WHERE library_id = $1
-                      AND COALESCE(NULLIF(series, ''), 'unclassified') = $2
-                      AND title ILIKE $3
-                    LIMIT 1
-                    "#,
-                )
-                .bind(library_id)
-                .bind(series_name)
-                .bind(&pattern)
-                .fetch_optional(&state.pool)
-                .await?
-            }
-        };
+        // Strategy 2: External title contained in local title or vice-versa (case-insensitive)
+        if local_book_id.is_none() {
+            let ext_title_lower = book.title.to_lowercase();
+            local_book_id = local_books.iter().find(|(id, _, local_title)| {
+                if matched_local_ids.contains(id) {
+                    return false;
+                }
+                let local_lower = local_title.to_lowercase();
+                local_lower.contains(&ext_title_lower) || ext_title_lower.contains(&local_lower)
+            }).map(|(id, _, _)| *id);
+        }
+
+        if let Some(id) = local_book_id {
+            matched_local_ids.insert(id);
+        }
 
         sqlx::query(
             r#"
