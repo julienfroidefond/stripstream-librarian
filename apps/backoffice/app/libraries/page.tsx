@@ -114,6 +114,7 @@ export default async function LibrariesPage() {
                     monitorEnabled={lib.monitor_enabled}
                     scanMode={lib.scan_mode}
                     watcherEnabled={lib.watcher_enabled}
+                    metadataProvider={lib.metadata_provider}
                   />
                 </div>
               </CardHeader>

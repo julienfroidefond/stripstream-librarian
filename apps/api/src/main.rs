@@ -5,6 +5,8 @@ mod handlers;
 mod index_jobs;
 mod komga;
 mod libraries;
+mod metadata;
+mod metadata_providers;
 mod api_middleware;
 mod openapi;
 mod pages;
@@ -83,6 +85,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/libraries/:id", delete(libraries::delete_library))
         .route("/libraries/:id/scan", axum::routing::post(libraries::scan_library))
         .route("/libraries/:id/monitoring", axum::routing::patch(libraries::update_monitoring))
+        .route("/libraries/:id/metadata-provider", axum::routing::patch(libraries::update_metadata_provider))
         .route("/books/:id", axum::routing::patch(books::update_book))
         .route("/books/:id/convert", axum::routing::post(books::convert_book))
         .route("/libraries/:library_id/series/:name", axum::routing::patch(books::update_series))
@@ -102,6 +105,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/komga/sync", axum::routing::post(komga::sync_komga_read_books))
         .route("/komga/reports", get(komga::list_sync_reports))
         .route("/komga/reports/:id", get(komga::get_sync_report))
+        .route("/metadata/search", axum::routing::post(metadata::search_metadata))
+        .route("/metadata/match", axum::routing::post(metadata::create_metadata_match))
+        .route("/metadata/approve/:id", axum::routing::post(metadata::approve_metadata))
+        .route("/metadata/reject/:id", axum::routing::post(metadata::reject_metadata))
+        .route("/metadata/links", get(metadata::get_metadata_links))
+        .route("/metadata/missing/:id", get(metadata::get_missing_books))
+        .route("/metadata/links/:id", delete(metadata::delete_metadata_link))
         .merge(settings::settings_routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),

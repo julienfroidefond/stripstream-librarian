@@ -84,6 +84,12 @@ pub struct BookDetails {
     pub reading_current_page: Option<i32>,
     #[schema(value_type = Option<String>)]
     pub reading_last_read_at: Option<DateTime<Utc>>,
+    pub summary: Option<String>,
+    pub isbn: Option<String>,
+    pub publish_date: Option<String>,
+    /// Fields locked from external metadata sync
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locked_fields: Option<serde_json::Value>,
 }
 
 /// List books with optional filtering and pagination
@@ -249,7 +255,7 @@ pub async fn get_book(
 ) -> Result<Json<BookDetails>, ApiError> {
     let row = sqlx::query(
         r#"
-        SELECT b.id, b.library_id, b.kind, b.title, b.author, b.authors, b.series, b.volume, b.language, b.page_count, b.thumbnail_path,
+        SELECT b.id, b.library_id, b.kind, b.title, b.author, b.authors, b.series, b.volume, b.language, b.page_count, b.thumbnail_path, b.locked_fields, b.summary, b.isbn, b.publish_date,
                bf.abs_path, bf.format, bf.parse_status,
                COALESCE(brp.status, 'unread') AS reading_status,
                brp.current_page AS reading_current_page,
@@ -290,6 +296,10 @@ pub async fn get_book(
         reading_status: row.get("reading_status"),
         reading_current_page: row.get("reading_current_page"),
         reading_last_read_at: row.get("reading_last_read_at"),
+        summary: row.get("summary"),
+        isbn: row.get("isbn"),
+        publish_date: row.get("publish_date"),
+        locked_fields: Some(row.get::<serde_json::Value, _>("locked_fields")),
     }))
 }
 
@@ -961,6 +971,12 @@ pub struct UpdateBookRequest {
     pub series: Option<String>,
     pub volume: Option<i32>,
     pub language: Option<String>,
+    pub summary: Option<String>,
+    pub isbn: Option<String>,
+    pub publish_date: Option<String>,
+    /// Fields locked from external metadata sync
+    #[serde(default)]
+    pub locked_fields: Option<serde_json::Value>,
 }
 
 /// Update metadata for a specific book
@@ -996,12 +1012,18 @@ pub async fn update_book(
     let series = body.series.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
     let language = body.language.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
 
+    let summary = body.summary.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let isbn = body.isbn.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let publish_date = body.publish_date.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let locked_fields = body.locked_fields.clone().unwrap_or(serde_json::json!({}));
     let row = sqlx::query(
         r#"
         UPDATE books
-        SET title = $2, author = $3, authors = $4, series = $5, volume = $6, language = $7, updated_at = NOW()
+        SET title = $2, author = $3, authors = $4, series = $5, volume = $6, language = $7,
+            summary = $8, isbn = $9, publish_date = $10, locked_fields = $11, updated_at = NOW()
         WHERE id = $1
         RETURNING id, library_id, kind, title, author, authors, series, volume, language, page_count, thumbnail_path,
+                  summary, isbn, publish_date,
                   COALESCE((SELECT status FROM book_reading_progress WHERE book_id = $1), 'unread') AS reading_status,
                   (SELECT current_page FROM book_reading_progress WHERE book_id = $1) AS reading_current_page,
                   (SELECT last_read_at FROM book_reading_progress WHERE book_id = $1) AS reading_last_read_at
@@ -1014,6 +1036,10 @@ pub async fn update_book(
     .bind(&series)
     .bind(body.volume)
     .bind(&language)
+    .bind(&summary)
+    .bind(&isbn)
+    .bind(&publish_date)
+    .bind(&locked_fields)
     .fetch_optional(&state.pool)
     .await?;
 
@@ -1038,6 +1064,10 @@ pub async fn update_book(
         reading_status: row.get("reading_status"),
         reading_current_page: row.get("reading_current_page"),
         reading_last_read_at: row.get("reading_last_read_at"),
+        summary: row.get("summary"),
+        isbn: row.get("isbn"),
+        publish_date: row.get("publish_date"),
+        locked_fields: Some(locked_fields),
     }))
 }
 
@@ -1048,9 +1078,12 @@ pub struct SeriesMetadata {
     pub description: Option<String>,
     pub publishers: Vec<String>,
     pub start_year: Option<i32>,
+    pub total_volumes: Option<i32>,
     /// Convenience: author from first book (for pre-filling the per-book apply section)
     pub book_author: Option<String>,
     pub book_language: Option<String>,
+    /// Fields locked from external metadata sync, e.g. {"authors": true, "description": true}
+    pub locked_fields: serde_json::Value,
 }
 
 /// Get metadata for a specific series
@@ -1087,7 +1120,7 @@ pub async fn get_series_metadata(
     };
 
     let meta_row = sqlx::query(
-        "SELECT authors, description, publishers, start_year FROM series_metadata WHERE library_id = $1 AND name = $2"
+        "SELECT authors, description, publishers, start_year, total_volumes, locked_fields FROM series_metadata WHERE library_id = $1 AND name = $2"
     )
     .bind(library_id)
     .bind(&name)
@@ -1099,8 +1132,10 @@ pub async fn get_series_metadata(
         description: meta_row.as_ref().and_then(|r| r.get("description")),
         publishers: meta_row.as_ref().map(|r| r.get::<Vec<String>, _>("publishers")).unwrap_or_default(),
         start_year: meta_row.as_ref().and_then(|r| r.get("start_year")),
+        total_volumes: meta_row.as_ref().and_then(|r| r.get("total_volumes")),
         book_author: books_row.as_ref().and_then(|r| r.get("author")),
         book_language: books_row.as_ref().and_then(|r| r.get("language")),
+        locked_fields: meta_row.as_ref().map(|r| r.get::<serde_json::Value, _>("locked_fields")).unwrap_or(serde_json::json!({})),
     }))
 }
 
@@ -1122,6 +1157,10 @@ pub struct UpdateSeriesRequest {
     #[serde(default)]
     pub publishers: Vec<String>,
     pub start_year: Option<i32>,
+    pub total_volumes: Option<i32>,
+    /// Fields locked from external metadata sync
+    #[serde(default)]
+    pub locked_fields: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -1214,15 +1253,18 @@ pub async fn update_series(
         .map(|a| a.trim().to_string())
         .filter(|a| !a.is_empty())
         .collect();
+    let locked_fields = body.locked_fields.clone().unwrap_or(serde_json::json!({}));
     sqlx::query(
         r#"
-        INSERT INTO series_metadata (library_id, name, authors, description, publishers, start_year, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        INSERT INTO series_metadata (library_id, name, authors, description, publishers, start_year, total_volumes, locked_fields, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
         ON CONFLICT (library_id, name) DO UPDATE
           SET authors     = EXCLUDED.authors,
               description = EXCLUDED.description,
               publishers  = EXCLUDED.publishers,
               start_year  = EXCLUDED.start_year,
+              total_volumes = EXCLUDED.total_volumes,
+              locked_fields = EXCLUDED.locked_fields,
               updated_at  = NOW()
         "#
     )
@@ -1232,6 +1274,8 @@ pub async fn update_series(
     .bind(&description)
     .bind(&publishers)
     .bind(body.start_year)
+    .bind(body.total_volumes)
+    .bind(&locked_fields)
     .execute(&state.pool)
     .await?;
 

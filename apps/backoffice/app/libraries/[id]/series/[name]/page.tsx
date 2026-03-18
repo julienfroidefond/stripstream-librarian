@@ -1,9 +1,11 @@
-import { fetchLibraries, fetchBooks, fetchSeriesMetadata, getBookCoverUrl, BookDto, SeriesMetadataDto } from "../../../../../lib/api";
+import { fetchLibraries, fetchBooks, fetchSeriesMetadata, getBookCoverUrl, getMetadataLink, getMissingBooks, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto } from "../../../../../lib/api";
 import { BooksGrid, EmptyState } from "../../../../components/BookCard";
 import { MarkSeriesReadButton } from "../../../../components/MarkSeriesReadButton";
 import { MarkBookReadButton } from "../../../../components/MarkBookReadButton";
 import { EditSeriesForm } from "../../../../components/EditSeriesForm";
+import { MetadataSearchModal } from "../../../../components/MetadataSearchModal";
 import { OffsetPagination } from "../../../../components/ui";
+import { SafeHtml } from "../../../../components/SafeHtml";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -24,7 +26,7 @@ export default async function SeriesDetailPage({
 
   const seriesName = decodeURIComponent(name);
 
-  const [library, booksPage, seriesMeta] = await Promise.all([
+  const [library, booksPage, seriesMeta, metadataLinks] = await Promise.all([
     fetchLibraries().then((libs) => libs.find((l) => l.id === id)),
     fetchBooks(id, seriesName, page, limit).catch(() => ({
       items: [] as BookDto[],
@@ -33,7 +35,14 @@ export default async function SeriesDetailPage({
       limit,
     })),
     fetchSeriesMetadata(id, seriesName).catch(() => null as SeriesMetadataDto | null),
+    getMetadataLink(id, seriesName).catch(() => [] as ExternalMetadataLinkDto[]),
   ]);
+
+  const existingLink = metadataLinks.find((l) => l.status === "approved") ?? metadataLinks[0] ?? null;
+  let missingData: MissingBooksDto | null = null;
+  if (existingLink && existingLink.status === "approved") {
+    missingData = await getMissingBooks(existingLink.id).catch(() => null);
+  }
 
   if (!library) {
     notFound();
@@ -96,7 +105,7 @@ export default async function SeriesDetailPage({
           )}
 
           {seriesMeta?.description && (
-            <p className="text-sm text-muted-foreground leading-relaxed">{seriesMeta.description}</p>
+            <SafeHtml html={seriesMeta.description} className="text-sm text-muted-foreground leading-relaxed" />
           )}
 
           <div className="flex flex-wrap items-center gap-4 text-sm">
@@ -143,6 +152,14 @@ export default async function SeriesDetailPage({
               currentBookLanguage={seriesMeta?.book_language ?? booksPage.items[0]?.language ?? null}
               currentDescription={seriesMeta?.description ?? null}
               currentStartYear={seriesMeta?.start_year ?? null}
+              currentTotalVolumes={seriesMeta?.total_volumes ?? null}
+              currentLockedFields={seriesMeta?.locked_fields ?? {}}
+            />
+            <MetadataSearchModal
+              libraryId={id}
+              seriesName={seriesName}
+              existingLink={existingLink}
+              initialMissing={missingData}
             />
           </div>
         </div>

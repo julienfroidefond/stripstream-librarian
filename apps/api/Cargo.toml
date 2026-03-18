@@ -19,6 +19,7 @@ stripstream-core = { path = "../../crates/core" }
 parsers = { path = "../../crates/parsers" }
 rand.workspace = true
 tokio-stream = "0.1"
+regex = "1"
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -33,3 +34,4 @@ uuid.workspace = true
 utoipa.workspace = true
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }
 webp.workspace = true
+scraper.workspace = true

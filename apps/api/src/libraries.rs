@@ -21,6 +21,7 @@ pub struct LibraryResponse {
     #[schema(value_type = Option<String>)]
     pub next_scan_at: Option<chrono::DateTime<chrono::Utc>>,
     pub watcher_enabled: bool,
+    pub metadata_provider: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -45,8 +46,8 @@ pub struct CreateLibraryRequest {
 )]
 pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<LibraryResponse>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at, l.watcher_enabled,
-                (SELECT COUNT(*) FROM books b WHERE b.library_id = l.id) as book_count 
+        "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at, l.watcher_enabled, l.metadata_provider,
+                (SELECT COUNT(*) FROM books b WHERE b.library_id = l.id) as book_count
          FROM libraries l ORDER BY l.created_at DESC"
     )
         .fetch_all(&state.pool)
@@ -64,6 +65,7 @@ pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<Li
             scan_mode: row.get("scan_mode"),
             next_scan_at: row.get("next_scan_at"),
             watcher_enabled: row.get("watcher_enabled"),
+            metadata_provider: row.get("metadata_provider"),
         })
         .collect();
 
@@ -115,6 +117,7 @@ pub async fn create_library(
         scan_mode: "manual".to_string(),
         next_scan_at: None,
         watcher_enabled: false,
+        metadata_provider: None,
     }))
 }
 
@@ -281,7 +284,7 @@ pub async fn update_monitoring(
     let watcher_enabled = input.watcher_enabled.unwrap_or(false);
 
     let result = sqlx::query(
-        "UPDATE libraries SET monitor_enabled = $2, scan_mode = $3, next_scan_at = $4, watcher_enabled = $5 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled"
+        "UPDATE libraries SET monitor_enabled = $2, scan_mode = $3, next_scan_at = $4, watcher_enabled = $5 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider"
     )
     .bind(library_id)
     .bind(input.monitor_enabled)
@@ -310,5 +313,66 @@ pub async fn update_monitoring(
         scan_mode: row.get("scan_mode"),
         next_scan_at: row.get("next_scan_at"),
         watcher_enabled: row.get("watcher_enabled"),
+        metadata_provider: row.get("metadata_provider"),
+    }))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateMetadataProviderRequest {
+    pub metadata_provider: Option<String>,
+}
+
+/// Update the metadata provider for a library
+#[utoipa::path(
+    patch,
+    path = "/libraries/{id}/metadata-provider",
+    tag = "libraries",
+    params(
+        ("id" = String, Path, description = "Library UUID"),
+    ),
+    request_body = UpdateMetadataProviderRequest,
+    responses(
+        (status = 200, body = LibraryResponse),
+        (status = 404, description = "Library not found"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn update_metadata_provider(
+    State(state): State<AppState>,
+    AxumPath(library_id): AxumPath<Uuid>,
+    Json(input): Json<UpdateMetadataProviderRequest>,
+) -> Result<Json<LibraryResponse>, ApiError> {
+    let provider = input.metadata_provider.as_deref().filter(|s| !s.is_empty());
+
+    let result = sqlx::query(
+        "UPDATE libraries SET metadata_provider = $2 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider"
+    )
+    .bind(library_id)
+    .bind(provider)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let Some(row) = result else {
+        return Err(ApiError::not_found("library not found"));
+    };
+
+    let book_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM books WHERE library_id = $1")
+        .bind(library_id)
+        .fetch_one(&state.pool)
+        .await?;
+
+    Ok(Json(LibraryResponse {
+        id: row.get("id"),
+        name: row.get("name"),
+        root_path: row.get("root_path"),
+        enabled: row.get("enabled"),
+        book_count,
+        monitor_enabled: row.get("monitor_enabled"),
+        scan_mode: row.get("scan_mode"),
+        next_scan_at: row.get("next_scan_at"),
+        watcher_enabled: row.get("watcher_enabled"),
+        metadata_provider: row.get("metadata_provider"),
     }))
 }

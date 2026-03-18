@@ -8,6 +8,7 @@ export type LibraryDto = {
   scan_mode: string;
   next_scan_at: string | null;
   watcher_enabled: boolean;
+  metadata_provider: string | null;
 };
 
 export type IndexJobDto = {
@@ -74,6 +75,10 @@ export type BookDto = {
   reading_status: ReadingStatus;
   reading_current_page: number | null;
   reading_last_read_at: string | null;
+  summary: string | null;
+  isbn: string | null;
+  publish_date: string | null;
+  locked_fields?: Record<string, boolean>;
 };
 
 export type BooksPageDto = {
@@ -492,6 +497,10 @@ export type UpdateBookRequest = {
   series: string | null;
   volume: number | null;
   language: string | null;
+  summary: string | null;
+  isbn: string | null;
+  publish_date: string | null;
+  locked_fields?: Record<string, boolean>;
 };
 
 export async function updateBook(bookId: string, data: UpdateBookRequest) {
@@ -506,8 +515,10 @@ export type SeriesMetadataDto = {
   description: string | null;
   publishers: string[];
   start_year: number | null;
+  total_volumes: number | null;
   book_author: string | null;
   book_language: string | null;
+  locked_fields: Record<string, boolean>;
 };
 
 export async function fetchSeriesMetadata(libraryId: string, seriesName: string) {
@@ -524,6 +535,8 @@ export type UpdateSeriesRequest = {
   description: string | null;
   publishers: string[];
   start_year: number | null;
+  total_volumes: number | null;
+  locked_fields?: Record<string, boolean>;
 };
 
 export async function updateSeries(libraryId: string, seriesName: string, data: UpdateSeriesRequest) {
@@ -583,4 +596,137 @@ export async function listKomgaReports() {
 
 export async function getKomgaReport(id: string) {
   return apiFetch<KomgaSyncResponse>(`/komga/reports/${id}`);
+}
+
+// ---------------------------------------------------------------------------
+// External Metadata
+// ---------------------------------------------------------------------------
+
+export type SeriesCandidateDto = {
+  provider: string;
+  external_id: string;
+  title: string;
+  authors: string[];
+  description: string | null;
+  publishers: string[];
+  start_year: number | null;
+  total_volumes: number | null;
+  cover_url: string | null;
+  external_url: string | null;
+  confidence: number;
+  metadata_json: Record<string, unknown>;
+};
+
+export type ExternalMetadataLinkDto = {
+  id: string;
+  library_id: string;
+  series_name: string;
+  provider: string;
+  external_id: string;
+  external_url: string | null;
+  status: string;
+  confidence: number | null;
+  metadata_json: Record<string, unknown>;
+  total_volumes_external: number | null;
+  matched_at: string;
+  approved_at: string | null;
+  synced_at: string | null;
+};
+
+export type FieldChange = {
+  field: string;
+  old_value?: unknown;
+  new_value?: unknown;
+};
+
+export type SeriesSyncReport = {
+  fields_updated: FieldChange[];
+  fields_skipped: FieldChange[];
+};
+
+export type BookSyncReport = {
+  book_id: string;
+  title: string;
+  volume: number | null;
+  fields_updated: FieldChange[];
+  fields_skipped: FieldChange[];
+};
+
+export type SyncReport = {
+  series: SeriesSyncReport | null;
+  books: BookSyncReport[];
+  books_matched: number;
+  books_unmatched: number;
+};
+
+export type MissingBooksDto = {
+  total_external: number;
+  total_local: number;
+  missing_count: number;
+  missing_books: {
+    title: string | null;
+    volume_number: number | null;
+    external_book_id: string | null;
+  }[];
+};
+
+export async function searchMetadata(libraryId: string, seriesName: string, provider?: string) {
+  return apiFetch<SeriesCandidateDto[]>("/metadata/search", {
+    method: "POST",
+    body: JSON.stringify({ library_id: libraryId, series_name: seriesName, provider: provider || undefined }),
+  });
+}
+
+export async function createMetadataMatch(data: {
+  library_id: string;
+  series_name: string;
+  provider: string;
+  external_id: string;
+  external_url?: string | null;
+  confidence?: number | null;
+  title: string;
+  metadata_json: Record<string, unknown>;
+  total_volumes?: number | null;
+}) {
+  return apiFetch<ExternalMetadataLinkDto>("/metadata/match", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function approveMetadataMatch(id: string, syncSeries: boolean, syncBooks: boolean) {
+  return apiFetch<{ status: string; report: SyncReport }>(`/metadata/approve/${id}`, {
+    method: "POST",
+    body: JSON.stringify({ sync_series: syncSeries, sync_books: syncBooks }),
+  });
+}
+
+export async function rejectMetadataMatch(id: string) {
+  return apiFetch<{ status: string }>(`/metadata/reject/${id}`, {
+    method: "POST",
+  });
+}
+
+export async function getMetadataLink(libraryId: string, seriesName: string) {
+  const params = new URLSearchParams();
+  params.set("library_id", libraryId);
+  params.set("series_name", seriesName);
+  return apiFetch<ExternalMetadataLinkDto[]>(`/metadata/links?${params.toString()}`);
+}
+
+export async function getMissingBooks(linkId: string) {
+  return apiFetch<MissingBooksDto>(`/metadata/missing/${linkId}`);
+}
+
+export async function deleteMetadataLink(id: string) {
+  return apiFetch<{ deleted: boolean }>(`/metadata/links/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function updateLibraryMetadataProvider(libraryId: string, provider: string | null) {
+  return apiFetch<LibraryDto>(`/libraries/${libraryId}/metadata-provider`, {
+    method: "PATCH",
+    body: JSON.stringify({ metadata_provider: provider }),
+  });
 }

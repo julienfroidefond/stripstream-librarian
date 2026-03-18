@@ -53,6 +53,9 @@ export default async function BooksPage({
         reading_status: "unread" as const,
         reading_current_page: null,
         reading_last_read_at: null,
+        summary: null,
+        isbn: null,
+        publish_date: null,
       }));
       totalHits = searchResponse.estimated_total_hits;
     }

@@ -5,6 +5,40 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { FormField, FormLabel, FormInput } from "./ui/Form";
 
+function LockButton({
+  locked,
+  onToggle,
+  disabled,
+}: {
+  locked: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={disabled}
+      className={`p-1 rounded transition-colors ${
+        locked
+          ? "text-amber-500 hover:text-amber-600"
+          : "text-muted-foreground/40 hover:text-muted-foreground"
+      }`}
+      title={locked ? "Champ verrouillé (protégé des synchros)" : "Cliquer pour verrouiller ce champ"}
+    >
+      {locked ? (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>
+      ) : (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 interface EditSeriesFormProps {
   libraryId: string;
   seriesName: string;
@@ -14,6 +48,8 @@ interface EditSeriesFormProps {
   currentBookLanguage: string | null;
   currentDescription: string | null;
   currentStartYear: number | null;
+  currentTotalVolumes: number | null;
+  currentLockedFields: Record<string, boolean>;
 }
 
 export function EditSeriesForm({
@@ -25,6 +61,8 @@ export function EditSeriesForm({
   currentBookLanguage,
   currentDescription,
   currentStartYear,
+  currentTotalVolumes,
+  currentLockedFields,
 }: EditSeriesFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -41,11 +79,19 @@ export function EditSeriesForm({
   const [publisherInputEl, setPublisherInputEl] = useState<HTMLInputElement | null>(null);
   const [description, setDescription] = useState(currentDescription ?? "");
   const [startYear, setStartYear] = useState(currentStartYear?.toString() ?? "");
+  const [totalVolumes, setTotalVolumes] = useState(currentTotalVolumes?.toString() ?? "");
+
+  // Lock states
+  const [lockedFields, setLockedFields] = useState<Record<string, boolean>>(currentLockedFields);
 
   // Propagation aux livres — opt-in via bouton
   const [bookAuthor, setBookAuthor] = useState(currentBookAuthor ?? "");
   const [bookLanguage, setBookLanguage] = useState(currentBookLanguage ?? "");
   const [showApplyToBooks, setShowApplyToBooks] = useState(false);
+
+  const toggleLock = (field: string) => {
+    setLockedFields((prev) => ({ ...prev, [field]: !prev[field] }));
+  };
 
   const addAuthor = () => {
     const v = authorInput.trim();
@@ -95,12 +141,14 @@ export function EditSeriesForm({
     setPublisherInput("");
     setDescription(currentDescription ?? "");
     setStartYear(currentStartYear?.toString() ?? "");
+    setTotalVolumes(currentTotalVolumes?.toString() ?? "");
+    setLockedFields(currentLockedFields);
     setShowApplyToBooks(false);
     setBookAuthor(currentBookAuthor ?? "");
     setBookLanguage(currentBookLanguage ?? "");
     setError(null);
     setIsOpen(false);
-  }, [seriesName, currentAuthors, currentPublishers, currentDescription, currentStartYear, currentBookAuthor, currentBookLanguage]);
+  }, [seriesName, currentAuthors, currentPublishers, currentDescription, currentStartYear, currentTotalVolumes, currentBookAuthor, currentBookLanguage, currentLockedFields]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -133,6 +181,8 @@ export function EditSeriesForm({
           publishers: finalPublishers,
           description: description.trim() || null,
           start_year: startYear.trim() ? parseInt(startYear.trim(), 10) : null,
+          total_volumes: totalVolumes.trim() ? parseInt(totalVolumes.trim(), 10) : null,
+          locked_fields: lockedFields,
         };
         if (showApplyToBooks) {
           body.author = bookAuthor.trim() || null;
@@ -205,7 +255,10 @@ export function EditSeriesForm({
               </FormField>
 
               <FormField>
-                <FormLabel>Année de début</FormLabel>
+                <div className="flex items-center gap-1">
+                  <FormLabel>Année de début</FormLabel>
+                  <LockButton locked={!!lockedFields.start_year} onToggle={() => toggleLock("start_year")} disabled={isPending} />
+                </div>
                 <FormInput
                   type="number"
                   min="1900"
@@ -217,9 +270,27 @@ export function EditSeriesForm({
                 />
               </FormField>
 
+              <FormField>
+                <div className="flex items-center gap-1">
+                  <FormLabel>Nombre de volumes</FormLabel>
+                  <LockButton locked={!!lockedFields.total_volumes} onToggle={() => toggleLock("total_volumes")} disabled={isPending} />
+                </div>
+                <FormInput
+                  type="number"
+                  min="1"
+                  value={totalVolumes}
+                  onChange={(e) => setTotalVolumes(e.target.value)}
+                  disabled={isPending}
+                  placeholder="ex : 12"
+                />
+              </FormField>
+
               {/* Auteurs — multi-valeur */}
               <FormField className="sm:col-span-2">
-                <FormLabel>Auteur(s)</FormLabel>
+                <div className="flex items-center gap-1">
+                  <FormLabel>Auteur(s)</FormLabel>
+                  <LockButton locked={!!lockedFields.authors} onToggle={() => toggleLock("authors")} disabled={isPending} />
+                </div>
                 <div className="space-y-2">
                   {authors.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
@@ -302,7 +373,10 @@ export function EditSeriesForm({
 
               {/* Éditeurs — multi-valeur */}
               <FormField className="sm:col-span-2">
-                <FormLabel>Éditeur(s)</FormLabel>
+                <div className="flex items-center gap-1">
+                  <FormLabel>Éditeur(s)</FormLabel>
+                  <LockButton locked={!!lockedFields.publishers} onToggle={() => toggleLock("publishers")} disabled={isPending} />
+                </div>
                 <div className="space-y-2">
                   {publishers.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
@@ -348,7 +422,10 @@ export function EditSeriesForm({
               </FormField>
 
               <FormField className="sm:col-span-2">
-                <FormLabel>Description</FormLabel>
+                <div className="flex items-center gap-1">
+                  <FormLabel>Description</FormLabel>
+                  <LockButton locked={!!lockedFields.description} onToggle={() => toggleLock("description")} disabled={isPending} />
+                </div>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -359,6 +436,16 @@ export function EditSeriesForm({
                 />
               </FormField>
             </div>
+
+            {/* Lock legend */}
+            {Object.values(lockedFields).some(Boolean) && (
+              <p className="text-xs text-amber-500 flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                Les champs verrouillés ne seront pas écrasés par les synchros de métadonnées externes.
+              </p>
+            )}
 
             {error && <p className="text-xs text-destructive">{error}</p>}
 

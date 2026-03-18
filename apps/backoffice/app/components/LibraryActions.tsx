@@ -2,21 +2,24 @@
 
 import { useState, useRef, useEffect, useTransition } from "react";
 import { Button } from "../components/ui";
+import { ProviderIcon } from "../components/ProviderIcon";
 
 interface LibraryActionsProps {
   libraryId: string;
   monitorEnabled: boolean;
   scanMode: string;
   watcherEnabled: boolean;
+  metadataProvider: string | null;
   onUpdate?: () => void;
 }
 
-export function LibraryActions({ 
-  libraryId, 
-  monitorEnabled, 
-  scanMode, 
+export function LibraryActions({
+  libraryId,
+  monitorEnabled,
+  scanMode,
   watcherEnabled,
-  onUpdate 
+  metadataProvider,
+  onUpdate
 }: LibraryActionsProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -39,17 +42,25 @@ export function LibraryActions({
       const monitorEnabled = formData.get("monitor_enabled") === "true";
       const watcherEnabled = formData.get("watcher_enabled") === "true";
       const scanMode = formData.get("scan_mode") as string;
+      const newMetadataProvider = (formData.get("metadata_provider") as string) || null;
 
       try {
-        const response = await fetch(`/api/libraries/${libraryId}/monitoring`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            monitor_enabled: monitorEnabled,
-            scan_mode: scanMode,
-            watcher_enabled: watcherEnabled,
+        const [response] = await Promise.all([
+          fetch(`/api/libraries/${libraryId}/monitoring`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              monitor_enabled: monitorEnabled,
+              scan_mode: scanMode,
+              watcher_enabled: watcherEnabled,
+            }),
           }),
-        });
+          fetch(`/api/libraries/${libraryId}/metadata-provider`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ metadata_provider: newMetadataProvider }),
+          }),
+        ]);
 
         if (response.ok) {
           setIsOpen(false);
@@ -123,6 +134,25 @@ export function LibraryActions({
                   <option value="hourly">Hourly</option>
                   <option value="daily">Daily</option>
                   <option value="weekly">Weekly</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                  {metadataProvider && <ProviderIcon provider={metadataProvider} size={16} />}
+                  Metadata Provider
+                </label>
+                <select
+                  name="metadata_provider"
+                  defaultValue={metadataProvider || ""}
+                  className="text-sm border border-border rounded-lg px-2 py-1 bg-background"
+                >
+                  <option value="">Default</option>
+                  <option value="google_books">Google Books</option>
+                  <option value="comicvine">ComicVine</option>
+                  <option value="open_library">Open Library</option>
+                  <option value="anilist">AniList</option>
+                  <option value="bedetheque">Bédéthèque</option>
                 </select>
               </div>
 

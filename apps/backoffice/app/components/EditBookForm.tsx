@@ -6,6 +6,40 @@ import { useRouter } from "next/navigation";
 import { BookDto } from "@/lib/api";
 import { FormField, FormLabel, FormInput } from "./ui/Form";
 
+function LockButton({
+  locked,
+  onToggle,
+  disabled,
+}: {
+  locked: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={disabled}
+      className={`p-1 rounded transition-colors ${
+        locked
+          ? "text-amber-500 hover:text-amber-600"
+          : "text-muted-foreground/40 hover:text-muted-foreground"
+      }`}
+      title={locked ? "Champ verrouillé (protégé des synchros)" : "Cliquer pour verrouiller ce champ"}
+    >
+      {locked ? (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>
+      ) : (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 interface EditBookFormProps {
   book: BookDto;
 }
@@ -23,6 +57,14 @@ export function EditBookForm({ book }: EditBookFormProps) {
   const [series, setSeries] = useState(book.series ?? "");
   const [volume, setVolume] = useState(book.volume?.toString() ?? "");
   const [language, setLanguage] = useState(book.language ?? "");
+  const [summary, setSummary] = useState(book.summary ?? "");
+  const [isbn, setIsbn] = useState(book.isbn ?? "");
+  const [publishDate, setPublishDate] = useState(book.publish_date ?? "");
+  const [lockedFields, setLockedFields] = useState<Record<string, boolean>>(book.locked_fields ?? {});
+
+  const toggleLock = (field: string) => {
+    setLockedFields((prev) => ({ ...prev, [field]: !prev[field] }));
+  };
 
   const addAuthor = () => {
     const v = authorInput.trim();
@@ -51,6 +93,10 @@ export function EditBookForm({ book }: EditBookFormProps) {
     setSeries(book.series ?? "");
     setVolume(book.volume?.toString() ?? "");
     setLanguage(book.language ?? "");
+    setSummary(book.summary ?? "");
+    setIsbn(book.isbn ?? "");
+    setPublishDate(book.publish_date ?? "");
+    setLockedFields(book.locked_fields ?? {});
     setError(null);
     setIsOpen(false);
   }, [book]);
@@ -85,6 +131,10 @@ export function EditBookForm({ book }: EditBookFormProps) {
             series: series.trim() || null,
             volume: volume.trim() ? parseInt(volume.trim(), 10) : null,
             language: language.trim() || null,
+            summary: summary.trim() || null,
+            isbn: isbn.trim() || null,
+            publish_date: publishDate.trim() || null,
+            locked_fields: lockedFields,
           }),
         });
         if (!res.ok) {
@@ -130,7 +180,10 @@ export function EditBookForm({ book }: EditBookFormProps) {
           <form onSubmit={handleSubmit} className="p-5 space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField className="sm:col-span-2">
-                <FormLabel required>Titre</FormLabel>
+                <div className="flex items-center gap-1">
+                  <FormLabel required>Titre</FormLabel>
+                  <LockButton locked={!!lockedFields.title} onToggle={() => toggleLock("title")} disabled={isPending} />
+                </div>
                 <FormInput
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
@@ -141,7 +194,10 @@ export function EditBookForm({ book }: EditBookFormProps) {
 
               {/* Auteurs — multi-valeur */}
               <FormField className="sm:col-span-2">
-                <FormLabel>Auteur(s)</FormLabel>
+                <div className="flex items-center gap-1">
+                  <FormLabel>Auteur(s)</FormLabel>
+                  <LockButton locked={!!lockedFields.authors} onToggle={() => toggleLock("authors")} disabled={isPending} />
+                </div>
                 <div className="space-y-2">
                   {authors.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
@@ -187,7 +243,10 @@ export function EditBookForm({ book }: EditBookFormProps) {
               </FormField>
 
               <FormField>
-                <FormLabel>Langue</FormLabel>
+                <div className="flex items-center gap-1">
+                  <FormLabel>Langue</FormLabel>
+                  <LockButton locked={!!lockedFields.language} onToggle={() => toggleLock("language")} disabled={isPending} />
+                </div>
                 <FormInput
                   value={language}
                   onChange={(e) => setLanguage(e.target.value)}
@@ -197,7 +256,10 @@ export function EditBookForm({ book }: EditBookFormProps) {
               </FormField>
 
               <FormField>
-                <FormLabel>Série</FormLabel>
+                <div className="flex items-center gap-1">
+                  <FormLabel>Série</FormLabel>
+                  <LockButton locked={!!lockedFields.series} onToggle={() => toggleLock("series")} disabled={isPending} />
+                </div>
                 <FormInput
                   value={series}
                   onChange={(e) => setSeries(e.target.value)}
@@ -207,7 +269,10 @@ export function EditBookForm({ book }: EditBookFormProps) {
               </FormField>
 
               <FormField>
-                <FormLabel>Volume</FormLabel>
+                <div className="flex items-center gap-1">
+                  <FormLabel>Volume</FormLabel>
+                  <LockButton locked={!!lockedFields.volume} onToggle={() => toggleLock("volume")} disabled={isPending} />
+                </div>
                 <FormInput
                   type="number"
                   min="1"
@@ -217,7 +282,58 @@ export function EditBookForm({ book }: EditBookFormProps) {
                   placeholder="Numéro de volume"
                 />
               </FormField>
+
+              <FormField>
+                <div className="flex items-center gap-1">
+                  <FormLabel>ISBN</FormLabel>
+                  <LockButton locked={!!lockedFields.isbn} onToggle={() => toggleLock("isbn")} disabled={isPending} />
+                </div>
+                <FormInput
+                  value={isbn}
+                  onChange={(e) => setIsbn(e.target.value)}
+                  disabled={isPending}
+                  placeholder="ISBN"
+                />
+              </FormField>
+
+              <FormField>
+                <div className="flex items-center gap-1">
+                  <FormLabel>Date de publication</FormLabel>
+                  <LockButton locked={!!lockedFields.publish_date} onToggle={() => toggleLock("publish_date")} disabled={isPending} />
+                </div>
+                <FormInput
+                  value={publishDate}
+                  onChange={(e) => setPublishDate(e.target.value)}
+                  disabled={isPending}
+                  placeholder="ex : 2023-01-15"
+                />
+              </FormField>
+
+              <FormField className="sm:col-span-2">
+                <div className="flex items-center gap-1">
+                  <FormLabel>Description</FormLabel>
+                  <LockButton locked={!!lockedFields.summary} onToggle={() => toggleLock("summary")} disabled={isPending} />
+                </div>
+                <textarea
+                  value={summary}
+                  onChange={(e) => setSummary(e.target.value)}
+                  disabled={isPending}
+                  placeholder="Résumé / description du livre"
+                  rows={4}
+                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+                />
+              </FormField>
             </div>
+
+            {/* Lock legend */}
+            {Object.values(lockedFields).some(Boolean) && (
+              <p className="text-xs text-amber-500 flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                Les champs verrouillés ne seront pas écrasés par les synchros de métadonnées externes.
+              </p>
+            )}
 
             {error && (
               <p className="text-xs text-destructive">{error}</p>

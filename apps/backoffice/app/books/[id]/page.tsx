@@ -3,6 +3,7 @@ import { BookPreview } from "../../components/BookPreview";
 import { ConvertButton } from "../../components/ConvertButton";
 import { MarkBookReadButton } from "../../components/MarkBookReadButton";
 import { EditBookForm } from "../../components/EditBookForm";
+import { SafeHtml } from "../../components/SafeHtml";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -14,31 +15,6 @@ const readingStatusConfig: Record<ReadingStatus, { label: string; className: str
   reading: { label: "En cours", className: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30" },
   read: { label: "Lu", className: "bg-green-500/15 text-green-600 dark:text-green-400 border border-green-500/30" },
 };
-
-function ReadingStatusBadge({
-  status,
-  currentPage,
-  lastReadAt,
-}: {
-  status: ReadingStatus;
-  currentPage: number | null;
-  lastReadAt: string | null;
-}) {
-  const { label, className } = readingStatusConfig[status];
-  return (
-    <div className="flex items-center gap-2">
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${className}`}>
-        {label}
-        {status === "reading" && currentPage != null && ` · p. ${currentPage}`}
-      </span>
-      {lastReadAt && (
-        <span className="text-xs text-muted-foreground">
-          {new Date(lastReadAt).toLocaleDateString()}
-        </span>
-      )}
-    </div>
-  );
-}
 
 async function fetchBook(bookId: string): Promise<BookDto | null> {
   try {
@@ -64,163 +40,195 @@ export default async function BookDetailPage({
   }
 
   const library = libraries.find(l => l.id === book.library_id);
+  const formatBadge = (book.format ?? book.kind).toUpperCase();
+  const formatColor =
+    formatBadge === "CBZ" ? "bg-success/10 text-success border-success/30" :
+    formatBadge === "CBR" ? "bg-warning/10 text-warning border-warning/30" :
+    formatBadge === "PDF" ? "bg-destructive/10 text-destructive border-destructive/30" :
+    "bg-muted/50 text-muted-foreground border-border";
+  const { label: statusLabel, className: statusClassName } = readingStatusConfig[book.reading_status];
 
   return (
-    <>
-      <div className="mb-6">
-        <Link href="/books" className="inline-flex items-center text-sm text-muted-foreground hover:text-primary transition-colors">
-          ← Back to books
+    <div className="space-y-6">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-sm">
+        <Link href="/libraries" className="text-muted-foreground hover:text-primary transition-colors">
+          Libraries
         </Link>
+        <span className="text-muted-foreground">/</span>
+        {library && (
+          <>
+            <Link
+              href={`/libraries/${book.library_id}/series`}
+              className="text-muted-foreground hover:text-primary transition-colors"
+            >
+              {library.name}
+            </Link>
+            <span className="text-muted-foreground">/</span>
+          </>
+        )}
+        {book.series && (
+          <>
+            <Link
+              href={`/libraries/${book.library_id}/series/${encodeURIComponent(book.series)}`}
+              className="text-muted-foreground hover:text-primary transition-colors"
+            >
+              {book.series}
+            </Link>
+            <span className="text-muted-foreground">/</span>
+          </>
+        )}
+        <span className="text-foreground font-medium truncate">{book.title}</span>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-8">
+      {/* Hero */}
+      <div className="flex flex-col sm:flex-row gap-6">
+        {/* Cover */}
         <div className="flex-shrink-0">
-          <div className="bg-card rounded-xl shadow-card border border-border p-4 inline-block">
+          <div className="w-48 aspect-[2/3] relative rounded-xl overflow-hidden shadow-card border border-border">
             <Image
               src={getBookCoverUrl(book.id)}
               alt={`Cover of ${book.title}`}
-              width={300}
-              height={440}
-              className="w-auto h-auto max-w-[300px] rounded-lg"
+              fill
+              className="object-cover"
               unoptimized
               loading="lazy"
             />
           </div>
         </div>
 
-        <div className="flex-1">
-          <div className="bg-card rounded-xl shadow-sm border border-border p-6">
-            <div className="flex items-start justify-between gap-4 mb-2">
+        {/* Info */}
+        <div className="flex-1 space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
               <h1 className="text-3xl font-bold text-foreground">{book.title}</h1>
-              <EditBookForm book={book} />
-            </div>
-            
-            {book.author && (
-              <p className="text-lg text-muted-foreground mb-4">by {book.author}</p>
-            )}
-
-            {book.series && (
-              <p className="text-sm text-muted-foreground mb-6">
-                {book.series}
-                {book.volume && <span className="ml-2 px-2 py-1 bg-primary/10 text-primary rounded text-xs">Volume {book.volume}</span>}
-              </p>
-            )}
-
-            <div className="space-y-3">
-              {book.reading_status && (
-                <div className="flex items-center justify-between py-2 border-b border-border">
-                  <span className="text-sm text-muted-foreground">Lecture :</span>
-                  <div className="flex items-center gap-3">
-                    <ReadingStatusBadge
-                      status={book.reading_status}
-                      currentPage={book.reading_current_page ?? null}
-                      lastReadAt={book.reading_last_read_at ?? null}
-                    />
-                    <MarkBookReadButton bookId={book.id} currentStatus={book.reading_status} />
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between py-2 border-b border-border">
-                <span className="text-sm text-muted-foreground">Format:</span>
-                <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${
-                  (book.format ?? book.kind) === 'cbz' ? 'bg-success/10 text-success' :
-                  (book.format ?? book.kind) === 'cbr' ? 'bg-warning/10 text-warning' :
-                  (book.format ?? book.kind) === 'pdf' ? 'bg-destructive/10 text-destructive' :
-                  'bg-muted/50 text-muted-foreground'
-                }`}>
-                  {(book.format ?? book.kind).toUpperCase()}
-                </span>
-              </div>
-              
-              {book.volume && (
-                <div className="flex items-center justify-between py-2 border-b border-border">
-                  <span className="text-sm text-muted-foreground">Volume:</span>
-                  <span className="text-sm text-foreground">{book.volume}</span>
-                </div>
-              )}
-              
-              {book.language && (
-                <div className="flex items-center justify-between py-2 border-b border-border">
-                  <span className="text-sm text-muted-foreground">Language:</span>
-                  <span className="text-sm text-foreground">{book.language.toUpperCase()}</span>
-                </div>
-              )}
-              
-              {book.page_count && (
-                <div className="flex items-center justify-between py-2 border-b border-border">
-                  <span className="text-sm text-muted-foreground">Pages:</span>
-                  <span className="text-sm text-foreground">{book.page_count}</span>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between py-2 border-b border-border">
-                <span className="text-sm text-muted-foreground">Library:</span>
-                <span className="text-sm text-foreground">{library?.name || book.library_id}</span>
-              </div>
-
-              {book.series && (
-                <div className="flex items-center justify-between py-2 border-b border-border">
-                  <span className="text-sm text-muted-foreground">Series:</span>
-                  <span className="text-sm text-foreground">{book.series}</span>
-                </div>
-              )}
-
-              {book.file_format && (
-                <div className="flex items-center justify-between py-2 border-b border-border">
-                  <span className="text-sm text-muted-foreground">File Format:</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-foreground">{book.file_format.toUpperCase()}</span>
-                    {book.file_format === "cbr" && <ConvertButton bookId={book.id} />}
-                  </div>
-                </div>
-              )}
-
-              {book.file_parse_status && (
-                <div className="flex items-center justify-between py-2 border-b border-border">
-                  <span className="text-sm text-muted-foreground">Parse Status:</span>
-                  <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${
-                    book.file_parse_status === 'success' ? 'bg-success/10 text-success' : 
-                    book.file_parse_status === 'failed' ? 'bg-destructive/10 text-error' : 'bg-muted/50 text-muted-foreground'
-                  }`}>
-                    {book.file_parse_status}
-                  </span>
-                </div>
-              )}
-
-              {book.file_path && (
-                <div className="flex flex-col py-2 border-b border-border">
-                  <span className="text-sm text-muted-foreground mb-1">File Path:</span>
-                  <code className="text-xs font-mono text-foreground break-all">{book.file_path}</code>
-                </div>
-              )}
-
-              <div className="flex flex-col py-2 border-b border-border">
-                <span className="text-sm text-muted-foreground mb-1">Book ID:</span>
-                <code className="text-xs font-mono text-foreground break-all">{book.id}</code>
-              </div>
-
-              <div className="flex flex-col py-2 border-b border-border">
-                <span className="text-sm text-muted-foreground mb-1">Library ID:</span>
-                <code className="text-xs font-mono text-foreground break-all">{book.library_id}</code>
-              </div>
-
-              {book.updated_at && (
-                <div className="flex items-center justify-between py-2">
-                  <span className="text-sm text-muted-foreground">Updated:</span>
-                  <span className="text-sm text-foreground">{new Date(book.updated_at).toLocaleString()}</span>
-                </div>
+              {book.author && (
+                <p className="text-base text-muted-foreground mt-1">{book.author}</p>
               )}
             </div>
+            <EditBookForm book={book} />
           </div>
+
+          {/* Series + Volume link */}
+          {book.series && (
+            <div className="flex items-center gap-2 text-sm">
+              <Link
+                href={`/libraries/${book.library_id}/series/${encodeURIComponent(book.series)}`}
+                className="text-primary hover:text-primary/80 transition-colors font-medium"
+              >
+                {book.series}
+              </Link>
+              {book.volume != null && (
+                <span className="px-2 py-0.5 bg-primary/10 text-primary rounded-md text-xs font-semibold">
+                  Vol. {book.volume}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Reading status + actions */}
+          <div className="flex flex-wrap items-center gap-3">
+            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${statusClassName}`}>
+              {statusLabel}
+              {book.reading_status === "reading" && book.reading_current_page != null && ` · p. ${book.reading_current_page}`}
+            </span>
+            {book.reading_last_read_at && (
+              <span className="text-xs text-muted-foreground">
+                {new Date(book.reading_last_read_at).toLocaleDateString()}
+              </span>
+            )}
+            <MarkBookReadButton bookId={book.id} currentStatus={book.reading_status} />
+            {book.file_format === "cbr" && <ConvertButton bookId={book.id} />}
+          </div>
+
+          {/* Metadata pills */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border ${formatColor}`}>
+              {formatBadge}
+            </span>
+            {book.page_count && (
+              <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-muted/50 text-muted-foreground border border-border">
+                {book.page_count} pages
+              </span>
+            )}
+            {book.language && (
+              <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-muted/50 text-muted-foreground border border-border">
+                {book.language.toUpperCase()}
+              </span>
+            )}
+            {book.isbn && (
+              <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-mono font-medium bg-muted/50 text-muted-foreground border border-border">
+                ISBN {book.isbn}
+              </span>
+            )}
+            {book.publish_date && (
+              <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-muted/50 text-muted-foreground border border-border">
+                {book.publish_date}
+              </span>
+            )}
+          </div>
+
+          {/* Description */}
+          {book.summary && (
+            <SafeHtml html={book.summary} className="text-sm text-muted-foreground leading-relaxed" />
+          )}
         </div>
       </div>
 
-      {book.page_count && book.page_count > 0 && (
-        <div className="mt-8">
-          <BookPreview bookId={book.id} pageCount={book.page_count} />
+      {/* Technical info (collapsible) */}
+      <details className="group">
+        <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors select-none flex items-center gap-1.5">
+          <svg className="w-3.5 h-3.5 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          Informations techniques
+        </summary>
+        <div className="mt-3 p-4 rounded-lg bg-muted/30 border border-border/50 space-y-2 text-xs">
+          {book.file_path && (
+            <div className="flex flex-col gap-0.5">
+              <span className="text-muted-foreground">Fichier</span>
+              <code className="font-mono text-foreground break-all">{book.file_path}</code>
+            </div>
+          )}
+          {book.file_format && (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Format fichier</span>
+              <span className="text-foreground">{book.file_format.toUpperCase()}</span>
+            </div>
+          )}
+          {book.file_parse_status && (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Parsing</span>
+              <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                book.file_parse_status === "success" ? "bg-success/10 text-success" :
+                book.file_parse_status === "failed" ? "bg-destructive/10 text-destructive" :
+                "bg-muted/50 text-muted-foreground"
+              }`}>
+                {book.file_parse_status}
+              </span>
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Book ID</span>
+            <code className="font-mono text-foreground">{book.id}</code>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Library ID</span>
+            <code className="font-mono text-foreground">{book.library_id}</code>
+          </div>
+          {book.updated_at && (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Mis à jour</span>
+              <span className="text-foreground">{new Date(book.updated_at).toLocaleString()}</span>
+            </div>
+          )}
         </div>
+      </details>
+
+      {/* Book Preview */}
+      {book.page_count && book.page_count > 0 && (
+        <BookPreview bookId={book.id} pageCount={book.page_count} />
       )}
-    </>
+    </div>
   );
 }
