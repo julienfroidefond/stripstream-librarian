@@ -42,6 +42,7 @@ pub fn settings_routes() -> Router<AppState> {
         .route("/settings/cache/clear", post(clear_cache))
         .route("/settings/cache/stats", get(get_cache_stats))
         .route("/settings/thumbnail/stats", get(get_thumbnail_stats))
+        .route("/settings/search/resync", post(force_search_resync))
 }
 
 /// List all settings
@@ -323,4 +324,28 @@ pub async fn get_thumbnail_stats(State(_state): State<AppState>) -> Result<Json<
     .map_err(|e| ApiError::internal(format!("thumbnail stats failed: {}", e)))?;
 
     Ok(Json(stats))
+}
+
+/// Force a full Meilisearch resync by resetting the sync timestamp
+#[utoipa::path(
+    post,
+    path = "/settings/search/resync",
+    tag = "settings",
+    responses(
+        (status = 200, description = "Resync scheduled"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn force_search_resync(
+    State(state): State<AppState>,
+) -> Result<Json<Value>, ApiError> {
+    sqlx::query("UPDATE sync_metadata SET last_meili_sync = NULL WHERE id = 1")
+        .execute(&state.pool)
+        .await?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": "Search resync scheduled. The indexer will perform a full sync on its next cycle."
+    })))
 }

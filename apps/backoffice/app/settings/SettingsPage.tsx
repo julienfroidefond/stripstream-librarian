@@ -21,6 +21,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
   const [clearResult, setClearResult] = useState<ClearCacheResponse | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [isResyncing, setIsResyncing] = useState(false);
+  const [resyncResult, setResyncResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // Komga sync state — URL and username are persisted in settings
   const [komgaUrl, setKomgaUrl] = useState("");
@@ -87,6 +89,20 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
     }
   }
 
+  async function handleSearchResync() {
+    setIsResyncing(true);
+    setResyncResult(null);
+    try {
+      const response = await fetch("/api/settings/search/resync", { method: "POST" });
+      const result = await response.json();
+      setResyncResult(result);
+    } catch {
+      setResyncResult({ success: false, message: "Failed to trigger search resync" });
+    } finally {
+      setIsResyncing(false);
+    }
+  }
+
   const fetchReports = useCallback(async () => {
     try {
       const resp = await fetch("/api/komga/reports");
@@ -147,6 +163,13 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
     }
   }
 
+  const [activeTab, setActiveTab] = useState<"general" | "integrations">("general");
+
+  const tabs = [
+    { id: "general" as const, label: "General", icon: "settings" as const },
+    { id: "integrations" as const, label: "Integrations", icon: "refresh" as const },
+  ];
+
   return (
     <>
       <div className="mb-6">
@@ -154,6 +177,24 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
           <Icon name="settings" size="xl" />
           Settings
         </h1>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="flex gap-1 mb-6 border-b border-border">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+              activeTab === tab.id
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+            }`}
+          >
+            <Icon name={tab.icon} size="sm" />
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {saveMessage && (
@@ -164,6 +205,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         </Card>
       )}
 
+      {activeTab === "general" && (<>
       {/* Image Processing Settings */}
       <Card className="mb-6">
         <CardHeader>
@@ -316,6 +358,43 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                 <>
                   <Icon name="trash" size="sm" className="mr-2" />
                   Clear Cache
+                </>
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Search Index */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Icon name="search" size="md" />
+            Search Index
+          </CardTitle>
+          <CardDescription>Force a full resync of the Meilisearch index. This will re-index all books on the next indexer cycle.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {resyncResult && (
+              <div className={`p-3 rounded-lg ${resyncResult.success ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
+                {resyncResult.message}
+              </div>
+            )}
+
+            <Button
+              onClick={handleSearchResync}
+              disabled={isResyncing}
+            >
+              {isResyncing ? (
+                <>
+                  <Icon name="spinner" size="sm" className="animate-spin -ml-1 mr-2" />
+                  Scheduling...
+                </>
+              ) : (
+                <>
+                  <Icon name="refresh" size="sm" className="mr-2" />
+                  Force Search Resync
                 </>
               )}
             </Button>
@@ -522,6 +601,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         </CardContent>
       </Card>
 
+      </>)}
+
+      {activeTab === "integrations" && (<>
       {/* Komga Sync */}
       <Card className="mb-6">
         <CardHeader>
@@ -761,6 +843,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
           </div>
         </CardContent>
       </Card>
+      </>)}
     </>
   );
 }

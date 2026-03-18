@@ -12,7 +12,7 @@ struct SearchDoc {
     library_id: String,
     kind: String,
     title: String,
-    author: Option<String>,
+    authors: Vec<String>,
     series: Option<String>,
     volume: Option<i32>,
     language: Option<String>,
@@ -37,6 +37,13 @@ pub async fn sync_meili(pool: &PgPool, meili_url: &str, meili_master_key: &str) 
         .send()
         .await;
 
+    let _ = client
+        .put(format!("{base}/indexes/books/settings/searchable-attributes"))
+        .header("Authorization", format!("Bearer {meili_master_key}"))
+        .json(&serde_json::json!(["title", "authors", "series"]))
+        .send()
+        .await;
+
     // Get last sync timestamp
     let last_sync: Option<DateTime<Utc>> = sqlx::query_scalar(
         "SELECT last_meili_sync FROM sync_metadata WHERE id = 1 AND last_meili_sync IS NOT NULL"
@@ -47,23 +54,35 @@ pub async fn sync_meili(pool: &PgPool, meili_url: &str, meili_master_key: &str) 
     // If no previous sync, do a full sync
     let is_full_sync = last_sync.is_none();
     
-    // Get books to sync: all if full sync, only modified since last sync otherwise
+    // Get books to sync: all if full sync, only modified since last sync otherwise.
+    // Join series_metadata to merge series-level authors into the search document.
+    let books_query = r#"
+        SELECT b.id, b.library_id, b.kind, b.title, b.series, b.volume, b.language, b.updated_at,
+            ARRAY(
+                SELECT DISTINCT unnest(
+                    COALESCE(b.authors, CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END)
+                    || COALESCE(sm.authors, ARRAY[]::text[])
+                )
+            ) as authors
+        FROM books b
+        LEFT JOIN series_metadata sm
+            ON sm.library_id = b.library_id
+            AND sm.name = COALESCE(NULLIF(b.series, ''), 'unclassified')
+    "#;
+
     let rows = if is_full_sync {
         info!("[MEILI] Performing full sync");
-        sqlx::query(
-            "SELECT id, library_id, kind, title, author, series, volume, language, updated_at FROM books",
-        )
+        sqlx::query(books_query)
         .fetch_all(pool)
         .await?
     } else {
         let since = last_sync.unwrap();
         info!("[MEILI] Performing incremental sync since {}", since);
-        
-        // Also get deleted book IDs to remove from MeiliSearch
-        // For now, we'll do a diff approach: get all book IDs from DB and compare with Meili
-        sqlx::query(
-            "SELECT id, library_id, kind, title, author, series, volume, language, updated_at FROM books WHERE updated_at > $1",
-        )
+
+        // Include books that changed OR whose series_metadata changed
+        sqlx::query(&format!(
+            "{books_query} WHERE b.updated_at > $1 OR sm.updated_at > $1"
+        ))
         .bind(since)
         .fetch_all(pool)
         .await?
@@ -87,7 +106,7 @@ pub async fn sync_meili(pool: &PgPool, meili_url: &str, meili_master_key: &str) 
             library_id: row.get::<Uuid, _>("library_id").to_string(),
             kind: row.get("kind"),
             title: row.get("title"),
-            author: row.get("author"),
+            authors: row.get::<Vec<String>, _>("authors"),
             series: row.get("series"),
             volume: row.get("volume"),
             language: row.get("language"),

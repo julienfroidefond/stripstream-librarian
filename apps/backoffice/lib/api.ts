@@ -87,7 +87,7 @@ export type SearchHitDto = {
   id: string;
   library_id: string;
   title: string;
-  author: string | null;
+  authors: string[];
   series: string | null;
   volume: number | null;
   kind: string;
@@ -404,6 +404,12 @@ export async function clearCache() {
 
 export async function getThumbnailStats() {
   return apiFetch<ThumbnailStats>("/settings/thumbnail/stats");
+}
+
+export async function forceSearchResync() {
+  return apiFetch<{ success: boolean; message: string }>("/settings/search/resync", {
+    method: "POST",
+  });
 }
 
 export async function convertBook(bookId: string) {
