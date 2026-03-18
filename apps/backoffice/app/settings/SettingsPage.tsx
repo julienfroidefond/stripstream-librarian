@@ -244,13 +244,13 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                     handleUpdateSetting("image_processing", newSettings.image_processing);
                   }}
                 >
-                  <option value="lanczos3">Lanczos3 (Best Quality)</option>
-                  <option value="triangle">Triangle (Faster)</option>
-                  <option value="nearest">Nearest (Fastest)</option>
+                  <option value="lanczos3">Lanczos3 (Meilleure qualité)</option>
+                  <option value="triangle">Triangle (Plus rapide)</option>
+                  <option value="nearest">Nearest (Le plus rapide)</option>
                 </FormSelect>
               </FormField>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Max Allowed Width (px)</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">Largeur maximale autorisée (px)</label>
                 <FormInput 
                   type="number" 
                   min={100} 
@@ -276,13 +276,13 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             <Icon name="cache" size="md" />
             Cache
           </CardTitle>
-          <CardDescription>Manage the image cache and storage</CardDescription>
+          <CardDescription>Gérer le cache d&apos;images et le stockage</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg">
               <div>
-                <p className="text-sm text-muted-foreground">Cache Size</p>
+                <p className="text-sm text-muted-foreground">Taille du cache</p>
                 <p className="text-2xl font-semibold">{cacheStats.total_size_mb.toFixed(2)} MB</p>
               </div>
               <div>
