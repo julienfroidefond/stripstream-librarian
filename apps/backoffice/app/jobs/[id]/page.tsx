@@ -566,7 +566,16 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium text-sm text-foreground truncate">{r.series_name}</span>
+                    {job.library_id ? (
+                      <Link
+                        href={`/libraries/${job.library_id}/series/${encodeURIComponent(r.series_name)}`}
+                        className="font-medium text-sm text-primary hover:underline truncate"
+                      >
+                        {r.series_name}
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-sm text-foreground truncate">{r.series_name}</span>
+                    )}
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${
                       r.status === "auto_matched" ? "bg-success/20 text-success" :
                       r.status === "already_linked" ? "bg-primary/20 text-primary" :
