@@ -610,20 +610,50 @@ fn extract_volume_from_title(title: &str) -> Option<i32> {
     None
 }
 
+/// Normalize a title by removing French articles (leading or in parentheses)
+/// and extra whitespace/punctuation, so that "Les Légendaires - Résistance"
+/// and "Légendaires (Les) - Résistance" produce the same canonical form.
+fn normalize_title(s: &str) -> String {
+    let lower = s.to_lowercase();
+    // Remove articles in parentheses: "(les)", "(la)", "(le)", "(l')", "(un)", "(une)", "(des)"
+    let re_parens = regex::Regex::new(r"\s*\((?:les?|la|l'|une?|des|du|d')\)").unwrap();
+    let cleaned = re_parens.replace_all(&lower, "");
+    // Remove leading articles: "les ", "la ", "le ", "l'", "un ", "une ", "des ", "du ", "d'"
+    let re_leading = regex::Regex::new(r"^(?:les?|la|l'|une?|des|du|d')\s+").unwrap();
+    let cleaned = re_leading.replace(&cleaned, "");
+    // Collapse multiple spaces/dashes into single
+    let re_spaces = regex::Regex::new(r"\s+").unwrap();
+    re_spaces.replace_all(cleaned.trim(), " ").to_string()
+}
+
 fn compute_confidence(title: &str, query: &str) -> f32 {
     let title_lower = title.to_lowercase();
-    if title_lower == query {
-        1.0
-    } else if title_lower.starts_with(query) || query.starts_with(&title_lower) {
+    let query_lower = query.to_lowercase();
+    if title_lower == query_lower {
+        return 1.0;
+    }
+
+    // Try with normalized forms (handles Bedetheque's "Name (Article)" convention)
+    let title_norm = normalize_title(title);
+    let query_norm = normalize_title(query);
+    if title_norm == query_norm {
+        return 1.0;
+    }
+
+    if title_lower.starts_with(&query_lower) || query_lower.starts_with(&title_lower) {
         0.85
-    } else if title_lower.contains(query) || query.contains(&title_lower) {
+    } else if title_norm.starts_with(&query_norm) || query_norm.starts_with(&title_norm) {
+        0.85
+    } else if title_lower.contains(&query_lower) || query_lower.contains(&title_lower) {
+        0.7
+    } else if title_norm.contains(&query_norm) || query_norm.contains(&title_norm) {
         0.7
     } else {
-        let common: usize = query
+        let common: usize = query_lower
             .chars()
             .filter(|c| title_lower.contains(*c))
             .count();
-        let max_len = query.len().max(title_lower.len()).max(1);
+        let max_len = query_lower.len().max(title_lower.len()).max(1);
         (common as f32 / max_len as f32).clamp(0.1, 0.6)
     }
 }
