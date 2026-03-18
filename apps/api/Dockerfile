@@ -1,25 +1,38 @@
 FROM rust:1-bookworm AS builder
 WORKDIR /app
 
-# Install sccache for faster builds
-RUN cargo install sccache --locked
-ENV RUSTC_WRAPPER=sccache
-ENV SCCACHE_DIR=/sccache
-
+# Copy workspace manifests and create dummy source files to cache dependency builds
 COPY Cargo.toml ./
 COPY apps/api/Cargo.toml apps/api/Cargo.toml
 COPY apps/indexer/Cargo.toml apps/indexer/Cargo.toml
 COPY crates/core/Cargo.toml crates/core/Cargo.toml
 COPY crates/parsers/Cargo.toml crates/parsers/Cargo.toml
+
+RUN mkdir -p apps/api/src apps/indexer/src crates/core/src crates/parsers/src && \
+    echo "fn main() {}" > apps/api/src/main.rs && \
+    echo "fn main() {}" > apps/indexer/src/main.rs && \
+    echo "" > apps/indexer/src/lib.rs && \
+    echo "" > crates/core/src/lib.rs && \
+    echo "" > crates/parsers/src/lib.rs
+
+# Build dependencies only (cached as long as Cargo.toml files don't change)
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/app/target \
+    cargo build --release -p api && \
+    cargo install sqlx-cli --no-default-features --features postgres --locked
+
+# Copy real source code and build
 COPY apps/api/src apps/api/src
 COPY apps/indexer/src apps/indexer/src
 COPY crates/core/src crates/core/src
 COPY crates/parsers/src crates/parsers/src
 
-# Build with sccache (cache persisted between builds via Docker cache mount)
-RUN --mount=type=cache,target=/sccache \
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/app/target \
     cargo build --release -p api && \
-    cargo install sqlx-cli --no-default-features --features postgres --locked
+    cp /app/target/release/api /usr/local/bin/api
 
 FROM debian:bookworm-slim
 
@@ -42,7 +55,7 @@ RUN ARCH=$(dpkg --print-architecture) && \
     cp /tmp/lib/libpdfium.so /usr/local/lib/ && \
     rm -rf /tmp/pdfium.tgz /tmp/lib /tmp/include && \
     ldconfig
-COPY --from=builder /app/target/release/api /usr/local/bin/api
+COPY --from=builder /usr/local/bin/api /usr/local/bin/api
 COPY --from=builder /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
 COPY infra/migrations /app/migrations
 COPY apps/api/entrypoint.sh /usr/local/bin/entrypoint.sh
