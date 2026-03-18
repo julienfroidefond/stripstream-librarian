@@ -123,6 +123,7 @@ export type SeriesDto = {
   library_id: string;
   series_status: string | null;
   missing_count: number | null;
+  metadata_provider: string | null;
 };
 
 export function config() {
@@ -322,6 +323,7 @@ export async function fetchAllSeries(
   sort?: string,
   seriesStatus?: string,
   hasMissing?: boolean,
+  metadataProvider?: string,
 ): Promise<SeriesPageDto> {
   const params = new URLSearchParams();
   if (libraryId) params.set("library_id", libraryId);
@@ -330,6 +332,7 @@ export async function fetchAllSeries(
   if (sort) params.set("sort", sort);
   if (seriesStatus) params.set("series_status", seriesStatus);
   if (hasMissing) params.set("has_missing", "true");
+  if (metadataProvider) params.set("metadata_provider", metadataProvider);
   params.set("page", page.toString());
   params.set("limit", limit.toString());
 

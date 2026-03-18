@@ -550,6 +550,12 @@ const en: Record<TranslationKey, string> = {
   // Series filters
   "seriesFilters.all": "All",
   "seriesFilters.missingBooks": "Missing books",
+
+  // Metadata filter
+  "series.metadata": "Metadata",
+  "series.metadataAll": "All",
+  "series.metadataLinked": "Linked",
+  "series.metadataUnlinked": "Not linked",
 };
 
 export default en;

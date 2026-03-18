@@ -5,6 +5,7 @@ import { LiveSearchForm } from "../components/LiveSearchForm";
 import { Card, CardContent, OffsetPagination } from "../components/ui";
 import Image from "next/image";
 import Link from "next/link";
+import { ProviderIcon } from "../components/ProviderIcon";
 
 export const dynamic = "force-dynamic";
 
@@ -21,12 +22,13 @@ export default async function SeriesPage({
   const sort = typeof searchParamsAwaited.sort === "string" ? searchParamsAwaited.sort : undefined;
   const seriesStatus = typeof searchParamsAwaited.series_status === "string" ? searchParamsAwaited.series_status : undefined;
   const hasMissing = searchParamsAwaited.has_missing === "true";
+  const metadataProvider = typeof searchParamsAwaited.metadata_provider === "string" ? searchParamsAwaited.metadata_provider : undefined;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 20;
 
   const [libraries, seriesPage, dbStatuses] = await Promise.all([
     fetchLibraries().catch(() => [] as LibraryDto[]),
-    fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit, sort, seriesStatus, hasMissing).catch(
+    fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit, sort, seriesStatus, hasMissing, metadataProvider).catch(
       () => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }) as SeriesPageDto
     ),
     fetchSeriesStatuses().catch(() => [] as string[]),
@@ -39,7 +41,7 @@ export default async function SeriesPage({
     { value: "latest", label: t("books.sortLatest") },
   ];
 
-  const hasFilters = searchQuery || libraryId || readingStatus || sort || seriesStatus || hasMissing;
+  const hasFilters = searchQuery || libraryId || readingStatus || sort || seriesStatus || hasMissing || metadataProvider;
 
   const libraryOptions = [
     { value: "", label: t("books.allLibraries") },
@@ -70,6 +72,17 @@ export default async function SeriesPage({
     { value: "true", label: t("series.missingBooks") },
   ];
 
+  const metadataOptions = [
+    { value: "", label: t("series.metadataAll") },
+    { value: "linked", label: t("series.metadataLinked") },
+    { value: "unlinked", label: t("series.metadataUnlinked") },
+    { value: "google_books", label: "Google Books" },
+    { value: "open_library", label: "Open Library" },
+    { value: "comicvine", label: "ComicVine" },
+    { value: "anilist", label: "AniList" },
+    { value: "bedetheque", label: "Bédéthèque" },
+  ];
+
   return (
     <>
       <div className="mb-6">
@@ -87,11 +100,12 @@ export default async function SeriesPage({
             basePath="/series"
             fields={[
               { name: "q", type: "text", label: t("common.search"), placeholder: t("series.searchPlaceholder"), className: "flex-1 w-full" },
-              { name: "library", type: "select", label: t("books.library"), options: libraryOptions, className: "w-full sm:w-48" },
-              { name: "status", type: "select", label: t("series.reading"), options: statusOptions, className: "w-full sm:w-36" },
+              { name: "library", type: "select", label: t("books.library"), options: libraryOptions, className: "w-full sm:w-44" },
+              { name: "status", type: "select", label: t("series.reading"), options: statusOptions, className: "w-full sm:w-32" },
               { name: "series_status", type: "select", label: t("editSeries.status"), options: seriesStatusOptions, className: "w-full sm:w-36" },
               { name: "has_missing", type: "select", label: t("series.missing"), options: missingOptions, className: "w-full sm:w-36" },
-              { name: "sort", type: "select", label: t("books.sort"), options: sortOptions, className: "w-full sm:w-36" },
+              { name: "metadata_provider", type: "select", label: t("series.metadata"), options: metadataOptions, className: "w-full sm:w-36" },
+              { name: "sort", type: "select", label: t("books.sort"), options: sortOptions, className: "w-full sm:w-32" },
             ]}
           />
         </CardContent>
@@ -156,6 +170,11 @@ export default async function SeriesPage({
                       {s.missing_count != null && s.missing_count > 0 && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-yellow-500/15 text-yellow-600">
                           {t("series.missingCount", { count: String(s.missing_count), plural: s.missing_count > 1 ? "s" : "" })}
+                        </span>
+                      )}
+                      {s.metadata_provider && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-purple-500/15 text-purple-600 inline-flex items-center gap-0.5">
+                          <ProviderIcon provider={s.metadata_provider} size={10} />
                         </span>
                       )}
                     </div>

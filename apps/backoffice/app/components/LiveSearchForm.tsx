@@ -68,7 +68,7 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
         if (timerRef.current) clearTimeout(timerRef.current);
         router.replace(buildUrl() as any);
       }}
-      className="flex flex-col sm:flex-row gap-3 items-start sm:items-end"
+      className="flex flex-col sm:flex-row sm:flex-wrap gap-3 items-start sm:items-end"
     >
       {fields.map((field) =>
         field.type === "text" ? (

@@ -314,6 +314,7 @@ pub struct SeriesItem {
     pub library_id: Uuid,
     pub series_status: Option<String>,
     pub missing_count: Option<i64>,
+    pub metadata_provider: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -336,6 +337,9 @@ pub struct ListSeriesQuery {
     /// Filter series with missing books: "true" to show only series with missing books
     #[schema(value_type = Option<String>, example = "true")]
     pub has_missing: Option<String>,
+    /// Filter by metadata provider: a provider name (e.g. "google_books"), "linked" (any provider), or "unlinked" (no provider)
+    #[schema(value_type = Option<String>, example = "google_books")]
+    pub metadata_provider: Option<String>,
     #[schema(value_type = Option<i64>, example = 1)]
     pub page: Option<i64>,
     #[schema(value_type = Option<i64>, example = 50)]
@@ -351,6 +355,7 @@ pub struct ListSeriesQuery {
         ("library_id" = String, Path, description = "Library UUID"),
         ("q" = Option<String>, Query, description = "Filter by series name (case-insensitive, partial match)"),
         ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
+        ("metadata_provider" = Option<String>, Query, description = "Filter by metadata provider: a provider name (e.g. 'google_books'), 'linked' (any provider), or 'unlinked' (no provider)"),
         ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
         ("limit" = Option<i64>, Query, description = "Items per page (max 200, default 50)"),
     ),
@@ -400,6 +405,13 @@ pub async fn list_series(
         "AND mc.missing_count > 0".to_string()
     } else { String::new() };
 
+    let metadata_provider_cond = match query.metadata_provider.as_deref() {
+        Some("unlinked") => "AND ml.provider IS NULL".to_string(),
+        Some("linked") => "AND ml.provider IS NOT NULL".to_string(),
+        Some(_) => { p += 1; format!("AND ml.provider = ${p}") },
+        None => String::new(),
+    };
+
     let missing_cte = format!(
         r#"
         missing_counts AS (
@@ -412,6 +424,16 @@ pub async fn list_series(
         )
         "#
     );
+
+    let metadata_links_cte = r#"
+        metadata_links AS (
+            SELECT DISTINCT ON (eml.series_name, eml.library_id)
+                eml.series_name, eml.library_id, eml.provider
+            FROM external_metadata_links eml
+            WHERE eml.status = 'approved'
+            ORDER BY eml.series_name, eml.library_id, eml.created_at DESC
+        )
+    "#;
 
     let count_sql = format!(
         r#"
@@ -427,11 +449,13 @@ pub async fn list_series(
             LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
             GROUP BY sb.name
         ),
-        {missing_cte}
+        {missing_cte},
+        {metadata_links_cte}
         SELECT COUNT(*) FROM series_counts sc
         LEFT JOIN series_metadata sm ON sm.library_id = $1 AND sm.name = sc.name
         LEFT JOIN missing_counts mc ON mc.series_name = sc.name
-        WHERE TRUE {q_cond} {count_rs_cond} {ss_cond} {missing_cond}
+        LEFT JOIN metadata_links ml ON ml.series_name = sc.name AND ml.library_id = $1
+        WHERE TRUE {q_cond} {count_rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond}
         "#
     );
 
@@ -464,23 +488,27 @@ pub async fn list_series(
             LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
             GROUP BY sb.name
         ),
-        {missing_cte}
+        {missing_cte},
+        {metadata_links_cte}
         SELECT
             sc.name,
             sc.book_count,
             sc.books_read_count,
             sb.id as first_book_id,
             sm.status as series_status,
-            mc.missing_count
+            mc.missing_count,
+            ml.provider as metadata_provider
         FROM series_counts sc
         JOIN sorted_books sb ON sb.name = sc.name AND sb.rn = 1
         LEFT JOIN series_metadata sm ON sm.library_id = $1 AND sm.name = sc.name
         LEFT JOIN missing_counts mc ON mc.series_name = sc.name
+        LEFT JOIN metadata_links ml ON ml.series_name = sc.name AND ml.library_id = $1
         WHERE TRUE
           {q_cond}
           {count_rs_cond}
           {ss_cond}
           {missing_cond}
+          {metadata_provider_cond}
         ORDER BY
             REGEXP_REPLACE(LOWER(sc.name), '[0-9].*$', ''),
             COALESCE(
@@ -509,6 +537,12 @@ pub async fn list_series(
         count_builder = count_builder.bind(ss);
         data_builder = data_builder.bind(ss);
     }
+    if let Some(ref mp) = query.metadata_provider {
+        if mp != "linked" && mp != "unlinked" {
+            count_builder = count_builder.bind(mp);
+            data_builder = data_builder.bind(mp);
+        }
+    }
 
     data_builder = data_builder.bind(limit).bind(offset);
 
@@ -528,6 +562,7 @@ pub async fn list_series(
             library_id,
             series_status: row.get("series_status"),
             missing_count: row.get("missing_count"),
+            metadata_provider: row.get("metadata_provider"),
         })
         .collect();
 
@@ -553,6 +588,9 @@ pub struct ListAllSeriesQuery {
     /// Filter series with missing books: "true" to show only series with missing books
     #[schema(value_type = Option<String>, example = "true")]
     pub has_missing: Option<String>,
+    /// Filter by metadata provider: a provider name (e.g. "google_books"), "linked" (any provider), or "unlinked" (no provider)
+    #[schema(value_type = Option<String>, example = "google_books")]
+    pub metadata_provider: Option<String>,
     #[schema(value_type = Option<i64>, example = 1)]
     pub page: Option<i64>,
     #[schema(value_type = Option<i64>, example = 50)]
@@ -571,6 +609,7 @@ pub struct ListAllSeriesQuery {
         ("q" = Option<String>, Query, description = "Filter by series name (case-insensitive, partial match)"),
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),
         ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
+        ("metadata_provider" = Option<String>, Query, description = "Filter by metadata provider: a provider name (e.g. 'google_books'), 'linked' (any provider), or 'unlinked' (no provider)"),
         ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
         ("limit" = Option<i64>, Query, description = "Items per page (max 200, default 50)"),
         ("sort" = Option<String>, Query, description = "Sort order: 'title' (default) or 'latest' (most recently added first)"),
@@ -625,6 +664,13 @@ pub async fn list_all_series(
         "AND mc.missing_count > 0".to_string()
     } else { String::new() };
 
+    let metadata_provider_cond = match query.metadata_provider.as_deref() {
+        Some("unlinked") => "AND ml.provider IS NULL".to_string(),
+        Some("linked") => "AND ml.provider IS NOT NULL".to_string(),
+        Some(_) => { p += 1; format!("AND ml.provider = ${p}") },
+        None => String::new(),
+    };
+
     // Missing counts CTE — needs library_id filter when filtering by library
     let missing_cte = if query.library_id.is_some() {
         format!(
@@ -652,6 +698,16 @@ pub async fn list_all_series(
         "#.to_string()
     };
 
+    let metadata_links_cte = r#"
+        metadata_links AS (
+            SELECT DISTINCT ON (eml.series_name, eml.library_id)
+                eml.series_name, eml.library_id, eml.provider
+            FROM external_metadata_links eml
+            WHERE eml.status = 'approved'
+            ORDER BY eml.series_name, eml.library_id, eml.created_at DESC
+        )
+    "#;
+
     let count_sql = format!(
         r#"
         WITH sorted_books AS (
@@ -666,11 +722,13 @@ pub async fn list_all_series(
             LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
             GROUP BY sb.name, sb.library_id
         ),
-        {missing_cte}
+        {missing_cte},
+        {metadata_links_cte}
         SELECT COUNT(*) FROM series_counts sc
         LEFT JOIN series_metadata sm ON sm.library_id = sc.library_id AND sm.name = sc.name
         LEFT JOIN missing_counts mc ON mc.series_name = sc.name AND mc.library_id = sc.library_id
-        WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond}
+        LEFT JOIN metadata_links ml ON ml.series_name = sc.name AND ml.library_id = sc.library_id
+        WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond}
         "#
     );
 
@@ -713,7 +771,8 @@ pub async fn list_all_series(
             LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
             GROUP BY sb.name, sb.library_id
         ),
-        {missing_cte}
+        {missing_cte},
+        {metadata_links_cte}
         SELECT
             sc.name,
             sc.book_count,
@@ -721,16 +780,19 @@ pub async fn list_all_series(
             sb.id as first_book_id,
             sb.library_id,
             sm.status as series_status,
-            mc.missing_count
+            mc.missing_count,
+            ml.provider as metadata_provider
         FROM series_counts sc
         JOIN sorted_books sb ON sb.name = sc.name AND sb.rn = 1
         LEFT JOIN series_metadata sm ON sm.library_id = sc.library_id AND sm.name = sc.name
         LEFT JOIN missing_counts mc ON mc.series_name = sc.name AND mc.library_id = sc.library_id
+        LEFT JOIN metadata_links ml ON ml.series_name = sc.name AND ml.library_id = sc.library_id
         WHERE TRUE
           {q_cond}
           {rs_cond}
           {ss_cond}
           {missing_cond}
+          {metadata_provider_cond}
         ORDER BY {series_order_clause}
         LIMIT ${limit_p} OFFSET ${offset_p}
         "#
@@ -757,6 +819,12 @@ pub async fn list_all_series(
         count_builder = count_builder.bind(ss);
         data_builder = data_builder.bind(ss);
     }
+    if let Some(ref mp) = query.metadata_provider {
+        if mp != "linked" && mp != "unlinked" {
+            count_builder = count_builder.bind(mp);
+            data_builder = data_builder.bind(mp);
+        }
+    }
 
     data_builder = data_builder.bind(limit).bind(offset);
 
@@ -776,6 +844,7 @@ pub async fn list_all_series(
             library_id: row.get("library_id"),
             series_status: row.get("series_status"),
             missing_count: row.get("missing_count"),
+            metadata_provider: row.get("metadata_provider"),
         })
         .collect();
 
@@ -887,6 +956,7 @@ pub async fn ongoing_series(
             library_id: row.get("library_id"),
             series_status: None,
             missing_count: None,
+            metadata_provider: None,
         })
         .collect();
 

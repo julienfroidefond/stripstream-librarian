@@ -548,6 +548,12 @@ const fr = {
   // Series filters
   "seriesFilters.all": "Tous",
   "seriesFilters.missingBooks": "Livres manquants",
+
+  // Metadata filter
+  "series.metadata": "Métadonnées",
+  "series.metadataAll": "Toutes",
+  "series.metadataLinked": "Associée",
+  "series.metadataUnlinked": "Non associée",
 } as const;
 
 export type TranslationKey = keyof typeof fr;
