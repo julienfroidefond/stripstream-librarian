@@ -2,6 +2,7 @@
 
 import { useRef, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useTranslation } from "../../lib/i18n/context";
 
 interface FieldDef {
   name: string;
@@ -21,6 +22,7 @@ interface LiveSearchFormProps {
 export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearchFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useTranslation();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -120,7 +122,7 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
             w-full sm:w-auto
           "
         >
-          Effacer
+          {t("common.clear")}
         </button>
       )}
     </form>

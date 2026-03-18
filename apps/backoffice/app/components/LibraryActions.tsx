@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useTransition } from "react";
 import { Button } from "../components/ui";
 import { ProviderIcon } from "../components/ProviderIcon";
+import { useTranslation } from "../../lib/i18n/context";
 
 interface LibraryActionsProps {
   libraryId: string;
@@ -23,6 +24,7 @@ export function LibraryActions({
   fallbackMetadataProvider,
   onUpdate
 }: LibraryActionsProps) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -109,7 +111,7 @@ export function LibraryActions({
                     defaultChecked={monitorEnabled}
                     className="w-4 h-4 rounded border-border text-primary focus:ring-ring"
                   />
-                  Scan auto
+                  {t("libraryActions.autoScan")}
                 </label>
               </div>
 
@@ -122,36 +124,36 @@ export function LibraryActions({
                     defaultChecked={watcherEnabled}
                     className="w-4 h-4 rounded border-border text-primary focus:ring-ring"
                   />
-                  Surveillance fichiers ⚡
+                  {t("libraryActions.fileWatch")}
                 </label>
               </div>
 
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-foreground">📅 Planification</label>
+                <label className="text-sm font-medium text-foreground">{t("libraryActions.schedule")}</label>
                 <select 
                   name="scan_mode" 
                   defaultValue={scanMode}
                   className="text-sm border border-border rounded-lg px-2 py-1 bg-background"
                 >
-                  <option value="manual">Manuel</option>
-                  <option value="hourly">Toutes les heures</option>
-                  <option value="daily">Quotidien</option>
-                  <option value="weekly">Hebdomadaire</option>
+                  <option value="manual">{t("monitoring.manual")}</option>
+                  <option value="hourly">{t("monitoring.hourly")}</option>
+                  <option value="daily">{t("monitoring.daily")}</option>
+                  <option value="weekly">{t("monitoring.weekly")}</option>
                 </select>
               </div>
 
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
                   {metadataProvider && <ProviderIcon provider={metadataProvider} size={16} />}
-                  Fournisseur
+                  {t("libraryActions.provider")}
                 </label>
                 <select
                   name="metadata_provider"
                   defaultValue={metadataProvider || ""}
                   className="text-sm border border-border rounded-lg px-2 py-1 bg-background"
                 >
-                  <option value="">Par défaut</option>
-                  <option value="none">Aucun</option>
+                  <option value="">{t("libraryActions.default")}</option>
+                  <option value="none">{t("libraryActions.none")}</option>
                   <option value="google_books">Google Books</option>
                   <option value="comicvine">ComicVine</option>
                   <option value="open_library">Open Library</option>
@@ -163,14 +165,14 @@ export function LibraryActions({
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
                   {fallbackMetadataProvider && fallbackMetadataProvider !== "none" && <ProviderIcon provider={fallbackMetadataProvider} size={16} />}
-                  Secours
+                  {t("libraryActions.fallback")}
                 </label>
                 <select
                   name="fallback_metadata_provider"
                   defaultValue={fallbackMetadataProvider || ""}
                   className="text-sm border border-border rounded-lg px-2 py-1 bg-background"
                 >
-                  <option value="">Aucun</option>
+                  <option value="">{t("libraryActions.none")}</option>
                   <option value="google_books">Google Books</option>
                   <option value="comicvine">ComicVine</option>
                   <option value="open_library">Open Library</option>
@@ -191,7 +193,7 @@ export function LibraryActions({
                 className="w-full"
                 disabled={isPending}
               >
-                {isPending ? "Enregistrement..." : "Enregistrer"}
+                {isPending ? t("libraryActions.saving") : t("common.save")}
               </Button>
             </div>
           </form>

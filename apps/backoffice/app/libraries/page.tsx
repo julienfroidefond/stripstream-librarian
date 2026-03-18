@@ -1,22 +1,23 @@
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { listFolders, createLibrary, deleteLibrary, fetchLibraries, fetchSeries, scanLibrary, startMetadataBatch, LibraryDto, FolderItem } from "../../lib/api";
+import { getServerTranslations } from "../../lib/i18n/server";
 import { LibraryActions } from "../components/LibraryActions";
 import { LibraryForm } from "../components/LibraryForm";
-import { 
+import {
   Card, CardHeader, CardTitle, CardDescription, CardContent,
   Button, Badge
 } from "../components/ui";
 
 export const dynamic = "force-dynamic";
 
-function formatNextScan(nextScanAt: string | null): string {
+function formatNextScan(nextScanAt: string | null, imminentLabel: string): string {
   if (!nextScanAt) return "-";
   const date = new Date(nextScanAt);
   const now = new Date();
   const diff = date.getTime() - now.getTime();
-  
-  if (diff < 0) return "Imminent";
+
+  if (diff < 0) return imminentLabel;
   if (diff < 60000) return "< 1 min";
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h`;
@@ -24,6 +25,7 @@ function formatNextScan(nextScanAt: string | null): string {
 }
 
 export default async function LibrariesPage() {
+  const { t } = await getServerTranslations();
   const [libraries, folders] = await Promise.all([
     fetchLibraries().catch(() => [] as LibraryDto[]),
     listFolders().catch(() => [] as FolderItem[])
@@ -90,15 +92,15 @@ export default async function LibrariesPage() {
           <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
           </svg>
-          Bibliothèques
+          {t("libraries.title")}
         </h1>
       </div>
       
       {/* Add Library Form */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Ajouter une bibliothèque</CardTitle>
-          <CardDescription>Créer une nouvelle bibliothèque à partir d'un dossier existant</CardDescription>
+          <CardTitle>{t("libraries.addLibrary")}</CardTitle>
+          <CardDescription>{t("libraries.addLibraryDescription")}</CardDescription>
         </CardHeader>
         <CardContent>
           <LibraryForm initialFolders={folders} action={addLibrary} />
@@ -115,7 +117,7 @@ export default async function LibrariesPage() {
                 <div className="flex items-start justify-between">
                   <div>
                     <CardTitle className="text-lg">{lib.name}</CardTitle>
-                    {!lib.enabled && <Badge variant="muted" className="mt-1">Désactivée</Badge>}
+                    {!lib.enabled && <Badge variant="muted" className="mt-1">{t("libraries.disabled")}</Badge>}
                   </div>
                   <LibraryActions
                     libraryId={lib.id}
@@ -138,28 +140,28 @@ export default async function LibrariesPage() {
                     className="text-center p-3 bg-muted/50 rounded-lg hover:bg-accent transition-colors duration-200"
                   >
                     <span className="block text-2xl font-bold text-primary">{lib.book_count}</span>
-                    <span className="text-xs text-muted-foreground">Livres</span>
+                    <span className="text-xs text-muted-foreground">{t("libraries.books")}</span>
                   </Link>
                   <Link 
                     href={`/libraries/${lib.id}/series`} 
                     className="text-center p-3 bg-muted/50 rounded-lg hover:bg-accent transition-colors duration-200"
                   >
                     <span className="block text-2xl font-bold text-foreground">{seriesCount}</span>
-                    <span className="text-xs text-muted-foreground">Séries</span>
+                    <span className="text-xs text-muted-foreground">{t("libraries.series")}</span>
                   </Link>
                 </div>
 
                 {/* Status */}
                 <div className="flex items-center gap-3 mb-4 text-sm">
                   <span className={`flex items-center gap-1 ${lib.monitor_enabled ? 'text-success' : 'text-muted-foreground'}`}>
-                    {lib.monitor_enabled ? '●' : '○'} {lib.monitor_enabled ? 'Auto' : 'Manuel'}
+                    {lib.monitor_enabled ? '●' : '○'} {lib.monitor_enabled ? t("libraries.auto") : t("libraries.manual")}
                   </span>
                   {lib.watcher_enabled && (
                     <span className="text-warning" title="Surveillance de fichiers active">⚡</span>
                   )}
                   {lib.monitor_enabled && lib.next_scan_at && (
                     <span className="text-xs text-muted-foreground ml-auto">
-                      Prochain : {formatNextScan(lib.next_scan_at)}
+                      {t("libraries.nextScan", { time: formatNextScan(lib.next_scan_at, t("libraries.imminent")) })}
                     </span>
                   )}
                 </div>
@@ -172,7 +174,7 @@ export default async function LibrariesPage() {
                       <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                       </svg>
-                      Indexer
+                      {t("libraries.index")}
                     </Button>
                   </form>
                   <form className="flex-1">
@@ -181,13 +183,13 @@ export default async function LibrariesPage() {
                       <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                       </svg>
-                      Complet
+                      {t("libraries.fullIndex")}
                     </Button>
                   </form>
                   {lib.metadata_provider !== "none" && (
                     <form>
                       <input type="hidden" name="id" value={lib.id} />
-                      <Button type="submit" variant="secondary" size="sm" formAction={batchMetadataAction} title="Métadonnées en lot">
+                      <Button type="submit" variant="secondary" size="sm" formAction={batchMetadataAction} title={t("libraries.batchMetadata")}>
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                         </svg>

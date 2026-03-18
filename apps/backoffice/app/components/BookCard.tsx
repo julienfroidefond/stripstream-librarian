@@ -4,11 +4,12 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { BookDto, ReadingStatus } from "../../lib/api";
+import { useTranslation } from "../../lib/i18n/context";
 
-const readingStatusOverlay: Record<ReadingStatus, { label: string; className: string } | null> = {
+const readingStatusOverlayClasses: Record<ReadingStatus, string | null> = {
   unread: null,
-  reading: { label: "En cours", className: "bg-amber-500/90 text-white" },
-  read: { label: "Lu", className: "bg-green-600/90 text-white" },
+  reading: "bg-amber-500/90 text-white",
+  read: "bg-green-600/90 text-white",
 };
 
 interface BookCardProps {
@@ -57,9 +58,15 @@ function BookImage({ src, alt }: { src: string; alt: string }) {
 }
 
 export function BookCard({ book, readingStatus }: BookCardProps) {
+  const { t } = useTranslation();
   const coverUrl = book.coverUrl || `/api/books/${book.id}/thumbnail`;
   const status = readingStatus ?? book.reading_status;
-  const overlay = status ? readingStatusOverlay[status] : null;
+  const overlayClass = status ? readingStatusOverlayClasses[status] : null;
+  const statusLabels: Record<ReadingStatus, string> = {
+    unread: t("status.unread"),
+    reading: t("status.reading"),
+    read: t("status.read"),
+  };
 
   const isRead = status === "read";
 
@@ -71,11 +78,11 @@ export function BookCard({ book, readingStatus }: BookCardProps) {
       <div className="relative">
         <BookImage
           src={coverUrl}
-          alt={`Couverture de ${book.title}`}
+          alt={t("books.coverOf", { name: book.title })}
         />
-        {overlay && (
-          <span className={`absolute bottom-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide ${overlay.className}`}>
-            {overlay.label}
+        {overlayClass && status && (
+          <span className={`absolute bottom-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide ${overlayClass}`}>
+            {statusLabels[status]}
           </span>
         )}
       </div>

@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useTranslation } from "../../lib/i18n/context";
 import { Badge } from "./ui/Badge";
 import { ProgressBar } from "./ui/ProgressBar";
 
@@ -45,6 +46,7 @@ const ChevronIcon = ({ className }: { className?: string }) => (
 );
 
 export function JobsIndicator() {
+  const { t } = useTranslation();
   const [activeJobs, setActiveJobs] = useState<Job[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -152,7 +154,7 @@ export function JobsIndicator() {
           hover:bg-accent
           transition-colors duration-200
         "
-        title="Voir toutes les tâches"
+        title={t("jobsIndicator.viewAll")}
       >
         <JobsIcon className="w-[18px] h-[18px]" />
       </Link>
@@ -187,11 +189,11 @@ export function JobsIndicator() {
           <div className="flex items-center gap-3">
             <span className="text-xl">📊</span>
             <div>
-              <h3 className="font-semibold text-foreground">Tâches actives</h3>
+              <h3 className="font-semibold text-foreground">{t("jobsIndicator.activeTasks")}</h3>
               <p className="text-xs text-muted-foreground">
                 {runningJobs.length > 0
-                  ? `${runningJobs.length} en cours, ${pendingJobs.length} en attente`
-                  : `${pendingJobs.length} tâche${pendingJobs.length !== 1 ? 's' : ''} en attente`
+                  ? t("jobsIndicator.runningAndPending", { running: runningJobs.length, pending: pendingJobs.length })
+                  : t("jobsIndicator.pendingTasks", { count: pendingJobs.length, plural: pendingJobs.length !== 1 ? "s" : "" })
                 }
               </p>
             </div>
@@ -201,7 +203,7 @@ export function JobsIndicator() {
             className="text-sm font-medium text-primary hover:text-primary/80 transition-colors"
             onClick={() => setIsOpen(false)}
           >
-            Tout voir →
+            {t("jobsIndicator.viewAllLink")}
           </Link>
         </div>
 
@@ -209,7 +211,7 @@ export function JobsIndicator() {
         {runningJobs.length > 0 && (
           <div className="px-4 py-3 border-b border-border/60">
             <div className="flex items-center justify-between text-sm mb-2">
-              <span className="text-muted-foreground">Progression globale</span>
+              <span className="text-muted-foreground">{t("jobsIndicator.overallProgress")}</span>
               <span className="font-semibold text-foreground">{Math.round(totalProgress)}%</span>
             </div>
             <ProgressBar value={totalProgress} size="sm" variant="success" />
@@ -221,7 +223,7 @@ export function JobsIndicator() {
           {activeJobs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
               <span className="text-4xl mb-2">✅</span>
-              <p>Aucune tâche active</p>
+              <p>{t("jobsIndicator.noActiveTasks")}</p>
             </div>
           ) : (
             <ul className="divide-y divide-border/60">
@@ -242,7 +244,7 @@ export function JobsIndicator() {
                         <div className="flex items-center gap-2 mb-1">
                           <code className="text-xs px-1.5 py-0.5 bg-muted rounded font-mono">{job.id.slice(0, 8)}</code>
                           <Badge variant={job.type === 'rebuild' ? 'primary' : job.type === 'thumbnail_regenerate' ? 'warning' : 'secondary'} className="text-[10px]">
-                            {job.type === 'thumbnail_rebuild' ? 'Miniatures' : job.type === 'thumbnail_regenerate' ? 'Regénération' : job.type}
+                            {t(`jobType.${job.type}` as any) !== `jobType.${job.type}` ? t(`jobType.${job.type}` as any) : job.type}
                           </Badge>
                         </div>
 
@@ -281,7 +283,7 @@ export function JobsIndicator() {
 
         {/* Footer */}
         <div className="px-4 py-2 border-t border-border/60 bg-muted/50">
-          <p className="text-xs text-muted-foreground text-center">Actualisation automatique toutes les 2s</p>
+          <p className="text-xs text-muted-foreground text-center">{t("jobsIndicator.autoRefresh")}</p>
         </div>
       </div>
     </>
@@ -304,7 +306,7 @@ export function JobsIndicator() {
           ${isOpen ? 'ring-2 ring-ring ring-offset-2 ring-offset-background' : ''}
         `}
         onClick={() => setIsOpen(!isOpen)}
-        title={`${totalCount} tâche${totalCount !== 1 ? 's' : ''} active${totalCount !== 1 ? 's' : ''}`}
+        title={t("jobsIndicator.taskCount", { count: totalCount, plural: totalCount !== 1 ? "s" : "" })}
       >
         {/* Animated spinner for running jobs */}
         {runningJobs.length > 0 && (

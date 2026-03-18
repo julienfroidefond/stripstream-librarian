@@ -3,11 +3,13 @@ import { redirect } from "next/navigation";
 import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, IndexJobDto, LibraryDto } from "../../lib/api";
 import { JobsList } from "../components/JobsList";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormSelect, FormRow } from "../components/ui";
+import { getServerTranslations } from "../../lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function JobsPage({ searchParams }: { searchParams: Promise<{ highlight?: string }> }) {
   const { highlight } = await searchParams;
+  const { t } = await getServerTranslations();
   const [jobs, libraries] = await Promise.all([
     listJobs().catch(() => [] as IndexJobDto[]),
     fetchLibraries().catch(() => [] as LibraryDto[])
@@ -63,21 +65,21 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
           <svg className="w-8 h-8 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
-          Tâches d&apos;indexation
+          {t("jobs.title")}
         </h1>
       </div>
 
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Lancer une tâche</CardTitle>
-          <CardDescription>Sélectionnez une bibliothèque (ou toutes) et choisissez l&apos;action à effectuer.</CardDescription>
+          <CardTitle>{t("jobs.startJob")}</CardTitle>
+          <CardDescription>{t("jobs.startJobDescription")}</CardDescription>
         </CardHeader>
         <CardContent>
           <form>
             <FormRow>
               <FormField className="flex-1 max-w-xs">
                 <FormSelect name="library_id" defaultValue="">
-                  <option value="">Toutes les bibliothèques</option>
+                  <option value="">{t("jobs.allLibraries")}</option>
                   {libraries.map((lib) => (
                     <option key={lib.id} value={lib.id}>{lib.name}</option>
                   ))}
@@ -88,31 +90,31 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  Reconstruction
+                  {t("jobs.rebuild")}
                 </Button>
                 <Button type="submit" formAction={triggerFullRebuild} variant="warning">
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
-                  Reconstruction complète
+                  {t("jobs.fullRebuild")}
                 </Button>
                 <Button type="submit" formAction={triggerThumbnailsRebuild} variant="secondary">
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                  Générer les miniatures
+                  {t("jobs.generateThumbnails")}
                 </Button>
                 <Button type="submit" formAction={triggerThumbnailsRegenerate} variant="warning">
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  Regénérer les miniatures
+                  {t("jobs.regenerateThumbnails")}
                 </Button>
                 <Button type="submit" formAction={triggerMetadataBatch} variant="secondary">
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
-                  Métadonnées en lot
+                  {t("jobs.batchMetadata")}
                 </Button>
               </div>
             </FormRow>
@@ -123,7 +125,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
       {/* Job types legend */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle className="text-base">Référence des types de tâches</CardTitle>
+          <CardTitle className="text-base">{t("jobs.referenceTitle")}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
@@ -134,10 +136,8 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                 </svg>
               </div>
               <div>
-                <span className="font-medium text-foreground">Reconstruction</span>
-                <p className="text-muted-foreground text-xs mt-0.5">
-                  Scan incr&eacute;mental : d&eacute;tecte les fichiers ajout&eacute;s, modifi&eacute;s ou supprim&eacute;s depuis le dernier scan, les indexe et g&eacute;n&egrave;re les miniatures manquantes. Les donn&eacute;es existantes non modifi&eacute;es sont conserv&eacute;es. C&rsquo;est l&rsquo;action la plus courante et la plus rapide.
-                </p>
+                <span className="font-medium text-foreground">{t("jobs.rebuild")}</span>
+                <p className="text-muted-foreground text-xs mt-0.5" dangerouslySetInnerHTML={{ __html: t("jobs.rebuildDescription") }} />
               </div>
             </div>
             <div className="flex gap-3">
@@ -147,10 +147,8 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                 </svg>
               </div>
               <div>
-                <span className="font-medium text-foreground">Reconstruction complète</span>
-                <p className="text-muted-foreground text-xs mt-0.5">
-                  Supprime toutes les donn&eacute;es index&eacute;es (livres, s&eacute;ries, miniatures) puis effectue un scan complet depuis z&eacute;ro. Utile si la base de donn&eacute;es est d&eacute;synchronis&eacute;e ou corrompue. Op&eacute;ration longue et destructive : les statuts de lecture et les m&eacute;tadonn&eacute;es manuelles seront perdus.
-                </p>
+                <span className="font-medium text-foreground">{t("jobs.fullRebuild")}</span>
+                <p className="text-muted-foreground text-xs mt-0.5" dangerouslySetInnerHTML={{ __html: t("jobs.fullRebuildDescription") }} />
               </div>
             </div>
             <div className="flex gap-3">
@@ -160,10 +158,8 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                 </svg>
               </div>
               <div>
-                <span className="font-medium text-foreground">Générer les miniatures</span>
-                <p className="text-muted-foreground text-xs mt-0.5">
-                  G&eacute;n&egrave;re les miniatures uniquement pour les livres qui n&rsquo;en ont pas encore. Les miniatures existantes ne sont pas touch&eacute;es. Utile apr&egrave;s un import ou si certaines miniatures sont manquantes.
-                </p>
+                <span className="font-medium text-foreground">{t("jobs.generateThumbnails")}</span>
+                <p className="text-muted-foreground text-xs mt-0.5" dangerouslySetInnerHTML={{ __html: t("jobs.generateThumbnailsDescription") }} />
               </div>
             </div>
             <div className="flex gap-3">
@@ -173,10 +169,8 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                 </svg>
               </div>
               <div>
-                <span className="font-medium text-foreground">Regénérer les miniatures</span>
-                <p className="text-muted-foreground text-xs mt-0.5">
-                  Reg&eacute;n&egrave;re toutes les miniatures depuis z&eacute;ro, en rempla&ccedil;ant les existantes. Utile si la qualit&eacute; ou la taille des miniatures a chang&eacute; dans la configuration, ou si des miniatures sont corrompues.
-                </p>
+                <span className="font-medium text-foreground">{t("jobs.regenerateThumbnails")}</span>
+                <p className="text-muted-foreground text-xs mt-0.5" dangerouslySetInnerHTML={{ __html: t("jobs.regenerateThumbnailsDescription") }} />
               </div>
             </div>
             <div className="flex gap-3">
@@ -186,10 +180,8 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                 </svg>
               </div>
               <div>
-                <span className="font-medium text-foreground">Métadonnées en lot</span>
-                <p className="text-muted-foreground text-xs mt-0.5">
-                  Recherche automatiquement les m&eacute;tadonn&eacute;es de chaque s&eacute;rie de la biblioth&egrave;que aupr&egrave;s du provider configur&eacute; (avec fallback si configur&eacute;). Seuls les r&eacute;sultats avec un match unique &agrave; 100% de confiance sont appliqu&eacute;s automatiquement. Les s&eacute;ries d&eacute;j&agrave; li&eacute;es sont ignor&eacute;es. Un rapport d&eacute;taill&eacute; par s&eacute;rie est disponible &agrave; la fin du job. <strong>Requiert une biblioth&egrave;que sp&eacute;cifique</strong> (ne fonctionne pas sur &laquo; Toutes les bibliothèques &raquo;).
-                </p>
+                <span className="font-medium text-foreground">{t("jobs.batchMetadata")}</span>
+                <p className="text-muted-foreground text-xs mt-0.5" dangerouslySetInnerHTML={{ __html: t("jobs.batchMetadataDescription") }} />
               </div>
             </div>
           </div>

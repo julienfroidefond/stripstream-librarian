@@ -4,6 +4,7 @@ import { useState } from "react";
 import { FolderPicker } from "./FolderPicker";
 import { FolderItem } from "../../lib/api";
 import { Button, FormField, FormInput, FormRow } from "./ui";
+import { useTranslation } from "../../lib/i18n/context";
 
 interface LibraryFormProps {
   initialFolders: FolderItem[];
@@ -11,13 +12,14 @@ interface LibraryFormProps {
 }
 
 export function LibraryForm({ initialFolders, action }: LibraryFormProps) {
+  const { t } = useTranslation();
   const [selectedPath, setSelectedPath] = useState<string>("");
 
   return (
     <form action={action}>
       <FormRow>
         <FormField className="flex-1 min-w-48">
-          <FormInput name="name" placeholder="Nom de la bibliothèque" required />
+          <FormInput name="name" placeholder={t("libraries.libraryName")} required />
         </FormField>
         <FormField className="flex-1 min-w-64">
           <input type="hidden" name="root_path" value={selectedPath} />
@@ -30,7 +32,7 @@ export function LibraryForm({ initialFolders, action }: LibraryFormProps) {
       </FormRow>
       <div className="mt-4 flex justify-end">
         <Button type="submit" disabled={!selectedPath}>
-          Ajouter une bibliothèque
+          {t("libraries.addButton")}
         </Button>
       </div>
     </form>

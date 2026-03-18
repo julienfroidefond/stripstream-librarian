@@ -4,6 +4,7 @@ import { useState } from "react";
 import { FolderBrowser } from "./FolderBrowser";
 import { FolderItem } from "../../lib/api";
 import { Button } from "./ui";
+import { useTranslation } from "../../lib/i18n/context";
 
 interface FolderPickerProps {
   initialFolders: FolderItem[];
@@ -13,6 +14,7 @@ interface FolderPickerProps {
 
 export function FolderPicker({ initialFolders, selectedPath, onSelect }: FolderPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const { t } = useTranslation();
 
   const handleSelect = (path: string) => {
     onSelect(path);
@@ -27,7 +29,7 @@ export function FolderPicker({ initialFolders, selectedPath, onSelect }: FolderP
           <input
             type="text"
             readOnly
-            value={selectedPath || "Sélectionner un dossier..."}
+            value={selectedPath || t("folder.selectFolder")}
             className={`
               w-full px-3 py-2 rounded-lg border bg-card
               text-sm font-mono
@@ -57,7 +59,7 @@ export function FolderPicker({ initialFolders, selectedPath, onSelect }: FolderP
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
           </svg>
-          Parcourir
+          {t("common.browse")}
         </Button>
       </div>
 
@@ -79,7 +81,7 @@ export function FolderPicker({ initialFolders, selectedPath, onSelect }: FolderP
                   <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                   </svg>
-                  <span className="font-medium">Sélectionner le dossier</span>
+                  <span className="font-medium">{t("folder.selectFolderTitle")}</span>
                 </div>
                 <button
                   type="button"
@@ -104,7 +106,7 @@ export function FolderPicker({ initialFolders, selectedPath, onSelect }: FolderP
               {/* Footer */}
               <div className="flex items-center justify-between px-4 py-3 border-t border-border/50 bg-muted/30">
                 <span className="text-xs text-muted-foreground">
-                  Cliquez sur un dossier pour le sélectionner
+                  {t("folder.clickToSelect")}
                 </span>
                 <div className="flex gap-2">
                   <Button
@@ -113,7 +115,7 @@ export function FolderPicker({ initialFolders, selectedPath, onSelect }: FolderP
                     size="sm"
                     onClick={() => setIsOpen(false)}
                   >
-                    Annuler
+                    {t("common.cancel")}
                   </Button>
                 </div>
               </div>

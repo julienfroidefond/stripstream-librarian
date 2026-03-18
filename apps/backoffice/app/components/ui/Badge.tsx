@@ -1,4 +1,7 @@
+"use client";
+
 import { ReactNode } from "react";
+import { useTranslation } from "../../../lib/i18n/context";
 
 type BadgeVariant = 
   | "default" 
@@ -70,19 +73,19 @@ const statusVariants: Record<string, BadgeVariant> = {
   unread: "unread",
 };
 
-const statusLabels: Record<string, string> = {
-  extracting_pages: "Extraction des pages",
-  generating_thumbnails: "Miniatures",
-};
-
 interface StatusBadgeProps {
   status: string;
   className?: string;
 }
 
 export function StatusBadge({ status, className = "" }: StatusBadgeProps) {
+  const { t } = useTranslation();
   const key = status.toLowerCase();
   const variant = statusVariants[key] || "default";
+  const statusLabels: Record<string, string> = {
+    extracting_pages: t("statusBadge.extracting_pages"),
+    generating_thumbnails: t("statusBadge.generating_thumbnails"),
+  };
   const label = statusLabels[key] ?? status;
   return <Badge variant={variant} className={className}>{label}</Badge>;
 }
@@ -95,22 +98,23 @@ const jobTypeVariants: Record<string, BadgeVariant> = {
   thumbnail_regenerate: "warning",
 };
 
-const jobTypeLabels: Record<string, string> = {
-  rebuild: "Indexation",
-  full_rebuild: "Indexation complète",
-  thumbnail_rebuild: "Miniatures",
-  thumbnail_regenerate: "Régén. miniatures",
-  cbr_to_cbz: "CBR → CBZ",
-};
-
 interface JobTypeBadgeProps {
   type: string;
   className?: string;
 }
 
 export function JobTypeBadge({ type, className = "" }: JobTypeBadgeProps) {
+  const { t } = useTranslation();
   const key = type.toLowerCase();
   const variant = jobTypeVariants[key] || "default";
+  const jobTypeLabels: Record<string, string> = {
+    rebuild: t("jobType.rebuild"),
+    full_rebuild: t("jobType.full_rebuild"),
+    thumbnail_rebuild: t("jobType.thumbnail_rebuild"),
+    thumbnail_regenerate: t("jobType.thumbnail_regenerate"),
+    cbr_to_cbz: t("jobType.cbr_to_cbz"),
+    metadata_batch: t("jobType.metadata_batch"),
+  };
   const label = jobTypeLabels[key] ?? type;
   return <Badge variant={variant} className={className}>{label}</Badge>;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslation } from "../../lib/i18n/context";
 import { StatusBadge, Badge, ProgressBar } from "./ui";
 
 interface ProgressEvent {
@@ -24,6 +25,7 @@ interface JobProgressProps {
 }
 
 export function JobProgress({ jobId, onComplete }: JobProgressProps) {
+  const { t } = useTranslation();
   const [progress, setProgress] = useState<ProgressEvent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isComplete, setIsComplete] = useState(false);
@@ -53,25 +55,25 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
           onComplete?.();
         }
       } catch (err) {
-        setError("Échec de l'analyse des données SSE");
+        setError(t("jobProgress.sseError"));
       }
     };
     
     eventSource.onerror = (err) => {
       console.error("SSE error:", err);
       eventSource.close();
-      setError("Connexion perdue");
+      setError(t("jobProgress.connectionLost"));
     };
 
     return () => {
       eventSource.close();
     };
-  }, [jobId, onComplete]);
+  }, [jobId, onComplete, t]);
 
   if (error) {
     return (
       <div className="p-4 bg-destructive/10 text-error rounded-lg text-sm">
-        Erreur : {error}
+        {t("jobProgress.error", { message: error })}
       </div>
     );
   }
@@ -79,7 +81,7 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
   if (!progress) {
     return (
       <div className="p-4 text-muted-foreground text-sm">
-        Chargement de la progression...
+        {t("jobProgress.loadingProgress")}
       </div>
     );
   }
@@ -88,14 +90,14 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
   const processed = progress.processed_files ?? 0;
   const total = progress.total_files ?? 0;
   const isPhase2 = progress.status === "extracting_pages" || progress.status === "generating_thumbnails";
-  const unitLabel = progress.status === "extracting_pages" ? "pages" : progress.status === "generating_thumbnails" ? "miniatures" : "fichiers";
+  const unitLabel = progress.status === "extracting_pages" ? t("jobProgress.pages") : progress.status === "generating_thumbnails" ? t("jobProgress.thumbnails") : t("jobProgress.filesUnit");
 
   return (
     <div className="p-4 bg-card rounded-lg border border-border">
       <div className="flex items-center justify-between mb-3">
         <StatusBadge status={progress.status} />
         {isComplete && (
-          <Badge variant="success">Terminé</Badge>
+          <Badge variant="success">{t("jobProgress.done")}</Badge>
         )}
       </div>
 
@@ -105,20 +107,20 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
         <span>{processed} / {total} {unitLabel}</span>
         {progress.current_file && (
           <span className="truncate max-w-md" title={progress.current_file}>
-            En cours : {progress.current_file.length > 40
-              ? progress.current_file.substring(0, 40) + "..." 
-              : progress.current_file}
+            {t("jobProgress.currentFile", { file: progress.current_file.length > 40
+              ? progress.current_file.substring(0, 40) + "..."
+              : progress.current_file })}
           </span>
         )}
       </div>
 
       {progress.stats_json && !isPhase2 && (
         <div className="flex flex-wrap gap-3 text-xs">
-          <Badge variant="primary">Analysés : {progress.stats_json.scanned_files}</Badge>
-          <Badge variant="success">Indexés : {progress.stats_json.indexed_files}</Badge>
-          <Badge variant="warning">Supprimés : {progress.stats_json.removed_files}</Badge>
+          <Badge variant="primary">{t("jobProgress.scanned", { count: progress.stats_json.scanned_files })}</Badge>
+          <Badge variant="success">{t("jobProgress.indexed", { count: progress.stats_json.indexed_files })}</Badge>
+          <Badge variant="warning">{t("jobProgress.removed", { count: progress.stats_json.removed_files })}</Badge>
           {progress.stats_json.errors > 0 && (
-            <Badge variant="error">Erreurs : {progress.stats_json.errors}</Badge>
+            <Badge variant="error">{t("jobProgress.errors", { count: progress.stats_json.errors })}</Badge>
           )}
         </div>
       )}

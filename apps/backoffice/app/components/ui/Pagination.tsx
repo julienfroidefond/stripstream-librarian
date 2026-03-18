@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "./Button";
 import { IconButton } from "./Button";
+import { useTranslation } from "../../../lib/i18n/context";
 
 interface CursorPaginationProps {
   hasNextPage: boolean;
@@ -23,6 +24,7 @@ export function CursorPagination({
 }: CursorPaginationProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useTranslation();
 
   const goToNext = () => {
     if (!nextCursor) return;
@@ -48,7 +50,7 @@ export function CursorPagination({
     <div className="flex flex-col sm:flex-row items-center justify-between gap-6 mt-8 pt-8 border-t border-border/60">
       {/* Page size selector */}
       <div className="flex items-center gap-3">
-        <span className="text-sm text-muted-foreground">Afficher</span>
+        <span className="text-sm text-muted-foreground">{t("pagination.show")}</span>
         <select
           value={pageSize.toString()}
           onChange={(e) => changePageSize(Number(e.target.value))}
@@ -60,12 +62,12 @@ export function CursorPagination({
             </option>
           ))}
         </select>
-        <span className="text-sm text-muted-foreground">par page</span>
+        <span className="text-sm text-muted-foreground">{t("common.perPage")}</span>
       </div>
 
       {/* Count info */}
       <div className="text-sm text-muted-foreground">
-        Affichage de {currentCount} éléments
+        {t("pagination.displaying", { count: currentCount.toString() })}
       </div>
 
       {/* Navigation */}
@@ -79,7 +81,7 @@ export function CursorPagination({
           <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
           </svg>
-          Premier
+          {t("common.first")}
         </Button>
 
         <Button
@@ -88,7 +90,7 @@ export function CursorPagination({
           onClick={goToNext}
           disabled={!hasNextPage}
         >
-          Suivant
+          {t("common.next")}
           <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
@@ -115,6 +117,7 @@ export function OffsetPagination({
 }: OffsetPaginationProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useTranslation();
 
   const goToPage = (page: number) => {
     const params = new URLSearchParams(searchParams);
@@ -170,7 +173,7 @@ export function OffsetPagination({
     <div className="flex flex-col sm:flex-row items-center justify-between gap-6 mt-8 pt-8 border-t border-border/60">
       {/* Page size selector */}
       <div className="flex items-center gap-3">
-        <span className="text-sm text-muted-foreground">Afficher</span>
+        <span className="text-sm text-muted-foreground">{t("pagination.show")}</span>
         <select
           value={pageSize.toString()}
           onChange={(e) => changePageSize(Number(e.target.value))}
@@ -182,12 +185,12 @@ export function OffsetPagination({
             </option>
           ))}
         </select>
-        <span className="text-sm text-muted-foreground">par page</span>
+        <span className="text-sm text-muted-foreground">{t("common.perPage")}</span>
       </div>
 
       {/* Page info */}
       <div className="text-sm text-muted-foreground">
-        {startItem}-{endItem} sur {totalItems}
+        {t("pagination.range", { start: startItem.toString(), end: endItem.toString(), total: totalItems.toString() })}
       </div>
 
       {/* Page navigation */}
@@ -196,7 +199,7 @@ export function OffsetPagination({
           size="sm"
           onClick={() => goToPage(currentPage - 1)}
           disabled={currentPage <= 1}
-          title="Page précédente"
+          title={t("common.previousPage")}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -224,7 +227,7 @@ export function OffsetPagination({
           size="sm"
           onClick={() => goToPage(currentPage + 1)}
           disabled={currentPage >= totalPages}
-          title="Page suivante"
+          title={t("common.nextPage")}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

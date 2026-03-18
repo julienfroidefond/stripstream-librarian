@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "./ui";
+import { useTranslation } from "../../lib/i18n/context";
 
 interface MarkBookReadButtonProps {
   bookId: string;
@@ -10,12 +11,13 @@ interface MarkBookReadButtonProps {
 }
 
 export function MarkBookReadButton({ bookId, currentStatus }: MarkBookReadButtonProps) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   const isRead = currentStatus === "read";
   const targetStatus = isRead ? "unread" : "read";
-  const label = isRead ? "Marquer non lu" : "Marquer comme lu";
+  const label = isRead ? t("markRead.markUnread") : t("markRead.markAsRead");
 
   const handleClick = async () => {
     setLoading(true);

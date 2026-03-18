@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
+import { useTranslation } from "../../lib/i18n/context";
 
 interface MonitoringFormProps {
   libraryId: string;
@@ -10,6 +11,7 @@ interface MonitoringFormProps {
 }
 
 export function MonitoringForm({ libraryId, monitorEnabled, scanMode, watcherEnabled }: MonitoringFormProps) {
+  const { t } = useTranslation();
   const [isPending, startTransition] = useTransition();
 
   const handleSubmit = (formData: FormData) => {
@@ -51,7 +53,7 @@ export function MonitoringForm({ libraryId, monitorEnabled, scanMode, watcherEna
             disabled={isPending}
             className="w-3.5 h-3.5 rounded border-border text-primary focus:ring-primary"
           />
-          <span>Auto</span>
+          <span>{t("monitoring.auto")}</span>
         </label>
         
         <label className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm font-medium transition-all cursor-pointer select-none ${
@@ -67,7 +69,7 @@ export function MonitoringForm({ libraryId, monitorEnabled, scanMode, watcherEna
             disabled={isPending}
             className="w-3.5 h-3.5 rounded border-border text-warning focus:ring-warning"
           />
-          <span title="Surveillance des fichiers en temps réel">⚡</span>
+          <span title={t("monitoring.fileWatch")}>⚡</span>
         </label>
         
         <select
@@ -76,10 +78,10 @@ export function MonitoringForm({ libraryId, monitorEnabled, scanMode, watcherEna
           disabled={isPending}
           className="px-3 py-1.5 text-sm rounded-lg border border-border bg-card text-foreground focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50"
         >
-          <option value="manual">Manuel</option>
-          <option value="hourly">Toutes les heures</option>
-          <option value="daily">Quotidien</option>
-          <option value="weekly">Hebdomadaire</option>
+          <option value="manual">{t("monitoring.manual")}</option>
+          <option value="hourly">{t("monitoring.hourly")}</option>
+          <option value="daily">{t("monitoring.daily")}</option>
+          <option value="weekly">{t("monitoring.weekly")}</option>
         </select>
         
         <button 

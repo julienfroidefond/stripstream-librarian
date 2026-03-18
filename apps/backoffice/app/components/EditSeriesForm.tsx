@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { FormField, FormLabel, FormInput } from "./ui/Form";
+import { useTranslation } from "../../lib/i18n/context";
 
 function LockButton({
   locked,
@@ -14,6 +15,7 @@ function LockButton({
   onToggle: () => void;
   disabled?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <button
       type="button"
@@ -24,7 +26,7 @@ function LockButton({
           ? "text-amber-500 hover:text-amber-600"
           : "text-muted-foreground/40 hover:text-muted-foreground"
       }`}
-      title={locked ? "Champ verrouillé (protégé des synchros)" : "Cliquer pour verrouiller ce champ"}
+      title={locked ? t("editBook.lockedField") : t("editBook.clickToLock")}
     >
       {locked ? (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -39,14 +41,7 @@ function LockButton({
   );
 }
 
-const SERIES_STATUSES = [
-  { value: "", label: "Non défini" },
-  { value: "ongoing", label: "En cours" },
-  { value: "ended", label: "Terminée" },
-  { value: "hiatus", label: "Hiatus" },
-  { value: "cancelled", label: "Annulée" },
-  { value: "upcoming", label: "À paraître" },
-] as const;
+const SERIES_STATUS_VALUES = ["", "ongoing", "ended", "hiatus", "cancelled", "upcoming"] as const;
 
 interface EditSeriesFormProps {
   libraryId: string;
@@ -75,6 +70,7 @@ export function EditSeriesForm({
   currentStatus,
   currentLockedFields,
 }: EditSeriesFormProps) {
+  const { t } = useTranslation();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isOpen, setIsOpen] = useState(false);
@@ -213,7 +209,7 @@ export function EditSeriesForm({
         );
         if (!res.ok) {
           const data = await res.json();
-          setError(data.error ?? "Erreur lors de la sauvegarde");
+          setError(data.error ?? t("editBook.saveError"));
           return;
         }
         setIsOpen(false);
@@ -224,7 +220,7 @@ export function EditSeriesForm({
           router.refresh();
         }
       } catch {
-        setError("Erreur réseau");
+        setError(t("common.networkError"));
       }
     });
   };
@@ -242,7 +238,7 @@ export function EditSeriesForm({
         <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-muted/30 sticky top-0 z-10">
-            <h3 className="font-semibold text-foreground">Modifier la série</h3>
+            <h3 className="font-semibold text-foreground">{t("editSeries.title")}</h3>
             <button
               type="button"
               onClick={handleClose}
@@ -259,18 +255,18 @@ export function EditSeriesForm({
           <form onSubmit={handleSubmit} className="p-5 space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField>
-                <FormLabel required>Nom</FormLabel>
+                <FormLabel required>{t("editSeries.name")}</FormLabel>
                 <FormInput
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   disabled={isPending}
-                  placeholder="Nom de la série"
+                  placeholder={t("editSeries.namePlaceholder")}
                 />
               </FormField>
 
               <FormField>
                 <div className="flex items-center gap-1">
-                  <FormLabel>Année de début</FormLabel>
+                  <FormLabel>{t("editSeries.startYear")}</FormLabel>
                   <LockButton locked={!!lockedFields.start_year} onToggle={() => toggleLock("start_year")} disabled={isPending} />
                 </div>
                 <FormInput
@@ -280,13 +276,13 @@ export function EditSeriesForm({
                   value={startYear}
                   onChange={(e) => setStartYear(e.target.value)}
                   disabled={isPending}
-                  placeholder="ex : 1990"
+                  placeholder={t("editSeries.startYearPlaceholder")}
                 />
               </FormField>
 
               <FormField>
                 <div className="flex items-center gap-1">
-                  <FormLabel>Nombre de volumes</FormLabel>
+                  <FormLabel>{t("editSeries.totalVolumes")}</FormLabel>
                   <LockButton locked={!!lockedFields.total_volumes} onToggle={() => toggleLock("total_volumes")} disabled={isPending} />
                 </div>
                 <FormInput
@@ -295,13 +291,13 @@ export function EditSeriesForm({
                   value={totalVolumes}
                   onChange={(e) => setTotalVolumes(e.target.value)}
                   disabled={isPending}
-                  placeholder="ex : 12"
+                  placeholder="12"
                 />
               </FormField>
 
               <FormField>
                 <div className="flex items-center gap-1">
-                  <FormLabel>Statut</FormLabel>
+                  <FormLabel>{t("editSeries.status")}</FormLabel>
                   <LockButton locked={!!lockedFields.status} onToggle={() => toggleLock("status")} disabled={isPending} />
                 </div>
                 <select
@@ -310,8 +306,10 @@ export function EditSeriesForm({
                   disabled={isPending}
                   className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
                 >
-                  {SERIES_STATUSES.map((s) => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
+                  {SERIES_STATUS_VALUES.map((v) => (
+                    <option key={v} value={v}>
+                      {v === "" ? t("seriesStatus.notDefined") : t(`seriesStatus.${v}` as any)}
+                    </option>
                   ))}
                 </select>
               </FormField>
@@ -319,7 +317,7 @@ export function EditSeriesForm({
               {/* Auteurs — multi-valeur */}
               <FormField className="sm:col-span-2">
                 <div className="flex items-center gap-1">
-                  <FormLabel>Auteur(s)</FormLabel>
+                  <FormLabel>{t("editSeries.authors")}</FormLabel>
                   <LockButton locked={!!lockedFields.authors} onToggle={() => toggleLock("authors")} disabled={isPending} />
                 </div>
                 <div className="space-y-2">
@@ -336,7 +334,7 @@ export function EditSeriesForm({
                             onClick={() => removeAuthor(i)}
                             disabled={isPending}
                             className="hover:text-destructive transition-colors ml-0.5"
-                            aria-label={`Supprimer ${a}`}
+                            aria-label={t("editBook.removeAuthor", { name: a })}
                           >
                             ×
                           </button>
@@ -351,7 +349,7 @@ export function EditSeriesForm({
                       onChange={(e) => setAuthorInput(e.target.value)}
                       onKeyDown={handleAuthorKeyDown}
                       disabled={isPending}
-                      placeholder="Ajouter un auteur (Entrée pour valider)"
+                      placeholder={t("editBook.addAuthor")}
                       className="flex h-10 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                     <button
@@ -371,9 +369,9 @@ export function EditSeriesForm({
                           ? "border-primary bg-primary/10 text-primary"
                           : "border-border bg-card text-muted-foreground hover:text-foreground"
                       }`}
-                      title="Appliquer auteur et langue à tous les livres de la série"
+                      title={t("editSeries.applyToBooksTitle")}
                     >
-                      → livres
+                      {t("editSeries.applyToBooks")}
                     </button>
                   </div>
                 </div>
@@ -382,21 +380,21 @@ export function EditSeriesForm({
               {showApplyToBooks && (
                 <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3 pl-4 border-l-2 border-primary/30">
                   <FormField>
-                    <FormLabel>Auteur (livres)</FormLabel>
+                    <FormLabel>{t("editSeries.bookAuthor")}</FormLabel>
                     <FormInput
                       value={bookAuthor}
                       onChange={(e) => setBookAuthor(e.target.value)}
                       disabled={isPending}
-                      placeholder="Écrase le champ auteur de chaque livre"
+                      placeholder={t("editSeries.bookAuthorPlaceholder")}
                     />
                   </FormField>
                   <FormField>
-                    <FormLabel>Langue (livres)</FormLabel>
+                    <FormLabel>{t("editSeries.bookLanguage")}</FormLabel>
                     <FormInput
                       value={bookLanguage}
                       onChange={(e) => setBookLanguage(e.target.value)}
                       disabled={isPending}
-                      placeholder="ex : fr, en, jp"
+                      placeholder={t("editBook.languagePlaceholder")}
                     />
                   </FormField>
                 </div>
@@ -405,7 +403,7 @@ export function EditSeriesForm({
               {/* Éditeurs — multi-valeur */}
               <FormField className="sm:col-span-2">
                 <div className="flex items-center gap-1">
-                  <FormLabel>Éditeur(s)</FormLabel>
+                  <FormLabel>{t("editSeries.publishers")}</FormLabel>
                   <LockButton locked={!!lockedFields.publishers} onToggle={() => toggleLock("publishers")} disabled={isPending} />
                 </div>
                 <div className="space-y-2">
@@ -422,7 +420,7 @@ export function EditSeriesForm({
                             onClick={() => removePublisher(i)}
                             disabled={isPending}
                             className="hover:text-destructive transition-colors ml-0.5"
-                            aria-label={`Supprimer ${p}`}
+                            aria-label={t("editBook.removeAuthor", { name: p })}
                           >
                             ×
                           </button>
@@ -437,7 +435,7 @@ export function EditSeriesForm({
                       onChange={(e) => setPublisherInput(e.target.value)}
                       onKeyDown={handlePublisherKeyDown}
                       disabled={isPending}
-                      placeholder="Ajouter un éditeur (Entrée pour valider)"
+                      placeholder={t("editSeries.addPublisher")}
                       className="flex h-10 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                     <button
@@ -454,7 +452,7 @@ export function EditSeriesForm({
 
               <FormField className="sm:col-span-2">
                 <div className="flex items-center gap-1">
-                  <FormLabel>Description</FormLabel>
+                  <FormLabel>{t("editBook.description")}</FormLabel>
                   <LockButton locked={!!lockedFields.description} onToggle={() => toggleLock("description")} disabled={isPending} />
                 </div>
                 <textarea
@@ -462,7 +460,7 @@ export function EditSeriesForm({
                   onChange={(e) => setDescription(e.target.value)}
                   disabled={isPending}
                   rows={3}
-                  placeholder="Synopsis ou description de la série…"
+                  placeholder={t("editSeries.descriptionPlaceholder")}
                   className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
                 />
               </FormField>
@@ -474,7 +472,7 @@ export function EditSeriesForm({
                 <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                 </svg>
-                Les champs verrouillés ne seront pas écrasés par les synchros de métadonnées externes.
+                {t("editBook.lockedFieldsNote")}
               </p>
             )}
 
@@ -488,14 +486,14 @@ export function EditSeriesForm({
                 disabled={isPending}
                 className="px-4 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
               >
-                Annuler
+                {t("common.cancel")}
               </button>
               <button
                 type="submit"
                 disabled={isPending || (!newName.trim() && seriesName !== "unclassified")}
                 className="px-4 py-1.5 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {isPending ? "Sauvegarde…" : "Sauvegarder"}
+                {isPending ? t("common.saving") : t("common.save")}
               </button>
             </div>
           </form>
@@ -511,7 +509,7 @@ export function EditSeriesForm({
         onClick={() => setIsOpen(true)}
         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
       >
-        <span>✏️</span> Modifier la série
+        <span>✏️</span> {t("editSeries.title")}
       </button>
       {modal}
     </>

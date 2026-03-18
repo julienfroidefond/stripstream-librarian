@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useTranslation } from "../../lib/i18n/context";
 import { JobProgress } from "./JobProgress";
 import { StatusBadge, JobTypeBadge, Button, MiniProgressBar } from "./ui";
 
@@ -33,6 +34,7 @@ interface JobRowProps {
 }
 
 export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, formatDuration }: JobRowProps) {
+  const { t } = useTranslation();
   const isActive = job.status === "running" || job.status === "pending" || job.status === "extracting_pages" || job.status === "generating_thumbnails";
   const [showProgress, setShowProgress] = useState(highlighted || isActive);
 
@@ -63,12 +65,12 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
       ? job.total_files != null
         ? `${job.processed_files ?? 0}/${job.total_files}`
         : scanned > 0
-          ? `${scanned} analysés`
+          ? t("jobRow.scanned", { count: scanned })
           : "-"
       : job.status === "success" && (indexed > 0 || removed > 0 || errors > 0)
         ? null // rendered below as ✓ / − / ⚠
         : scanned > 0
-          ? `${scanned} analysés`
+          ? t("jobRow.scanned", { count: scanned })
           : "—";
 
   // Thumbnails column (Phase 2: extracting_pages + generating_thumbnails)
@@ -113,7 +115,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
                 className="text-xs text-primary hover:text-primary/80 hover:underline"
                 onClick={() => setShowProgress(!showProgress)}
               >
-                {showProgress ? "Masquer" : "Afficher"} la progression
+                {showProgress ? t("jobRow.hideProgress") : t("jobRow.showProgress")}
               </button>
             )}
           </div>
@@ -154,7 +156,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
               href={`/jobs/${job.id}`}
               className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
             >
-              Voir
+              {t("jobRow.view")}
             </Link>
             {(job.status === "pending" || job.status === "running" || job.status === "extracting_pages" || job.status === "generating_thumbnails") && (
               <Button 
@@ -162,7 +164,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
                 size="sm"
                 onClick={() => onCancel(job.id)}
               >
-                Annuler
+                {t("common.cancel")}
               </Button>
             )}
           </div>

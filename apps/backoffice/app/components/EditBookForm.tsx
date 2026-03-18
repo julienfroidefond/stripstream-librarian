@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { BookDto } from "@/lib/api";
 import { FormField, FormLabel, FormInput } from "./ui/Form";
+import { useTranslation } from "../../lib/i18n/context";
 
 function LockButton({
   locked,
@@ -15,6 +16,7 @@ function LockButton({
   onToggle: () => void;
   disabled?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <button
       type="button"
@@ -25,7 +27,7 @@ function LockButton({
           ? "text-amber-500 hover:text-amber-600"
           : "text-muted-foreground/40 hover:text-muted-foreground"
       }`}
-      title={locked ? "Champ verrouillé (protégé des synchros)" : "Cliquer pour verrouiller ce champ"}
+      title={locked ? t("editBook.lockedField") : t("editBook.clickToLock")}
     >
       {locked ? (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -45,6 +47,7 @@ interface EditBookFormProps {
 }
 
 export function EditBookForm({ book }: EditBookFormProps) {
+  const { t } = useTranslation();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isOpen, setIsOpen] = useState(false);
@@ -139,13 +142,13 @@ export function EditBookForm({ book }: EditBookFormProps) {
         });
         if (!res.ok) {
           const data = await res.json();
-          setError(data.error ?? "Erreur lors de la sauvegarde");
+          setError(data.error ?? t("editBook.saveError"));
           return;
         }
         setIsOpen(false);
         router.refresh();
       } catch {
-        setError("Erreur réseau");
+        setError(t("common.networkError"));
       }
     });
   };
@@ -163,7 +166,7 @@ export function EditBookForm({ book }: EditBookFormProps) {
         <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-muted/30 sticky top-0 z-10">
-            <h3 className="font-semibold text-foreground">Modifier les métadonnées</h3>
+            <h3 className="font-semibold text-foreground">{t("editBook.editMetadata")}</h3>
             <button
               type="button"
               onClick={handleClose}
@@ -181,21 +184,21 @@ export function EditBookForm({ book }: EditBookFormProps) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField className="sm:col-span-2">
                 <div className="flex items-center gap-1">
-                  <FormLabel required>Titre</FormLabel>
+                  <FormLabel required>{t("editBook.title")}</FormLabel>
                   <LockButton locked={!!lockedFields.title} onToggle={() => toggleLock("title")} disabled={isPending} />
                 </div>
                 <FormInput
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   disabled={isPending}
-                  placeholder="Titre du livre"
+                  placeholder={t("editBook.titlePlaceholder")}
                 />
               </FormField>
 
               {/* Auteurs — multi-valeur */}
               <FormField className="sm:col-span-2">
                 <div className="flex items-center gap-1">
-                  <FormLabel>Auteur(s)</FormLabel>
+                  <FormLabel>{t("editBook.authors")}</FormLabel>
                   <LockButton locked={!!lockedFields.authors} onToggle={() => toggleLock("authors")} disabled={isPending} />
                 </div>
                 <div className="space-y-2">
@@ -212,7 +215,7 @@ export function EditBookForm({ book }: EditBookFormProps) {
                             onClick={() => removeAuthor(i)}
                             disabled={isPending}
                             className="hover:text-destructive transition-colors ml-0.5"
-                            aria-label={`Supprimer ${a}`}
+                            aria-label={t("editBook.removeAuthor", { name: a })}
                           >
                             ×
                           </button>
@@ -227,7 +230,7 @@ export function EditBookForm({ book }: EditBookFormProps) {
                       onChange={(e) => setAuthorInput(e.target.value)}
                       onKeyDown={handleAuthorKeyDown}
                       disabled={isPending}
-                      placeholder="Ajouter un auteur (Entrée pour valider)"
+                      placeholder={t("editBook.addAuthor")}
                       className="flex h-10 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                     <button
@@ -244,33 +247,33 @@ export function EditBookForm({ book }: EditBookFormProps) {
 
               <FormField>
                 <div className="flex items-center gap-1">
-                  <FormLabel>Langue</FormLabel>
+                  <FormLabel>{t("editBook.language")}</FormLabel>
                   <LockButton locked={!!lockedFields.language} onToggle={() => toggleLock("language")} disabled={isPending} />
                 </div>
                 <FormInput
                   value={language}
                   onChange={(e) => setLanguage(e.target.value)}
                   disabled={isPending}
-                  placeholder="ex : fr, en, jp"
+                  placeholder={t("editBook.languagePlaceholder")}
                 />
               </FormField>
 
               <FormField>
                 <div className="flex items-center gap-1">
-                  <FormLabel>Série</FormLabel>
+                  <FormLabel>{t("editBook.series")}</FormLabel>
                   <LockButton locked={!!lockedFields.series} onToggle={() => toggleLock("series")} disabled={isPending} />
                 </div>
                 <FormInput
                   value={series}
                   onChange={(e) => setSeries(e.target.value)}
                   disabled={isPending}
-                  placeholder="Nom de la série"
+                  placeholder={t("editBook.seriesPlaceholder")}
                 />
               </FormField>
 
               <FormField>
                 <div className="flex items-center gap-1">
-                  <FormLabel>Volume</FormLabel>
+                  <FormLabel>{t("editBook.volume")}</FormLabel>
                   <LockButton locked={!!lockedFields.volume} onToggle={() => toggleLock("volume")} disabled={isPending} />
                 </div>
                 <FormInput
@@ -279,13 +282,13 @@ export function EditBookForm({ book }: EditBookFormProps) {
                   value={volume}
                   onChange={(e) => setVolume(e.target.value)}
                   disabled={isPending}
-                  placeholder="Numéro de volume"
+                  placeholder={t("editBook.volumePlaceholder")}
                 />
               </FormField>
 
               <FormField>
                 <div className="flex items-center gap-1">
-                  <FormLabel>ISBN</FormLabel>
+                  <FormLabel>{t("editBook.isbn")}</FormLabel>
                   <LockButton locked={!!lockedFields.isbn} onToggle={() => toggleLock("isbn")} disabled={isPending} />
                 </div>
                 <FormInput
@@ -298,27 +301,27 @@ export function EditBookForm({ book }: EditBookFormProps) {
 
               <FormField>
                 <div className="flex items-center gap-1">
-                  <FormLabel>Date de publication</FormLabel>
+                  <FormLabel>{t("editBook.publishDate")}</FormLabel>
                   <LockButton locked={!!lockedFields.publish_date} onToggle={() => toggleLock("publish_date")} disabled={isPending} />
                 </div>
                 <FormInput
                   value={publishDate}
                   onChange={(e) => setPublishDate(e.target.value)}
                   disabled={isPending}
-                  placeholder="ex : 2023-01-15"
+                  placeholder={t("editBook.publishDatePlaceholder")}
                 />
               </FormField>
 
               <FormField className="sm:col-span-2">
                 <div className="flex items-center gap-1">
-                  <FormLabel>Description</FormLabel>
+                  <FormLabel>{t("editBook.description")}</FormLabel>
                   <LockButton locked={!!lockedFields.summary} onToggle={() => toggleLock("summary")} disabled={isPending} />
                 </div>
                 <textarea
                   value={summary}
                   onChange={(e) => setSummary(e.target.value)}
                   disabled={isPending}
-                  placeholder="Résumé / description du livre"
+                  placeholder={t("editBook.descriptionPlaceholder")}
                   rows={4}
                   className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
                 />
@@ -331,7 +334,7 @@ export function EditBookForm({ book }: EditBookFormProps) {
                 <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                 </svg>
-                Les champs verrouillés ne seront pas écrasés par les synchros de métadonnées externes.
+                {t("editBook.lockedFieldsNote")}
               </p>
             )}
 
@@ -347,14 +350,14 @@ export function EditBookForm({ book }: EditBookFormProps) {
                 disabled={isPending}
                 className="px-4 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
               >
-                Annuler
+                {t("common.cancel")}
               </button>
               <button
                 type="submit"
                 disabled={isPending || !title.trim()}
                 className="px-4 py-1.5 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {isPending ? "Sauvegarde…" : "Sauvegarder"}
+                {isPending ? t("editBook.savingLabel") : t("editBook.saveLabel")}
               </button>
             </div>
           </form>
@@ -370,7 +373,7 @@ export function EditBookForm({ book }: EditBookFormProps) {
         onClick={() => setIsOpen(true)}
         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
       >
-        <span>✏️</span> Modifier
+        <span>✏️</span> {t("editBook.editMetadata")}
       </button>
       {modal}
     </>

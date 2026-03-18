@@ -9,6 +9,7 @@ import { SafeHtml } from "../../../../components/SafeHtml";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { getServerTranslations } from "../../../../../lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export default async function SeriesDetailPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { id, name } = await params;
+  const { t } = await getServerTranslations();
   const searchParamsAwaited = await searchParams;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 50;
@@ -55,7 +57,7 @@ export default async function SeriesDetailPage({
 
   const totalPages = Math.ceil(booksPage.total / limit);
   const booksReadCount = booksPage.items.filter((b) => b.reading_status === "read").length;
-  const displayName = seriesName === "unclassified" ? "Non classé" : seriesName;
+  const displayName = seriesName === "unclassified" ? t("books.unclassified") : seriesName;
 
   // Use first book cover as series cover
   const coverBookId = booksPage.items[0]?.id;
@@ -68,7 +70,7 @@ export default async function SeriesDetailPage({
           href="/libraries"
           className="text-muted-foreground hover:text-primary transition-colors"
         >
-          Bibliothèques
+          {t("nav.libraries")}
         </Link>
         <span className="text-muted-foreground">/</span>
         <Link
@@ -88,7 +90,7 @@ export default async function SeriesDetailPage({
             <div className="w-40 aspect-[2/3] relative rounded-xl overflow-hidden shadow-card border border-border">
               <Image
                 src={getBookCoverUrl(coverBookId)}
-                alt={`Couverture de ${displayName}`}
+                alt={t("books.coverOf", { name: displayName })}
                 fill
                 className="object-cover"
                 unoptimized
@@ -112,12 +114,7 @@ export default async function SeriesDetailPage({
                 seriesMeta.status === "cancelled" ? "bg-red-500/15 text-red-600" :
                 "bg-muted text-muted-foreground"
               }`}>
-                {seriesMeta.status === "ongoing" ? "En cours" :
-                 seriesMeta.status === "ended" ? "Terminée" :
-                 seriesMeta.status === "hiatus" ? "Hiatus" :
-                 seriesMeta.status === "cancelled" ? "Annulée" :
-                 seriesMeta.status === "upcoming" ? "À paraître" :
-                 seriesMeta.status}
+                {t(`seriesStatus.${seriesMeta.status}` as any) || seriesMeta.status}
               </span>
             )}
           </div>
@@ -137,11 +134,11 @@ export default async function SeriesDetailPage({
             )}
             {((seriesMeta && seriesMeta.publishers.length > 0) || seriesMeta?.start_year) && <span className="w-px h-4 bg-border" />}
             <span className="text-muted-foreground">
-              <span className="font-semibold text-foreground">{booksPage.total}</span> livre{booksPage.total !== 1 ? "s" : ""}
+              <span className="font-semibold text-foreground">{booksPage.total}</span> {t("dashboard.books").toLowerCase()}
             </span>
             <span className="w-px h-4 bg-border" />
             <span className="text-muted-foreground">
-              <span className="font-semibold text-foreground">{booksReadCount}</span>/{booksPage.total} lu{booksPage.total !== 1 ? "s" : ""}
+              {t("series.readCount", { read: String(booksReadCount), total: String(booksPage.total) })}
             </span>
 
             {/* Progress bar */}
@@ -196,7 +193,7 @@ export default async function SeriesDetailPage({
           />
         </>
       ) : (
-        <EmptyState message="Aucun livre dans cette série" />
+        <EmptyState message={t("librarySeries.noBooksInSeries")} />
       )}
     </div>
   );

@@ -4,16 +4,17 @@ import { ConvertButton } from "../../components/ConvertButton";
 import { MarkBookReadButton } from "../../components/MarkBookReadButton";
 import { EditBookForm } from "../../components/EditBookForm";
 import { SafeHtml } from "../../components/SafeHtml";
+import { getServerTranslations } from "../../../lib/i18n/server";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-const readingStatusConfig: Record<ReadingStatus, { label: string; className: string }> = {
-  unread: { label: "Non lu", className: "bg-muted/60 text-muted-foreground border border-border" },
-  reading: { label: "En cours", className: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30" },
-  read: { label: "Lu", className: "bg-green-500/15 text-green-600 dark:text-green-400 border border-green-500/30" },
+const readingStatusClassNames: Record<ReadingStatus, string> = {
+  unread: "bg-muted/60 text-muted-foreground border border-border",
+  reading: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30",
+  read: "bg-green-500/15 text-green-600 dark:text-green-400 border border-green-500/30",
 };
 
 async function fetchBook(bookId: string): Promise<BookDto | null> {
@@ -39,6 +40,8 @@ export default async function BookDetailPage({
     notFound();
   }
 
+  const { t, locale } = await getServerTranslations();
+
   const library = libraries.find(l => l.id === book.library_id);
   const formatBadge = (book.format ?? book.kind).toUpperCase();
   const formatColor =
@@ -46,14 +49,15 @@ export default async function BookDetailPage({
     formatBadge === "CBR" ? "bg-warning/10 text-warning border-warning/30" :
     formatBadge === "PDF" ? "bg-destructive/10 text-destructive border-destructive/30" :
     "bg-muted/50 text-muted-foreground border-border";
-  const { label: statusLabel, className: statusClassName } = readingStatusConfig[book.reading_status];
+  const statusLabel = t(`status.${book.reading_status}` as "status.unread" | "status.reading" | "status.read");
+  const statusClassName = readingStatusClassNames[book.reading_status];
 
   return (
     <div className="space-y-6">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm">
         <Link href="/libraries" className="text-muted-foreground hover:text-primary transition-colors">
-          Bibliothèques
+          {t("bookDetail.libraries")}
         </Link>
         <span className="text-muted-foreground">/</span>
         {library && (
@@ -88,7 +92,7 @@ export default async function BookDetailPage({
           <div className="w-48 aspect-[2/3] relative rounded-xl overflow-hidden shadow-card border border-border">
             <Image
               src={getBookCoverUrl(book.id)}
-              alt={`Couverture de ${book.title}`}
+              alt={t("bookDetail.coverOf", { title: book.title })}
               fill
               className="object-cover"
               unoptimized
@@ -134,7 +138,7 @@ export default async function BookDetailPage({
             </span>
             {book.reading_last_read_at && (
               <span className="text-xs text-muted-foreground">
-                {new Date(book.reading_last_read_at).toLocaleDateString()}
+                {new Date(book.reading_last_read_at).toLocaleDateString(locale)}
               </span>
             )}
             <MarkBookReadButton bookId={book.id} currentStatus={book.reading_status} />
@@ -148,7 +152,7 @@ export default async function BookDetailPage({
             </span>
             {book.page_count && (
               <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-muted/50 text-muted-foreground border border-border">
-                {book.page_count} pages
+                {book.page_count} {t("dashboard.pages").toLowerCase()}
               </span>
             )}
             {book.language && (
@@ -181,24 +185,24 @@ export default async function BookDetailPage({
           <svg className="w-3.5 h-3.5 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
-          Informations techniques
+          {t("bookDetail.technicalInfo")}
         </summary>
         <div className="mt-3 p-4 rounded-lg bg-muted/30 border border-border/50 space-y-2 text-xs">
           {book.file_path && (
             <div className="flex flex-col gap-0.5">
-              <span className="text-muted-foreground">Fichier</span>
+              <span className="text-muted-foreground">{t("bookDetail.file")}</span>
               <code className="font-mono text-foreground break-all">{book.file_path}</code>
             </div>
           )}
           {book.file_format && (
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Format fichier</span>
+              <span className="text-muted-foreground">{t("bookDetail.fileFormat")}</span>
               <span className="text-foreground">{book.file_format.toUpperCase()}</span>
             </div>
           )}
           {book.file_parse_status && (
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Parsing</span>
+              <span className="text-muted-foreground">{t("bookDetail.parsing")}</span>
               <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
                 book.file_parse_status === "success" ? "bg-success/10 text-success" :
                 book.file_parse_status === "failed" ? "bg-destructive/10 text-destructive" :
@@ -218,8 +222,8 @@ export default async function BookDetailPage({
           </div>
           {book.updated_at && (
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Mis à jour</span>
-              <span className="text-foreground">{new Date(book.updated_at).toLocaleString()}</span>
+              <span className="text-muted-foreground">{t("bookDetail.updatedAt")}</span>
+              <span className="text-foreground">{new Date(book.updated_at).toLocaleString(locale)}</span>
             </div>
           )}
         </div>

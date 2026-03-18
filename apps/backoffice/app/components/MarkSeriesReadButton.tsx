@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslation } from "../../lib/i18n/context";
 
 interface MarkSeriesReadButtonProps {
   seriesName: string;
@@ -10,12 +11,13 @@ interface MarkSeriesReadButtonProps {
 }
 
 export function MarkSeriesReadButton({ seriesName, bookCount, booksReadCount }: MarkSeriesReadButtonProps) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   const allRead = booksReadCount >= bookCount;
   const targetStatus = allRead ? "unread" : "read";
-  const label = allRead ? "Marquer non lu" : "Tout marquer lu";
+  const label = allRead ? t("markRead.markUnread") : t("markRead.markAllRead");
 
   const handleClick = async (e: React.MouseEvent) => {
     e.preventDefault();

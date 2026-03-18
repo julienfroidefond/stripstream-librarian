@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, FormRow, Icon } from "../components/ui";
 import { ProviderIcon } from "../components/ProviderIcon";
 import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, KomgaSyncResponse, KomgaSyncReportSummary } from "../../lib/api";
+import { useTranslation } from "../../lib/i18n/context";
+import type { Locale } from "../../lib/i18n/types";
 
 interface SettingsPageProps {
   initialSettings: Settings;
@@ -12,6 +14,7 @@ interface SettingsPageProps {
 }
 
 export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats }: SettingsPageProps) {
+  const { t, locale, setLocale } = useTranslation();
   const [settings, setSettings] = useState<Settings>({
     ...initialSettings,
     thumbnail: initialSettings.thumbnail || { enabled: true, width: 300, height: 400, quality: 80, format: "webp", directory: "/data/thumbnails" }
@@ -55,13 +58,13 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         body: JSON.stringify({ value })
       });
       if (response.ok) {
-        setSaveMessage("Paramètres enregistrés avec succès");
+        setSaveMessage(t("settings.savedSuccess"));
         setTimeout(() => setSaveMessage(null), 3000);
       } else {
-        setSaveMessage("Échec de l'enregistrement des paramètres");
+        setSaveMessage(t("settings.savedError"));
       }
     } catch (error) {
-      setSaveMessage("Erreur lors de l'enregistrement des paramètres");
+      setSaveMessage(t("settings.saveError"));
     } finally {
       setIsSaving(false);
     }
@@ -81,7 +84,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         setCacheStats(stats);
       }
     } catch (error) {
-      setClearResult({ success: false, message: "Échec du vidage du cache" });
+      setClearResult({ success: false, message: t("settings.cacheClearError") });
     } finally {
       setIsClearing(false);
     }
@@ -150,8 +153,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
   const [activeTab, setActiveTab] = useState<"general" | "integrations">("general");
 
   const tabs = [
-    { id: "general" as const, label: "Général", icon: "settings" as const },
-    { id: "integrations" as const, label: "Intégrations", icon: "refresh" as const },
+    { id: "general" as const, label: t("settings.general"), icon: "settings" as const },
+    { id: "integrations" as const, label: t("settings.integrations"), icon: "refresh" as const },
   ];
 
   return (
@@ -159,7 +162,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
           <Icon name="settings" size="xl" />
-          Paramètres
+          {t("settings.title")}
         </h1>
       </div>
 
@@ -190,20 +193,40 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       )}
 
       {activeTab === "general" && (<>
+      {/* Language Selector */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Icon name="settings" size="md" />
+            {t("settings.language")}
+          </CardTitle>
+          <CardDescription>{t("settings.languageDesc")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FormSelect
+            value={locale}
+            onChange={(e) => setLocale(e.target.value as Locale)}
+          >
+            <option value="fr">Français</option>
+            <option value="en">English</option>
+          </FormSelect>
+        </CardContent>
+      </Card>
+
       {/* Image Processing Settings */}
       <Card className="mb-6">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Icon name="image" size="md" />
-            Traitement d&apos;images
+            {t("settings.imageProcessing")}
           </CardTitle>
-          <CardDescription>Ces paramètres s&apos;appliquent uniquement lorsqu&apos;un client demande explicitement une conversion de format via l&apos;API (ex. <code className="text-xs bg-muted px-1 rounded">?format=webp&amp;width=800</code>). Les pages servies sans paramètres sont livrées telles quelles depuis l&apos;archive, sans traitement.</CardDescription>
+          <CardDescription><span dangerouslySetInnerHTML={{ __html: t("settings.imageProcessingDesc") }} /></CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <FormRow>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Format de sortie par défaut</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.defaultFormat")}</label>
                 <FormSelect
                   value={settings.image_processing.format}
                   onChange={(e) => {
@@ -218,7 +241,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                 </FormSelect>
               </FormField>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Qualité par défaut (1-100)</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.defaultQuality")}</label>
                 <FormInput 
                   type="number" 
                   min={1} 
@@ -235,7 +258,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             </FormRow>
             <FormRow>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Filtre de redimensionnement par défaut</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.defaultFilter")}</label>
                 <FormSelect 
                   value={settings.image_processing.filter}
                   onChange={(e) => {
@@ -244,13 +267,13 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                     handleUpdateSetting("image_processing", newSettings.image_processing);
                   }}
                 >
-                  <option value="lanczos3">Lanczos3 (Meilleure qualité)</option>
-                  <option value="triangle">Triangle (Plus rapide)</option>
-                  <option value="nearest">Nearest (Le plus rapide)</option>
+                  <option value="lanczos3">{t("settings.filterLanczos")}</option>
+                  <option value="triangle">{t("settings.filterTriangle")}</option>
+                  <option value="nearest">{t("settings.filterNearest")}</option>
                 </FormSelect>
               </FormField>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Largeur maximale autorisée (px)</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.maxWidth")}</label>
                 <FormInput 
                   type="number" 
                   min={100} 
@@ -274,23 +297,23 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Icon name="cache" size="md" />
-            Cache
+            {t("settings.cache")}
           </CardTitle>
-          <CardDescription>Gérer le cache d&apos;images et le stockage</CardDescription>
+          <CardDescription>{t("settings.cacheDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg">
               <div>
-                <p className="text-sm text-muted-foreground">Taille du cache</p>
+                <p className="text-sm text-muted-foreground">{t("settings.cacheSize")}</p>
                 <p className="text-2xl font-semibold">{cacheStats.total_size_mb.toFixed(2)} MB</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Files</p>
+                <p className="text-sm text-muted-foreground">{t("settings.files")}</p>
                 <p className="text-2xl font-semibold">{cacheStats.file_count}</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Directory</p>
+                <p className="text-sm text-muted-foreground">{t("settings.directory")}</p>
                 <p className="text-sm font-mono truncate" title={cacheStats.directory}>{cacheStats.directory}</p>
               </div>
             </div>
@@ -303,7 +326,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
 
             <FormRow>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Cache Directory</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.cacheDirectory")}</label>
                 <FormInput 
                   value={settings.cache.directory}
                   onChange={(e) => {
@@ -314,7 +337,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                 />
               </FormField>
               <FormField className="w-32">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Max Size (MB)</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.maxSizeMb")}</label>
                 <FormInput 
                   type="number"
                   value={settings.cache.max_size_mb}
@@ -336,12 +359,12 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               {isClearing ? (
                 <>
                   <Icon name="spinner" size="sm" className="animate-spin -ml-1 mr-2" />
-                  Clearing...
+                  {t("settings.clearing")}
                 </>
               ) : (
                 <>
                   <Icon name="trash" size="sm" className="mr-2" />
-                  Clear Cache
+                  {t("settings.clearCache")}
                 </>
               )}
             </Button>
@@ -354,15 +377,15 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Icon name="performance" size="md" />
-            Performance Limits
+            {t("settings.performanceLimits")}
           </CardTitle>
-          <CardDescription>Configure API performance, rate limiting, and thumbnail generation concurrency</CardDescription>
+          <CardDescription>{t("settings.performanceDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <FormRow>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Concurrent Renders</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.concurrentRenders")}</label>
                 <FormInput 
                   type="number"
                   min={1}
@@ -376,11 +399,11 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   onBlur={() => handleUpdateSetting("limits", settings.limits)}
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Maximum number of page renders and thumbnail generations running in parallel
+                  {t("settings.concurrentRendersHelp")}
                 </p>
               </FormField>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Timeout (seconds)</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.timeoutSeconds")}</label>
                 <FormInput 
                   type="number"
                   min={5}
@@ -395,7 +418,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                 />
               </FormField>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Rate Limit (req/s)</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.rateLimit")}</label>
                 <FormInput 
                   type="number"
                   min={10}
@@ -411,7 +434,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               </FormField>
             </FormRow>
             <p className="text-sm text-muted-foreground">
-              Note: Changes to limits require a server restart to take effect. The "Concurrent Renders" setting controls both page rendering and thumbnail generation parallelism.
+              {t("settings.limitsNote")}
             </p>
           </div>
         </CardContent>
@@ -422,15 +445,15 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Icon name="image" size="md" />
-            Thumbnails
+            {t("settings.thumbnails")}
           </CardTitle>
-          <CardDescription>Configure thumbnail generation during indexing</CardDescription>
+          <CardDescription>{t("settings.thumbnailsDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <FormRow>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Enable Thumbnails</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.enableThumbnails")}</label>
                 <FormSelect 
                   value={settings.thumbnail.enabled ? "true" : "false"}
                   onChange={(e) => {
@@ -439,12 +462,12 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                     handleUpdateSetting("thumbnail", newSettings.thumbnail);
                   }}
                 >
-                  <option value="true">Enabled</option>
-                  <option value="false">Disabled</option>
+                  <option value="true">{t("common.enabled")}</option>
+                  <option value="false">{t("common.disabled")}</option>
                 </FormSelect>
               </FormField>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Output Format</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.outputFormat")}</label>
                 <FormSelect 
                   value={settings.thumbnail.format}
                   onChange={(e) => {
@@ -453,21 +476,21 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                     handleUpdateSetting("thumbnail", newSettings.thumbnail);
                   }}
                 >
-                  <option value="original">Original (No Re-encoding)</option>
+                  <option value="original">{t("settings.formatOriginal")}</option>
                   <option value="webp">WebP</option>
                   <option value="jpeg">JPEG</option>
                   <option value="png">PNG</option>
                 </FormSelect>
                 <p className="text-xs text-muted-foreground mt-1">
                   {settings.thumbnail.format === "original"
-                    ? "Resizes to target dimensions, keeps source format (JPEG→JPEG). Much faster generation."
-                    : "Resizes and re-encodes to selected format."}
+                    ? t("settings.formatOriginalDesc")
+                    : t("settings.formatReencodeDesc")}
                 </p>
               </FormField>
             </FormRow>
             <FormRow>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Width (px)</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.width")}</label>
                 <FormInput 
                   type="number" 
                   min={50} 
@@ -482,7 +505,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                 />
               </FormField>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Height (px)</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.height")}</label>
                 <FormInput 
                   type="number" 
                   min={50} 
@@ -497,7 +520,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                 />
               </FormField>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Quality (1-100)</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.quality")}</label>
                 <FormInput 
                   type="number" 
                   min={1} 
@@ -514,7 +537,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             </FormRow>
             <FormRow>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Thumbnail Directory</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.thumbnailDirectory")}</label>
                 <FormInput 
                   value={settings.thumbnail.directory}
                   onChange={(e) => {
@@ -528,21 +551,21 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
 
             <div className="grid grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg">
               <div>
-                <p className="text-sm text-muted-foreground">Total Size</p>
+                <p className="text-sm text-muted-foreground">{t("settings.totalSize")}</p>
                 <p className="text-2xl font-semibold">{thumbnailStats.total_size_mb.toFixed(2)} MB</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Files</p>
+                <p className="text-sm text-muted-foreground">{t("settings.files")}</p>
                 <p className="text-2xl font-semibold">{thumbnailStats.file_count}</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Directory</p>
+                <p className="text-sm text-muted-foreground">{t("settings.directory")}</p>
                 <p className="text-sm font-mono truncate" title={thumbnailStats.directory}>{thumbnailStats.directory}</p>
               </div>
             </div>
 
             <p className="text-sm text-muted-foreground">
-              Note: Thumbnail settings are used during indexing. Existing thumbnails will not be regenerated automatically. The concurrency for thumbnail generation is controlled by the "Concurrent Renders" setting in Performance Limits above.
+              {t("settings.thumbnailsNote")}
             </p>
           </div>
         </CardContent>
@@ -559,15 +582,15 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Icon name="refresh" size="md" />
-            Komga Sync
+            {t("settings.komgaSync")}
           </CardTitle>
-          <CardDescription>Import read status from a Komga server. Books are matched by title (case-insensitive). Credentials are not stored.</CardDescription>
+          <CardDescription>{t("settings.komgaDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <FormRow>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Komga URL</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.komgaUrl")}</label>
                 <FormInput
                   type="url"
                   placeholder="https://komga.example.com"
@@ -578,14 +601,14 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             </FormRow>
             <FormRow>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Username</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.username")}</label>
                 <FormInput
                   value={komgaUsername}
                   onChange={(e) => setKomgaUsername(e.target.value)}
                 />
               </FormField>
               <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">Password</label>
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.password")}</label>
                 <FormInput
                   type="password"
                   value={komgaPassword}
@@ -601,12 +624,12 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               {isSyncing ? (
                 <>
                   <Icon name="spinner" size="sm" className="animate-spin -ml-1 mr-2" />
-                  Syncing...
+                  {t("settings.syncing")}
                 </>
               ) : (
                 <>
                   <Icon name="refresh" size="sm" className="mr-2" />
-                  Sync Read Books
+                  {t("settings.syncReadBooks")}
                 </>
               )}
             </Button>
@@ -621,19 +644,19 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               <div className="space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
                   <div>
-                    <p className="text-sm text-muted-foreground">Komga read</p>
+                    <p className="text-sm text-muted-foreground">{t("settings.komgaRead")}</p>
                     <p className="text-2xl font-semibold">{syncResult.total_komga_read}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Matched</p>
+                    <p className="text-sm text-muted-foreground">{t("settings.matched")}</p>
                     <p className="text-2xl font-semibold">{syncResult.matched}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Already read</p>
+                    <p className="text-sm text-muted-foreground">{t("settings.alreadyRead")}</p>
                     <p className="text-2xl font-semibold">{syncResult.already_read}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Newly marked</p>
+                    <p className="text-sm text-muted-foreground">{t("settings.newlyMarked")}</p>
                     <p className="text-2xl font-semibold text-success">{syncResult.newly_marked}</p>
                   </div>
                 </div>
@@ -646,7 +669,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                       className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
                     >
                       <Icon name={showMatchedBooks ? "chevronDown" : "chevronRight"} size="sm" />
-                      {syncResult.matched_books.length} matched book{syncResult.matched_books.length !== 1 ? "s" : ""}
+                      {t("settings.matchedBooks", { count: syncResult.matched_books.length, plural: syncResult.matched_books.length !== 1 ? "s" : "" })}
                     </button>
                     {showMatchedBooks && (
                       <div className="mt-2 max-h-60 overflow-y-auto p-3 bg-success/5 rounded-lg text-sm space-y-1">
@@ -671,7 +694,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                       className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
                     >
                       <Icon name={showUnmatched ? "chevronDown" : "chevronRight"} size="sm" />
-                      {syncResult.unmatched.length} unmatched book{syncResult.unmatched.length !== 1 ? "s" : ""}
+                      {t("settings.unmatchedBooks", { count: syncResult.unmatched.length, plural: syncResult.unmatched.length !== 1 ? "s" : "" })}
                     </button>
                     {showUnmatched && (
                       <div className="mt-2 max-h-60 overflow-y-auto p-3 bg-muted/20 rounded-lg text-sm space-y-1">
@@ -687,7 +710,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             {/* Past reports */}
             {reports.length > 0 && (
               <div className="border-t border-border pt-4">
-                <h3 className="text-sm font-medium text-foreground mb-3">Sync History</h3>
+                <h3 className="text-sm font-medium text-foreground mb-3">{t("settings.syncHistory")}</h3>
                 <div className="space-y-2">
                   {reports.map((r) => (
                     <button
@@ -709,11 +732,11 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                         </span>
                       </div>
                       <div className="flex gap-4 mt-1 text-xs text-muted-foreground">
-                        <span>{r.total_komga_read} read</span>
-                        <span>{r.matched} matched</span>
-                        <span className="text-success">{r.newly_marked} new</span>
+                        <span>{r.total_komga_read} {t("settings.read")}</span>
+                        <span>{r.matched} {t("settings.matched").toLowerCase()}</span>
+                        <span className="text-success">{r.newly_marked} {t("settings.new")}</span>
                         {r.unmatched_count > 0 && (
-                          <span className="text-warning">{r.unmatched_count} unmatched</span>
+                          <span className="text-warning">{r.unmatched_count} {t("settings.unmatched")}</span>
                         )}
                       </div>
                     </button>
@@ -725,19 +748,19 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   <div className="mt-3 space-y-3">
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
                       <div>
-                        <p className="text-sm text-muted-foreground">Komga read</p>
+                        <p className="text-sm text-muted-foreground">{t("settings.komgaRead")}</p>
                         <p className="text-2xl font-semibold">{selectedReport.total_komga_read}</p>
                       </div>
                       <div>
-                        <p className="text-sm text-muted-foreground">Matched</p>
+                        <p className="text-sm text-muted-foreground">{t("settings.matched")}</p>
                         <p className="text-2xl font-semibold">{selectedReport.matched}</p>
                       </div>
                       <div>
-                        <p className="text-sm text-muted-foreground">Already read</p>
+                        <p className="text-sm text-muted-foreground">{t("settings.alreadyRead")}</p>
                         <p className="text-2xl font-semibold">{selectedReport.already_read}</p>
                       </div>
                       <div>
-                        <p className="text-sm text-muted-foreground">Newly marked</p>
+                        <p className="text-sm text-muted-foreground">{t("settings.newlyMarked")}</p>
                         <p className="text-2xl font-semibold text-success">{selectedReport.newly_marked}</p>
                       </div>
                     </div>
@@ -750,7 +773,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                           className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
                         >
                           <Icon name={showReportMatchedBooks ? "chevronDown" : "chevronRight"} size="sm" />
-                          {selectedReport.matched_books.length} matched book{selectedReport.matched_books.length !== 1 ? "s" : ""}
+                          {t("settings.matchedBooks", { count: selectedReport.matched_books.length, plural: selectedReport.matched_books.length !== 1 ? "s" : "" })}
                         </button>
                         {showReportMatchedBooks && (
                           <div className="mt-2 max-h-60 overflow-y-auto p-3 bg-success/5 rounded-lg text-sm space-y-1">
@@ -775,7 +798,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                           className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
                         >
                           <Icon name={showReportUnmatched ? "chevronDown" : "chevronRight"} size="sm" />
-                          {selectedReport.unmatched.length} unmatched book{selectedReport.unmatched.length !== 1 ? "s" : ""}
+                          {t("settings.unmatchedBooks", { count: selectedReport.unmatched.length, plural: selectedReport.unmatched.length !== 1 ? "s" : "" })}
                         </button>
                         {showReportUnmatched && (
                           <div className="mt-2 max-h-60 overflow-y-auto p-3 bg-muted/20 rounded-lg text-sm space-y-1">
@@ -809,6 +832,7 @@ const METADATA_LANGUAGES = [
 ] as const;
 
 function MetadataProvidersCard({ handleUpdateSetting }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void> }) {
+  const { t } = useTranslation();
   const [defaultProvider, setDefaultProvider] = useState("google_books");
   const [metadataLanguage, setMetadataLanguage] = useState("en");
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
@@ -843,15 +867,15 @@ function MetadataProvidersCard({ handleUpdateSetting }: { handleUpdateSetting: (
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Icon name="search" size="md" />
-          Metadata Providers
+          {t("settings.metadataProviders")}
         </CardTitle>
-        <CardDescription>Configure external metadata providers for series/book enrichment. Each library can override the default provider. All providers are available for quick-search in the metadata modal.</CardDescription>
+        <CardDescription>{t("settings.metadataProvidersDesc")}</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-6">
           {/* Default provider */}
           <div>
-            <label className="text-sm font-medium text-muted-foreground mb-2 block">Default Provider</label>
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">{t("settings.defaultProvider")}</label>
             <div className="flex gap-2 flex-wrap">
               {([
                 { value: "google_books", label: "Google Books" },
@@ -878,12 +902,12 @@ function MetadataProvidersCard({ handleUpdateSetting }: { handleUpdateSetting: (
                 </button>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground mt-2">Used by default for metadata search. Libraries can override this individually.</p>
+            <p className="text-xs text-muted-foreground mt-2">{t("settings.defaultProviderHelp")}</p>
           </div>
 
           {/* Metadata language */}
           <div>
-            <label className="text-sm font-medium text-muted-foreground mb-2 block">Metadata Language</label>
+            <label className="text-sm font-medium text-muted-foreground mb-2 block">{t("settings.metadataLanguage")}</label>
             <div className="flex gap-2">
               {METADATA_LANGUAGES.map((l) => (
                 <button
@@ -903,41 +927,41 @@ function MetadataProvidersCard({ handleUpdateSetting }: { handleUpdateSetting: (
                 </button>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground mt-2">Preferred language for search results and descriptions. Fallback: English.</p>
+            <p className="text-xs text-muted-foreground mt-2">{t("settings.metadataLanguageHelp")}</p>
           </div>
 
           {/* Provider API keys — always visible */}
           <div className="border-t border-border/50 pt-4">
-            <h4 className="text-sm font-medium text-foreground mb-3">API Keys</h4>
+            <h4 className="text-sm font-medium text-foreground mb-3">{t("settings.apiKeys")}</h4>
             <div className="space-y-4">
               <FormField>
                 <label className="text-sm font-medium text-muted-foreground mb-1 flex items-center gap-1.5">
                   <ProviderIcon provider="google_books" size={16} />
-                  Google Books API Key
+                  {t("settings.googleBooksKey")}
                 </label>
                 <FormInput
                   type="password"
-                  placeholder="Optional — for higher rate limits"
+                  placeholder={t("settings.googleBooksPlaceholder")}
                   value={apiKeys.google_books || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, google_books: e.target.value })}
                   onBlur={() => save(defaultProvider, metadataLanguage, apiKeys)}
                 />
-                <p className="text-xs text-muted-foreground mt-1">Works without a key but with lower rate limits.</p>
+                <p className="text-xs text-muted-foreground mt-1">{t("settings.googleBooksHelp")}</p>
               </FormField>
 
               <FormField>
                 <label className="text-sm font-medium text-muted-foreground mb-1 flex items-center gap-1.5">
                   <ProviderIcon provider="comicvine" size={16} />
-                  ComicVine API Key
+                  {t("settings.comicvineKey")}
                 </label>
                 <FormInput
                   type="password"
-                  placeholder="Required to use ComicVine"
+                  placeholder={t("settings.comicvinePlaceholder")}
                   value={apiKeys.comicvine || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, comicvine: e.target.value })}
                   onBlur={() => save(defaultProvider, metadataLanguage, apiKeys)}
                 />
-                <p className="text-xs text-muted-foreground mt-1">Get your key at <span className="font-mono text-foreground/70">comicvine.gamespot.com/api</span>.</p>
+                <p className="text-xs text-muted-foreground mt-1">{t("settings.comicvineHelp")} <span className="font-mono text-foreground/70">comicvine.gamespot.com/api</span>.</p>
               </FormField>
 
               <div className="p-3 rounded-lg bg-muted/30 flex items-center gap-3 flex-wrap">
@@ -950,12 +974,12 @@ function MetadataProvidersCard({ handleUpdateSetting }: { handleUpdateSetting: (
                   <ProviderIcon provider="anilist" size={16} />
                   <span className="text-xs font-medium text-foreground">AniList</span>
                 </div>
-                <span className="text-xs text-muted-foreground">and</span>
+                <span className="text-xs text-muted-foreground">{t("common.and")}</span>
                 <div className="flex items-center gap-1.5">
                   <ProviderIcon provider="bedetheque" size={16} />
                   <span className="text-xs font-medium text-foreground">Bédéthèque</span>
                 </div>
-                <span className="text-xs text-muted-foreground">are free and require no API key.</span>
+                <span className="text-xs text-muted-foreground">{t("settings.freeProviders")}</span>
               </div>
             </div>
           </div>

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { NavIcon } from "./ui";
+import { useTranslation } from "../../lib/i18n/context";
 
 type NavItem = {
   href: "/" | "/books" | "/series" | "/libraries" | "/jobs" | "/tokens" | "/settings";
@@ -24,6 +25,7 @@ const XIcon = () => (
 );
 
 export function MobileNav({ navItems }: { navItems: NavItem[] }) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -53,7 +55,7 @@ export function MobileNav({ navItems }: { navItems: NavItem[] }) {
         `}
       >
         <div className="h-16 border-b border-border/40 flex items-center px-4">
-          <span className="text-sm font-semibold text-muted-foreground tracking-wide uppercase">Navigation</span>
+          <span className="text-sm font-semibold text-muted-foreground tracking-wide uppercase">{t("nav.navigation")}</span>
         </div>
 
         <nav className="flex flex-col gap-1 p-3 flex-1">
@@ -76,7 +78,7 @@ export function MobileNav({ navItems }: { navItems: NavItem[] }) {
               onClick={() => setIsOpen(false)}
             >
               <NavIcon name="settings" />
-              <span className="font-medium">Paramètres</span>
+              <span className="font-medium">{t("nav.settings")}</span>
             </Link>
           </div>
         </nav>
@@ -90,7 +92,7 @@ export function MobileNav({ navItems }: { navItems: NavItem[] }) {
       <button
         className="md:hidden p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
         onClick={() => setIsOpen(!isOpen)}
-        aria-label={isOpen ? "Fermer le menu" : "Ouvrir le menu"}
+        aria-label={isOpen ? t("nav.closeMenu") : t("nav.openMenu")}
         aria-expanded={isOpen}
       >
         {isOpen ? <XIcon /> : <HamburgerIcon />}

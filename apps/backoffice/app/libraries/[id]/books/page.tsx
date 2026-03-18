@@ -3,6 +3,7 @@ import { BooksGrid, EmptyState } from "../../../components/BookCard";
 import { LibrarySubPageHeader } from "../../../components/LibrarySubPageHeader";
 import { OffsetPagination } from "../../../components/ui";
 import { notFound } from "next/navigation";
+import { getServerTranslations } from "../../../../lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,7 @@ export default async function LibraryBooksPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { id } = await params;
+  const { t } = await getServerTranslations();
   const searchParamsAwaited = await searchParams;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const series = typeof searchParamsAwaited.series === "string" ? searchParamsAwaited.series : undefined;
@@ -38,14 +40,14 @@ export default async function LibraryBooksPage({
     coverUrl: getBookCoverUrl(book.id)
   }));
 
-  const seriesDisplayName = series === "unclassified" ? "Non classé" : series;
+  const seriesDisplayName = series === "unclassified" ? t("books.unclassified") : (series ?? "");
   const totalPages = Math.ceil(booksPage.total / limit);
 
   return (
     <div className="space-y-6">
       <LibrarySubPageHeader
         library={library}
-        title={series ? `Livres de "${seriesDisplayName}"` : "Tous les livres"}
+        title={series ? t("libraryBooks.booksOfSeries", { series: seriesDisplayName }) : t("libraryBooks.allBooks")}
         icon={
           <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
@@ -53,9 +55,9 @@ export default async function LibraryBooksPage({
         }
         iconColor="text-success"
         filterInfo={series ? {
-          label: `Livres de la série "${seriesDisplayName}"`,
+          label: t("libraryBooks.filterLabel", { series: seriesDisplayName }),
           clearHref: `/libraries/${id}/books`,
-          clearLabel: "Voir tous les livres"
+          clearLabel: t("libraryBooks.viewAll")
         } : undefined}
       />
 
@@ -71,7 +73,7 @@ export default async function LibraryBooksPage({
           />
         </>
       ) : (
-        <EmptyState message={series ? `Aucun livre dans la série "${seriesDisplayName}"` : "Aucun livre dans cette bibliothèque"} />
+        <EmptyState message={series ? t("libraryBooks.noBooksInSeries", { series: seriesDisplayName }) : t("libraryBooks.noBooks")} />
       )}
     </div>
   );

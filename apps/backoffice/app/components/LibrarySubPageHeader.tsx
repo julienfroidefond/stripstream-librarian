@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Card, Badge } from "./ui";
+import { getServerTranslations } from "../../lib/i18n/server";
 
 interface LibrarySubPageHeaderProps {
   library: {
@@ -19,13 +20,14 @@ interface LibrarySubPageHeaderProps {
   };
 }
 
-export function LibrarySubPageHeader({ 
-  library, 
-  title, 
-  icon, 
+export async function LibrarySubPageHeader({
+  library,
+  title,
+  icon,
   iconColor = "text-primary",
-  filterInfo 
+  filterInfo
 }: LibrarySubPageHeaderProps) {
+  const { t } = await getServerTranslations();
   return (
     <div className="space-y-6">
       {/* Header avec breadcrumb intégré */}
@@ -38,7 +40,7 @@ export function LibrarySubPageHeader({
             <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            Bibliothèques
+            {t("libraryHeader.libraries")}
           </Link>
           <span className="text-muted-foreground">/</span>
           <span className="text-sm text-foreground font-medium">{library.name}</span>
@@ -73,8 +75,7 @@ export function LibrarySubPageHeader({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
               </svg>
               <span className="text-foreground">
-                <span className="font-semibold">{library.book_count}</span>
-                <span className="text-muted-foreground ml-1">livre{library.book_count !== 1 ? 's' : ''}</span>
+                <span className="text-muted-foreground ml-1">{t("libraryHeader.bookCount", { count: library.book_count, plural: library.book_count !== 1 ? "s" : "" })}</span>
               </span>
             </div>
             
@@ -86,7 +87,7 @@ export function LibrarySubPageHeader({
               variant={library.enabled ? "success" : "muted"}
               className="text-xs"
             >
-              {library.enabled ? "Activée" : "Désactivée"}
+              {library.enabled ? t("libraryHeader.enabled") : t("libraries.disabled")}
             </Badge>
           </div>
         </div>

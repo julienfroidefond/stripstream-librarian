@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { LibrarySubPageHeader } from "../../../components/LibrarySubPageHeader";
+import { getServerTranslations } from "../../../../lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ export default async function LibrarySeriesPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { id } = await params;
+  const { t } = await getServerTranslations();
   const searchParamsAwaited = await searchParams;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 20;
@@ -37,14 +39,14 @@ export default async function LibrarySeriesPage({
   const totalPages = Math.ceil(seriesPage.total / limit);
 
   const KNOWN_STATUSES: Record<string, string> = {
-    ongoing: "En cours",
-    ended: "Terminée",
-    hiatus: "Hiatus",
-    cancelled: "Annulée",
-    upcoming: "À paraître",
+    ongoing: t("seriesStatus.ongoing"),
+    ended: t("seriesStatus.ended"),
+    hiatus: t("seriesStatus.hiatus"),
+    cancelled: t("seriesStatus.cancelled"),
+    upcoming: t("seriesStatus.upcoming"),
   };
   const seriesStatusOptions = [
-    { value: "", label: "Tous les statuts" },
+    { value: "", label: t("seriesStatus.allStatuses") },
     ...dbStatuses.map((s) => ({ value: s, label: KNOWN_STATUSES[s] || s })),
   ];
 
@@ -52,7 +54,7 @@ export default async function LibrarySeriesPage({
     <div className="space-y-6">
       <LibrarySubPageHeader
         library={library}
-        title="Séries"
+        title={t("series.title")}
         icon={
           <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
@@ -81,7 +83,7 @@ export default async function LibrarySeriesPage({
                   <div className="aspect-[2/3] relative bg-muted/50">
                     <Image
                       src={getBookCoverUrl(s.first_book_id)}
-                      alt={`Couverture de ${s.name}`}
+                      alt={t("books.coverOf", { name: s.name })}
                       fill
                       className="object-cover"
                       unoptimized
@@ -89,11 +91,11 @@ export default async function LibrarySeriesPage({
                   </div>
                   <div className="p-3">
                     <h3 className="font-medium text-foreground truncate text-sm" title={s.name}>
-                      {s.name === "unclassified" ? "Non classé" : s.name}
+                      {s.name === "unclassified" ? t("books.unclassified") : s.name}
                     </h3>
                     <div className="flex items-center justify-between mt-1">
                       <p className="text-xs text-muted-foreground">
-                        {s.books_read_count}/{s.book_count} lu{s.book_count !== 1 ? 's' : ''}
+                        {t("series.readCount", { read: String(s.books_read_count), total: String(s.book_count) })}
                       </p>
                       <MarkSeriesReadButton
                         seriesName={s.name}
@@ -110,17 +112,12 @@ export default async function LibrarySeriesPage({
                           s.series_status === "cancelled" ? "bg-red-500/15 text-red-600" :
                           "bg-muted text-muted-foreground"
                         }`}>
-                          {s.series_status === "ongoing" ? "En cours" :
-                           s.series_status === "ended" ? "Terminée" :
-                           s.series_status === "hiatus" ? "Hiatus" :
-                           s.series_status === "cancelled" ? "Annulée" :
-                           s.series_status === "upcoming" ? "À paraître" :
-                           s.series_status}
+                          {KNOWN_STATUSES[s.series_status] || s.series_status}
                         </span>
                       )}
                       {s.missing_count != null && s.missing_count > 0 && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-yellow-500/15 text-yellow-600">
-                          {s.missing_count} manquant{s.missing_count > 1 ? "s" : ""}
+                          {t("series.missingCount", { count: String(s.missing_count) })}
                         </span>
                       )}
                     </div>
@@ -139,7 +136,7 @@ export default async function LibrarySeriesPage({
         </>
       ) : (
         <div className="text-center py-12 text-muted-foreground">
-          <p>Aucune série trouvée dans cette bibliothèque</p>
+          <p>{t("librarySeries.noSeries")}</p>
         </div>
       )}
     </div>

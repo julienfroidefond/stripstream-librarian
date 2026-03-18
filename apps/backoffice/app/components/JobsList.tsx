@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTranslation } from "../../lib/i18n/context";
 import { JobRow } from "./JobRow";
 
 interface Job {
@@ -39,25 +40,35 @@ function formatDuration(start: string, end: string | null): string {
   return `${Math.floor(diff / 3600000)}h ${Math.floor((diff % 3600000) / 60000)}m`;
 }
 
-function formatDate(dateStr: string): string {
+function getDateParts(dateStr: string): { mins: number; hours: number; useDate: boolean; date: Date } {
   const date = new Date(dateStr);
   const now = new Date();
   const diff = now.getTime() - date.getTime();
-  
+
   if (diff < 3600000) {
     const mins = Math.floor(diff / 60000);
-    if (mins < 1) return "À l'instant";
-    return `il y a ${mins}m`;
+    return { mins, hours: 0, useDate: false, date };
   }
   if (diff < 86400000) {
     const hours = Math.floor(diff / 3600000);
-    return `il y a ${hours}h`;
+    return { mins: 0, hours, useDate: false, date };
   }
-  return date.toLocaleDateString();
+  return { mins: 0, hours: 0, useDate: true, date };
 }
 
 export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListProps) {
+  const { t } = useTranslation();
   const [jobs, setJobs] = useState(initialJobs);
+
+  const formatDate = (dateStr: string): string => {
+    const parts = getDateParts(dateStr);
+    if (parts.useDate) {
+      return parts.date.toLocaleDateString();
+    }
+    if (parts.mins < 1) return t("time.justNow");
+    if (parts.hours > 0) return t("time.hoursAgo", { count: parts.hours });
+    return t("time.minutesAgo", { count: parts.mins });
+  };
 
   // Refresh jobs list via SSE
   useEffect(() => {
@@ -102,15 +113,15 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
         <table className="w-full">
           <thead>
             <tr className="border-b border-border/60 bg-muted/50">
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">ID</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Bibliothèque</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Type</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Statut</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Fichiers</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Miniatures</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Durée</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Créé</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Actions</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("jobsList.id")}</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("jobsList.library")}</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("jobsList.type")}</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("jobsList.status")}</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("jobsList.files")}</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("jobsList.thumbnails")}</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("jobsList.duration")}</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("jobsList.created")}</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("jobsList.actions")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">

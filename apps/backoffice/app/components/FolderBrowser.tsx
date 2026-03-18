@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { FolderItem } from "../../lib/api";
+import { useTranslation } from "../../lib/i18n/context";
 
 interface TreeNode extends FolderItem {
   children?: TreeNode[];
@@ -15,6 +16,7 @@ interface FolderBrowserProps {
 }
 
 export function FolderBrowser({ initialFolders, selectedPath, onSelect }: FolderBrowserProps) {
+  const { t } = useTranslation();
   // Convert initial folders to tree structure
   const [tree, setTree] = useState<TreeNode[]>(
     initialFolders.map(f => ({ ...f, children: f.has_children ? [] : undefined }))
@@ -173,7 +175,7 @@ export function FolderBrowser({ initialFolders, selectedPath, onSelect }: Folder
       <div className="max-h-80 overflow-y-auto">
         {tree.length === 0 ? (
           <div className="px-3 py-8 text-sm text-muted-foreground text-center">
-            Aucun dossier trouvé
+            {t("folder.noFolders")}
           </div>
         ) : (
           tree.map(node => renderNode(node))

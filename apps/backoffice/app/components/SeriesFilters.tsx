@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
+import { useTranslation } from "../../lib/i18n/context";
 
 interface SeriesFiltersProps {
   basePath: string;
@@ -13,6 +14,7 @@ interface SeriesFiltersProps {
 export function SeriesFilters({ basePath, currentSeriesStatus, currentHasMissing, seriesStatusOptions }: SeriesFiltersProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useTranslation();
 
   const updateFilter = useCallback((key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -43,8 +45,8 @@ export function SeriesFilters({ basePath, currentSeriesStatus, currentHasMissing
         onChange={(e) => updateFilter("has_missing", e.target.value)}
         className="px-3 py-2 rounded-lg border border-border bg-card text-foreground text-sm"
       >
-        <option value="">Tous</option>
-        <option value="true">Livres manquants</option>
+        <option value="">{t("seriesFilters.all")}</option>
+        <option value="true">{t("seriesFilters.missingBooks")}</option>
       </select>
     </div>
   );

@@ -4,6 +4,7 @@ import { LiveSearchForm } from "../components/LiveSearchForm";
 import { Card, CardContent, OffsetPagination } from "../components/ui";
 import Link from "next/link";
 import Image from "next/image";
+import { getServerTranslations } from "../../lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ export default async function BooksPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
+  const { t } = await getServerTranslations();
   const searchParamsAwaited = await searchParams;
   const libraryId = typeof searchParamsAwaited.library === "string" ? searchParamsAwaited.library : undefined;
   const searchQuery = typeof searchParamsAwaited.q === "string" ? searchParamsAwaited.q : "";
@@ -78,20 +80,20 @@ export default async function BooksPage({
   const totalPages = Math.ceil(total / limit);
 
   const libraryOptions = [
-    { value: "", label: "Toutes les bibliothèques" },
+    { value: "", label: t("books.allLibraries") },
     ...libraries.map((lib) => ({ value: lib.id, label: lib.name })),
   ];
 
   const statusOptions = [
-    { value: "", label: "Tous" },
-    { value: "unread", label: "Non lu" },
-    { value: "reading", label: "En cours" },
-    { value: "read", label: "Lu" },
+    { value: "", label: t("common.all") },
+    { value: "unread", label: t("status.unread") },
+    { value: "reading", label: t("status.reading") },
+    { value: "read", label: t("status.read") },
   ];
 
   const sortOptions = [
-    { value: "", label: "Titre" },
-    { value: "latest", label: "Ajout récent" },
+    { value: "", label: t("books.sortTitle") },
+    { value: "latest", label: t("books.sortLatest") },
   ];
 
   const hasFilters = searchQuery || libraryId || readingStatus || sort;
@@ -103,7 +105,7 @@ export default async function BooksPage({
           <svg className="w-8 h-8 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
           </svg>
-          Livres
+          {t("books.title")}
         </h1>
       </div>
 
@@ -112,10 +114,10 @@ export default async function BooksPage({
           <LiveSearchForm
             basePath="/books"
             fields={[
-              { name: "q", type: "text", label: "Rechercher", placeholder: "Rechercher par titre, auteur, série...", className: "flex-1 w-full" },
-              { name: "library", type: "select", label: "Bibliothèque", options: libraryOptions, className: "w-full sm:w-48" },
-              { name: "status", type: "select", label: "Statut", options: statusOptions, className: "w-full sm:w-40" },
-              { name: "sort", type: "select", label: "Tri", options: sortOptions, className: "w-full sm:w-40" },
+              { name: "q", type: "text", label: t("common.search"), placeholder: t("books.searchPlaceholder"), className: "flex-1 w-full" },
+              { name: "library", type: "select", label: t("books.library"), options: libraryOptions, className: "w-full sm:w-48" },
+              { name: "status", type: "select", label: t("books.status"), options: statusOptions, className: "w-full sm:w-40" },
+              { name: "sort", type: "select", label: t("books.sort"), options: sortOptions, className: "w-full sm:w-40" },
             ]}
           />
         </CardContent>
@@ -124,18 +126,18 @@ export default async function BooksPage({
       {/* Résultats */}
       {searchQuery && totalHits !== null ? (
         <p className="text-sm text-muted-foreground mb-4">
-          {totalHits} résultat{totalHits !== 1 ? 's' : ''} pour &laquo; {searchQuery} &raquo;
+          {t("books.resultCountFor", { count: String(totalHits), plural: totalHits !== 1 ? "s" : "", query: searchQuery })}
         </p>
       ) : !searchQuery && (
         <p className="text-sm text-muted-foreground mb-4">
-          {total} livre{total !== 1 ? 's' : ''}
+          {t("books.resultCount", { count: String(total), plural: total !== 1 ? "s" : "" })}
         </p>
       )}
 
       {/* Séries matchantes */}
       {seriesHits.length > 0 && (
         <div className="mb-8">
-          <h2 className="text-lg font-semibold text-foreground mb-3">Séries</h2>
+          <h2 className="text-lg font-semibold text-foreground mb-3">{t("books.seriesHeading")}</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {seriesHits.map((s) => (
               <Link
@@ -147,7 +149,7 @@ export default async function BooksPage({
                   <div className="aspect-[2/3] relative bg-muted/50">
                     <Image
                       src={getBookCoverUrl(s.first_book_id)}
-                      alt={`Couverture de ${s.name}`}
+                      alt={t("books.coverOf", { name: s.name })}
                       fill
                       className="object-cover"
                       unoptimized
@@ -155,10 +157,10 @@ export default async function BooksPage({
                   </div>
                   <div className="p-2">
                     <h3 className="font-medium text-foreground truncate text-sm" title={s.name}>
-                      {s.name === "unclassified" ? "Non classé" : s.name}
+                      {s.name === "unclassified" ? t("books.unclassified") : s.name}
                     </h3>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {s.book_count} livre{s.book_count !== 1 ? 's' : ''}
+                      {t("books.bookCount", { count: String(s.book_count), plural: s.book_count !== 1 ? "s" : "" })}
                     </p>
                   </div>
                 </div>
@@ -171,7 +173,7 @@ export default async function BooksPage({
       {/* Grille de livres */}
       {displayBooks.length > 0 ? (
         <>
-          {searchQuery && <h2 className="text-lg font-semibold text-foreground mb-3">Livres</h2>}
+          {searchQuery && <h2 className="text-lg font-semibold text-foreground mb-3">{t("books.title")}</h2>}
           <BooksGrid books={displayBooks} />
 
           {!searchQuery && (
@@ -184,7 +186,7 @@ export default async function BooksPage({
           )}
         </>
       ) : (
-        <EmptyState message={searchQuery ? `Aucun livre trouvé pour "${searchQuery}"` : "Aucun livre disponible"} />
+        <EmptyState message={searchQuery ? t("books.noResults", { query: searchQuery }) : t("books.noBooks")} />
       )}
     </>
   );
