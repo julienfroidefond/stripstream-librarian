@@ -9,12 +9,9 @@ jobs:
   deploy:
     runs-on: mac-orbstack-runner # le nom que tu as donné au runner
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Deploy stack
         env:
           DOCKER_BUILDKIT: 1
           COMPOSE_DOCKER_CLI_BUILD: 1
         run: |
-          BUILDKIT_PROGRESS=plain docker pull julienfroidefond32/stripstream-backoffice && docker pull julienfroidefond32/stripstream-api && docker pull julienfroidefond32/stripstream-indexer && ./scripts/stack.sh up stripstream
+          BUILDKIT_PROGRESS=plain cd /Users/julienfroidefond/Sites/docker-stack && docker pull julienfroidefond32/stripstream-backoffice && docker pull julienfroidefond32/stripstream-api && docker pull julienfroidefond32/stripstream-indexer && ./scripts/stack.sh up stripstream
