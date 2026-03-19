@@ -694,7 +694,7 @@ pub(crate) async fn sync_series_metadata(
         .and_then(|y| y.as_i64())
         .map(|y| y as i32);
     let status = if let Some(raw) = metadata_json.get("status").and_then(|s| s.as_str()) {
-        Some(normalize_series_status(&state.pool, raw).await)
+        normalize_series_status(&state.pool, raw).await
     } else {
         None
     };
@@ -827,8 +827,8 @@ pub(crate) async fn sync_series_metadata(
 }
 
 /// Normalize provider-specific status strings using the status_mappings table.
-/// Falls back to the original lowercase value if no mapping is found.
-pub(crate) async fn normalize_series_status(pool: &sqlx::PgPool, raw: &str) -> String {
+/// Returns None if no mapping is found — unknown statuses are not stored.
+pub(crate) async fn normalize_series_status(pool: &sqlx::PgPool, raw: &str) -> Option<String> {
     let lower = raw.to_lowercase();
 
     // Try exact match first
@@ -839,7 +839,7 @@ pub(crate) async fn normalize_series_status(pool: &sqlx::PgPool, raw: &str) -> S
     .fetch_optional(pool)
     .await
     {
-        return row;
+        return Some(row);
     }
 
     // Try substring match (for Bédéthèque-style statuses like "Série finie")
@@ -850,11 +850,11 @@ pub(crate) async fn normalize_series_status(pool: &sqlx::PgPool, raw: &str) -> S
     .fetch_optional(pool)
     .await
     {
-        return row;
+        return Some(row);
     }
 
-    // No mapping found — return lowercase original
-    lower
+    // No mapping found — don't store unknown statuses
+    None
 }
 
 pub(crate) async fn sync_books_metadata(
