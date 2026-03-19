@@ -513,6 +513,15 @@ async fn get_series_books_impl(
 
         // External book ID from album URL (e.g. "...-1063.html")
         let album_url = title_el.and_then(|el| el.value().attr("href")).unwrap_or("");
+
+        // Only keep main tomes — their URLs contain "Tome-{N}-"
+        // Skip hors-série (HS), intégrales (INT/INTFL), romans, coffrets, etc.
+        if let Ok(re) = regex::Regex::new(r"(?i)-Tome-\d+-") {
+            if !re.is_match(album_url) {
+                continue;
+            }
+        }
+
         let external_book_id = regex::Regex::new(r"-(\d+)\.html")
             .ok()
             .and_then(|re| re.captures(album_url))
