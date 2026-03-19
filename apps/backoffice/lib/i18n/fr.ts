@@ -489,6 +489,18 @@ const fr = {
   "prowlarr.notConfigured": "Prowlarr n'est pas configuré",
   "prowlarr.download": "Télécharger",
   "prowlarr.info": "Info",
+  "prowlarr.sendToQbittorrent": "Envoyer à qBittorrent",
+  "prowlarr.sending": "Envoi...",
+  "prowlarr.sentSuccess": "Envoyé à qBittorrent",
+  "prowlarr.sentError": "Échec de l'envoi à qBittorrent",
+
+  // Settings - qBittorrent
+  "settings.qbittorrent": "qBittorrent",
+  "settings.qbittorrentDesc": "Configurer qBittorrent comme client de téléchargement. Les torrents trouvés via Prowlarr peuvent être envoyés directement à qBittorrent.",
+  "settings.qbittorrentUrl": "URL qBittorrent",
+  "settings.qbittorrentUrlPlaceholder": "http://localhost:8080",
+  "settings.qbittorrentUsername": "Nom d'utilisateur",
+  "settings.qbittorrentPassword": "Mot de passe",
 
   // Settings - Language
   "settings.language": "Langue",

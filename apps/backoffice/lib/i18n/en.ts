@@ -491,6 +491,18 @@ const en: Record<TranslationKey, string> = {
   "prowlarr.notConfigured": "Prowlarr is not configured",
   "prowlarr.download": "Download",
   "prowlarr.info": "Info",
+  "prowlarr.sendToQbittorrent": "Send to qBittorrent",
+  "prowlarr.sending": "Sending...",
+  "prowlarr.sentSuccess": "Sent to qBittorrent",
+  "prowlarr.sentError": "Failed to send to qBittorrent",
+
+  // Settings - qBittorrent
+  "settings.qbittorrent": "qBittorrent",
+  "settings.qbittorrentDesc": "Configure qBittorrent as a download client. Torrents found via Prowlarr can be sent directly to qBittorrent.",
+  "settings.qbittorrentUrl": "qBittorrent URL",
+  "settings.qbittorrentUrlPlaceholder": "http://localhost:8080",
+  "settings.qbittorrentUsername": "Username",
+  "settings.qbittorrentPassword": "Password",
 
   // Settings - Language
   "settings.language": "Language",

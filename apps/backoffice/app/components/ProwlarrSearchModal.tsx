@@ -33,7 +33,13 @@ export function ProwlarrSearchModal({ seriesName, missingBooks }: ProwlarrSearch
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // Check if Prowlarr is configured on mount
+  // qBittorrent state
+  const [isQbConfigured, setIsQbConfigured] = useState(false);
+  const [sendingGuid, setSendingGuid] = useState<string | null>(null);
+  const [sentGuids, setSentGuids] = useState<Set<string>>(new Set());
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  // Check if Prowlarr and qBittorrent are configured on mount
   useEffect(() => {
     fetch("/api/settings/prowlarr")
       .then((r) => (r.ok ? r.json() : null))
@@ -41,6 +47,12 @@ export function ProwlarrSearchModal({ seriesName, missingBooks }: ProwlarrSearch
         setIsConfigured(!!(data && data.api_key && data.api_key.trim()));
       })
       .catch(() => setIsConfigured(false));
+    fetch("/api/settings/qbittorrent")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        setIsQbConfigured(!!(data && data.url && data.url.trim() && data.username && data.username.trim()));
+      })
+      .catch(() => setIsQbConfigured(false));
   }, []);
 
   const doSearch = useCallback(async (searchSeriesName: string, volumeNumber?: number) => {
@@ -81,6 +93,30 @@ export function ProwlarrSearchModal({ seriesName, missingBooks }: ProwlarrSearch
 
   function handleClose() {
     setIsOpen(false);
+  }
+
+  async function handleSendToQbittorrent(downloadUrl: string, guid: string) {
+    setSendingGuid(guid);
+    setSendError(null);
+    try {
+      const resp = await fetch("/api/qbittorrent/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: downloadUrl }),
+      });
+      const data = await resp.json();
+      if (data.error) {
+        setSendError(data.error);
+      } else if (data.success) {
+        setSentGuids((prev) => new Set(prev).add(guid));
+      } else {
+        setSendError(data.message || t("prowlarr.sentError"));
+      }
+    } catch {
+      setSendError(t("prowlarr.sentError"));
+    } finally {
+      setSendingGuid(null);
+    }
   }
 
   // Don't render button if not configured
@@ -204,6 +240,31 @@ export function ProwlarrSearchModal({ seriesName, missingBooks }: ProwlarrSearch
                             </td>
                             <td className="px-3 py-2">
                               <div className="flex items-center justify-end gap-1.5">
+                                {isQbConfigured && release.downloadUrl && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSendToQbittorrent(release.downloadUrl!, release.guid)}
+                                    disabled={sendingGuid === release.guid || sentGuids.has(release.guid)}
+                                    className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors disabled:opacity-50 ${
+                                      sentGuids.has(release.guid)
+                                        ? "text-green-500"
+                                        : "text-primary hover:bg-primary/10"
+                                    }`}
+                                    title={sentGuids.has(release.guid) ? t("prowlarr.sentSuccess") : t("prowlarr.sendToQbittorrent")}
+                                  >
+                                    {sendingGuid === release.guid ? (
+                                      <Icon name="spinner" size="sm" className="animate-spin" />
+                                    ) : sentGuids.has(release.guid) ? (
+                                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M3 8l4 4 6-7" />
+                                      </svg>
+                                    ) : (
+                                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M14 8V14H2V2H8M10 2H14V6M14 2L7 9" />
+                                      </svg>
+                                    )}
+                                  </button>
+                                )}
                                 {release.downloadUrl && (
                                   <a
                                     href={release.downloadUrl}
@@ -235,6 +296,13 @@ export function ProwlarrSearchModal({ seriesName, missingBooks }: ProwlarrSearch
                       </tbody>
                     </table>
                   </div>
+                </div>
+              )}
+
+              {/* qBittorrent send error */}
+              {sendError && (
+                <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+                  {sendError}
                 </div>
               )}
 

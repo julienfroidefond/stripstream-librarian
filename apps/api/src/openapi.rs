@@ -60,6 +60,8 @@ use utoipa::OpenApi;
         crate::settings::delete_status_mapping,
         crate::prowlarr::search_prowlarr,
         crate::prowlarr::test_prowlarr,
+        crate::qbittorrent::add_torrent,
+        crate::qbittorrent::test_qbittorrent,
     ),
     components(
         schemas(
@@ -124,6 +126,9 @@ use utoipa::OpenApi;
             crate::metadata::ExternalMetadataLinkDto,
             crate::metadata::MissingBooksDto,
             crate::metadata::MissingBookItem,
+            crate::qbittorrent::QBittorrentAddRequest,
+            crate::qbittorrent::QBittorrentAddResponse,
+            crate::qbittorrent::QBittorrentTestResponse,
             crate::prowlarr::ProwlarrSearchRequest,
             crate::prowlarr::ProwlarrRelease,
             crate::prowlarr::ProwlarrCategory,
@@ -143,6 +148,7 @@ use utoipa::OpenApi;
         (name = "tokens", description = "API token management (Admin only)"),
         (name = "settings", description = "Application settings and cache management (Admin only)"),
         (name = "prowlarr", description = "Prowlarr indexer integration (Admin only)"),
+        (name = "qbittorrent", description = "qBittorrent download client integration (Admin only)"),
     ),
     modifiers(&SecurityAddon)
 )]

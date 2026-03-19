@@ -910,3 +910,18 @@ export type ProwlarrTestResponse = {
   message: string;
   indexer_count: number | null;
 };
+
+// ---------------------------------------------------------------------------
+// qBittorrent
+// ---------------------------------------------------------------------------
+
+export type QBittorrentAddResponse = {
+  success: boolean;
+  message: string;
+};
+
+export type QBittorrentTestResponse = {
+  success: boolean;
+  message: string;
+  version: string | null;
+};
