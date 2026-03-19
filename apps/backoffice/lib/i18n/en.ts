@@ -487,6 +487,8 @@ const en: Record<TranslationKey, string> = {
   "prowlarr.columnSeeders": "Seeds",
   "prowlarr.columnLeechers": "Peers",
   "prowlarr.columnProtocol": "Protocol",
+  "prowlarr.searchPlaceholder": "Edit search query...",
+  "prowlarr.searchAction": "Search",
   "prowlarr.searchError": "Search failed",
   "prowlarr.notConfigured": "Prowlarr is not configured",
   "prowlarr.download": "Download",

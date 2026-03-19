@@ -55,13 +55,16 @@ export function ProwlarrSearchModal({ seriesName, missingBooks }: ProwlarrSearch
       .catch(() => setIsQbConfigured(false));
   }, []);
 
-  const doSearch = useCallback(async (searchSeriesName: string, volumeNumber?: number) => {
+  const [searchInput, setSearchInput] = useState(`"${seriesName}"`);
+
+  const doSearch = useCallback(async (queryOverride?: string) => {
+    const searchQuery = queryOverride ?? searchInput;
+    if (!searchQuery.trim()) return;
     setIsSearching(true);
     setError(null);
     setResults([]);
     try {
-      const body: { series_name: string; volume_number?: number } = { series_name: searchSeriesName };
-      if (volumeNumber !== undefined) body.volume_number = volumeNumber;
+      const body = { series_name: seriesName, custom_query: searchQuery.trim() };
       const resp = await fetch("/api/prowlarr/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -80,15 +83,18 @@ export function ProwlarrSearchModal({ seriesName, missingBooks }: ProwlarrSearch
     } finally {
       setIsSearching(false);
     }
-  }, [t]);
+  }, [t, seriesName, searchInput]);
+
+  const defaultQuery = `"${seriesName}"`;
 
   function handleOpen() {
     setIsOpen(true);
     setResults([]);
     setError(null);
     setQuery("");
+    setSearchInput(defaultQuery);
     // Auto-search the series on open
-    doSearch(seriesName);
+    doSearch(defaultQuery);
   }
 
   function handleClose() {
@@ -143,29 +149,56 @@ export function ProwlarrSearchModal({ seriesName, missingBooks }: ProwlarrSearch
               </div>
 
               <div className="p-5 space-y-4">
-              {/* Missing volumes + re-search */}
-              <div className="flex flex-wrap items-center gap-2">
+              {/* Search input */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (searchInput.trim()) doSearch(searchInput.trim());
+                }}
+                className="flex items-center gap-2"
+              >
+                <input
+                  type="text"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                  placeholder={t("prowlarr.searchPlaceholder")}
+                />
+                <button
+                  type="submit"
+                  disabled={isSearching || !searchInput.trim()}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                >
+                  <Icon name="search" size="sm" />
+                  {t("prowlarr.searchAction")}
+                </button>
+              </form>
+
+              {/* Quick search badges */}
+              <div className="flex flex-wrap items-center gap-2 max-h-24 overflow-y-auto">
                 <button
                   type="button"
-                  onClick={() => doSearch(seriesName)}
+                  onClick={() => { setSearchInput(defaultQuery); doSearch(defaultQuery); }}
                   disabled={isSearching}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-primary/50 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors"
                 >
-                  <Icon name="search" size="sm" />
                   {seriesName}
                 </button>
-              {missingBooks && missingBooks.length > 0 && missingBooks.map((book, i) => (
+              {missingBooks && missingBooks.length > 0 && missingBooks.map((book, i) => {
+                const label = book.title || `Vol. ${book.volume_number}`;
+                const q = book.volume_number != null ? `"${seriesName}" ${book.volume_number}` : `"${seriesName}" ${label}`;
+                return (
                   <button
                     key={i}
                     type="button"
-                    onClick={() => doSearch(seriesName, book.volume_number ?? undefined)}
+                    onClick={() => { setSearchInput(q); doSearch(q); }}
                     disabled={isSearching}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-muted/30 hover:bg-muted/50 disabled:opacity-50 transition-colors"
                   >
-                    <Icon name="search" size="sm" />
-                    {book.title || `Vol. ${book.volume_number}`}
+                    {label}
                   </button>
-                ))}
+                );
+              })}
               </div>
 
               {/* Error */}

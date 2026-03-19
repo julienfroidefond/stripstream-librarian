@@ -485,6 +485,8 @@ const fr = {
   "prowlarr.columnSeeders": "Seeds",
   "prowlarr.columnLeechers": "Peers",
   "prowlarr.columnProtocol": "Protocole",
+  "prowlarr.searchPlaceholder": "Modifier la recherche...",
+  "prowlarr.searchAction": "Rechercher",
   "prowlarr.searchError": "Erreur lors de la recherche",
   "prowlarr.notConfigured": "Prowlarr n'est pas configuré",
   "prowlarr.download": "Télécharger",

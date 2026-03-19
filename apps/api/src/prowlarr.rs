@@ -11,6 +11,7 @@ use crate::{error::ApiError, state::AppState};
 pub struct ProwlarrSearchRequest {
     pub series_name: String,
     pub volume_number: Option<i32>,
+    pub custom_query: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -104,7 +105,9 @@ pub async fn search_prowlarr(
 ) -> Result<Json<ProwlarrSearchResponse>, ApiError> {
     let (url, api_key, categories) = load_prowlarr_config(&state.pool).await?;
 
-    let query = if let Some(vol) = body.volume_number {
+    let query = if let Some(custom) = &body.custom_query {
+        custom.clone()
+    } else if let Some(vol) = body.volume_number {
         format!("\"{}\" {}", body.series_name, vol)
     } else {
         format!("\"{}\"", body.series_name)
@@ -139,10 +142,19 @@ pub async fn search_prowlarr(
         )));
     }
 
-    let results: Vec<ProwlarrRelease> = resp
-        .json()
+    let raw_text = resp
+        .text()
         .await
-        .map_err(|e| ApiError::internal(format!("Failed to parse Prowlarr response: {e}")))?;
+        .map_err(|e| ApiError::internal(format!("Failed to read Prowlarr response: {e}")))?;
+
+    tracing::debug!("Prowlarr raw response length: {} chars", raw_text.len());
+
+    let results: Vec<ProwlarrRelease> = serde_json::from_str(&raw_text)
+        .map_err(|e| {
+            tracing::error!("Failed to parse Prowlarr response: {e}");
+            tracing::error!("Raw response (first 500 chars): {}", &raw_text[..raw_text.len().min(500)]);
+            ApiError::internal(format!("Failed to parse Prowlarr response: {e}"))
+        })?;
 
     Ok(Json(ProwlarrSearchResponse { results, query }))
 }
