@@ -683,13 +683,6 @@ export function MetadataSearchModal({
         {existingLink && existingLink.status === "approved" ? t("metadata.metadataButton") : t("metadata.searchButton")}
       </button>
 
-      {/* Inline badge when linked */}
-      {existingLink && existingLink.status === "approved" && initialMissing && initialMissing.missing_count > 0 && (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-600 text-xs border border-yellow-500/30">
-          {t("series.missingCount", { count: initialMissing.missing_count, plural: initialMissing.missing_count !== 1 ? "s" : "" })}
-        </span>
-      )}
-
       {existingLink && existingLink.status === "approved" && (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs border border-primary/30">
           <ProviderIcon provider={existingLink.provider} size={12} />

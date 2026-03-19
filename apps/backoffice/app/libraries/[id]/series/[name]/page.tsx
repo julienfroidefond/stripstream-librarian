@@ -142,7 +142,7 @@ export default async function SeriesDetailPage({
               {t("series.readCount", { read: String(booksReadCount), total: String(booksPage.total), plural: booksPage.total !== 1 ? "s" : "" })}
             </span>
 
-            {/* Progress bar */}
+            {/* Reading progress bar */}
             <div className="flex items-center gap-2 flex-1 min-w-[120px] max-w-[200px]">
               <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
                 <div
@@ -151,6 +151,22 @@ export default async function SeriesDetailPage({
                 />
               </div>
             </div>
+
+            {/* Collection progress bar (owned / expected) */}
+            {missingData && missingData.total_external > 0 && (
+              <>
+                <span className="w-px h-4 bg-border" />
+                <span className="text-muted-foreground">
+                  {booksPage.total}/{missingData.total_external} — {t("series.missingCount", { count: missingData.missing_count, plural: missingData.missing_count !== 1 ? "s" : "" })}
+                </span>
+                <div className="w-[150px] h-2 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-amber-500 rounded-full transition-all"
+                    style={{ width: `${Math.round((booksPage.total / missingData.total_external) * 100)}%` }}
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -172,15 +188,15 @@ export default async function SeriesDetailPage({
               currentStatus={seriesMeta?.status ?? null}
               currentLockedFields={seriesMeta?.locked_fields ?? {}}
             />
+            <ProwlarrSearchModal
+              seriesName={seriesName}
+              missingBooks={missingData?.missing_books ?? null}
+            />
             <MetadataSearchModal
               libraryId={id}
               seriesName={seriesName}
               existingLink={existingLink}
               initialMissing={missingData}
-            />
-            <ProwlarrSearchModal
-              seriesName={seriesName}
-              missingBooks={missingData?.missing_books ?? null}
             />
           </div>
         </div>
