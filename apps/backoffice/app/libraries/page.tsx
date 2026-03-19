@@ -80,7 +80,12 @@ export default async function LibrariesPage() {
   async function batchMetadataAction(formData: FormData) {
     "use server";
     const id = formData.get("id") as string;
-    await startMetadataBatch(id);
+    try {
+      await startMetadataBatch(id);
+    } catch {
+      // Library may have metadata disabled — ignore silently
+      return;
+    }
     revalidatePath("/libraries");
     revalidatePath("/jobs");
   }

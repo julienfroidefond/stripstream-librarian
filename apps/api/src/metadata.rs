@@ -694,7 +694,7 @@ pub(crate) async fn sync_series_metadata(
         .and_then(|y| y.as_i64())
         .map(|y| y as i32);
     let status = if let Some(raw) = metadata_json.get("status").and_then(|s| s.as_str()) {
-        normalize_series_status(&state.pool, raw).await
+        Some(normalize_series_status(&state.pool, raw).await)
     } else {
         None
     };
@@ -802,7 +802,7 @@ pub(crate) async fn sync_series_metadata(
         FieldDef {
             name: "status",
             old: existing.as_ref().and_then(|r| r.get::<Option<String>, _>("status")).map(serde_json::Value::String),
-            new: status.as_ref().map(|s| serde_json::Value::String(s.clone())),
+            new: status.as_ref().map(|s: &String| serde_json::Value::String(s.clone())),
         },
     ];
 
@@ -828,33 +828,33 @@ pub(crate) async fn sync_series_metadata(
 
 /// Normalize provider-specific status strings using the status_mappings table.
 /// Returns None if no mapping is found — unknown statuses are not stored.
-pub(crate) async fn normalize_series_status(pool: &sqlx::PgPool, raw: &str) -> Option<String> {
+pub(crate) async fn normalize_series_status(pool: &sqlx::PgPool, raw: &str) -> String {
     let lower = raw.to_lowercase();
 
-    // Try exact match first
+    // Try exact match first (only mapped entries)
     if let Ok(Some(row)) = sqlx::query_scalar::<_, String>(
-        "SELECT mapped_status FROM status_mappings WHERE provider_status = $1",
+        "SELECT mapped_status FROM status_mappings WHERE provider_status = $1 AND mapped_status IS NOT NULL",
     )
     .bind(&lower)
     .fetch_optional(pool)
     .await
     {
-        return Some(row);
+        return row;
     }
 
     // Try substring match (for Bédéthèque-style statuses like "Série finie")
     if let Ok(Some(row)) = sqlx::query_scalar::<_, String>(
-        "SELECT mapped_status FROM status_mappings WHERE $1 LIKE '%' || provider_status || '%' LIMIT 1",
+        "SELECT mapped_status FROM status_mappings WHERE $1 LIKE '%' || provider_status || '%' AND mapped_status IS NOT NULL LIMIT 1",
     )
     .bind(&lower)
     .fetch_optional(pool)
     .await
     {
-        return Some(row);
+        return row;
     }
 
-    // No mapping found — don't store unknown statuses
-    None
+    // No mapping found — return the provider status as-is (lowercased)
+    lower
 }
 
 pub(crate) async fn sync_books_metadata(

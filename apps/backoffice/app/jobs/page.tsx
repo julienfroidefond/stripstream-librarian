@@ -53,7 +53,13 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     "use server";
     const libraryId = formData.get("library_id") as string;
     if (!libraryId) return;
-    const result = await startMetadataBatch(libraryId);
+    let result;
+    try {
+      result = await startMetadataBatch(libraryId);
+    } catch {
+      // Library may have metadata disabled — ignore silently
+      return;
+    }
     revalidatePath("/jobs");
     redirect(`/jobs?highlight=${result.id}`);
   }
@@ -62,7 +68,12 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     "use server";
     const libraryId = formData.get("library_id") as string;
     if (!libraryId) return;
-    const result = await startMetadataRefresh(libraryId);
+    let result;
+    try {
+      result = await startMetadataRefresh(libraryId);
+    } catch {
+      return;
+    }
     revalidatePath("/jobs");
     redirect(`/jobs?highlight=${result.id}`);
   }

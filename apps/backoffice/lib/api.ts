@@ -433,7 +433,7 @@ export async function getThumbnailStats() {
 export type StatusMappingDto = {
   id: string;
   provider_status: string;
-  mapped_status: string;
+  mapped_status: string | null;
 };
 
 export async function fetchStatusMappings(): Promise<StatusMappingDto[]> {

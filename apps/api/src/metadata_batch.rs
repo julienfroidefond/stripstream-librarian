@@ -772,7 +772,7 @@ async fn sync_series_from_candidate(
     let start_year = candidate.start_year;
     let total_volumes = candidate.total_volumes;
     let status = if let Some(raw) = candidate.metadata_json.get("status").and_then(|s| s.as_str()) {
-        crate::metadata::normalize_series_status(pool, raw).await
+        Some(crate::metadata::normalize_series_status(pool, raw).await)
     } else {
         None
     };

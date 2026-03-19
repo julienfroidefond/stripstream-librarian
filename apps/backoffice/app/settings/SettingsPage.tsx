@@ -1023,26 +1023,39 @@ function StatusMappingsCard() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Group mappings by target status
+  // Group mappings by target status (only those with a non-null mapped_status)
   const grouped = useMemo(() => {
     const map = new Map<string, StatusMappingDto[]>();
     for (const m of mappings) {
-      const list = map.get(m.mapped_status) || [];
-      list.push(m);
-      map.set(m.mapped_status, list);
+      if (m.mapped_status) {
+        const list = map.get(m.mapped_status) || [];
+        list.push(m);
+        map.set(m.mapped_status, list);
+      }
     }
     return map;
   }, [mappings]);
 
-  // Provider statuses not yet mapped
-  const mappedProviderStatuses = useMemo(
+  // Unmapped = mappings with null mapped_status + provider statuses not in status_mappings at all
+  const knownProviderStatuses = useMemo(
     () => new Set(mappings.map((m) => m.provider_status)),
     [mappings],
   );
-  const unmappedProviderStatuses = useMemo(
-    () => providerStatuses.filter((ps) => !mappedProviderStatuses.has(ps)),
-    [providerStatuses, mappedProviderStatuses],
+  const unmappedMappings = useMemo(
+    () => mappings.filter((m) => !m.mapped_status),
+    [mappings],
   );
+  const newProviderStatuses = useMemo(
+    () => providerStatuses.filter((ps) => !knownProviderStatuses.has(ps)),
+    [providerStatuses, knownProviderStatuses],
+  );
+
+  // All possible targets = existing statuses from DB + custom ones added locally
+  const [customTargets, setCustomTargets] = useState<string[]>([]);
+  const allTargets = useMemo(() => {
+    const set = new Set([...targetStatuses, ...customTargets]);
+    return [...set].sort();
+  }, [targetStatuses, customTargets]);
 
   async function handleAssign(providerStatus: string, targetStatus: string) {
     if (!providerStatus || !targetStatus) return;
@@ -1061,27 +1074,12 @@ function StatusMappingsCard() {
     }
   }
 
-  async function handleDelete(id: string) {
+  async function handleUnmap(id: string) {
     try {
       const res = await fetch(`/api/settings/status-mappings/${id}`, { method: "DELETE" });
       if (res.ok) {
-        setMappings((prev) => prev.filter((m) => m.id !== id));
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  async function handleChangeTarget(mapping: StatusMappingDto, newTarget: string) {
-    try {
-      const res = await fetch("/api/settings/status-mappings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider_status: mapping.provider_status, mapped_status: newTarget }),
-      });
-      if (res.ok) {
         const updated: StatusMappingDto = await res.json();
-        setMappings((prev) => prev.map((m) => (m.id === mapping.id ? updated : m)));
+        setMappings((prev) => prev.map((m) => (m.id === id ? updated : m)));
       }
     } catch {
       // ignore
@@ -1090,8 +1088,8 @@ function StatusMappingsCard() {
 
   function handleCreateTarget() {
     const name = newTargetName.trim().toLowerCase();
-    if (!name || targetStatuses.includes(name)) return;
-    setTargetStatuses((prev) => [...prev, name].sort());
+    if (!name || allTargets.includes(name)) return;
+    setCustomTargets((prev) => [...prev, name]);
     setNewTargetName("");
   }
 
@@ -1131,7 +1129,7 @@ function StatusMappingsCard() {
             />
             <Button
               onClick={handleCreateTarget}
-              disabled={!newTargetName.trim() || targetStatuses.includes(newTargetName.trim().toLowerCase())}
+              disabled={!newTargetName.trim() || allTargets.includes(newTargetName.trim().toLowerCase())}
             >
               <Icon name="plus" size="sm" />
               {t("settings.createTargetStatus")}
@@ -1139,7 +1137,7 @@ function StatusMappingsCard() {
           </div>
 
           {/* Grouped by target status */}
-          {targetStatuses.map((target) => {
+          {allTargets.map((target) => {
             const items = grouped.get(target) || [];
             return (
               <div key={target} className="border border-border/50 rounded-lg p-3">
@@ -1158,7 +1156,7 @@ function StatusMappingsCard() {
                       {m.provider_status}
                       <button
                         type="button"
-                        onClick={() => handleDelete(m.id)}
+                        onClick={() => handleUnmap(m.id)}
                         className="ml-1 text-muted-foreground hover:text-destructive transition-colors"
                         title={t("common.delete")}
                       >
@@ -1166,17 +1164,36 @@ function StatusMappingsCard() {
                       </button>
                     </span>
                   ))}
+                  {items.length === 0 && (
+                    <span className="text-xs text-muted-foreground italic">{t("settings.noMappings")}</span>
+                  )}
                 </div>
               </div>
             );
           })}
 
-          {/* Unmapped provider statuses */}
-          {unmappedProviderStatuses.length > 0 && (
+          {/* Unmapped provider statuses (null mapped_status + brand new from providers) */}
+          {(unmappedMappings.length > 0 || newProviderStatuses.length > 0) && (
             <div className="border-t border-border/50 pt-4">
               <h4 className="text-sm font-medium text-foreground mb-3">{t("settings.unmappedSection")}</h4>
               <div className="space-y-2">
-                {unmappedProviderStatuses.map((ps) => (
+                {unmappedMappings.map((m) => (
+                  <div key={m.id} className="flex items-center gap-2">
+                    <span className="text-sm font-mono bg-muted/50 px-2 py-1 rounded-md min-w-[120px]">{m.provider_status}</span>
+                    <Icon name="chevronRight" size="sm" />
+                    <FormSelect
+                      className="w-auto"
+                      value=""
+                      onChange={(e) => { if (e.target.value) handleAssign(m.provider_status, e.target.value); }}
+                    >
+                      <option value="">{t("settings.selectTargetStatus")}</option>
+                      {allTargets.map((s) => (
+                        <option key={s} value={s}>{statusLabel(s)}</option>
+                      ))}
+                    </FormSelect>
+                  </div>
+                ))}
+                {newProviderStatuses.map((ps) => (
                   <div key={ps} className="flex items-center gap-2">
                     <span className="text-sm font-mono bg-muted/50 px-2 py-1 rounded-md min-w-[120px]">{ps}</span>
                     <Icon name="chevronRight" size="sm" />
@@ -1186,7 +1203,7 @@ function StatusMappingsCard() {
                       onChange={(e) => { if (e.target.value) handleAssign(ps, e.target.value); }}
                     >
                       <option value="">{t("settings.selectTargetStatus")}</option>
-                      {targetStatuses.map((s) => (
+                      {allTargets.map((s) => (
                         <option key={s} value={s}>{statusLabel(s)}</option>
                       ))}
                     </FormSelect>

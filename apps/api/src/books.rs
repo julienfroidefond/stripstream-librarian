@@ -870,7 +870,7 @@ pub async fn series_statuses(
         r#"SELECT DISTINCT s FROM (
             SELECT LOWER(status) AS s FROM series_metadata WHERE status IS NOT NULL
             UNION
-            SELECT mapped_status AS s FROM status_mappings
+            SELECT mapped_status AS s FROM status_mappings WHERE mapped_status IS NOT NULL
         ) t ORDER BY s"#,
     )
     .fetch_all(&state.pool)

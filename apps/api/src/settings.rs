@@ -342,7 +342,7 @@ pub async fn get_thumbnail_stats(State(_state): State<AppState>) -> Result<Json<
 pub struct StatusMappingDto {
     pub id: String,
     pub provider_status: String,
-    pub mapped_status: String,
+    pub mapped_status: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
@@ -366,7 +366,7 @@ pub async fn list_status_mappings(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<StatusMappingDto>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT id, provider_status, mapped_status FROM status_mappings ORDER BY mapped_status, provider_status",
+        "SELECT id, provider_status, mapped_status FROM status_mappings ORDER BY mapped_status NULLS LAST, provider_status",
     )
     .fetch_all(&state.pool)
     .await?;
@@ -376,7 +376,7 @@ pub async fn list_status_mappings(
         .map(|row| StatusMappingDto {
             id: row.get::<Uuid, _>("id").to_string(),
             provider_status: row.get("provider_status"),
-            mapped_status: row.get("mapped_status"),
+            mapped_status: row.get::<Option<String>, _>("mapped_status"),
         })
         .collect();
 
@@ -418,18 +418,18 @@ pub async fn upsert_status_mapping(
     Ok(Json(StatusMappingDto {
         id: row.get::<Uuid, _>("id").to_string(),
         provider_status: row.get("provider_status"),
-        mapped_status: row.get("mapped_status"),
+        mapped_status: row.get::<Option<String>, _>("mapped_status"),
     }))
 }
 
-/// Delete a status mapping
+/// Unmap a status mapping (sets mapped_status to NULL, keeps the provider status known)
 #[utoipa::path(
     delete,
     path = "/settings/status-mappings/{id}",
     tag = "settings",
     params(("id" = String, Path, description = "Mapping UUID")),
     responses(
-        (status = 204, description = "Deleted"),
+        (status = 200, body = StatusMappingDto),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Not found"),
     ),
@@ -438,15 +438,20 @@ pub async fn upsert_status_mapping(
 pub async fn delete_status_mapping(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
-) -> Result<Json<Value>, ApiError> {
-    let result = sqlx::query("DELETE FROM status_mappings WHERE id = $1")
-        .bind(id)
-        .execute(&state.pool)
-        .await?;
+) -> Result<Json<StatusMappingDto>, ApiError> {
+    let row = sqlx::query(
+        "UPDATE status_mappings SET mapped_status = NULL, updated_at = NOW() WHERE id = $1 RETURNING id, provider_status, mapped_status",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
 
-    if result.rows_affected() == 0 {
-        return Err(ApiError::not_found("status mapping not found"));
+    match row {
+        Some(row) => Ok(Json(StatusMappingDto {
+            id: row.get::<Uuid, _>("id").to_string(),
+            provider_status: row.get("provider_status"),
+            mapped_status: row.get::<Option<String>, _>("mapped_status"),
+        })),
+        None => Err(ApiError::not_found("status mapping not found")),
     }
-
-    Ok(Json(serde_json::json!({"deleted": true})))
 }
