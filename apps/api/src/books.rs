@@ -398,7 +398,7 @@ pub async fn list_series(
     } else { String::new() };
 
     let ss_cond = if query.series_status.is_some() {
-        p += 1; format!("AND sm.status = ${p}")
+        p += 1; format!("AND LOWER(sm.status) = ${p}")
     } else { String::new() };
 
     let missing_cond = if has_missing {
@@ -655,7 +655,7 @@ pub async fn list_all_series(
     } else { String::new() };
 
     let ss_cond = if query.series_status.is_some() {
-        p += 1; format!("AND sm.status = ${p}")
+        p += 1; format!("AND LOWER(sm.status) = ${p}")
     } else { String::new() };
 
     let missing_cond = if has_missing {
@@ -868,7 +868,7 @@ pub async fn series_statuses(
 ) -> Result<Json<Vec<String>>, ApiError> {
     let rows: Vec<String> = sqlx::query_scalar(
         r#"SELECT DISTINCT s FROM (
-            SELECT status AS s FROM series_metadata WHERE status IS NOT NULL
+            SELECT LOWER(status) AS s FROM series_metadata WHERE status IS NOT NULL
             UNION
             SELECT mapped_status AS s FROM status_mappings
         ) t ORDER BY s"#,
