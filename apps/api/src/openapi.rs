@@ -58,6 +58,8 @@ use utoipa::OpenApi;
         crate::settings::list_status_mappings,
         crate::settings::upsert_status_mapping,
         crate::settings::delete_status_mapping,
+        crate::prowlarr::search_prowlarr,
+        crate::prowlarr::test_prowlarr,
     ),
     components(
         schemas(
@@ -122,6 +124,11 @@ use utoipa::OpenApi;
             crate::metadata::ExternalMetadataLinkDto,
             crate::metadata::MissingBooksDto,
             crate::metadata::MissingBookItem,
+            crate::prowlarr::ProwlarrSearchRequest,
+            crate::prowlarr::ProwlarrRelease,
+            crate::prowlarr::ProwlarrCategory,
+            crate::prowlarr::ProwlarrSearchResponse,
+            crate::prowlarr::ProwlarrTestResponse,
             ErrorResponse,
         )
     ),
@@ -135,6 +142,7 @@ use utoipa::OpenApi;
         (name = "indexing", description = "Search index management and job control (Admin only)"),
         (name = "tokens", description = "API token management (Admin only)"),
         (name = "settings", description = "Application settings and cache management (Admin only)"),
+        (name = "prowlarr", description = "Prowlarr indexer integration (Admin only)"),
     ),
     modifiers(&SecurityAddon)
 )]

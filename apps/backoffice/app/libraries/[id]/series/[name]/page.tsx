@@ -4,6 +4,7 @@ import { MarkSeriesReadButton } from "../../../../components/MarkSeriesReadButto
 import { MarkBookReadButton } from "../../../../components/MarkBookReadButton";
 import { EditSeriesForm } from "../../../../components/EditSeriesForm";
 import { MetadataSearchModal } from "../../../../components/MetadataSearchModal";
+import { ProwlarrSearchModal } from "../../../../components/ProwlarrSearchModal";
 import { OffsetPagination } from "../../../../components/ui";
 import { SafeHtml } from "../../../../components/SafeHtml";
 import Image from "next/image";
@@ -138,7 +139,7 @@ export default async function SeriesDetailPage({
             </span>
             <span className="w-px h-4 bg-border" />
             <span className="text-muted-foreground">
-              {t("series.readCount", { read: String(booksReadCount), total: String(booksPage.total) })}
+              {t("series.readCount", { read: String(booksReadCount), total: String(booksPage.total), plural: booksPage.total !== 1 ? "s" : "" })}
             </span>
 
             {/* Progress bar */}
@@ -176,6 +177,10 @@ export default async function SeriesDetailPage({
               seriesName={seriesName}
               existingLink={existingLink}
               initialMissing={missingData}
+            />
+            <ProwlarrSearchModal
+              seriesName={seriesName}
+              missingBooks={missingData?.missing_books ?? null}
             />
           </div>
         </div>

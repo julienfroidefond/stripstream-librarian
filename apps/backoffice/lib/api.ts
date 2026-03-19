@@ -876,3 +876,37 @@ export async function getMetadataBatchResults(jobId: string, status?: string) {
   const params = status ? `?status=${status}` : "";
   return apiFetch<MetadataBatchResultDto[]>(`/metadata/batch/${jobId}/results${params}`);
 }
+
+// ---------------------------------------------------------------------------
+// Prowlarr
+// ---------------------------------------------------------------------------
+
+export type ProwlarrCategory = {
+  id: number;
+  name: string | null;
+};
+
+export type ProwlarrRelease = {
+  guid: string;
+  title: string;
+  size: number;
+  downloadUrl: string | null;
+  indexer: string | null;
+  seeders: number | null;
+  leechers: number | null;
+  publishDate: string | null;
+  protocol: string | null;
+  infoUrl: string | null;
+  categories: ProwlarrCategory[] | null;
+};
+
+export type ProwlarrSearchResponse = {
+  results: ProwlarrRelease[];
+  query: string;
+};
+
+export type ProwlarrTestResponse = {
+  success: boolean;
+  message: string;
+  indexer_count: number | null;
+};

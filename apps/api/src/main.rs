@@ -12,6 +12,7 @@ mod metadata_providers;
 mod api_middleware;
 mod openapi;
 mod pages;
+mod prowlarr;
 mod reading_progress;
 mod search;
 mod settings;
@@ -104,6 +105,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/tokens", get(tokens::list_tokens).post(tokens::create_token))
         .route("/admin/tokens/:id", delete(tokens::revoke_token))
         .route("/admin/tokens/:id/delete", axum::routing::post(tokens::delete_token))
+        .route("/prowlarr/search", axum::routing::post(prowlarr::search_prowlarr))
+        .route("/prowlarr/test", get(prowlarr::test_prowlarr))
         .route("/komga/sync", axum::routing::post(komga::sync_komga_read_books))
         .route("/komga/reports", get(komga::list_sync_reports))
         .route("/komga/reports/:id", get(komga::get_sync_report))

@@ -95,7 +95,7 @@ export default async function LibrarySeriesPage({
                     </h3>
                     <div className="flex items-center justify-between mt-1">
                       <p className="text-xs text-muted-foreground">
-                        {t("series.readCount", { read: String(s.books_read_count), total: String(s.book_count) })}
+                        {t("series.readCount", { read: String(s.books_read_count), total: String(s.book_count), plural: s.book_count !== 1 ? "s" : "" })}
                       </p>
                       <MarkSeriesReadButton
                         seriesName={s.name}
