@@ -99,13 +99,13 @@ export default async function SeriesPage({
           <LiveSearchForm
             basePath="/series"
             fields={[
-              { name: "q", type: "text", label: t("common.search"), placeholder: t("series.searchPlaceholder"), className: "flex-1 w-full" },
-              { name: "library", type: "select", label: t("books.library"), options: libraryOptions, className: "w-full sm:w-44" },
-              { name: "status", type: "select", label: t("series.reading"), options: statusOptions, className: "w-full sm:w-32" },
-              { name: "series_status", type: "select", label: t("editSeries.status"), options: seriesStatusOptions, className: "w-full sm:w-36" },
-              { name: "has_missing", type: "select", label: t("series.missing"), options: missingOptions, className: "w-full sm:w-36" },
-              { name: "metadata_provider", type: "select", label: t("series.metadata"), options: metadataOptions, className: "w-full sm:w-36" },
-              { name: "sort", type: "select", label: t("books.sort"), options: sortOptions, className: "w-full sm:w-32" },
+              { name: "q", type: "text", label: t("common.search"), placeholder: t("series.searchPlaceholder") },
+              { name: "library", type: "select", label: t("books.library"), options: libraryOptions },
+              { name: "status", type: "select", label: t("series.reading"), options: statusOptions },
+              { name: "series_status", type: "select", label: t("editSeries.status"), options: seriesStatusOptions },
+              { name: "has_missing", type: "select", label: t("series.missing"), options: missingOptions },
+              { name: "metadata_provider", type: "select", label: t("series.metadata"), options: metadataOptions },
+              { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },
             ]}
           />
         </CardContent>

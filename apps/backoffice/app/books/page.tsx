@@ -114,10 +114,10 @@ export default async function BooksPage({
           <LiveSearchForm
             basePath="/books"
             fields={[
-              { name: "q", type: "text", label: t("common.search"), placeholder: t("books.searchPlaceholder"), className: "flex-1 w-full" },
-              { name: "library", type: "select", label: t("books.library"), options: libraryOptions, className: "w-full sm:w-48" },
-              { name: "status", type: "select", label: t("books.status"), options: statusOptions, className: "w-full sm:w-40" },
-              { name: "sort", type: "select", label: t("books.sort"), options: sortOptions, className: "w-full sm:w-40" },
+              { name: "q", type: "text", label: t("common.search"), placeholder: t("books.searchPlaceholder") },
+              { name: "library", type: "select", label: t("books.library"), options: libraryOptions },
+              { name: "status", type: "select", label: t("books.status"), options: statusOptions },
+              { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },
             ]}
           />
         </CardContent>
