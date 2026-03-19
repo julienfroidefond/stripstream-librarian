@@ -389,17 +389,19 @@ async fn process_metadata_batch(
             update_progress(pool, job_id, processed, total, series_name).await;
             insert_result(
                 pool,
-                job_id,
-                library_id,
-                series_name,
-                "already_linked",
-                None,
-                false,
-                0,
-                None,
-                None,
-                None,
-                Some("Unclassified series skipped"),
+                &InsertResultParams {
+                    job_id,
+                    library_id,
+                    series_name,
+                    status: "already_linked",
+                    provider_used: None,
+                    fallback_used: false,
+                    candidates_count: 0,
+                    best_confidence: None,
+                    best_candidate_json: None,
+                    link_id: None,
+                    error_message: Some("Unclassified series skipped"),
+                },
             )
             .await;
             continue;
@@ -411,17 +413,19 @@ async fn process_metadata_batch(
             update_progress(pool, job_id, processed, total, series_name).await;
             insert_result(
                 pool,
-                job_id,
-                library_id,
-                series_name,
-                "already_linked",
-                None,
-                false,
-                0,
-                None,
-                None,
-                None,
-                None,
+                &InsertResultParams {
+                    job_id,
+                    library_id,
+                    series_name,
+                    status: "already_linked",
+                    provider_used: None,
+                    fallback_used: false,
+                    candidates_count: 0,
+                    best_confidence: None,
+                    best_candidate_json: None,
+                    link_id: None,
+                    error_message: None,
+                },
             )
             .await;
             continue;
@@ -577,17 +581,19 @@ async fn process_metadata_batch(
 
         insert_result(
             pool,
-            job_id,
-            library_id,
-            series_name,
-            result_status,
-            provider_used.as_deref(),
-            fallback_used,
-            candidates_count,
-            best_confidence,
-            best_candidate.as_ref(),
-            link_id,
-            error_msg.as_deref(),
+            &InsertResultParams {
+                job_id,
+                library_id,
+                series_name,
+                status: result_status,
+                provider_used: provider_used.as_deref(),
+                fallback_used,
+                candidates_count,
+                best_confidence,
+                best_candidate_json: best_candidate.as_ref(),
+                link_id,
+                error_message: error_msg.as_deref(),
+            },
         )
         .await;
 
@@ -765,9 +771,12 @@ async fn sync_series_from_candidate(
     let publishers = &candidate.publishers;
     let start_year = candidate.start_year;
     let total_volumes = candidate.total_volumes;
-    let status = candidate.metadata_json
-        .get("status")
-        .and_then(|s| s.as_str());
+    let status = if let Some(raw) = candidate.metadata_json.get("status").and_then(|s| s.as_str()) {
+        Some(crate::metadata::normalize_series_status(pool, raw).await)
+    } else {
+        None
+    };
+    let status = status.as_deref();
 
     sqlx::query(
         r#"
@@ -1070,20 +1079,21 @@ pub(crate) async fn update_progress(pool: &PgPool, job_id: Uuid, processed: i32,
     .await;
 }
 
-async fn insert_result(
-    pool: &PgPool,
+struct InsertResultParams<'a> {
     job_id: Uuid,
     library_id: Uuid,
-    series_name: &str,
-    status: &str,
-    provider_used: Option<&str>,
+    series_name: &'a str,
+    status: &'a str,
+    provider_used: Option<&'a str>,
     fallback_used: bool,
     candidates_count: i32,
     best_confidence: Option<f32>,
-    best_candidate_json: Option<&serde_json::Value>,
+    best_candidate_json: Option<&'a serde_json::Value>,
     link_id: Option<Uuid>,
-    error_message: Option<&str>,
-) {
+    error_message: Option<&'a str>,
+}
+
+async fn insert_result(pool: &PgPool, params: &InsertResultParams<'_>) {
     let _ = sqlx::query(
         r#"
         INSERT INTO metadata_batch_results
@@ -1091,17 +1101,17 @@ async fn insert_result(
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         "#,
     )
-    .bind(job_id)
-    .bind(library_id)
-    .bind(series_name)
-    .bind(status)
-    .bind(provider_used)
-    .bind(fallback_used)
-    .bind(candidates_count)
-    .bind(best_confidence)
-    .bind(best_candidate_json)
-    .bind(link_id)
-    .bind(error_message)
+    .bind(params.job_id)
+    .bind(params.library_id)
+    .bind(params.series_name)
+    .bind(params.status)
+    .bind(params.provider_used)
+    .bind(params.fallback_used)
+    .bind(params.candidates_count)
+    .bind(params.best_confidence)
+    .bind(params.best_candidate_json)
+    .bind(params.link_id)
+    .bind(params.error_message)
     .execute(pool)
     .await;
 }

@@ -445,6 +445,19 @@ const en: Record<TranslationKey, string> = {
   "settings.comicvineHelp": "Get your key at",
   "settings.freeProviders": "are free and do not require an API key.",
 
+  // Settings - Status Mappings
+  "settings.statusMappings": "Status mappings",
+  "settings.statusMappingsDesc": "Configure the mapping between provider statuses and database statuses. Multiple provider statuses can map to a single target status.",
+  "settings.targetStatus": "Target status",
+  "settings.providerStatuses": "Provider statuses",
+  "settings.addProviderStatus": "Add a provider status…",
+  "settings.noMappings": "No mappings configured",
+  "settings.unmappedSection": "Unmapped",
+  "settings.addMapping": "Add a mapping",
+  "settings.selectTargetStatus": "Select a target status",
+  "settings.newTargetPlaceholder": "New target status (e.g. hiatus)",
+  "settings.createTargetStatus": "Create status",
+
   // Settings - Language
   "settings.language": "Language",
   "settings.languageDesc": "Choose the interface language",

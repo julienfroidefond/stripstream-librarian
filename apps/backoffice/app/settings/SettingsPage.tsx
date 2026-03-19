@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, FormRow, Icon } from "../components/ui";
 import { ProviderIcon } from "../components/ProviderIcon";
-import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, KomgaSyncResponse, KomgaSyncReportSummary } from "../../lib/api";
+import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, KomgaSyncResponse, KomgaSyncReportSummary, StatusMappingDto } from "../../lib/api";
 import { useTranslation } from "../../lib/i18n/context";
 import type { Locale } from "../../lib/i18n/types";
 
@@ -577,6 +577,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       {/* Metadata Providers */}
       <MetadataProvidersCard handleUpdateSetting={handleUpdateSetting} />
 
+      {/* Status Mappings */}
+      <StatusMappingsCard />
+
       {/* Komga Sync */}
       <Card className="mb-6">
         <CardHeader>
@@ -983,6 +986,215 @@ function MetadataProvidersCard({ handleUpdateSetting }: { handleUpdateSetting: (
               </div>
             </div>
           </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Status Mappings sub-component
+// ---------------------------------------------------------------------------
+
+function StatusMappingsCard() {
+  const { t } = useTranslation();
+  const [mappings, setMappings] = useState<StatusMappingDto[]>([]);
+  const [targetStatuses, setTargetStatuses] = useState<string[]>([]);
+  const [providerStatuses, setProviderStatuses] = useState<string[]>([]);
+  const [newTargetName, setNewTargetName] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [mRes, sRes, pRes] = await Promise.all([
+        fetch("/api/settings/status-mappings").then((r) => r.ok ? r.json() : []),
+        fetch("/api/series/statuses").then((r) => r.ok ? r.json() : []),
+        fetch("/api/series/provider-statuses").then((r) => r.ok ? r.json() : []),
+      ]);
+      setMappings(mRes);
+      setTargetStatuses(sRes);
+      setProviderStatuses(pRes);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // Group mappings by target status
+  const grouped = useMemo(() => {
+    const map = new Map<string, StatusMappingDto[]>();
+    for (const m of mappings) {
+      const list = map.get(m.mapped_status) || [];
+      list.push(m);
+      map.set(m.mapped_status, list);
+    }
+    return map;
+  }, [mappings]);
+
+  // Provider statuses not yet mapped
+  const mappedProviderStatuses = useMemo(
+    () => new Set(mappings.map((m) => m.provider_status)),
+    [mappings],
+  );
+  const unmappedProviderStatuses = useMemo(
+    () => providerStatuses.filter((ps) => !mappedProviderStatuses.has(ps)),
+    [providerStatuses, mappedProviderStatuses],
+  );
+
+  async function handleAssign(providerStatus: string, targetStatus: string) {
+    if (!providerStatus || !targetStatus) return;
+    try {
+      const res = await fetch("/api/settings/status-mappings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider_status: providerStatus, mapped_status: targetStatus }),
+      });
+      if (res.ok) {
+        const created: StatusMappingDto = await res.json();
+        setMappings((prev) => [...prev.filter((m) => m.provider_status !== created.provider_status), created]);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleDelete(id: string) {
+    try {
+      const res = await fetch(`/api/settings/status-mappings/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setMappings((prev) => prev.filter((m) => m.id !== id));
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleChangeTarget(mapping: StatusMappingDto, newTarget: string) {
+    try {
+      const res = await fetch("/api/settings/status-mappings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider_status: mapping.provider_status, mapped_status: newTarget }),
+      });
+      if (res.ok) {
+        const updated: StatusMappingDto = await res.json();
+        setMappings((prev) => prev.map((m) => (m.id === mapping.id ? updated : m)));
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  function handleCreateTarget() {
+    const name = newTargetName.trim().toLowerCase();
+    if (!name || targetStatuses.includes(name)) return;
+    setTargetStatuses((prev) => [...prev, name].sort());
+    setNewTargetName("");
+  }
+
+  function statusLabel(status: string) {
+    const key = `seriesStatus.${status}` as Parameters<typeof t>[0];
+    const translated = t(key);
+    return translated !== key ? translated : status;
+  }
+
+  if (loading) {
+    return (
+      <Card className="mb-6">
+        <CardContent><p className="text-muted-foreground py-4">{t("common.loading")}</p></CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Icon name="settings" size="md" />
+          {t("settings.statusMappings")}
+        </CardTitle>
+        <CardDescription>{t("settings.statusMappingsDesc")}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          {/* Create new target status */}
+          <div className="flex gap-2 items-center">
+            <FormInput
+              placeholder={t("settings.newTargetPlaceholder")}
+              value={newTargetName}
+              onChange={(e) => setNewTargetName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleCreateTarget(); }}
+              className="max-w-[250px]"
+            />
+            <Button
+              onClick={handleCreateTarget}
+              disabled={!newTargetName.trim() || targetStatuses.includes(newTargetName.trim().toLowerCase())}
+            >
+              <Icon name="plus" size="sm" />
+              {t("settings.createTargetStatus")}
+            </Button>
+          </div>
+
+          {/* Grouped by target status */}
+          {targetStatuses.map((target) => {
+            const items = grouped.get(target) || [];
+            return (
+              <div key={target} className="border border-border/50 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-sm font-medium text-foreground">
+                    {statusLabel(target)}
+                  </span>
+                  <span className="text-xs text-muted-foreground font-mono">({target})</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {items.map((m) => (
+                    <span
+                      key={m.id}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted/50 text-sm font-mono"
+                    >
+                      {m.provider_status}
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(m.id)}
+                        className="ml-1 text-muted-foreground hover:text-destructive transition-colors"
+                        title={t("common.delete")}
+                      >
+                        <Icon name="x" size="sm" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Unmapped provider statuses */}
+          {unmappedProviderStatuses.length > 0 && (
+            <div className="border-t border-border/50 pt-4">
+              <h4 className="text-sm font-medium text-foreground mb-3">{t("settings.unmappedSection")}</h4>
+              <div className="space-y-2">
+                {unmappedProviderStatuses.map((ps) => (
+                  <div key={ps} className="flex items-center gap-2">
+                    <span className="text-sm font-mono bg-muted/50 px-2 py-1 rounded-md min-w-[120px]">{ps}</span>
+                    <Icon name="chevronRight" size="sm" />
+                    <FormSelect
+                      className="w-auto"
+                      value=""
+                      onChange={(e) => { if (e.target.value) handleAssign(ps, e.target.value); }}
+                    >
+                      <option value="">{t("settings.selectTargetStatus")}</option>
+                      {targetStatuses.map((s) => (
+                        <option key={s} value={s}>{statusLabel(s)}</option>
+                      ))}
+                    </FormSelect>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

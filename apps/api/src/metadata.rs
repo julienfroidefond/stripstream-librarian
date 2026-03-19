@@ -693,10 +693,11 @@ pub(crate) async fn sync_series_metadata(
         .get("start_year")
         .and_then(|y| y.as_i64())
         .map(|y| y as i32);
-    let status = metadata_json
-        .get("status")
-        .and_then(|s| s.as_str())
-        .map(normalize_series_status);
+    let status = if let Some(raw) = metadata_json.get("status").and_then(|s| s.as_str()) {
+        Some(normalize_series_status(&state.pool, raw).await)
+    } else {
+        None
+    };
 
     // Fetch existing state before upsert
     let existing = sqlx::query(
@@ -775,7 +776,7 @@ pub(crate) async fn sync_series_metadata(
     let fields = vec![
         FieldDef {
             name: "description",
-            old: existing.as_ref().and_then(|r| r.get::<Option<String>, _>("description")).map(|s| serde_json::Value::String(s)),
+            old: existing.as_ref().and_then(|r| r.get::<Option<String>, _>("description")).map(serde_json::Value::String),
             new: description.map(|s| serde_json::Value::String(s.to_string())),
         },
         FieldDef {
@@ -800,7 +801,7 @@ pub(crate) async fn sync_series_metadata(
         },
         FieldDef {
             name: "status",
-            old: existing.as_ref().and_then(|r| r.get::<Option<String>, _>("status")).map(|s| serde_json::Value::String(s)),
+            old: existing.as_ref().and_then(|r| r.get::<Option<String>, _>("status")).map(serde_json::Value::String),
             new: status.as_ref().map(|s| serde_json::Value::String(s.clone())),
         },
     ];
@@ -825,25 +826,35 @@ pub(crate) async fn sync_series_metadata(
     Ok(report)
 }
 
-/// Normalize provider-specific status strings to a standard set:
-/// "ongoing", "ended", "hiatus", "cancelled", or the original lowercase value
-fn normalize_series_status(raw: &str) -> String {
+/// Normalize provider-specific status strings using the status_mappings table.
+/// Falls back to the original lowercase value if no mapping is found.
+pub(crate) async fn normalize_series_status(pool: &sqlx::PgPool, raw: &str) -> String {
     let lower = raw.to_lowercase();
-    match lower.as_str() {
-        // AniList
-        "finished" => "ended".to_string(),
-        "releasing" => "ongoing".to_string(),
-        "not_yet_released" => "upcoming".to_string(),
-        "cancelled" => "cancelled".to_string(),
-        "hiatus" => "hiatus".to_string(),
-        // Bédéthèque
-        _ if lower.contains("finie") || lower.contains("terminée") => "ended".to_string(),
-        _ if lower.contains("en cours") => "ongoing".to_string(),
-        _ if lower.contains("hiatus") || lower.contains("suspendue") => "hiatus".to_string(),
-        _ if lower.contains("annulée") || lower.contains("arrêtée") => "cancelled".to_string(),
-        // Fallback
-        _ => lower,
+
+    // Try exact match first
+    if let Ok(Some(row)) = sqlx::query_scalar::<_, String>(
+        "SELECT mapped_status FROM status_mappings WHERE provider_status = $1",
+    )
+    .bind(&lower)
+    .fetch_optional(pool)
+    .await
+    {
+        return row;
     }
+
+    // Try substring match (for Bédéthèque-style statuses like "Série finie")
+    if let Ok(Some(row)) = sqlx::query_scalar::<_, String>(
+        "SELECT mapped_status FROM status_mappings WHERE $1 LIKE '%' || provider_status || '%' LIMIT 1",
+    )
+    .bind(&lower)
+    .fetch_optional(pool)
+    .await
+    {
+        return row;
+    }
+
+    // No mapping found — return lowercase original
+    lower
 }
 
 pub(crate) async fn sync_books_metadata(

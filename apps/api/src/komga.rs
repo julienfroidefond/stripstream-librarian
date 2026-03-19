@@ -154,10 +154,11 @@ pub async fn sync_komga_read_books(
     .fetch_all(&state.pool)
     .await?;
 
+    type BookEntry = (Uuid, String, String);
     // Primary: (series_lower, title_lower) -> Vec<(Uuid, title, series)>
-    let mut primary_map: HashMap<(String, String), Vec<(Uuid, String, String)>> = HashMap::new();
+    let mut primary_map: HashMap<(String, String), Vec<BookEntry>> = HashMap::new();
     // Secondary: title_lower -> Vec<(Uuid, title, series)>
-    let mut secondary_map: HashMap<String, Vec<(Uuid, String, String)>> = HashMap::new();
+    let mut secondary_map: HashMap<String, Vec<BookEntry>> = HashMap::new();
 
     for row in &rows {
         let id: Uuid = row.get("id");

@@ -144,10 +144,10 @@ async fn search_series_impl(
                 entry.publishers.push(p.clone());
             }
         }
-        if entry.start_year.is_none() || first_publish_year.map_or(false, |y| entry.start_year.unwrap() > y) {
-            if first_publish_year.is_some() {
-                entry.start_year = first_publish_year;
-            }
+        if (entry.start_year.is_none() || first_publish_year.is_some_and(|y| entry.start_year.unwrap() > y))
+            && first_publish_year.is_some()
+        {
+            entry.start_year = first_publish_year;
         }
         if entry.cover_url.is_none() {
             entry.cover_url = cover_url;

@@ -443,6 +443,19 @@ const fr = {
   "settings.comicvineHelp": "Obtenez votre clé sur",
   "settings.freeProviders": "sont gratuits et ne nécessitent pas de clé API.",
 
+  // Settings - Status Mappings
+  "settings.statusMappings": "Correspondance de statuts",
+  "settings.statusMappingsDesc": "Configurer la correspondance entre les statuts des fournisseurs et les statuts en base de données. Plusieurs statuts fournisseurs peuvent pointer vers un même statut cible.",
+  "settings.targetStatus": "Statut cible",
+  "settings.providerStatuses": "Statuts fournisseurs",
+  "settings.addProviderStatus": "Ajouter un statut fournisseur…",
+  "settings.noMappings": "Aucune correspondance configurée",
+  "settings.unmappedSection": "Non mappés",
+  "settings.addMapping": "Ajouter une correspondance",
+  "settings.selectTargetStatus": "Sélectionner un statut cible",
+  "settings.newTargetPlaceholder": "Nouveau statut cible (ex: hiatus)",
+  "settings.createTargetStatus": "Créer un statut",
+
   // Settings - Language
   "settings.language": "Langue",
   "settings.languageDesc": "Choisir la langue de l'interface",

@@ -1,11 +1,12 @@
 use axum::{
-    extract::State,
-    routing::{get, post},
+    extract::{Path as AxumPath, State},
+    routing::{delete, get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::Row;
+use uuid::Uuid;
 use utoipa::ToSchema;
 
 use crate::{error::ApiError, state::{AppState, load_dynamic_settings}};
@@ -42,6 +43,14 @@ pub fn settings_routes() -> Router<AppState> {
         .route("/settings/cache/clear", post(clear_cache))
         .route("/settings/cache/stats", get(get_cache_stats))
         .route("/settings/thumbnail/stats", get(get_thumbnail_stats))
+        .route(
+            "/settings/status-mappings",
+            get(list_status_mappings).post(upsert_status_mapping),
+        )
+        .route(
+            "/settings/status-mappings/:id",
+            delete(delete_status_mapping),
+        )
 }
 
 /// List all settings
@@ -323,4 +332,121 @@ pub async fn get_thumbnail_stats(State(_state): State<AppState>) -> Result<Json<
     .map_err(|e| ApiError::internal(format!("thumbnail stats failed: {}", e)))?;
 
     Ok(Json(stats))
+}
+
+// ---------------------------------------------------------------------------
+// Status Mappings
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct StatusMappingDto {
+    pub id: String,
+    pub provider_status: String,
+    pub mapped_status: String,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct UpsertStatusMappingRequest {
+    pub provider_status: String,
+    pub mapped_status: String,
+}
+
+/// List all status mappings
+#[utoipa::path(
+    get,
+    path = "/settings/status-mappings",
+    tag = "settings",
+    responses(
+        (status = 200, body = Vec<StatusMappingDto>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn list_status_mappings(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<StatusMappingDto>>, ApiError> {
+    let rows = sqlx::query(
+        "SELECT id, provider_status, mapped_status FROM status_mappings ORDER BY mapped_status, provider_status",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let mappings = rows
+        .iter()
+        .map(|row| StatusMappingDto {
+            id: row.get::<Uuid, _>("id").to_string(),
+            provider_status: row.get("provider_status"),
+            mapped_status: row.get("mapped_status"),
+        })
+        .collect();
+
+    Ok(Json(mappings))
+}
+
+/// Create or update a status mapping
+#[utoipa::path(
+    post,
+    path = "/settings/status-mappings",
+    tag = "settings",
+    request_body = UpsertStatusMappingRequest,
+    responses(
+        (status = 200, body = StatusMappingDto),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn upsert_status_mapping(
+    State(state): State<AppState>,
+    Json(body): Json<UpsertStatusMappingRequest>,
+) -> Result<Json<StatusMappingDto>, ApiError> {
+    let provider_status = body.provider_status.to_lowercase();
+
+    let row = sqlx::query(
+        r#"
+        INSERT INTO status_mappings (provider_status, mapped_status)
+        VALUES ($1, $2)
+        ON CONFLICT (provider_status)
+        DO UPDATE SET mapped_status = $2, updated_at = NOW()
+        RETURNING id, provider_status, mapped_status
+        "#,
+    )
+    .bind(&provider_status)
+    .bind(&body.mapped_status)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(StatusMappingDto {
+        id: row.get::<Uuid, _>("id").to_string(),
+        provider_status: row.get("provider_status"),
+        mapped_status: row.get("mapped_status"),
+    }))
+}
+
+/// Delete a status mapping
+#[utoipa::path(
+    delete,
+    path = "/settings/status-mappings/{id}",
+    tag = "settings",
+    params(("id" = String, Path, description = "Mapping UUID")),
+    responses(
+        (status = 204, description = "Deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Not found"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn delete_status_mapping(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Uuid>,
+) -> Result<Json<Value>, ApiError> {
+    let result = sqlx::query("DELETE FROM status_mappings WHERE id = $1")
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(ApiError::not_found("status mapping not found"));
+    }
+
+    Ok(Json(serde_json::json!({"deleted": true})))
 }

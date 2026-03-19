@@ -429,6 +429,28 @@ export async function getThumbnailStats() {
   return apiFetch<ThumbnailStats>("/settings/thumbnail/stats");
 }
 
+// Status mappings
+export type StatusMappingDto = {
+  id: string;
+  provider_status: string;
+  mapped_status: string;
+};
+
+export async function fetchStatusMappings(): Promise<StatusMappingDto[]> {
+  return apiFetch<StatusMappingDto[]>("/settings/status-mappings");
+}
+
+export async function upsertStatusMapping(provider_status: string, mapped_status: string): Promise<StatusMappingDto> {
+  return apiFetch<StatusMappingDto>("/settings/status-mappings", {
+    method: "POST",
+    body: JSON.stringify({ provider_status, mapped_status }),
+  });
+}
+
+export async function deleteStatusMapping(id: string): Promise<void> {
+  await apiFetch<unknown>(`/settings/status-mappings/${id}`, { method: "DELETE" });
+}
+
 export async function convertBook(bookId: string) {
   return apiFetch<IndexJobDto>(`/books/${bookId}/convert`, { method: "POST" });
 }

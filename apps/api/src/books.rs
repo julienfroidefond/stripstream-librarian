@@ -412,8 +412,7 @@ pub async fn list_series(
         None => String::new(),
     };
 
-    let missing_cte = format!(
-        r#"
+    let missing_cte = r#"
         missing_counts AS (
             SELECT eml.series_name,
                 COUNT(ebm.id) FILTER (WHERE ebm.book_id IS NULL) as missing_count
@@ -422,8 +421,7 @@ pub async fn list_series(
             WHERE eml.library_id = $1 AND eml.status = 'approved'
             GROUP BY eml.series_name
         )
-        "#
-    );
+        "#.to_string();
 
     let metadata_links_cte = r#"
         metadata_links AS (
@@ -673,8 +671,7 @@ pub async fn list_all_series(
 
     // Missing counts CTE — needs library_id filter when filtering by library
     let missing_cte = if query.library_id.is_some() {
-        format!(
-            r#"
+        r#"
             missing_counts AS (
                 SELECT eml.series_name, eml.library_id,
                     COUNT(ebm.id) FILTER (WHERE ebm.book_id IS NULL) as missing_count
@@ -683,8 +680,7 @@ pub async fn list_all_series(
                 WHERE eml.library_id = $1 AND eml.status = 'approved'
                 GROUP BY eml.series_name, eml.library_id
             )
-            "#
-        )
+            "#.to_string()
     } else {
         r#"
         missing_counts AS (
@@ -871,7 +867,37 @@ pub async fn series_statuses(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<String>>, ApiError> {
     let rows: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT status FROM series_metadata WHERE status IS NOT NULL ORDER BY status",
+        r#"SELECT DISTINCT s FROM (
+            SELECT status AS s FROM series_metadata WHERE status IS NOT NULL
+            UNION
+            SELECT mapped_status AS s FROM status_mappings
+        ) t ORDER BY s"#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(rows))
+}
+
+/// List distinct raw provider statuses from external metadata links
+#[utoipa::path(
+    get,
+    path = "/series/provider-statuses",
+    tag = "books",
+    responses(
+        (status = 200, body = Vec<String>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn provider_statuses(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<String>>, ApiError> {
+    let rows: Vec<String> = sqlx::query_scalar(
+        r#"SELECT DISTINCT lower(metadata_json->>'status') AS s
+           FROM external_metadata_links
+           WHERE metadata_json->>'status' IS NOT NULL
+             AND metadata_json->>'status' != ''
+           ORDER BY s"#,
     )
     .fetch_all(&state.pool)
     .await?;

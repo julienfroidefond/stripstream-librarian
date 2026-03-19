@@ -574,9 +574,12 @@ async fn sync_series_with_diff(
     let new_publishers = &candidate.publishers;
     let new_start_year = candidate.start_year;
     let new_total_volumes = candidate.total_volumes;
-    let new_status = candidate.metadata_json
-        .get("status")
-        .and_then(|s| s.as_str());
+    let new_status = if let Some(raw) = candidate.metadata_json.get("status").and_then(|s| s.as_str()) {
+        Some(crate::metadata::normalize_series_status(pool, raw).await)
+    } else {
+        None
+    };
+    let new_status = new_status.as_deref();
 
     // Fetch existing series metadata for diffing
     let existing = sqlx::query(

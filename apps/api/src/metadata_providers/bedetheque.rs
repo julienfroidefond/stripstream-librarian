@@ -497,6 +497,13 @@ async fn get_series_books_impl(
         }))
         .collect();
 
+    static RE_TOME: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)-Tome-\d+-").unwrap());
+    static RE_BOOK_ID: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"-(\d+)\.html").unwrap());
+    static RE_VOLUME: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)Tome-(\d+)-").unwrap());
+
     for (idx, album_el) in doc.select(&album_sel).enumerate() {
         // Title from <a class="titre" title="..."> — the title attribute is clean
         let title_sel = Selector::parse("a.titre").ok();
@@ -516,22 +523,18 @@ async fn get_series_books_impl(
 
         // Only keep main tomes — their URLs contain "Tome-{N}-"
         // Skip hors-série (HS), intégrales (INT/INTFL), romans, coffrets, etc.
-        if let Ok(re) = regex::Regex::new(r"(?i)-Tome-\d+-") {
-            if !re.is_match(album_url) {
-                continue;
-            }
+        if !RE_TOME.is_match(album_url) {
+            continue;
         }
 
-        let external_book_id = regex::Regex::new(r"-(\d+)\.html")
-            .ok()
-            .and_then(|re| re.captures(album_url))
+        let external_book_id = RE_BOOK_ID
+            .captures(album_url)
             .map(|c| c[1].to_string())
             .unwrap_or_default();
 
         // Volume number from URL pattern "Tome-{N}-" or from itemprop name
-        let volume_number = regex::Regex::new(r"(?i)Tome-(\d+)-")
-            .ok()
-            .and_then(|re| re.captures(album_url))
+        let volume_number = RE_VOLUME
+            .captures(album_url)
             .and_then(|c| c[1].parse::<i32>().ok())
             .or_else(|| extract_volume_from_title(&title));
 
@@ -649,13 +652,13 @@ fn compute_confidence(title: &str, query: &str) -> f32 {
         return 1.0;
     }
 
-    if title_lower.starts_with(&query_lower) || query_lower.starts_with(&title_lower) {
+    if title_lower.starts_with(&query_lower) || query_lower.starts_with(&title_lower)
+        || title_norm.starts_with(&query_norm) || query_norm.starts_with(&title_norm)
+    {
         0.85
-    } else if title_norm.starts_with(&query_norm) || query_norm.starts_with(&title_norm) {
-        0.85
-    } else if title_lower.contains(&query_lower) || query_lower.contains(&title_lower) {
-        0.7
-    } else if title_norm.contains(&query_norm) || query_norm.contains(&title_norm) {
+    } else if title_lower.contains(&query_lower) || query_lower.contains(&title_lower)
+        || title_norm.contains(&query_norm) || query_norm.contains(&title_norm)
+    {
         0.7
     } else {
         let common: usize = query_lower

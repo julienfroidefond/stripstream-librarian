@@ -295,7 +295,7 @@ async fn get_series_books_impl(
 
     let mut books: Vec<BookCandidate> = items
         .iter()
-        .map(|item| volume_to_book_candidate(item))
+        .map(volume_to_book_candidate)
         .collect();
 
     // Sort by volume number

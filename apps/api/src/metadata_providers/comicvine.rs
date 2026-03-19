@@ -86,11 +86,11 @@ async fn search_series_impl(
         .iter()
         .filter_map(|vol| {
             let name = vol.get("name").and_then(|n| n.as_str())?.to_string();
-            let id = vol.get("id").and_then(|id| id.as_i64())? as i64;
+            let id = vol.get("id").and_then(|id| id.as_i64())?;
             let description = vol
                 .get("description")
                 .and_then(|d| d.as_str())
-                .map(|d| strip_html(d));
+                .map(strip_html);
             let publisher = vol
                 .get("publisher")
                 .and_then(|p| p.get("name"))
@@ -180,7 +180,7 @@ async fn get_series_books_impl(
     let books: Vec<BookCandidate> = results
         .iter()
         .filter_map(|issue| {
-            let id = issue.get("id").and_then(|id| id.as_i64())? as i64;
+            let id = issue.get("id").and_then(|id| id.as_i64())?;
             let name = issue
                 .get("name")
                 .and_then(|n| n.as_str())
@@ -194,7 +194,7 @@ async fn get_series_books_impl(
             let description = issue
                 .get("description")
                 .and_then(|d| d.as_str())
-                .map(|d| strip_html(d));
+                .map(strip_html);
             let cover_url = issue
                 .get("image")
                 .and_then(|img| img.get("medium_url").or_else(|| img.get("small_url")))

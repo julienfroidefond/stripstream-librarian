@@ -277,7 +277,17 @@ pub async fn get_page(
                 let cache_dir2 = cache_dir_path.clone();
                 let format2 = format;
                 tokio::spawn(async move {
-                    prefetch_page(state2, book_id, &abs_path2, next_page, format2, quality, width, filter, timeout_secs, &cache_dir2).await;
+                    prefetch_page(state2, &PrefetchParams {
+                        book_id,
+                        abs_path: &abs_path2,
+                        page: next_page,
+                        format: format2,
+                        quality,
+                        width,
+                        filter,
+                        timeout_secs,
+                        cache_dir: &cache_dir2,
+                    }).await;
                 });
             }
 
@@ -290,19 +300,30 @@ pub async fn get_page(
     }
 }
 
-/// Prefetch a single page into disk+memory cache (best-effort, ignores errors).
-async fn prefetch_page(
-    state: AppState,
+struct PrefetchParams<'a> {
     book_id: Uuid,
-    abs_path: &str,
+    abs_path: &'a str,
     page: u32,
     format: OutputFormat,
     quality: u8,
     width: u32,
     filter: image::imageops::FilterType,
     timeout_secs: u64,
-    cache_dir: &Path,
-) {
+    cache_dir: &'a Path,
+}
+
+/// Prefetch a single page into disk+memory cache (best-effort, ignores errors).
+async fn prefetch_page(state: AppState, params: &PrefetchParams<'_>) {
+    let book_id = params.book_id;
+    let page = params.page;
+    let format = params.format;
+    let quality = params.quality;
+    let width = params.width;
+    let filter = params.filter;
+    let timeout_secs = params.timeout_secs;
+    let abs_path = params.abs_path;
+    let cache_dir = params.cache_dir;
+
     let mem_key = format!("{book_id}:{page}:{}:{quality}:{width}", format.extension());
     // Already in memory cache?
     if state.page_cache.lock().await.contains(&mem_key) {

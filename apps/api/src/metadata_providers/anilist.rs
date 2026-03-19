@@ -128,7 +128,7 @@ async fn search_series_impl(
     let mut candidates: Vec<SeriesCandidate> = media
         .iter()
         .filter_map(|m| {
-            let id = m.get("id").and_then(|id| id.as_i64())? as i64;
+            let id = m.get("id").and_then(|id| id.as_i64())?;
             let title_obj = m.get("title")?;
             let title = title_obj
                 .get("english")
