@@ -803,6 +803,49 @@ export async function startMetadataBatch(libraryId: string) {
   });
 }
 
+export async function startMetadataRefresh(libraryId: string) {
+  return apiFetch<{ id: string; status: string }>("/metadata/refresh", {
+    method: "POST",
+    body: JSON.stringify({ library_id: libraryId }),
+  });
+}
+
+export type RefreshFieldDiff = {
+  field: string;
+  old?: unknown;
+  new?: unknown;
+};
+
+export type RefreshBookDiff = {
+  book_id: string;
+  title: string;
+  volume: number | null;
+  changes: RefreshFieldDiff[];
+};
+
+export type RefreshSeriesResult = {
+  series_name: string;
+  provider: string;
+  status: string; // "updated" | "unchanged" | "error"
+  series_changes: RefreshFieldDiff[];
+  book_changes: RefreshBookDiff[];
+  error?: string;
+};
+
+export type MetadataRefreshReportDto = {
+  job_id: string;
+  status: string;
+  total_links: number;
+  refreshed: number;
+  unchanged: number;
+  errors: number;
+  changes: RefreshSeriesResult[];
+};
+
+export async function getMetadataRefreshReport(jobId: string) {
+  return apiFetch<MetadataRefreshReportDto>(`/metadata/refresh/${jobId}/report`);
+}
+
 export async function getMetadataBatchReport(jobId: string) {
   return apiFetch<MetadataBatchReportDto>(`/metadata/batch/${jobId}/report`);
 }

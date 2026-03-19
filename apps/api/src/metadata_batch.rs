@@ -1008,7 +1008,7 @@ async fn resolve_provider_name(pool: &PgPool, lib_provider: Option<&str>) -> Str
     "google_books".to_string()
 }
 
-async fn load_provider_config_from_pool(
+pub(crate) async fn load_provider_config_from_pool(
     pool: &PgPool,
     provider_name: &str,
 ) -> metadata_providers::ProviderConfig {
@@ -1042,7 +1042,7 @@ async fn load_provider_config_from_pool(
     config
 }
 
-async fn is_job_cancelled(pool: &PgPool, job_id: Uuid) -> bool {
+pub(crate) async fn is_job_cancelled(pool: &PgPool, job_id: Uuid) -> bool {
     sqlx::query_scalar::<_, bool>(
         "SELECT status = 'cancelled' FROM index_jobs WHERE id = $1",
     )
@@ -1052,7 +1052,7 @@ async fn is_job_cancelled(pool: &PgPool, job_id: Uuid) -> bool {
     .unwrap_or(false)
 }
 
-async fn update_progress(pool: &PgPool, job_id: Uuid, processed: i32, total: i32, current: &str) {
+pub(crate) async fn update_progress(pool: &PgPool, job_id: Uuid, processed: i32, total: i32, current: &str) {
     let percent = if total > 0 {
         (processed as f64 / total as f64 * 100.0) as i32
     } else {

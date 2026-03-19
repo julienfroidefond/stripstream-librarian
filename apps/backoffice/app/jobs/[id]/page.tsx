@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { apiFetch, getMetadataBatchReport, getMetadataBatchResults, MetadataBatchReportDto, MetadataBatchResultDto } from "../../../lib/api";
+import { apiFetch, getMetadataBatchReport, getMetadataBatchResults, getMetadataRefreshReport, MetadataBatchReportDto, MetadataBatchResultDto, MetadataRefreshReportDto } from "../../../lib/api";
 import {
   Card, CardHeader, CardTitle, CardDescription, CardContent,
   StatusBadge, JobTypeBadge, StatBox, ProgressBar
@@ -119,9 +119,15 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
       description: t("jobType.metadata_batchDesc"),
       isThumbnailOnly: false,
     },
+    metadata_refresh: {
+      label: t("jobType.metadata_refreshLabel"),
+      description: t("jobType.metadata_refreshDesc"),
+      isThumbnailOnly: false,
+    },
   };
 
   const isMetadataBatch = job.type === "metadata_batch";
+  const isMetadataRefresh = job.type === "metadata_refresh";
 
   // Fetch batch report & results for metadata_batch jobs
   let batchReport: MetadataBatchReportDto | null = null;
@@ -131,6 +137,12 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
       getMetadataBatchReport(id).catch(() => null),
       getMetadataBatchResults(id).catch(() => []),
     ]);
+  }
+
+  // Fetch refresh report for metadata_refresh jobs
+  let refreshReport: MetadataRefreshReportDto | null = null;
+  if (isMetadataRefresh) {
+    refreshReport = await getMetadataRefreshReport(id).catch(() => null);
   }
 
   const typeInfo = JOB_TYPE_INFO[job.type] ?? {
@@ -154,6 +166,8 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
   // Which label to use for the progress card
   const progressTitle = isMetadataBatch
     ? t("jobDetail.metadataSearch")
+    : isMetadataRefresh
+    ? t("jobDetail.metadataRefresh")
     : isThumbnailOnly
       ? t("jobType.thumbnail_rebuild")
       : isExtractingPages
@@ -164,6 +178,8 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
 
   const progressDescription = isMetadataBatch
     ? t("jobDetail.metadataSearchDesc")
+    : isMetadataRefresh
+    ? t("jobDetail.metadataRefreshDesc")
     : isThumbnailOnly
       ? undefined
       : isExtractingPages
@@ -209,7 +225,12 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
                 — {batchReport.auto_matched} {t("jobDetail.autoMatched").toLowerCase()}, {batchReport.already_linked} {t("jobDetail.alreadyLinked").toLowerCase()}, {batchReport.no_results} {t("jobDetail.noResults").toLowerCase()}, {batchReport.errors} {t("jobDetail.errors").toLowerCase()}
               </span>
             )}
-            {!isMetadataBatch && job.stats_json && (
+            {isMetadataRefresh && refreshReport && (
+              <span className="ml-2 text-success/80">
+                — {refreshReport.refreshed} {t("jobDetail.refreshed").toLowerCase()}, {refreshReport.unchanged} {t("jobDetail.unchanged").toLowerCase()}, {refreshReport.errors} {t("jobDetail.errors").toLowerCase()}
+              </span>
+            )}
+            {!isMetadataBatch && !isMetadataRefresh && job.stats_json && (
               <span className="ml-2 text-success/80">
                 — {job.stats_json.scanned_files} {t("jobDetail.scanned").toLowerCase()}, {job.stats_json.indexed_files} {t("jobDetail.indexed").toLowerCase()}
                 {job.stats_json.removed_files > 0 && `, ${job.stats_json.removed_files} ${t("jobDetail.removed").toLowerCase()}`}
@@ -218,7 +239,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
                 {job.total_files != null && job.total_files > 0 && `, ${job.total_files} ${t("jobType.thumbnail_rebuild").toLowerCase()}`}
               </span>
             )}
-            {!isMetadataBatch && !job.stats_json && isThumbnailOnly && job.total_files != null && (
+            {!isMetadataBatch && !isMetadataRefresh && !job.stats_json && isThumbnailOnly && job.total_files != null && (
               <span className="ml-2 text-success/80">
                 — {job.processed_files ?? job.total_files} {t("jobDetail.generated").toLowerCase()}
               </span>
@@ -483,7 +504,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
         )}
 
         {/* Index Statistics — index jobs only */}
-        {job.stats_json && !isThumbnailOnly && !isMetadataBatch && (
+        {job.stats_json && !isThumbnailOnly && !isMetadataBatch && !isMetadataRefresh && (
           <Card>
             <CardHeader>
               <CardTitle>{t("jobDetail.indexStats")}</CardTitle>
@@ -543,6 +564,132 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
                 <StatBox value={batchReport.low_confidence} label={t("jobDetail.lowConfidence")} variant="warning" />
                 <StatBox value={batchReport.errors} label={t("jobDetail.errors")} variant={batchReport.errors > 0 ? "error" : "default"} />
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Metadata refresh report */}
+        {isMetadataRefresh && refreshReport && (
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("jobDetail.refreshReport")}</CardTitle>
+              <CardDescription>{t("jobDetail.refreshReportDesc", { count: String(refreshReport.total_links) })}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <StatBox value={refreshReport.refreshed} label={t("jobDetail.refreshed")} variant="success" />
+                <StatBox value={refreshReport.unchanged} label={t("jobDetail.unchanged")} />
+                <StatBox value={refreshReport.errors} label={t("jobDetail.errors")} variant={refreshReport.errors > 0 ? "error" : "default"} />
+                <StatBox value={refreshReport.total_links} label={t("jobDetail.total")} />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Metadata refresh changes detail */}
+        {isMetadataRefresh && refreshReport && refreshReport.changes.length > 0 && (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>{t("jobDetail.refreshChanges")}</CardTitle>
+              <CardDescription>{t("jobDetail.refreshChangesDesc", { count: String(refreshReport.changes.length) })}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 max-h-[600px] overflow-y-auto">
+              {refreshReport.changes.map((r, idx) => (
+                <div
+                  key={idx}
+                  className={`p-3 rounded-lg border ${
+                    r.status === "updated" ? "bg-success/10 border-success/20" :
+                    r.status === "error" ? "bg-destructive/10 border-destructive/20" :
+                    "bg-muted/50 border-border/60"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    {job.library_id ? (
+                      <Link
+                        href={`/libraries/${job.library_id}/series/${encodeURIComponent(r.series_name)}`}
+                        className="font-medium text-sm text-primary hover:underline truncate"
+                      >
+                        {r.series_name}
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-sm text-foreground truncate">{r.series_name}</span>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-muted-foreground">{r.provider}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${
+                        r.status === "updated" ? "bg-success/20 text-success" :
+                        r.status === "error" ? "bg-destructive/20 text-destructive" :
+                        "bg-muted text-muted-foreground"
+                      }`}>
+                        {r.status === "updated" ? t("jobDetail.refreshed") :
+                         r.status === "error" ? t("common.error") :
+                         t("jobDetail.unchanged")}
+                      </span>
+                    </div>
+                  </div>
+
+                  {r.error && (
+                    <p className="text-xs text-destructive/80 mt-1">{r.error}</p>
+                  )}
+
+                  {/* Series field changes */}
+                  {r.series_changes.length > 0 && (
+                    <div className="mt-2">
+                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">{t("metadata.seriesLabel")}</span>
+                      <div className="mt-1 space-y-1">
+                        {r.series_changes.map((c, ci) => (
+                          <div key={ci} className="flex items-start gap-2 text-xs">
+                            <span className="font-medium text-foreground shrink-0 w-24">{t(`field.${c.field}` as never) || c.field}</span>
+                            <span className="text-muted-foreground line-through truncate max-w-[200px]" title={String(c.old ?? "—")}>
+                              {c.old != null ? (Array.isArray(c.old) ? (c.old as string[]).join(", ") : String(c.old)) : "—"}
+                            </span>
+                            <span className="text-success shrink-0">→</span>
+                            <span className="text-success truncate max-w-[200px]" title={String(c.new ?? "—")}>
+                              {c.new != null ? (Array.isArray(c.new) ? (c.new as string[]).join(", ") : String(c.new)) : "—"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Book field changes */}
+                  {r.book_changes.length > 0 && (
+                    <div className="mt-2">
+                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">
+                        {t("metadata.booksLabel")} ({r.book_changes.length})
+                      </span>
+                      <div className="mt-1 space-y-2">
+                        {r.book_changes.map((b, bi) => (
+                          <div key={bi} className="pl-2 border-l-2 border-border/60">
+                            <Link
+                              href={`/books/${b.book_id}`}
+                              className="text-xs text-primary hover:underline font-medium"
+                            >
+                              {b.volume != null && <span className="text-muted-foreground mr-1">T.{b.volume}</span>}
+                              {b.title}
+                            </Link>
+                            <div className="mt-0.5 space-y-0.5">
+                              {b.changes.map((c, ci) => (
+                                <div key={ci} className="flex items-start gap-2 text-xs">
+                                  <span className="font-medium text-foreground shrink-0 w-24">{t(`field.${c.field}` as never) || c.field}</span>
+                                  <span className="text-muted-foreground line-through truncate max-w-[150px]" title={String(c.old ?? "—")}>
+                                    {c.old != null ? (Array.isArray(c.old) ? (c.old as string[]).join(", ") : String(c.old).substring(0, 60)) : "—"}
+                                  </span>
+                                  <span className="text-success shrink-0">→</span>
+                                  <span className="text-success truncate max-w-[150px]" title={String(c.new ?? "—")}>
+                                    {c.new != null ? (Array.isArray(c.new) ? (c.new as string[]).join(", ") : String(c.new).substring(0, 60)) : "—"}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
             </CardContent>
           </Card>
         )}

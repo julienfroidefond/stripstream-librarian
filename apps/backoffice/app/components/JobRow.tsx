@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useTranslation } from "../../lib/i18n/context";
 import { JobProgress } from "./JobProgress";
-import { StatusBadge, JobTypeBadge, Button, MiniProgressBar } from "./ui";
+import { StatusBadge, JobTypeBadge, Button, MiniProgressBar, Icon } from "./ui";
 
 interface JobRowProps {
   job: {
@@ -59,28 +59,11 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
   const isThumbnailJob = job.type === "thumbnail_rebuild" || job.type === "thumbnail_regenerate";
   const hasThumbnailPhase = isPhase2 || isThumbnailJob;
 
-  // Files column: index-phase stats only (Phase 1 discovery)
-  const filesDisplay =
-    job.status === "running" && !isPhase2
-      ? job.total_files != null
-        ? `${job.processed_files ?? 0}/${job.total_files}`
-        : scanned > 0
-          ? t("jobRow.scanned", { count: scanned })
-          : "-"
-      : job.status === "success" && (indexed > 0 || removed > 0 || errors > 0)
-        ? null // rendered below as ✓ / − / ⚠
-        : scanned > 0
-          ? t("jobRow.scanned", { count: scanned })
-          : "—";
+  const isMetadataBatch = job.type === "metadata_batch";
+  const isMetadataRefresh = job.type === "metadata_refresh";
 
-  // Thumbnails column (Phase 2: extracting_pages + generating_thumbnails)
+  // Thumbnails progress (Phase 2: extracting_pages + generating_thumbnails)
   const thumbInProgress = hasThumbnailPhase && (job.status === "running" || isPhase2);
-  const thumbDisplay =
-    thumbInProgress && job.total_files != null
-      ? `${job.processed_files ?? 0}/${job.total_files}`
-      : job.status === "success" && job.total_files != null && hasThumbnailPhase
-        ? `✓ ${job.total_files}`
-        : "—";
 
   return (
     <>
@@ -122,25 +105,67 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
         </td>
         <td className="px-4 py-3">
           <div className="flex flex-col gap-1">
-            {filesDisplay !== null ? (
-              <span className="text-sm text-foreground">{filesDisplay}</span>
-            ) : (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-success">✓ {indexed}</span>
-                {removed > 0 && <span className="text-warning">− {removed}</span>}
-                {errors > 0 && <span className="text-error">⚠ {errors}</span>}
+            {/* Running progress */}
+            {isActive && job.total_files != null && (
+              <div className="flex flex-col gap-1">
+                <span className="text-sm text-foreground">{job.processed_files ?? 0}/{job.total_files}</span>
+                <MiniProgressBar value={job.processed_files ?? 0} max={job.total_files} className="w-24" />
               </div>
             )}
-            {job.status === "running" && !isPhase2 && job.total_files != null && (
-              <MiniProgressBar value={job.processed_files ?? 0} max={job.total_files} className="w-24" />
-            )}
-          </div>
-        </td>
-        <td className="px-4 py-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-sm text-foreground">{thumbDisplay}</span>
-            {thumbInProgress && job.total_files != null && (
-              <MiniProgressBar value={job.processed_files ?? 0} max={job.total_files} className="w-24" />
+            {/* Completed stats with icons */}
+            {!isActive && (
+              <div className="flex items-center gap-3 text-xs">
+                {/* Files: indexed count */}
+                {indexed > 0 && (
+                  <span className="inline-flex items-center gap-1 text-success" title={t("jobRow.filesIndexed", { count: indexed })}>
+                    <Icon name="document" size="sm" />
+                    {indexed}
+                  </span>
+                )}
+                {/* Removed files */}
+                {removed > 0 && (
+                  <span className="inline-flex items-center gap-1 text-warning" title={t("jobRow.filesRemoved", { count: removed })}>
+                    <Icon name="trash" size="sm" />
+                    {removed}
+                  </span>
+                )}
+                {/* Thumbnails */}
+                {hasThumbnailPhase && job.total_files != null && job.total_files > 0 && (
+                  <span className="inline-flex items-center gap-1 text-primary" title={t("jobRow.thumbnailsGenerated", { count: job.total_files })}>
+                    <Icon name="image" size="sm" />
+                    {job.total_files}
+                  </span>
+                )}
+                {/* Metadata batch: series processed */}
+                {isMetadataBatch && job.total_files != null && job.total_files > 0 && (
+                  <span className="inline-flex items-center gap-1 text-info" title={t("jobRow.metadataProcessed", { count: job.total_files })}>
+                    <Icon name="tag" size="sm" />
+                    {job.total_files}
+                  </span>
+                )}
+                {/* Metadata refresh: links refreshed */}
+                {isMetadataRefresh && job.total_files != null && job.total_files > 0 && (
+                  <span className="inline-flex items-center gap-1 text-info" title={t("jobRow.metadataRefreshed", { count: job.total_files })}>
+                    <Icon name="tag" size="sm" />
+                    {job.total_files}
+                  </span>
+                )}
+                {/* Errors */}
+                {errors > 0 && (
+                  <span className="inline-flex items-center gap-1 text-error" title={t("jobRow.errors", { count: errors })}>
+                    <Icon name="warning" size="sm" />
+                    {errors}
+                  </span>
+                )}
+                {/* Scanned only (no other stats) */}
+                {indexed === 0 && removed === 0 && errors === 0 && !hasThumbnailPhase && !isMetadataBatch && !isMetadataRefresh && scanned > 0 && (
+                  <span className="text-sm text-muted-foreground">{t("jobRow.scanned", { count: scanned })}</span>
+                )}
+                {/* Nothing to show */}
+                {indexed === 0 && removed === 0 && errors === 0 && scanned === 0 && !hasThumbnailPhase && !isMetadataBatch && !isMetadataRefresh && (
+                  <span className="text-sm text-muted-foreground">—</span>
+                )}
+              </div>
             )}
           </div>
         </td>
@@ -172,7 +197,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
       </tr>
       {showProgress && isActive && (
         <tr>
-          <td colSpan={9} className="px-4 py-3 bg-muted/50">
+          <td colSpan={8} className="px-4 py-3 bg-muted/50">
             <JobProgress 
               jobId={job.id}
               onComplete={handleComplete}

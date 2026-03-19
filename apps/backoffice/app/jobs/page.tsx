@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, IndexJobDto, LibraryDto } from "../../lib/api";
+import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, IndexJobDto, LibraryDto } from "../../lib/api";
 import { JobsList } from "../components/JobsList";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormSelect, FormRow } from "../components/ui";
 import { getServerTranslations } from "../../lib/i18n/server";
@@ -54,6 +54,15 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     const libraryId = formData.get("library_id") as string;
     if (!libraryId) return;
     const result = await startMetadataBatch(libraryId);
+    revalidatePath("/jobs");
+    redirect(`/jobs?highlight=${result.id}`);
+  }
+
+  async function triggerMetadataRefresh(formData: FormData) {
+    "use server";
+    const libraryId = formData.get("library_id") as string;
+    if (!libraryId) return;
+    const result = await startMetadataRefresh(libraryId);
     revalidatePath("/jobs");
     redirect(`/jobs?highlight=${result.id}`);
   }
@@ -115,6 +124,12 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                   {t("jobs.batchMetadata")}
+                </Button>
+                <Button type="submit" formAction={triggerMetadataRefresh} variant="secondary">
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  {t("jobs.refreshMetadata")}
                 </Button>
               </div>
             </FormRow>
@@ -182,6 +197,17 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
               <div>
                 <span className="font-medium text-foreground">{t("jobs.batchMetadata")}</span>
                 <p className="text-muted-foreground text-xs mt-0.5" dangerouslySetInnerHTML={{ __html: t("jobs.batchMetadataDescription") }} />
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <div className="shrink-0 mt-0.5">
+                <svg className="w-5 h-5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </div>
+              <div>
+                <span className="font-medium text-foreground">{t("jobs.refreshMetadata")}</span>
+                <p className="text-muted-foreground text-xs mt-0.5" dangerouslySetInnerHTML={{ __html: t("jobs.refreshMetadataDescription") }} />
               </div>
             </div>
           </div>

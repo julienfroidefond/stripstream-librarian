@@ -7,6 +7,7 @@ mod komga;
 mod libraries;
 mod metadata;
 mod metadata_batch;
+mod metadata_refresh;
 mod metadata_providers;
 mod api_middleware;
 mod openapi;
@@ -116,6 +117,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/metadata/batch", axum::routing::post(metadata_batch::start_batch))
         .route("/metadata/batch/:id/report", get(metadata_batch::get_batch_report))
         .route("/metadata/batch/:id/results", get(metadata_batch::get_batch_results))
+        .route("/metadata/refresh", axum::routing::post(metadata_refresh::start_refresh))
+        .route("/metadata/refresh/:id/report", get(metadata_refresh::get_refresh_report))
         .merge(settings::settings_routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
