@@ -19,6 +19,9 @@ pub struct ListBooksQuery {
     pub series: Option<String>,
     #[schema(value_type = Option<String>, example = "unread,reading")]
     pub reading_status: Option<String>,
+    /// Filter by exact author name (matches in authors array or scalar author field)
+    #[schema(value_type = Option<String>)]
+    pub author: Option<String>,
     #[schema(value_type = Option<i64>, example = 1)]
     pub page: Option<i64>,
     #[schema(value_type = Option<i64>, example = 50)]
@@ -135,6 +138,9 @@ pub async fn list_books(
     let rs_cond = if reading_statuses.is_some() {
         p += 1; format!("AND COALESCE(brp.status, 'unread') = ANY(${p})")
     } else { String::new() };
+    let author_cond = if query.author.is_some() {
+        p += 1; format!("AND (${p} = ANY(COALESCE(NULLIF(b.authors, '{{}}'), CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END)))")
+    } else { String::new() };
 
     let count_sql = format!(
         r#"SELECT COUNT(*) FROM books b
@@ -143,7 +149,8 @@ pub async fn list_books(
              AND ($2::text IS NULL OR b.kind = $2)
              AND ($3::text IS NULL OR b.format = $3)
              {series_cond}
-             {rs_cond}"#
+             {rs_cond}
+             {author_cond}"#
     );
 
     let order_clause = if query.sort.as_deref() == Some("latest") {
@@ -168,6 +175,7 @@ pub async fn list_books(
           AND ($3::text IS NULL OR b.format = $3)
           {series_cond}
           {rs_cond}
+          {author_cond}
         ORDER BY {order_clause}
         LIMIT ${limit_p} OFFSET ${offset_p}
         "#
@@ -191,6 +199,10 @@ pub async fn list_books(
     if let Some(ref statuses) = reading_statuses {
         count_builder = count_builder.bind(statuses.clone());
         data_builder = data_builder.bind(statuses.clone());
+    }
+    if let Some(ref author) = query.author {
+        count_builder = count_builder.bind(author.clone());
+        data_builder = data_builder.bind(author.clone());
     }
 
     data_builder = data_builder.bind(limit).bind(offset);

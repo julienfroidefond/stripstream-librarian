@@ -7,9 +7,9 @@ import { NavIcon } from "./ui";
 import { useTranslation } from "../../lib/i18n/context";
 
 type NavItem = {
-  href: "/" | "/books" | "/series" | "/libraries" | "/jobs" | "/tokens" | "/settings";
+  href: "/" | "/books" | "/series" | "/authors" | "/libraries" | "/jobs" | "/tokens" | "/settings";
   label: string;
-  icon: "dashboard" | "books" | "series" | "libraries" | "jobs" | "tokens" | "settings";
+  icon: "dashboard" | "books" | "series" | "authors" | "libraries" | "jobs" | "tokens" | "settings";
 };
 
 const HamburgerIcon = () => (

@@ -284,12 +284,14 @@ export async function fetchBooks(
   limit: number = 50,
   readingStatus?: string,
   sort?: string,
+  author?: string,
 ): Promise<BooksPageDto> {
   const params = new URLSearchParams();
   if (libraryId) params.set("library_id", libraryId);
   if (series) params.set("series", series);
   if (readingStatus) params.set("reading_status", readingStatus);
   if (sort) params.set("sort", sort);
+  if (author) params.set("author", author);
   params.set("page", page.toString());
   params.set("limit", limit.toString());
 
@@ -550,6 +552,38 @@ export type StatsResponse = {
 
 export async function fetchStats() {
   return apiFetch<StatsResponse>("/stats");
+}
+
+// ---------------------------------------------------------------------------
+// Authors
+// ---------------------------------------------------------------------------
+
+export type AuthorDto = {
+  name: string;
+  book_count: number;
+  series_count: number;
+};
+
+export type AuthorsPageDto = {
+  items: AuthorDto[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+export async function fetchAuthors(
+  q?: string,
+  page: number = 1,
+  limit: number = 20,
+  sort?: string,
+): Promise<AuthorsPageDto> {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (sort) params.set("sort", sort);
+  params.set("page", page.toString());
+  params.set("limit", limit.toString());
+
+  return apiFetch<AuthorsPageDto>(`/authors?${params.toString()}`);
 }
 
 export type UpdateBookRequest = {

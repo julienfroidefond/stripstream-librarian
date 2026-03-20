@@ -1,4 +1,5 @@
 mod auth;
+mod authors;
 mod books;
 mod error;
 mod handlers;
@@ -145,6 +146,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/series/statuses", get(books::series_statuses))
         .route("/series/provider-statuses", get(books::provider_statuses))
         .route("/series/mark-read", axum::routing::post(reading_progress::mark_series_read))
+        .route("/authors", get(authors::list_authors))
         .route("/stats", get(stats::get_stats))
         .route("/search", get(search::search_books))
         .route_layer(middleware::from_fn_with_state(state.clone(), api_middleware::read_rate_limit))

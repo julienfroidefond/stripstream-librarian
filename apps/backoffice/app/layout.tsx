@@ -18,15 +18,16 @@ export const metadata: Metadata = {
 };
 
 type NavItem = {
-  href: "/" | "/books" | "/series" | "/libraries" | "/jobs" | "/tokens" | "/settings";
+  href: "/" | "/books" | "/series" | "/authors" | "/libraries" | "/jobs" | "/tokens" | "/settings";
   labelKey: TranslationKey;
-  icon: "dashboard" | "books" | "series" | "libraries" | "jobs" | "tokens" | "settings";
+  icon: "dashboard" | "books" | "series" | "authors" | "libraries" | "jobs" | "tokens" | "settings";
 };
 
 const navItems: NavItem[] = [
   { href: "/", labelKey: "nav.dashboard", icon: "dashboard" },
   { href: "/books", labelKey: "nav.books", icon: "books" },
   { href: "/series", labelKey: "nav.series", icon: "series" },
+  { href: "/authors", labelKey: "nav.authors", icon: "authors" },
   { href: "/libraries", labelKey: "nav.libraries", icon: "libraries" },
   { href: "/jobs", labelKey: "nav.jobs", icon: "jobs" },
   { href: "/tokens", labelKey: "nav.tokens", icon: "tokens" },

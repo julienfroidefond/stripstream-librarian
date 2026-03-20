@@ -113,6 +113,20 @@ const en: Record<TranslationKey, string> = {
   "series.missingCount": "{{count}} missing",
   "series.readCount": "{{read}}/{{total}} read",
 
+  // Authors page
+  "nav.authors": "Authors",
+  "authors.title": "Authors",
+  "authors.searchPlaceholder": "Search by author name...",
+  "authors.bookCount": "{{count}} book{{plural}}",
+  "authors.seriesCount": "{{count}} serie{{plural}}",
+  "authors.noResults": "No authors found matching your filters",
+  "authors.noAuthors": "No authors available",
+  "authors.matchingQuery": "matching",
+  "authors.sortName": "Name",
+  "authors.sortBooks": "Book count",
+  "authors.booksBy": "Books by {{name}}",
+  "authors.seriesBy": "Series by {{name}}",
+
   // Libraries page
   "libraries.title": "Libraries",
   "libraries.addLibrary": "Add a library",

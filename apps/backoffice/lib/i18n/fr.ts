@@ -111,6 +111,20 @@ const fr = {
   "series.missingCount": "{{count}} manquant{{plural}}",
   "series.readCount": "{{read}}/{{total}} lu{{plural}}",
 
+  // Authors page
+  "nav.authors": "Auteurs",
+  "authors.title": "Auteurs",
+  "authors.searchPlaceholder": "Rechercher par nom d'auteur...",
+  "authors.bookCount": "{{count}} livre{{plural}}",
+  "authors.seriesCount": "{{count}} série{{plural}}",
+  "authors.noResults": "Aucun auteur trouvé correspondant à vos filtres",
+  "authors.noAuthors": "Aucun auteur disponible",
+  "authors.matchingQuery": "correspondant à",
+  "authors.sortName": "Nom",
+  "authors.sortBooks": "Nombre de livres",
+  "authors.booksBy": "Livres de {{name}}",
+  "authors.seriesBy": "Séries de {{name}}",
+
   // Libraries page
   "libraries.title": "Bibliothèques",
   "libraries.addLibrary": "Ajouter une bibliothèque",

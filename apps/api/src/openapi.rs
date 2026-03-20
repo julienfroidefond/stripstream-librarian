@@ -39,6 +39,7 @@ use utoipa::OpenApi;
         crate::tokens::create_token,
         crate::tokens::revoke_token,
         crate::tokens::delete_token,
+        crate::authors::list_authors,
         crate::stats::get_stats,
         crate::settings::get_settings,
         crate::settings::get_setting,
@@ -104,6 +105,9 @@ use utoipa::OpenApi;
             crate::settings::ThumbnailStats,
             crate::settings::StatusMappingDto,
             crate::settings::UpsertStatusMappingRequest,
+            crate::authors::ListAuthorsQuery,
+            crate::authors::AuthorItem,
+            crate::authors::AuthorsPageResponse,
             crate::stats::StatsResponse,
             crate::stats::StatsOverview,
             crate::stats::ReadingStatusStats,
@@ -141,6 +145,7 @@ use utoipa::OpenApi;
         ("Bearer" = [])
     ),
     tags(
+        (name = "authors", description = "Author browsing and listing"),
         (name = "books", description = "Read-only endpoints for browsing and searching books"),
         (name = "reading-progress", description = "Reading progress tracking per book"),
         (name = "libraries", description = "Library management endpoints (Admin only)"),
