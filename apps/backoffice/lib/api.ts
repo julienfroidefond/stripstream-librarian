@@ -10,6 +10,8 @@ export type LibraryDto = {
   watcher_enabled: boolean;
   metadata_provider: string | null;
   fallback_metadata_provider: string | null;
+  metadata_refresh_mode: string;
+  next_metadata_refresh_at: string | null;
 };
 
 export type IndexJobDto = {
@@ -192,17 +194,22 @@ export async function updateLibraryMonitoring(
   monitorEnabled: boolean,
   scanMode: string,
   watcherEnabled?: boolean,
+  metadataRefreshMode?: string,
 ) {
   const body: {
     monitor_enabled: boolean;
     scan_mode: string;
     watcher_enabled?: boolean;
+    metadata_refresh_mode?: string;
   } = {
     monitor_enabled: monitorEnabled,
     scan_mode: scanMode,
   };
   if (watcherEnabled !== undefined) {
     body.watcher_enabled = watcherEnabled;
+  }
+  if (metadataRefreshMode !== undefined) {
+    body.metadata_refresh_mode = metadataRefreshMode;
   }
   return apiFetch<LibraryDto>(`/libraries/${libraryId}/monitoring`, {
     method: "PATCH",

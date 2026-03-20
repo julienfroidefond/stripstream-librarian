@@ -7,8 +7,8 @@ export async function PATCH(
 ) {
   const { id } = await params;
   try {
-    const { monitor_enabled, scan_mode, watcher_enabled } = await request.json();
-    const data = await updateLibraryMonitoring(id, monitor_enabled, scan_mode, watcher_enabled);
+    const { monitor_enabled, scan_mode, watcher_enabled, metadata_refresh_mode } = await request.json();
+    const data = await updateLibraryMonitoring(id, monitor_enabled, scan_mode, watcher_enabled, metadata_refresh_mode);
     return NextResponse.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update monitoring settings";
