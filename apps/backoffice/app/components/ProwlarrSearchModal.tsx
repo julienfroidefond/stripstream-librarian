@@ -64,7 +64,11 @@ export function ProwlarrSearchModal({ seriesName, missingBooks }: ProwlarrSearch
     setError(null);
     setResults([]);
     try {
-      const body = { series_name: seriesName, custom_query: searchQuery.trim() };
+      const missing_volumes = missingBooks?.map((b) => ({
+        volume_number: b.volume_number,
+        title: b.title,
+      })) ?? undefined;
+      const body = { series_name: seriesName, custom_query: searchQuery.trim(), missing_volumes };
       const resp = await fetch("/api/prowlarr/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -237,12 +241,23 @@ export function ProwlarrSearchModal({ seriesName, missingBooks }: ProwlarrSearch
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
-                        {results.map((release, i) => (
-                          <tr key={release.guid || i} className="hover:bg-muted/20 transition-colors">
+                        {results.map((release, i) => {
+                          const hasMissing = release.matchedMissingVolumes && release.matchedMissingVolumes.length > 0;
+                          return (
+                          <tr key={release.guid || i} className={`transition-colors ${hasMissing ? "bg-green-500/10 hover:bg-green-500/20 border-l-2 border-l-green-500" : "hover:bg-muted/20"}`}>
                             <td className="px-3 py-2 max-w-[400px]">
                               <span className="truncate block" title={release.title}>
                                 {release.title}
                               </span>
+                              {hasMissing && (
+                                <div className="flex items-center gap-1 mt-1">
+                                  {release.matchedMissingVolumes!.map((vol) => (
+                                    <span key={vol} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-600">
+                                      {t("prowlarr.missingVol", { vol })}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                             </td>
                             <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
                               {release.indexer || "—"}
@@ -325,7 +340,8 @@ export function ProwlarrSearchModal({ seriesName, missingBooks }: ProwlarrSearch
                               </div>
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

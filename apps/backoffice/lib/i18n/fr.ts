@@ -512,6 +512,7 @@ const fr = {
   "prowlarr.sending": "Envoi...",
   "prowlarr.sentSuccess": "Envoyé à qBittorrent",
   "prowlarr.sentError": "Échec de l'envoi à qBittorrent",
+  "prowlarr.missingVol": "T{{vol}} manquant",
 
   // Settings - qBittorrent
   "settings.qbittorrent": "qBittorrent",

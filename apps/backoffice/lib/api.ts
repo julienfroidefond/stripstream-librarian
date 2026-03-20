@@ -939,6 +939,7 @@ export type ProwlarrRelease = {
   protocol: string | null;
   infoUrl: string | null;
   categories: ProwlarrCategory[] | null;
+  matchedMissingVolumes: number[] | null;
 };
 
 export type ProwlarrSearchResponse = {
