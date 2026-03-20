@@ -122,6 +122,8 @@ const fr = {
   "libraries.manual": "Manuel",
   "libraries.nextScan": "Prochain : {{time}}",
   "libraries.imminent": "Imminent",
+  "libraries.nextMetadataRefresh": "Prochain rafraîchissement méta. : {{time}}",
+  "libraries.nextMetadataRefreshShort": "Méta. : {{time}}",
   "libraries.index": "Indexer",
   "libraries.fullIndex": "Complet",
   "libraries.batchMetadata": "Métadonnées en lot",
@@ -146,6 +148,7 @@ const fr = {
   "libraryActions.fallback": "Secours",
   "libraryActions.default": "Par défaut",
   "libraryActions.none": "Aucun",
+  "libraryActions.metadataRefreshSchedule": "Rafraîchir méta.",
   "libraryActions.saving": "Enregistrement...",
 
   // Library sub-page header

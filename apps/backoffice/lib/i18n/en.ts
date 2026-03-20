@@ -124,6 +124,8 @@ const en: Record<TranslationKey, string> = {
   "libraries.manual": "Manual",
   "libraries.nextScan": "Next: {{time}}",
   "libraries.imminent": "Imminent",
+  "libraries.nextMetadataRefresh": "Next metadata refresh: {{time}}",
+  "libraries.nextMetadataRefreshShort": "Meta.: {{time}}",
   "libraries.index": "Index",
   "libraries.fullIndex": "Full",
   "libraries.batchMetadata": "Batch metadata",
@@ -148,6 +150,7 @@ const en: Record<TranslationKey, string> = {
   "libraryActions.fallback": "Fallback",
   "libraryActions.default": "Default",
   "libraryActions.none": "None",
+  "libraryActions.metadataRefreshSchedule": "Refresh meta.",
   "libraryActions.saving": "Saving...",
 
   // Library sub-page header

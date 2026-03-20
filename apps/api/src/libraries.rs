@@ -23,6 +23,9 @@ pub struct LibraryResponse {
     pub watcher_enabled: bool,
     pub metadata_provider: Option<String>,
     pub fallback_metadata_provider: Option<String>,
+    pub metadata_refresh_mode: String,
+    #[schema(value_type = Option<String>)]
+    pub next_metadata_refresh_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -47,7 +50,7 @@ pub struct CreateLibraryRequest {
 )]
 pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<LibraryResponse>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at, l.watcher_enabled, l.metadata_provider, l.fallback_metadata_provider,
+        "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at, l.watcher_enabled, l.metadata_provider, l.fallback_metadata_provider, l.metadata_refresh_mode, l.next_metadata_refresh_at,
                 (SELECT COUNT(*) FROM books b WHERE b.library_id = l.id) as book_count
          FROM libraries l ORDER BY l.created_at DESC"
     )
@@ -68,6 +71,8 @@ pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<Li
             watcher_enabled: row.get("watcher_enabled"),
             metadata_provider: row.get("metadata_provider"),
             fallback_metadata_provider: row.get("fallback_metadata_provider"),
+            metadata_refresh_mode: row.get("metadata_refresh_mode"),
+            next_metadata_refresh_at: row.get("next_metadata_refresh_at"),
         })
         .collect();
 
@@ -121,6 +126,8 @@ pub async fn create_library(
         watcher_enabled: false,
         metadata_provider: None,
         fallback_metadata_provider: None,
+        metadata_refresh_mode: "manual".to_string(),
+        next_metadata_refresh_at: None,
     }))
 }
 
@@ -241,6 +248,8 @@ pub struct UpdateMonitoringRequest {
     #[schema(value_type = String, example = "hourly")]
     pub scan_mode: String, // 'manual', 'hourly', 'daily', 'weekly'
     pub watcher_enabled: Option<bool>,
+    #[schema(value_type = Option<String>, example = "daily")]
+    pub metadata_refresh_mode: Option<String>, // 'manual', 'hourly', 'daily', 'weekly'
 }
 
 /// Update monitoring settings for a library
@@ -271,6 +280,12 @@ pub async fn update_monitoring(
         return Err(ApiError::bad_request("scan_mode must be one of: manual, hourly, daily, weekly"));
     }
 
+    // Validate metadata_refresh_mode
+    let metadata_refresh_mode = input.metadata_refresh_mode.as_deref().unwrap_or("manual");
+    if !valid_modes.contains(&metadata_refresh_mode) {
+        return Err(ApiError::bad_request("metadata_refresh_mode must be one of: manual, hourly, daily, weekly"));
+    }
+
     // Calculate next_scan_at if monitoring is enabled
     let next_scan_at = if input.monitor_enabled {
         let interval_minutes = match input.scan_mode.as_str() {
@@ -284,16 +299,31 @@ pub async fn update_monitoring(
         None
     };
 
+    // Calculate next_metadata_refresh_at
+    let next_metadata_refresh_at = if metadata_refresh_mode != "manual" {
+        let interval_minutes = match metadata_refresh_mode {
+            "hourly" => 60,
+            "daily" => 1440,
+            "weekly" => 10080,
+            _ => 1440,
+        };
+        Some(chrono::Utc::now() + chrono::Duration::minutes(interval_minutes))
+    } else {
+        None
+    };
+
     let watcher_enabled = input.watcher_enabled.unwrap_or(false);
 
     let result = sqlx::query(
-        "UPDATE libraries SET monitor_enabled = $2, scan_mode = $3, next_scan_at = $4, watcher_enabled = $5 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider"
+        "UPDATE libraries SET monitor_enabled = $2, scan_mode = $3, next_scan_at = $4, watcher_enabled = $5, metadata_refresh_mode = $6, next_metadata_refresh_at = $7 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at"
     )
     .bind(library_id)
     .bind(input.monitor_enabled)
     .bind(input.scan_mode)
     .bind(next_scan_at)
     .bind(watcher_enabled)
+    .bind(metadata_refresh_mode)
+    .bind(next_metadata_refresh_at)
     .fetch_optional(&state.pool)
     .await?;
 
@@ -318,6 +348,8 @@ pub async fn update_monitoring(
         watcher_enabled: row.get("watcher_enabled"),
         metadata_provider: row.get("metadata_provider"),
         fallback_metadata_provider: row.get("fallback_metadata_provider"),
+        metadata_refresh_mode: row.get("metadata_refresh_mode"),
+        next_metadata_refresh_at: row.get("next_metadata_refresh_at"),
     }))
 }
 
@@ -353,7 +385,7 @@ pub async fn update_metadata_provider(
     let fallback = input.fallback_metadata_provider.as_deref().filter(|s| !s.is_empty());
 
     let result = sqlx::query(
-        "UPDATE libraries SET metadata_provider = $2, fallback_metadata_provider = $3 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider"
+        "UPDATE libraries SET metadata_provider = $2, fallback_metadata_provider = $3 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at"
     )
     .bind(library_id)
     .bind(provider)
@@ -382,5 +414,7 @@ pub async fn update_metadata_provider(
         watcher_enabled: row.get("watcher_enabled"),
         metadata_provider: row.get("metadata_provider"),
         fallback_metadata_provider: row.get("fallback_metadata_provider"),
+        metadata_refresh_mode: row.get("metadata_refresh_mode"),
+        next_metadata_refresh_at: row.get("next_metadata_refresh_at"),
     }))
 }

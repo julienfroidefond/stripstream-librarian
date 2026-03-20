@@ -131,6 +131,7 @@ export default async function LibrariesPage() {
                     watcherEnabled={lib.watcher_enabled}
                     metadataProvider={lib.metadata_provider}
                     fallbackMetadataProvider={lib.fallback_metadata_provider}
+                    metadataRefreshMode={lib.metadata_refresh_mode}
                   />
                 </div>
               </CardHeader>
@@ -167,6 +168,11 @@ export default async function LibrariesPage() {
                   {lib.monitor_enabled && lib.next_scan_at && (
                     <span className="text-xs text-muted-foreground ml-auto">
                       {t("libraries.nextScan", { time: formatNextScan(lib.next_scan_at, t("libraries.imminent")) })}
+                    </span>
+                  )}
+                  {lib.metadata_refresh_mode !== "manual" && lib.next_metadata_refresh_at && (
+                    <span className="text-xs text-muted-foreground ml-auto" title={t("libraries.nextMetadataRefresh", { time: formatNextScan(lib.next_metadata_refresh_at, t("libraries.imminent")) })}>
+                      {t("libraries.nextMetadataRefreshShort", { time: formatNextScan(lib.next_metadata_refresh_at, t("libraries.imminent")) })}
                     </span>
                   )}
                 </div>

@@ -12,6 +12,7 @@ interface LibraryActionsProps {
   watcherEnabled: boolean;
   metadataProvider: string | null;
   fallbackMetadataProvider: string | null;
+  metadataRefreshMode: string;
   onUpdate?: () => void;
 }
 
@@ -22,6 +23,7 @@ export function LibraryActions({
   watcherEnabled,
   metadataProvider,
   fallbackMetadataProvider,
+  metadataRefreshMode,
   onUpdate
 }: LibraryActionsProps) {
   const { t } = useTranslation();
@@ -48,6 +50,7 @@ export function LibraryActions({
       const scanMode = formData.get("scan_mode") as string;
       const newMetadataProvider = (formData.get("metadata_provider") as string) || null;
       const newFallbackProvider = (formData.get("fallback_metadata_provider") as string) || null;
+      const newMetadataRefreshMode = formData.get("metadata_refresh_mode") as string;
 
       try {
         const [response] = await Promise.all([
@@ -58,6 +61,7 @@ export function LibraryActions({
               monitor_enabled: monitorEnabled,
               scan_mode: scanMode,
               watcher_enabled: watcherEnabled,
+              metadata_refresh_mode: newMetadataRefreshMode,
             }),
           }),
           fetch(`/api/libraries/${libraryId}/metadata-provider`, {
@@ -178,6 +182,20 @@ export function LibraryActions({
                   <option value="open_library">Open Library</option>
                   <option value="anilist">AniList</option>
                   <option value="bedetheque">Bédéthèque</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-foreground">{t("libraryActions.metadataRefreshSchedule")}</label>
+                <select
+                  name="metadata_refresh_mode"
+                  defaultValue={metadataRefreshMode}
+                  className="text-sm border border-border rounded-lg px-2 py-1 bg-background"
+                >
+                  <option value="manual">{t("monitoring.manual")}</option>
+                  <option value="hourly">{t("monitoring.hourly")}</option>
+                  <option value="daily">{t("monitoring.daily")}</option>
+                  <option value="weekly">{t("monitoring.weekly")}</option>
                 </select>
               </div>
 
