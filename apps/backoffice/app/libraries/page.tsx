@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
-import { listFolders, createLibrary, deleteLibrary, fetchLibraries, fetchSeries, getBookCoverUrl, LibraryDto, FolderItem } from "../../lib/api";
+import { listFolders, createLibrary, deleteLibrary, fetchLibraries, getBookCoverUrl, LibraryDto, FolderItem } from "../../lib/api";
 import type { TranslationKey } from "../../lib/i18n/fr";
 import { getServerTranslations } from "../../lib/i18n/server";
 import { LibraryActions } from "../components/LibraryActions";
@@ -33,26 +33,12 @@ export default async function LibrariesPage() {
     listFolders().catch(() => [] as FolderItem[])
   ]);
 
-  const seriesData = await Promise.all(
-    libraries.map(async (lib) => {
-      try {
-        const seriesPage = await fetchSeries(lib.id, 1, 6);
-        return {
-          id: lib.id,
-          count: seriesPage.total,
-          thumbnails: seriesPage.items
-            .map(s => s.first_book_id)
-            .filter(Boolean)
-            .slice(0, 4)
-            .map(bookId => getBookCoverUrl(bookId)),
-        };
-      } catch {
-        return { id: lib.id, count: 0, thumbnails: [] as string[] };
-      }
-    })
+  const thumbnailMap = new Map(
+    libraries.map(lib => [
+      lib.id,
+      (lib.thumbnail_book_ids || []).map(bookId => getBookCoverUrl(bookId)),
+    ])
   );
-
-  const seriesMap = new Map(seriesData.map(s => [s.id, s]));
 
   async function addLibrary(formData: FormData) {
     "use server";
@@ -96,9 +82,7 @@ export default async function LibrariesPage() {
       {/* Libraries Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {libraries.map((lib) => {
-          const series = seriesMap.get(lib.id);
-          const seriesCount = series?.count || 0;
-          const thumbnails = series?.thumbnails || [];
+          const thumbnails = thumbnailMap.get(lib.id) || [];
           return (
             <Card key={lib.id} className="flex flex-col overflow-hidden">
               {/* Thumbnail fan */}
@@ -183,7 +167,7 @@ export default async function LibrariesPage() {
                     href={`/libraries/${lib.id}/series`}
                     className="text-center p-2.5 bg-muted/50 rounded-lg hover:bg-accent transition-colors duration-200"
                   >
-                    <span className="block text-2xl font-bold text-foreground">{seriesCount}</span>
+                    <span className="block text-2xl font-bold text-foreground">{lib.series_count}</span>
                     <span className="text-xs text-muted-foreground">{t("libraries.series")}</span>
                   </Link>
                 </div>

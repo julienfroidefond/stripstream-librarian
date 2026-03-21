@@ -12,6 +12,8 @@ export type LibraryDto = {
   fallback_metadata_provider: string | null;
   metadata_refresh_mode: string;
   next_metadata_refresh_at: string | null;
+  series_count: number;
+  thumbnail_book_ids: string[];
 };
 
 export type IndexJobDto = {

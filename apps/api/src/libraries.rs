@@ -26,6 +26,10 @@ pub struct LibraryResponse {
     pub metadata_refresh_mode: String,
     #[schema(value_type = Option<String>)]
     pub next_metadata_refresh_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub series_count: i64,
+    /// First book IDs from up to 5 distinct series (for thumbnail fan display)
+    #[schema(value_type = Vec<String>)]
+    pub thumbnail_book_ids: Vec<Uuid>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -51,7 +55,21 @@ pub struct CreateLibraryRequest {
 pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<LibraryResponse>>, ApiError> {
     let rows = sqlx::query(
         "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at, l.watcher_enabled, l.metadata_provider, l.fallback_metadata_provider, l.metadata_refresh_mode, l.next_metadata_refresh_at,
-                (SELECT COUNT(*) FROM books b WHERE b.library_id = l.id) as book_count
+                (SELECT COUNT(*) FROM books b WHERE b.library_id = l.id) as book_count,
+                (SELECT COUNT(DISTINCT COALESCE(NULLIF(b.series, ''), 'unclassified')) FROM books b WHERE b.library_id = l.id) as series_count,
+                COALESCE((
+                    SELECT ARRAY_AGG(first_id ORDER BY series_name)
+                    FROM (
+                        SELECT DISTINCT ON (COALESCE(NULLIF(b.series, ''), 'unclassified'))
+                            COALESCE(NULLIF(b.series, ''), 'unclassified') as series_name,
+                            b.id as first_id
+                        FROM books b
+                        WHERE b.library_id = l.id
+                        ORDER BY COALESCE(NULLIF(b.series, ''), 'unclassified'),
+                            b.volume NULLS LAST, b.title ASC
+                        LIMIT 5
+                    ) sub
+                ), ARRAY[]::uuid[]) as thumbnail_book_ids
          FROM libraries l ORDER BY l.created_at DESC"
     )
         .fetch_all(&state.pool)
@@ -65,6 +83,7 @@ pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<Li
             root_path: row.get("root_path"),
             enabled: row.get("enabled"),
             book_count: row.get("book_count"),
+            series_count: row.get("series_count"),
             monitor_enabled: row.get("monitor_enabled"),
             scan_mode: row.get("scan_mode"),
             next_scan_at: row.get("next_scan_at"),
@@ -73,6 +92,7 @@ pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<Li
             fallback_metadata_provider: row.get("fallback_metadata_provider"),
             metadata_refresh_mode: row.get("metadata_refresh_mode"),
             next_metadata_refresh_at: row.get("next_metadata_refresh_at"),
+            thumbnail_book_ids: row.get("thumbnail_book_ids"),
         })
         .collect();
 
@@ -120,6 +140,7 @@ pub async fn create_library(
         root_path,
         enabled: true,
         book_count: 0,
+        series_count: 0,
         monitor_enabled: false,
         scan_mode: "manual".to_string(),
         next_scan_at: None,
@@ -128,6 +149,7 @@ pub async fn create_library(
         fallback_metadata_provider: None,
         metadata_refresh_mode: "manual".to_string(),
         next_metadata_refresh_at: None,
+        thumbnail_book_ids: vec![],
     }))
 }
 
@@ -337,12 +359,29 @@ pub async fn update_monitoring(
         .fetch_one(&state.pool)
         .await?;
 
+    let series_count: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT COALESCE(NULLIF(series, ''), 'unclassified')) FROM books WHERE library_id = $1")
+        .bind(library_id)
+        .fetch_one(&state.pool)
+        .await?;
+
+    let thumbnail_book_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT b.id FROM books b
+         WHERE b.library_id = $1
+         ORDER BY COALESCE(NULLIF(b.series, ''), 'unclassified'), b.volume NULLS LAST, b.title ASC
+         LIMIT 5"
+    )
+    .bind(library_id)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+
     Ok(Json(LibraryResponse {
         id: row.get("id"),
         name: row.get("name"),
         root_path: row.get("root_path"),
         enabled: row.get("enabled"),
         book_count,
+        series_count,
         monitor_enabled: row.get("monitor_enabled"),
         scan_mode: row.get("scan_mode"),
         next_scan_at: row.get("next_scan_at"),
@@ -351,6 +390,7 @@ pub async fn update_monitoring(
         fallback_metadata_provider: row.get("fallback_metadata_provider"),
         metadata_refresh_mode: row.get("metadata_refresh_mode"),
         next_metadata_refresh_at: row.get("next_metadata_refresh_at"),
+        thumbnail_book_ids,
     }))
 }
 
@@ -403,12 +443,29 @@ pub async fn update_metadata_provider(
         .fetch_one(&state.pool)
         .await?;
 
+    let series_count: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT COALESCE(NULLIF(series, ''), 'unclassified')) FROM books WHERE library_id = $1")
+        .bind(library_id)
+        .fetch_one(&state.pool)
+        .await?;
+
+    let thumbnail_book_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT b.id FROM books b
+         WHERE b.library_id = $1
+         ORDER BY COALESCE(NULLIF(b.series, ''), 'unclassified'), b.volume NULLS LAST, b.title ASC
+         LIMIT 5"
+    )
+    .bind(library_id)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+
     Ok(Json(LibraryResponse {
         id: row.get("id"),
         name: row.get("name"),
         root_path: row.get("root_path"),
         enabled: row.get("enabled"),
         book_count,
+        series_count,
         monitor_enabled: row.get("monitor_enabled"),
         scan_mode: row.get("scan_mode"),
         next_scan_at: row.get("next_scan_at"),
@@ -417,5 +474,6 @@ pub async fn update_metadata_provider(
         fallback_metadata_provider: row.get("fallback_metadata_provider"),
         metadata_refresh_mode: row.get("metadata_refresh_mode"),
         next_metadata_refresh_at: row.get("next_metadata_refresh_at"),
+        thumbnail_book_ids,
     }))
 }
