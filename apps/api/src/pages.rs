@@ -351,6 +351,7 @@ async fn prefetch_page(state: AppState, params: &PrefetchParams<'_>) {
         Some(ref e) if e == "cbz" => "cbz",
         Some(ref e) if e == "cbr" => "cbr",
         Some(ref e) if e == "pdf" => "pdf",
+        Some(ref e) if e == "epub" => "epub",
         _ => return,
     }
     .to_string();
@@ -479,6 +480,7 @@ fn render_page(
         "cbz" => parsers::BookFormat::Cbz,
         "cbr" => parsers::BookFormat::Cbr,
         "pdf" => parsers::BookFormat::Pdf,
+        "epub" => parsers::BookFormat::Epub,
         _ => return Err(ApiError::bad_request("unsupported source format")),
     };
 

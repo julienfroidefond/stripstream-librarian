@@ -102,7 +102,7 @@ pub struct BookDetails {
     tag = "books",
     params(
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),
-        ("kind" = Option<String>, Query, description = "Filter by book kind (cbz, cbr, pdf)"),
+        ("kind" = Option<String>, Query, description = "Filter by book kind (cbz, cbr, pdf, epub)"),
         ("series" = Option<String>, Query, description = "Filter by series name (use 'unclassified' for books without series)"),
         ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
         ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),

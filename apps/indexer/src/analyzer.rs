@@ -290,6 +290,7 @@ fn book_format_from_str(s: &str) -> Option<BookFormat> {
         "cbz" => Some(BookFormat::Cbz),
         "cbr" => Some(BookFormat::Cbr),
         "pdf" => Some(BookFormat::Pdf),
+        "epub" => Some(BookFormat::Epub),
         _ => None,
     }
 }

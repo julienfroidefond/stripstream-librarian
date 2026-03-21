@@ -40,7 +40,7 @@ pub fn compute_fingerprint(path: &Path, size: u64, mtime: &DateTime<Utc>) -> Res
 
 pub fn kind_from_format(format: BookFormat) -> &'static str {
     match format {
-        BookFormat::Pdf => "ebook",
+        BookFormat::Pdf | BookFormat::Epub => "ebook",
         BookFormat::Cbz | BookFormat::Cbr => "comic",
     }
 }

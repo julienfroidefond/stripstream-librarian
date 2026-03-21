@@ -47,7 +47,7 @@ pub struct SearchResponse {
     params(
         ("q" = String, Query, description = "Search query (books + series via PostgreSQL full-text)"),
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),
-        ("type" = Option<String>, Query, description = "Filter by type (cbz, cbr, pdf)"),
+        ("type" = Option<String>, Query, description = "Filter by type (cbz, cbr, pdf, epub)"),
         ("kind" = Option<String>, Query, description = "Filter by kind (alias for type)"),
         ("limit" = Option<usize>, Query, description = "Max results per type (max 100)"),
     ),

@@ -115,6 +115,7 @@ export function BookCard({ book, readingStatus }: BookCardProps) {
               ${(book.format ?? book.kind) === 'cbz' ? 'bg-success/10 text-success' : ''}
               ${(book.format ?? book.kind) === 'cbr' ? 'bg-warning/10 text-warning' : ''}
               ${(book.format ?? book.kind) === 'pdf' ? 'bg-destructive/10 text-destructive' : ''}
+              ${(book.format ?? book.kind) === 'epub' ? 'bg-info/10 text-info' : ''}
             `}>
               {book.format ?? book.kind}
             </span>
