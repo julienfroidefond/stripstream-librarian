@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { apiFetch, getMetadataBatchReport, getMetadataBatchResults, getMetadataRefreshReport, MetadataBatchReportDto, MetadataBatchResultDto, MetadataRefreshReportDto } from "../../../lib/api";
@@ -5,6 +7,7 @@ import {
   Card, CardHeader, CardTitle, CardDescription, CardContent,
   StatusBadge, JobTypeBadge, StatBox, ProgressBar
 } from "../../components/ui";
+import { JobDetailLive } from "../../components/JobDetailLive";
 import { getServerTranslations } from "../../../lib/i18n/server";
 
 interface JobDetailPageProps {
@@ -158,6 +161,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
   const isCompleted = job.status === "success";
   const isFailed = job.status === "failed";
   const isCancelled = job.status === "cancelled";
+  const isTerminal = isCompleted || isFailed || isCancelled;
   const isExtractingPages = job.status === "extracting_pages";
   const isThumbnailPhase = job.status === "generating_thumbnails";
   const isPhase2 = isExtractingPages || isThumbnailPhase;
@@ -199,6 +203,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
 
   return (
     <>
+      <JobDetailLive jobId={id} isTerminal={isTerminal} />
       <div className="mb-6">
         <Link
           href="/jobs"
