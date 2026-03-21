@@ -286,6 +286,8 @@ export async function fetchBooks(
   readingStatus?: string,
   sort?: string,
   author?: string,
+  format?: string,
+  metadataProvider?: string,
 ): Promise<BooksPageDto> {
   const params = new URLSearchParams();
   if (libraryId) params.set("library_id", libraryId);
@@ -293,6 +295,8 @@ export async function fetchBooks(
   if (readingStatus) params.set("reading_status", readingStatus);
   if (sort) params.set("sort", sort);
   if (author) params.set("author", author);
+  if (format) params.set("format", format);
+  if (metadataProvider) params.set("metadata_provider", metadataProvider);
   params.set("page", page.toString());
   params.set("limit", limit.toString());
 

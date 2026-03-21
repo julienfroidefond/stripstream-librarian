@@ -18,6 +18,8 @@ export default async function BooksPage({
   const libraryId = typeof searchParamsAwaited.library === "string" ? searchParamsAwaited.library : undefined;
   const searchQuery = typeof searchParamsAwaited.q === "string" ? searchParamsAwaited.q : "";
   const readingStatus = typeof searchParamsAwaited.status === "string" ? searchParamsAwaited.status : undefined;
+  const format = typeof searchParamsAwaited.format === "string" ? searchParamsAwaited.format : undefined;
+  const metadataProvider = typeof searchParamsAwaited.metadata === "string" ? searchParamsAwaited.metadata : undefined;
   const sort = typeof searchParamsAwaited.sort === "string" ? searchParamsAwaited.sort : undefined;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 20;
@@ -62,7 +64,7 @@ export default async function BooksPage({
       totalHits = searchResponse.estimated_total_hits;
     }
   } else {
-    const booksPage = await fetchBooks(libraryId, undefined, page, limit, readingStatus, sort).catch(() => ({
+    const booksPage = await fetchBooks(libraryId, undefined, page, limit, readingStatus, sort, undefined, format, metadataProvider).catch(() => ({
       items: [] as BookDto[],
       total: 0,
       page: 1,
@@ -91,12 +93,26 @@ export default async function BooksPage({
     { value: "read", label: t("status.read") },
   ];
 
+  const formatOptions = [
+    { value: "", label: t("books.allFormats") },
+    { value: "cbz", label: "CBZ" },
+    { value: "cbr", label: "CBR" },
+    { value: "pdf", label: "PDF" },
+    { value: "epub", label: "EPUB" },
+  ];
+
+  const metadataOptions = [
+    { value: "", label: t("series.metadataAll") },
+    { value: "linked", label: t("series.metadataLinked") },
+    { value: "unlinked", label: t("series.metadataUnlinked") },
+  ];
+
   const sortOptions = [
     { value: "", label: t("books.sortTitle") },
     { value: "latest", label: t("books.sortLatest") },
   ];
 
-  const hasFilters = searchQuery || libraryId || readingStatus || sort;
+  const hasFilters = searchQuery || libraryId || readingStatus || format || metadataProvider || sort;
 
   return (
     <>
@@ -117,6 +133,8 @@ export default async function BooksPage({
               { name: "q", type: "text", label: t("common.search"), placeholder: t("books.searchPlaceholder") },
               { name: "library", type: "select", label: t("books.library"), options: libraryOptions },
               { name: "status", type: "select", label: t("books.status"), options: statusOptions },
+              { name: "format", type: "select", label: t("books.format"), options: formatOptions },
+              { name: "metadata", type: "select", label: t("series.metadata"), options: metadataOptions },
               { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },
             ]}
           />

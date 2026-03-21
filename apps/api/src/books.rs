@@ -29,6 +29,9 @@ pub struct ListBooksQuery {
     /// Sort order: "title" (default) or "latest" (most recently added first)
     #[schema(value_type = Option<String>, example = "latest")]
     pub sort: Option<String>,
+    /// Filter by metadata provider: "linked" (any provider), "unlinked" (no provider), or a specific provider name
+    #[schema(value_type = Option<String>, example = "linked")]
+    pub metadata_provider: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -108,6 +111,7 @@ pub struct BookDetails {
         ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
         ("limit" = Option<i64>, Query, description = "Items per page (max 200, default 50)"),
         ("sort" = Option<String>, Query, description = "Sort order: 'title' (default) or 'latest' (most recently added first)"),
+        ("metadata_provider" = Option<String>, Query, description = "Filter by metadata provider: 'linked' (any provider), 'unlinked' (no provider), or a specific provider name"),
     ),
     responses(
         (status = 200, body = BooksPage),
@@ -141,16 +145,34 @@ pub async fn list_books(
     let author_cond = if query.author.is_some() {
         p += 1; format!("AND (${p} = ANY(COALESCE(NULLIF(b.authors, '{{}}'), CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END)))")
     } else { String::new() };
+    let metadata_cond = match query.metadata_provider.as_deref() {
+        Some("unlinked") => "AND eml.id IS NULL".to_string(),
+        Some("linked") => "AND eml.id IS NOT NULL".to_string(),
+        Some(_) => { p += 1; format!("AND eml.provider = ${p}") },
+        None => String::new(),
+    };
+
+    let metadata_links_cte = r#"
+        metadata_links AS (
+            SELECT DISTINCT ON (eml.series_name, eml.library_id)
+                eml.series_name, eml.library_id, eml.provider, eml.id
+            FROM external_metadata_links eml
+            WHERE eml.status = 'approved'
+            ORDER BY eml.series_name, eml.library_id, eml.created_at DESC
+        )"#;
 
     let count_sql = format!(
-        r#"SELECT COUNT(*) FROM books b
+        r#"WITH {metadata_links_cte}
+           SELECT COUNT(*) FROM books b
            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+           LEFT JOIN metadata_links eml ON eml.series_name = b.series AND eml.library_id = b.library_id
            WHERE ($1::uuid IS NULL OR b.library_id = $1)
              AND ($2::text IS NULL OR b.kind = $2)
              AND ($3::text IS NULL OR b.format = $3)
              {series_cond}
              {rs_cond}
-             {author_cond}"#
+             {author_cond}
+             {metadata_cond}"#
     );
 
     let order_clause = if query.sort.as_deref() == Some("latest") {
@@ -164,18 +186,21 @@ pub async fn list_books(
     let offset_p = p + 2;
     let data_sql = format!(
         r#"
+        WITH {metadata_links_cte}
         SELECT b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, b.series, b.volume, b.language, b.page_count, b.thumbnail_path, b.updated_at,
                COALESCE(brp.status, 'unread') AS reading_status,
                brp.current_page AS reading_current_page,
                brp.last_read_at AS reading_last_read_at
         FROM books b
         LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+        LEFT JOIN metadata_links eml ON eml.series_name = b.series AND eml.library_id = b.library_id
         WHERE ($1::uuid IS NULL OR b.library_id = $1)
           AND ($2::text IS NULL OR b.kind = $2)
           AND ($3::text IS NULL OR b.format = $3)
           {series_cond}
           {rs_cond}
           {author_cond}
+          {metadata_cond}
         ORDER BY {order_clause}
         LIMIT ${limit_p} OFFSET ${offset_p}
         "#
@@ -203,6 +228,12 @@ pub async fn list_books(
     if let Some(ref author) = query.author {
         count_builder = count_builder.bind(author.clone());
         data_builder = data_builder.bind(author.clone());
+    }
+    if let Some(ref mp) = query.metadata_provider {
+        if mp != "linked" && mp != "unlinked" {
+            count_builder = count_builder.bind(mp.clone());
+            data_builder = data_builder.bind(mp.clone());
+        }
     }
 
     data_builder = data_builder.bind(limit).bind(offset);

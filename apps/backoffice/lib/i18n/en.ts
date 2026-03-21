@@ -100,6 +100,8 @@ const en: Record<TranslationKey, string> = {
   "books.noResults": "No books found for \"{{query}}\"",
   "books.noBooks": "No books available",
   "books.coverOf": "Cover of {{name}}",
+  "books.format": "Format",
+  "books.allFormats": "All formats",
 
   // Series page
   "series.title": "Series",

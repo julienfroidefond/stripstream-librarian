@@ -98,6 +98,8 @@ const fr = {
   "books.noResults": "Aucun livre trouvé pour \"{{query}}\"",
   "books.noBooks": "Aucun livre disponible",
   "books.coverOf": "Couverture de {{name}}",
+  "books.format": "Format",
+  "books.allFormats": "Tous les formats",
 
   // Series page
   "series.title": "Séries",
