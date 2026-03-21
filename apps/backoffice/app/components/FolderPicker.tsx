@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { FolderBrowser } from "./FolderBrowser";
 import { FolderItem } from "../../lib/api";
 import { Button } from "./ui";
@@ -64,14 +65,14 @@ export function FolderPicker({ initialFolders, selectedPath, onSelect }: FolderP
       </div>
 
       {/* Popup Modal */}
-      {isOpen && (
+      {isOpen && createPortal(
         <>
           {/* Backdrop */}
-          <div 
+          <div
             className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50"
             onClick={() => setIsOpen(false)}
           />
-          
+
           {/* Modal */}
           <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
             <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -121,7 +122,8 @@ export function FolderPicker({ initialFolders, selectedPath, onSelect }: FolderP
               </div>
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );
