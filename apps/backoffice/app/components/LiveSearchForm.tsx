@@ -39,12 +39,17 @@ interface LiveSearchFormProps {
   debounceMs?: number;
 }
 
+const STORAGE_KEY_PREFIX = "filters:";
+
 export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearchFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t } = useTranslation();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const restoredRef = useRef(false);
+
+  const storageKey = `${STORAGE_KEY_PREFIX}${basePath}`;
 
   const buildUrl = useCallback((): string => {
     if (!formRef.current) return basePath;
@@ -58,16 +63,58 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
     return qs ? `${basePath}?${qs}` : basePath;
   }, [basePath]);
 
+  const saveFilters = useCallback(() => {
+    if (!formRef.current) return;
+    const formData = new FormData(formRef.current);
+    const filters: Record<string, string> = {};
+    for (const [key, value] of formData.entries()) {
+      const str = value.toString().trim();
+      if (str) filters[key] = str;
+    }
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(filters));
+    } catch {}
+  }, [storageKey]);
+
   const navigate = useCallback((immediate: boolean) => {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (immediate) {
+      saveFilters();
       router.replace(buildUrl() as any);
     } else {
       timerRef.current = setTimeout(() => {
+        saveFilters();
         router.replace(buildUrl() as any);
       }, debounceMs);
     }
-  }, [router, buildUrl, debounceMs]);
+  }, [router, buildUrl, debounceMs, saveFilters]);
+
+  // Restore filters from localStorage on mount if URL has no filters
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+
+    const hasUrlFilters = fields.some((f) => {
+      const val = searchParams.get(f.name);
+      return val && val.trim() !== "";
+    });
+    if (hasUrlFilters) return;
+
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (!saved) return;
+      const filters: Record<string, string> = JSON.parse(saved);
+      const fieldNames = new Set(fields.map((f) => f.name));
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(filters)) {
+        if (fieldNames.has(key) && value) params.set(key, value);
+      }
+      const qs = params.toString();
+      if (qs) {
+        router.replace(`${basePath}?${qs}` as any);
+      }
+    } catch {}
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     return () => {
@@ -89,6 +136,7 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
       onSubmit={(e) => {
         e.preventDefault();
         if (timerRef.current) clearTimeout(timerRef.current);
+        saveFilters();
         router.replace(buildUrl() as any);
       }}
       className="space-y-4"
@@ -149,7 +197,11 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
             {hasFilters && (
               <button
                 type="button"
-                onClick={() => router.replace(basePath as any)}
+                onClick={() => {
+                  formRef.current?.reset();
+                  try { localStorage.removeItem(storageKey); } catch {}
+                  router.replace(basePath as any);
+                }}
                 className="
                   inline-flex items-center gap-1
                   h-8 px-2.5
