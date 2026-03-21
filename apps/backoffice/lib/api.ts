@@ -141,7 +141,7 @@ export function config() {
 
 export async function apiFetch<T>(
   path: string,
-  init?: RequestInit,
+  init?: RequestInit & { next?: { revalidate?: number; tags?: string[] } },
 ): Promise<T> {
   const { baseUrl, token } = config();
   const headers = new Headers(init?.headers || {});
@@ -150,10 +150,12 @@ export async function apiFetch<T>(
     headers.set("Content-Type", "application/json");
   }
 
+  const { next: nextOptions, ...restInit } = init ?? {};
+
   const res = await fetch(`${baseUrl}${path}`, {
-    ...init,
+    ...restInit,
     headers,
-    cache: "no-store",
+    ...(nextOptions ? { next: nextOptions } : { cache: "no-store" as const }),
   });
 
   if (!res.ok) {
@@ -168,7 +170,7 @@ export async function apiFetch<T>(
 }
 
 export async function fetchLibraries() {
-  return apiFetch<LibraryDto[]>("/libraries");
+  return apiFetch<LibraryDto[]>("/libraries", { next: { revalidate: 30 } });
 }
 
 export async function createLibrary(name: string, rootPath: string) {
@@ -356,7 +358,7 @@ export async function fetchAllSeries(
 }
 
 export async function fetchSeriesStatuses(): Promise<string[]> {
-  return apiFetch<string[]>("/series/statuses");
+  return apiFetch<string[]>("/series/statuses", { next: { revalidate: 300 } });
 }
 
 export async function searchBooks(
@@ -421,7 +423,7 @@ export type ThumbnailStats = {
 };
 
 export async function getSettings() {
-  return apiFetch<Settings>("/settings");
+  return apiFetch<Settings>("/settings", { next: { revalidate: 60 } });
 }
 
 export async function updateSetting(key: string, value: unknown) {
@@ -432,7 +434,7 @@ export async function updateSetting(key: string, value: unknown) {
 }
 
 export async function getCacheStats() {
-  return apiFetch<CacheStats>("/settings/cache/stats");
+  return apiFetch<CacheStats>("/settings/cache/stats", { next: { revalidate: 30 } });
 }
 
 export async function clearCache() {
@@ -442,7 +444,7 @@ export async function clearCache() {
 }
 
 export async function getThumbnailStats() {
-  return apiFetch<ThumbnailStats>("/settings/thumbnail/stats");
+  return apiFetch<ThumbnailStats>("/settings/thumbnail/stats", { next: { revalidate: 30 } });
 }
 
 // Status mappings
@@ -453,7 +455,7 @@ export type StatusMappingDto = {
 };
 
 export async function fetchStatusMappings(): Promise<StatusMappingDto[]> {
-  return apiFetch<StatusMappingDto[]>("/settings/status-mappings");
+  return apiFetch<StatusMappingDto[]>("/settings/status-mappings", { next: { revalidate: 60 } });
 }
 
 export async function upsertStatusMapping(provider_status: string, mapped_status: string): Promise<StatusMappingDto> {
@@ -558,7 +560,7 @@ export type StatsResponse = {
 };
 
 export async function fetchStats() {
-  return apiFetch<StatsResponse>("/stats");
+  return apiFetch<StatsResponse>("/stats", { next: { revalidate: 30 } });
 }
 
 // ---------------------------------------------------------------------------
