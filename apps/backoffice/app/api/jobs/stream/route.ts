@@ -7,10 +7,11 @@ export async function GET(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       controller.enqueue(new TextEncoder().encode(""));
-      
+
       let lastData: string | null = null;
       let isActive = true;
       let consecutiveErrors = 0;
+      let intervalId: ReturnType<typeof setInterval> | null = null;
 
       const fetchJobs = async () => {
         if (!isActive) return;
@@ -25,51 +26,52 @@ export async function GET(request: NextRequest) {
             const data = await response.json();
             const dataStr = JSON.stringify(data);
 
-            // Send if data changed
+            // Send only if data changed
             if (dataStr !== lastData && isActive) {
               lastData = dataStr;
               try {
                 controller.enqueue(
                   new TextEncoder().encode(`data: ${dataStr}\n\n`)
                 );
-              } catch (err) {
-                // Controller closed, ignore
+              } catch {
                 isActive = false;
               }
             }
+
+            // Adapt interval: 2s when active jobs exist, 15s when idle
+            const hasActiveJobs = data.some((j: { status: string }) =>
+              j.status === "running" || j.status === "pending" || j.status === "extracting_pages" || j.status === "generating_thumbnails"
+            );
+            const nextInterval = hasActiveJobs ? 2000 : 15000;
+            restartInterval(nextInterval);
           }
         } catch (error) {
           if (isActive) {
             consecutiveErrors++;
-            // Only log first failure and every 30th to avoid spam
             if (consecutiveErrors === 1 || consecutiveErrors % 30 === 0) {
               console.warn(`SSE fetch error (${consecutiveErrors} consecutive):`, error);
             }
           }
         }
       };
-      
-      // Initial fetch
+
+      const restartInterval = (ms: number) => {
+        if (intervalId !== null) clearInterval(intervalId);
+        intervalId = setInterval(fetchJobs, ms);
+      };
+
+      // Initial fetch + start polling
       await fetchJobs();
-      
-      // Poll every 2 seconds
-      const interval = setInterval(async () => {
-        if (!isActive) {
-          clearInterval(interval);
-          return;
-        }
-        await fetchJobs();
-      }, 2000);
-      
+
       // Cleanup
       request.signal.addEventListener("abort", () => {
         isActive = false;
-        clearInterval(interval);
+        if (intervalId !== null) clearInterval(intervalId);
         controller.close();
       });
     },
   });
-  
+
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",

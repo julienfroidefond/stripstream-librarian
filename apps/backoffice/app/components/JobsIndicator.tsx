@@ -54,44 +54,60 @@ export function JobsIndicator() {
   const [popinStyle, setPopinStyle] = useState<React.CSSProperties>({});
 
   useEffect(() => {
-    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let eventSource: EventSource | null = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    const fetchActiveJobs = async () => {
-      try {
-        const response = await fetch("/api/jobs/active");
-        if (response.ok) {
-          const jobs: Job[] = await response.json();
-          setActiveJobs(jobs);
-          // Adapt polling interval: 2s when jobs are active, 30s when idle
-          restartInterval(jobs.length > 0 ? 2000 : 30000);
-        }
-      } catch (error) {
-        console.error("Failed to fetch jobs:", error);
+    const connect = () => {
+      if (eventSource) {
+        eventSource.close();
       }
+      eventSource = new EventSource("/api/jobs/stream");
+
+      eventSource.onmessage = (event) => {
+        try {
+          const allJobs: Job[] = JSON.parse(event.data);
+          const active = allJobs.filter(j =>
+            j.status === "running" || j.status === "pending" ||
+            j.status === "extracting_pages" || j.status === "generating_thumbnails"
+          );
+          setActiveJobs(active);
+        } catch {
+          // ignore malformed data
+        }
+      };
+
+      eventSource.onerror = () => {
+        eventSource?.close();
+        eventSource = null;
+        // Reconnect after 5s on error
+        reconnectTimeout = setTimeout(connect, 5000);
+      };
     };
 
-    const restartInterval = (ms: number) => {
-      if (intervalId !== null) clearInterval(intervalId);
-      intervalId = setInterval(fetchActiveJobs, ms);
+    const disconnect = () => {
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
     };
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        if (intervalId !== null) {
-          clearInterval(intervalId);
-          intervalId = null;
-        }
+        disconnect();
       } else {
-        // Refetch immediately when tab becomes visible, then resume polling
-        fetchActiveJobs();
+        connect();
       }
     };
 
-    fetchActiveJobs();
+    connect();
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      if (intervalId !== null) clearInterval(intervalId);
+      disconnect();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
