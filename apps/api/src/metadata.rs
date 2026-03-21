@@ -369,13 +369,23 @@ pub async fn approve_metadata(
             .await?;
     }
 
-    // Notify via Telegram
+    // Notify via Telegram (with first book thumbnail if available)
     let provider_for_notif: String = row.get("provider");
+    let thumbnail_path: Option<String> = sqlx::query_scalar(
+        "SELECT thumbnail_path FROM books WHERE library_id = $1 AND series_name = $2 AND thumbnail_path IS NOT NULL ORDER BY sort_order LIMIT 1",
+    )
+    .bind(library_id)
+    .bind(&series_name)
+    .fetch_optional(&state.pool)
+    .await
+    .ok()
+    .flatten();
     notifications::notify(
         state.pool.clone(),
         notifications::NotificationEvent::MetadataApproved {
             series_name: series_name.clone(),
             provider: provider_for_notif,
+            thumbnail_path,
         },
     );
 

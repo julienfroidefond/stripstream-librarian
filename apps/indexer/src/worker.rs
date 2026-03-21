@@ -36,11 +36,18 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
         }
     });
 
+    struct JobInfo {
+        job_type: String,
+        library_name: Option<String>,
+        book_title: Option<String>,
+        thumbnail_path: Option<String>,
+    }
+
     async fn load_job_info(
         pool: &sqlx::PgPool,
         job_id: Uuid,
         library_id: Option<Uuid>,
-    ) -> (String, Option<String>, Option<String>) {
+    ) -> JobInfo {
         let row = sqlx::query("SELECT type, book_id FROM index_jobs WHERE id = $1")
             .bind(job_id)
             .fetch_optional(pool)
@@ -64,18 +71,22 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
             None
         };
 
-        let book_title: Option<String> = if let Some(bid) = book_id {
-            sqlx::query_scalar("SELECT title FROM books WHERE id = $1")
+        let (book_title, thumbnail_path): (Option<String>, Option<String>) = if let Some(bid) = book_id {
+            let row = sqlx::query("SELECT title, thumbnail_path FROM books WHERE id = $1")
                 .bind(bid)
                 .fetch_optional(pool)
                 .await
                 .ok()
-                .flatten()
+                .flatten();
+            match row {
+                Some(r) => (r.get("title"), r.get("thumbnail_path")),
+                None => (None, None),
+            }
         } else {
-            None
+            (None, None)
         };
 
-        (job_type, library_name, book_title)
+        JobInfo { job_type, library_name, book_title, thumbnail_path }
     }
 
     async fn load_scan_stats(pool: &sqlx::PgPool, job_id: Uuid) -> notifications::ScanStats {
@@ -111,6 +122,7 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
         job_type: &str,
         library_name: Option<String>,
         book_title: Option<String>,
+        thumbnail_path: Option<String>,
         stats: notifications::ScanStats,
         duration_seconds: u64,
     ) -> notifications::NotificationEvent {
@@ -123,6 +135,7 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
             "conversion" => notifications::NotificationEvent::ConversionCompleted {
                 library_name,
                 book_title,
+                thumbnail_path,
             },
             _ => notifications::NotificationEvent::ScanCompleted {
                 job_type: job_type.to_string(),
@@ -137,6 +150,7 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
         job_type: &str,
         library_name: Option<String>,
         book_title: Option<String>,
+        thumbnail_path: Option<String>,
         error: String,
     ) -> notifications::NotificationEvent {
         match notifications::job_type_category(job_type) {
@@ -148,6 +162,7 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
             "conversion" => notifications::NotificationEvent::ConversionFailed {
                 library_name,
                 book_title,
+                thumbnail_path,
                 error,
             },
             _ => notifications::NotificationEvent::ScanFailed {
@@ -163,8 +178,7 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
             Ok(Some((job_id, library_id))) => {
                 info!("[INDEXER] Starting job {} library={:?}", job_id, library_id);
                 let started_at = std::time::Instant::now();
-                let (job_type, library_name, book_title) =
-                    load_job_info(&state.pool, job_id, library_id).await;
+                let info = load_job_info(&state.pool, job_id, library_id).await;
 
                 if let Err(err) = job::process_job(&state, job_id, library_id).await {
                     let err_str = err.to_string();
@@ -173,8 +187,8 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
                         notifications::notify(
                             state.pool.clone(),
                             notifications::NotificationEvent::ScanCancelled {
-                                job_type: job_type.clone(),
-                                library_name: library_name.clone(),
+                                job_type: info.job_type.clone(),
+                                library_name: info.library_name.clone(),
                             },
                         );
                     } else {
@@ -182,7 +196,7 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
                         let _ = job::fail_job(&state.pool, job_id, &err_str).await;
                         notifications::notify(
                             state.pool.clone(),
-                            build_failed_event(&job_type, library_name.clone(), book_title.clone(), err_str),
+                            build_failed_event(&info.job_type, info.library_name.clone(), info.book_title.clone(), info.thumbnail_path.clone(), err_str),
                         );
                     }
                 } else {
@@ -191,9 +205,10 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
                     notifications::notify(
                         state.pool.clone(),
                         build_completed_event(
-                            &job_type,
-                            library_name.clone(),
-                            book_title.clone(),
+                            &info.job_type,
+                            info.library_name.clone(),
+                            info.book_title.clone(),
+                            info.thumbnail_path.clone(),
                             stats,
                             started_at.elapsed().as_secs(),
                         ),

@@ -89,15 +89,17 @@ pub async fn load_telegram_config(pool: &PgPool) -> Option<TelegramConfig> {
 // Telegram HTTP
 // ---------------------------------------------------------------------------
 
+fn build_client() -> Result<reqwest::Client> {
+    Ok(reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?)
+}
+
 async fn send_telegram(config: &TelegramConfig, text: &str) -> Result<()> {
     let url = format!(
         "https://api.telegram.org/bot{}/sendMessage",
         config.bot_token
     );
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()?;
 
     let body = serde_json::json!({
         "chat_id": config.chat_id,
@@ -105,7 +107,48 @@ async fn send_telegram(config: &TelegramConfig, text: &str) -> Result<()> {
         "parse_mode": "HTML",
     });
 
-    let resp = client.post(&url).json(&body).send().await?;
+    let resp = build_client()?.post(&url).json(&body).send().await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        anyhow::bail!("Telegram API returned {status}: {text}");
+    }
+
+    Ok(())
+}
+
+async fn send_telegram_photo(config: &TelegramConfig, caption: &str, photo_path: &str) -> Result<()> {
+    let url = format!(
+        "https://api.telegram.org/bot{}/sendPhoto",
+        config.bot_token
+    );
+
+    let photo_bytes = tokio::fs::read(photo_path).await?;
+    let filename = std::path::Path::new(photo_path)
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    let mime = if filename.ends_with(".webp") {
+        "image/webp"
+    } else if filename.ends_with(".png") {
+        "image/png"
+    } else {
+        "image/jpeg"
+    };
+
+    let part = reqwest::multipart::Part::bytes(photo_bytes)
+        .file_name(filename)
+        .mime_str(mime)?;
+
+    let form = reqwest::multipart::Form::new()
+        .text("chat_id", config.chat_id.clone())
+        .text("caption", caption.to_string())
+        .text("parse_mode", "HTML")
+        .part("photo", part);
+
+    let resp = build_client()?.post(&url).multipart(form).send().await?;
 
     if !resp.status().is_success() {
         let status = resp.status();
@@ -165,16 +208,19 @@ pub enum NotificationEvent {
     ConversionCompleted {
         library_name: Option<String>,
         book_title: Option<String>,
+        thumbnail_path: Option<String>,
     },
     ConversionFailed {
         library_name: Option<String>,
         book_title: Option<String>,
+        thumbnail_path: Option<String>,
         error: String,
     },
     // Metadata manual approve
     MetadataApproved {
         series_name: String,
         provider: String,
+        thumbnail_path: Option<String>,
     },
     // Metadata batch (auto-match)
     MetadataBatchCompleted {
@@ -292,6 +338,7 @@ fn format_event(event: &NotificationEvent) -> String {
         NotificationEvent::ConversionCompleted {
             library_name,
             book_title,
+            ..
         } => {
             let lib = library_name.as_deref().unwrap_or("Unknown");
             let title = book_title.as_deref().unwrap_or("Unknown");
@@ -305,6 +352,7 @@ fn format_event(event: &NotificationEvent) -> String {
             library_name,
             book_title,
             error,
+            ..
         } => {
             let lib = library_name.as_deref().unwrap_or("Unknown");
             let title = book_title.as_deref().unwrap_or("Unknown");
@@ -319,6 +367,7 @@ fn format_event(event: &NotificationEvent) -> String {
         NotificationEvent::MetadataApproved {
             series_name,
             provider,
+            ..
         } => {
             format!(
                 "🔗 <b>Metadata linked</b>\n\
@@ -420,6 +469,17 @@ fn is_event_enabled(config: &TelegramConfig, event: &NotificationEvent) -> bool 
     }
 }
 
+/// Extract thumbnail path from event if present and file exists on disk.
+fn event_thumbnail(event: &NotificationEvent) -> Option<&str> {
+    let path = match event {
+        NotificationEvent::ConversionCompleted { thumbnail_path, .. } => thumbnail_path.as_deref(),
+        NotificationEvent::ConversionFailed { thumbnail_path, .. } => thumbnail_path.as_deref(),
+        NotificationEvent::MetadataApproved { thumbnail_path, .. } => thumbnail_path.as_deref(),
+        _ => None,
+    };
+    path.filter(|p| std::path::Path::new(p).exists())
+}
+
 /// Load config + format + send in a spawned task. Errors are only logged.
 pub fn notify(pool: PgPool, event: NotificationEvent) {
     tokio::spawn(async move {
@@ -433,10 +493,21 @@ pub fn notify(pool: PgPool, event: NotificationEvent) {
         }
 
         let text = format_event(&event);
-        if let Err(e) = send_telegram(&config, &text).await {
-            warn!("[TELEGRAM] Failed to send notification: {e}");
+        let sent = if let Some(photo) = event_thumbnail(&event) {
+            match send_telegram_photo(&config, &text, photo).await {
+                Ok(()) => Ok(()),
+                Err(e) => {
+                    warn!("[TELEGRAM] Photo send failed, falling back to text: {e}");
+                    send_telegram(&config, &text).await
+                }
+            }
         } else {
-            info!("[TELEGRAM] Notification sent");
+            send_telegram(&config, &text).await
+        };
+
+        match sent {
+            Ok(()) => info!("[TELEGRAM] Notification sent"),
+            Err(e) => warn!("[TELEGRAM] Failed to send notification: {e}"),
         }
     });
 }
