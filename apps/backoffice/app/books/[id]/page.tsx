@@ -95,7 +95,7 @@ export default async function BookDetailPage({
               alt={t("bookDetail.coverOf", { title: book.title })}
               fill
               className="object-cover"
-              unoptimized
+              sizes="192px"
               loading="lazy"
             />
           </div>

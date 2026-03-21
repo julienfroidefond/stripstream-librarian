@@ -86,7 +86,7 @@ export default async function LibrarySeriesPage({
                       alt={t("books.coverOf", { name: s.name })}
                       fill
                       className="object-cover"
-                      unoptimized
+                      sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
                     />
                   </div>
                   <div className="p-3">

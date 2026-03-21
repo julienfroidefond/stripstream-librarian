@@ -1,4 +1,5 @@
 import { revalidatePath } from "next/cache";
+import Image from "next/image";
 import Link from "next/link";
 import { listFolders, createLibrary, deleteLibrary, fetchLibraries, getBookCoverUrl, LibraryDto, FolderItem } from "../../lib/api";
 import type { TranslationKey } from "../../lib/i18n/fr";
@@ -88,10 +89,12 @@ export default async function LibrariesPage() {
               {/* Thumbnail fan */}
               {thumbnails.length > 0 ? (
                 <Link href={`/libraries/${lib.id}/series`} className="block relative h-48 overflow-hidden bg-muted/10">
-                  <img
+                  <Image
                     src={thumbnails[0]}
                     alt=""
-                    className="absolute inset-0 w-full h-full object-cover blur-xl scale-110 opacity-40"
+                    fill
+                    className="object-cover blur-xl scale-110 opacity-40"
+                    sizes="(max-width: 768px) 100vw, 33vw"
                     loading="lazy"
                   />
                   <div className="absolute inset-0 flex items-end justify-center">
@@ -104,17 +107,20 @@ export default async function LibrariesPage() {
                       const cx = Math.cos(rad) * radius;
                       const cy = Math.sin(rad) * radius;
                       return (
-                        <img
+                        <Image
                           key={i}
                           src={url}
                           alt=""
-                          className="absolute w-24 h-36 object-cover shadow-lg"
+                          width={96}
+                          height={144}
+                          className="absolute object-cover shadow-lg"
                           style={{
                             transform: `translate(${cx}px, ${cy}px) rotate(${angle}deg)`,
                             transformOrigin: 'bottom center',
                             zIndex: count - Math.abs(Math.round(i - mid)),
                             bottom: '-185px',
                           }}
+                          sizes="96px"
                           loading="lazy"
                         />
                       );
