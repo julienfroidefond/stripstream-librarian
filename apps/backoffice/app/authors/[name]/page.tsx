@@ -21,26 +21,19 @@ export default async function AuthorDetailPage({
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 20;
 
-  // Fetch books by this author (server-side filtering via API) and series
+  // Fetch books by this author (server-side filtering via API) and series by this author
   const [booksPage, seriesPage] = await Promise.all([
     fetchBooks(undefined, undefined, page, limit, undefined, undefined, authorName).catch(
       () => ({ items: [], total: 0, page: 1, limit }) as BooksPageDto
     ),
-    fetchAllSeries(undefined, undefined, undefined, 1, 200).catch(
+    fetchAllSeries(undefined, undefined, undefined, 1, 200, undefined, undefined, undefined, undefined, authorName).catch(
       () => ({ items: [], total: 0, page: 1, limit: 200 }) as SeriesPageDto
     ),
   ]);
 
   const totalPages = Math.ceil(booksPage.total / limit);
 
-  // Extract unique series names from this author's books
-  const authorSeriesNames = new Set(
-    booksPage.items
-      .map((b) => b.series)
-      .filter((s): s is string => s != null && s !== "")
-  );
-
-  const authorSeries = seriesPage.items.filter((s) => authorSeriesNames.has(s.name));
+  const authorSeries = seriesPage.items;
 
   return (
     <>

@@ -292,6 +292,9 @@ pub struct ListAllSeriesQuery {
     /// Filter by metadata provider: a provider name (e.g. "google_books"), "linked" (any provider), or "unlinked" (no provider)
     #[schema(value_type = Option<String>, example = "google_books")]
     pub metadata_provider: Option<String>,
+    /// Filter by author name (matches in series_metadata.authors or book-level authors)
+    #[schema(value_type = Option<String>, example = "Toriyama")]
+    pub author: Option<String>,
     #[schema(value_type = Option<i64>, example = 1)]
     pub page: Option<i64>,
     #[schema(value_type = Option<i64>, example = 50)]
@@ -311,6 +314,7 @@ pub struct ListAllSeriesQuery {
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),
         ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
         ("metadata_provider" = Option<String>, Query, description = "Filter by metadata provider: a provider name (e.g. 'google_books'), 'linked' (any provider), or 'unlinked' (no provider)"),
+        ("author" = Option<String>, Query, description = "Filter by author name (matches in series_metadata.authors or book-level authors)"),
         ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
         ("limit" = Option<i64>, Query, description = "Items per page (max 200, default 50)"),
         ("sort" = Option<String>, Query, description = "Sort order: 'title' (default) or 'latest' (most recently added first)"),
@@ -372,6 +376,10 @@ pub async fn list_all_series(
         None => String::new(),
     };
 
+    let author_cond = if query.author.is_some() {
+        p += 1; format!("AND (${p} = ANY(sm.authors) OR EXISTS (SELECT 1 FROM books bk WHERE bk.series = sc.name AND bk.library_id = sc.library_id AND ${p} = ANY(COALESCE(NULLIF(bk.authors, '{{}}'), CASE WHEN bk.author IS NOT NULL AND bk.author != '' THEN ARRAY[bk.author] ELSE ARRAY[]::text[] END))))")
+    } else { String::new() };
+
     // Missing counts CTE — needs library_id filter when filtering by library
     let missing_cte = if query.library_id.is_some() {
         r#"
@@ -427,7 +435,7 @@ pub async fn list_all_series(
         LEFT JOIN series_metadata sm ON sm.library_id = sc.library_id AND sm.name = sc.name
         LEFT JOIN missing_counts mc ON mc.series_name = sc.name AND mc.library_id = sc.library_id
         LEFT JOIN metadata_links ml ON ml.series_name = sc.name AND ml.library_id = sc.library_id
-        WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond}
+        WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {author_cond}
         "#
     );
 
@@ -492,6 +500,7 @@ pub async fn list_all_series(
           {ss_cond}
           {missing_cond}
           {metadata_provider_cond}
+          {author_cond}
         ORDER BY {series_order_clause}
         LIMIT ${limit_p} OFFSET ${offset_p}
         "#
@@ -523,6 +532,10 @@ pub async fn list_all_series(
             count_builder = count_builder.bind(mp);
             data_builder = data_builder.bind(mp);
         }
+    }
+    if let Some(ref author) = query.author {
+        count_builder = count_builder.bind(author.clone());
+        data_builder = data_builder.bind(author.clone());
     }
 
     data_builder = data_builder.bind(limit).bind(offset);

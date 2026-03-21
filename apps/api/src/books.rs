@@ -143,7 +143,7 @@ pub async fn list_books(
         p += 1; format!("AND COALESCE(brp.status, 'unread') = ANY(${p})")
     } else { String::new() };
     let author_cond = if query.author.is_some() {
-        p += 1; format!("AND (${p} = ANY(COALESCE(NULLIF(b.authors, '{{}}'), CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END)))")
+        p += 1; format!("AND (${p} = ANY(COALESCE(NULLIF(b.authors, '{{}}'), CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END)) OR EXISTS (SELECT 1 FROM series_metadata sm WHERE sm.library_id = b.library_id AND sm.name = b.series AND ${p} = ANY(sm.authors)))")
     } else { String::new() };
     let metadata_cond = match query.metadata_provider.as_deref() {
         Some("unlinked") => "AND eml.id IS NULL".to_string(),

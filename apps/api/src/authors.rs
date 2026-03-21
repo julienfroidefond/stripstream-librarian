@@ -68,7 +68,7 @@ pub async fn list_authors(
         .filter(|s| !s.trim().is_empty())
         .map(|s| format!("%{s}%"));
 
-    // Aggregate unique authors from books.authors + books.author
+    // Aggregate unique authors from books.authors + books.author + series_metadata.authors
     let sql = format!(
         r#"
         WITH all_authors AS (
@@ -79,18 +79,21 @@ pub async fn list_authors(
                 )
             ) AS name
             FROM books
+            UNION
+            SELECT DISTINCT UNNEST(authors) AS name
+            FROM series_metadata
+            WHERE authors != '{{}}'
         ),
         filtered AS (
             SELECT name FROM all_authors
             WHERE ($1::text IS NULL OR name ILIKE $1)
         ),
-        counted AS (
+        book_counts AS (
             SELECT
-                f.name,
-                COUNT(DISTINCT b.id) AS book_count,
-                COUNT(DISTINCT NULLIF(b.series, '')) AS series_count
+                f.name AS author_name,
+                COUNT(DISTINCT b.id) AS book_count
             FROM filtered f
-            JOIN books b ON (
+            LEFT JOIN books b ON (
                 f.name = ANY(
                     COALESCE(
                         NULLIF(b.authors, '{{}}'),
@@ -99,9 +102,24 @@ pub async fn list_authors(
                 )
             )
             GROUP BY f.name
+        ),
+        series_counts AS (
+            SELECT
+                f.name AS author_name,
+                COUNT(DISTINCT (sm.library_id, sm.name)) AS series_count
+            FROM filtered f
+            LEFT JOIN series_metadata sm ON (
+                f.name = ANY(sm.authors) AND sm.authors != '{{}}'
+            )
+            GROUP BY f.name
         )
-        SELECT name, book_count, series_count
-        FROM counted
+        SELECT
+            f.name,
+            COALESCE(bc.book_count, 0) AS book_count,
+            COALESCE(sc.series_count, 0) AS series_count
+        FROM filtered f
+        LEFT JOIN book_counts bc ON bc.author_name = f.name
+        LEFT JOIN series_counts sc ON sc.author_name = f.name
         ORDER BY {order_clause}
         LIMIT $2 OFFSET $3
         "#
@@ -116,6 +134,10 @@ pub async fn list_authors(
                 )
             ) AS name
             FROM books
+            UNION
+            SELECT DISTINCT UNNEST(authors) AS name
+            FROM series_metadata
+            WHERE authors != '{}'
         )
         SELECT COUNT(*) AS total
         FROM all_authors
