@@ -734,7 +734,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-medium text-foreground">
-                          {new Date(r.created_at).toLocaleString()}
+                          {new Date(r.created_at).toLocaleString(locale)}
                         </span>
                         <span className="text-xs text-muted-foreground truncate ml-2" title={r.komga_url}>
                           {r.komga_url}

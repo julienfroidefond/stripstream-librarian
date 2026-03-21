@@ -57,13 +57,13 @@ function getDateParts(dateStr: string): { mins: number; hours: number; useDate: 
 }
 
 export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [jobs, setJobs] = useState(initialJobs);
 
   const formatDate = (dateStr: string): string => {
     const parts = getDateParts(dateStr);
     if (parts.useDate) {
-      return parts.date.toLocaleDateString();
+      return parts.date.toLocaleDateString(locale);
     }
     if (parts.mins < 1) return t("time.justNow");
     if (parts.hours > 0) return t("time.hoursAgo", { count: parts.hours });
