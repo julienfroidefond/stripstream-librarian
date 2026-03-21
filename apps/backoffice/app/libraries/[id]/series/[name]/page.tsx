@@ -2,13 +2,21 @@ import { fetchLibraries, fetchBooks, fetchSeriesMetadata, getBookCoverUrl, getMe
 import { BooksGrid, EmptyState } from "../../../../components/BookCard";
 import { MarkSeriesReadButton } from "../../../../components/MarkSeriesReadButton";
 import { MarkBookReadButton } from "../../../../components/MarkBookReadButton";
-import { EditSeriesForm } from "../../../../components/EditSeriesForm";
-import { MetadataSearchModal } from "../../../../components/MetadataSearchModal";
-import { ProwlarrSearchModal } from "../../../../components/ProwlarrSearchModal";
+import nextDynamic from "next/dynamic";
 import { OffsetPagination } from "../../../../components/ui";
 import { SafeHtml } from "../../../../components/SafeHtml";
 import Image from "next/image";
 import Link from "next/link";
+
+const EditSeriesForm = nextDynamic(
+  () => import("../../../../components/EditSeriesForm").then(m => m.EditSeriesForm)
+);
+const MetadataSearchModal = nextDynamic(
+  () => import("../../../../components/MetadataSearchModal").then(m => m.MetadataSearchModal)
+);
+const ProwlarrSearchModal = nextDynamic(
+  () => import("../../../../components/ProwlarrSearchModal").then(m => m.ProwlarrSearchModal)
+);
 import { notFound } from "next/navigation";
 import { getServerTranslations } from "../../../../../lib/i18n/server";
 

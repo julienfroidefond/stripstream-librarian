@@ -2,11 +2,15 @@ import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch, ReadingStatus } fro
 import { BookPreview } from "../../components/BookPreview";
 import { ConvertButton } from "../../components/ConvertButton";
 import { MarkBookReadButton } from "../../components/MarkBookReadButton";
-import { EditBookForm } from "../../components/EditBookForm";
+import nextDynamic from "next/dynamic";
 import { SafeHtml } from "../../components/SafeHtml";
 import { getServerTranslations } from "../../../lib/i18n/server";
 import Image from "next/image";
 import Link from "next/link";
+
+const EditBookForm = nextDynamic(
+  () => import("../../components/EditBookForm").then(m => m.EditBookForm)
+);
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
