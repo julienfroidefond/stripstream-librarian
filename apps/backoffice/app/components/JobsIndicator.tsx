@@ -54,21 +54,46 @@ export function JobsIndicator() {
   const [popinStyle, setPopinStyle] = useState<React.CSSProperties>({});
 
   useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
     const fetchActiveJobs = async () => {
       try {
         const response = await fetch("/api/jobs/active");
         if (response.ok) {
-          const jobs = await response.json();
+          const jobs: Job[] = await response.json();
           setActiveJobs(jobs);
+          // Adapt polling interval: 2s when jobs are active, 30s when idle
+          restartInterval(jobs.length > 0 ? 2000 : 30000);
         }
       } catch (error) {
         console.error("Failed to fetch jobs:", error);
       }
     };
 
+    const restartInterval = (ms: number) => {
+      if (intervalId !== null) clearInterval(intervalId);
+      intervalId = setInterval(fetchActiveJobs, ms);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (intervalId !== null) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+      } else {
+        // Refetch immediately when tab becomes visible, then resume polling
+        fetchActiveJobs();
+      }
+    };
+
     fetchActiveJobs();
-    const interval = setInterval(fetchActiveJobs, 2000);
-    return () => clearInterval(interval);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      if (intervalId !== null) clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   // Position the popin relative to the button
