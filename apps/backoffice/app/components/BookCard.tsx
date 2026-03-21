@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { BookDto, ReadingStatus } from "../../lib/api";
@@ -17,7 +17,7 @@ interface BookCardProps {
   readingStatus?: ReadingStatus;
 }
 
-function BookImage({ src, alt }: { src: string; alt: string }) {
+const BookImage = memo(function BookImage({ src, alt }: { src: string; alt: string }) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
 
@@ -54,9 +54,9 @@ function BookImage({ src, alt }: { src: string; alt: string }) {
       />
     </div>
   );
-}
+});
 
-export function BookCard({ book, readingStatus }: BookCardProps) {
+export const BookCard = memo(function BookCard({ book, readingStatus }: BookCardProps) {
   const { t } = useTranslation();
   const coverUrl = book.coverUrl || `/api/books/${book.id}/thumbnail`;
   const status = readingStatus ?? book.reading_status;
@@ -128,7 +128,7 @@ export function BookCard({ book, readingStatus }: BookCardProps) {
       </div>
     </Link>
   );
-}
+});
 
 interface BooksGridProps {
   books: (BookDto & { coverUrl?: string })[];
