@@ -124,6 +124,12 @@ pub async fn start_batch(
 
     // Spawn the background processing task
     let pool = state.pool.clone();
+    let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+        .bind(library_id)
+        .fetch_optional(&state.pool)
+        .await
+        .ok()
+        .flatten();
     tokio::spawn(async move {
         if let Err(e) = process_metadata_batch(&pool, job_id, library_id).await {
             warn!("[METADATA_BATCH] job {job_id} failed: {e}");
@@ -134,6 +140,13 @@ pub async fn start_batch(
             .bind(e.to_string())
             .execute(&pool)
             .await;
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::MetadataBatchFailed {
+                    library_name,
+                    error: e.to_string(),
+                },
+            );
         }
     });
 
@@ -620,6 +633,21 @@ async fn process_metadata_batch(
     .map_err(|e| e.to_string())?;
 
     info!("[METADATA_BATCH] job={job_id} completed: {processed}/{total} series processed");
+
+    let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+        .bind(library_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    notifications::notify(
+        pool.clone(),
+        notifications::NotificationEvent::MetadataBatchCompleted {
+            library_name,
+            total_series: total,
+            processed,
+        },
+    );
 
     Ok(())
 }

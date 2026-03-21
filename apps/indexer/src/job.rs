@@ -328,6 +328,7 @@ pub async fn process_job(
         removed_files: 0,
         errors: 0,
         warnings: 0,
+        new_series: 0,
     };
 
     let mut total_processed_count = 0i32;

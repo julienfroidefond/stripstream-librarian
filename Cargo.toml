@@ -3,6 +3,7 @@ members = [
   "apps/api",
   "apps/indexer",
   "crates/core",
+  "crates/notifications",
   "crates/parsers",
 ]
 resolver = "2"

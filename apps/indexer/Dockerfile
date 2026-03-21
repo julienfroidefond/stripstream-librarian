@@ -6,13 +6,15 @@ COPY Cargo.toml ./
 COPY apps/api/Cargo.toml apps/api/Cargo.toml
 COPY apps/indexer/Cargo.toml apps/indexer/Cargo.toml
 COPY crates/core/Cargo.toml crates/core/Cargo.toml
+COPY crates/notifications/Cargo.toml crates/notifications/Cargo.toml
 COPY crates/parsers/Cargo.toml crates/parsers/Cargo.toml
 
-RUN mkdir -p apps/api/src apps/indexer/src crates/core/src crates/parsers/src && \
+RUN mkdir -p apps/api/src apps/indexer/src crates/core/src crates/notifications/src crates/parsers/src && \
     echo "fn main() {}" > apps/api/src/main.rs && \
     echo "fn main() {}" > apps/indexer/src/main.rs && \
     echo "" > apps/indexer/src/lib.rs && \
     echo "" > crates/core/src/lib.rs && \
+    echo "" > crates/notifications/src/lib.rs && \
     echo "" > crates/parsers/src/lib.rs
 
 # Build dependencies only (cached as long as Cargo.toml files don't change)
@@ -25,12 +27,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 COPY apps/api/src apps/api/src
 COPY apps/indexer/src apps/indexer/src
 COPY crates/core/src crates/core/src
+COPY crates/notifications/src crates/notifications/src
 COPY crates/parsers/src crates/parsers/src
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
-    touch apps/indexer/src/main.rs crates/core/src/lib.rs crates/parsers/src/lib.rs && \
+    touch apps/indexer/src/main.rs crates/core/src/lib.rs crates/notifications/src/lib.rs crates/parsers/src/lib.rs && \
     cargo build --release -p indexer && \
     cp /app/target/release/indexer /usr/local/bin/indexer
 

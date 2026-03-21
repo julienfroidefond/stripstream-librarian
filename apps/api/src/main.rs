@@ -21,6 +21,7 @@ mod series;
 mod settings;
 mod state;
 mod stats;
+mod telegram;
 mod thumbnails;
 mod tokens;
 
@@ -111,6 +112,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/prowlarr/test", get(prowlarr::test_prowlarr))
         .route("/qbittorrent/add", axum::routing::post(qbittorrent::add_torrent))
         .route("/qbittorrent/test", get(qbittorrent::test_qbittorrent))
+        .route("/telegram/test", get(telegram::test_telegram))
         .route("/komga/sync", axum::routing::post(komga::sync_komga_read_books))
         .route("/komga/reports", get(komga::list_sync_reports))
         .route("/komga/reports/:id", get(komga::get_sync_report))

@@ -369,6 +369,16 @@ pub async fn approve_metadata(
             .await?;
     }
 
+    // Notify via Telegram
+    let provider_for_notif: String = row.get("provider");
+    notifications::notify(
+        state.pool.clone(),
+        notifications::NotificationEvent::MetadataApproved {
+            series_name: series_name.clone(),
+            provider: provider_for_notif,
+        },
+    );
+
     Ok(Json(ApproveResponse {
         status: "approved".to_string(),
         report,

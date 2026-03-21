@@ -14,6 +14,7 @@ use crate::{
     utils,
     AppState,
 };
+use std::collections::HashSet;
 
 #[derive(Serialize)]
 pub struct JobStats {
@@ -22,6 +23,7 @@ pub struct JobStats {
     pub removed_files: usize,
     pub errors: usize,
     pub warnings: usize,
+    pub new_series: usize,
 }
 
 const BATCH_SIZE: usize = 100;
@@ -105,6 +107,18 @@ pub async fn scan_library_discovery(
     } else {
         HashMap::new()
     };
+
+    // Track existing series names for new_series counting
+    let existing_series: HashSet<String> = sqlx::query_scalar(
+        "SELECT DISTINCT COALESCE(NULLIF(series, ''), 'unclassified') FROM books WHERE library_id = $1",
+    )
+    .bind(library_id)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .collect();
+    let mut seen_new_series: HashSet<String> = HashSet::new();
 
     let mut seen: HashMap<String, bool> = HashMap::new();
     let mut library_processed_count = 0i32;
@@ -381,6 +395,12 @@ pub async fn scan_library_discovery(
         debug!(target: "scan", "[SCAN] Inserting: {}", file_name);
         let book_id = Uuid::new_v4();
         let file_id = Uuid::new_v4();
+
+        // Track new series
+        let series_key = parsed.series.as_deref().unwrap_or("unclassified").to_string();
+        if !existing_series.contains(&series_key) && seen_new_series.insert(series_key) {
+            stats.new_series += 1;
+        }
 
         books_to_insert.push(BookInsert {
             book_id,

@@ -133,6 +133,12 @@ pub async fn start_refresh(
 
     // Spawn the background processing task
     let pool = state.pool.clone();
+    let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+        .bind(library_id)
+        .fetch_optional(&state.pool)
+        .await
+        .ok()
+        .flatten();
     tokio::spawn(async move {
         if let Err(e) = process_metadata_refresh(&pool, job_id, library_id).await {
             warn!("[METADATA_REFRESH] job {job_id} failed: {e}");
@@ -143,6 +149,13 @@ pub async fn start_refresh(
             .bind(e.to_string())
             .execute(&pool)
             .await;
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::MetadataRefreshFailed {
+                    library_name,
+                    error: e.to_string(),
+                },
+            );
         }
     });
 
@@ -318,6 +331,22 @@ async fn process_metadata_refresh(
     .map_err(|e| e.to_string())?;
 
     info!("[METADATA_REFRESH] job={job_id} completed: {refreshed} updated, {unchanged} unchanged, {errors} errors");
+
+    let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+        .bind(library_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    notifications::notify(
+        pool.clone(),
+        notifications::NotificationEvent::MetadataRefreshCompleted {
+            library_name,
+            refreshed,
+            unchanged,
+            errors,
+        },
+    );
 
     Ok(())
 }

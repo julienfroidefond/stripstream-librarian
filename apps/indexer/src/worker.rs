@@ -1,10 +1,12 @@
 use std::time::Duration;
+use sqlx::Row;
 use tracing::{error, info, trace};
+use uuid::Uuid;
 use crate::{job, scheduler, watcher, AppState};
 
 pub async fn run_worker(state: AppState, interval_seconds: u64) {
     let wait = Duration::from_secs(interval_seconds.max(1));
-    
+
     // Cleanup stale jobs from previous runs
     if let Err(err) = job::cleanup_stale_jobs(&state.pool).await {
         error!("[CLEANUP] Failed to cleanup stale jobs: {}", err);
@@ -34,21 +36,168 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
         }
     });
 
+    async fn load_job_info(
+        pool: &sqlx::PgPool,
+        job_id: Uuid,
+        library_id: Option<Uuid>,
+    ) -> (String, Option<String>, Option<String>) {
+        let row = sqlx::query("SELECT type, book_id FROM index_jobs WHERE id = $1")
+            .bind(job_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+
+        let (job_type, book_id): (String, Option<Uuid>) = match row {
+            Some(r) => (r.get("type"), r.get("book_id")),
+            None => ("unknown".to_string(), None),
+        };
+
+        let library_name: Option<String> = if let Some(lib_id) = library_id {
+            sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+                .bind(lib_id)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+
+        let book_title: Option<String> = if let Some(bid) = book_id {
+            sqlx::query_scalar("SELECT title FROM books WHERE id = $1")
+                .bind(bid)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+
+        (job_type, library_name, book_title)
+    }
+
+    async fn load_scan_stats(pool: &sqlx::PgPool, job_id: Uuid) -> notifications::ScanStats {
+        let row = sqlx::query("SELECT stats_json FROM index_jobs WHERE id = $1")
+            .bind(job_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+
+        if let Some(row) = row {
+            if let Ok(val) = row.try_get::<serde_json::Value, _>("stats_json") {
+                return notifications::ScanStats {
+                    scanned_files: val.get("scanned_files").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+                    indexed_files: val.get("indexed_files").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+                    removed_files: val.get("removed_files").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+                    new_series: val.get("new_series").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+                    errors: val.get("errors").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+                };
+            }
+        }
+
+        notifications::ScanStats {
+            scanned_files: 0,
+            indexed_files: 0,
+            removed_files: 0,
+            new_series: 0,
+            errors: 0,
+        }
+    }
+
+    fn build_completed_event(
+        job_type: &str,
+        library_name: Option<String>,
+        book_title: Option<String>,
+        stats: notifications::ScanStats,
+        duration_seconds: u64,
+    ) -> notifications::NotificationEvent {
+        match notifications::job_type_category(job_type) {
+            "thumbnail" => notifications::NotificationEvent::ThumbnailCompleted {
+                job_type: job_type.to_string(),
+                library_name,
+                duration_seconds,
+            },
+            "conversion" => notifications::NotificationEvent::ConversionCompleted {
+                library_name,
+                book_title,
+            },
+            _ => notifications::NotificationEvent::ScanCompleted {
+                job_type: job_type.to_string(),
+                library_name,
+                stats,
+                duration_seconds,
+            },
+        }
+    }
+
+    fn build_failed_event(
+        job_type: &str,
+        library_name: Option<String>,
+        book_title: Option<String>,
+        error: String,
+    ) -> notifications::NotificationEvent {
+        match notifications::job_type_category(job_type) {
+            "thumbnail" => notifications::NotificationEvent::ThumbnailFailed {
+                job_type: job_type.to_string(),
+                library_name,
+                error,
+            },
+            "conversion" => notifications::NotificationEvent::ConversionFailed {
+                library_name,
+                book_title,
+                error,
+            },
+            _ => notifications::NotificationEvent::ScanFailed {
+                job_type: job_type.to_string(),
+                library_name,
+                error,
+            },
+        }
+    }
+
     loop {
         match job::claim_next_job(&state.pool).await {
             Ok(Some((job_id, library_id))) => {
                 info!("[INDEXER] Starting job {} library={:?}", job_id, library_id);
+                let started_at = std::time::Instant::now();
+                let (job_type, library_name, book_title) =
+                    load_job_info(&state.pool, job_id, library_id).await;
+
                 if let Err(err) = job::process_job(&state, job_id, library_id).await {
                     let err_str = err.to_string();
                     if err_str.contains("cancelled") || err_str.contains("Cancelled") {
                         info!("[INDEXER] Job {} was cancelled by user", job_id);
-                        // Status is already 'cancelled' in DB, don't change it
+                        notifications::notify(
+                            state.pool.clone(),
+                            notifications::NotificationEvent::ScanCancelled {
+                                job_type: job_type.clone(),
+                                library_name: library_name.clone(),
+                            },
+                        );
                     } else {
                         error!("[INDEXER] Job {} failed: {}", job_id, err);
                         let _ = job::fail_job(&state.pool, job_id, &err_str).await;
+                        notifications::notify(
+                            state.pool.clone(),
+                            build_failed_event(&job_type, library_name.clone(), book_title.clone(), err_str),
+                        );
                     }
                 } else {
                     info!("[INDEXER] Job {} completed", job_id);
+                    let stats = load_scan_stats(&state.pool, job_id).await;
+                    notifications::notify(
+                        state.pool.clone(),
+                        build_completed_event(
+                            &job_type,
+                            library_name.clone(),
+                            book_title.clone(),
+                            stats,
+                            started_at.elapsed().as_secs(),
+                        ),
+                    );
                 }
             }
             Ok(None) => {
