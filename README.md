@@ -81,28 +81,58 @@ The backoffice will be available at http://localhost:7082
 
 ## Features
 
-### Libraries Management
-- Create and manage multiple libraries
-- Configure automatic scanning schedules (hourly, daily, weekly)
-- Real-time file watcher for instant indexing
-- Full and incremental rebuild options
+> For the full feature list, business rules, and API details, see [docs/FEATURES.md](docs/FEATURES.md).
 
-### Books Management
-- Support for CBZ, CBR, and PDF formats
-- Automatic metadata extraction
-- Series and volume detection
-- Full-text search powered by PostgreSQL
+### Libraries
+- Multi-library management with per-library configuration
+- Incremental and full scanning, real-time filesystem watcher
+- Per-library metadata provider selection (Google Books, ComicVine, BedéThèque, AniList, Open Library)
 
-### Jobs Monitoring
-- Real-time job progress tracking
-- Detailed statistics (scanned, indexed, removed, errors)
-- Job history and logs
-- Cancel pending jobs
+### Books & Series
+- **Formats**: CBZ, CBR, PDF, EPUB
+- Automatic metadata extraction (title, series, volume, authors, page count) from filenames and directory structure
+- Series aggregation with missing volume detection
+- Thumbnail generation (WebP/JPEG/PNG) with lazy generation and bulk rebuild
+- CBR → CBZ conversion
 
-### Search
-- Full-text search across titles, authors, and series
-- Library filtering
-- Real-time suggestions
+### Reading Progress
+- Per-book tracking: unread / reading / read with current page
+- Series-level aggregated reading status
+- Bulk mark-as-read for series
+
+### Search & Discovery
+- Full-text search across titles, authors, and series (PostgreSQL `pg_trgm`)
+- Author listing with book/series counts
+- Filtering by reading status, series status, format, metadata provider
+
+### External Metadata
+- Search, match, approve/reject workflow with confidence scoring
+- Batch auto-matching and scheduled metadata refresh
+- Field locking to protect manual edits from sync
+
+### External Integrations
+- **Komga**: import reading progress
+- **Prowlarr**: search for missing volumes
+- **qBittorrent**: add torrents directly from search results
+
+### Background Jobs
+- Rebuild, rescan, thumbnail generation, metadata batch, CBR conversion
+- Real-time progress via Server-Sent Events (SSE)
+- Job history, error tracking, cancellation
+
+### Page Rendering
+- On-demand page extraction from all formats
+- Image processing (format, quality, max width, resampling filter)
+- LRU in-memory + disk cache
+
+### Security
+- Token-based auth (`admin` / `read` scopes) with Argon2 hashing
+- Rate limiting, token expiration and revocation
+
+### Web UI (Backoffice)
+- Dashboard with statistics, charts, and reading progress
+- Library, book, series, author management
+- Live job monitoring, metadata search modals, settings panel
 
 ## Environment Variables
 
