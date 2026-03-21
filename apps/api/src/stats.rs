@@ -90,7 +90,7 @@ pub struct StatsResponse {
 #[utoipa::path(
     get,
     path = "/stats",
-    tag = "books",
+    tag = "stats",
     responses(
         (status = 200, body = StatsResponse),
         (status = 401, description = "Unauthorized"),

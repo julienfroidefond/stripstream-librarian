@@ -43,7 +43,7 @@ pub struct SearchResponse {
 #[utoipa::path(
     get,
     path = "/search",
-    tag = "books",
+    tag = "search",
     params(
         ("q" = String, Query, description = "Search query (books + series via PostgreSQL full-text)"),
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),

@@ -48,7 +48,6 @@ pub struct CreateLibraryRequest {
     responses(
         (status = 200, body = Vec<LibraryResponse>),
         (status = 401, description = "Unauthorized"),
-        (status = 403, description = "Forbidden - Admin scope required"),
     ),
     security(("Bearer" = []))
 )]
@@ -221,7 +220,6 @@ use crate::index_jobs::{IndexJobResponse, RebuildRequest};
         (status = 200, body = IndexJobResponse),
         (status = 404, description = "Library not found"),
         (status = 401, description = "Unauthorized"),
-        (status = 403, description = "Forbidden - Admin scope required"),
     ),
     security(("Bearer" = []))
 )]

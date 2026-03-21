@@ -17,6 +17,7 @@ mod prowlarr;
 mod qbittorrent;
 mod reading_progress;
 mod search;
+mod series;
 mod settings;
 mod state;
 mod stats;
@@ -86,14 +87,13 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let admin_routes = Router::new()
-        .route("/libraries", get(libraries::list_libraries).post(libraries::create_library))
+        .route("/libraries", axum::routing::post(libraries::create_library))
         .route("/libraries/:id", delete(libraries::delete_library))
-        .route("/libraries/:id/scan", axum::routing::post(libraries::scan_library))
         .route("/libraries/:id/monitoring", axum::routing::patch(libraries::update_monitoring))
         .route("/libraries/:id/metadata-provider", axum::routing::patch(libraries::update_metadata_provider))
         .route("/books/:id", axum::routing::patch(books::update_book))
         .route("/books/:id/convert", axum::routing::post(books::convert_book))
-        .route("/libraries/:library_id/series/:name", axum::routing::patch(books::update_series))
+        .route("/libraries/:library_id/series/:name", axum::routing::patch(series::update_series))
         .route("/index/rebuild", axum::routing::post(index_jobs::enqueue_rebuild))
         .route("/index/thumbnails/rebuild", axum::routing::post(thumbnails::start_thumbnails_rebuild))
         .route("/index/thumbnails/regenerate", axum::routing::post(thumbnails::start_thumbnails_regenerate))
@@ -133,18 +133,20 @@ async fn main() -> anyhow::Result<()> {
         ));
 
     let read_routes = Router::new()
+        .route("/libraries", get(libraries::list_libraries))
+        .route("/libraries/:id/scan", axum::routing::post(libraries::scan_library))
         .route("/books", get(books::list_books))
-        .route("/books/ongoing", get(books::ongoing_books))
+        .route("/books/ongoing", get(series::ongoing_books))
         .route("/books/:id", get(books::get_book))
         .route("/books/:id/thumbnail", get(books::get_thumbnail))
         .route("/books/:id/pages/:n", get(pages::get_page))
         .route("/books/:id/progress", get(reading_progress::get_reading_progress).patch(reading_progress::update_reading_progress))
-        .route("/libraries/:library_id/series", get(books::list_series))
-        .route("/libraries/:library_id/series/:name/metadata", get(books::get_series_metadata))
-        .route("/series", get(books::list_all_series))
-        .route("/series/ongoing", get(books::ongoing_series))
-        .route("/series/statuses", get(books::series_statuses))
-        .route("/series/provider-statuses", get(books::provider_statuses))
+        .route("/libraries/:library_id/series", get(series::list_series))
+        .route("/libraries/:library_id/series/:name/metadata", get(series::get_series_metadata))
+        .route("/series", get(series::list_all_series))
+        .route("/series/ongoing", get(series::ongoing_series))
+        .route("/series/statuses", get(series::series_statuses))
+        .route("/series/provider-statuses", get(series::provider_statuses))
         .route("/series/mark-read", axum::routing::post(reading_progress::mark_series_read))
         .route("/authors", get(authors::list_authors))
         .route("/stats", get(stats::get_stats))
