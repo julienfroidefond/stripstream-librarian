@@ -102,6 +102,11 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
       description: t("jobType.full_rebuildDesc"),
       isThumbnailOnly: false,
     },
+    rescan: {
+      label: t("jobType.rescanLabel"),
+      description: t("jobType.rescanDesc"),
+      isThumbnailOnly: false,
+    },
     thumbnail_rebuild: {
       label: t("jobType.thumbnail_rebuildLabel"),
       description: t("jobType.thumbnail_rebuildDesc"),

@@ -93,6 +93,7 @@ export function StatusBadge({ status, className = "" }: StatusBadgeProps) {
 // Job type badge
 const jobTypeVariants: Record<string, BadgeVariant> = {
   rebuild: "primary",
+  rescan: "primary",
   full_rebuild: "warning",
   thumbnail_rebuild: "secondary",
   thumbnail_regenerate: "warning",
@@ -109,6 +110,7 @@ export function JobTypeBadge({ type, className = "" }: JobTypeBadgeProps) {
   const variant = jobTypeVariants[key] || "default";
   const jobTypeLabels: Record<string, string> = {
     rebuild: t("jobType.rebuild"),
+    rescan: t("jobType.rescan"),
     full_rebuild: t("jobType.full_rebuild"),
     thumbnail_rebuild: t("jobType.thumbnail_rebuild"),
     thumbnail_regenerate: t("jobType.thumbnail_regenerate"),

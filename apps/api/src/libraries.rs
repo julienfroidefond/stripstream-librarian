@@ -219,7 +219,8 @@ pub async fn scan_library(
     }
 
     let is_full = payload.as_ref().and_then(|p| p.full).unwrap_or(false);
-    let job_type = if is_full { "full_rebuild" } else { "rebuild" };
+    let is_rescan = payload.as_ref().and_then(|p| p.rescan).unwrap_or(false);
+    let job_type = if is_full { "full_rebuild" } else if is_rescan { "rescan" } else { "rebuild" };
 
     // Create indexing job for this library
     let job_id = Uuid::new_v4();

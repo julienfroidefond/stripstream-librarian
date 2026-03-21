@@ -221,10 +221,11 @@ export async function listJobs() {
   return apiFetch<IndexJobDto[]>("/index/status");
 }
 
-export async function rebuildIndex(libraryId?: string, full?: boolean) {
-  const body: { library_id?: string; full?: boolean } = {};
+export async function rebuildIndex(libraryId?: string, full?: boolean, rescan?: boolean) {
+  const body: { library_id?: string; full?: boolean; rescan?: boolean } = {};
   if (libraryId) body.library_id = libraryId;
   if (full) body.full = true;
+  if (rescan) body.rescan = true;
   return apiFetch<IndexJobDto>("/index/rebuild", {
     method: "POST",
     body: JSON.stringify(body),

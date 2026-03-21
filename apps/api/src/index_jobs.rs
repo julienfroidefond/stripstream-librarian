@@ -16,6 +16,10 @@ pub struct RebuildRequest {
     pub library_id: Option<Uuid>,
     #[schema(value_type = Option<bool>, example = false)]
     pub full: Option<bool>,
+    /// Deep rescan: clears directory mtimes to force re-walking all directories,
+    /// discovering newly supported formats without deleting existing data.
+    #[schema(value_type = Option<bool>, example = false)]
+    pub rescan: Option<bool>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -117,7 +121,8 @@ pub async fn enqueue_rebuild(
 ) -> Result<Json<IndexJobResponse>, ApiError> {
     let library_id = payload.as_ref().and_then(|p| p.0.library_id);
     let is_full = payload.as_ref().and_then(|p| p.0.full).unwrap_or(false);
-    let job_type = if is_full { "full_rebuild" } else { "rebuild" };
+    let is_rescan = payload.as_ref().and_then(|p| p.0.rescan).unwrap_or(false);
+    let job_type = if is_full { "full_rebuild" } else if is_rescan { "rescan" } else { "rebuild" };
     let id = Uuid::new_v4();
 
     sqlx::query(

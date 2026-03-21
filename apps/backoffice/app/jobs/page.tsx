@@ -33,6 +33,14 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     redirect(`/jobs?highlight=${result.id}`);
   }
 
+  async function triggerRescan(formData: FormData) {
+    "use server";
+    const libraryId = formData.get("library_id") as string;
+    const result = await rebuildIndex(libraryId || undefined, false, true);
+    revalidatePath("/jobs");
+    redirect(`/jobs?highlight=${result.id}`);
+  }
+
   async function triggerThumbnailsRebuild(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
@@ -127,13 +135,23 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                     </div>
                     <p className="text-xs text-muted-foreground mt-1 ml-6">{t("jobs.rebuildShort")}</p>
                   </button>
-                  <button type="submit" formAction={triggerFullRebuild}
-                    className="w-full text-left rounded-lg border border-warning/30 bg-warning/5 p-3 hover:bg-warning/10 transition-colors group cursor-pointer">
+                  <button type="submit" formAction={triggerRescan}
+                    className="w-full text-left rounded-lg border border-input bg-background p-3 hover:bg-accent/50 transition-colors group cursor-pointer">
                     <div className="flex items-center gap-2">
-                      <svg className="w-4 h-4 text-warning shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      <span className="font-medium text-sm text-foreground">{t("jobs.rescan")}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 ml-6">{t("jobs.rescanShort")}</p>
+                  </button>
+                  <button type="submit" formAction={triggerFullRebuild}
+                    className="w-full text-left rounded-lg border border-destructive/30 bg-destructive/5 p-3 hover:bg-destructive/10 transition-colors group cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4 text-destructive shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                       </svg>
-                      <span className="font-medium text-sm text-warning">{t("jobs.fullRebuild")}</span>
+                      <span className="font-medium text-sm text-destructive">{t("jobs.fullRebuild")}</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1 ml-6">{t("jobs.fullRebuildShort")}</p>
                   </button>

@@ -43,6 +43,7 @@ const API_ONLY_JOB_TYPES: &[&str] = &["metadata_batch", "metadata_refresh"];
 const EXCLUSIVE_JOB_TYPES: &[&str] = &[
     "rebuild",
     "full_rebuild",
+    "rescan",
     "scan",
     "thumbnail_rebuild",
     "thumbnail_regenerate",
@@ -211,10 +212,28 @@ pub async fn process_job(
     }
 
     let is_full_rebuild = job_type == "full_rebuild";
+    let is_rescan = job_type == "rescan";
     info!(
-        "[JOB] {} type={} full_rebuild={}",
-        job_id, job_type, is_full_rebuild
+        "[JOB] {} type={} full_rebuild={} rescan={}",
+        job_id, job_type, is_full_rebuild, is_rescan
     );
+
+    // Rescan: clear directory mtimes to force re-walking all directories,
+    // but keep existing data intact (unlike full_rebuild)
+    if is_rescan {
+        if let Some(library_id) = target_library_id {
+            let _ = sqlx::query("DELETE FROM directory_mtimes WHERE library_id = $1")
+                .bind(library_id)
+                .execute(&state.pool)
+                .await;
+            info!("[JOB] Rescan: cleared directory mtimes for library {}", library_id);
+        } else {
+            let _ = sqlx::query("DELETE FROM directory_mtimes")
+                .execute(&state.pool)
+                .await;
+            info!("[JOB] Rescan: cleared all directory mtimes");
+        }
+    }
 
     // Full rebuild: delete existing data first
     if is_full_rebuild {
@@ -258,7 +277,7 @@ pub async fn process_job(
     // For full rebuilds, the DB is already cleared, so we must walk the filesystem.
     let library_ids: Vec<uuid::Uuid> = libraries.iter().map(|r| r.get("id")).collect();
 
-    let total_files: usize = if !is_full_rebuild {
+    let total_files: usize = if !is_full_rebuild && !is_rescan {
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM book_files bf JOIN books b ON b.id = bf.book_id WHERE b.library_id = ANY($1)"
         )
