@@ -60,30 +60,62 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   async function triggerMetadataBatch(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    if (!libraryId) return;
-    let result;
-    try {
-      result = await startMetadataBatch(libraryId);
-    } catch {
-      // Library may have metadata disabled — ignore silently
-      return;
+    if (libraryId) {
+      let result;
+      try {
+        result = await startMetadataBatch(libraryId);
+      } catch {
+        // Library may have metadata disabled — ignore silently
+        return;
+      }
+      revalidatePath("/jobs");
+      redirect(`/jobs?highlight=${result.id}`);
+    } else {
+      // All libraries — skip those with metadata disabled
+      const allLibraries = await fetchLibraries().catch(() => [] as LibraryDto[]);
+      let lastId: string | undefined;
+      for (const lib of allLibraries) {
+        if (lib.metadata_provider === "none") continue;
+        try {
+          const result = await startMetadataBatch(lib.id);
+          if (result.status !== "already_running") lastId = result.id;
+        } catch {
+          // Library may have metadata disabled or other issue — skip
+        }
+      }
+      revalidatePath("/jobs");
+      redirect(lastId ? `/jobs?highlight=${lastId}` : "/jobs");
     }
-    revalidatePath("/jobs");
-    redirect(`/jobs?highlight=${result.id}`);
   }
 
   async function triggerMetadataRefresh(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    if (!libraryId) return;
-    let result;
-    try {
-      result = await startMetadataRefresh(libraryId);
-    } catch {
-      return;
+    if (libraryId) {
+      let result;
+      try {
+        result = await startMetadataRefresh(libraryId);
+      } catch {
+        return;
+      }
+      revalidatePath("/jobs");
+      redirect(`/jobs?highlight=${result.id}`);
+    } else {
+      // All libraries — skip those with metadata disabled
+      const allLibraries = await fetchLibraries().catch(() => [] as LibraryDto[]);
+      let lastId: string | undefined;
+      for (const lib of allLibraries) {
+        if (lib.metadata_provider === "none") continue;
+        try {
+          const result = await startMetadataRefresh(lib.id);
+          if (result.status !== "already_running") lastId = result.id;
+        } catch {
+          // Library may have metadata disabled or no approved links — skip
+        }
+      }
+      revalidatePath("/jobs");
+      redirect(lastId ? `/jobs?highlight=${lastId}` : "/jobs");
     }
-    revalidatePath("/jobs");
-    redirect(`/jobs?highlight=${result.id}`);
   }
 
   return (
@@ -197,7 +229,6 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                   </svg>
                   {t("jobs.groupMetadata")}
-                  <span className="text-xs font-normal text-muted-foreground">({t("jobs.requiresLibrary")})</span>
                 </div>
                 <div className="space-y-2">
                   <button type="submit" formAction={triggerMetadataBatch}
