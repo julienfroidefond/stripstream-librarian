@@ -584,8 +584,9 @@ export type StatsResponse = {
   metadata: MetadataStats;
 };
 
-export async function fetchStats() {
-  return apiFetch<StatsResponse>("/stats", { next: { revalidate: 30 } });
+export async function fetchStats(period?: "day" | "week" | "month") {
+  const params = period && period !== "month" ? `?period=${period}` : "";
+  return apiFetch<StatsResponse>(`/stats${params}`, { next: { revalidate: 30 } });
 }
 
 // ---------------------------------------------------------------------------

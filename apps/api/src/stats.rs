@@ -1,9 +1,18 @@
-use axum::{extract::State, Json};
-use serde::Serialize;
+use axum::{
+    extract::{Query, State},
+    Json,
+};
+use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::{error::ApiError, state::AppState};
+
+#[derive(Deserialize, IntoParams)]
+pub struct StatsQuery {
+    /// Granularity: "day", "week" or "month" (default: "month")
+    pub period: Option<String>,
+}
 
 #[derive(Serialize, ToSchema)]
 pub struct StatsOverview {
@@ -117,6 +126,7 @@ pub struct StatsResponse {
     get,
     path = "/stats",
     tag = "stats",
+    params(StatsQuery),
     responses(
         (status = 200, body = StatsResponse),
         (status = 401, description = "Unauthorized"),
@@ -125,7 +135,9 @@ pub struct StatsResponse {
 )]
 pub async fn get_stats(
     State(state): State<AppState>,
+    Query(query): Query<StatsQuery>,
 ) -> Result<Json<StatsResponse>, ApiError> {
+    let period = query.period.as_deref().unwrap_or("month");
     // Overview + reading status in one query
     let overview_row = sqlx::query(
         r#"
@@ -285,20 +297,74 @@ pub async fn get_stats(
         })
         .collect();
 
-    // Additions over time (last 12 months)
-    let additions_rows = sqlx::query(
-        r#"
-        SELECT
-            TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') AS month,
-            COUNT(*) AS books_added
-        FROM books
-        WHERE created_at >= DATE_TRUNC('month', NOW()) - INTERVAL '11 months'
-        GROUP BY DATE_TRUNC('month', created_at)
-        ORDER BY month ASC
-        "#,
-    )
-    .fetch_all(&state.pool)
-    .await?;
+    // Additions over time (with gap filling)
+    let additions_rows = match period {
+        "day" => {
+            sqlx::query(
+                r#"
+                SELECT
+                    TO_CHAR(d.dt, 'YYYY-MM-DD') AS month,
+                    COALESCE(cnt.books_added, 0) AS books_added
+                FROM generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day') AS d(dt)
+                LEFT JOIN (
+                    SELECT created_at::date AS dt, COUNT(*) AS books_added
+                    FROM books
+                    WHERE created_at >= CURRENT_DATE - INTERVAL '6 days'
+                    GROUP BY created_at::date
+                ) cnt ON cnt.dt = d.dt
+                ORDER BY month ASC
+                "#,
+            )
+            .fetch_all(&state.pool)
+            .await?
+        }
+        "week" => {
+            sqlx::query(
+                r#"
+                SELECT
+                    TO_CHAR(d.dt, 'YYYY-MM-DD') AS month,
+                    COALESCE(cnt.books_added, 0) AS books_added
+                FROM generate_series(
+                    DATE_TRUNC('week', NOW() - INTERVAL '2 months'),
+                    DATE_TRUNC('week', NOW()),
+                    '1 week'
+                ) AS d(dt)
+                LEFT JOIN (
+                    SELECT DATE_TRUNC('week', created_at) AS dt, COUNT(*) AS books_added
+                    FROM books
+                    WHERE created_at >= DATE_TRUNC('week', NOW() - INTERVAL '2 months')
+                    GROUP BY DATE_TRUNC('week', created_at)
+                ) cnt ON cnt.dt = d.dt
+                ORDER BY month ASC
+                "#,
+            )
+            .fetch_all(&state.pool)
+            .await?
+        }
+        _ => {
+            sqlx::query(
+                r#"
+                SELECT
+                    TO_CHAR(d.dt, 'YYYY-MM') AS month,
+                    COALESCE(cnt.books_added, 0) AS books_added
+                FROM generate_series(
+                    DATE_TRUNC('month', NOW()) - INTERVAL '11 months',
+                    DATE_TRUNC('month', NOW()),
+                    '1 month'
+                ) AS d(dt)
+                LEFT JOIN (
+                    SELECT DATE_TRUNC('month', created_at) AS dt, COUNT(*) AS books_added
+                    FROM books
+                    WHERE created_at >= DATE_TRUNC('month', NOW()) - INTERVAL '11 months'
+                    GROUP BY DATE_TRUNC('month', created_at)
+                ) cnt ON cnt.dt = d.dt
+                ORDER BY month ASC
+                "#,
+            )
+            .fetch_all(&state.pool)
+            .await?
+        }
+    };
 
     let additions_over_time: Vec<MonthlyAdditions> = additions_rows
         .iter()
@@ -409,21 +475,77 @@ pub async fn get_stats(
         })
         .collect();
 
-    // Reading activity over time (last 12 months)
-    let reading_time_rows = sqlx::query(
-        r#"
-        SELECT
-            TO_CHAR(DATE_TRUNC('month', brp.last_read_at), 'YYYY-MM') AS month,
-            COUNT(*) AS books_read
-        FROM book_reading_progress brp
-        WHERE brp.status = 'read'
-          AND brp.last_read_at >= DATE_TRUNC('month', NOW()) - INTERVAL '11 months'
-        GROUP BY DATE_TRUNC('month', brp.last_read_at)
-        ORDER BY month ASC
-        "#,
-    )
-    .fetch_all(&state.pool)
-    .await?;
+    // Reading activity over time (with gap filling)
+    let reading_time_rows = match period {
+        "day" => {
+            sqlx::query(
+                r#"
+                SELECT
+                    TO_CHAR(d.dt, 'YYYY-MM-DD') AS month,
+                    COALESCE(cnt.books_read, 0) AS books_read
+                FROM generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day') AS d(dt)
+                LEFT JOIN (
+                    SELECT brp.last_read_at::date AS dt, COUNT(*) AS books_read
+                    FROM book_reading_progress brp
+                    WHERE brp.status = 'read'
+                      AND brp.last_read_at >= CURRENT_DATE - INTERVAL '6 days'
+                    GROUP BY brp.last_read_at::date
+                ) cnt ON cnt.dt = d.dt
+                ORDER BY month ASC
+                "#,
+            )
+            .fetch_all(&state.pool)
+            .await?
+        }
+        "week" => {
+            sqlx::query(
+                r#"
+                SELECT
+                    TO_CHAR(d.dt, 'YYYY-MM-DD') AS month,
+                    COALESCE(cnt.books_read, 0) AS books_read
+                FROM generate_series(
+                    DATE_TRUNC('week', NOW() - INTERVAL '2 months'),
+                    DATE_TRUNC('week', NOW()),
+                    '1 week'
+                ) AS d(dt)
+                LEFT JOIN (
+                    SELECT DATE_TRUNC('week', brp.last_read_at) AS dt, COUNT(*) AS books_read
+                    FROM book_reading_progress brp
+                    WHERE brp.status = 'read'
+                      AND brp.last_read_at >= DATE_TRUNC('week', NOW() - INTERVAL '2 months')
+                    GROUP BY DATE_TRUNC('week', brp.last_read_at)
+                ) cnt ON cnt.dt = d.dt
+                ORDER BY month ASC
+                "#,
+            )
+            .fetch_all(&state.pool)
+            .await?
+        }
+        _ => {
+            sqlx::query(
+                r#"
+                SELECT
+                    TO_CHAR(d.dt, 'YYYY-MM') AS month,
+                    COALESCE(cnt.books_read, 0) AS books_read
+                FROM generate_series(
+                    DATE_TRUNC('month', NOW()) - INTERVAL '11 months',
+                    DATE_TRUNC('month', NOW()),
+                    '1 month'
+                ) AS d(dt)
+                LEFT JOIN (
+                    SELECT DATE_TRUNC('month', brp.last_read_at) AS dt, COUNT(*) AS books_read
+                    FROM book_reading_progress brp
+                    WHERE brp.status = 'read'
+                      AND brp.last_read_at >= DATE_TRUNC('month', NOW()) - INTERVAL '11 months'
+                    GROUP BY DATE_TRUNC('month', brp.last_read_at)
+                ) cnt ON cnt.dt = d.dt
+                ORDER BY month ASC
+                "#,
+            )
+            .fetch_all(&state.pool)
+            .await?
+        }
+    };
 
     let reading_over_time: Vec<MonthlyReading> = reading_time_rows
         .iter()

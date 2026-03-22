@@ -2,6 +2,7 @@ import React from "react";
 import { fetchStats, StatsResponse, getBookCoverUrl } from "../lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui";
 import { RcDonutChart, RcBarChart, RcAreaChart, RcStackedBar, RcHorizontalBar } from "./components/DashboardCharts";
+import { PeriodToggle } from "./components/PeriodToggle";
 import Image from "next/image";
 import Link from "next/link";
 import { getServerTranslations } from "../lib/i18n/server";
@@ -19,6 +20,24 @@ function formatBytes(bytes: number): string {
 
 function formatNumber(n: number, locale: string): string {
   return n.toLocaleString(locale === "fr" ? "fr-FR" : "en-US");
+}
+
+function formatChartLabel(raw: string, period: "day" | "week" | "month", locale: string): string {
+  const loc = locale === "fr" ? "fr-FR" : "en-US";
+  if (period === "month") {
+    // raw = "YYYY-MM"
+    const [y, m] = raw.split("-");
+    const d = new Date(Number(y), Number(m) - 1, 1);
+    return d.toLocaleDateString(loc, { month: "short" });
+  }
+  if (period === "week") {
+    // raw = "YYYY-MM-DD" (Monday of the week)
+    const d = new Date(raw + "T00:00:00");
+    return d.toLocaleDateString(loc, { day: "numeric", month: "short" });
+  }
+  // day: raw = "YYYY-MM-DD"
+  const d = new Date(raw + "T00:00:00");
+  return d.toLocaleDateString(loc, { weekday: "short", day: "numeric" });
 }
 
 // Horizontal progress bar for metadata quality (stays server-rendered, no recharts needed)
@@ -40,12 +59,19 @@ function HorizontalBar({ label, value, max, subLabel, color = "var(--color-prima
   );
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const searchParamsAwaited = await searchParams;
+  const rawPeriod = searchParamsAwaited.period;
+  const period = rawPeriod === "day" ? "day" as const : rawPeriod === "week" ? "week" as const : "month" as const;
   const { t, locale } = await getServerTranslations();
 
   let stats: StatsResponse | null = null;
   try {
-    stats = await fetchStats();
+    stats = await fetchStats(period);
   } catch (e) {
     console.error("Failed to fetch stats:", e);
   }
@@ -175,20 +201,19 @@ export default async function DashboardPage() {
       )}
 
       {/* Reading activity line chart */}
-      {reading_over_time.length > 0 && (
-        <Card hover={false}>
-          <CardHeader>
-            <CardTitle className="text-base">{t("dashboard.readingActivity")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <RcAreaChart
-              noDataLabel={noDataLabel}
-              data={reading_over_time.map((m) => ({ label: m.month.slice(5), value: m.books_read }))}
-              color="hsl(142 60% 45%)"
-            />
-          </CardContent>
-        </Card>
-      )}
+      <Card hover={false}>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-base">{t("dashboard.readingActivity")}</CardTitle>
+          <PeriodToggle labels={{ day: t("dashboard.periodDay"), week: t("dashboard.periodWeek"), month: t("dashboard.periodMonth") }} />
+        </CardHeader>
+        <CardContent>
+          <RcAreaChart
+            noDataLabel={noDataLabel}
+            data={reading_over_time.map((m) => ({ label: formatChartLabel(m.month, period, locale), value: m.books_read }))}
+            color="hsl(142 60% 45%)"
+          />
+        </CardContent>
+      </Card>
 
       {/* Charts row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -351,15 +376,16 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      {/* Monthly additions line chart – full width */}
+      {/* Additions line chart – full width */}
       <Card hover={false}>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle className="text-base">{t("dashboard.booksAdded")}</CardTitle>
+          <PeriodToggle labels={{ day: t("dashboard.periodDay"), week: t("dashboard.periodWeek"), month: t("dashboard.periodMonth") }} />
         </CardHeader>
         <CardContent>
           <RcAreaChart
             noDataLabel={noDataLabel}
-            data={additions_over_time.map((m) => ({ label: m.month.slice(5), value: m.books_added }))}
+            data={additions_over_time.map((m) => ({ label: formatChartLabel(m.month, period, locale), value: m.books_added }))}
             color="hsl(198 78% 37%)"
           />
         </CardContent>
