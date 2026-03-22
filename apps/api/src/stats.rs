@@ -107,6 +107,15 @@ pub struct MonthlyReading {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct JobTimePoint {
+    pub label: String,
+    pub scan: i64,
+    pub rebuild: i64,
+    pub thumbnail: i64,
+    pub other: i64,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct StatsResponse {
     pub overview: StatsOverview,
     pub reading_status: ReadingStatusStats,
@@ -118,6 +127,7 @@ pub struct StatsResponse {
     pub by_library: Vec<LibraryStats>,
     pub top_series: Vec<TopSeries>,
     pub additions_over_time: Vec<MonthlyAdditions>,
+    pub jobs_over_time: Vec<JobTimePoint>,
     pub metadata: MetadataStats,
 }
 
@@ -555,6 +565,125 @@ pub async fn get_stats(
         })
         .collect();
 
+    // Jobs over time (with gap filling, grouped by type category)
+    let jobs_rows = match period {
+        "day" => {
+            sqlx::query(
+                r#"
+                SELECT
+                    TO_CHAR(d.dt, 'YYYY-MM-DD') AS label,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'scan'), 0)::BIGINT AS scan,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'rebuild'), 0)::BIGINT AS rebuild,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'thumbnail'), 0)::BIGINT AS thumbnail,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'other'), 0)::BIGINT AS other
+                FROM generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day') AS d(dt)
+                LEFT JOIN (
+                    SELECT
+                        finished_at::date AS dt,
+                        CASE
+                            WHEN type = 'scan' THEN 'scan'
+                            WHEN type IN ('rebuild', 'full_rebuild', 'rescan') THEN 'rebuild'
+                            WHEN type IN ('thumbnail_rebuild', 'thumbnail_regenerate') THEN 'thumbnail'
+                            ELSE 'other'
+                        END AS cat,
+                        COUNT(*) AS c
+                    FROM index_jobs
+                    WHERE status IN ('success', 'failed')
+                      AND finished_at >= CURRENT_DATE - INTERVAL '6 days'
+                    GROUP BY finished_at::date, cat
+                ) cnt ON cnt.dt = d.dt
+                GROUP BY d.dt
+                ORDER BY label ASC
+                "#,
+            )
+            .fetch_all(&state.pool)
+            .await?
+        }
+        "week" => {
+            sqlx::query(
+                r#"
+                SELECT
+                    TO_CHAR(d.dt, 'YYYY-MM-DD') AS label,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'scan'), 0)::BIGINT AS scan,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'rebuild'), 0)::BIGINT AS rebuild,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'thumbnail'), 0)::BIGINT AS thumbnail,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'other'), 0)::BIGINT AS other
+                FROM generate_series(
+                    DATE_TRUNC('week', NOW() - INTERVAL '2 months'),
+                    DATE_TRUNC('week', NOW()),
+                    '1 week'
+                ) AS d(dt)
+                LEFT JOIN (
+                    SELECT
+                        DATE_TRUNC('week', finished_at) AS dt,
+                        CASE
+                            WHEN type = 'scan' THEN 'scan'
+                            WHEN type IN ('rebuild', 'full_rebuild', 'rescan') THEN 'rebuild'
+                            WHEN type IN ('thumbnail_rebuild', 'thumbnail_regenerate') THEN 'thumbnail'
+                            ELSE 'other'
+                        END AS cat,
+                        COUNT(*) AS c
+                    FROM index_jobs
+                    WHERE status IN ('success', 'failed')
+                      AND finished_at >= DATE_TRUNC('week', NOW() - INTERVAL '2 months')
+                    GROUP BY DATE_TRUNC('week', finished_at), cat
+                ) cnt ON cnt.dt = d.dt
+                GROUP BY d.dt
+                ORDER BY label ASC
+                "#,
+            )
+            .fetch_all(&state.pool)
+            .await?
+        }
+        _ => {
+            sqlx::query(
+                r#"
+                SELECT
+                    TO_CHAR(d.dt, 'YYYY-MM') AS label,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'scan'), 0)::BIGINT AS scan,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'rebuild'), 0)::BIGINT AS rebuild,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'thumbnail'), 0)::BIGINT AS thumbnail,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'other'), 0)::BIGINT AS other
+                FROM generate_series(
+                    DATE_TRUNC('month', NOW()) - INTERVAL '11 months',
+                    DATE_TRUNC('month', NOW()),
+                    '1 month'
+                ) AS d(dt)
+                LEFT JOIN (
+                    SELECT
+                        DATE_TRUNC('month', finished_at) AS dt,
+                        CASE
+                            WHEN type = 'scan' THEN 'scan'
+                            WHEN type IN ('rebuild', 'full_rebuild', 'rescan') THEN 'rebuild'
+                            WHEN type IN ('thumbnail_rebuild', 'thumbnail_regenerate') THEN 'thumbnail'
+                            ELSE 'other'
+                        END AS cat,
+                        COUNT(*) AS c
+                    FROM index_jobs
+                    WHERE status IN ('success', 'failed')
+                      AND finished_at >= DATE_TRUNC('month', NOW()) - INTERVAL '11 months'
+                    GROUP BY DATE_TRUNC('month', finished_at), cat
+                ) cnt ON cnt.dt = d.dt
+                GROUP BY d.dt
+                ORDER BY label ASC
+                "#,
+            )
+            .fetch_all(&state.pool)
+            .await?
+        }
+    };
+
+    let jobs_over_time: Vec<JobTimePoint> = jobs_rows
+        .iter()
+        .map(|r| JobTimePoint {
+            label: r.get("label"),
+            scan: r.get("scan"),
+            rebuild: r.get("rebuild"),
+            thumbnail: r.get("thumbnail"),
+            other: r.get("other"),
+        })
+        .collect();
+
     Ok(Json(StatsResponse {
         overview,
         reading_status,
@@ -566,6 +695,7 @@ pub async fn get_stats(
         by_library,
         top_series,
         additions_over_time,
+        jobs_over_time,
         metadata,
     }))
 }

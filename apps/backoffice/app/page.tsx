@@ -1,7 +1,7 @@
 import React from "react";
 import { fetchStats, StatsResponse, getBookCoverUrl } from "../lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui";
-import { RcDonutChart, RcBarChart, RcAreaChart, RcStackedBar, RcHorizontalBar } from "./components/DashboardCharts";
+import { RcDonutChart, RcBarChart, RcAreaChart, RcStackedBar, RcHorizontalBar, RcMultiLineChart } from "./components/DashboardCharts";
 import { PeriodToggle } from "./components/PeriodToggle";
 import Image from "next/image";
 import Link from "next/link";
@@ -88,7 +88,7 @@ export default async function DashboardPage({
     );
   }
 
-  const { overview, reading_status, currently_reading = [], recently_read = [], reading_over_time = [], by_format, by_library, top_series, additions_over_time, metadata } = stats;
+  const { overview, reading_status, currently_reading = [], recently_read = [], reading_over_time = [], by_format, by_library, top_series, additions_over_time, jobs_over_time = [], metadata } = stats;
 
   const readingColors = ["hsl(220 13% 70%)", "hsl(45 93% 47%)", "hsl(142 60% 45%)"];
   const formatColors = [
@@ -136,7 +136,7 @@ export default async function DashboardPage({
               {currently_reading.length === 0 ? (
                 <p className="text-muted-foreground text-sm text-center py-4">{t("dashboard.noCurrentlyReading")}</p>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-3 max-h-[216px] overflow-y-auto pr-1">
                   {currently_reading.slice(0, 8).map((book) => {
                     const pct = book.page_count > 0 ? Math.round((book.current_page / book.page_count) * 100) : 0;
                     return (
@@ -176,7 +176,7 @@ export default async function DashboardPage({
               {recently_read.length === 0 ? (
                 <p className="text-muted-foreground text-sm text-center py-4">{t("dashboard.noRecentlyRead")}</p>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-3 max-h-[216px] overflow-y-auto pr-1">
                   {recently_read.map((book) => (
                     <Link key={book.book_id} href={`/books/${book.book_id}` as any} className="flex items-center gap-3 group">
                       <Image
@@ -387,6 +387,32 @@ export default async function DashboardPage({
             noDataLabel={noDataLabel}
             data={additions_over_time.map((m) => ({ label: formatChartLabel(m.month, period, locale), value: m.books_added }))}
             color="hsl(198 78% 37%)"
+          />
+        </CardContent>
+      </Card>
+
+      {/* Jobs over time – multi-line chart */}
+      <Card hover={false}>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-base">{t("dashboard.jobsOverTime")}</CardTitle>
+          <PeriodToggle labels={{ day: t("dashboard.periodDay"), week: t("dashboard.periodWeek"), month: t("dashboard.periodMonth") }} />
+        </CardHeader>
+        <CardContent>
+          <RcMultiLineChart
+            noDataLabel={noDataLabel}
+            data={jobs_over_time.map((j) => ({
+              label: formatChartLabel(j.label, period, locale),
+              scan: j.scan,
+              rebuild: j.rebuild,
+              thumbnail: j.thumbnail,
+              other: j.other,
+            }))}
+            lines={[
+              { key: "scan", label: t("dashboard.jobScan"), color: "hsl(198 78% 37%)" },
+              { key: "rebuild", label: t("dashboard.jobRebuild"), color: "hsl(142 60% 45%)" },
+              { key: "thumbnail", label: t("dashboard.jobThumbnail"), color: "hsl(45 93% 47%)" },
+              { key: "other", label: t("dashboard.jobOther"), color: "hsl(280 60% 50%)" },
+            ]}
           />
         </CardContent>
       </Card>

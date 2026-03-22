@@ -3,7 +3,7 @@
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  AreaChart, Area,
+  AreaChart, Area, Line, LineChart,
   Legend,
 } from "recharts";
 
@@ -183,6 +183,49 @@ export function RcHorizontalBar({
         />
         <Bar dataKey="value" fill={color} radius={[0, 4, 4, 0]} />
       </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Multi-line chart (jobs over time)
+// ---------------------------------------------------------------------------
+
+export function RcMultiLineChart({
+  data,
+  lines,
+  noDataLabel,
+}: {
+  data: Record<string, unknown>[];
+  lines: { key: string; label: string; color: string }[];
+  noDataLabel?: string;
+}) {
+  const hasData = data.some((d) => lines.some((l) => (d[l.key] as number) > 0));
+  if (data.length === 0 || !hasData)
+    return <p className="text-muted-foreground text-sm text-center py-8">{noDataLabel}</p>;
+
+  return (
+    <ResponsiveContainer width="100%" height={180}>
+      <LineChart data={data} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" opacity={0.3} />
+        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
+        <YAxis tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} allowDecimals={false} />
+        <Tooltip
+          contentStyle={{ backgroundColor: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12 }}
+        />
+        <Legend wrapperStyle={{ fontSize: 11 }} />
+        {lines.map((l) => (
+          <Line
+            key={l.key}
+            type="monotone"
+            dataKey={l.key}
+            name={l.label}
+            stroke={l.color}
+            strokeWidth={2}
+            dot={{ r: 3, fill: l.color }}
+          />
+        ))}
+      </LineChart>
     </ResponsiveContainer>
   );
 }

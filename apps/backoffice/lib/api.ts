@@ -570,6 +570,14 @@ export type MonthlyReading = {
   books_read: number;
 };
 
+export type JobTimePoint = {
+  label: string;
+  scan: number;
+  rebuild: number;
+  thumbnail: number;
+  other: number;
+};
+
 export type StatsResponse = {
   overview: StatsOverview;
   reading_status: ReadingStatusStats;
@@ -581,6 +589,7 @@ export type StatsResponse = {
   by_library: LibraryStatsItem[];
   top_series: TopSeriesItem[];
   additions_over_time: MonthlyAdditions[];
+  jobs_over_time: JobTimePoint[];
   metadata: MetadataStats;
 };
 
