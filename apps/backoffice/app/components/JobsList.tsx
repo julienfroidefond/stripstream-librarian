@@ -40,34 +40,21 @@ function formatDuration(start: string, end: string | null): string {
   return `${Math.floor(diff / 3600000)}h ${Math.floor((diff % 3600000) / 60000)}m`;
 }
 
-function getDateParts(dateStr: string): { mins: number; hours: number; useDate: boolean; date: Date } {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-
-  if (diff < 3600000) {
-    const mins = Math.floor(diff / 60000);
-    return { mins, hours: 0, useDate: false, date };
-  }
-  if (diff < 86400000) {
-    const hours = Math.floor(diff / 3600000);
-    return { mins: 0, hours, useDate: false, date };
-  }
-  return { mins: 0, hours: 0, useDate: true, date };
-}
-
 export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListProps) {
   const { t, locale } = useTranslation();
   const [jobs, setJobs] = useState(initialJobs);
 
   const formatDate = (dateStr: string): string => {
-    const parts = getDateParts(dateStr);
-    if (parts.useDate) {
-      return parts.date.toLocaleDateString(locale);
-    }
-    if (parts.mins < 1) return t("time.justNow");
-    if (parts.hours > 0) return t("time.hoursAgo", { count: parts.hours });
-    return t("time.minutesAgo", { count: parts.mins });
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return dateStr;
+    const loc = locale === "fr" ? "fr-FR" : "en-US";
+    return date.toLocaleString(loc, {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   };
 
   // Refresh jobs list via SSE
