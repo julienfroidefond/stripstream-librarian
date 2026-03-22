@@ -287,4 +287,4 @@ volumes:
 
 ## License
 
-[Your License Here]
+This project is licensed under the [MIT License](LICENSE).
