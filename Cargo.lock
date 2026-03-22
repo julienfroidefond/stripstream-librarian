@@ -64,7 +64,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "api"
-version = "1.25.0"
+version = "1.26.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -1233,7 +1233,7 @@ dependencies = [
 
 [[package]]
 name = "indexer"
-version = "1.25.0"
+version = "1.26.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1667,7 +1667,7 @@ dependencies = [
 
 [[package]]
 name = "notifications"
-version = "1.25.0"
+version = "1.26.0"
 dependencies = [
  "anyhow",
  "reqwest",
@@ -1786,7 +1786,7 @@ dependencies = [
 
 [[package]]
 name = "parsers"
-version = "1.25.0"
+version = "1.26.0"
 dependencies = [
  "anyhow",
  "flate2",
@@ -2923,7 +2923,7 @@ dependencies = [
 
 [[package]]
 name = "stripstream-core"
-version = "1.25.0"
+version = "1.26.0"
 dependencies = [
  "anyhow",
  "serde",
