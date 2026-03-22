@@ -170,6 +170,34 @@
 
 ---
 
+## Notifications
+
+### Telegram
+- Real-time notifications via Telegram Bot API (`sendMessage` and `sendPhoto`)
+- Configuration: bot token, chat ID, enable/disable toggle
+- Test connection button in settings
+
+### Granular Event Toggles
+12 individually configurable notification events grouped by category:
+
+| Category | Events |
+|----------|--------|
+| Scans | `scan_completed`, `scan_failed`, `scan_cancelled` |
+| Thumbnails | `thumbnail_completed`, `thumbnail_failed`, `thumbnail_cancelled` |
+| Conversion | `conversion_completed`, `conversion_failed`, `conversion_cancelled` |
+| Metadata | `metadata_approved`, `metadata_batch_completed`, `metadata_refresh_completed` |
+
+### Thumbnail Images in Notifications
+- Book cover thumbnails attached to applicable notifications (conversion, metadata approval)
+- Uses `sendPhoto` multipart upload with fallback to text-only `sendMessage`
+
+### Implementation
+- Shared `crates/notifications` crate used by both API and indexer
+- Fire-and-forget: notification failures are logged but never block the main operation
+- Messages formatted in HTML with event-specific icons
+
+---
+
 ## Page Rendering & Caching
 
 ### Page Extraction
@@ -238,13 +266,16 @@
 ## Backoffice (Web UI)
 
 ### Dashboard
-- Statistics cards: books, series, authors, libraries
-- Donut charts: reading status breakdown, format distribution
-- Bar charts: books per language
-- Per-library reading progress bars
-- Top series by book/page count
-- Monthly addition timeline
-- Metadata coverage stats
+- Statistics cards: books, series, authors, libraries, pages, total size
+- Interactive charts (recharts): donut, area, stacked bar, horizontal bar
+- Reading status breakdown, format distribution, library distribution
+- Currently reading section with progress bars
+- Recently read section with cover thumbnails
+- Reading activity over time (area chart)
+- Books added over time (area chart)
+- Per-library stacked reading progress
+- Top series by book count
+- Metadata coverage and provider breakdown
 
 ### Pages
 - **Libraries**: list, create, delete, configure monitoring and metadata provider
@@ -253,7 +284,7 @@
 - **Authors**: list with book/series counts, detail with author's books
 - **Jobs**: history, live progress via SSE, error details
 - **Tokens**: create, list, revoke API tokens
-- **Settings**: image processing, cache, thumbnails, external services (Prowlarr, qBittorrent)
+- **Settings**: image processing, cache, thumbnails, external services (Prowlarr, qBittorrent), notifications (Telegram)
 
 ### Interactive Features
 - Real-time search with suggestions

@@ -110,6 +110,12 @@ The backoffice will be available at http://localhost:7082
 - Batch auto-matching and scheduled metadata refresh
 - Field locking to protect manual edits from sync
 
+### Notifications
+- **Telegram**: real-time notifications via Telegram Bot API
+- 12 granular event toggles (scans, thumbnails, conversions, metadata)
+- Book thumbnail images included in notifications where applicable
+- Test connection from settings
+
 ### External Integrations
 - **Komga**: import reading progress
 - **Prowlarr**: search for missing volumes
@@ -130,9 +136,11 @@ The backoffice will be available at http://localhost:7082
 - Rate limiting, token expiration and revocation
 
 ### Web UI (Backoffice)
-- Dashboard with statistics, charts, and reading progress
+- Dashboard with statistics, interactive charts (recharts), and reading progress
+- Currently reading & recently read sections
 - Library, book, series, author management
 - Live job monitoring, metadata search modals, settings panel
+- Notification settings with per-event toggle configuration
 
 ## Environment Variables
 
