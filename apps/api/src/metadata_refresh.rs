@@ -124,14 +124,14 @@ pub async fn start_refresh(
 
     let job_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'metadata_refresh', 'pending')",
+        "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'metadata_refresh', 'running', NOW())",
     )
     .bind(job_id)
     .bind(library_id)
     .execute(&state.pool)
     .await?;
 
-    // Spawn the background processing task
+    // Spawn the background processing task (status already 'running' to avoid poller race)
     let pool = state.pool.clone();
     let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
         .bind(library_id)
@@ -222,7 +222,7 @@ pub async fn get_refresh_report(
 // Background processing
 // ---------------------------------------------------------------------------
 
-async fn process_metadata_refresh(
+pub(crate) async fn process_metadata_refresh(
     pool: &PgPool,
     job_id: Uuid,
     library_id: Uuid,

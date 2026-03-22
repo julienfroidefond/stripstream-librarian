@@ -4,6 +4,7 @@ mod books;
 mod error;
 mod handlers;
 mod index_jobs;
+mod job_poller;
 mod komga;
 mod libraries;
 mod metadata;
@@ -159,6 +160,9 @@ async fn main() -> anyhow::Result<()> {
             auth::require_read,
         ));
 
+    // Clone pool before state is moved into the router
+    let poller_pool = state.pool.clone();
+
     let app = Router::new()
         .route("/health", get(handlers::health))
         .route("/ready", get(handlers::ready))
@@ -169,6 +173,11 @@ async fn main() -> anyhow::Result<()> {
         .merge(read_routes)
         .layer(middleware::from_fn_with_state(state.clone(), api_middleware::request_counter))
         .with_state(state);
+
+    // Start background poller for API-only jobs (metadata_batch, metadata_refresh)
+    tokio::spawn(async move {
+        job_poller::run_job_poller(poller_pool, 5).await;
+    });
 
     let listener = tokio::net::TcpListener::bind(&config.listen_addr).await?;
     info!(addr = %config.listen_addr, "api listening");
