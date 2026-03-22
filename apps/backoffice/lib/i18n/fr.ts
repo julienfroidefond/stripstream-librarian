@@ -80,6 +80,12 @@ const fr = {
   "dashboard.bookMetadata": "Métadonnées livres",
   "dashboard.withSummary": "Avec résumé",
   "dashboard.withIsbn": "Avec ISBN",
+  "dashboard.currentlyReading": "En cours de lecture",
+  "dashboard.recentlyRead": "Derniers livres lus",
+  "dashboard.readingActivity": "Activité de lecture (12 derniers mois)",
+  "dashboard.pageProgress": "p. {{current}} / {{total}}",
+  "dashboard.noCurrentlyReading": "Aucun livre en cours",
+  "dashboard.noRecentlyRead": "Aucun livre lu récemment",
 
   // Books page
   "books.title": "Livres",

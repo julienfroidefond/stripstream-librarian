@@ -82,6 +82,12 @@ const en: Record<TranslationKey, string> = {
   "dashboard.bookMetadata": "Book metadata",
   "dashboard.withSummary": "With summary",
   "dashboard.withIsbn": "With ISBN",
+  "dashboard.currentlyReading": "Currently reading",
+  "dashboard.recentlyRead": "Recently read",
+  "dashboard.readingActivity": "Reading activity (last 12 months)",
+  "dashboard.pageProgress": "p. {{current}} / {{total}}",
+  "dashboard.noCurrentlyReading": "No books in progress",
+  "dashboard.noRecentlyRead": "No books read recently",
 
   // Books page
   "books.title": "Books",

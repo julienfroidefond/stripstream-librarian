@@ -550,9 +550,32 @@ export type MetadataStats = {
   by_provider: ProviderCount[];
 };
 
+export type CurrentlyReadingItem = {
+  book_id: string;
+  title: string;
+  series: string | null;
+  current_page: number;
+  page_count: number;
+};
+
+export type RecentlyReadItem = {
+  book_id: string;
+  title: string;
+  series: string | null;
+  last_read_at: string;
+};
+
+export type MonthlyReading = {
+  month: string;
+  books_read: number;
+};
+
 export type StatsResponse = {
   overview: StatsOverview;
   reading_status: ReadingStatusStats;
+  currently_reading: CurrentlyReadingItem[];
+  recently_read: RecentlyReadItem[];
+  reading_over_time: MonthlyReading[];
   by_format: FormatCount[];
   by_language: LanguageCount[];
   by_library: LibraryStatsItem[];

@@ -1,6 +1,8 @@
 import React from "react";
-import { fetchStats, StatsResponse } from "../lib/api";
+import { fetchStats, StatsResponse, getBookCoverUrl } from "../lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui";
+import { RcDonutChart, RcBarChart, RcAreaChart, RcStackedBar, RcHorizontalBar } from "./components/DashboardCharts";
+import Image from "next/image";
 import Link from "next/link";
 import { getServerTranslations } from "../lib/i18n/server";
 import type { TranslateFunction } from "../lib/i18n/dictionaries";
@@ -19,84 +21,7 @@ function formatNumber(n: number, locale: string): string {
   return n.toLocaleString(locale === "fr" ? "fr-FR" : "en-US");
 }
 
-// Donut chart via SVG
-function DonutChart({ data, colors, noDataLabel, locale = "fr" }: { data: { label: string; value: number; color: string }[]; colors?: string[]; noDataLabel?: string; locale?: string }) {
-  const total = data.reduce((sum, d) => sum + d.value, 0);
-  if (total === 0) return <p className="text-muted-foreground text-sm text-center py-8">{noDataLabel}</p>;
-
-  const radius = 40;
-  const circumference = 2 * Math.PI * radius;
-  let offset = 0;
-
-  return (
-    <div className="flex items-center gap-6">
-      <svg viewBox="0 0 100 100" className="w-32 h-32 shrink-0">
-        {data.map((d, i) => {
-          const pct = d.value / total;
-          const dashLength = pct * circumference;
-          const currentOffset = offset;
-          offset += dashLength;
-          return (
-            <circle
-              key={i}
-              cx="50"
-              cy="50"
-              r={radius}
-              fill="none"
-              stroke={d.color}
-              strokeWidth="16"
-              strokeDasharray={`${dashLength} ${circumference - dashLength}`}
-              strokeDashoffset={-currentOffset}
-              transform="rotate(-90 50 50)"
-              className="transition-all duration-500"
-            />
-          );
-        })}
-        <text x="50" y="50" textAnchor="middle" dominantBaseline="central" className="fill-foreground text-[10px] font-bold">
-          {formatNumber(total, locale)}
-        </text>
-      </svg>
-      <div className="flex flex-col gap-1.5 min-w-0">
-        {data.map((d, i) => (
-          <div key={i} className="flex items-center gap-2 text-sm">
-            <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-            <span className="text-muted-foreground truncate">{d.label}</span>
-            <span className="font-medium text-foreground ml-auto">{d.value}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// Bar chart via pure CSS
-function BarChart({ data, color = "var(--color-primary)", noDataLabel }: { data: { label: string; value: number }[]; color?: string; noDataLabel?: string }) {
-  const max = Math.max(...data.map((d) => d.value), 1);
-  if (data.length === 0) return <p className="text-muted-foreground text-sm text-center py-8">{noDataLabel}</p>;
-
-  return (
-    <div className="flex items-end gap-1.5 h-40">
-      {data.map((d, i) => (
-        <div key={i} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-          <span className="text-[10px] text-muted-foreground font-medium">{d.value || ""}</span>
-          <div
-            className="w-full rounded-t-sm transition-all duration-500 min-h-[2px]"
-            style={{
-              height: `${(d.value / max) * 100}%`,
-              backgroundColor: color,
-              opacity: d.value === 0 ? 0.2 : 1,
-            }}
-          />
-          <span className="text-[10px] text-muted-foreground truncate w-full text-center">
-            {d.label}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// Horizontal progress bar for library breakdown
+// Horizontal progress bar for metadata quality (stays server-rendered, no recharts needed)
 function HorizontalBar({ label, value, max, subLabel, color = "var(--color-primary)" }: { label: string; value: number; max: number; subLabel?: string; color?: string }) {
   const pct = max > 0 ? (value / max) * 100 : 0;
   return (
@@ -137,7 +62,7 @@ export default async function DashboardPage() {
     );
   }
 
-  const { overview, reading_status, by_format, by_language, by_library, top_series, additions_over_time, metadata } = stats;
+  const { overview, reading_status, currently_reading = [], recently_read = [], reading_over_time = [], by_format, by_library, top_series, additions_over_time, metadata } = stats;
 
   const readingColors = ["hsl(220 13% 70%)", "hsl(45 93% 47%)", "hsl(142 60% 45%)"];
   const formatColors = [
@@ -146,7 +71,6 @@ export default async function DashboardPage() {
     "hsl(170 60% 45%)", "hsl(220 60% 50%)",
   ];
 
-  const maxLibBooks = Math.max(...by_library.map((l) => l.book_count), 1);
   const noDataLabel = t("common.noData");
 
   return (
@@ -174,6 +98,98 @@ export default async function DashboardPage() {
         <StatCard icon="size" label={t("dashboard.totalSize")} value={formatBytes(overview.total_size_bytes)} color="warning" />
       </div>
 
+      {/* Currently reading + Recently read */}
+      {(currently_reading.length > 0 || recently_read.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Currently reading */}
+          <Card hover={false}>
+            <CardHeader>
+              <CardTitle className="text-base">{t("dashboard.currentlyReading")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {currently_reading.length === 0 ? (
+                <p className="text-muted-foreground text-sm text-center py-4">{t("dashboard.noCurrentlyReading")}</p>
+              ) : (
+                <div className="space-y-3">
+                  {currently_reading.slice(0, 8).map((book) => {
+                    const pct = book.page_count > 0 ? Math.round((book.current_page / book.page_count) * 100) : 0;
+                    return (
+                      <Link key={book.book_id} href={`/books/${book.book_id}` as any} className="flex items-center gap-3 group">
+                        <Image
+                          src={getBookCoverUrl(book.book_id)}
+                          alt={book.title}
+                          width={40}
+                          height={56}
+                          className="w-10 h-14 object-cover rounded shadow-sm shrink-0 bg-muted"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">{book.title}</p>
+                          {book.series && <p className="text-xs text-muted-foreground truncate">{book.series}</p>}
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <div className="h-1.5 flex-1 bg-muted rounded-full overflow-hidden">
+                              <div className="h-full bg-warning rounded-full transition-all" style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="text-[10px] text-muted-foreground shrink-0">{pct}%</span>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">{t("dashboard.pageProgress", { current: book.current_page, total: book.page_count })}</p>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Recently read */}
+          <Card hover={false}>
+            <CardHeader>
+              <CardTitle className="text-base">{t("dashboard.recentlyRead")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {recently_read.length === 0 ? (
+                <p className="text-muted-foreground text-sm text-center py-4">{t("dashboard.noRecentlyRead")}</p>
+              ) : (
+                <div className="space-y-3">
+                  {recently_read.map((book) => (
+                    <Link key={book.book_id} href={`/books/${book.book_id}` as any} className="flex items-center gap-3 group">
+                      <Image
+                        src={getBookCoverUrl(book.book_id)}
+                        alt={book.title}
+                        width={40}
+                        height={56}
+                        className="w-10 h-14 object-cover rounded shadow-sm shrink-0 bg-muted"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">{book.title}</p>
+                        {book.series && <p className="text-xs text-muted-foreground truncate">{book.series}</p>}
+                      </div>
+                      <span className="text-xs text-muted-foreground shrink-0">{book.last_read_at}</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Reading activity line chart */}
+      {reading_over_time.length > 0 && (
+        <Card hover={false}>
+          <CardHeader>
+            <CardTitle className="text-base">{t("dashboard.readingActivity")}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <RcAreaChart
+              noDataLabel={noDataLabel}
+              data={reading_over_time.map((m) => ({ label: m.month.slice(5), value: m.books_read }))}
+              color="hsl(142 60% 45%)"
+            />
+          </CardContent>
+        </Card>
+      )}
+
       {/* Charts row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {/* Reading status donut */}
@@ -182,13 +198,12 @@ export default async function DashboardPage() {
             <CardTitle className="text-base">{t("dashboard.readingStatus")}</CardTitle>
           </CardHeader>
           <CardContent>
-            <DonutChart
-              locale={locale}
+            <RcDonutChart
               noDataLabel={noDataLabel}
               data={[
-                { label: t("status.unread"), value: reading_status.unread, color: readingColors[0] },
-                { label: t("status.reading"), value: reading_status.reading, color: readingColors[1] },
-                { label: t("status.read"), value: reading_status.read, color: readingColors[2] },
+                { name: t("status.unread"), value: reading_status.unread, color: readingColors[0] },
+                { name: t("status.reading"), value: reading_status.reading, color: readingColors[1] },
+                { name: t("status.read"), value: reading_status.read, color: readingColors[2] },
               ]}
             />
           </CardContent>
@@ -200,11 +215,10 @@ export default async function DashboardPage() {
             <CardTitle className="text-base">{t("dashboard.byFormat")}</CardTitle>
           </CardHeader>
           <CardContent>
-            <DonutChart
-              locale={locale}
+            <RcDonutChart
               noDataLabel={noDataLabel}
               data={by_format.slice(0, 6).map((f, i) => ({
-                label: (f.format || t("dashboard.unknown")).toUpperCase(),
+                name: (f.format || t("dashboard.unknown")).toUpperCase(),
                 value: f.count,
                 color: formatColors[i % formatColors.length],
               }))}
@@ -218,11 +232,10 @@ export default async function DashboardPage() {
             <CardTitle className="text-base">{t("dashboard.byLibrary")}</CardTitle>
           </CardHeader>
           <CardContent>
-            <DonutChart
-              locale={locale}
+            <RcDonutChart
               noDataLabel={noDataLabel}
               data={by_library.slice(0, 6).map((l, i) => ({
-                label: l.library_name,
+                name: l.library_name,
                 value: l.book_count,
                 color: formatColors[i % formatColors.length],
               }))}
@@ -239,12 +252,11 @@ export default async function DashboardPage() {
             <CardTitle className="text-base">{t("dashboard.metadataCoverage")}</CardTitle>
           </CardHeader>
           <CardContent>
-            <DonutChart
-              locale={locale}
+            <RcDonutChart
               noDataLabel={noDataLabel}
               data={[
-                { label: t("dashboard.seriesLinked"), value: metadata.series_linked, color: "hsl(142 60% 45%)" },
-                { label: t("dashboard.seriesUnlinked"), value: metadata.series_unlinked, color: "hsl(220 13% 70%)" },
+                { name: t("dashboard.seriesLinked"), value: metadata.series_linked, color: "hsl(142 60% 45%)" },
+                { name: t("dashboard.seriesUnlinked"), value: metadata.series_unlinked, color: "hsl(220 13% 70%)" },
               ]}
             />
           </CardContent>
@@ -256,11 +268,10 @@ export default async function DashboardPage() {
             <CardTitle className="text-base">{t("dashboard.byProvider")}</CardTitle>
           </CardHeader>
           <CardContent>
-            <DonutChart
-              locale={locale}
+            <RcDonutChart
               noDataLabel={noDataLabel}
               data={metadata.by_provider.map((p, i) => ({
-                label: p.provider.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+                name: p.provider.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
                 value: p.count,
                 color: formatColors[i % formatColors.length],
               }))}
@@ -294,24 +305,32 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      {/* Second row */}
+      {/* Libraries breakdown + Top series */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Monthly additions bar chart */}
-        <Card hover={false}>
-          <CardHeader>
-            <CardTitle className="text-base">{t("dashboard.booksAdded")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BarChart
-              noDataLabel={noDataLabel}
-              data={additions_over_time.map((m) => ({
-                label: m.month.slice(5), // "MM" from "YYYY-MM"
-                value: m.books_added,
-              }))}
-              color="hsl(198 78% 37%)"
-            />
-          </CardContent>
-        </Card>
+        {by_library.length > 0 && (
+          <Card hover={false}>
+            <CardHeader>
+              <CardTitle className="text-base">{t("dashboard.libraries")}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <RcStackedBar
+                data={by_library.map((lib) => ({
+                  name: lib.library_name,
+                  read: lib.read_count,
+                  reading: lib.reading_count,
+                  unread: lib.unread_count,
+                  sizeLabel: formatBytes(lib.size_bytes),
+                }))}
+                labels={{
+                  read: t("status.read"),
+                  reading: t("status.reading"),
+                  unread: t("status.unread"),
+                  books: t("dashboard.books"),
+                }}
+              />
+            </CardContent>
+          </Card>
+        )}
 
         {/* Top series */}
         <Card hover={false}>
@@ -319,67 +338,32 @@ export default async function DashboardPage() {
             <CardTitle className="text-base">{t("dashboard.popularSeries")}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {top_series.slice(0, 8).map((s, i) => (
-                <HorizontalBar
-                  key={i}
-                  label={s.series}
-                  value={s.book_count}
-                  max={top_series[0]?.book_count || 1}
-                  subLabel={t("dashboard.readCount", { read: s.read_count, total: s.book_count })}
-                  color="hsl(142 60% 45%)"
-                />
-              ))}
-              {top_series.length === 0 && (
-                <p className="text-muted-foreground text-sm text-center py-4">{t("dashboard.noSeries")}</p>
-              )}
-            </div>
+            <RcHorizontalBar
+              noDataLabel={t("dashboard.noSeries")}
+              data={top_series.slice(0, 8).map((s) => ({
+                name: s.series,
+                value: s.book_count,
+                subLabel: t("dashboard.readCount", { read: s.read_count, total: s.book_count }),
+              }))}
+              color="hsl(142 60% 45%)"
+            />
           </CardContent>
         </Card>
       </div>
 
-      {/* Libraries breakdown */}
-      {by_library.length > 0 && (
-        <Card hover={false}>
-          <CardHeader>
-            <CardTitle className="text-base">{t("dashboard.libraries")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-              {by_library.map((lib, i) => (
-                <div key={i} className="space-y-2">
-                  <div className="flex justify-between items-baseline">
-                    <span className="font-medium text-foreground text-sm">{lib.library_name}</span>
-                    <span className="text-xs text-muted-foreground">{formatBytes(lib.size_bytes)}</span>
-                  </div>
-                  <div className="h-3 bg-muted rounded-full overflow-hidden flex">
-                    <div
-                      className="h-full transition-all duration-500"
-                      style={{ width: `${(lib.read_count / Math.max(lib.book_count, 1)) * 100}%`, backgroundColor: "hsl(142 60% 45%)" }}
-                      title={`${t("status.read")} : ${lib.read_count}`}
-                    />
-                    <div
-                      className="h-full transition-all duration-500"
-                      style={{ width: `${(lib.reading_count / Math.max(lib.book_count, 1)) * 100}%`, backgroundColor: "hsl(45 93% 47%)" }}
-                      title={`${t("status.reading")} : ${lib.reading_count}`}
-                    />
-                    <div
-                      className="h-full transition-all duration-500"
-                      style={{ width: `${(lib.unread_count / Math.max(lib.book_count, 1)) * 100}%`, backgroundColor: "hsl(220 13% 70%)" }}
-                      title={`${t("status.unread")} : ${lib.unread_count}`}
-                    />
-                  </div>
-                  <div className="flex gap-3 text-[11px] text-muted-foreground">
-                    <span>{lib.book_count} {t("dashboard.books").toLowerCase()}</span>
-                    <span className="text-success">{lib.read_count} {t("status.read").toLowerCase()}</span>
-                    <span className="text-warning">{lib.reading_count} {t("status.reading").toLowerCase()}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Monthly additions line chart – full width */}
+      <Card hover={false}>
+        <CardHeader>
+          <CardTitle className="text-base">{t("dashboard.booksAdded")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <RcAreaChart
+            noDataLabel={noDataLabel}
+            data={additions_over_time.map((m) => ({ label: m.month.slice(5), value: m.books_added }))}
+            color="hsl(198 78% 37%)"
+          />
+        </CardContent>
+      </Card>
 
       {/* Quick links */}
       <QuickLinks t={t} />

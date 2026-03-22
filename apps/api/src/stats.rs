@@ -75,9 +75,35 @@ pub struct ProviderCount {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct CurrentlyReadingItem {
+    pub book_id: String,
+    pub title: String,
+    pub series: Option<String>,
+    pub current_page: i32,
+    pub page_count: i32,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RecentlyReadItem {
+    pub book_id: String,
+    pub title: String,
+    pub series: Option<String>,
+    pub last_read_at: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct MonthlyReading {
+    pub month: String,
+    pub books_read: i64,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct StatsResponse {
     pub overview: StatsOverview,
     pub reading_status: ReadingStatusStats,
+    pub currently_reading: Vec<CurrentlyReadingItem>,
+    pub recently_read: Vec<RecentlyReadItem>,
+    pub reading_over_time: Vec<MonthlyReading>,
     pub by_format: Vec<FormatCount>,
     pub by_language: Vec<LanguageCount>,
     pub by_library: Vec<LibraryStats>,
@@ -327,9 +353,92 @@ pub async fn get_stats(
         by_provider,
     };
 
+    // Currently reading books
+    let reading_rows = sqlx::query(
+        r#"
+        SELECT b.id AS book_id, b.title, b.series, brp.current_page, b.page_count
+        FROM book_reading_progress brp
+        JOIN books b ON b.id = brp.book_id
+        WHERE brp.status = 'reading' AND brp.current_page IS NOT NULL
+        ORDER BY brp.updated_at DESC
+        LIMIT 20
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let currently_reading: Vec<CurrentlyReadingItem> = reading_rows
+        .iter()
+        .map(|r| {
+            let id: uuid::Uuid = r.get("book_id");
+            CurrentlyReadingItem {
+                book_id: id.to_string(),
+                title: r.get("title"),
+                series: r.get("series"),
+                current_page: r.get::<Option<i32>, _>("current_page").unwrap_or(0),
+                page_count: r.get::<Option<i32>, _>("page_count").unwrap_or(0),
+            }
+        })
+        .collect();
+
+    // Recently read books
+    let recent_rows = sqlx::query(
+        r#"
+        SELECT b.id AS book_id, b.title, b.series,
+               TO_CHAR(brp.last_read_at, 'YYYY-MM-DD') AS last_read_at
+        FROM book_reading_progress brp
+        JOIN books b ON b.id = brp.book_id
+        WHERE brp.status = 'read' AND brp.last_read_at IS NOT NULL
+        ORDER BY brp.last_read_at DESC
+        LIMIT 10
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let recently_read: Vec<RecentlyReadItem> = recent_rows
+        .iter()
+        .map(|r| {
+            let id: uuid::Uuid = r.get("book_id");
+            RecentlyReadItem {
+                book_id: id.to_string(),
+                title: r.get("title"),
+                series: r.get("series"),
+                last_read_at: r.get::<Option<String>, _>("last_read_at").unwrap_or_default(),
+            }
+        })
+        .collect();
+
+    // Reading activity over time (last 12 months)
+    let reading_time_rows = sqlx::query(
+        r#"
+        SELECT
+            TO_CHAR(DATE_TRUNC('month', brp.last_read_at), 'YYYY-MM') AS month,
+            COUNT(*) AS books_read
+        FROM book_reading_progress brp
+        WHERE brp.status = 'read'
+          AND brp.last_read_at >= DATE_TRUNC('month', NOW()) - INTERVAL '11 months'
+        GROUP BY DATE_TRUNC('month', brp.last_read_at)
+        ORDER BY month ASC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let reading_over_time: Vec<MonthlyReading> = reading_time_rows
+        .iter()
+        .map(|r| MonthlyReading {
+            month: r.get::<Option<String>, _>("month").unwrap_or_default(),
+            books_read: r.get("books_read"),
+        })
+        .collect();
+
     Ok(Json(StatsResponse {
         overview,
         reading_status,
+        currently_reading,
+        recently_read,
+        reading_over_time,
         by_format,
         by_language,
         by_library,
