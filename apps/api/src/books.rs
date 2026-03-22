@@ -631,12 +631,17 @@ pub async fn get_thumbnail(
         crate::pages::render_book_page_1(&state, book_id, 300, 80).await?
     };
 
+    let etag_value = format!("\"{}_{:x}\"", book_id, data.len());
+
     let mut headers = HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
     headers.insert(
         header::CACHE_CONTROL,
         HeaderValue::from_static("public, max-age=31536000, immutable"),
     );
+    if let Ok(v) = HeaderValue::from_str(&etag_value) {
+        headers.insert(header::ETAG, v);
+    }
 
     Ok((StatusCode::OK, headers, Body::from(data)))
 }
