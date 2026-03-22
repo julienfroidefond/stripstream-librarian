@@ -21,19 +21,16 @@ export async function GET(
     const response = await fetch(apiUrl.toString(), {
       headers: { Authorization: `Bearer ${token}` },
     });
-    
+
     if (!response.ok) {
-      return new NextResponse(`Failed to fetch image: ${response.status}`, { 
-        status: response.status 
+      return new NextResponse(`Failed to fetch image: ${response.status}`, {
+        status: response.status
       });
     }
-    
-    // Récupérer le content-type et les données
+
     const contentType = response.headers.get("content-type") || "image/webp";
-    const imageBuffer = await response.arrayBuffer();
-    
-    // Retourner l'image avec le bon content-type
-    return new NextResponse(imageBuffer, {
+
+    return new NextResponse(response.body, {
       headers: {
         "Content-Type": contentType,
         "Cache-Control": "public, max-age=300",

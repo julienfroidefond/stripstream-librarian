@@ -4,6 +4,7 @@ const nextConfig = {
   typedRoutes: true,
   images: {
     minimumCacheTTL: 86400,
+    unoptimized: true,
   },
 };
 

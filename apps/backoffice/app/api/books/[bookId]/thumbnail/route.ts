@@ -6,23 +6,22 @@ export async function GET(
   { params }: { params: Promise<{ bookId: string }> }
 ) {
   const { bookId } = await params;
-  
+
   try {
     const { baseUrl, token } = config();
     const response = await fetch(`${baseUrl}/books/${bookId}/thumbnail`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    
+
     if (!response.ok) {
-      return new NextResponse(`Failed to fetch thumbnail: ${response.status}`, { 
-        status: response.status 
+      return new NextResponse(`Failed to fetch thumbnail: ${response.status}`, {
+        status: response.status
       });
     }
-    
+
     const contentType = response.headers.get("content-type") || "image/webp";
-    const imageBuffer = await response.arrayBuffer();
-    
-    return new NextResponse(imageBuffer, {
+
+    return new NextResponse(response.body, {
       headers: {
         "Content-Type": contentType,
         "Cache-Control": "public, max-age=31536000, immutable",
