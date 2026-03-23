@@ -161,7 +161,13 @@ async fn send_telegram_photo(config: &TelegramConfig, caption: &str, photo_path:
 
 /// Send a test message. Returns the result directly (not fire-and-forget).
 pub async fn send_test_message(config: &TelegramConfig) -> Result<()> {
-    send_telegram(config, "🔔 <b>Stripstream Librarian</b>\nTest notification — connection OK!").await
+    send_telegram(
+        config,
+        "🔔 <b>Stripstream Librarian</b>\n\
+         ━━━━━━━━━━━━━━━━━━━━\n\
+         ✅ Test notification — connection OK!",
+    )
+    .await
 }
 
 // ---------------------------------------------------------------------------
@@ -265,22 +271,23 @@ fn format_event(event: &NotificationEvent) -> String {
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let duration = format_duration(*duration_seconds);
-            format!(
-                "📚 <b>Scan completed</b>\n\
-                 Library: {lib}\n\
-                 Type: {job_type}\n\
-                 New books: {}\n\
-                 New series: {}\n\
-                 Files scanned: {}\n\
-                 Removed: {}\n\
-                 Errors: {}\n\
-                 Duration: {duration}",
-                stats.indexed_files,
-                stats.new_series,
-                stats.scanned_files,
-                stats.removed_files,
-                stats.errors,
-            )
+            let mut lines = vec![
+                format!("✅ <b>Scan completed</b>"),
+                format!("━━━━━━━━━━━━━━━━━━━━"),
+                format!("📂 <b>Library:</b> {lib}"),
+                format!("🏷 <b>Type:</b> {job_type}"),
+                format!("⏱ <b>Duration:</b> {duration}"),
+                String::new(),
+                format!("📊 <b>Results</b>"),
+                format!("  📗 New books: <b>{}</b>", stats.indexed_files),
+                format!("  📚 New series: <b>{}</b>", stats.new_series),
+                format!("  🔎 Files scanned: <b>{}</b>", stats.scanned_files),
+                format!("  🗑 Removed: <b>{}</b>", stats.removed_files),
+            ];
+            if stats.errors > 0 {
+                lines.push(format!("  ⚠️ Errors: <b>{}</b>", stats.errors));
+            }
+            lines.join("\n")
         }
         NotificationEvent::ScanFailed {
             job_type,
@@ -289,23 +296,28 @@ fn format_event(event: &NotificationEvent) -> String {
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let err = truncate(error, 200);
-            format!(
-                "❌ <b>Scan failed</b>\n\
-                 Library: {lib}\n\
-                 Type: {job_type}\n\
-                 Error: {err}"
-            )
+            [
+                format!("🚨 <b>Scan failed</b>"),
+                format!("━━━━━━━━━━━━━━━━━━━━"),
+                format!("📂 <b>Library:</b> {lib}"),
+                format!("🏷 <b>Type:</b> {job_type}"),
+                String::new(),
+                format!("💬 <code>{err}</code>"),
+            ]
+            .join("\n")
         }
         NotificationEvent::ScanCancelled {
             job_type,
             library_name,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
-            format!(
-                "⏹ <b>Scan cancelled</b>\n\
-                 Library: {lib}\n\
-                 Type: {job_type}"
-            )
+            [
+                format!("⏹ <b>Scan cancelled</b>"),
+                format!("━━━━━━━━━━━━━━━━━━━━"),
+                format!("📂 <b>Library:</b> {lib}"),
+                format!("🏷 <b>Type:</b> {job_type}"),
+            ]
+            .join("\n")
         }
         NotificationEvent::ThumbnailCompleted {
             job_type,
@@ -314,12 +326,14 @@ fn format_event(event: &NotificationEvent) -> String {
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let duration = format_duration(*duration_seconds);
-            format!(
-                "🖼 <b>Thumbnails completed</b>\n\
-                 Library: {lib}\n\
-                 Type: {job_type}\n\
-                 Duration: {duration}"
-            )
+            [
+                format!("✅ <b>Thumbnails completed</b>"),
+                format!("━━━━━━━━━━━━━━━━━━━━"),
+                format!("📂 <b>Library:</b> {lib}"),
+                format!("🏷 <b>Type:</b> {job_type}"),
+                format!("⏱ <b>Duration:</b> {duration}"),
+            ]
+            .join("\n")
         }
         NotificationEvent::ThumbnailFailed {
             job_type,
@@ -328,12 +342,15 @@ fn format_event(event: &NotificationEvent) -> String {
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let err = truncate(error, 200);
-            format!(
-                "❌ <b>Thumbnails failed</b>\n\
-                 Library: {lib}\n\
-                 Type: {job_type}\n\
-                 Error: {err}"
-            )
+            [
+                format!("🚨 <b>Thumbnails failed</b>"),
+                format!("━━━━━━━━━━━━━━━━━━━━"),
+                format!("📂 <b>Library:</b> {lib}"),
+                format!("🏷 <b>Type:</b> {job_type}"),
+                String::new(),
+                format!("💬 <code>{err}</code>"),
+            ]
+            .join("\n")
         }
         NotificationEvent::ConversionCompleted {
             library_name,
@@ -342,11 +359,13 @@ fn format_event(event: &NotificationEvent) -> String {
         } => {
             let lib = library_name.as_deref().unwrap_or("Unknown");
             let title = book_title.as_deref().unwrap_or("Unknown");
-            format!(
-                "🔄 <b>CBR→CBZ conversion completed</b>\n\
-                 Library: {lib}\n\
-                 Book: {title}"
-            )
+            [
+                format!("✅ <b>CBR → CBZ conversion completed</b>"),
+                format!("━━━━━━━━━━━━━━━━━━━━"),
+                format!("📂 <b>Library:</b> {lib}"),
+                format!("📖 <b>Book:</b> {title}"),
+            ]
+            .join("\n")
         }
         NotificationEvent::ConversionFailed {
             library_name,
@@ -357,23 +376,28 @@ fn format_event(event: &NotificationEvent) -> String {
             let lib = library_name.as_deref().unwrap_or("Unknown");
             let title = book_title.as_deref().unwrap_or("Unknown");
             let err = truncate(error, 200);
-            format!(
-                "❌ <b>CBR→CBZ conversion failed</b>\n\
-                 Library: {lib}\n\
-                 Book: {title}\n\
-                 Error: {err}"
-            )
+            [
+                format!("🚨 <b>CBR → CBZ conversion failed</b>"),
+                format!("━━━━━━━━━━━━━━━━━━━━"),
+                format!("📂 <b>Library:</b> {lib}"),
+                format!("📖 <b>Book:</b> {title}"),
+                String::new(),
+                format!("💬 <code>{err}</code>"),
+            ]
+            .join("\n")
         }
         NotificationEvent::MetadataApproved {
             series_name,
             provider,
             ..
         } => {
-            format!(
-                "🔗 <b>Metadata linked</b>\n\
-                 Series: {series_name}\n\
-                 Provider: {provider}"
-            )
+            [
+                format!("✅ <b>Metadata linked</b>"),
+                format!("━━━━━━━━━━━━━━━━━━━━"),
+                format!("📚 <b>Series:</b> {series_name}"),
+                format!("🔗 <b>Provider:</b> {provider}"),
+            ]
+            .join("\n")
         }
         NotificationEvent::MetadataBatchCompleted {
             library_name,
@@ -381,11 +405,13 @@ fn format_event(event: &NotificationEvent) -> String {
             processed,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
-            format!(
-                "🔍 <b>Metadata batch completed</b>\n\
-                 Library: {lib}\n\
-                 Series processed: {processed}/{total_series}"
-            )
+            [
+                format!("✅ <b>Metadata batch completed</b>"),
+                format!("━━━━━━━━━━━━━━━━━━━━"),
+                format!("📂 <b>Library:</b> {lib}"),
+                format!("📊 <b>Processed:</b> {processed}/{total_series} series"),
+            ]
+            .join("\n")
         }
         NotificationEvent::MetadataBatchFailed {
             library_name,
@@ -393,11 +419,14 @@ fn format_event(event: &NotificationEvent) -> String {
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let err = truncate(error, 200);
-            format!(
-                "❌ <b>Metadata batch failed</b>\n\
-                 Library: {lib}\n\
-                 Error: {err}"
-            )
+            [
+                format!("🚨 <b>Metadata batch failed</b>"),
+                format!("━━━━━━━━━━━━━━━━━━━━"),
+                format!("📂 <b>Library:</b> {lib}"),
+                String::new(),
+                format!("💬 <code>{err}</code>"),
+            ]
+            .join("\n")
         }
         NotificationEvent::MetadataRefreshCompleted {
             library_name,
@@ -406,13 +435,19 @@ fn format_event(event: &NotificationEvent) -> String {
             errors,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
-            format!(
-                "🔄 <b>Metadata refresh completed</b>\n\
-                 Library: {lib}\n\
-                 Updated: {refreshed}\n\
-                 Unchanged: {unchanged}\n\
-                 Errors: {errors}"
-            )
+            let mut lines = vec![
+                format!("✅ <b>Metadata refresh completed</b>"),
+                format!("━━━━━━━━━━━━━━━━━━━━"),
+                format!("📂 <b>Library:</b> {lib}"),
+                String::new(),
+                format!("📊 <b>Results</b>"),
+                format!("  🔄 Updated: <b>{refreshed}</b>"),
+                format!("  ▪️ Unchanged: <b>{unchanged}</b>"),
+            ];
+            if *errors > 0 {
+                lines.push(format!("  ⚠️ Errors: <b>{errors}</b>"));
+            }
+            lines.join("\n")
         }
         NotificationEvent::MetadataRefreshFailed {
             library_name,
@@ -420,11 +455,14 @@ fn format_event(event: &NotificationEvent) -> String {
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let err = truncate(error, 200);
-            format!(
-                "❌ <b>Metadata refresh failed</b>\n\
-                 Library: {lib}\n\
-                 Error: {err}"
-            )
+            [
+                format!("🚨 <b>Metadata refresh failed</b>"),
+                format!("━━━━━━━━━━━━━━━━━━━━"),
+                format!("📂 <b>Library:</b> {lib}"),
+                String::new(),
+                format!("💬 <code>{err}</code>"),
+            ]
+            .join("\n")
         }
     }
 }
