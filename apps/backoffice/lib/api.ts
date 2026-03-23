@@ -32,6 +32,7 @@ export type IndexJobDto = {
     removed_files: number;
     errors: number;
     warnings: number;
+    refreshed?: number;
   } | null;
   progress_percent: number | null;
   processed_files: number | null;

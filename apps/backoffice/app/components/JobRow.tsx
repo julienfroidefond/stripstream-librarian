@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useTranslation } from "../../lib/i18n/context";
 import { JobProgress } from "./JobProgress";
-import { StatusBadge, JobTypeBadge, Button, MiniProgressBar, Icon } from "./ui";
+import { StatusBadge, JobTypeBadge, Button, MiniProgressBar, Icon, Tooltip } from "./ui";
 
 interface JobRowProps {
   job: {
@@ -21,6 +21,7 @@ interface JobRowProps {
       indexed_files: number;
       removed_files: number;
       errors: number;
+      refreshed?: number;
     } | null;
     progress_percent: number | null;
     processed_files: number | null;
@@ -117,49 +118,74 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
               <div className="flex items-center gap-3 text-xs">
                 {/* Files: indexed count */}
                 {indexed > 0 && (
-                  <span className="inline-flex items-center gap-1 text-success" title={t("jobRow.filesIndexed", { count: indexed })}>
-                    <Icon name="document" size="sm" />
-                    {indexed}
-                  </span>
+                  <Tooltip label={t("jobRow.filesIndexed", { count: indexed })}>
+                    <span className="inline-flex items-center gap-1 text-success">
+                      <Icon name="document" size="sm" />
+                      {indexed}
+                    </span>
+                  </Tooltip>
                 )}
                 {/* Removed files */}
                 {removed > 0 && (
-                  <span className="inline-flex items-center gap-1 text-warning" title={t("jobRow.filesRemoved", { count: removed })}>
-                    <Icon name="trash" size="sm" />
-                    {removed}
-                  </span>
+                  <Tooltip label={t("jobRow.filesRemoved", { count: removed })}>
+                    <span className="inline-flex items-center gap-1 text-warning">
+                      <Icon name="trash" size="sm" />
+                      {removed}
+                    </span>
+                  </Tooltip>
                 )}
                 {/* Thumbnails */}
                 {hasThumbnailPhase && job.total_files != null && job.total_files > 0 && (
-                  <span className="inline-flex items-center gap-1 text-primary" title={t("jobRow.thumbnailsGenerated", { count: job.total_files })}>
-                    <Icon name="image" size="sm" />
-                    {job.total_files}
-                  </span>
+                  <Tooltip label={t("jobRow.thumbnailsGenerated", { count: job.total_files })}>
+                    <span className="inline-flex items-center gap-1 text-primary">
+                      <Icon name="image" size="sm" />
+                      {job.total_files}
+                    </span>
+                  </Tooltip>
                 )}
                 {/* Metadata batch: series processed */}
                 {isMetadataBatch && job.total_files != null && job.total_files > 0 && (
-                  <span className="inline-flex items-center gap-1 text-info" title={t("jobRow.metadataProcessed", { count: job.total_files })}>
-                    <Icon name="tag" size="sm" />
-                    {job.total_files}
-                  </span>
+                  <Tooltip label={t("jobRow.metadataProcessed", { count: job.total_files })}>
+                    <span className="inline-flex items-center gap-1 text-info">
+                      <Icon name="tag" size="sm" />
+                      {job.total_files}
+                    </span>
+                  </Tooltip>
                 )}
-                {/* Metadata refresh: links refreshed */}
+                {/* Metadata refresh: total links + refreshed count */}
                 {isMetadataRefresh && job.total_files != null && job.total_files > 0 && (
-                  <span className="inline-flex items-center gap-1 text-info" title={t("jobRow.metadataRefreshed", { count: job.total_files })}>
-                    <Icon name="tag" size="sm" />
-                    {job.total_files}
-                  </span>
+                  <Tooltip label={t("jobRow.metadataLinks", { count: job.total_files })}>
+                    <span className="inline-flex items-center gap-1 text-info">
+                      <Icon name="tag" size="sm" />
+                      {job.total_files}
+                    </span>
+                  </Tooltip>
+                )}
+                {isMetadataRefresh && job.stats_json?.refreshed != null && job.stats_json.refreshed > 0 && (
+                  <Tooltip label={t("jobRow.metadataRefreshed", { count: job.stats_json.refreshed })}>
+                    <span className="inline-flex items-center gap-1 text-success">
+                      <Icon name="refresh" size="sm" />
+                      {job.stats_json.refreshed}
+                    </span>
+                  </Tooltip>
                 )}
                 {/* Errors */}
                 {errors > 0 && (
-                  <span className="inline-flex items-center gap-1 text-error" title={t("jobRow.errors", { count: errors })}>
-                    <Icon name="warning" size="sm" />
-                    {errors}
-                  </span>
+                  <Tooltip label={t("jobRow.errors", { count: errors })}>
+                    <span className="inline-flex items-center gap-1 text-error">
+                      <Icon name="warning" size="sm" />
+                      {errors}
+                    </span>
+                  </Tooltip>
                 )}
                 {/* Scanned only (no other stats) */}
                 {indexed === 0 && removed === 0 && errors === 0 && !hasThumbnailPhase && !isMetadataBatch && !isMetadataRefresh && scanned > 0 && (
-                  <span className="text-sm text-muted-foreground">{t("jobRow.scanned", { count: scanned })}</span>
+                  <Tooltip label={t("jobRow.scanned", { count: scanned })}>
+                    <span className="inline-flex items-center gap-1 text-muted-foreground">
+                      <Icon name="search" size="sm" />
+                      {scanned}
+                    </span>
+                  </Tooltip>
                 )}
                 {/* Nothing to show */}
                 {indexed === 0 && removed === 0 && errors === 0 && scanned === 0 && !hasThumbnailPhase && !isMetadataBatch && !isMetadataRefresh && (

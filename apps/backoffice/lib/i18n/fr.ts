@@ -256,6 +256,7 @@ const fr = {
   "jobRow.thumbnailsGenerated": "{{count}} miniatures générées",
   "jobRow.metadataProcessed": "{{count}} séries traitées",
   "jobRow.metadataRefreshed": "{{count}} séries rafraîchies",
+  "jobRow.metadataLinks": "{{count}} liens analysés",
   "jobRow.errors": "{{count}} erreurs",
   "jobRow.view": "Voir",
 

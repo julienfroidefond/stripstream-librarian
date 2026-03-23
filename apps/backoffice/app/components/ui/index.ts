@@ -19,3 +19,4 @@ export {
 } from "./Form";
 export { PageIcon, NavIcon, Icon } from "./Icon";
 export { CursorPagination, OffsetPagination } from "./Pagination";
+export { Tooltip } from "./Tooltip";

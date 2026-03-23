@@ -258,6 +258,7 @@ const en: Record<TranslationKey, string> = {
   "jobRow.thumbnailsGenerated": "{{count}} thumbnails generated",
   "jobRow.metadataProcessed": "{{count}} series processed",
   "jobRow.metadataRefreshed": "{{count}} series refreshed",
+  "jobRow.metadataLinks": "{{count}} links analyzed",
   "jobRow.errors": "{{count}} errors",
   "jobRow.view": "View",
 
