@@ -110,9 +110,16 @@ pub async fn start_refresh(
         })));
     }
 
-    // Check there are approved links to refresh
+    // Check there are approved links to refresh (only ongoing series)
     let link_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM external_metadata_links WHERE library_id = $1 AND status = 'approved'",
+        r#"
+        SELECT COUNT(*) FROM external_metadata_links eml
+        LEFT JOIN series_metadata sm
+            ON sm.library_id = eml.library_id AND sm.name = eml.series_name
+        WHERE eml.library_id = $1
+          AND eml.status = 'approved'
+          AND COALESCE(sm.status, 'ongoing') NOT IN ('ended', 'cancelled')
+        "#,
     )
     .bind(library_id)
     .fetch_one(&state.pool)
@@ -234,13 +241,17 @@ pub(crate) async fn process_metadata_refresh(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Get all approved links for this library
+    // Get approved links for this library, only for ongoing series (not ended/cancelled)
     let links: Vec<(Uuid, String, String, String)> = sqlx::query_as(
         r#"
-        SELECT id, series_name, provider, external_id
-        FROM external_metadata_links
-        WHERE library_id = $1 AND status = 'approved'
-        ORDER BY series_name
+        SELECT eml.id, eml.series_name, eml.provider, eml.external_id
+        FROM external_metadata_links eml
+        LEFT JOIN series_metadata sm
+            ON sm.library_id = eml.library_id AND sm.name = eml.series_name
+        WHERE eml.library_id = $1
+          AND eml.status = 'approved'
+          AND COALESCE(sm.status, 'ongoing') NOT IN ('ended', 'cancelled')
+        ORDER BY eml.series_name
         "#,
     )
     .bind(library_id)

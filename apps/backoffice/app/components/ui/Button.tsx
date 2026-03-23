@@ -14,7 +14,7 @@ type ButtonVariant =
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
   variant?: ButtonVariant;
-  size?: "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg";
 }
 
 const variantStyles: Record<ButtonVariant, string> = {
@@ -33,6 +33,7 @@ const variantStyles: Record<ButtonVariant, string> = {
 };
 
 const sizeStyles: Record<string, string> = {
+  xs: "h-7 px-2.5 text-xs rounded-md",
   sm: "h-9 px-3 text-xs rounded-md",
   md: "h-10 px-4 py-2 text-sm rounded-md",
   lg: "h-11 px-8 text-base rounded-md",

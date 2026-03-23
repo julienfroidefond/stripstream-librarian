@@ -203,18 +203,25 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
         </td>
         <td className="px-4 py-3">
           <div className="flex items-center gap-2">
-            <Link 
+            <Link
               href={`/jobs/${job.id}`}
-              className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+              className="inline-flex items-center justify-center gap-1.5 h-7 px-2.5 text-xs font-medium rounded-md bg-primary text-white hover:bg-primary/90 transition-colors"
             >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
               {t("jobRow.view")}
             </Link>
             {(job.status === "pending" || job.status === "running" || job.status === "extracting_pages" || job.status === "generating_thumbnails") && (
-              <Button 
-                variant="danger" 
-                size="sm"
+              <Button
+                variant="danger"
+                size="xs"
                 onClick={() => onCancel(job.id)}
               >
+                <svg className="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
                 {t("common.cancel")}
               </Button>
             )}
