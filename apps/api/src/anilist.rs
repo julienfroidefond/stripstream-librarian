@@ -380,6 +380,14 @@ pub async fn link_series(
         }
     };
 
+    // Auto-enable reading_status_provider on the library when linking a series
+    let _ = sqlx::query(
+        "UPDATE libraries SET reading_status_provider = 'anilist' WHERE id = $1 AND reading_status_provider IS NULL",
+    )
+    .bind(library_id)
+    .execute(&state.pool)
+    .await;
+
     let row = sqlx::query(
         r#"
         INSERT INTO anilist_series_links (library_id, series_name, provider, anilist_id, anilist_title, anilist_url, status, linked_at)
@@ -576,12 +584,10 @@ pub async fn preview_sync(
             SELECT
                 COUNT(*) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read,
-                sm.total_volumes
+                (SELECT sm.total_volumes FROM series_metadata sm WHERE sm.library_id = $1 AND sm.series_name = $2 LIMIT 1) as total_volumes
             FROM books b
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND brp.user_id = $3
-            LEFT JOIN series_metadata sm ON sm.library_id = $1 AND sm.series_name = $2
             WHERE b.library_id = $1 AND COALESCE(NULLIF(b.series, ''), 'unclassified') = $2
-            GROUP BY sm.total_volumes
             "#,
         )
         .bind(library_id)
@@ -686,12 +692,10 @@ pub async fn sync_to_anilist(
             SELECT
                 COUNT(*) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read,
-                sm.total_volumes
+                (SELECT sm.total_volumes FROM series_metadata sm WHERE sm.library_id = $1 AND sm.series_name = $2 LIMIT 1) as total_volumes
             FROM books b
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND brp.user_id = $3
-            LEFT JOIN series_metadata sm ON sm.library_id = $1 AND sm.series_name = $2
             WHERE b.library_id = $1 AND COALESCE(NULLIF(b.series, ''), 'unclassified') = $2
-            GROUP BY sm.total_volumes
             "#,
         )
         .bind(library_id)
