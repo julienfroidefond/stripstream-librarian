@@ -80,6 +80,8 @@ const en: Record<TranslationKey, string> = {
   "dashboard.periodDay": "Day",
   "dashboard.periodWeek": "Week",
   "dashboard.periodMonth": "Month",
+  "dashboard.metricBooks": "Books",
+  "dashboard.metricPages": "Pages",
   "dashboard.popularSeries": "Popular series",
   "dashboard.noSeries": "No series yet",
   "dashboard.unknown": "Unknown",

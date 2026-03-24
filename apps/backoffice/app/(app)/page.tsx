@@ -3,6 +3,7 @@ import { fetchStats, fetchUsers, StatsResponse, UserDto } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui";
 import { RcDonutChart, RcBarChart, RcAreaChart, RcStackedBar, RcHorizontalBar, RcMultiLineChart } from "@/app/components/DashboardCharts";
 import { PeriodToggle } from "@/app/components/PeriodToggle";
+import { MetricToggle } from "@/app/components/MetricToggle";
 import { CurrentlyReadingList, RecentlyReadList } from "@/app/components/ReadingUserFilter";
 import Link from "next/link";
 import { getServerTranslations } from "@/lib/i18n/server";
@@ -67,6 +68,7 @@ export default async function DashboardPage({
   const searchParamsAwaited = await searchParams;
   const rawPeriod = searchParamsAwaited.period;
   const period = rawPeriod === "day" ? "day" as const : rawPeriod === "week" ? "week" as const : "month" as const;
+  const metric = searchParamsAwaited.metric === "pages" ? "pages" as const : "books" as const;
   const { t, locale } = await getServerTranslations();
 
   let stats: StatsResponse | null = null;
@@ -179,7 +181,10 @@ export default async function DashboardPage({
       <Card hover={false}>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle className="text-base">{t("dashboard.readingActivity")}</CardTitle>
-          <PeriodToggle labels={{ day: t("dashboard.periodDay"), week: t("dashboard.periodWeek"), month: t("dashboard.periodMonth") }} />
+          <div className="flex gap-2">
+            <MetricToggle labels={{ books: t("dashboard.metricBooks"), pages: t("dashboard.metricPages") }} />
+            <PeriodToggle labels={{ day: t("dashboard.periodDay"), week: t("dashboard.periodWeek"), month: t("dashboard.periodMonth") }} />
+          </div>
         </CardHeader>
         <CardContent>
           {(() => {
@@ -187,12 +192,13 @@ export default async function DashboardPage({
               "hsl(142 60% 45%)", "hsl(198 78% 37%)", "hsl(45 93% 47%)",
               "hsl(2 72% 48%)", "hsl(280 60% 50%)", "hsl(32 80% 50%)",
             ];
+            const dataKey = metric === "pages" ? "pages_read" : "books_read";
             const usernames = [...new Set(users_reading_over_time.map(r => r.username))];
             if (usernames.length === 0) {
               return (
                 <RcAreaChart
                   noDataLabel={noDataLabel}
-                  data={reading_over_time.map((m) => ({ label: formatChartLabel(m.month, period, locale), value: m.books_read }))}
+                  data={reading_over_time.map((m) => ({ label: formatChartLabel(m.month, period, locale), value: m[dataKey] }))}
                   color="hsl(142 60% 45%)"
                 />
               );
@@ -202,7 +208,7 @@ export default async function DashboardPage({
             for (const row of users_reading_over_time) {
               const label = formatChartLabel(row.month, period, locale);
               if (!byMonth.has(row.month)) byMonth.set(row.month, { label });
-              byMonth.get(row.month)![row.username] = row.books_read;
+              byMonth.get(row.month)![row.username] = row[dataKey];
             }
             const chartData = [...byMonth.values()];
             const lines = usernames.map((u, i) => ({

@@ -106,6 +106,7 @@ pub struct RecentlyReadItem {
 pub struct MonthlyReading {
     pub month: String,
     pub books_read: i64,
+    pub pages_read: i64,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -113,6 +114,7 @@ pub struct UserMonthlyReading {
     pub month: String,
     pub username: String,
     pub books_read: i64,
+    pub pages_read: i64,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -516,11 +518,14 @@ pub async fn get_stats(
                 r#"
                 SELECT
                     TO_CHAR(d.dt, 'YYYY-MM-DD') AS month,
-                    COALESCE(cnt.books_read, 0) AS books_read
+                    COALESCE(cnt.books_read, 0) AS books_read,
+                    COALESCE(cnt.pages_read, 0) AS pages_read
                 FROM generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day') AS d(dt)
                 LEFT JOIN (
-                    SELECT brp.last_read_at::date AS dt, COUNT(*) AS books_read
+                    SELECT brp.last_read_at::date AS dt, COUNT(*) AS books_read,
+                           COALESCE(SUM(b.page_count), 0)::BIGINT AS pages_read
                     FROM book_reading_progress brp
+                    JOIN books b ON b.id = brp.book_id
                     WHERE brp.status = 'read'
                       AND brp.last_read_at >= CURRENT_DATE - INTERVAL '6 days'
                       AND ($1::uuid IS NULL OR brp.user_id = $1)
@@ -538,15 +543,18 @@ pub async fn get_stats(
                 r#"
                 SELECT
                     TO_CHAR(d.dt, 'YYYY-MM-DD') AS month,
-                    COALESCE(cnt.books_read, 0) AS books_read
+                    COALESCE(cnt.books_read, 0) AS books_read,
+                    COALESCE(cnt.pages_read, 0) AS pages_read
                 FROM generate_series(
                     DATE_TRUNC('week', NOW() - INTERVAL '2 months'),
                     DATE_TRUNC('week', NOW()),
                     '1 week'
                 ) AS d(dt)
                 LEFT JOIN (
-                    SELECT DATE_TRUNC('week', brp.last_read_at) AS dt, COUNT(*) AS books_read
+                    SELECT DATE_TRUNC('week', brp.last_read_at) AS dt, COUNT(*) AS books_read,
+                           COALESCE(SUM(b.page_count), 0)::BIGINT AS pages_read
                     FROM book_reading_progress brp
+                    JOIN books b ON b.id = brp.book_id
                     WHERE brp.status = 'read'
                       AND brp.last_read_at >= DATE_TRUNC('week', NOW() - INTERVAL '2 months')
                       AND ($1::uuid IS NULL OR brp.user_id = $1)
@@ -564,15 +572,18 @@ pub async fn get_stats(
                 r#"
                 SELECT
                     TO_CHAR(d.dt, 'YYYY-MM') AS month,
-                    COALESCE(cnt.books_read, 0) AS books_read
+                    COALESCE(cnt.books_read, 0) AS books_read,
+                    COALESCE(cnt.pages_read, 0) AS pages_read
                 FROM generate_series(
                     DATE_TRUNC('month', NOW()) - INTERVAL '11 months',
                     DATE_TRUNC('month', NOW()),
                     '1 month'
                 ) AS d(dt)
                 LEFT JOIN (
-                    SELECT DATE_TRUNC('month', brp.last_read_at) AS dt, COUNT(*) AS books_read
+                    SELECT DATE_TRUNC('month', brp.last_read_at) AS dt, COUNT(*) AS books_read,
+                           COALESCE(SUM(b.page_count), 0)::BIGINT AS pages_read
                     FROM book_reading_progress brp
+                    JOIN books b ON b.id = brp.book_id
                     WHERE brp.status = 'read'
                       AND brp.last_read_at >= DATE_TRUNC('month', NOW()) - INTERVAL '11 months'
                       AND ($1::uuid IS NULL OR brp.user_id = $1)
@@ -592,6 +603,7 @@ pub async fn get_stats(
         .map(|r| MonthlyReading {
             month: r.get::<Option<String>, _>("month").unwrap_or_default(),
             books_read: r.get("books_read"),
+            pages_read: r.get("pages_read"),
         })
         .collect();
 
@@ -603,12 +615,15 @@ pub async fn get_stats(
                 SELECT
                     TO_CHAR(d.dt, 'YYYY-MM-DD') AS month,
                     u.username,
-                    COALESCE(cnt.books_read, 0) AS books_read
+                    COALESCE(cnt.books_read, 0) AS books_read,
+                    COALESCE(cnt.pages_read, 0) AS pages_read
                 FROM generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day') AS d(dt)
                 CROSS JOIN users u
                 LEFT JOIN (
-                    SELECT brp.last_read_at::date AS dt, brp.user_id, COUNT(*) AS books_read
+                    SELECT brp.last_read_at::date AS dt, brp.user_id, COUNT(*) AS books_read,
+                           COALESCE(SUM(b.page_count), 0)::BIGINT AS pages_read
                     FROM book_reading_progress brp
+                    JOIN books b ON b.id = brp.book_id
                     WHERE brp.status = 'read'
                       AND brp.last_read_at >= CURRENT_DATE - INTERVAL '6 days'
                     GROUP BY brp.last_read_at::date, brp.user_id
@@ -625,7 +640,8 @@ pub async fn get_stats(
                 SELECT
                     TO_CHAR(d.dt, 'YYYY-MM-DD') AS month,
                     u.username,
-                    COALESCE(cnt.books_read, 0) AS books_read
+                    COALESCE(cnt.books_read, 0) AS books_read,
+                    COALESCE(cnt.pages_read, 0) AS pages_read
                 FROM generate_series(
                     DATE_TRUNC('week', NOW() - INTERVAL '2 months'),
                     DATE_TRUNC('week', NOW()),
@@ -633,8 +649,10 @@ pub async fn get_stats(
                 ) AS d(dt)
                 CROSS JOIN users u
                 LEFT JOIN (
-                    SELECT DATE_TRUNC('week', brp.last_read_at) AS dt, brp.user_id, COUNT(*) AS books_read
+                    SELECT DATE_TRUNC('week', brp.last_read_at) AS dt, brp.user_id, COUNT(*) AS books_read,
+                           COALESCE(SUM(b.page_count), 0)::BIGINT AS pages_read
                     FROM book_reading_progress brp
+                    JOIN books b ON b.id = brp.book_id
                     WHERE brp.status = 'read'
                       AND brp.last_read_at >= DATE_TRUNC('week', NOW() - INTERVAL '2 months')
                     GROUP BY DATE_TRUNC('week', brp.last_read_at), brp.user_id
@@ -651,7 +669,8 @@ pub async fn get_stats(
                 SELECT
                     TO_CHAR(d.dt, 'YYYY-MM') AS month,
                     u.username,
-                    COALESCE(cnt.books_read, 0) AS books_read
+                    COALESCE(cnt.books_read, 0) AS books_read,
+                    COALESCE(cnt.pages_read, 0) AS pages_read
                 FROM generate_series(
                     DATE_TRUNC('month', NOW()) - INTERVAL '11 months',
                     DATE_TRUNC('month', NOW()),
@@ -659,8 +678,10 @@ pub async fn get_stats(
                 ) AS d(dt)
                 CROSS JOIN users u
                 LEFT JOIN (
-                    SELECT DATE_TRUNC('month', brp.last_read_at) AS dt, brp.user_id, COUNT(*) AS books_read
+                    SELECT DATE_TRUNC('month', brp.last_read_at) AS dt, brp.user_id, COUNT(*) AS books_read,
+                           COALESCE(SUM(b.page_count), 0)::BIGINT AS pages_read
                     FROM book_reading_progress brp
+                    JOIN books b ON b.id = brp.book_id
                     WHERE brp.status = 'read'
                       AND brp.last_read_at >= DATE_TRUNC('month', NOW()) - INTERVAL '11 months'
                     GROUP BY DATE_TRUNC('month', brp.last_read_at), brp.user_id
@@ -679,6 +700,7 @@ pub async fn get_stats(
             month: r.get::<Option<String>, _>("month").unwrap_or_default(),
             username: r.get("username"),
             books_read: r.get("books_read"),
+            pages_read: r.get("pages_read"),
         })
         .collect();
 

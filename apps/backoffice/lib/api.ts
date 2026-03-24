@@ -699,12 +699,14 @@ export type RecentlyReadItem = {
 export type MonthlyReading = {
   month: string;
   books_read: number;
+  pages_read: number;
 };
 
 export type UserMonthlyReading = {
   month: string;
   username: string;
   books_read: number;
+  pages_read: number;
 };
 
 export type JobTimePoint = {

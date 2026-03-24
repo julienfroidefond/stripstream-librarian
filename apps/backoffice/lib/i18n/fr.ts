@@ -78,6 +78,8 @@ const fr = {
   "dashboard.periodDay": "Jour",
   "dashboard.periodWeek": "Semaine",
   "dashboard.periodMonth": "Mois",
+  "dashboard.metricBooks": "Livres",
+  "dashboard.metricPages": "Pages",
   "dashboard.popularSeries": "Séries populaires",
   "dashboard.noSeries": "Aucune série pour le moment",
   "dashboard.unknown": "Inconnu",
