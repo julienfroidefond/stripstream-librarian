@@ -1,10 +1,11 @@
+use axum::extract::Extension;
 use axum::{extract::{Path, Query, State}, Json};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use uuid::Uuid;
 use utoipa::ToSchema;
 
-use crate::{books::BookItem, error::ApiError, state::AppState};
+use crate::{auth::AuthUser, books::BookItem, error::ApiError, state::AppState};
 
 #[derive(Serialize, ToSchema)]
 pub struct SeriesItem {
@@ -70,9 +71,11 @@ pub struct ListSeriesQuery {
 )]
 pub async fn list_series(
     State(state): State<AppState>,
+    user: Option<Extension<AuthUser>>,
     Path(library_id): Path<Uuid>,
     Query(query): Query<ListSeriesQuery>,
 ) -> Result<Json<SeriesPage>, ApiError> {
+    let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
     let page = query.page.unwrap_or(1).max(1);
     let offset = (page - 1) * limit;
@@ -115,6 +118,10 @@ pub async fn list_series(
         None => String::new(),
     };
 
+    let user_id_p = p + 1;
+    let limit_p = p + 2;
+    let offset_p = p + 3;
+
     let missing_cte = r#"
         missing_counts AS (
             SELECT eml.series_name,
@@ -147,7 +154,7 @@ pub async fn list_series(
                 COUNT(*) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
             FROM sorted_books sb
-            LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
+            LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
             GROUP BY sb.name
         ),
         {missing_cte},
@@ -159,9 +166,6 @@ pub async fn list_series(
         WHERE TRUE {q_cond} {count_rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond}
         "#
     );
-
-    let limit_p = p + 1;
-    let offset_p = p + 2;
 
     let data_sql = format!(
         r#"
@@ -186,7 +190,7 @@ pub async fn list_series(
                 COUNT(*) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
             FROM sorted_books sb
-            LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
+            LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
             GROUP BY sb.name
         ),
         {missing_cte},
@@ -245,7 +249,8 @@ pub async fn list_series(
         }
     }
 
-    data_builder = data_builder.bind(limit).bind(offset);
+    count_builder = count_builder.bind(user_id);
+    data_builder = data_builder.bind(user_id).bind(limit).bind(offset);
 
     let (count_row, rows) = tokio::try_join!(
         count_builder.fetch_one(&state.pool),
@@ -327,8 +332,10 @@ pub struct ListAllSeriesQuery {
 )]
 pub async fn list_all_series(
     State(state): State<AppState>,
+    user: Option<Extension<AuthUser>>,
     Query(query): Query<ListAllSeriesQuery>,
 ) -> Result<Json<SeriesPage>, ApiError> {
+    let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
     let page = query.page.unwrap_or(1).max(1);
     let offset = (page - 1) * limit;
@@ -415,6 +422,10 @@ pub async fn list_all_series(
         )
     "#;
 
+    let user_id_p = p + 1;
+    let limit_p = p + 2;
+    let offset_p = p + 3;
+
     let count_sql = format!(
         r#"
         WITH sorted_books AS (
@@ -426,7 +437,7 @@ pub async fn list_all_series(
                 COUNT(*) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
             FROM sorted_books sb
-            LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
+            LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
             GROUP BY sb.name, sb.library_id
         ),
         {missing_cte},
@@ -444,9 +455,6 @@ pub async fn list_all_series(
     } else {
         "REGEXP_REPLACE(LOWER(sc.name), '[0-9].*$', ''), COALESCE((REGEXP_MATCH(LOWER(sc.name), '\\d+'))[1]::int, 0), sc.name ASC".to_string()
     };
-
-    let limit_p = p + 1;
-    let offset_p = p + 2;
 
     let data_sql = format!(
         r#"
@@ -475,7 +483,7 @@ pub async fn list_all_series(
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count,
                 MAX(sb.updated_at) as latest_updated_at
             FROM sorted_books sb
-            LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
+            LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
             GROUP BY sb.name, sb.library_id
         ),
         {missing_cte},
@@ -538,7 +546,8 @@ pub async fn list_all_series(
         data_builder = data_builder.bind(author.clone());
     }
 
-    data_builder = data_builder.bind(limit).bind(offset);
+    count_builder = count_builder.bind(user_id);
+    data_builder = data_builder.bind(user_id).bind(limit).bind(offset);
 
     let (count_row, rows) = tokio::try_join!(
         count_builder.fetch_one(&state.pool),
@@ -642,8 +651,10 @@ pub struct OngoingQuery {
 )]
 pub async fn ongoing_series(
     State(state): State<AppState>,
+    user: Option<Extension<AuthUser>>,
     Query(query): Query<OngoingQuery>,
 ) -> Result<Json<Vec<SeriesItem>>, ApiError> {
+    let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
     let limit = query.limit.unwrap_or(10).clamp(1, 50);
 
     let rows = sqlx::query(
@@ -655,7 +666,7 @@ pub async fn ongoing_series(
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') AS books_read_count,
                 MAX(brp.last_read_at) AS last_read_at
             FROM books b
-            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
             GROUP BY COALESCE(NULLIF(b.series, ''), 'unclassified')
             HAVING (
                 COUNT(brp.book_id) FILTER (WHERE brp.status IN ('read', 'reading')) > 0
@@ -685,6 +696,7 @@ pub async fn ongoing_series(
         "#,
     )
     .bind(limit)
+    .bind(user_id)
     .fetch_all(&state.pool)
     .await?;
 
@@ -721,8 +733,10 @@ pub async fn ongoing_series(
 )]
 pub async fn ongoing_books(
     State(state): State<AppState>,
+    user: Option<Extension<AuthUser>>,
     Query(query): Query<OngoingQuery>,
 ) -> Result<Json<Vec<BookItem>>, ApiError> {
+    let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
     let limit = query.limit.unwrap_or(10).clamp(1, 50);
 
     let rows = sqlx::query(
@@ -732,7 +746,7 @@ pub async fn ongoing_books(
                 COALESCE(NULLIF(b.series, ''), 'unclassified') AS name,
                 MAX(brp.last_read_at) AS series_last_read_at
             FROM books b
-            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
             GROUP BY COALESCE(NULLIF(b.series, ''), 'unclassified')
             HAVING (
                 COUNT(brp.book_id) FILTER (WHERE brp.status IN ('read', 'reading')) > 0
@@ -753,7 +767,7 @@ pub async fn ongoing_books(
                 ) AS rn
             FROM books b
             JOIN ongoing_series os ON COALESCE(NULLIF(b.series, ''), 'unclassified') = os.name
-            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
             WHERE COALESCE(brp.status, 'unread') != 'read'
         )
         SELECT id, library_id, kind, format, title, author, authors, series, volume, language, page_count,
@@ -765,6 +779,7 @@ pub async fn ongoing_books(
         "#,
     )
     .bind(limit)
+    .bind(user_id)
     .fetch_all(&state.pool)
     .await?;
 

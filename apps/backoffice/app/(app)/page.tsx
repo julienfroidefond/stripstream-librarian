@@ -1,9 +1,9 @@
 import React from "react";
-import { fetchStats, StatsResponse, getBookCoverUrl } from "@/lib/api";
+import { fetchStats, fetchUsers, StatsResponse, UserDto } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui";
 import { RcDonutChart, RcBarChart, RcAreaChart, RcStackedBar, RcHorizontalBar, RcMultiLineChart } from "@/app/components/DashboardCharts";
 import { PeriodToggle } from "@/app/components/PeriodToggle";
-import Image from "next/image";
+import { CurrentlyReadingList, RecentlyReadList } from "@/app/components/ReadingUserFilter";
 import Link from "next/link";
 import { getServerTranslations } from "@/lib/i18n/server";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
@@ -70,8 +70,12 @@ export default async function DashboardPage({
   const { t, locale } = await getServerTranslations();
 
   let stats: StatsResponse | null = null;
+  let users: UserDto[] = [];
   try {
-    stats = await fetchStats(period);
+    [stats, users] = await Promise.all([
+      fetchStats(period),
+      fetchUsers().catch(() => []),
+    ]);
   } catch (e) {
     console.error("Failed to fetch stats:", e);
   }
@@ -94,6 +98,7 @@ export default async function DashboardPage({
     currently_reading = [],
     recently_read = [],
     reading_over_time = [],
+    users_reading_over_time = [],
     by_format,
     by_library,
     top_series,
@@ -145,37 +150,12 @@ export default async function DashboardPage({
               <CardTitle className="text-base">{t("dashboard.currentlyReading")}</CardTitle>
             </CardHeader>
             <CardContent>
-              {currently_reading.length === 0 ? (
-                <p className="text-muted-foreground text-sm text-center py-4">{t("dashboard.noCurrentlyReading")}</p>
-              ) : (
-                <div className="space-y-3 max-h-[216px] overflow-y-auto pr-1">
-                  {currently_reading.slice(0, 8).map((book) => {
-                    const pct = book.page_count > 0 ? Math.round((book.current_page / book.page_count) * 100) : 0;
-                    return (
-                      <Link key={book.book_id} href={`/books/${book.book_id}` as any} className="flex items-center gap-3 group">
-                        <Image
-                          src={getBookCoverUrl(book.book_id)}
-                          alt={book.title}
-                          width={40}
-                          height={56}
-                          className="w-10 h-14 object-cover rounded shadow-sm shrink-0 bg-muted"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">{book.title}</p>
-                          {book.series && <p className="text-xs text-muted-foreground truncate">{book.series}</p>}
-                          <div className="mt-1.5 flex items-center gap-2">
-                            <div className="h-1.5 flex-1 bg-muted rounded-full overflow-hidden">
-                              <div className="h-full bg-warning rounded-full transition-all" style={{ width: `${pct}%` }} />
-                            </div>
-                            <span className="text-[10px] text-muted-foreground shrink-0">{pct}%</span>
-                          </div>
-                          <p className="text-[10px] text-muted-foreground mt-0.5">{t("dashboard.pageProgress", { current: book.current_page, total: book.page_count })}</p>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
+              <CurrentlyReadingList
+                items={currently_reading}
+                allLabel={t("dashboard.allUsers")}
+                emptyLabel={t("dashboard.noCurrentlyReading")}
+                pageProgressTemplate={t("dashboard.pageProgress")}
+              />
             </CardContent>
           </Card>
 
@@ -185,28 +165,11 @@ export default async function DashboardPage({
               <CardTitle className="text-base">{t("dashboard.recentlyRead")}</CardTitle>
             </CardHeader>
             <CardContent>
-              {recently_read.length === 0 ? (
-                <p className="text-muted-foreground text-sm text-center py-4">{t("dashboard.noRecentlyRead")}</p>
-              ) : (
-                <div className="space-y-3 max-h-[216px] overflow-y-auto pr-1">
-                  {recently_read.map((book) => (
-                    <Link key={book.book_id} href={`/books/${book.book_id}` as any} className="flex items-center gap-3 group">
-                      <Image
-                        src={getBookCoverUrl(book.book_id)}
-                        alt={book.title}
-                        width={40}
-                        height={56}
-                        className="w-10 h-14 object-cover rounded shadow-sm shrink-0 bg-muted"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">{book.title}</p>
-                        {book.series && <p className="text-xs text-muted-foreground truncate">{book.series}</p>}
-                      </div>
-                      <span className="text-xs text-muted-foreground shrink-0">{book.last_read_at}</span>
-                    </Link>
-                  ))}
-                </div>
-              )}
+              <RecentlyReadList
+                items={recently_read}
+                allLabel={t("dashboard.allUsers")}
+                emptyLabel={t("dashboard.noRecentlyRead")}
+              />
             </CardContent>
           </Card>
         </div>
@@ -219,30 +182,84 @@ export default async function DashboardPage({
           <PeriodToggle labels={{ day: t("dashboard.periodDay"), week: t("dashboard.periodWeek"), month: t("dashboard.periodMonth") }} />
         </CardHeader>
         <CardContent>
-          <RcAreaChart
-            noDataLabel={noDataLabel}
-            data={reading_over_time.map((m) => ({ label: formatChartLabel(m.month, period, locale), value: m.books_read }))}
-            color="hsl(142 60% 45%)"
-          />
+          {(() => {
+            const userColors = [
+              "hsl(142 60% 45%)", "hsl(198 78% 37%)", "hsl(45 93% 47%)",
+              "hsl(2 72% 48%)", "hsl(280 60% 50%)", "hsl(32 80% 50%)",
+            ];
+            const usernames = [...new Set(users_reading_over_time.map(r => r.username))];
+            if (usernames.length === 0) {
+              return (
+                <RcAreaChart
+                  noDataLabel={noDataLabel}
+                  data={reading_over_time.map((m) => ({ label: formatChartLabel(m.month, period, locale), value: m.books_read }))}
+                  color="hsl(142 60% 45%)"
+                />
+              );
+            }
+            // Pivot: { label, username1: n, username2: n, ... }
+            const byMonth = new Map<string, Record<string, unknown>>();
+            for (const row of users_reading_over_time) {
+              const label = formatChartLabel(row.month, period, locale);
+              if (!byMonth.has(row.month)) byMonth.set(row.month, { label });
+              byMonth.get(row.month)![row.username] = row.books_read;
+            }
+            const chartData = [...byMonth.values()];
+            const lines = usernames.map((u, i) => ({
+              key: u,
+              label: u,
+              color: userColors[i % userColors.length],
+            }));
+            return <RcMultiLineChart data={chartData} lines={lines} noDataLabel={noDataLabel} />;
+          })()}
         </CardContent>
       </Card>
 
       {/* Charts row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Reading status donut */}
+        {/* Reading status par lecteur */}
         <Card hover={false}>
           <CardHeader>
             <CardTitle className="text-base">{t("dashboard.readingStatus")}</CardTitle>
           </CardHeader>
           <CardContent>
-            <RcDonutChart
-              noDataLabel={noDataLabel}
-              data={[
-                { name: t("status.unread"), value: reading_status.unread, color: readingColors[0] },
-                { name: t("status.reading"), value: reading_status.reading, color: readingColors[1] },
-                { name: t("status.read"), value: reading_status.read, color: readingColors[2] },
-              ]}
-            />
+            {users.length === 0 ? (
+              <RcDonutChart
+                noDataLabel={noDataLabel}
+                data={[
+                  { name: t("status.unread"), value: reading_status.unread, color: readingColors[0] },
+                  { name: t("status.reading"), value: reading_status.reading, color: readingColors[1] },
+                  { name: t("status.read"), value: reading_status.read, color: readingColors[2] },
+                ]}
+              />
+            ) : (
+              <div className="space-y-3">
+                {users.map((user) => {
+                  const total = overview.total_books;
+                  const read = user.books_read;
+                  const reading = user.books_reading;
+                  const unread = Math.max(0, total - read - reading);
+                  const readPct = total > 0 ? (read / total) * 100 : 0;
+                  const readingPct = total > 0 ? (reading / total) * 100 : 0;
+                  return (
+                    <div key={user.id} className="space-y-1">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium text-foreground truncate">{user.username}</span>
+                        <span className="text-xs text-muted-foreground shrink-0 ml-2">
+                          <span className="text-success font-medium">{read}</span>
+                          {reading > 0 && <span className="text-amber-500 font-medium"> · {reading}</span>}
+                          <span className="text-muted-foreground/60"> / {total}</span>
+                        </span>
+                      </div>
+                      <div className="h-2 bg-muted rounded-full overflow-hidden flex">
+                        <div className="h-full bg-success transition-all duration-500" style={{ width: `${readPct}%` }} />
+                        <div className="h-full bg-amber-500 transition-all duration-500" style={{ width: `${readingPct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
 

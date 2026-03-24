@@ -11,9 +11,14 @@ use sqlx::Row;
 use crate::{error::ApiError, state::AppState};
 
 #[derive(Clone, Debug)]
+pub struct AuthUser {
+    pub user_id: uuid::Uuid,
+}
+
+#[derive(Clone, Debug)]
 pub enum Scope {
     Admin,
-    Read,
+    Read { user_id: uuid::Uuid },
 }
 
 pub async fn require_admin(
@@ -40,6 +45,20 @@ pub async fn require_read(
     let token = bearer_token(&req).ok_or_else(|| ApiError::unauthorized("missing bearer token"))?;
     let scope = authenticate(&state, token).await?;
 
+    if let Scope::Read { user_id } = &scope {
+        req.extensions_mut().insert(AuthUser { user_id: *user_id });
+    } else if matches!(scope, Scope::Admin) {
+        // Admin peut s'impersonifier via le header X-As-User
+        if let Some(as_user_id) = req
+            .headers()
+            .get("X-As-User")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| uuid::Uuid::parse_str(v).ok())
+        {
+            req.extensions_mut().insert(AuthUser { user_id: as_user_id });
+        }
+    }
+
     req.extensions_mut().insert(scope);
     Ok(next.run(req).await)
 }
@@ -60,8 +79,7 @@ async fn authenticate(state: &AppState, token: &str) -> Result<Scope, ApiError> 
 
     let maybe_row = sqlx::query(
         r#"
-        SELECT id, token_hash, scope
-        FROM api_tokens
+        SELECT id, token_hash, scope, user_id FROM api_tokens
         WHERE prefix = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW())
         "#,
     )
@@ -88,7 +106,12 @@ async fn authenticate(state: &AppState, token: &str) -> Result<Scope, ApiError> 
     let scope: String = row.try_get("scope").map_err(|_| ApiError::unauthorized("invalid token"))?;
     match scope.as_str() {
         "admin" => Ok(Scope::Admin),
-        "read" => Ok(Scope::Read),
+        "read" => {
+            let user_id: uuid::Uuid = row
+                .try_get("user_id")
+                .map_err(|_| ApiError::unauthorized("read token missing user_id"))?;
+            Ok(Scope::Read { user_id })
+        }
         _ => Err(ApiError::unauthorized("invalid token scope")),
     }
 }

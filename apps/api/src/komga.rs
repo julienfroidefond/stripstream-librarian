@@ -38,6 +38,8 @@ pub struct KomgaSyncRequest {
     pub url: String,
     pub username: String,
     pub password: String,
+    #[schema(value_type = String)]
+    pub user_id: Uuid,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -45,6 +47,8 @@ pub struct KomgaSyncResponse {
     #[schema(value_type = String)]
     pub id: Uuid,
     pub komga_url: String,
+    #[schema(value_type = Option<String>)]
+    pub user_id: Option<Uuid>,
     pub total_komga_read: i64,
     pub matched: i64,
     pub already_read: i64,
@@ -61,6 +65,8 @@ pub struct KomgaSyncReportSummary {
     #[schema(value_type = String)]
     pub id: Uuid,
     pub komga_url: String,
+    #[schema(value_type = Option<String>)]
+    pub user_id: Option<Uuid>,
     pub total_komga_read: i64,
     pub matched: i64,
     pub already_read: i64,
@@ -215,11 +221,12 @@ pub async fn sync_komga_read_books(
     let mut already_read_ids: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
 
     if !matched_ids.is_empty() {
-        // Get already-read book IDs
+        // Get already-read book IDs for this user
         let ar_rows = sqlx::query(
-            "SELECT book_id FROM book_reading_progress WHERE book_id = ANY($1) AND status = 'read'",
+            "SELECT book_id FROM book_reading_progress WHERE book_id = ANY($1) AND user_id = $2 AND status = 'read'",
         )
         .bind(&matched_ids)
+        .bind(body.user_id)
         .fetch_all(&state.pool)
         .await?;
 
@@ -228,12 +235,12 @@ pub async fn sync_komga_read_books(
         }
         already_read = already_read_ids.len() as i64;
 
-        // Bulk upsert all matched books as read
+        // Bulk upsert all matched books as read for this user
         sqlx::query(
             r#"
-            INSERT INTO book_reading_progress (book_id, status, current_page, last_read_at, updated_at)
-            SELECT unnest($1::uuid[]), 'read', NULL, NOW(), NOW()
-            ON CONFLICT (book_id) DO UPDATE
+            INSERT INTO book_reading_progress (book_id, user_id, status, current_page, last_read_at, updated_at)
+            SELECT unnest($1::uuid[]), $2, 'read', NULL, NOW(), NOW()
+            ON CONFLICT (book_id, user_id) DO UPDATE
               SET status = 'read',
                   current_page = NULL,
                   last_read_at = NOW(),
@@ -242,6 +249,7 @@ pub async fn sync_komga_read_books(
             "#,
         )
         .bind(&matched_ids)
+        .bind(body.user_id)
         .execute(&state.pool)
         .await?;
     }
@@ -273,12 +281,13 @@ pub async fn sync_komga_read_books(
     let newly_marked_books_json = serde_json::to_value(&newly_marked_books).unwrap_or_default();
     let report_row = sqlx::query(
         r#"
-        INSERT INTO komga_sync_reports (komga_url, total_komga_read, matched, already_read, newly_marked, matched_books, newly_marked_books, unmatched)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO komga_sync_reports (komga_url, user_id, total_komga_read, matched, already_read, newly_marked, matched_books, newly_marked_books, unmatched)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id, created_at
         "#,
     )
     .bind(&url)
+    .bind(body.user_id)
     .bind(total_komga_read)
     .bind(matched)
     .bind(already_read)
@@ -292,6 +301,7 @@ pub async fn sync_komga_read_books(
     Ok(Json(KomgaSyncResponse {
         id: report_row.get("id"),
         komga_url: url,
+        user_id: Some(body.user_id),
         total_komga_read,
         matched,
         already_read,
@@ -319,7 +329,7 @@ pub async fn list_sync_reports(
 ) -> Result<Json<Vec<KomgaSyncReportSummary>>, ApiError> {
     let rows = sqlx::query(
         r#"
-        SELECT id, komga_url, total_komga_read, matched, already_read, newly_marked,
+        SELECT id, komga_url, user_id, total_komga_read, matched, already_read, newly_marked,
                jsonb_array_length(unmatched) as unmatched_count, created_at
         FROM komga_sync_reports
         ORDER BY created_at DESC
@@ -334,6 +344,7 @@ pub async fn list_sync_reports(
         .map(|row| KomgaSyncReportSummary {
             id: row.get("id"),
             komga_url: row.get("komga_url"),
+            user_id: row.get("user_id"),
             total_komga_read: row.get("total_komga_read"),
             matched: row.get("matched"),
             already_read: row.get("already_read"),
@@ -365,7 +376,7 @@ pub async fn get_sync_report(
 ) -> Result<Json<KomgaSyncResponse>, ApiError> {
     let row = sqlx::query(
         r#"
-        SELECT id, komga_url, total_komga_read, matched, already_read, newly_marked, matched_books, newly_marked_books, unmatched, created_at
+        SELECT id, komga_url, user_id, total_komga_read, matched, already_read, newly_marked, matched_books, newly_marked_books, unmatched, created_at
         FROM komga_sync_reports
         WHERE id = $1
         "#,
@@ -386,6 +397,7 @@ pub async fn get_sync_report(
     Ok(Json(KomgaSyncResponse {
         id: row.get("id"),
         komga_url: row.get("komga_url"),
+        user_id: row.get("user_id"),
         total_komga_read: row.get("total_komga_read"),
         matched: row.get("matched"),
         already_read: row.get("already_read"),

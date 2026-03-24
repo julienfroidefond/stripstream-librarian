@@ -1,4 +1,4 @@
-import { getSettings, getCacheStats, getThumbnailStats } from "@/lib/api";
+import { getSettings, getCacheStats, getThumbnailStats, fetchUsers } from "@/lib/api";
 import SettingsPage from "./SettingsPage";
 
 export const dynamic = "force-dynamic";
@@ -23,5 +23,7 @@ export default async function SettingsPageWrapper() {
     directory: "/data/thumbnails"
   }));
 
-  return <SettingsPage initialSettings={settings} initialCacheStats={cacheStats} initialThumbnailStats={thumbnailStats} />;
+  const users = await fetchUsers().catch(() => []);
+
+  return <SettingsPage initialSettings={settings} initialCacheStats={cacheStats} initialThumbnailStats={thumbnailStats} users={users} />;
 }

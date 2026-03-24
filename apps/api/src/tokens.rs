@@ -16,6 +16,8 @@ pub struct CreateTokenRequest {
     pub name: String,
     #[schema(value_type = Option<String>, example = "read")]
     pub scope: Option<String>,
+    #[schema(value_type = Option<String>)]
+    pub user_id: Option<Uuid>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -25,6 +27,9 @@ pub struct TokenResponse {
     pub name: String,
     pub scope: String,
     pub prefix: String,
+    #[schema(value_type = Option<String>)]
+    pub user_id: Option<Uuid>,
+    pub username: Option<String>,
     #[schema(value_type = Option<String>)]
     pub last_used_at: Option<DateTime<Utc>>,
     #[schema(value_type = Option<String>)]
@@ -71,6 +76,10 @@ pub async fn create_token(
         _ => return Err(ApiError::bad_request("scope must be 'admin' or 'read'")),
     };
 
+    if scope == "read" && input.user_id.is_none() {
+        return Err(ApiError::bad_request("user_id is required for read-scoped tokens"));
+    }
+
     let mut random = [0u8; 24];
     OsRng.fill_bytes(&mut random);
     let secret = URL_SAFE_NO_PAD.encode(random);
@@ -85,13 +94,14 @@ pub async fn create_token(
 
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO api_tokens (id, name, prefix, token_hash, scope) VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO api_tokens (id, name, prefix, token_hash, scope, user_id) VALUES ($1, $2, $3, $4, $5, $6)",
     )
     .bind(id)
     .bind(input.name.trim())
     .bind(&prefix)
     .bind(token_hash)
     .bind(scope)
+    .bind(input.user_id)
     .execute(&state.pool)
     .await?;
 
@@ -118,7 +128,13 @@ pub async fn create_token(
 )]
 pub async fn list_tokens(State(state): State<AppState>) -> Result<Json<Vec<TokenResponse>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT id, name, scope, prefix, last_used_at, revoked_at, created_at FROM api_tokens ORDER BY created_at DESC",
+        r#"
+        SELECT t.id, t.name, t.scope, t.prefix, t.user_id, u.username,
+               t.last_used_at, t.revoked_at, t.created_at
+        FROM api_tokens t
+        LEFT JOIN users u ON u.id = t.user_id
+        ORDER BY t.created_at DESC
+        "#,
     )
     .fetch_all(&state.pool)
     .await?;
@@ -130,6 +146,8 @@ pub async fn list_tokens(State(state): State<AppState>) -> Result<Json<Vec<Token
             name: row.get("name"),
             scope: row.get("scope"),
             prefix: row.get("prefix"),
+            user_id: row.get("user_id"),
+            username: row.get("username"),
             last_used_at: row.get("last_used_at"),
             revoked_at: row.get("revoked_at"),
             created_at: row.get("created_at"),
@@ -169,6 +187,47 @@ pub async fn revoke_token(
     }
 
     Ok(Json(serde_json::json!({"revoked": true, "id": id})))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateTokenRequest {
+    #[schema(value_type = Option<String>)]
+    pub user_id: Option<Uuid>,
+}
+
+/// Update a token's assigned user
+#[utoipa::path(
+    patch,
+    path = "/admin/tokens/{id}",
+    tag = "tokens",
+    params(
+        ("id" = String, Path, description = "Token UUID"),
+    ),
+    request_body = UpdateTokenRequest,
+    responses(
+        (status = 200, description = "Token updated"),
+        (status = 404, description = "Token not found"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn update_token(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<UpdateTokenRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let result = sqlx::query("UPDATE api_tokens SET user_id = $1 WHERE id = $2")
+        .bind(input.user_id)
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(ApiError::not_found("token not found"));
+    }
+
+    Ok(Json(serde_json::json!({"updated": true, "id": id})))
 }
 
 /// Permanently delete a revoked API token

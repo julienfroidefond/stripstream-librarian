@@ -8,6 +8,7 @@ const en: Record<TranslationKey, string> = {
   "nav.libraries": "Libraries",
   "nav.jobs": "Jobs",
   "nav.tokens": "Tokens",
+  "nav.users": "Users",
   "nav.settings": "Settings",
   "nav.navigation": "Navigation",
   "nav.closeMenu": "Close menu",
@@ -96,6 +97,7 @@ const en: Record<TranslationKey, string> = {
   "dashboard.pageProgress": "p. {{current}} / {{total}}",
   "dashboard.noCurrentlyReading": "No books in progress",
   "dashboard.noRecentlyRead": "No books read recently",
+  "dashboard.allUsers": "All",
 
   // Books page
   "books.title": "Books",
@@ -405,6 +407,21 @@ const en: Record<TranslationKey, string> = {
   "tokens.revoked": "Revoked",
   "tokens.active": "Active",
   "tokens.revoke": "Revoke",
+  "tokens.user": "User",
+  "tokens.noUser": "None (admin)",
+  "tokens.apiTokens": "API Tokens",
+
+  // Users page
+  "users.title": "Users",
+  "users.createNew": "Create a user",
+  "users.createDescription": "Create a user account for read access",
+  "users.username": "Username",
+  "users.createButton": "Create",
+  "users.name": "Username",
+  "users.tokenCount": "Tokens",
+  "users.createdAt": "Created",
+  "users.actions": "Actions",
+  "users.noUsers": "No users",
 
   // Settings page
   "settings.title": "Settings",

@@ -6,6 +6,7 @@ const fr = {
   "nav.libraries": "Bibliothèques",
   "nav.jobs": "Tâches",
   "nav.tokens": "Jetons",
+  "nav.users": "Utilisateurs",
   "nav.settings": "Paramètres",
   "nav.navigation": "Navigation",
   "nav.closeMenu": "Fermer le menu",
@@ -94,6 +95,7 @@ const fr = {
   "dashboard.pageProgress": "p. {{current}} / {{total}}",
   "dashboard.noCurrentlyReading": "Aucun livre en cours",
   "dashboard.noRecentlyRead": "Aucun livre lu récemment",
+  "dashboard.allUsers": "Tous",
 
   // Books page
   "books.title": "Livres",
@@ -403,6 +405,21 @@ const fr = {
   "tokens.revoked": "Révoqué",
   "tokens.active": "Actif",
   "tokens.revoke": "Révoquer",
+  "tokens.user": "Utilisateur",
+  "tokens.noUser": "Aucun (admin)",
+  "tokens.apiTokens": "Tokens API",
+
+  // Users page
+  "users.title": "Utilisateurs",
+  "users.createNew": "Créer un utilisateur",
+  "users.createDescription": "Créer un compte utilisateur pour accès lecture",
+  "users.username": "Nom d'utilisateur",
+  "users.createButton": "Créer",
+  "users.name": "Nom d'utilisateur",
+  "users.tokenCount": "Nb de jetons",
+  "users.createdAt": "Créé le",
+  "users.actions": "Actions",
+  "users.noUsers": "Aucun utilisateur",
 
   // Settings page
   "settings.title": "Paramètres",

@@ -1,11 +1,11 @@
-use axum::{extract::{Path, State}, Json};
+use axum::{extract::{Extension, Path, State}, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use uuid::Uuid;
 use utoipa::ToSchema;
 
-use crate::{error::ApiError, state::AppState};
+use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
 #[derive(Serialize, ToSchema)]
 pub struct ReadingProgressResponse {
@@ -42,8 +42,10 @@ pub struct UpdateReadingProgressRequest {
 )]
 pub async fn get_reading_progress(
     State(state): State<AppState>,
+    user: Option<Extension<AuthUser>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ReadingProgressResponse>, ApiError> {
+    let auth_user = user.ok_or_else(|| ApiError::bad_request("admin tokens cannot track reading progress"))?.0;
     // Verify book exists
     let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM books WHERE id = $1)")
         .bind(id)
@@ -55,9 +57,10 @@ pub async fn get_reading_progress(
     }
 
     let row = sqlx::query(
-        "SELECT status, current_page, last_read_at FROM book_reading_progress WHERE book_id = $1",
+        "SELECT status, current_page, last_read_at FROM book_reading_progress WHERE book_id = $1 AND user_id = $2",
     )
     .bind(id)
+    .bind(auth_user.user_id)
     .fetch_optional(&state.pool)
     .await?;
 
@@ -96,9 +99,11 @@ pub async fn get_reading_progress(
 )]
 pub async fn update_reading_progress(
     State(state): State<AppState>,
+    user: Option<Extension<AuthUser>>,
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateReadingProgressRequest>,
 ) -> Result<Json<ReadingProgressResponse>, ApiError> {
+    let auth_user = user.ok_or_else(|| ApiError::bad_request("admin tokens cannot track reading progress"))?.0;
     // Validate status value
     if !["unread", "reading", "read"].contains(&body.status.as_str()) {
         return Err(ApiError::bad_request(format!(
@@ -143,9 +148,9 @@ pub async fn update_reading_progress(
 
     let row = sqlx::query(
         r#"
-        INSERT INTO book_reading_progress (book_id, status, current_page, last_read_at, updated_at)
-        VALUES ($1, $2, $3, NOW(), NOW())
-        ON CONFLICT (book_id) DO UPDATE
+        INSERT INTO book_reading_progress (book_id, user_id, status, current_page, last_read_at, updated_at)
+        VALUES ($1, $2, $3, $4, NOW(), NOW())
+        ON CONFLICT (book_id, user_id) DO UPDATE
           SET status       = EXCLUDED.status,
               current_page = EXCLUDED.current_page,
               last_read_at = NOW(),
@@ -154,6 +159,7 @@ pub async fn update_reading_progress(
         "#,
     )
     .bind(id)
+    .bind(auth_user.user_id)
     .bind(&body.status)
     .bind(current_page)
     .fetch_one(&state.pool)
@@ -194,8 +200,10 @@ pub struct MarkSeriesReadResponse {
 )]
 pub async fn mark_series_read(
     State(state): State<AppState>,
+    user: Option<Extension<AuthUser>>,
     Json(body): Json<MarkSeriesReadRequest>,
 ) -> Result<Json<MarkSeriesReadResponse>, ApiError> {
+    let auth_user = user.ok_or_else(|| ApiError::bad_request("admin tokens cannot track reading progress"))?.0;
     if !["read", "unread"].contains(&body.status.as_str()) {
         return Err(ApiError::bad_request(
             "status must be 'read' or 'unread'",
@@ -209,24 +217,50 @@ pub async fn mark_series_read(
     };
 
     let sql = if body.status == "unread" {
-        // Delete progress records to reset to unread
+        // Delete progress records to reset to unread (scoped to this user)
+        if body.series == "unclassified" {
+            format!(
+                r#"
+                WITH target_books AS (
+                    SELECT id FROM books WHERE {series_filter}
+                )
+                DELETE FROM book_reading_progress
+                WHERE book_id IN (SELECT id FROM target_books) AND user_id = $1
+                "#
+            )
+        } else {
+            format!(
+                r#"
+                WITH target_books AS (
+                    SELECT id FROM books WHERE {series_filter}
+                )
+                DELETE FROM book_reading_progress
+                WHERE book_id IN (SELECT id FROM target_books) AND user_id = $2
+                "#
+            )
+        }
+    } else if body.series == "unclassified" {
         format!(
             r#"
-            WITH target_books AS (
-                SELECT id FROM books WHERE {series_filter}
-            )
-            DELETE FROM book_reading_progress
-            WHERE book_id IN (SELECT id FROM target_books)
+            INSERT INTO book_reading_progress (book_id, user_id, status, current_page, last_read_at, updated_at)
+            SELECT id, $1, 'read', NULL, NOW(), NOW()
+            FROM books
+            WHERE {series_filter}
+            ON CONFLICT (book_id, user_id) DO UPDATE
+              SET status = 'read',
+                  current_page = NULL,
+                  last_read_at = NOW(),
+                  updated_at = NOW()
             "#
         )
     } else {
         format!(
             r#"
-            INSERT INTO book_reading_progress (book_id, status, current_page, last_read_at, updated_at)
-            SELECT id, 'read', NULL, NOW(), NOW()
+            INSERT INTO book_reading_progress (book_id, user_id, status, current_page, last_read_at, updated_at)
+            SELECT id, $2, 'read', NULL, NOW(), NOW()
             FROM books
             WHERE {series_filter}
-            ON CONFLICT (book_id) DO UPDATE
+            ON CONFLICT (book_id, user_id) DO UPDATE
               SET status = 'read',
                   current_page = NULL,
                   last_read_at = NOW(),
@@ -236,9 +270,18 @@ pub async fn mark_series_read(
     };
 
     let result = if body.series == "unclassified" {
-        sqlx::query(&sql).execute(&state.pool).await?
+        // $1 = user_id (no series bind needed)
+        sqlx::query(&sql)
+            .bind(auth_user.user_id)
+            .execute(&state.pool)
+            .await?
     } else {
-        sqlx::query(&sql).bind(&body.series).execute(&state.pool).await?
+        // $1 = series, $2 = user_id
+        sqlx::query(&sql)
+            .bind(&body.series)
+            .bind(auth_user.user_id)
+            .execute(&state.pool)
+            .await?
     };
 
     Ok(Json(MarkSeriesReadResponse {

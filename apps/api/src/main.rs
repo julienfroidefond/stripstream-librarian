@@ -25,6 +25,7 @@ mod stats;
 mod telegram;
 mod thumbnails;
 mod tokens;
+mod users;
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -106,8 +107,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/index/jobs/:id/errors", get(index_jobs::get_job_errors))
         .route("/index/cancel/:id", axum::routing::post(index_jobs::cancel_job))
         .route("/folders", get(index_jobs::list_folders))
+        .route("/admin/users", get(users::list_users).post(users::create_user))
+        .route("/admin/users/:id", delete(users::delete_user).patch(users::update_user))
         .route("/admin/tokens", get(tokens::list_tokens).post(tokens::create_token))
-        .route("/admin/tokens/:id", delete(tokens::revoke_token))
+        .route("/admin/tokens/:id", delete(tokens::revoke_token).patch(tokens::update_token))
         .route("/admin/tokens/:id/delete", axum::routing::post(tokens::delete_token))
         .route("/prowlarr/search", axum::routing::post(prowlarr::search_prowlarr))
         .route("/prowlarr/test", get(prowlarr::test_prowlarr))

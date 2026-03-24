@@ -45,6 +45,17 @@ export type TokenDto = {
   scope: string;
   prefix: string;
   revoked_at: string | null;
+  user_id?: string;
+  username?: string;
+};
+
+export type UserDto = {
+  id: string;
+  username: string;
+  token_count: number;
+  books_read: number;
+  books_reading: number;
+  created_at: string;
 };
 
 export type FolderItem = {
@@ -149,6 +160,16 @@ export async function apiFetch<T>(
   headers.set("Authorization", `Bearer ${token}`);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
+  }
+
+  // Impersonation : injecte X-As-User si un user est sélectionné dans le backoffice
+  try {
+    const { cookies } = await import("next/headers");
+    const cookieStore = await cookies();
+    const asUserId = cookieStore.get("as_user_id")?.value;
+    if (asUserId) headers.set("X-As-User", asUserId);
+  } catch {
+    // Hors contexte Next.js (tests, etc.)
   }
 
   const { next: nextOptions, ...restInit } = init ?? {};
@@ -268,10 +289,32 @@ export async function listTokens() {
   return apiFetch<TokenDto[]>("/admin/tokens");
 }
 
-export async function createToken(name: string, scope: string) {
+export async function createToken(name: string, scope: string, userId?: string) {
   return apiFetch<{ token: string }>("/admin/tokens", {
     method: "POST",
-    body: JSON.stringify({ name, scope }),
+    body: JSON.stringify({ name, scope, ...(userId ? { user_id: userId } : {}) }),
+  });
+}
+
+export async function fetchUsers(): Promise<UserDto[]> {
+  return apiFetch<UserDto[]>("/admin/users");
+}
+
+export async function createUser(username: string): Promise<UserDto> {
+  return apiFetch<UserDto>("/admin/users", {
+    method: "POST",
+    body: JSON.stringify({ username }),
+  });
+}
+
+export async function deleteUser(id: string): Promise<void> {
+  return apiFetch<void>(`/admin/users/${id}`, { method: "DELETE" });
+}
+
+export async function updateUser(id: string, username: string): Promise<void> {
+  return apiFetch<void>(`/admin/users/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ username }),
   });
 }
 
@@ -281,6 +324,13 @@ export async function revokeToken(id: string) {
 
 export async function deleteToken(id: string) {
   return apiFetch<void>(`/admin/tokens/${id}/delete`, { method: "POST" });
+}
+
+export async function updateToken(id: string, userId: string | null) {
+  return apiFetch<void>(`/admin/tokens/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ user_id: userId || null }),
+  });
 }
 
 export async function fetchBooks(
@@ -557,6 +607,7 @@ export type CurrentlyReadingItem = {
   series: string | null;
   current_page: number;
   page_count: number;
+  username?: string;
 };
 
 export type RecentlyReadItem = {
@@ -564,10 +615,17 @@ export type RecentlyReadItem = {
   title: string;
   series: string | null;
   last_read_at: string;
+  username?: string;
 };
 
 export type MonthlyReading = {
   month: string;
+  books_read: number;
+};
+
+export type UserMonthlyReading = {
+  month: string;
+  username: string;
   books_read: number;
 };
 
@@ -585,6 +643,7 @@ export type StatsResponse = {
   currently_reading: CurrentlyReadingItem[];
   recently_read: RecentlyReadItem[];
   reading_over_time: MonthlyReading[];
+  users_reading_over_time: UserMonthlyReading[];
   by_format: FormatCount[];
   by_language: LanguageCount[];
   by_library: LibraryStatsItem[];
@@ -699,11 +758,13 @@ export type KomgaSyncRequest = {
   url: string;
   username: string;
   password: string;
+  user_id: string;
 };
 
 export type KomgaSyncResponse = {
   id: string;
   komga_url: string;
+  user_id?: string;
   total_komga_read: number;
   matched: number;
   already_read: number;
@@ -717,6 +778,7 @@ export type KomgaSyncResponse = {
 export type KomgaSyncReportSummary = {
   id: string;
   komga_url: string;
+  user_id?: string;
   total_komga_read: number;
   matched: number;
   already_read: number;

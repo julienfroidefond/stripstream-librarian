@@ -1,11 +1,11 @@
-use axum::{extract::{Path, Query, State}, Json};
+use axum::{extract::{Extension, Path, Query, State}, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use uuid::Uuid;
 use utoipa::ToSchema;
 
-use crate::{error::ApiError, index_jobs::IndexJobResponse, state::AppState};
+use crate::{auth::AuthUser, error::ApiError, index_jobs::IndexJobResponse, state::AppState};
 
 #[derive(Deserialize, ToSchema)]
 pub struct ListBooksQuery {
@@ -122,7 +122,9 @@ pub struct BookDetails {
 pub async fn list_books(
     State(state): State<AppState>,
     Query(query): Query<ListBooksQuery>,
+    user: Option<Extension<AuthUser>>,
 ) -> Result<Json<BooksPage>, ApiError> {
+    let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
     let page = query.page.unwrap_or(1).max(1);
     let offset = (page - 1) * limit;
@@ -151,6 +153,8 @@ pub async fn list_books(
         Some(_) => { p += 1; format!("AND eml.provider = ${p}") },
         None => String::new(),
     };
+    p += 1;
+    let uid_p = p;
 
     let metadata_links_cte = r#"
         metadata_links AS (
@@ -164,7 +168,7 @@ pub async fn list_books(
     let count_sql = format!(
         r#"WITH {metadata_links_cte}
            SELECT COUNT(*) FROM books b
-           LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+           LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${uid_p}::uuid IS NOT NULL AND brp.user_id = ${uid_p}
            LEFT JOIN metadata_links eml ON eml.series_name = b.series AND eml.library_id = b.library_id
            WHERE ($1::uuid IS NULL OR b.library_id = $1)
              AND ($2::text IS NULL OR b.kind = $2)
@@ -192,7 +196,7 @@ pub async fn list_books(
                brp.current_page AS reading_current_page,
                brp.last_read_at AS reading_last_read_at
         FROM books b
-        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${uid_p}::uuid IS NOT NULL AND brp.user_id = ${uid_p}
         LEFT JOIN metadata_links eml ON eml.series_name = b.series AND eml.library_id = b.library_id
         WHERE ($1::uuid IS NULL OR b.library_id = $1)
           AND ($2::text IS NULL OR b.kind = $2)
@@ -235,8 +239,8 @@ pub async fn list_books(
             data_builder = data_builder.bind(mp.clone());
         }
     }
-
-    data_builder = data_builder.bind(limit).bind(offset);
+    count_builder = count_builder.bind(user_id);
+    data_builder = data_builder.bind(user_id).bind(limit).bind(offset);
 
     let (count_row, rows) = tokio::try_join!(
         count_builder.fetch_one(&state.pool),
@@ -295,7 +299,9 @@ pub async fn list_books(
 pub async fn get_book(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    user: Option<Extension<AuthUser>>,
 ) -> Result<Json<BookDetails>, ApiError> {
+    let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
     let row = sqlx::query(
         r#"
         SELECT b.id, b.library_id, b.kind, b.title, b.author, b.authors, b.series, b.volume, b.language, b.page_count, b.thumbnail_path, b.locked_fields, b.summary, b.isbn, b.publish_date,
@@ -311,11 +317,12 @@ pub async fn get_book(
           ORDER BY updated_at DESC
           LIMIT 1
         ) bf ON TRUE
-        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
         WHERE b.id = $1
         "#,
     )
     .bind(id)
+    .bind(user_id)
     .fetch_optional(&state.pool)
     .await?;
 
@@ -521,9 +528,9 @@ pub async fn update_book(
         WHERE id = $1
         RETURNING id, library_id, kind, title, author, authors, series, volume, language, page_count, thumbnail_path,
                   summary, isbn, publish_date,
-                  COALESCE((SELECT status FROM book_reading_progress WHERE book_id = $1), 'unread') AS reading_status,
-                  (SELECT current_page FROM book_reading_progress WHERE book_id = $1) AS reading_current_page,
-                  (SELECT last_read_at FROM book_reading_progress WHERE book_id = $1) AS reading_last_read_at
+                  'unread' AS reading_status,
+                  NULL::integer AS reading_current_page,
+                  NULL::timestamptz AS reading_last_read_at
         "#,
     )
     .bind(id)

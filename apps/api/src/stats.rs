@@ -1,12 +1,12 @@
 use axum::{
-    extract::{Query, State},
+    extract::{Extension, Query, State},
     Json,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use utoipa::{IntoParams, ToSchema};
 
-use crate::{error::ApiError, state::AppState};
+use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
 #[derive(Deserialize, IntoParams)]
 pub struct StatsQuery {
@@ -90,6 +90,7 @@ pub struct CurrentlyReadingItem {
     pub series: Option<String>,
     pub current_page: i32,
     pub page_count: i32,
+    pub username: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -98,11 +99,19 @@ pub struct RecentlyReadItem {
     pub title: String,
     pub series: Option<String>,
     pub last_read_at: String,
+    pub username: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct MonthlyReading {
     pub month: String,
+    pub books_read: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct UserMonthlyReading {
+    pub month: String,
+    pub username: String,
     pub books_read: i64,
 }
 
@@ -129,6 +138,7 @@ pub struct StatsResponse {
     pub additions_over_time: Vec<MonthlyAdditions>,
     pub jobs_over_time: Vec<JobTimePoint>,
     pub metadata: MetadataStats,
+    pub users_reading_over_time: Vec<UserMonthlyReading>,
 }
 
 /// Get collection statistics for the dashboard
@@ -146,7 +156,9 @@ pub struct StatsResponse {
 pub async fn get_stats(
     State(state): State<AppState>,
     Query(query): Query<StatsQuery>,
+    user: Option<Extension<AuthUser>>,
 ) -> Result<Json<StatsResponse>, ApiError> {
+    let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
     let period = query.period.as_deref().unwrap_or("month");
     // Overview + reading status in one query
     let overview_row = sqlx::query(
@@ -165,9 +177,10 @@ pub async fn get_stats(
             COUNT(*) FILTER (WHERE brp.status = 'reading') AS reading,
             COUNT(*) FILTER (WHERE brp.status = 'read') AS read
         FROM books b
-        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ($1::uuid IS NULL OR brp.user_id = $1)
         "#,
     )
+    .bind(user_id)
     .fetch_one(&state.pool)
     .await?;
 
@@ -255,7 +268,7 @@ pub async fn get_stats(
             COUNT(*) FILTER (WHERE COALESCE(brp.status, 'unread') = 'unread') AS unread_count
         FROM libraries l
         LEFT JOIN books b ON b.library_id = l.id
-        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ($1::uuid IS NULL OR brp.user_id = $1)
         LEFT JOIN LATERAL (
             SELECT size_bytes FROM book_files WHERE book_id = b.id ORDER BY updated_at DESC LIMIT 1
         ) bf ON TRUE
@@ -263,6 +276,7 @@ pub async fn get_stats(
         ORDER BY book_count DESC
         "#,
     )
+    .bind(user_id)
     .fetch_all(&state.pool)
     .await?;
 
@@ -287,13 +301,14 @@ pub async fn get_stats(
             COUNT(*) FILTER (WHERE brp.status = 'read') AS read_count,
             COALESCE(SUM(b.page_count), 0)::BIGINT AS total_pages
         FROM books b
-        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ($1::uuid IS NULL OR brp.user_id = $1)
         WHERE b.series IS NOT NULL AND b.series != ''
         GROUP BY b.series
         ORDER BY book_count DESC
         LIMIT 10
         "#,
     )
+    .bind(user_id)
     .fetch_all(&state.pool)
     .await?;
 
@@ -432,14 +447,17 @@ pub async fn get_stats(
     // Currently reading books
     let reading_rows = sqlx::query(
         r#"
-        SELECT b.id AS book_id, b.title, b.series, brp.current_page, b.page_count
+        SELECT b.id AS book_id, b.title, b.series, brp.current_page, b.page_count, u.username
         FROM book_reading_progress brp
         JOIN books b ON b.id = brp.book_id
+        LEFT JOIN users u ON u.id = brp.user_id
         WHERE brp.status = 'reading' AND brp.current_page IS NOT NULL
+          AND ($1::uuid IS NULL OR brp.user_id = $1)
         ORDER BY brp.updated_at DESC
         LIMIT 20
         "#,
     )
+    .bind(user_id)
     .fetch_all(&state.pool)
     .await?;
 
@@ -453,6 +471,7 @@ pub async fn get_stats(
                 series: r.get("series"),
                 current_page: r.get::<Option<i32>, _>("current_page").unwrap_or(0),
                 page_count: r.get::<Option<i32>, _>("page_count").unwrap_or(0),
+                username: r.get("username"),
             }
         })
         .collect();
@@ -461,14 +480,18 @@ pub async fn get_stats(
     let recent_rows = sqlx::query(
         r#"
         SELECT b.id AS book_id, b.title, b.series,
-               TO_CHAR(brp.last_read_at, 'YYYY-MM-DD') AS last_read_at
+               TO_CHAR(brp.last_read_at, 'YYYY-MM-DD') AS last_read_at,
+               u.username
         FROM book_reading_progress brp
         JOIN books b ON b.id = brp.book_id
+        LEFT JOIN users u ON u.id = brp.user_id
         WHERE brp.status = 'read' AND brp.last_read_at IS NOT NULL
+          AND ($1::uuid IS NULL OR brp.user_id = $1)
         ORDER BY brp.last_read_at DESC
         LIMIT 10
         "#,
     )
+    .bind(user_id)
     .fetch_all(&state.pool)
     .await?;
 
@@ -481,6 +504,7 @@ pub async fn get_stats(
                 title: r.get("title"),
                 series: r.get("series"),
                 last_read_at: r.get::<Option<String>, _>("last_read_at").unwrap_or_default(),
+                username: r.get("username"),
             }
         })
         .collect();
@@ -499,11 +523,13 @@ pub async fn get_stats(
                     FROM book_reading_progress brp
                     WHERE brp.status = 'read'
                       AND brp.last_read_at >= CURRENT_DATE - INTERVAL '6 days'
+                      AND ($1::uuid IS NULL OR brp.user_id = $1)
                     GROUP BY brp.last_read_at::date
                 ) cnt ON cnt.dt = d.dt
                 ORDER BY month ASC
                 "#,
             )
+            .bind(user_id)
             .fetch_all(&state.pool)
             .await?
         }
@@ -523,11 +549,13 @@ pub async fn get_stats(
                     FROM book_reading_progress brp
                     WHERE brp.status = 'read'
                       AND brp.last_read_at >= DATE_TRUNC('week', NOW() - INTERVAL '2 months')
+                      AND ($1::uuid IS NULL OR brp.user_id = $1)
                     GROUP BY DATE_TRUNC('week', brp.last_read_at)
                 ) cnt ON cnt.dt = d.dt
                 ORDER BY month ASC
                 "#,
             )
+            .bind(user_id)
             .fetch_all(&state.pool)
             .await?
         }
@@ -547,11 +575,13 @@ pub async fn get_stats(
                     FROM book_reading_progress brp
                     WHERE brp.status = 'read'
                       AND brp.last_read_at >= DATE_TRUNC('month', NOW()) - INTERVAL '11 months'
+                      AND ($1::uuid IS NULL OR brp.user_id = $1)
                     GROUP BY DATE_TRUNC('month', brp.last_read_at)
                 ) cnt ON cnt.dt = d.dt
                 ORDER BY month ASC
                 "#,
             )
+            .bind(user_id)
             .fetch_all(&state.pool)
             .await?
         }
@@ -561,6 +591,93 @@ pub async fn get_stats(
         .iter()
         .map(|r| MonthlyReading {
             month: r.get::<Option<String>, _>("month").unwrap_or_default(),
+            books_read: r.get("books_read"),
+        })
+        .collect();
+
+    // Per-user reading over time (admin view — always all users, no user_id filter)
+    let users_reading_time_rows = match period {
+        "day" => {
+            sqlx::query(
+                r#"
+                SELECT
+                    TO_CHAR(d.dt, 'YYYY-MM-DD') AS month,
+                    u.username,
+                    COALESCE(cnt.books_read, 0) AS books_read
+                FROM generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day') AS d(dt)
+                CROSS JOIN users u
+                LEFT JOIN (
+                    SELECT brp.last_read_at::date AS dt, brp.user_id, COUNT(*) AS books_read
+                    FROM book_reading_progress brp
+                    WHERE brp.status = 'read'
+                      AND brp.last_read_at >= CURRENT_DATE - INTERVAL '6 days'
+                    GROUP BY brp.last_read_at::date, brp.user_id
+                ) cnt ON cnt.dt = d.dt AND cnt.user_id = u.id
+                ORDER BY month ASC, u.username
+                "#,
+            )
+            .fetch_all(&state.pool)
+            .await?
+        }
+        "week" => {
+            sqlx::query(
+                r#"
+                SELECT
+                    TO_CHAR(d.dt, 'YYYY-MM-DD') AS month,
+                    u.username,
+                    COALESCE(cnt.books_read, 0) AS books_read
+                FROM generate_series(
+                    DATE_TRUNC('week', NOW() - INTERVAL '2 months'),
+                    DATE_TRUNC('week', NOW()),
+                    '1 week'
+                ) AS d(dt)
+                CROSS JOIN users u
+                LEFT JOIN (
+                    SELECT DATE_TRUNC('week', brp.last_read_at) AS dt, brp.user_id, COUNT(*) AS books_read
+                    FROM book_reading_progress brp
+                    WHERE brp.status = 'read'
+                      AND brp.last_read_at >= DATE_TRUNC('week', NOW() - INTERVAL '2 months')
+                    GROUP BY DATE_TRUNC('week', brp.last_read_at), brp.user_id
+                ) cnt ON cnt.dt = d.dt AND cnt.user_id = u.id
+                ORDER BY month ASC, u.username
+                "#,
+            )
+            .fetch_all(&state.pool)
+            .await?
+        }
+        _ => {
+            sqlx::query(
+                r#"
+                SELECT
+                    TO_CHAR(d.dt, 'YYYY-MM') AS month,
+                    u.username,
+                    COALESCE(cnt.books_read, 0) AS books_read
+                FROM generate_series(
+                    DATE_TRUNC('month', NOW()) - INTERVAL '11 months',
+                    DATE_TRUNC('month', NOW()),
+                    '1 month'
+                ) AS d(dt)
+                CROSS JOIN users u
+                LEFT JOIN (
+                    SELECT DATE_TRUNC('month', brp.last_read_at) AS dt, brp.user_id, COUNT(*) AS books_read
+                    FROM book_reading_progress brp
+                    WHERE brp.status = 'read'
+                      AND brp.last_read_at >= DATE_TRUNC('month', NOW()) - INTERVAL '11 months'
+                    GROUP BY DATE_TRUNC('month', brp.last_read_at), brp.user_id
+                ) cnt ON cnt.dt = d.dt AND cnt.user_id = u.id
+                ORDER BY month ASC, u.username
+                "#,
+            )
+            .fetch_all(&state.pool)
+            .await?
+        }
+    };
+
+    let users_reading_over_time: Vec<UserMonthlyReading> = users_reading_time_rows
+        .iter()
+        .map(|r| UserMonthlyReading {
+            month: r.get::<Option<String>, _>("month").unwrap_or_default(),
+            username: r.get("username"),
             books_read: r.get("books_read"),
         })
         .collect();
@@ -697,5 +814,6 @@ pub async fn get_stats(
         additions_over_time,
         jobs_over_time,
         metadata,
+        users_reading_over_time,
     }))
 }

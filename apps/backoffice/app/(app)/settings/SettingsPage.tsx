@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, FormRow, Icon } from "@/app/components/ui";
 import { ProviderIcon } from "@/app/components/ProviderIcon";
-import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, KomgaSyncResponse, KomgaSyncReportSummary, StatusMappingDto } from "@/lib/api";
+import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, KomgaSyncResponse, KomgaSyncReportSummary, StatusMappingDto, UserDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 import type { Locale } from "@/lib/i18n/types";
 
@@ -11,9 +11,10 @@ interface SettingsPageProps {
   initialSettings: Settings;
   initialCacheStats: CacheStats;
   initialThumbnailStats: ThumbnailStats;
+  users: UserDto[];
 }
 
-export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats }: SettingsPageProps) {
+export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users }: SettingsPageProps) {
   const { t, locale, setLocale } = useTranslation();
   const [settings, setSettings] = useState<Settings>({
     ...initialSettings,
@@ -29,6 +30,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
   const [komgaUrl, setKomgaUrl] = useState("");
   const [komgaUsername, setKomgaUsername] = useState("");
   const [komgaPassword, setKomgaPassword] = useState("");
+  const [komgaUserId, setKomgaUserId] = useState(users[0]?.id ?? "");
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<KomgaSyncResponse | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -104,6 +106,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       if (data) {
         if (data.url) setKomgaUrl(data.url);
         if (data.username) setKomgaUsername(data.username);
+        if (data.user_id) setKomgaUserId(data.user_id);
       }
     }).catch(() => {});
   }, [fetchReports]);
@@ -128,7 +131,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       const response = await fetch("/api/komga/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: komgaUrl, username: komgaUsername, password: komgaPassword }),
+        body: JSON.stringify({ url: komgaUrl, username: komgaUsername, password: komgaPassword, user_id: komgaUserId }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -140,7 +143,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         fetch("/api/settings/komga", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ value: { url: komgaUrl, username: komgaUsername } }),
+          body: JSON.stringify({ value: { url: komgaUrl, username: komgaUsername, user_id: komgaUserId } }),
         }).catch(() => {});
       }
     } catch {
@@ -627,9 +630,22 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               </FormField>
             </FormRow>
 
+            {users.length > 0 && (
+              <FormRow>
+                <FormField className="flex-1">
+                  <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("users.title")}</label>
+                  <FormSelect value={komgaUserId} onChange={(e) => setKomgaUserId(e.target.value)}>
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>{u.username}</option>
+                    ))}
+                  </FormSelect>
+                </FormField>
+              </FormRow>
+            )}
+
             <Button
               onClick={handleKomgaSync}
-              disabled={isSyncing || !komgaUrl || !komgaUsername || !komgaPassword}
+              disabled={isSyncing || !komgaUrl || !komgaUsername || !komgaPassword || !komgaUserId}
             >
               {isSyncing ? (
                 <>
