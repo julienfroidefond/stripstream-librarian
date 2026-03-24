@@ -55,7 +55,7 @@ async fn anilist_graphql(
 }
 
 /// Load AniList settings from DB: (access_token, anilist_user_id, local_user_id)
-async fn load_anilist_settings(pool: &sqlx::PgPool) -> Result<(String, i64, Option<Uuid>), ApiError> {
+async fn load_anilist_settings(pool: &sqlx::PgPool) -> Result<(String, Option<i64>, Option<Uuid>), ApiError> {
     let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'anilist'")
         .fetch_optional(pool)
         .await?;
@@ -70,9 +70,7 @@ async fn load_anilist_settings(pool: &sqlx::PgPool) -> Result<(String, i64, Opti
         .ok_or_else(|| ApiError::bad_request("AniList access token not configured"))?
         .to_string();
 
-    let user_id = value["user_id"]
-        .as_i64()
-        .ok_or_else(|| ApiError::bad_request("AniList user_id not configured"))?;
+    let user_id = value["user_id"].as_i64();
 
     let local_user_id = value["local_user_id"]
         .as_str()
@@ -785,6 +783,8 @@ pub async fn pull_from_anilist(
     State(state): State<AppState>,
 ) -> Result<Json<AnilistPullReport>, ApiError> {
     let (token, user_id, local_user_id) = load_anilist_settings(&state.pool).await?;
+    let user_id = user_id
+        .ok_or_else(|| ApiError::bad_request("AniList user_id not configured — please test the connection in settings"))?;
     let local_user_id = local_user_id
         .ok_or_else(|| ApiError::bad_request("AniList local user not configured — please select a user in settings"))?;
 
