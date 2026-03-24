@@ -19,6 +19,8 @@ pub struct SeriesItem {
     pub series_status: Option<String>,
     pub missing_count: Option<i64>,
     pub metadata_provider: Option<String>,
+    pub anilist_id: Option<i32>,
+    pub anilist_url: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -202,12 +204,15 @@ pub async fn list_series(
             sb.id as first_book_id,
             sm.status as series_status,
             mc.missing_count,
-            ml.provider as metadata_provider
+            ml.provider as metadata_provider,
+            asl.anilist_id,
+            asl.anilist_url
         FROM series_counts sc
         JOIN sorted_books sb ON sb.name = sc.name AND sb.rn = 1
         LEFT JOIN series_metadata sm ON sm.library_id = $1 AND sm.name = sc.name
         LEFT JOIN missing_counts mc ON mc.series_name = sc.name
         LEFT JOIN metadata_links ml ON ml.series_name = sc.name AND ml.library_id = $1
+        LEFT JOIN anilist_series_links asl ON asl.library_id = $1 AND asl.series_name = sc.name AND asl.provider = 'anilist'
         WHERE TRUE
           {q_cond}
           {count_rs_cond}
@@ -269,6 +274,8 @@ pub async fn list_series(
             series_status: row.get("series_status"),
             missing_count: row.get("missing_count"),
             metadata_provider: row.get("metadata_provider"),
+            anilist_id: row.get("anilist_id"),
+            anilist_url: row.get("anilist_url"),
         })
         .collect();
 
@@ -496,12 +503,15 @@ pub async fn list_all_series(
             sb.library_id,
             sm.status as series_status,
             mc.missing_count,
-            ml.provider as metadata_provider
+            ml.provider as metadata_provider,
+            asl.anilist_id,
+            asl.anilist_url
         FROM series_counts sc
         JOIN sorted_books sb ON sb.name = sc.name AND sb.rn = 1
         LEFT JOIN series_metadata sm ON sm.library_id = sc.library_id AND sm.name = sc.name
         LEFT JOIN missing_counts mc ON mc.series_name = sc.name AND mc.library_id = sc.library_id
         LEFT JOIN metadata_links ml ON ml.series_name = sc.name AND ml.library_id = sc.library_id
+        LEFT JOIN anilist_series_links asl ON asl.library_id = sc.library_id AND asl.series_name = sc.name AND asl.provider = 'anilist'
         WHERE TRUE
           {q_cond}
           {rs_cond}
@@ -566,6 +576,8 @@ pub async fn list_all_series(
             series_status: row.get("series_status"),
             missing_count: row.get("missing_count"),
             metadata_provider: row.get("metadata_provider"),
+            anilist_id: row.get("anilist_id"),
+            anilist_url: row.get("anilist_url"),
         })
         .collect();
 
@@ -711,6 +723,8 @@ pub async fn ongoing_series(
             series_status: None,
             missing_count: None,
             metadata_provider: None,
+            anilist_id: None,
+            anilist_url: None,
         })
         .collect();
 

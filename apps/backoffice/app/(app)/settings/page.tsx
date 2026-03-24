@@ -3,7 +3,8 @@ import SettingsPage from "./SettingsPage";
 
 export const dynamic = "force-dynamic";
 
-export default async function SettingsPageWrapper() {
+export default async function SettingsPageWrapper({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const { tab } = await searchParams;
   const settings = await getSettings().catch(() => ({
     image_processing: { format: "webp", quality: 85, filter: "lanczos3", max_width: 2160 },
     cache: { enabled: true, directory: "/tmp/stripstream-image-cache", max_size_mb: 10000 },
@@ -25,5 +26,5 @@ export default async function SettingsPageWrapper() {
 
   const users = await fetchUsers().catch(() => []);
 
-  return <SettingsPage initialSettings={settings} initialCacheStats={cacheStats} initialThumbnailStats={thumbnailStats} users={users} />;
+  return <SettingsPage initialSettings={settings} initialCacheStats={cacheStats} initialThumbnailStats={thumbnailStats} users={users} initialTab={tab} />;
 }

@@ -1,3 +1,4 @@
+mod anilist;
 mod auth;
 mod authors;
 mod books;
@@ -94,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/libraries/:id", delete(libraries::delete_library))
         .route("/libraries/:id/monitoring", axum::routing::patch(libraries::update_monitoring))
         .route("/libraries/:id/metadata-provider", axum::routing::patch(libraries::update_metadata_provider))
+        .route("/libraries/:id/reading-status-provider", axum::routing::patch(libraries::update_reading_status_provider))
         .route("/books/:id", axum::routing::patch(books::update_book))
         .route("/books/:id/convert", axum::routing::post(books::convert_book))
         .route("/libraries/:library_id/series/:name", axum::routing::patch(series::update_series))
@@ -120,6 +122,17 @@ async fn main() -> anyhow::Result<()> {
         .route("/komga/sync", axum::routing::post(komga::sync_komga_read_books))
         .route("/komga/reports", get(komga::list_sync_reports))
         .route("/komga/reports/:id", get(komga::get_sync_report))
+        .route("/anilist/status", get(anilist::get_status))
+        .route("/anilist/search", axum::routing::post(anilist::search_manga))
+        .route("/anilist/unlinked", get(anilist::list_unlinked))
+        .route("/anilist/sync/preview", get(anilist::preview_sync))
+        .route("/anilist/sync", axum::routing::post(anilist::sync_to_anilist))
+        .route("/anilist/pull", axum::routing::post(anilist::pull_from_anilist))
+        .route("/anilist/links", get(anilist::list_links))
+        .route("/anilist/libraries/:id", axum::routing::patch(anilist::toggle_library))
+        .route("/anilist/series/:library_id/:series_name", get(anilist::get_series_link))
+        .route("/anilist/series/:library_id/:series_name/link", axum::routing::post(anilist::link_series))
+        .route("/anilist/series/:library_id/:series_name/unlink", delete(anilist::unlink_series))
         .route("/metadata/search", axum::routing::post(metadata::search_metadata))
         .route("/metadata/match", axum::routing::post(metadata::create_metadata_match))
         .route("/metadata/approve/:id", axum::routing::post(metadata::approve_metadata))

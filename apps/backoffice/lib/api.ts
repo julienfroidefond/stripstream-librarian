@@ -14,6 +14,7 @@ export type LibraryDto = {
   next_metadata_refresh_at: string | null;
   series_count: number;
   thumbnail_book_ids: string[];
+  reading_status_provider: string | null;
 };
 
 export type IndexJobDto = {
@@ -140,6 +141,83 @@ export type SeriesDto = {
   series_status: string | null;
   missing_count: number | null;
   metadata_provider: string | null;
+  anilist_id: number | null;
+  anilist_url: string | null;
+};
+
+export type AnilistStatusDto = {
+  connected: boolean;
+  user_id: number;
+  username: string;
+  site_url: string;
+};
+
+export type AnilistMediaResultDto = {
+  id: number;
+  title_romaji: string | null;
+  title_english: string | null;
+  title_native: string | null;
+  site_url: string;
+  status: string | null;
+  volumes: number | null;
+};
+
+export type AnilistSeriesLinkDto = {
+  library_id: string;
+  series_name: string;
+  anilist_id: number;
+  anilist_title: string | null;
+  anilist_url: string | null;
+  status: string;
+  linked_at: string;
+  synced_at: string | null;
+};
+
+export type AnilistUnlinkedSeriesDto = {
+  library_id: string;
+  library_name: string;
+  series_name: string;
+};
+
+export type AnilistSyncPreviewItemDto = {
+  series_name: string;
+  anilist_id: number;
+  anilist_title: string | null;
+  anilist_url: string | null;
+  status: "PLANNING" | "CURRENT" | "COMPLETED";
+  progress_volumes: number;
+  books_read: number;
+  book_count: number;
+};
+
+export type AnilistSyncItemDto = {
+  series_name: string;
+  anilist_title: string | null;
+  anilist_url: string | null;
+  status: string;
+  progress_volumes: number;
+};
+
+export type AnilistSyncReportDto = {
+  synced: number;
+  skipped: number;
+  errors: string[];
+  items: AnilistSyncItemDto[];
+};
+
+export type AnilistPullItemDto = {
+  series_name: string;
+  anilist_title: string | null;
+  anilist_url: string | null;
+  anilist_status: string;
+  books_updated: number;
+};
+
+export type AnilistPullReportDto = {
+  updated: number;
+  skipped: number;
+  errors: string[];
+  items: AnilistPullItemDto[];
 };
 
 export function config() {
@@ -917,6 +995,12 @@ export async function getMetadataLink(libraryId: string, seriesName: string) {
   params.set("library_id", libraryId);
   params.set("series_name", seriesName);
   return apiFetch<ExternalMetadataLinkDto[]>(`/metadata/links?${params.toString()}`);
+}
+
+export async function getReadingStatusLink(libraryId: string, seriesName: string) {
+  return apiFetch<AnilistSeriesLinkDto>(
+    `/anilist/series/${libraryId}/${encodeURIComponent(seriesName)}`
+  );
 }
 
 export async function getMissingBooks(linkId: string) {

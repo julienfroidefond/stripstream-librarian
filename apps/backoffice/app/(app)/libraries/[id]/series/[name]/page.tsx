@@ -1,7 +1,8 @@
-import { fetchLibraries, fetchBooks, fetchSeriesMetadata, getBookCoverUrl, getMetadataLink, getMissingBooks, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto } from "@/lib/api";
+import { fetchLibraries, fetchBooks, fetchSeriesMetadata, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto } from "@/lib/api";
 import { BooksGrid, EmptyState } from "@/app/components/BookCard";
 import { MarkSeriesReadButton } from "@/app/components/MarkSeriesReadButton";
 import { MarkBookReadButton } from "@/app/components/MarkBookReadButton";
+import { ProviderIcon, providerLabel } from "@/app/components/ProviderIcon";
 import nextDynamic from "next/dynamic";
 import { OffsetPagination } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
@@ -13,6 +14,9 @@ const EditSeriesForm = nextDynamic(
 );
 const MetadataSearchModal = nextDynamic(
   () => import("@/app/components/MetadataSearchModal").then(m => m.MetadataSearchModal)
+);
+const ReadingStatusModal = nextDynamic(
+  () => import("@/app/components/ReadingStatusModal").then(m => m.ReadingStatusModal)
 );
 const ProwlarrSearchModal = nextDynamic(
   () => import("@/app/components/ProwlarrSearchModal").then(m => m.ProwlarrSearchModal)
@@ -37,7 +41,7 @@ export default async function SeriesDetailPage({
 
   const seriesName = decodeURIComponent(name);
 
-  const [library, booksPage, seriesMeta, metadataLinks] = await Promise.all([
+  const [library, booksPage, seriesMeta, metadataLinks, readingStatusLink] = await Promise.all([
     fetchLibraries().then((libs) => libs.find((l) => l.id === id)),
     fetchBooks(id, seriesName, page, limit).catch(() => ({
       items: [] as BookDto[],
@@ -47,6 +51,7 @@ export default async function SeriesDetailPage({
     })),
     fetchSeriesMetadata(id, seriesName).catch(() => null as SeriesMetadataDto | null),
     getMetadataLink(id, seriesName).catch(() => [] as ExternalMetadataLinkDto[]),
+    getReadingStatusLink(id, seriesName).catch(() => null as AnilistSeriesLinkDto | null),
   ]);
 
   const existingLink = metadataLinks.find((l) => l.status === "approved") ?? metadataLinks[0] ?? null;
@@ -125,6 +130,37 @@ export default async function SeriesDetailPage({
               }`}>
                 {t(`seriesStatus.${seriesMeta.status}` as any) || seriesMeta.status}
               </span>
+            )}
+            {existingLink?.status === "approved" && (
+              existingLink.external_url ? (
+                <a
+                  href={existingLink.external_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs border border-primary/30 hover:bg-primary/20 transition-colors"
+                >
+                  <ProviderIcon provider={existingLink.provider} size={12} />
+                  {providerLabel(existingLink.provider)}
+                </a>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs border border-primary/30">
+                  <ProviderIcon provider={existingLink.provider} size={12} />
+                  {providerLabel(existingLink.provider)}
+                </span>
+              )
+            )}
+            {readingStatusLink && (
+              <a
+                href={readingStatusLink.anilist_url ?? `https://anilist.co/manga/${readingStatusLink.anilist_id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-600 text-xs border border-cyan-500/30 hover:bg-cyan-500/20 transition-colors"
+              >
+                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M6.361 2.943 0 21.056h4.942l1.077-3.133H11.4l1.077 3.133H17.5L11.128 2.943H6.361zm1.58 11.152 1.84-5.354 1.84 5.354H7.941zM17.358 2.943v18.113h4.284V2.943h-4.284z"/>
+                </svg>
+                AniList
+              </a>
             )}
           </div>
 
@@ -205,6 +241,12 @@ export default async function SeriesDetailPage({
               seriesName={seriesName}
               existingLink={existingLink}
               initialMissing={missingData}
+            />
+            <ReadingStatusModal
+              libraryId={id}
+              seriesName={seriesName}
+              readingStatusProvider={library.reading_status_provider ?? null}
+              existingLink={readingStatusLink}
             />
           </div>
         </div>

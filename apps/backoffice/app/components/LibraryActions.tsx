@@ -14,6 +14,7 @@ interface LibraryActionsProps {
   metadataProvider: string | null;
   fallbackMetadataProvider: string | null;
   metadataRefreshMode: string;
+  readingStatusProvider: string | null;
   onUpdate?: () => void;
 }
 
@@ -25,6 +26,7 @@ export function LibraryActions({
   metadataProvider,
   fallbackMetadataProvider,
   metadataRefreshMode,
+  readingStatusProvider,
 }: LibraryActionsProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
@@ -40,6 +42,7 @@ export function LibraryActions({
       const newMetadataProvider = (formData.get("metadata_provider") as string) || null;
       const newFallbackProvider = (formData.get("fallback_metadata_provider") as string) || null;
       const newMetadataRefreshMode = formData.get("metadata_refresh_mode") as string;
+      const newReadingStatusProvider = (formData.get("reading_status_provider") as string) || null;
 
       try {
         const [response] = await Promise.all([
@@ -57,6 +60,11 @@ export function LibraryActions({
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ metadata_provider: newMetadataProvider, fallback_metadata_provider: newFallbackProvider }),
+          }),
+          fetch(`/api/libraries/${libraryId}/reading-status-provider`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reading_status_provider: newReadingStatusProvider }),
           }),
         ]);
 
@@ -252,6 +260,34 @@ export function LibraryActions({
                         </select>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1.5">{t("libraryActions.metadataRefreshDesc")}</p>
+                    </div>
+                  </div>
+
+                  <hr className="border-border/40" />
+
+                  {/* Section: État de lecture */}
+                  <div className="space-y-5">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground uppercase tracking-wide">
+                      <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {t("libraryActions.sectionReadingStatus")}
+                    </h3>
+                    <div>
+                      <div className="flex items-center justify-between gap-4">
+                        <label className="text-sm font-medium text-foreground">
+                          {t("libraryActions.readingStatusProvider")}
+                        </label>
+                        <select
+                          name="reading_status_provider"
+                          defaultValue={readingStatusProvider || ""}
+                          className="text-sm border border-border rounded-lg px-3 py-1.5 bg-background min-w-[160px] shrink-0"
+                        >
+                          <option value="">{t("libraryActions.none")}</option>
+                          <option value="anilist">AniList</option>
+                        </select>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1.5">{t("libraryActions.readingStatusProviderDesc")}</p>
                     </div>
                   </div>
 

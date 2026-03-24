@@ -30,6 +30,7 @@ pub struct LibraryResponse {
     /// First book IDs from up to 5 distinct series (for thumbnail fan display)
     #[schema(value_type = Vec<String>)]
     pub thumbnail_book_ids: Vec<Uuid>,
+    pub reading_status_provider: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -53,7 +54,7 @@ pub struct CreateLibraryRequest {
 )]
 pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<LibraryResponse>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at, l.watcher_enabled, l.metadata_provider, l.fallback_metadata_provider, l.metadata_refresh_mode, l.next_metadata_refresh_at,
+        "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at, l.watcher_enabled, l.metadata_provider, l.fallback_metadata_provider, l.metadata_refresh_mode, l.next_metadata_refresh_at, l.reading_status_provider,
                 (SELECT COUNT(*) FROM books b WHERE b.library_id = l.id) as book_count,
                 (SELECT COUNT(DISTINCT COALESCE(NULLIF(b.series, ''), 'unclassified')) FROM books b WHERE b.library_id = l.id) as series_count,
                 COALESCE((
@@ -92,6 +93,7 @@ pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<Li
             metadata_refresh_mode: row.get("metadata_refresh_mode"),
             next_metadata_refresh_at: row.get("next_metadata_refresh_at"),
             thumbnail_book_ids: row.get("thumbnail_book_ids"),
+            reading_status_provider: row.get("reading_status_provider"),
         })
         .collect();
 
@@ -149,6 +151,7 @@ pub async fn create_library(
         metadata_refresh_mode: "manual".to_string(),
         next_metadata_refresh_at: None,
         thumbnail_book_ids: vec![],
+        reading_status_provider: None,
     }))
 }
 
@@ -336,7 +339,7 @@ pub async fn update_monitoring(
     let watcher_enabled = input.watcher_enabled.unwrap_or(false);
 
     let result = sqlx::query(
-        "UPDATE libraries SET monitor_enabled = $2, scan_mode = $3, next_scan_at = $4, watcher_enabled = $5, metadata_refresh_mode = $6, next_metadata_refresh_at = $7 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at"
+        "UPDATE libraries SET monitor_enabled = $2, scan_mode = $3, next_scan_at = $4, watcher_enabled = $5, metadata_refresh_mode = $6, next_metadata_refresh_at = $7 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at, reading_status_provider"
     )
     .bind(library_id)
     .bind(input.monitor_enabled)
@@ -389,6 +392,7 @@ pub async fn update_monitoring(
         metadata_refresh_mode: row.get("metadata_refresh_mode"),
         next_metadata_refresh_at: row.get("next_metadata_refresh_at"),
         thumbnail_book_ids,
+        reading_status_provider: row.get("reading_status_provider"),
     }))
 }
 
@@ -424,7 +428,7 @@ pub async fn update_metadata_provider(
     let fallback = input.fallback_metadata_provider.as_deref().filter(|s| !s.is_empty());
 
     let result = sqlx::query(
-        "UPDATE libraries SET metadata_provider = $2, fallback_metadata_provider = $3 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at"
+        "UPDATE libraries SET metadata_provider = $2, fallback_metadata_provider = $3 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at, reading_status_provider"
     )
     .bind(library_id)
     .bind(provider)
@@ -473,5 +477,44 @@ pub async fn update_metadata_provider(
         metadata_refresh_mode: row.get("metadata_refresh_mode"),
         next_metadata_refresh_at: row.get("next_metadata_refresh_at"),
         thumbnail_book_ids,
+        reading_status_provider: row.get("reading_status_provider"),
     }))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateReadingStatusProviderRequest {
+    pub reading_status_provider: Option<String>,
+}
+
+/// Update the reading status provider for a library
+#[utoipa::path(
+    patch,
+    path = "/libraries/{id}/reading-status-provider",
+    tag = "libraries",
+    params(("id" = String, Path, description = "Library UUID")),
+    request_body = UpdateReadingStatusProviderRequest,
+    responses(
+        (status = 200, description = "Updated"),
+        (status = 404, description = "Library not found"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn update_reading_status_provider(
+    State(state): State<AppState>,
+    AxumPath(library_id): AxumPath<Uuid>,
+    Json(input): Json<UpdateReadingStatusProviderRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let provider = input.reading_status_provider.as_deref().filter(|s| !s.is_empty());
+    let result = sqlx::query("UPDATE libraries SET reading_status_provider = $2 WHERE id = $1")
+        .bind(library_id)
+        .bind(provider)
+        .execute(&state.pool)
+        .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(ApiError::not_found("library not found"));
+    }
+
+    Ok(Json(serde_json::json!({ "reading_status_provider": provider })))
 }

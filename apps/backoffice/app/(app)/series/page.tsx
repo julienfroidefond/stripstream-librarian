@@ -6,6 +6,7 @@ import { Card, CardContent, OffsetPagination } from "@/app/components/ui";
 import Image from "next/image";
 import Link from "next/link";
 import { ProviderIcon } from "@/app/components/ProviderIcon";
+import { ExternalLinkBadge } from "@/app/components/ExternalLinkBadge";
 
 export const dynamic = "force-dynamic";
 
@@ -122,13 +123,9 @@ export default async function SeriesPage({
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
             {series.map((s) => (
-              <Link
-                key={s.name}
-                href={`/libraries/${s.library_id}/series/${encodeURIComponent(s.name)}`}
-                className="group"
-              >
+              <div key={s.name} className="group relative">
                 <div
-                  className={`bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden hover:shadow-md hover:-translate-y-1 transition-all duration-200 ${
+                  className={`bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden group-hover:shadow-md group-hover:-translate-y-1 transition-all duration-200 ${
                     s.books_read_count >= s.book_count ? "opacity-50" : ""
                   }`}
                 >
@@ -149,13 +146,15 @@ export default async function SeriesPage({
                       <p className="text-xs text-muted-foreground">
                         {t("series.readCount", { read: String(s.books_read_count), total: String(s.book_count), plural: s.book_count !== 1 ? "s" : "" })}
                       </p>
-                      <MarkSeriesReadButton
-                        seriesName={s.name}
-                        bookCount={s.book_count}
-                        booksReadCount={s.books_read_count}
-                      />
+                      <div className="relative z-20">
+                        <MarkSeriesReadButton
+                          seriesName={s.name}
+                          bookCount={s.book_count}
+                          booksReadCount={s.books_read_count}
+                        />
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                    <div className="relative z-20 flex items-center gap-1 mt-1.5 flex-wrap">
                       {s.series_status && (
                         <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
                           s.series_status === "ongoing" ? "bg-blue-500/15 text-blue-600" :
@@ -177,10 +176,24 @@ export default async function SeriesPage({
                           <ProviderIcon provider={s.metadata_provider} size={10} />
                         </span>
                       )}
+                      {s.anilist_id && (
+                        <ExternalLinkBadge
+                          href={s.anilist_url ?? `https://anilist.co/manga/${s.anilist_id}`}
+                          className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-cyan-500/15 text-cyan-600 hover:bg-cyan-500/25"
+                        >
+                          AL
+                        </ExternalLinkBadge>
+                      )}
                     </div>
                   </div>
                 </div>
-              </Link>
+                {/* Link overlay covering the full card — below interactive elements */}
+                <Link
+                  href={`/libraries/${s.library_id}/series/${encodeURIComponent(s.name)}`}
+                  className="absolute inset-0 z-10 rounded-xl"
+                  aria-label={s.name === "unclassified" ? t("books.unclassified") : s.name}
+                />
+              </div>
             ))}
           </div>
 

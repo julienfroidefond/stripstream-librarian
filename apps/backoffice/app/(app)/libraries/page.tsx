@@ -146,6 +146,7 @@ export default async function LibrariesPage() {
                       metadataProvider={lib.metadata_provider}
                       fallbackMetadataProvider={lib.fallback_metadata_provider}
                       metadataRefreshMode={lib.metadata_refresh_mode}
+                      readingStatusProvider={lib.reading_status_provider}
                     />
                     <form>
                       <input type="hidden" name="id" value={lib.id} />
