@@ -95,9 +95,21 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
     }
   };
 
+  const refreshJobs = async () => {
+    try {
+      const res = await fetch("/api/jobs/list");
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setJobs(data);
+      }
+    } catch { /* SSE will catch up */ }
+  };
+
   const handleReplay = async (id: string) => {
     const response = await fetch(`/api/jobs/${id}/replay`, { method: "POST" });
-    if (!response.ok) {
+    if (response.ok) {
+      await refreshJobs();
+    } else {
       const data = await response.json().catch(() => ({}));
       console.error("Failed to replay job:", data?.error ?? response.status);
     }
