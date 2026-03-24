@@ -30,11 +30,14 @@ interface JobRowProps {
   libraryName: string | undefined;
   highlighted?: boolean;
   onCancel: (id: string) => void;
+  onReplay: (id: string) => void;
   formatDate: (date: string) => string;
   formatDuration: (start: string, end: string | null) => string;
 }
 
-export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, formatDuration }: JobRowProps) {
+const REPLAYABLE_TYPES = new Set(["rebuild", "full_rebuild", "rescan", "scan", "thumbnail_rebuild", "thumbnail_regenerate", "metadata_batch", "metadata_refresh"]);
+
+export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, formatDate, formatDuration }: JobRowProps) {
   const { t } = useTranslation();
   const isActive = job.status === "running" || job.status === "pending" || job.status === "extracting_pages" || job.status === "generating_thumbnails";
   const [showProgress, setShowProgress] = useState(highlighted || isActive);
@@ -213,7 +216,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
               </svg>
               {t("jobRow.view")}
             </Link>
-            {(job.status === "pending" || job.status === "running" || job.status === "extracting_pages" || job.status === "generating_thumbnails") && (
+            {isActive && (
               <Button
                 variant="danger"
                 size="xs"
@@ -223,6 +226,18 @@ export function JobRow({ job, libraryName, highlighted, onCancel, formatDate, fo
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
                 {t("common.cancel")}
+              </Button>
+            )}
+            {!isActive && REPLAYABLE_TYPES.has(job.type) && (
+              <Button
+                variant="secondary"
+                size="xs"
+                onClick={() => onReplay(job.id)}
+              >
+                <svg className="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {t("jobRow.replay")}
               </Button>
             )}
           </div>

@@ -95,6 +95,14 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
     }
   };
 
+  const handleReplay = async (id: string) => {
+    const response = await fetch(`/api/jobs/${id}/replay`, { method: "POST" });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      console.error("Failed to replay job:", data?.error ?? response.status);
+    }
+  };
+
   return (
     <div className="bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden">
       <div className="overflow-x-auto">
@@ -119,6 +127,7 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
                 libraryName={job.library_id ? libraries.get(job.library_id) : undefined}
                 highlighted={job.id === highlightJobId}
                 onCancel={handleCancel}
+                onReplay={handleReplay}
                 formatDate={formatDate}
                 formatDuration={formatDuration}
               />

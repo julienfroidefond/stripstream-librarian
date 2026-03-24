@@ -280,6 +280,7 @@ const fr = {
   "jobRow.metadataLinks": "{{count}} liens analysés",
   "jobRow.errors": "{{count}} erreurs",
   "jobRow.view": "Voir",
+  "jobRow.replay": "Rejouer",
 
   // Job progress
   "jobProgress.loadingProgress": "Chargement de la progression...",

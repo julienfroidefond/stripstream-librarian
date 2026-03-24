@@ -282,6 +282,7 @@ const en: Record<TranslationKey, string> = {
   "jobRow.metadataLinks": "{{count}} links analyzed",
   "jobRow.errors": "{{count}} errors",
   "jobRow.view": "View",
+  "jobRow.replay": "Replay",
 
   // Job progress
   "jobProgress.loadingProgress": "Loading progress...",
