@@ -380,14 +380,6 @@ pub async fn link_series(
         }
     };
 
-    // Auto-enable reading_status_provider on the library when linking a series
-    let _ = sqlx::query(
-        "UPDATE libraries SET reading_status_provider = 'anilist' WHERE id = $1 AND reading_status_provider IS NULL",
-    )
-    .bind(library_id)
-    .execute(&state.pool)
-    .await;
-
     let row = sqlx::query(
         r#"
         INSERT INTO anilist_series_links (library_id, series_name, provider, anilist_id, anilist_title, anilist_url, status, linked_at)
