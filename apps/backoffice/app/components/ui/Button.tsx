@@ -50,8 +50,8 @@ export function Button({
   return (
     <button 
       className={`
-        inline-flex items-center justify-center 
-        font-medium 
+        inline-flex items-center justify-center
+        font-medium cursor-pointer
         transition-all duration-200 ease-out
         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
         disabled:pointer-events-none disabled:opacity-50
