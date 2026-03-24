@@ -576,7 +576,7 @@ pub async fn preview_sync(
             SELECT
                 COUNT(*) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read,
-                (SELECT sm.total_volumes FROM series_metadata sm WHERE sm.library_id = $1 AND sm.series_name = $2 LIMIT 1) as total_volumes
+                (SELECT sm.total_volumes FROM series_metadata sm WHERE sm.library_id = $1 AND sm.name = $2 LIMIT 1) as total_volumes
             FROM books b
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND brp.user_id = $3
             WHERE b.library_id = $1 AND COALESCE(NULLIF(b.series, ''), 'unclassified') = $2
@@ -684,7 +684,7 @@ pub async fn sync_to_anilist(
             SELECT
                 COUNT(*) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read,
-                (SELECT sm.total_volumes FROM series_metadata sm WHERE sm.library_id = $1 AND sm.series_name = $2 LIMIT 1) as total_volumes
+                (SELECT sm.total_volumes FROM series_metadata sm WHERE sm.library_id = $1 AND sm.name = $2 LIMIT 1) as total_volumes
             FROM books b
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND brp.user_id = $3
             WHERE b.library_id = $1 AND COALESCE(NULLIF(b.series, ''), 'unclassified') = $2
