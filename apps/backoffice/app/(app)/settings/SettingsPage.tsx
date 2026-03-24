@@ -623,7 +623,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               <FormField className="flex-1">
                 <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.password")}</label>
                 <FormInput
-                  type="password"
+                  type="password" autoComplete="off"
                   value={komgaPassword}
                   onChange={(e) => setKomgaPassword(e.target.value)}
                 />
@@ -971,7 +971,7 @@ function MetadataProvidersCard({ handleUpdateSetting }: { handleUpdateSetting: (
                   {t("settings.googleBooksKey")}
                 </label>
                 <FormInput
-                  type="password"
+                  type="password" autoComplete="off"
                   placeholder={t("settings.googleBooksPlaceholder")}
                   value={apiKeys.google_books || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, google_books: e.target.value })}
@@ -986,7 +986,7 @@ function MetadataProvidersCard({ handleUpdateSetting }: { handleUpdateSetting: (
                   {t("settings.comicvineKey")}
                 </label>
                 <FormInput
-                  type="password"
+                  type="password" autoComplete="off"
                   placeholder={t("settings.comicvinePlaceholder")}
                   value={apiKeys.comicvine || ""}
                   onChange={(e) => setApiKeys({ ...apiKeys, comicvine: e.target.value })}
@@ -1328,7 +1328,7 @@ function ProwlarrCard({ handleUpdateSetting }: { handleUpdateSetting: (key: stri
             <FormField className="flex-1">
               <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.prowlarrApiKey")}</label>
               <FormInput
-                type="password"
+                type="password" autoComplete="off"
                 placeholder={t("settings.prowlarrApiKeyPlaceholder")}
                 value={prowlarrApiKey}
                 onChange={(e) => setProwlarrApiKey(e.target.value)}
@@ -1466,7 +1466,7 @@ function QBittorrentCard({ handleUpdateSetting }: { handleUpdateSetting: (key: s
             <FormField className="flex-1">
               <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.qbittorrentPassword")}</label>
               <FormInput
-                type="password"
+                type="password" autoComplete="off"
                 value={qbPassword}
                 onChange={(e) => setQbPassword(e.target.value)}
                 onBlur={() => saveQbittorrent()}
@@ -1632,7 +1632,7 @@ function TelegramCard({ handleUpdateSetting }: { handleUpdateSetting: (key: stri
             <FormField className="flex-1">
               <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.botToken")}</label>
               <FormInput
-                type="password"
+                type="password" autoComplete="off"
                 placeholder={t("settings.botTokenPlaceholder")}
                 value={botToken}
                 onChange={(e) => setBotToken(e.target.value)}
