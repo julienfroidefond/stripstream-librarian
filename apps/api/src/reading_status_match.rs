@@ -368,12 +368,27 @@ pub(crate) async fn process_reading_status_match(
             Ok(Outcome::Ambiguous) => {
                 insert_result(pool, job_id, library_id, series_name, "ambiguous", None, None, None, None).await;
             }
-            Err(e) => {
-                if e.contains("429") || e.contains("Too Many Requests") {
-                    return Err(format!(
-                        "AniList rate limit exceeded (429) — job stopped after {processed}/{total} series"
-                    ));
+            Err(e) if e.contains("429") || e.contains("Too Many Requests") => {
+                warn!("[READING_STATUS_MATCH] rate limit hit for '{series_name}', waiting 10s before retry");
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                match search_and_link(pool, library_id, series_name, &token).await {
+                    Ok(Outcome::Linked { anilist_id, anilist_title, anilist_url }) => {
+                        insert_result(pool, job_id, library_id, series_name, "linked", Some(anilist_id), anilist_title.as_deref(), anilist_url.as_deref(), None).await;
+                    }
+                    Ok(Outcome::NoResults) => {
+                        insert_result(pool, job_id, library_id, series_name, "no_results", None, None, None, None).await;
+                    }
+                    Ok(Outcome::Ambiguous) => {
+                        insert_result(pool, job_id, library_id, series_name, "ambiguous", None, None, None, None).await;
+                    }
+                    Err(e2) => {
+                        return Err(format!(
+                            "AniList rate limit exceeded (429) — job stopped after {processed}/{total} series: {e2}"
+                        ));
+                    }
                 }
+            }
+            Err(e) => {
                 warn!("[READING_STATUS_MATCH] series '{series_name}': {e}");
                 insert_result(pool, job_id, library_id, series_name, "error", None, None, None, Some(&e)).await;
             }
