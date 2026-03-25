@@ -1141,6 +1141,53 @@ export async function getReadingStatusPushResults(jobId: string) {
   return apiFetch<ReadingStatusPushResultDto[]>(`/reading-status/push/${jobId}/results`);
 }
 
+export async function startDownloadDetection(libraryId: string) {
+  return apiFetch<{ id: string; status: string }>("/download-detection/start", {
+    method: "POST",
+    body: JSON.stringify({ library_id: libraryId }),
+  });
+}
+
+export type AvailableReleaseDto = {
+  title: string;
+  size: number;
+  download_url: string | null;
+  indexer: string | null;
+  seeders: number | null;
+  matched_missing_volumes: number[];
+};
+
+export type DownloadDetectionReportDto = {
+  job_id: string;
+  status: string;
+  total_series: number;
+  found: number;
+  not_found: number;
+  no_missing: number;
+  no_metadata: number;
+  errors: number;
+};
+
+export type DownloadDetectionResultDto = {
+  id: string;
+  series_name: string;
+  status: "found" | "not_found" | "no_missing" | "no_metadata" | "error";
+  missing_count: number;
+  available_releases: AvailableReleaseDto[] | null;
+  error_message: string | null;
+};
+
+export async function getDownloadDetectionReport(jobId: string) {
+  return apiFetch<DownloadDetectionReportDto>(`/download-detection/${jobId}/report`);
+}
+
+export async function getDownloadDetectionResults(jobId: string, status?: string) {
+  const url = status
+    ? `/download-detection/${jobId}/results?status=${encodeURIComponent(status)}`
+    : `/download-detection/${jobId}/results`;
+  return apiFetch<DownloadDetectionResultDto[]>(url);
+}
+
 export type RefreshFieldDiff = {
   field: string;
   old?: unknown;

@@ -150,6 +150,29 @@
 ### Field Locking
 - Individual book fields can be locked to prevent external sync from overwriting manual edits
 
+### AniList Reading Status Sync
+
+Integration with AniList to synchronize reading progress in both directions for linked series.
+
+#### Configuration
+- AniList user ID required for pull/push operations
+- Configured per library in the reading status provider settings
+- Auto-push schedule configurable per library: `manual`, `hourly`, `daily`, `weekly`
+
+#### Reading Status Match (`reading_status_match`)
+- Pull reading progress from AniList and update local book statuses
+- Maps AniList list status: `PLANNING` → `unread`, `CURRENT` → `reading`, `COMPLETED` → `read`
+- Detailed per-series report: matched, updated, skipped, errors
+- Rate limit handling: waits 10s and retries once on HTTP 429, aborts on second 429
+
+#### Reading Status Push (`reading_status_push`)
+- Differential push: only syncs series that changed since last push, have new books, or have never been synced
+- Maps local status to AniList: `unread` → `PLANNING`, `reading` → `CURRENT`, `read` → `COMPLETED`
+- Never auto-completes a series on AniList based solely on owned books (requires all books read)
+- Per-series result tracking: pushed, skipped, no_books, error
+- Same 429 retry logic as `reading_status_match`
+- Auto-push schedule runs every minute check via indexer scheduler
+
 ---
 
 ## External Integrations
@@ -178,7 +201,7 @@
 - Test connection button in settings
 
 ### Granular Event Toggles
-12 individually configurable notification events grouped by category:
+16 individually configurable notification events grouped by category:
 
 | Category | Events |
 |----------|--------|
@@ -186,6 +209,7 @@
 | Thumbnails | `thumbnail_completed`, `thumbnail_failed`, `thumbnail_cancelled` |
 | Conversion | `conversion_completed`, `conversion_failed`, `conversion_cancelled` |
 | Metadata | `metadata_approved`, `metadata_batch_completed`, `metadata_refresh_completed` |
+| Reading status | `reading_status_match_completed`, `reading_status_match_failed`, `reading_status_push_completed`, `reading_status_push_failed` |
 
 ### Thumbnail Images in Notifications
 - Book cover thumbnails attached to applicable notifications (conversion, metadata approval)
@@ -233,6 +257,8 @@
 | `cbr_to_cbz` | Convert RAR to ZIP |
 | `metadata_batch` | Auto-match series to metadata |
 | `metadata_refresh` | Update approved metadata links |
+| `reading_status_match` | Pull reading progress from AniList to local |
+| `reading_status_push` | Differential push of reading statuses to AniList |
 
 ### Job Lifecycle
 - Status flow: `pending` → `running` → `success` | `failed` | `cancelled`

@@ -17,6 +17,12 @@ export const DEFAULT_EVENTS = {
   metadata_batch_failed: true,
   metadata_refresh_completed: true,
   metadata_refresh_failed: true,
+  reading_status_match_completed: true,
+  reading_status_match_failed: true,
+  reading_status_push_completed: true,
+  reading_status_push_failed: true,
+  download_detection_completed: true,
+  download_detection_failed: true,
 };
 
 export function TelegramCard({ handleUpdateSetting }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void> }) {
@@ -189,6 +195,24 @@ export function TelegramCard({ handleUpdateSetting }: { handleUpdateSetting: (ke
                     { key: "metadata_batch_failed" as const, label: t("settings.eventBatchFailed") },
                     { key: "metadata_refresh_completed" as const, label: t("settings.eventRefreshCompleted") },
                     { key: "metadata_refresh_failed" as const, label: t("settings.eventRefreshFailed") },
+                  ],
+                },
+                {
+                  category: t("settings.eventCategoryReadingStatus"),
+                  icon: "books" as const,
+                  items: [
+                    { key: "reading_status_match_completed" as const, label: t("settings.eventMatchCompleted") },
+                    { key: "reading_status_match_failed" as const, label: t("settings.eventMatchFailed") },
+                    { key: "reading_status_push_completed" as const, label: t("settings.eventPushCompleted") },
+                    { key: "reading_status_push_failed" as const, label: t("settings.eventPushFailed") },
+                  ],
+                },
+                {
+                  category: t("settings.eventCategoryDownloadDetection"),
+                  icon: "download" as const,
+                  items: [
+                    { key: "download_detection_completed" as const, label: t("settings.eventCompleted") },
+                    { key: "download_detection_failed" as const, label: t("settings.eventFailed") },
                   ],
                 },
               ]).map(({ category, icon, items }) => (

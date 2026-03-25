@@ -2,6 +2,7 @@ mod anilist;
 mod auth;
 mod authors;
 mod books;
+mod download_detection;
 mod error;
 mod handlers;
 mod index_jobs;
@@ -153,6 +154,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/reading-status/push", axum::routing::post(reading_status_push::start_push))
         .route("/reading-status/push/:id/report", get(reading_status_push::get_push_report))
         .route("/reading-status/push/:id/results", get(reading_status_push::get_push_results))
+        .route("/download-detection/start", axum::routing::post(download_detection::start_detection))
+        .route("/download-detection/:id/report", get(download_detection::get_detection_report))
+        .route("/download-detection/:id/results", get(download_detection::get_detection_results))
         .merge(settings::settings_routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),

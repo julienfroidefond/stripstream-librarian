@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { apiFetch, getMetadataBatchReport, getMetadataBatchResults, getMetadataRefreshReport, getReadingStatusMatchReport, getReadingStatusMatchResults, getReadingStatusPushReport, getReadingStatusPushResults, MetadataBatchReportDto, MetadataBatchResultDto, MetadataRefreshReportDto, ReadingStatusMatchReportDto, ReadingStatusMatchResultDto, ReadingStatusPushReportDto, ReadingStatusPushResultDto } from "@/lib/api";
+import { apiFetch, getMetadataBatchReport, getMetadataBatchResults, getMetadataRefreshReport, getReadingStatusMatchReport, getReadingStatusMatchResults, getReadingStatusPushReport, getReadingStatusPushResults, getDownloadDetectionReport, getDownloadDetectionResults, MetadataBatchReportDto, MetadataBatchResultDto, MetadataRefreshReportDto, ReadingStatusMatchReportDto, ReadingStatusMatchResultDto, ReadingStatusPushReportDto, ReadingStatusPushResultDto, DownloadDetectionReportDto, DownloadDetectionResultDto } from "@/lib/api";
 import {
   Card, CardHeader, CardTitle, CardDescription, CardContent,
   StatusBadge, JobTypeBadge, StatBox, ProgressBar
@@ -142,12 +142,18 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
       description: t("jobType.reading_status_pushDesc"),
       isThumbnailOnly: false,
     },
+    download_detection: {
+      label: t("jobType.download_detectionLabel"),
+      description: t("jobType.download_detectionDesc"),
+      isThumbnailOnly: false,
+    },
   };
 
   const isMetadataBatch = job.type === "metadata_batch";
   const isMetadataRefresh = job.type === "metadata_refresh";
   const isReadingStatusMatch = job.type === "reading_status_match";
   const isReadingStatusPush = job.type === "reading_status_push";
+  const isDownloadDetection = job.type === "download_detection";
 
   // Fetch batch report & results for metadata_batch jobs
   let batchReport: MetadataBatchReportDto | null = null;
@@ -185,6 +191,16 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     ]);
   }
 
+  // Fetch download detection report & results
+  let downloadDetectionReport: DownloadDetectionReportDto | null = null;
+  let downloadDetectionResults: DownloadDetectionResultDto[] = [];
+  if (isDownloadDetection) {
+    [downloadDetectionReport, downloadDetectionResults] = await Promise.all([
+      getDownloadDetectionReport(id).catch(() => null),
+      getDownloadDetectionResults(id, "found").catch(() => []),
+    ]);
+  }
+
   const typeInfo = JOB_TYPE_INFO[job.type] ?? {
     label: job.type,
     description: null,
@@ -213,6 +229,8 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     ? t("jobDetail.readingStatusMatch")
     : isReadingStatusPush
     ? t("jobDetail.readingStatusPush")
+    : isDownloadDetection
+    ? t("jobDetail.downloadDetection")
     : isThumbnailOnly
       ? t("jobType.thumbnail_rebuild")
       : isExtractingPages
@@ -229,6 +247,8 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     ? t("jobDetail.readingStatusMatchDesc")
     : isReadingStatusPush
     ? t("jobDetail.readingStatusPushDesc")
+    : isDownloadDetection
+    ? t("jobDetail.downloadDetectionDesc")
     : isThumbnailOnly
       ? undefined
       : isExtractingPages
@@ -290,7 +310,12 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
                 — {readingStatusPushReport.pushed} {t("jobDetail.pushed").toLowerCase()}, {readingStatusPushReport.no_books} {t("jobDetail.noBooks").toLowerCase()}, {readingStatusPushReport.errors} {t("jobDetail.errors").toLowerCase()}
               </span>
             )}
-            {!isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && job.stats_json && (
+            {isDownloadDetection && downloadDetectionReport && (
+              <span className="ml-2 text-success/80">
+                — {downloadDetectionReport.found} {t("jobDetail.downloadFound").toLowerCase()}, {downloadDetectionReport.not_found} {t("jobDetail.downloadNotFound").toLowerCase()}, {downloadDetectionReport.errors} {t("jobDetail.errors").toLowerCase()}
+              </span>
+            )}
+            {!isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && !isDownloadDetection && job.stats_json && (
               <span className="ml-2 text-success/80">
                 — {job.stats_json.scanned_files} {t("jobDetail.scanned").toLowerCase()}, {job.stats_json.indexed_files} {t("jobDetail.indexed").toLowerCase()}
                 {job.stats_json.removed_files > 0 && `, ${job.stats_json.removed_files} ${t("jobDetail.removed").toLowerCase()}`}
@@ -564,7 +589,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
         )}
 
         {/* Index Statistics — index jobs only */}
-        {job.stats_json && !isThumbnailOnly && !isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && (
+        {job.stats_json && !isThumbnailOnly && !isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && !isDownloadDetection && (
           <Card>
             <CardHeader>
               <CardTitle>{t("jobDetail.indexStats")}</CardTitle>
@@ -931,6 +956,85 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
                   )}
                   {r.error_message && (
                     <p className="text-xs text-destructive/80 mt-1">{r.error_message}</p>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Download detection — summary report */}
+        {isDownloadDetection && downloadDetectionReport && (
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("jobDetail.downloadDetectionReport")}</CardTitle>
+              <CardDescription>{t("jobDetail.seriesAnalyzed", { count: String(downloadDetectionReport.total_series) })}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <StatBox value={downloadDetectionReport.found} label={t("jobDetail.downloadFound")} variant="success" />
+                <StatBox value={downloadDetectionReport.not_found} label={t("jobDetail.downloadNotFound")} />
+                <StatBox value={downloadDetectionReport.no_missing} label={t("jobDetail.downloadNoMissing")} variant="primary" />
+                <StatBox value={downloadDetectionReport.no_metadata} label={t("jobDetail.downloadNoMetadata")} />
+                <StatBox value={downloadDetectionReport.errors} label={t("jobDetail.errors")} variant={downloadDetectionReport.errors > 0 ? "error" : "default"} />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Download detection — available releases per series */}
+        {isDownloadDetection && downloadDetectionResults.length > 0 && (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>{t("jobDetail.downloadAvailableReleases")}</CardTitle>
+              <CardDescription>{t("jobDetail.downloadAvailableReleasesDesc", { count: String(downloadDetectionResults.length) })}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 max-h-[700px] overflow-y-auto">
+              {downloadDetectionResults.map((r) => (
+                <div key={r.id} className="rounded-lg border border-success/20 bg-success/5 p-3">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    {job.library_id ? (
+                      <Link
+                        href={`/libraries/${job.library_id}/series/${encodeURIComponent(r.series_name)}`}
+                        className="font-semibold text-sm text-primary hover:underline truncate"
+                      >
+                        {r.series_name}
+                      </Link>
+                    ) : (
+                      <span className="font-semibold text-sm text-foreground truncate">{r.series_name}</span>
+                    )}
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap bg-warning/20 text-warning shrink-0">
+                      {t("jobDetail.downloadMissingCount", { count: String(r.missing_count) })}
+                    </span>
+                  </div>
+                  {r.available_releases && r.available_releases.length > 0 && (
+                    <div className="space-y-1.5">
+                      {r.available_releases.map((release, idx) => (
+                        <div key={idx} className="flex items-start gap-2 p-2 rounded bg-background/60 border border-border/40">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-mono text-foreground truncate" title={release.title}>{release.title}</p>
+                            <div className="flex items-center gap-3 mt-1 flex-wrap">
+                              {release.indexer && (
+                                <span className="text-[10px] text-muted-foreground">{release.indexer}</span>
+                              )}
+                              {release.seeders != null && (
+                                <span className="text-[10px] text-success font-medium">{release.seeders} {t("prowlarr.columnSeeders").toLowerCase()}</span>
+                              )}
+                              <span className="text-[10px] text-muted-foreground">
+                                {(release.size / 1024 / 1024).toFixed(0)} MB
+                              </span>
+                              <div className="flex items-center gap-1">
+                                {release.matched_missing_volumes.map((vol) => (
+                                  <span key={vol} className="text-[10px] px-1.5 py-0.5 rounded-full bg-success/20 text-success font-medium">
+                                    T.{vol}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               ))}

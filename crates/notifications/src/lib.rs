@@ -51,6 +51,10 @@ pub struct EventToggles {
     pub reading_status_push_completed: bool,
     #[serde(default = "default_true")]
     pub reading_status_push_failed: bool,
+    #[serde(default = "default_true")]
+    pub download_detection_completed: bool,
+    #[serde(default = "default_true")]
+    pub download_detection_failed: bool,
 }
 
 fn default_true() -> bool {
@@ -75,6 +79,8 @@ fn default_events() -> EventToggles {
         reading_status_match_failed: true,
         reading_status_push_completed: true,
         reading_status_push_failed: true,
+        download_detection_completed: true,
+        download_detection_failed: true,
     }
 }
 
@@ -277,6 +283,16 @@ pub enum NotificationEvent {
         pushed: i32,
     },
     ReadingStatusPushFailed {
+        library_name: Option<String>,
+        error: String,
+    },
+    // Download detection (Prowlarr search for missing volumes)
+    DownloadDetectionCompleted {
+        library_name: Option<String>,
+        total_series: i32,
+        found: i64,
+    },
+    DownloadDetectionFailed {
         library_name: Option<String>,
         error: String,
     },
@@ -557,6 +573,37 @@ fn format_event(event: &NotificationEvent) -> String {
             ]
             .join("\n")
         }
+        NotificationEvent::DownloadDetectionCompleted {
+            library_name,
+            total_series,
+            found,
+        } => {
+            let lib = library_name.as_deref().unwrap_or("All libraries");
+            [
+                format!("✅ <b>Download detection completed</b>"),
+                String::new(),
+                format!("📂 <b>Library:</b> {lib}"),
+                String::new(),
+                format!("📊 <b>Results</b>"),
+                format!("  📥 Available: <b>{found}</b> / <b>{total_series}</b> series"),
+            ]
+            .join("\n")
+        }
+        NotificationEvent::DownloadDetectionFailed {
+            library_name,
+            error,
+        } => {
+            let lib = library_name.as_deref().unwrap_or("All libraries");
+            let err = truncate(error, 200);
+            [
+                format!("🚨 <b>Download detection failed</b>"),
+                String::new(),
+                format!("📂 <b>Library:</b> {lib}"),
+                String::new(),
+                format!("💬 <code>{err}</code>"),
+            ]
+            .join("\n")
+        }
     }
 }
 
@@ -601,6 +648,8 @@ fn is_event_enabled(config: &TelegramConfig, event: &NotificationEvent) -> bool 
         NotificationEvent::ReadingStatusMatchFailed { .. } => config.events.reading_status_match_failed,
         NotificationEvent::ReadingStatusPushCompleted { .. } => config.events.reading_status_push_completed,
         NotificationEvent::ReadingStatusPushFailed { .. } => config.events.reading_status_push_failed,
+        NotificationEvent::DownloadDetectionCompleted { .. } => config.events.download_detection_completed,
+        NotificationEvent::DownloadDetectionFailed { .. } => config.events.download_detection_failed,
     }
 }
 

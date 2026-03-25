@@ -264,6 +264,9 @@ const fr = {
   "jobs.matchReadingStatusShort": "Lier automatiquement les séries non associées au provider",
   "jobs.pushReadingStatus": "Push des états de lecture",
   "jobs.pushReadingStatusShort": "Envoyer les états de lecture modifiés vers AniList (push différentiel)",
+  "jobs.groupProwlarr": "Téléchargement",
+  "jobs.downloadDetection": "Détection de téléchargements",
+  "jobs.downloadDetectionShort": "Cherche sur Prowlarr les releases disponibles pour les volumes manquants",
 
   // Jobs list
   "jobsList.id": "ID",
@@ -288,6 +291,7 @@ const fr = {
   "jobRow.seriesTotal": "{{count}} séries au total",
   "jobRow.seriesLinked": "{{count}} séries liées",
   "jobRow.seriesPushed": "{{count}} séries synchronisées",
+  "jobRow.downloadFound": "{{count}} releases trouvées",
   "jobRow.errors": "{{count}} erreurs",
   "jobRow.view": "Voir",
   "jobRow.replay": "Rejouer",
@@ -379,6 +383,16 @@ const fr = {
   "jobDetail.pushed": "Envoyés",
   "jobDetail.skipped": "Ignorés",
   "jobDetail.noBooks": "Sans livres",
+  "jobDetail.downloadDetection": "Détection de téléchargements",
+  "jobDetail.downloadDetectionDesc": "Analyse des séries avec volumes manquants via Prowlarr",
+  "jobDetail.downloadDetectionReport": "Rapport de détection",
+  "jobDetail.downloadFound": "Disponibles",
+  "jobDetail.downloadNotFound": "Non trouvés",
+  "jobDetail.downloadNoMissing": "Complets",
+  "jobDetail.downloadNoMetadata": "Sans métadonnées",
+  "jobDetail.downloadAvailableReleases": "Releases disponibles",
+  "jobDetail.downloadAvailableReleasesDesc": "{{count}} série(s) avec au moins une release trouvée",
+  "jobDetail.downloadMissingCount": "{{count}} manquant(s)",
 
   // Job types
   "jobType.rebuild": "Indexation",
@@ -411,6 +425,9 @@ const fr = {
   "jobType.reading_status_push": "Push statut lecture",
   "jobType.reading_status_pushLabel": "Push des états de lecture",
   "jobType.reading_status_pushDesc": "Envoie les états de lecture modifiés (ou nouvelles séries) vers AniList de façon différentielle.",
+  "jobType.download_detection": "Détection téléchargements",
+  "jobType.download_detectionLabel": "Détection de téléchargements disponibles",
+  "jobType.download_detectionDesc": "Analyse les séries avec des volumes manquants et interroge Prowlarr pour trouver les releases disponibles. Ne télécharge rien — produit uniquement un rapport des opportunités.",
 
   // Status badges
   "statusBadge.extracting_pages": "Extraction des pages",
@@ -645,6 +662,12 @@ const fr = {
   "settings.eventBatchFailed": "Batch échoué",
   "settings.eventRefreshCompleted": "Rafraîchissement terminé",
   "settings.eventRefreshFailed": "Rafraîchissement échoué",
+  "settings.eventCategoryReadingStatus": "État de lecture",
+  "settings.eventMatchCompleted": "Synchro. terminée",
+  "settings.eventMatchFailed": "Synchro. échouée",
+  "settings.eventPushCompleted": "Push terminé",
+  "settings.eventPushFailed": "Push échoué",
+  "settings.eventCategoryDownloadDetection": "Détection téléchargements",
   "settings.telegramHelp": "Comment obtenir les informations ?",
   "settings.telegramHelpBot": "Ouvrez Telegram, recherchez <b>@BotFather</b>, envoyez <code>/newbot</code> et suivez les instructions. Copiez le token fourni.",
   "settings.telegramHelpChat": "Envoyez un message à votre bot, puis ouvrez <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> dans votre navigateur. Le <b>chat id</b> apparaît dans <code>message.chat.id</code>.",

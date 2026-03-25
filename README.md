@@ -112,19 +112,20 @@ The backoffice will be available at http://localhost:7082
 
 ### Notifications
 - **Telegram**: real-time notifications via Telegram Bot API
-- 12 granular event toggles (scans, thumbnails, conversions, metadata)
+- 16 granular event toggles (scans, thumbnails, conversions, metadata, reading status, download detection)
 - Book thumbnail images included in notifications where applicable
 - Test connection from settings
 
 ### External Integrations
+- **AniList**: bidirectional reading status sync — pull progress from AniList or push local statuses (PLANNING/CURRENT/COMPLETED) with differential detection and configurable auto-push schedule
 - **Komga**: import reading progress
-- **Prowlarr**: search for missing volumes
+- **Prowlarr**: search for missing volumes manually from series pages, or run a **download detection job** to automatically scan all series with missing volumes and report available releases
 - **qBittorrent**: add torrents directly from search results
 
 ### Background Jobs
-- Rebuild, rescan, thumbnail generation, metadata batch, CBR conversion
+- Rebuild, rescan, thumbnail generation, metadata batch, CBR conversion, AniList reading status sync/push, download detection (Prowlarr)
 - Real-time progress via Server-Sent Events (SSE)
-- Job history, error tracking, cancellation
+- Job history, error tracking, cancellation, replay
 
 ### Page Rendering
 - On-demand page extraction from all formats

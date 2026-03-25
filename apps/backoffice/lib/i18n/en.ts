@@ -266,6 +266,9 @@ const en: Record<TranslationKey, string> = {
   "jobs.matchReadingStatusShort": "Auto-link unmatched series to the reading status provider",
   "jobs.pushReadingStatus": "Push reading statuses",
   "jobs.pushReadingStatusShort": "Push changed reading statuses to AniList (differential push)",
+  "jobs.groupProwlarr": "Download",
+  "jobs.downloadDetection": "Download detection",
+  "jobs.downloadDetectionShort": "Search Prowlarr for available releases matching missing volumes",
 
   // Jobs list
   "jobsList.id": "ID",
@@ -290,6 +293,7 @@ const en: Record<TranslationKey, string> = {
   "jobRow.seriesTotal": "{{count}} series total",
   "jobRow.seriesLinked": "{{count}} series linked",
   "jobRow.seriesPushed": "{{count}} series pushed",
+  "jobRow.downloadFound": "{{count}} releases found",
   "jobRow.errors": "{{count}} errors",
   "jobRow.view": "View",
   "jobRow.replay": "Replay",
@@ -381,6 +385,16 @@ const en: Record<TranslationKey, string> = {
   "jobDetail.pushed": "Pushed",
   "jobDetail.skipped": "Skipped",
   "jobDetail.noBooks": "No books",
+  "jobDetail.downloadDetection": "Download detection",
+  "jobDetail.downloadDetectionDesc": "Scanning series with missing volumes via Prowlarr",
+  "jobDetail.downloadDetectionReport": "Detection report",
+  "jobDetail.downloadFound": "Available",
+  "jobDetail.downloadNotFound": "Not found",
+  "jobDetail.downloadNoMissing": "Complete",
+  "jobDetail.downloadNoMetadata": "No metadata",
+  "jobDetail.downloadAvailableReleases": "Available releases",
+  "jobDetail.downloadAvailableReleasesDesc": "{{count}} series with at least one release found",
+  "jobDetail.downloadMissingCount": "{{count}} missing",
 
   // Job types
   "jobType.rebuild": "Indexing",
@@ -413,6 +427,9 @@ const en: Record<TranslationKey, string> = {
   "jobType.reading_status_push": "Reading status push",
   "jobType.reading_status_pushLabel": "Reading status push",
   "jobType.reading_status_pushDesc": "Differentially pushes changed reading statuses (or new series) to AniList.",
+  "jobType.download_detection": "Download detection",
+  "jobType.download_detectionLabel": "Available downloads detection",
+  "jobType.download_detectionDesc": "Scans series with missing volumes and queries Prowlarr to find available releases. Downloads nothing — produces a report of opportunities only.",
 
   // Status badges
   "statusBadge.extracting_pages": "Extracting pages",
@@ -647,6 +664,12 @@ const en: Record<TranslationKey, string> = {
   "settings.eventBatchFailed": "Batch failed",
   "settings.eventRefreshCompleted": "Refresh completed",
   "settings.eventRefreshFailed": "Refresh failed",
+  "settings.eventCategoryReadingStatus": "Reading status",
+  "settings.eventMatchCompleted": "Sync completed",
+  "settings.eventMatchFailed": "Sync failed",
+  "settings.eventPushCompleted": "Push completed",
+  "settings.eventPushFailed": "Push failed",
+  "settings.eventCategoryDownloadDetection": "Download detection",
   "settings.telegramHelp": "How to get the required information?",
   "settings.telegramHelpBot": "Open Telegram, search for <b>@BotFather</b>, send <code>/newbot</code> and follow the instructions. Copy the token it gives you.",
   "settings.telegramHelpChat": "Send a message to your bot, then open <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> in your browser. The <b>chat id</b> is in <code>message.chat.id</code>.",

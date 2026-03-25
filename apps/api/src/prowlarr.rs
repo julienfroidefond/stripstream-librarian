@@ -85,6 +85,20 @@ struct ProwlarrConfig {
     categories: Option<Vec<i32>>,
 }
 
+pub(crate) async fn load_prowlarr_config_internal(
+    pool: &sqlx::PgPool,
+) -> Result<(String, String, Vec<i32>), ApiError> {
+    load_prowlarr_config(pool).await
+}
+
+pub(crate) async fn check_prowlarr_configured(pool: &sqlx::PgPool) -> Result<(), ApiError> {
+    load_prowlarr_config(pool).await.map(|_| ())
+}
+
+pub(crate) fn extract_volumes_from_title_pub(title: &str) -> Vec<i32> {
+    extract_volumes_from_title(title)
+}
+
 async fn load_prowlarr_config(
     pool: &sqlx::PgPool,
 ) -> Result<(String, String, Vec<i32>), ApiError> {

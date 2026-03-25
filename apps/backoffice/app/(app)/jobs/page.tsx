@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startReadingStatusMatch, startReadingStatusPush, IndexJobDto, LibraryDto } from "@/lib/api";
+import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startReadingStatusMatch, startReadingStatusPush, startDownloadDetection, apiFetch, IndexJobDto, LibraryDto } from "@/lib/api";
 import { JobsList } from "@/app/components/JobsList";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, FormField, FormSelect } from "@/app/components/ui";
 import { getServerTranslations } from "@/lib/i18n/server";
@@ -10,10 +10,12 @@ export const dynamic = "force-dynamic";
 export default async function JobsPage({ searchParams }: { searchParams: Promise<{ highlight?: string }> }) {
   const { highlight } = await searchParams;
   const { t } = await getServerTranslations();
-  const [jobs, libraries] = await Promise.all([
+  const [jobs, libraries, prowlarrSettings] = await Promise.all([
     listJobs().catch(() => [] as IndexJobDto[]),
-    fetchLibraries().catch(() => [] as LibraryDto[])
+    fetchLibraries().catch(() => [] as LibraryDto[]),
+    apiFetch<{ url?: string }>("/settings/prowlarr").catch(() => null),
   ]);
+  const prowlarrConfigured = !!prowlarrSettings?.url;
 
   const libraryMap = new Map(libraries.map(l => [l.id, l.name]));
   const readingStatusLibraries = libraries.filter(l => l.reading_status_provider);
@@ -172,6 +174,35 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
           if (result.status !== "already_running") lastId = result.id;
         } catch {
           // Skip libraries with errors
+        }
+      }
+      revalidatePath("/jobs");
+      redirect(lastId ? `/jobs?highlight=${lastId}` : "/jobs");
+    }
+  }
+
+  async function triggerDownloadDetection(formData: FormData) {
+    "use server";
+    const libraryId = formData.get("library_id") as string;
+    if (libraryId) {
+      let result;
+      try {
+        result = await startDownloadDetection(libraryId);
+      } catch {
+        return;
+      }
+      revalidatePath("/jobs");
+      redirect(`/jobs?highlight=${result.id}`);
+    } else {
+      // All libraries
+      const allLibraries = await fetchLibraries().catch(() => [] as LibraryDto[]);
+      let lastId: string | undefined;
+      for (const lib of allLibraries) {
+        try {
+          const result = await startDownloadDetection(lib.id);
+          if (result.status !== "already_running") lastId = result.id;
+        } catch {
+          // Skip libraries with errors (e.g. Prowlarr not configured)
         }
       }
       revalidatePath("/jobs");
@@ -348,6 +379,28 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                   </div>
                 </div>
               )}
+
+              {/* Download group — only shown if Prowlarr is configured */}
+              {prowlarrConfigured && <div className="space-y-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  {t("jobs.groupProwlarr")}
+                </div>
+                <div className="space-y-2">
+                  <button type="submit" formAction={triggerDownloadDetection}
+                    className="w-full text-left rounded-lg border border-input bg-background p-3 hover:bg-accent/50 transition-colors group cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                      </svg>
+                      <span className="font-medium text-sm text-foreground">{t("jobs.downloadDetection")}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 ml-6">{t("jobs.downloadDetectionShort")}</p>
+                  </button>
+                </div>
+              </div>}
 
             </div>
           </form>

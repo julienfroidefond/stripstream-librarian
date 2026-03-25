@@ -24,6 +24,7 @@ interface JobRowProps {
       refreshed?: number;
       linked?: number;
       pushed?: number;
+      found?: number;
     } | null;
     progress_percent: number | null;
     processed_files: number | null;
@@ -69,6 +70,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
   const isMetadataRefresh = job.type === "metadata_refresh";
   const isReadingStatusMatch = job.type === "reading_status_match";
   const isReadingStatusPush = job.type === "reading_status_push";
+  const isDownloadDetection = job.type === "download_detection";
 
   // Thumbnails progress (Phase 2: extracting_pages + generating_thumbnails)
   const thumbInProgress = hasThumbnailPhase && (job.status === "running" || isPhase2);
@@ -210,6 +212,23 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
                     </span>
                   </Tooltip>
                 )}
+                {/* Download detection: total series + found count */}
+                {isDownloadDetection && job.total_files != null && job.total_files > 0 && (
+                  <Tooltip label={t("jobRow.seriesTotal", { count: job.total_files })}>
+                    <span className="inline-flex items-center gap-1 text-info">
+                      <Icon name="series" size="sm" />
+                      {job.total_files}
+                    </span>
+                  </Tooltip>
+                )}
+                {isDownloadDetection && job.stats_json?.found != null && job.stats_json.found > 0 && (
+                  <Tooltip label={t("jobRow.downloadFound", { count: job.stats_json.found })}>
+                    <span className="inline-flex items-center gap-1 text-success">
+                      <Icon name="download" size="sm" />
+                      {job.stats_json.found}
+                    </span>
+                  </Tooltip>
+                )}
                 {/* Errors */}
                 {errors > 0 && (
                   <Tooltip label={t("jobRow.errors", { count: errors })}>
@@ -229,7 +248,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
                   </Tooltip>
                 )}
                 {/* Nothing to show */}
-                {indexed === 0 && removed === 0 && errors === 0 && scanned === 0 && !hasThumbnailPhase && !isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && (
+                {indexed === 0 && removed === 0 && errors === 0 && scanned === 0 && !hasThumbnailPhase && !isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && !isDownloadDetection && (
                   <span className="text-sm text-muted-foreground">—</span>
                 )}
               </div>
