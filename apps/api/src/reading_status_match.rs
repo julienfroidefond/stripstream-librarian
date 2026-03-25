@@ -369,6 +369,11 @@ pub(crate) async fn process_reading_status_match(
                 insert_result(pool, job_id, library_id, series_name, "ambiguous", None, None, None, None).await;
             }
             Err(e) => {
+                if e.contains("429") || e.contains("Too Many Requests") {
+                    return Err(format!(
+                        "AniList rate limit exceeded (429) — job stopped after {processed}/{total} series"
+                    ));
+                }
                 warn!("[READING_STATUS_MATCH] series '{series_name}': {e}");
                 insert_result(pool, job_id, library_id, series_name, "error", None, None, None, Some(&e)).await;
             }
