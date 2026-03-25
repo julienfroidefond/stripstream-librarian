@@ -17,6 +17,8 @@ export type LibraryDto = {
   reading_status_provider: string | null;
   reading_status_push_mode: string;
   next_reading_status_push_at: string | null;
+  download_detection_mode: string;
+  next_download_detection_at: string | null;
 };
 
 export type IndexJobDto = {
@@ -301,12 +303,14 @@ export async function updateLibraryMonitoring(
   scanMode: string,
   watcherEnabled?: boolean,
   metadataRefreshMode?: string,
+  downloadDetectionMode?: string,
 ) {
   const body: {
     monitor_enabled: boolean;
     scan_mode: string;
     watcher_enabled?: boolean;
     metadata_refresh_mode?: string;
+    download_detection_mode?: string;
   } = {
     monitor_enabled: monitorEnabled,
     scan_mode: scanMode,
@@ -316,6 +320,9 @@ export async function updateLibraryMonitoring(
   }
   if (metadataRefreshMode !== undefined) {
     body.metadata_refresh_mode = metadataRefreshMode;
+  }
+  if (downloadDetectionMode !== undefined) {
+    body.download_detection_mode = downloadDetectionMode;
   }
   return apiFetch<LibraryDto>(`/libraries/${libraryId}/monitoring`, {
     method: "PATCH",

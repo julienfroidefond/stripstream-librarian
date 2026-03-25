@@ -119,34 +119,22 @@ pub async fn start_detection(
             .flatten();
 
     tokio::spawn(async move {
-        match process_download_detection(&pool, job_id, library_id).await {
-            Ok((total_series, found)) => {
-                notifications::notify(
-                    pool,
-                    notifications::NotificationEvent::DownloadDetectionCompleted {
-                        library_name,
-                        total_series,
-                        found,
-                    },
-                );
-            }
-            Err(e) => {
-                warn!("[DOWNLOAD_DETECTION] job {job_id} failed: {e}");
-                let _ = sqlx::query(
-                    "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
-                )
-                .bind(job_id)
-                .bind(e.to_string())
-                .execute(&pool)
-                .await;
-                notifications::notify(
-                    pool,
-                    notifications::NotificationEvent::DownloadDetectionFailed {
-                        library_name,
-                        error: e.to_string(),
-                    },
-                );
-            }
+        if let Err(e) = process_download_detection(&pool, job_id, library_id).await {
+            warn!("[DOWNLOAD_DETECTION] job {job_id} failed: {e}");
+            let _ = sqlx::query(
+                "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
+            )
+            .bind(job_id)
+            .bind(e.to_string())
+            .execute(&pool)
+            .await;
+            notifications::notify(
+                pool,
+                notifications::NotificationEvent::DownloadDetectionFailed {
+                    library_name,
+                    error: e.to_string(),
+                },
+            );
         }
     });
 
@@ -498,6 +486,22 @@ pub(crate) async fn process_download_detection(
 
     info!(
         "[DOWNLOAD_DETECTION] job={job_id} completed: {total} series, found={count_found}, not_found={count_not_found}, no_missing={count_no_missing}, no_metadata={count_no_metadata}, errors={count_errors}"
+    );
+
+    let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+        .bind(library_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+
+    notifications::notify(
+        pool.clone(),
+        notifications::NotificationEvent::DownloadDetectionCompleted {
+            library_name,
+            total_series: total,
+            found: count_found,
+        },
     );
 
     Ok((total, count_found))

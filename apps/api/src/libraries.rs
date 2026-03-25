@@ -34,6 +34,9 @@ pub struct LibraryResponse {
     pub reading_status_push_mode: String,
     #[schema(value_type = Option<String>)]
     pub next_reading_status_push_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub download_detection_mode: String,
+    #[schema(value_type = Option<String>)]
+    pub next_download_detection_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -57,7 +60,7 @@ pub struct CreateLibraryRequest {
 )]
 pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<LibraryResponse>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at, l.watcher_enabled, l.metadata_provider, l.fallback_metadata_provider, l.metadata_refresh_mode, l.next_metadata_refresh_at, l.reading_status_provider, l.reading_status_push_mode, l.next_reading_status_push_at,
+        "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at, l.watcher_enabled, l.metadata_provider, l.fallback_metadata_provider, l.metadata_refresh_mode, l.next_metadata_refresh_at, l.reading_status_provider, l.reading_status_push_mode, l.next_reading_status_push_at, l.download_detection_mode, l.next_download_detection_at,
                 (SELECT COUNT(*) FROM books b WHERE b.library_id = l.id) as book_count,
                 (SELECT COUNT(DISTINCT COALESCE(NULLIF(b.series, ''), 'unclassified')) FROM books b WHERE b.library_id = l.id) as series_count,
                 COALESCE((
@@ -99,6 +102,8 @@ pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<Li
             reading_status_provider: row.get("reading_status_provider"),
             reading_status_push_mode: row.get("reading_status_push_mode"),
             next_reading_status_push_at: row.get("next_reading_status_push_at"),
+            download_detection_mode: row.get("download_detection_mode"),
+            next_download_detection_at: row.get("next_download_detection_at"),
         })
         .collect();
 
@@ -159,6 +164,8 @@ pub async fn create_library(
         reading_status_provider: None,
         reading_status_push_mode: "manual".to_string(),
         next_reading_status_push_at: None,
+        download_detection_mode: "manual".to_string(),
+        next_download_detection_at: None,
     }))
 }
 
@@ -281,6 +288,8 @@ pub struct UpdateMonitoringRequest {
     pub watcher_enabled: Option<bool>,
     #[schema(value_type = Option<String>, example = "daily")]
     pub metadata_refresh_mode: Option<String>, // 'manual', 'hourly', 'daily', 'weekly'
+    #[schema(value_type = Option<String>, example = "daily")]
+    pub download_detection_mode: Option<String>, // 'manual', 'hourly', 'daily', 'weekly'
 }
 
 /// Update monitoring settings for a library
@@ -317,6 +326,12 @@ pub async fn update_monitoring(
         return Err(ApiError::bad_request("metadata_refresh_mode must be one of: manual, hourly, daily, weekly"));
     }
 
+    // Validate download_detection_mode
+    let download_detection_mode = input.download_detection_mode.as_deref().unwrap_or("manual");
+    if !valid_modes.contains(&download_detection_mode) {
+        return Err(ApiError::bad_request("download_detection_mode must be one of: manual, hourly, daily, weekly"));
+    }
+
     // Calculate next_scan_at if monitoring is enabled
     let next_scan_at = if input.monitor_enabled {
         let interval_minutes = match input.scan_mode.as_str() {
@@ -343,10 +358,23 @@ pub async fn update_monitoring(
         None
     };
 
+    // Calculate next_download_detection_at
+    let next_download_detection_at = if download_detection_mode != "manual" {
+        let interval_minutes = match download_detection_mode {
+            "hourly" => 60,
+            "daily" => 1440,
+            "weekly" => 10080,
+            _ => 1440,
+        };
+        Some(chrono::Utc::now() + chrono::Duration::minutes(interval_minutes))
+    } else {
+        None
+    };
+
     let watcher_enabled = input.watcher_enabled.unwrap_or(false);
 
     let result = sqlx::query(
-        "UPDATE libraries SET monitor_enabled = $2, scan_mode = $3, next_scan_at = $4, watcher_enabled = $5, metadata_refresh_mode = $6, next_metadata_refresh_at = $7 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at, reading_status_provider, reading_status_push_mode, next_reading_status_push_at"
+        "UPDATE libraries SET monitor_enabled = $2, scan_mode = $3, next_scan_at = $4, watcher_enabled = $5, metadata_refresh_mode = $6, next_metadata_refresh_at = $7, download_detection_mode = $8, next_download_detection_at = $9 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at, reading_status_provider, reading_status_push_mode, next_reading_status_push_at, download_detection_mode, next_download_detection_at"
     )
     .bind(library_id)
     .bind(input.monitor_enabled)
@@ -355,6 +383,8 @@ pub async fn update_monitoring(
     .bind(watcher_enabled)
     .bind(metadata_refresh_mode)
     .bind(next_metadata_refresh_at)
+    .bind(download_detection_mode)
+    .bind(next_download_detection_at)
     .fetch_optional(&state.pool)
     .await?;
 
@@ -402,6 +432,8 @@ pub async fn update_monitoring(
         reading_status_provider: row.get("reading_status_provider"),
         reading_status_push_mode: row.get("reading_status_push_mode"),
         next_reading_status_push_at: row.get("next_reading_status_push_at"),
+        download_detection_mode: row.get("download_detection_mode"),
+        next_download_detection_at: row.get("next_download_detection_at"),
     }))
 }
 
@@ -437,7 +469,7 @@ pub async fn update_metadata_provider(
     let fallback = input.fallback_metadata_provider.as_deref().filter(|s| !s.is_empty());
 
     let result = sqlx::query(
-        "UPDATE libraries SET metadata_provider = $2, fallback_metadata_provider = $3 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at, reading_status_provider, reading_status_push_mode, next_reading_status_push_at"
+        "UPDATE libraries SET metadata_provider = $2, fallback_metadata_provider = $3 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at, reading_status_provider, reading_status_push_mode, next_reading_status_push_at, download_detection_mode, next_download_detection_at"
     )
     .bind(library_id)
     .bind(provider)
@@ -489,6 +521,8 @@ pub async fn update_metadata_provider(
         reading_status_provider: row.get("reading_status_provider"),
         reading_status_push_mode: row.get("reading_status_push_mode"),
         next_reading_status_push_at: row.get("next_reading_status_push_at"),
+        download_detection_mode: row.get("download_detection_mode"),
+        next_download_detection_at: row.get("next_download_detection_at"),
     }))
 }
 

@@ -8,8 +8,8 @@ export async function PATCH(
 ) {
   const { id } = await params;
   try {
-    const { monitor_enabled, scan_mode, watcher_enabled, metadata_refresh_mode } = await request.json();
-    const data = await updateLibraryMonitoring(id, monitor_enabled, scan_mode, watcher_enabled, metadata_refresh_mode);
+    const { monitor_enabled, scan_mode, watcher_enabled, metadata_refresh_mode, download_detection_mode } = await request.json();
+    const data = await updateLibraryMonitoring(id, monitor_enabled, scan_mode, watcher_enabled, metadata_refresh_mode, download_detection_mode);
     revalidatePath("/libraries");
     return NextResponse.json(data);
   } catch (error) {

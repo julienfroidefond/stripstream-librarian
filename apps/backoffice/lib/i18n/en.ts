@@ -202,6 +202,9 @@ const en: Record<TranslationKey, string> = {
   "libraryActions.readingStatusProviderDesc": "Syncs reading states (read / reading / planned) with an external service",
   "libraryActions.readingStatusPushSchedule": "Auto-push schedule",
   "libraryActions.readingStatusPushScheduleDesc": "Automatically push reading progress to the provider on a schedule",
+  "libraryActions.sectionProwlarr": "Download detection",
+  "libraryActions.downloadDetectionSchedule": "Auto-detection schedule",
+  "libraryActions.downloadDetectionScheduleDesc": "Automatically run missing volume detection via Prowlarr on a schedule",
 
   // Reading status modal
   "readingStatus.button": "Reading status",

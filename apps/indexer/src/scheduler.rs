@@ -128,6 +128,75 @@ pub async fn check_and_schedule_reading_status_push(pool: &PgPool) -> Result<()>
     Ok(())
 }
 
+pub async fn check_and_schedule_download_detection(pool: &PgPool) -> Result<()> {
+    // Only schedule if Prowlarr is configured
+    let prowlarr_configured: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM settings WHERE key = 'prowlarr' AND value->>'base_url' IS NOT NULL AND value->>'base_url' != '')"
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if !prowlarr_configured {
+        return Ok(());
+    }
+
+    let libraries = sqlx::query(
+        r#"
+        SELECT id, download_detection_mode
+        FROM libraries
+        WHERE download_detection_mode != 'manual'
+          AND (
+            next_download_detection_at IS NULL
+            OR next_download_detection_at <= NOW()
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM index_jobs
+            WHERE library_id = libraries.id
+              AND type = 'download_detection'
+              AND status IN ('pending', 'running')
+          )
+        "#
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for row in libraries {
+        let library_id: Uuid = row.get("id");
+        let detection_mode: String = row.get("download_detection_mode");
+
+        info!("[SCHEDULER] Auto-running download detection for library {} (mode: {})", library_id, detection_mode);
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'download_detection', 'pending')"
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(pool)
+        .await?;
+
+        let interval_minutes: i64 = match detection_mode.as_str() {
+            "hourly" => 60,
+            "daily" => 1440,
+            "weekly" => 10080,
+            _ => 1440,
+        };
+
+        sqlx::query(
+            "UPDATE libraries SET last_download_detection_at = NOW(), next_download_detection_at = NOW() + INTERVAL '1 minute' * $2 WHERE id = $1"
+        )
+        .bind(library_id)
+        .bind(interval_minutes)
+        .execute(pool)
+        .await?;
+
+        info!("[SCHEDULER] Created download_detection job {} for library {}", job_id, library_id);
+    }
+
+    Ok(())
+}
+
 pub async fn check_and_schedule_metadata_refreshes(pool: &PgPool) -> Result<()> {
     let libraries = sqlx::query(
         r#"

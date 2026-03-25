@@ -16,6 +16,7 @@ interface LibraryActionsProps {
   metadataRefreshMode: string;
   readingStatusProvider: string | null;
   readingStatusPushMode: string;
+  downloadDetectionMode: string;
   onUpdate?: () => void;
 }
 
@@ -29,6 +30,7 @@ export function LibraryActions({
   metadataRefreshMode,
   readingStatusProvider,
   readingStatusPushMode,
+  downloadDetectionMode,
 }: LibraryActionsProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
@@ -46,6 +48,7 @@ export function LibraryActions({
       const newMetadataRefreshMode = formData.get("metadata_refresh_mode") as string;
       const newReadingStatusProvider = (formData.get("reading_status_provider") as string) || null;
       const newReadingStatusPushMode = (formData.get("reading_status_push_mode") as string) || "manual";
+      const newDownloadDetectionMode = (formData.get("download_detection_mode") as string) || "manual";
 
       try {
         const [response] = await Promise.all([
@@ -57,6 +60,7 @@ export function LibraryActions({
               scan_mode: scanMode,
               watcher_enabled: watcherEnabled,
               metadata_refresh_mode: newMetadataRefreshMode,
+              download_detection_mode: newDownloadDetectionMode,
             }),
           }),
           fetch(`/api/libraries/${libraryId}/metadata-provider`, {
@@ -310,6 +314,34 @@ export function LibraryActions({
                         </select>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1.5">{t("libraryActions.readingStatusPushScheduleDesc")}</p>
+                    </div>
+                  </div>
+
+                  <hr className="border-border/40" />
+
+                  {/* Section: Prowlarr */}
+                  <div className="space-y-5">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground uppercase tracking-wide">
+                      <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      {t("libraryActions.sectionProwlarr")}
+                    </h3>
+                    <div>
+                      <div className="flex items-center justify-between gap-4">
+                        <label className="text-sm font-medium text-foreground">{t("libraryActions.downloadDetectionSchedule")}</label>
+                        <select
+                          name="download_detection_mode"
+                          defaultValue={downloadDetectionMode}
+                          className="text-sm border border-border rounded-lg px-3 py-1.5 bg-background min-w-[160px] shrink-0"
+                        >
+                          <option value="manual">{t("monitoring.manual")}</option>
+                          <option value="hourly">{t("monitoring.hourly")}</option>
+                          <option value="daily">{t("monitoring.daily")}</option>
+                          <option value="weekly">{t("monitoring.weekly")}</option>
+                        </select>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1.5">{t("libraryActions.downloadDetectionScheduleDesc")}</p>
                     </div>
                   </div>
 

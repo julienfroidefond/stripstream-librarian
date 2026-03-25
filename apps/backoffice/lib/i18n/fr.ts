@@ -200,6 +200,9 @@ const fr = {
   "libraryActions.readingStatusProviderDesc": "Synchronise les états de lecture (lu / en cours / planifié) avec un service externe",
   "libraryActions.readingStatusPushSchedule": "Synchronisation automatique",
   "libraryActions.readingStatusPushScheduleDesc": "Pousse automatiquement la progression de lecture vers le provider selon un calendrier",
+  "libraryActions.sectionProwlarr": "Détection de téléchargements",
+  "libraryActions.downloadDetectionSchedule": "Détection automatique",
+  "libraryActions.downloadDetectionScheduleDesc": "Lance automatiquement la détection de volumes manquants via Prowlarr selon un calendrier",
 
   // Reading status modal
   "readingStatus.button": "État de lecture",
