@@ -198,6 +198,8 @@ const fr = {
   "libraryActions.sectionReadingStatus": "État de lecture",
   "libraryActions.readingStatusProvider": "Provider d'état de lecture",
   "libraryActions.readingStatusProviderDesc": "Synchronise les états de lecture (lu / en cours / planifié) avec un service externe",
+  "libraryActions.readingStatusPushSchedule": "Synchronisation automatique",
+  "libraryActions.readingStatusPushScheduleDesc": "Pousse automatiquement la progression de lecture vers le provider selon un calendrier",
 
   // Reading status modal
   "readingStatus.button": "État de lecture",

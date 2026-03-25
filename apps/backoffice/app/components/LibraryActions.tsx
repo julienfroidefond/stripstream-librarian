@@ -15,6 +15,7 @@ interface LibraryActionsProps {
   fallbackMetadataProvider: string | null;
   metadataRefreshMode: string;
   readingStatusProvider: string | null;
+  readingStatusPushMode: string;
   onUpdate?: () => void;
 }
 
@@ -27,6 +28,7 @@ export function LibraryActions({
   fallbackMetadataProvider,
   metadataRefreshMode,
   readingStatusProvider,
+  readingStatusPushMode,
 }: LibraryActionsProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
@@ -43,6 +45,7 @@ export function LibraryActions({
       const newFallbackProvider = (formData.get("fallback_metadata_provider") as string) || null;
       const newMetadataRefreshMode = formData.get("metadata_refresh_mode") as string;
       const newReadingStatusProvider = (formData.get("reading_status_provider") as string) || null;
+      const newReadingStatusPushMode = (formData.get("reading_status_push_mode") as string) || "manual";
 
       try {
         const [response] = await Promise.all([
@@ -64,7 +67,10 @@ export function LibraryActions({
           fetch(`/api/libraries/${libraryId}/reading-status-provider`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reading_status_provider: newReadingStatusProvider }),
+            body: JSON.stringify({
+              reading_status_provider: newReadingStatusProvider,
+              reading_status_push_mode: newReadingStatusPushMode,
+            }),
           }),
         ]);
 
@@ -288,6 +294,22 @@ export function LibraryActions({
                         </select>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1.5">{t("libraryActions.readingStatusProviderDesc")}</p>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between gap-4">
+                        <label className="text-sm font-medium text-foreground">{t("libraryActions.readingStatusPushSchedule")}</label>
+                        <select
+                          name="reading_status_push_mode"
+                          defaultValue={readingStatusPushMode}
+                          className="text-sm border border-border rounded-lg px-3 py-1.5 bg-background min-w-[160px] shrink-0"
+                        >
+                          <option value="manual">{t("monitoring.manual")}</option>
+                          <option value="hourly">{t("monitoring.hourly")}</option>
+                          <option value="daily">{t("monitoring.daily")}</option>
+                          <option value="weekly">{t("monitoring.weekly")}</option>
+                        </select>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1.5">{t("libraryActions.readingStatusPushScheduleDesc")}</p>
                     </div>
                   </div>
 

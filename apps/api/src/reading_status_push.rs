@@ -296,7 +296,7 @@ struct SeriesInfo {
     anilist_url: Option<String>,
 }
 
-async fn process_reading_status_push(
+pub async fn process_reading_status_push(
     pool: &PgPool,
     job_id: Uuid,
     library_id: Uuid,

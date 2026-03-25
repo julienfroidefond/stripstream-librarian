@@ -4,7 +4,7 @@ use sqlx::{PgPool, Row};
 use tracing::{error, info, trace};
 use uuid::Uuid;
 
-use crate::{metadata_batch, metadata_refresh};
+use crate::{metadata_batch, metadata_refresh, reading_status_push};
 
 /// Poll for pending API-only jobs (`metadata_batch`, `metadata_refresh`) and process them.
 /// This mirrors the indexer's worker loop but for job types handled by the API.
@@ -43,6 +43,14 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                             )
                             .await
                         }
+                        "reading_status_push" => {
+                            reading_status_push::process_reading_status_push(
+                                &pool_clone,
+                                job_id,
+                                library_id,
+                            )
+                            .await
+                        }
                         _ => Err(format!("Unknown API job type: {job_type}")),
                     };
 
@@ -75,6 +83,15 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                                     },
                                 );
                             }
+                            "reading_status_push" => {
+                                notifications::notify(
+                                    pool_clone,
+                                    notifications::NotificationEvent::ReadingStatusPushFailed {
+                                        library_name,
+                                        error: e.to_string(),
+                                    },
+                                );
+                            }
                             _ => {}
                         }
                     }
@@ -92,7 +109,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
     }
 }
 
-const API_JOB_TYPES: &[&str] = &["metadata_batch", "metadata_refresh"];
+const API_JOB_TYPES: &[&str] = &["metadata_batch", "metadata_refresh", "reading_status_push"];
 
 async fn claim_next_api_job(pool: &PgPool) -> Result<Option<(Uuid, String, Uuid)>, sqlx::Error> {
     let mut tx = pool.begin().await?;

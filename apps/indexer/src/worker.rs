@@ -32,6 +32,9 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
             if let Err(err) = scheduler::check_and_schedule_metadata_refreshes(&scheduler_state.pool).await {
                 error!("[SCHEDULER] Metadata refresh error: {}", err);
             }
+            if let Err(err) = scheduler::check_and_schedule_reading_status_push(&scheduler_state.pool).await {
+                error!("[SCHEDULER] Reading status push error: {}", err);
+            }
             tokio::time::sleep(scheduler_wait).await;
         }
     });

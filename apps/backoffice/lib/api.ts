@@ -15,6 +15,8 @@ export type LibraryDto = {
   series_count: number;
   thumbnail_book_ids: string[];
   reading_status_provider: string | null;
+  reading_status_push_mode: string;
+  next_reading_status_push_at: string | null;
 };
 
 export type IndexJobDto = {

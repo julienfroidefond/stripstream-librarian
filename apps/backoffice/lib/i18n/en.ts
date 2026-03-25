@@ -200,6 +200,8 @@ const en: Record<TranslationKey, string> = {
   "libraryActions.sectionReadingStatus": "Reading Status",
   "libraryActions.readingStatusProvider": "Reading Status Provider",
   "libraryActions.readingStatusProviderDesc": "Syncs reading states (read / reading / planned) with an external service",
+  "libraryActions.readingStatusPushSchedule": "Auto-push schedule",
+  "libraryActions.readingStatusPushScheduleDesc": "Automatically push reading progress to the provider on a schedule",
 
   // Reading status modal
   "readingStatus.button": "Reading status",
