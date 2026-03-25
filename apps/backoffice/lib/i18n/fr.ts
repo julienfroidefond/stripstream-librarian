@@ -706,6 +706,8 @@ const fr = {
   "pagination.show": "Afficher",
   "pagination.displaying": "Affichage de {{count}} éléments",
   "pagination.range": "{{start}}-{{end}} sur {{total}}",
+  "pagination.previous": "Précédent",
+  "pagination.next": "Suivant",
 
   // Book detail
   "bookDetail.libraries": "Bibliothèques",

@@ -708,6 +708,8 @@ const en: Record<TranslationKey, string> = {
   "pagination.show": "Show",
   "pagination.displaying": "Displaying {{count}} items",
   "pagination.range": "{{start}}-{{end}} of {{total}}",
+  "pagination.previous": "Previous",
+  "pagination.next": "Next",
 
   // Book detail
   "bookDetail.libraries": "Libraries",

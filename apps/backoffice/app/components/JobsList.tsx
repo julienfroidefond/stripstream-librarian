@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "../../lib/i18n/context";
 import { JobRow } from "./JobRow";
 
+const PAGE_SIZE = 25;
+
 interface Job {
   id: string;
   library_id: string | null;
@@ -45,6 +47,11 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
   const { t, locale } = useTranslation();
   const [jobs, setJobs] = useState(initialJobs);
 
+  const initialPage = highlightJobId
+    ? Math.ceil((initialJobs.findIndex(j => j.id === highlightJobId) + 1) / PAGE_SIZE) || 1
+    : 1;
+  const [currentPage, setCurrentPage] = useState(initialPage);
+
   const formatDate = (dateStr: string): string => {
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) return dateStr;
@@ -58,10 +65,14 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
     });
   };
 
+  const totalPages = Math.ceil(jobs.length / PAGE_SIZE);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const visibleJobs = jobs.slice(pageStart, pageStart + PAGE_SIZE);
+
   // Refresh jobs list via SSE
   useEffect(() => {
     const eventSource = new EventSource("/api/jobs/stream");
-    
+
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -132,7 +143,7 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">
-            {jobs.map((job) => (
+            {visibleJobs.map((job) => (
               <JobRow
                 key={job.id}
                 job={job}
@@ -147,6 +158,57 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
           </tbody>
         </table>
       </div>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-4 py-3 border-t border-border/60">
+          <span className="text-xs text-muted-foreground">
+            {t("pagination.range", {
+              start: pageStart + 1,
+              end: Math.min(pageStart + PAGE_SIZE, jobs.length),
+              total: jobs.length,
+            })}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-2.5 py-1.5 text-xs rounded-md border border-input bg-background hover:bg-accent/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {t("pagination.previous")}
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+              .reduce<(number | "…")[]>((acc, p, i, arr) => {
+                if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push("…");
+                acc.push(p);
+                return acc;
+              }, [])
+              .map((p, i) =>
+                p === "…" ? (
+                  <span key={`ellipsis-${i}`} className="px-1.5 text-xs text-muted-foreground">…</span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => setCurrentPage(p as number)}
+                    className={`min-w-[2rem] px-2.5 py-1.5 text-xs rounded-md border transition-colors ${
+                      currentPage === p
+                        ? "border-primary bg-primary text-white"
+                        : "border-input bg-background hover:bg-accent/50"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                )
+              )}
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-2.5 py-1.5 text-xs rounded-md border border-input bg-background hover:bg-accent/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {t("pagination.next")}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
