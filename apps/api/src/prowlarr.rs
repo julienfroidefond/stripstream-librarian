@@ -126,15 +126,56 @@ async fn load_prowlarr_config(
 // ─── Volume matching ─────────────────────────────────────────────────────────
 
 /// Extract volume numbers from a release title.
-/// Looks for patterns like: T01, Tome 01, Vol. 01, v01, #01,
-/// or standalone numbers that appear after common separators.
+///
+/// Handles individual volumes (T01, Tome 01, Vol. 01, v01, #01) and also
+/// **range packs** like `T01.T15`, `[T001.T104]`, `T01-T15`, `Tome 01 à Tome 15`
+/// — the range is expanded so every volume in [start..=end] is returned.
 fn extract_volumes_from_title(title: &str) -> Vec<i32> {
     let lower = title.to_lowercase();
+    let chars: Vec<char> = lower.chars().collect();
     let mut volumes = Vec::new();
 
-    // Patterns: T01, Tome 01, Tome01, Vol 01, Vol.01, v01, #01
+    // Pass 1 — range expansion: PREFIX NUMBER (SEP) PREFIX NUMBER
+    // Separator: '.' | '-' | 'à'
+    let mut i = 0;
+    while i < chars.len() {
+        if let Some((n1, after1)) = read_vol_prefix_number(&chars, i) {
+            let mut j = after1;
+            while j < chars.len() && chars[j] == ' ' {
+                j += 1;
+            }
+            let after_sep = if j < chars.len() && (chars[j] == '.' || chars[j] == '-') {
+                Some(j + 1)
+            } else if j < chars.len() && chars[j] == '\u{00e0}' {
+                // 'à' (U+00E0) — French "à" as in "Tome 01 à Tome 15"
+                Some(j + 1)
+            } else {
+                None
+            };
+
+            if let Some(sep_end) = after_sep {
+                let mut k = sep_end;
+                while k < chars.len() && chars[k] == ' ' {
+                    k += 1;
+                }
+                if let Some((n2, _)) = read_vol_prefix_number(&chars, k) {
+                    if n1 < n2 && n2 - n1 <= 500 {
+                        for v in n1..=n2 {
+                            if !volumes.contains(&v) {
+                                volumes.push(v);
+                            }
+                        }
+                        i = after1;
+                        continue;
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+
+    // Pass 2 — individual volumes not already captured by range expansion
     let prefixes = ["tome", "vol.", "vol ", "t", "v", "#"];
-    let chars: Vec<char> = lower.chars().collect();
     let len = chars.len();
 
     for prefix in &prefixes {
@@ -143,7 +184,7 @@ fn extract_volumes_from_title(title: &str) -> Vec<i32> {
             let abs_pos = start + pos;
             let after = abs_pos + prefix.len();
 
-            // For single-char prefixes (t, v, #), ensure it's at a word boundary
+            // For single-char prefixes (t, v), ensure it's at a word boundary
             if prefix.len() == 1 && *prefix != "#" {
                 if abs_pos > 0 && chars[abs_pos - 1].is_alphanumeric() {
                     start = after;
@@ -176,6 +217,64 @@ fn extract_volumes_from_title(title: &str) -> Vec<i32> {
     }
 
     volumes
+}
+
+/// Try to read a vol-prefixed number starting at `pos` in the `chars` slice.
+/// Returns `(number, position_after_last_digit)` or `None`.
+/// Prefixes recognised (longest first to avoid "t" matching "tome"):
+/// `tome`, `vol.`, `vol `, `t`, `v`, `#`.
+fn read_vol_prefix_number(chars: &[char], pos: usize) -> Option<(i32, usize)> {
+    if pos >= chars.len() {
+        return None;
+    }
+
+    // Build a look-ahead string from `pos` (at most 6 chars is enough for the longest prefix "tome ")
+    let suffix: String = chars[pos..].iter().collect();
+
+    const PREFIXES: &[(&str, bool)] = &[
+        ("tome", false),
+        ("vol.", false),
+        ("vol ", false),
+        ("t", true),
+        ("v", true),
+        ("#", false),
+    ];
+
+    let mut prefix_char_count = 0usize;
+    for (p, needs_boundary) in PREFIXES {
+        if suffix.starts_with(p) {
+            if *needs_boundary && pos > 0 && chars[pos - 1].is_alphanumeric() {
+                continue;
+            }
+            prefix_char_count = p.chars().count();
+            break;
+        }
+    }
+
+    if prefix_char_count == 0 {
+        return None;
+    }
+
+    let mut i = pos + prefix_char_count;
+    while i < chars.len() && chars[i] == ' ' {
+        i += 1;
+    }
+
+    let digit_start = i;
+    while i < chars.len() && chars[i].is_ascii_digit() {
+        i += 1;
+    }
+
+    if i == digit_start {
+        return None;
+    }
+
+    let n: i32 = chars[digit_start..i]
+        .iter()
+        .collect::<String>()
+        .parse()
+        .ok()?;
+    Some((n, i))
 }
 
 /// Match releases against missing volume numbers.
@@ -373,5 +472,67 @@ pub async fn test_prowlarr(
             message: format!("Connection failed: {e}"),
             indexer_count: None,
         })),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_volumes_from_title;
+
+    fn sorted(mut v: Vec<i32>) -> Vec<i32> {
+        v.sort_unstable();
+        v
+    }
+
+    #[test]
+    fn individual_volumes() {
+        assert_eq!(sorted(extract_volumes_from_title("One Piece T05")), vec![5]);
+        assert_eq!(sorted(extract_volumes_from_title("Naruto Tome 12")), vec![12]);
+        assert_eq!(sorted(extract_volumes_from_title("Vol.03")), vec![3]);
+        assert_eq!(sorted(extract_volumes_from_title("v07")), vec![7]);
+    }
+
+    #[test]
+    fn range_dot_separator() {
+        // T01.T15 → 1..=15
+        let v = sorted(extract_volumes_from_title("One Piece T01.T15"));
+        assert_eq!(v, (1..=15).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn range_dot_with_brackets() {
+        // [T001.T104] → 1..=104
+        let v = sorted(extract_volumes_from_title("Naruto [T001.T104]"));
+        assert_eq!(v.len(), 104);
+        assert_eq!(v[0], 1);
+        assert_eq!(v[103], 104);
+    }
+
+    #[test]
+    fn range_dash_separator() {
+        // T01-T15
+        let v = sorted(extract_volumes_from_title("Dragon Ball T01-T10"));
+        assert_eq!(v, (1..=10).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn range_french_a_grave() {
+        // Tome 01 à Tome 05
+        let v = sorted(extract_volumes_from_title("Astérix Tome 01 à Tome 05"));
+        assert_eq!(v, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn range_long_prefix() {
+        // Tome01.Tome15
+        let v = sorted(extract_volumes_from_title("Naruto Tome01.Tome15"));
+        assert_eq!(v, (1..=15).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn no_false_positive_version_string() {
+        // v2.0 should NOT be treated as a range
+        let v = extract_volumes_from_title("tool v2.0 release");
+        assert!(!v.contains(&0) || v.len() == 1); // only v2 at most
     }
 }
