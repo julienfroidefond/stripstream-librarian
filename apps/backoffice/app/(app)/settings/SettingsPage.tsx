@@ -1,11 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, FormRow, Icon } from "@/app/components/ui";
-import { ProviderIcon } from "@/app/components/ProviderIcon";
-import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, KomgaSyncResponse, KomgaSyncReportSummary, StatusMappingDto, UserDto, AnilistStatusDto, AnilistSyncReportDto, AnilistPullReportDto, AnilistSyncPreviewItemDto, AnilistSyncItemDto, AnilistPullItemDto } from "@/lib/api";
+import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, UserDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 import type { Locale } from "@/lib/i18n/types";
+import { MetadataProvidersCard } from "./components/MetadataProvidersCard";
+import { StatusMappingsCard } from "./components/StatusMappingsCard";
+import { ProwlarrCard } from "./components/ProwlarrCard";
+import { QBittorrentCard } from "./components/QBittorrentCard";
+import { TelegramCard } from "./components/TelegramCard";
+import { KomgaSyncCard } from "./components/KomgaSyncCard";
+import { AnilistTab } from "./components/AnilistTab";
 
 interface SettingsPageProps {
   initialSettings: Settings;
@@ -17,6 +24,9 @@ interface SettingsPageProps {
 
 export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab }: SettingsPageProps) {
   const { t, locale, setLocale } = useTranslation();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [settings, setSettings] = useState<Settings>({
     ...initialSettings,
     thumbnail: initialSettings.thumbnail || { enabled: true, width: 300, height: 400, quality: 80, format: "webp", directory: "/data/thumbnails" }
@@ -27,29 +37,23 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
   const [clearResult, setClearResult] = useState<ClearCacheResponse | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
-  // Komga sync state — URL and username are persisted in settings
-  const [komgaUrl, setKomgaUrl] = useState("");
-  const [komgaUsername, setKomgaUsername] = useState("");
-  const [komgaPassword, setKomgaPassword] = useState("");
-  const [komgaUserId, setKomgaUserId] = useState(users[0]?.id ?? "");
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<KomgaSyncResponse | null>(null);
-  const [syncError, setSyncError] = useState<string | null>(null);
-  const [showUnmatched, setShowUnmatched] = useState(false);
-  const [reports, setReports] = useState<KomgaSyncReportSummary[]>([]);
-  const [selectedReport, setSelectedReport] = useState<KomgaSyncResponse | null>(null);
-  const [showReportUnmatched, setShowReportUnmatched] = useState(false);
-  const [showMatchedBooks, setShowMatchedBooks] = useState(false);
-  const [showReportMatchedBooks, setShowReportMatchedBooks] = useState(false);
 
-  const syncNewlyMarkedSet = useMemo(
-    () => new Set(syncResult?.newly_marked_books ?? []),
-    [syncResult?.newly_marked_books],
+  const VALID_TABS = ["general", "downloadTools", "metadata", "readingStatus", "notifications"] as const;
+  type TabId = typeof VALID_TABS[number];
+
+  function resolveTab(tab: string | null | undefined): TabId {
+    if (tab && (VALID_TABS as readonly string[]).includes(tab)) return tab as TabId;
+    return "general";
+  }
+
+  const [activeTab, setActiveTab] = useState<TabId>(
+    resolveTab(searchParams.get("tab") ?? initialTab)
   );
-  const reportNewlyMarkedSet = useMemo(
-    () => new Set(selectedReport?.newly_marked_books ?? []),
-    [selectedReport?.newly_marked_books],
-  );
+
+  function handleTabChange(tab: TabId) {
+    setActiveTab(tab);
+    router.replace(`?tab=${tab}`, { scroll: false });
+  }
 
   async function handleUpdateSetting(key: string, value: unknown) {
     setIsSaving(true);
@@ -66,7 +70,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       } else {
         setSaveMessage(t("settings.savedError"));
       }
-    } catch (error) {
+    } catch {
       setSaveMessage(t("settings.saveError"));
     } finally {
       setIsSaving(false);
@@ -86,82 +90,18 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         const stats = await statsResponse.json();
         setCacheStats(stats);
       }
-    } catch (error) {
+    } catch {
       setClearResult({ success: false, message: t("settings.cacheClearError") });
     } finally {
       setIsClearing(false);
     }
   }
 
-  const fetchReports = useCallback(async () => {
-    try {
-      const resp = await fetch("/api/komga/reports");
-      if (resp.ok) setReports(await resp.json());
-    } catch { /* ignore */ }
-  }, []);
-
-  useEffect(() => {
-    fetchReports();
-    // Load saved Komga credentials (URL + username only)
-    fetch("/api/settings/komga").then(r => r.ok ? r.json() : null).then(data => {
-      if (data) {
-        if (data.url) setKomgaUrl(data.url);
-        if (data.username) setKomgaUsername(data.username);
-        if (data.user_id) setKomgaUserId(data.user_id);
-      }
-    }).catch(() => {});
-  }, [fetchReports]);
-
-  async function handleViewReport(id: string) {
-    setSelectedReport(null);
-    setShowReportUnmatched(false);
-    setShowReportMatchedBooks(false);
-    try {
-      const resp = await fetch(`/api/komga/reports/${id}`);
-      if (resp.ok) setSelectedReport(await resp.json());
-    } catch { /* ignore */ }
-  }
-
-  async function handleKomgaSync() {
-    setIsSyncing(true);
-    setSyncResult(null);
-    setSyncError(null);
-    setShowUnmatched(false);
-    setShowMatchedBooks(false);
-    try {
-      const response = await fetch("/api/komga/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: komgaUrl, username: komgaUsername, password: komgaPassword, user_id: komgaUserId }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        setSyncError(data.error || "Sync failed");
-      } else {
-        setSyncResult(data);
-        fetchReports();
-        // Persist URL and username (not password)
-        fetch("/api/settings/komga", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ value: { url: komgaUrl, username: komgaUsername, user_id: komgaUserId } }),
-        }).catch(() => {});
-      }
-    } catch {
-      setSyncError("Failed to connect to sync endpoint");
-    } finally {
-      setIsSyncing(false);
-    }
-  }
-
-  const [activeTab, setActiveTab] = useState<"general" | "integrations" | "anilist" | "notifications">(
-    initialTab === "anilist" || initialTab === "integrations" || initialTab === "notifications" ? initialTab : "general"
-  );
-
   const tabs = [
     { id: "general" as const, label: t("settings.general"), icon: "settings" as const },
-    { id: "integrations" as const, label: t("settings.integrations"), icon: "refresh" as const },
-    { id: "anilist" as const, label: t("settings.anilist"), icon: "link" as const },
+    { id: "downloadTools" as const, label: t("settings.downloadTools"), icon: "play" as const },
+    { id: "metadata" as const, label: t("settings.metadata"), icon: "tag" as const },
+    { id: "readingStatus" as const, label: t("settings.readingStatus"), icon: "eye" as const },
     { id: "notifications" as const, label: t("settings.notifications"), icon: "bell" as const },
   ];
 
@@ -179,7 +119,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => handleTabChange(tab.id)}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
               activeTab === tab.id
                 ? "border-primary text-primary"
@@ -250,10 +190,10 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               </FormField>
               <FormField className="flex-1">
                 <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.defaultQuality")}</label>
-                <FormInput 
-                  type="number" 
-                  min={1} 
-                  max={100} 
+                <FormInput
+                  type="number"
+                  min={1}
+                  max={100}
                   value={settings.image_processing.quality}
                   onChange={(e) => {
                     const quality = parseInt(e.target.value) || 85;
@@ -267,7 +207,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             <FormRow>
               <FormField className="flex-1">
                 <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.defaultFilter")}</label>
-                <FormSelect 
+                <FormSelect
                   value={settings.image_processing.filter}
                   onChange={(e) => {
                     const newSettings = { ...settings, image_processing: { ...settings.image_processing, filter: e.target.value } };
@@ -282,9 +222,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               </FormField>
               <FormField className="flex-1">
                 <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.maxWidth")}</label>
-                <FormInput 
-                  type="number" 
-                  min={100} 
+                <FormInput
+                  type="number"
+                  min={100}
                   max={2160}
                   value={settings.image_processing.max_width}
                   onChange={(e) => {
@@ -335,7 +275,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             <FormRow>
               <FormField className="flex-1">
                 <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.cacheDirectory")}</label>
-                <FormInput 
+                <FormInput
                   value={settings.cache.directory}
                   onChange={(e) => {
                     const newSettings = { ...settings, cache: { ...settings.cache, directory: e.target.value } };
@@ -346,7 +286,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               </FormField>
               <FormField className="w-32">
                 <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.maxSizeMb")}</label>
-                <FormInput 
+                <FormInput
                   type="number"
                   value={settings.cache.max_size_mb}
                   onChange={(e) => {
@@ -359,8 +299,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               </FormField>
             </FormRow>
 
-            <Button 
-              onClick={handleClearCache} 
+            <Button
+              onClick={handleClearCache}
               disabled={isClearing}
               variant="destructive"
             >
@@ -394,7 +334,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             <FormRow>
               <FormField className="flex-1">
                 <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.concurrentRenders")}</label>
-                <FormInput 
+                <FormInput
                   type="number"
                   min={1}
                   max={20}
@@ -412,7 +352,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               </FormField>
               <FormField className="flex-1">
                 <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.timeoutSeconds")}</label>
-                <FormInput 
+                <FormInput
                   type="number"
                   min={5}
                   max={60}
@@ -427,7 +367,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               </FormField>
               <FormField className="flex-1">
                 <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.rateLimit")}</label>
-                <FormInput 
+                <FormInput
                   type="number"
                   min={10}
                   max={1000}
@@ -462,7 +402,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             <FormRow>
               <FormField className="flex-1">
                 <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.enableThumbnails")}</label>
-                <FormSelect 
+                <FormSelect
                   value={settings.thumbnail.enabled ? "true" : "false"}
                   onChange={(e) => {
                     const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, enabled: e.target.value === "true" } };
@@ -476,7 +416,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               </FormField>
               <FormField className="flex-1">
                 <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.outputFormat")}</label>
-                <FormSelect 
+                <FormSelect
                   value={settings.thumbnail.format}
                   onChange={(e) => {
                     const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, format: e.target.value } };
@@ -499,9 +439,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             <FormRow>
               <FormField className="flex-1">
                 <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.width")}</label>
-                <FormInput 
-                  type="number" 
-                  min={50} 
+                <FormInput
+                  type="number"
+                  min={50}
                   max={600}
                   value={settings.thumbnail.width}
                   onChange={(e) => {
@@ -514,9 +454,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               </FormField>
               <FormField className="flex-1">
                 <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.height")}</label>
-                <FormInput 
-                  type="number" 
-                  min={50} 
+                <FormInput
+                  type="number"
+                  min={50}
                   max={800}
                   value={settings.thumbnail.height}
                   onChange={(e) => {
@@ -529,9 +469,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               </FormField>
               <FormField className="flex-1">
                 <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.quality")}</label>
-                <FormInput 
-                  type="number" 
-                  min={1} 
+                <FormInput
+                  type="number"
+                  min={1}
                   max={100}
                   value={settings.thumbnail.quality}
                   onChange={(e) => {
@@ -546,7 +486,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             <FormRow>
               <FormField className="flex-1">
                 <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.thumbnailDirectory")}</label>
-                <FormInput 
+                <FormInput
                   value={settings.thumbnail.directory}
                   onChange={(e) => {
                     const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, directory: e.target.value } };
@@ -581,271 +521,20 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
 
       </>)}
 
-      {activeTab === "integrations" && (<>
+      {activeTab === "metadata" && (<>
       {/* Metadata Providers */}
       <MetadataProvidersCard handleUpdateSetting={handleUpdateSetting} />
 
       {/* Status Mappings */}
       <StatusMappingsCard />
+      </>)}
 
+      {activeTab === "downloadTools" && (<>
       {/* Prowlarr */}
       <ProwlarrCard handleUpdateSetting={handleUpdateSetting} />
 
       {/* qBittorrent */}
       <QBittorrentCard handleUpdateSetting={handleUpdateSetting} />
-
-      {/* Komga Sync */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Icon name="refresh" size="md" />
-            {t("settings.komgaSync")}
-          </CardTitle>
-          <CardDescription>{t("settings.komgaDesc")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <FormRow>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.komgaUrl")}</label>
-                <FormInput
-                  type="url"
-                  placeholder="https://komga.example.com"
-                  value={komgaUrl}
-                  onChange={(e) => setKomgaUrl(e.target.value)}
-                />
-              </FormField>
-            </FormRow>
-            <FormRow>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.username")}</label>
-                <FormInput
-                  value={komgaUsername}
-                  onChange={(e) => setKomgaUsername(e.target.value)}
-                />
-              </FormField>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.password")}</label>
-                <FormInput
-                  type="password" autoComplete="off"
-                  value={komgaPassword}
-                  onChange={(e) => setKomgaPassword(e.target.value)}
-                />
-              </FormField>
-            </FormRow>
-
-            {users.length > 0 && (
-              <FormRow>
-                <FormField className="flex-1">
-                  <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("users.title")}</label>
-                  <FormSelect value={komgaUserId} onChange={(e) => setKomgaUserId(e.target.value)}>
-                    {users.map((u) => (
-                      <option key={u.id} value={u.id}>{u.username}</option>
-                    ))}
-                  </FormSelect>
-                </FormField>
-              </FormRow>
-            )}
-
-            <Button
-              onClick={handleKomgaSync}
-              disabled={isSyncing || !komgaUrl || !komgaUsername || !komgaPassword || !komgaUserId}
-            >
-              {isSyncing ? (
-                <>
-                  <Icon name="spinner" size="sm" className="animate-spin -ml-1 mr-2" />
-                  {t("settings.syncing")}
-                </>
-              ) : (
-                <>
-                  <Icon name="refresh" size="sm" className="mr-2" />
-                  {t("settings.syncReadBooks")}
-                </>
-              )}
-            </Button>
-
-            {syncError && (
-              <div className="p-3 rounded-lg bg-destructive/10 text-destructive">
-                {syncError}
-              </div>
-            )}
-
-            {syncResult && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
-                  <div>
-                    <p className="text-sm text-muted-foreground">{t("settings.komgaRead")}</p>
-                    <p className="text-2xl font-semibold">{syncResult.total_komga_read}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">{t("settings.matched")}</p>
-                    <p className="text-2xl font-semibold">{syncResult.matched}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">{t("settings.alreadyRead")}</p>
-                    <p className="text-2xl font-semibold">{syncResult.already_read}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">{t("settings.newlyMarked")}</p>
-                    <p className="text-2xl font-semibold text-success">{syncResult.newly_marked}</p>
-                  </div>
-                </div>
-
-                {syncResult.matched_books.length > 0 && (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => setShowMatchedBooks(!showMatchedBooks)}
-                      className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
-                    >
-                      <Icon name={showMatchedBooks ? "chevronDown" : "chevronRight"} size="sm" />
-                      {t("settings.matchedBooks", { count: syncResult.matched_books.length, plural: syncResult.matched_books.length !== 1 ? "s" : "" })}
-                    </button>
-                    {showMatchedBooks && (
-                      <div className="mt-2 max-h-60 overflow-y-auto p-3 bg-success/5 rounded-lg text-sm space-y-1">
-                        {syncResult.matched_books.map((title, i) => (
-                          <p key={i} className="text-foreground truncate flex items-center gap-1.5" title={title}>
-                            {syncNewlyMarkedSet.has(title) && (
-                              <Icon name="check" size="sm" className="text-success shrink-0" />
-                            )}
-                            {title}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {syncResult.unmatched.length > 0 && (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => setShowUnmatched(!showUnmatched)}
-                      className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
-                    >
-                      <Icon name={showUnmatched ? "chevronDown" : "chevronRight"} size="sm" />
-                      {t("settings.unmatchedBooks", { count: syncResult.unmatched.length, plural: syncResult.unmatched.length !== 1 ? "s" : "" })}
-                    </button>
-                    {showUnmatched && (
-                      <div className="mt-2 max-h-60 overflow-y-auto p-3 bg-muted/20 rounded-lg text-sm space-y-1">
-                        {syncResult.unmatched.map((title, i) => (
-                          <p key={i} className="text-muted-foreground truncate" title={title}>{title}</p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-            {/* Past reports */}
-            {reports.length > 0 && (
-              <div className="border-t border-border pt-4">
-                <h3 className="text-sm font-medium text-foreground mb-3">{t("settings.syncHistory")}</h3>
-                <div className="space-y-2">
-                  {reports.map((r) => (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => handleViewReport(r.id)}
-                      className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                        selectedReport?.id === r.id
-                          ? "border-primary bg-primary/5"
-                          : "border-border/60 bg-muted/20 hover:bg-muted/40"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-foreground">
-                          {new Date(r.created_at).toLocaleString(locale)}
-                        </span>
-                        <span className="text-xs text-muted-foreground truncate ml-2" title={r.komga_url}>
-                          {r.komga_url}
-                        </span>
-                      </div>
-                      <div className="flex gap-4 mt-1 text-xs text-muted-foreground">
-                        <span>{r.total_komga_read} {t("settings.read")}</span>
-                        <span>{r.matched} {t("settings.matched").toLowerCase()}</span>
-                        <span className="text-success">{r.newly_marked} {t("settings.new")}</span>
-                        {r.unmatched_count > 0 && (
-                          <span className="text-warning">{r.unmatched_count} {t("settings.unmatched")}</span>
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Selected report detail */}
-                {selectedReport && (
-                  <div className="mt-3 space-y-3">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
-                      <div>
-                        <p className="text-sm text-muted-foreground">{t("settings.komgaRead")}</p>
-                        <p className="text-2xl font-semibold">{selectedReport.total_komga_read}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">{t("settings.matched")}</p>
-                        <p className="text-2xl font-semibold">{selectedReport.matched}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">{t("settings.alreadyRead")}</p>
-                        <p className="text-2xl font-semibold">{selectedReport.already_read}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">{t("settings.newlyMarked")}</p>
-                        <p className="text-2xl font-semibold text-success">{selectedReport.newly_marked}</p>
-                      </div>
-                    </div>
-
-                    {selectedReport.matched_books && selectedReport.matched_books.length > 0 && (
-                      <div>
-                        <button
-                          type="button"
-                          onClick={() => setShowReportMatchedBooks(!showReportMatchedBooks)}
-                          className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
-                        >
-                          <Icon name={showReportMatchedBooks ? "chevronDown" : "chevronRight"} size="sm" />
-                          {t("settings.matchedBooks", { count: selectedReport.matched_books.length, plural: selectedReport.matched_books.length !== 1 ? "s" : "" })}
-                        </button>
-                        {showReportMatchedBooks && (
-                          <div className="mt-2 max-h-60 overflow-y-auto p-3 bg-success/5 rounded-lg text-sm space-y-1">
-                            {selectedReport.matched_books.map((title, i) => (
-                              <p key={i} className="text-foreground truncate flex items-center gap-1.5" title={title}>
-                                {reportNewlyMarkedSet.has(title) && (
-                                  <Icon name="check" size="sm" className="text-success shrink-0" />
-                                )}
-                                {title}
-                              </p>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {selectedReport.unmatched.length > 0 && (
-                      <div>
-                        <button
-                          type="button"
-                          onClick={() => setShowReportUnmatched(!showReportUnmatched)}
-                          className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
-                        >
-                          <Icon name={showReportUnmatched ? "chevronDown" : "chevronRight"} size="sm" />
-                          {t("settings.unmatchedBooks", { count: selectedReport.unmatched.length, plural: selectedReport.unmatched.length !== 1 ? "s" : "" })}
-                        </button>
-                        {showReportUnmatched && (
-                          <div className="mt-2 max-h-60 overflow-y-auto p-3 bg-muted/20 rounded-lg text-sm space-y-1">
-                            {selectedReport.unmatched.map((title, i) => (
-                              <p key={i} className="text-muted-foreground truncate" title={title}>{title}</p>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
       </>)}
 
       {activeTab === "notifications" && (<>
@@ -853,1315 +542,10 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       <TelegramCard handleUpdateSetting={handleUpdateSetting} />
       </>)}
 
-      {activeTab === "anilist" && (
+      {activeTab === "readingStatus" && (<>
         <AnilistTab handleUpdateSetting={handleUpdateSetting} users={users} />
-      )}
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Metadata Providers sub-component
-// ---------------------------------------------------------------------------
-
-const METADATA_LANGUAGES = [
-  { value: "en", label: "English" },
-  { value: "fr", label: "Français" },
-  { value: "es", label: "Español" },
-] as const;
-
-function MetadataProvidersCard({ handleUpdateSetting }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void> }) {
-  const { t } = useTranslation();
-  const [defaultProvider, setDefaultProvider] = useState("google_books");
-  const [metadataLanguage, setMetadataLanguage] = useState("en");
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    fetch("/api/settings/metadata_providers")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data) {
-          if (data.default_provider) setDefaultProvider(data.default_provider);
-          if (data.metadata_language) setMetadataLanguage(data.metadata_language);
-          if (data.comicvine?.api_key) setApiKeys((prev) => ({ ...prev, comicvine: data.comicvine.api_key }));
-          if (data.google_books?.api_key) setApiKeys((prev) => ({ ...prev, google_books: data.google_books.api_key }));
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  function save(provider: string, lang: string, keys: Record<string, string>) {
-    const value: Record<string, unknown> = {
-      default_provider: provider,
-      metadata_language: lang,
-    };
-    for (const [k, v] of Object.entries(keys)) {
-      if (v) value[k] = { api_key: v };
-    }
-    handleUpdateSetting("metadata_providers", value);
-  }
-
-  return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Icon name="search" size="md" />
-          {t("settings.metadataProviders")}
-        </CardTitle>
-        <CardDescription>{t("settings.metadataProvidersDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-6">
-          {/* Default provider */}
-          <div>
-            <label className="text-sm font-medium text-muted-foreground mb-2 block">{t("settings.defaultProvider")}</label>
-            <div className="flex gap-2 flex-wrap">
-              {([
-                { value: "google_books", label: "Google Books" },
-                { value: "open_library", label: "Open Library" },
-                { value: "comicvine", label: "ComicVine" },
-                { value: "anilist", label: "AniList" },
-                { value: "bedetheque", label: "Bédéthèque" },
-              ] as const).map((p) => (
-                <button
-                  key={p.value}
-                  type="button"
-                  onClick={() => {
-                    setDefaultProvider(p.value);
-                    save(p.value, metadataLanguage, apiKeys);
-                  }}
-                  className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                    defaultProvider === p.value
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/50"
-                  }`}
-                >
-                  <ProviderIcon provider={p.value} size={18} />
-                  {p.label}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">{t("settings.defaultProviderHelp")}</p>
-          </div>
-
-          {/* Metadata language */}
-          <div>
-            <label className="text-sm font-medium text-muted-foreground mb-2 block">{t("settings.metadataLanguage")}</label>
-            <div className="flex gap-2">
-              {METADATA_LANGUAGES.map((l) => (
-                <button
-                  key={l.value}
-                  type="button"
-                  onClick={() => {
-                    setMetadataLanguage(l.value);
-                    save(defaultProvider, l.value, apiKeys);
-                  }}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                    metadataLanguage === l.value
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/50"
-                  }`}
-                >
-                  {l.label}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">{t("settings.metadataLanguageHelp")}</p>
-          </div>
-
-          {/* Provider API keys — always visible */}
-          <div className="border-t border-border/50 pt-4">
-            <h4 className="text-sm font-medium text-foreground mb-3">{t("settings.apiKeys")}</h4>
-            <div className="space-y-4">
-              <FormField>
-                <label className="text-sm font-medium text-muted-foreground mb-1 flex items-center gap-1.5">
-                  <ProviderIcon provider="google_books" size={16} />
-                  {t("settings.googleBooksKey")}
-                </label>
-                <FormInput
-                  type="password" autoComplete="off"
-                  placeholder={t("settings.googleBooksPlaceholder")}
-                  value={apiKeys.google_books || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, google_books: e.target.value })}
-                  onBlur={() => save(defaultProvider, metadataLanguage, apiKeys)}
-                />
-                <p className="text-xs text-muted-foreground mt-1">{t("settings.googleBooksHelp")}</p>
-              </FormField>
-
-              <FormField>
-                <label className="text-sm font-medium text-muted-foreground mb-1 flex items-center gap-1.5">
-                  <ProviderIcon provider="comicvine" size={16} />
-                  {t("settings.comicvineKey")}
-                </label>
-                <FormInput
-                  type="password" autoComplete="off"
-                  placeholder={t("settings.comicvinePlaceholder")}
-                  value={apiKeys.comicvine || ""}
-                  onChange={(e) => setApiKeys({ ...apiKeys, comicvine: e.target.value })}
-                  onBlur={() => save(defaultProvider, metadataLanguage, apiKeys)}
-                />
-                <p className="text-xs text-muted-foreground mt-1">{t("settings.comicvineHelp")} <span className="font-mono text-foreground/70">comicvine.gamespot.com/api</span>.</p>
-              </FormField>
-
-              <div className="p-3 rounded-lg bg-muted/30 flex items-center gap-3 flex-wrap">
-                <div className="flex items-center gap-1.5">
-                  <ProviderIcon provider="open_library" size={16} />
-                  <span className="text-xs font-medium text-foreground">Open Library</span>
-                </div>
-                <span className="text-xs text-muted-foreground">,</span>
-                <div className="flex items-center gap-1.5">
-                  <ProviderIcon provider="anilist" size={16} />
-                  <span className="text-xs font-medium text-foreground">AniList</span>
-                </div>
-                <span className="text-xs text-muted-foreground">{t("common.and")}</span>
-                <div className="flex items-center gap-1.5">
-                  <ProviderIcon provider="bedetheque" size={16} />
-                  <span className="text-xs font-medium text-foreground">Bédéthèque</span>
-                </div>
-                <span className="text-xs text-muted-foreground">{t("settings.freeProviders")}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Status Mappings sub-component
-// ---------------------------------------------------------------------------
-
-function StatusMappingsCard() {
-  const { t } = useTranslation();
-  const [mappings, setMappings] = useState<StatusMappingDto[]>([]);
-  const [targetStatuses, setTargetStatuses] = useState<string[]>([]);
-  const [providerStatuses, setProviderStatuses] = useState<string[]>([]);
-  const [newTargetName, setNewTargetName] = useState("");
-  const [loading, setLoading] = useState(true);
-
-  const loadData = useCallback(async () => {
-    try {
-      const [mRes, sRes, pRes] = await Promise.all([
-        fetch("/api/settings/status-mappings").then((r) => r.ok ? r.json() : []),
-        fetch("/api/series/statuses").then((r) => r.ok ? r.json() : []),
-        fetch("/api/series/provider-statuses").then((r) => r.ok ? r.json() : []),
-      ]);
-      setMappings(mRes);
-      setTargetStatuses(sRes);
-      setProviderStatuses(pRes);
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { loadData(); }, [loadData]);
-
-  // Group mappings by target status (only those with a non-null mapped_status)
-  const grouped = useMemo(() => {
-    const map = new Map<string, StatusMappingDto[]>();
-    for (const m of mappings) {
-      if (m.mapped_status) {
-        const list = map.get(m.mapped_status) || [];
-        list.push(m);
-        map.set(m.mapped_status, list);
-      }
-    }
-    return map;
-  }, [mappings]);
-
-  // Unmapped = mappings with null mapped_status + provider statuses not in status_mappings at all
-  const knownProviderStatuses = useMemo(
-    () => new Set(mappings.map((m) => m.provider_status)),
-    [mappings],
-  );
-  const unmappedMappings = useMemo(
-    () => mappings.filter((m) => !m.mapped_status),
-    [mappings],
-  );
-  const newProviderStatuses = useMemo(
-    () => providerStatuses.filter((ps) => !knownProviderStatuses.has(ps)),
-    [providerStatuses, knownProviderStatuses],
-  );
-
-  // All possible targets = existing statuses from DB + custom ones added locally
-  const [customTargets, setCustomTargets] = useState<string[]>([]);
-  const allTargets = useMemo(() => {
-    const set = new Set([...targetStatuses, ...customTargets]);
-    return [...set].sort();
-  }, [targetStatuses, customTargets]);
-
-  async function handleAssign(providerStatus: string, targetStatus: string) {
-    if (!providerStatus || !targetStatus) return;
-    try {
-      const res = await fetch("/api/settings/status-mappings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider_status: providerStatus, mapped_status: targetStatus }),
-      });
-      if (res.ok) {
-        const created: StatusMappingDto = await res.json();
-        setMappings((prev) => [...prev.filter((m) => m.provider_status !== created.provider_status), created]);
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  async function handleUnmap(id: string) {
-    try {
-      const res = await fetch(`/api/settings/status-mappings/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        const updated: StatusMappingDto = await res.json();
-        setMappings((prev) => prev.map((m) => (m.id === id ? updated : m)));
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  function handleCreateTarget() {
-    const name = newTargetName.trim().toLowerCase();
-    if (!name || allTargets.includes(name)) return;
-    setCustomTargets((prev) => [...prev, name]);
-    setNewTargetName("");
-  }
-
-  function statusLabel(status: string) {
-    const key = `seriesStatus.${status}` as Parameters<typeof t>[0];
-    const translated = t(key);
-    return translated !== key ? translated : status;
-  }
-
-  if (loading) {
-    return (
-      <Card className="mb-6">
-        <CardContent><p className="text-muted-foreground py-4">{t("common.loading")}</p></CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Icon name="settings" size="md" />
-          {t("settings.statusMappings")}
-        </CardTitle>
-        <CardDescription>{t("settings.statusMappingsDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          {/* Create new target status */}
-          <div className="flex gap-2 items-center">
-            <FormInput
-              placeholder={t("settings.newTargetPlaceholder")}
-              value={newTargetName}
-              onChange={(e) => setNewTargetName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleCreateTarget(); }}
-              className="max-w-[250px]"
-            />
-            <Button
-              onClick={handleCreateTarget}
-              disabled={!newTargetName.trim() || allTargets.includes(newTargetName.trim().toLowerCase())}
-            >
-              <Icon name="plus" size="sm" />
-              {t("settings.createTargetStatus")}
-            </Button>
-          </div>
-
-          {/* Grouped by target status */}
-          {allTargets.map((target) => {
-            const items = grouped.get(target) || [];
-            return (
-              <div key={target} className="border border-border/50 rounded-lg p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-sm font-medium text-foreground">
-                    {statusLabel(target)}
-                  </span>
-                  <span className="text-xs text-muted-foreground font-mono">({target})</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {items.map((m) => (
-                    <span
-                      key={m.id}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted/50 text-sm font-mono"
-                    >
-                      {m.provider_status}
-                      <button
-                        type="button"
-                        onClick={() => handleUnmap(m.id)}
-                        className="ml-1 text-muted-foreground hover:text-destructive transition-colors"
-                        title={t("common.delete")}
-                      >
-                        <Icon name="x" size="sm" />
-                      </button>
-                    </span>
-                  ))}
-                  {items.length === 0 && (
-                    <span className="text-xs text-muted-foreground italic">{t("settings.noMappings")}</span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Unmapped provider statuses (null mapped_status + brand new from providers) */}
-          {(unmappedMappings.length > 0 || newProviderStatuses.length > 0) && (
-            <div className="border-t border-border/50 pt-4">
-              <h4 className="text-sm font-medium text-foreground mb-3">{t("settings.unmappedSection")}</h4>
-              <div className="space-y-2">
-                {unmappedMappings.map((m) => (
-                  <div key={m.id} className="flex items-center gap-2">
-                    <span className="text-sm font-mono bg-muted/50 px-2 py-1 rounded-md min-w-[120px]">{m.provider_status}</span>
-                    <Icon name="chevronRight" size="sm" />
-                    <FormSelect
-                      className="w-auto"
-                      value=""
-                      onChange={(e) => { if (e.target.value) handleAssign(m.provider_status, e.target.value); }}
-                    >
-                      <option value="">{t("settings.selectTargetStatus")}</option>
-                      {allTargets.map((s) => (
-                        <option key={s} value={s}>{statusLabel(s)}</option>
-                      ))}
-                    </FormSelect>
-                  </div>
-                ))}
-                {newProviderStatuses.map((ps) => (
-                  <div key={ps} className="flex items-center gap-2">
-                    <span className="text-sm font-mono bg-muted/50 px-2 py-1 rounded-md min-w-[120px]">{ps}</span>
-                    <Icon name="chevronRight" size="sm" />
-                    <FormSelect
-                      className="w-auto"
-                      value=""
-                      onChange={(e) => { if (e.target.value) handleAssign(ps, e.target.value); }}
-                    >
-                      <option value="">{t("settings.selectTargetStatus")}</option>
-                      {allTargets.map((s) => (
-                        <option key={s} value={s}>{statusLabel(s)}</option>
-                      ))}
-                    </FormSelect>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Prowlarr sub-component
-// ---------------------------------------------------------------------------
-
-function ProwlarrCard({ handleUpdateSetting }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void> }) {
-  const { t } = useTranslation();
-  const [prowlarrUrl, setProwlarrUrl] = useState("");
-  const [prowlarrApiKey, setProwlarrApiKey] = useState("");
-  const [prowlarrCategories, setProwlarrCategories] = useState("7030, 7020");
-  const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-
-  useEffect(() => {
-    fetch("/api/settings/prowlarr")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data) {
-          if (data.url) setProwlarrUrl(data.url);
-          if (data.api_key) setProwlarrApiKey(data.api_key);
-          if (data.categories) setProwlarrCategories(data.categories.join(", "));
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  function saveProwlarr(url?: string, apiKey?: string, cats?: string) {
-    const categories = (cats ?? prowlarrCategories)
-      .split(",")
-      .map((s) => parseInt(s.trim()))
-      .filter((n) => !isNaN(n));
-    handleUpdateSetting("prowlarr", {
-      url: url ?? prowlarrUrl,
-      api_key: apiKey ?? prowlarrApiKey,
-      categories,
-    });
-  }
-
-  async function handleTestConnection() {
-    setIsTesting(true);
-    setTestResult(null);
-    try {
-      const resp = await fetch("/api/prowlarr/test");
-      const data = await resp.json();
-      if (data.error) {
-        setTestResult({ success: false, message: data.error });
-      } else {
-        setTestResult(data);
-      }
-    } catch {
-      setTestResult({ success: false, message: "Failed to connect" });
-    } finally {
-      setIsTesting(false);
-    }
-  }
-
-  return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Icon name="search" size="md" />
-          {t("settings.prowlarr")}
-        </CardTitle>
-        <CardDescription>{t("settings.prowlarrDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <FormRow>
-            <FormField className="flex-1">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.prowlarrUrl")}</label>
-              <FormInput
-                type="url"
-                placeholder={t("settings.prowlarrUrlPlaceholder")}
-                value={prowlarrUrl}
-                onChange={(e) => setProwlarrUrl(e.target.value)}
-                onBlur={() => saveProwlarr()}
-              />
-            </FormField>
-          </FormRow>
-          <FormRow>
-            <FormField className="flex-1">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.prowlarrApiKey")}</label>
-              <FormInput
-                type="password" autoComplete="off"
-                placeholder={t("settings.prowlarrApiKeyPlaceholder")}
-                value={prowlarrApiKey}
-                onChange={(e) => setProwlarrApiKey(e.target.value)}
-                onBlur={() => saveProwlarr()}
-              />
-            </FormField>
-          </FormRow>
-          <FormRow>
-            <FormField className="flex-1">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.prowlarrCategories")}</label>
-              <FormInput
-                type="text"
-                placeholder="7030, 7020"
-                value={prowlarrCategories}
-                onChange={(e) => setProwlarrCategories(e.target.value)}
-                onBlur={() => saveProwlarr()}
-              />
-              <p className="text-xs text-muted-foreground mt-1">{t("settings.prowlarrCategoriesHelp")}</p>
-            </FormField>
-          </FormRow>
-
-          <div className="flex items-center gap-3">
-            <Button
-              onClick={handleTestConnection}
-              disabled={isTesting || !prowlarrUrl || !prowlarrApiKey}
-            >
-              {isTesting ? (
-                <>
-                  <Icon name="spinner" size="sm" className="animate-spin -ml-1 mr-2" />
-                  {t("settings.testing")}
-                </>
-              ) : (
-                <>
-                  <Icon name="refresh" size="sm" className="mr-2" />
-                  {t("settings.testConnection")}
-                </>
-              )}
-            </Button>
-            {testResult && (
-              <span className={`text-sm font-medium ${testResult.success ? "text-success" : "text-destructive"}`}>
-                {testResult.message}
-              </span>
-            )}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// qBittorrent sub-component
-// ---------------------------------------------------------------------------
-
-function QBittorrentCard({ handleUpdateSetting }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void> }) {
-  const { t } = useTranslation();
-  const [qbUrl, setQbUrl] = useState("");
-  const [qbUsername, setQbUsername] = useState("");
-  const [qbPassword, setQbPassword] = useState("");
-  const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-
-  useEffect(() => {
-    fetch("/api/settings/qbittorrent")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data) {
-          if (data.url) setQbUrl(data.url);
-          if (data.username) setQbUsername(data.username);
-          if (data.password) setQbPassword(data.password);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  function saveQbittorrent() {
-    handleUpdateSetting("qbittorrent", {
-      url: qbUrl,
-      username: qbUsername,
-      password: qbPassword,
-    });
-  }
-
-  async function handleTestConnection() {
-    setIsTesting(true);
-    setTestResult(null);
-    try {
-      const resp = await fetch("/api/qbittorrent/test");
-      const data = await resp.json();
-      if (data.error) {
-        setTestResult({ success: false, message: data.error });
-      } else {
-        setTestResult(data);
-      }
-    } catch {
-      setTestResult({ success: false, message: "Failed to connect" });
-    } finally {
-      setIsTesting(false);
-    }
-  }
-
-  return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Icon name="settings" size="md" />
-          {t("settings.qbittorrent")}
-        </CardTitle>
-        <CardDescription>{t("settings.qbittorrentDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <FormRow>
-            <FormField className="flex-1">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.qbittorrentUrl")}</label>
-              <FormInput
-                type="url"
-                placeholder={t("settings.qbittorrentUrlPlaceholder")}
-                value={qbUrl}
-                onChange={(e) => setQbUrl(e.target.value)}
-                onBlur={() => saveQbittorrent()}
-              />
-            </FormField>
-          </FormRow>
-          <FormRow>
-            <FormField className="flex-1">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.qbittorrentUsername")}</label>
-              <FormInput
-                type="text"
-                value={qbUsername}
-                onChange={(e) => setQbUsername(e.target.value)}
-                onBlur={() => saveQbittorrent()}
-              />
-            </FormField>
-            <FormField className="flex-1">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.qbittorrentPassword")}</label>
-              <FormInput
-                type="password" autoComplete="off"
-                value={qbPassword}
-                onChange={(e) => setQbPassword(e.target.value)}
-                onBlur={() => saveQbittorrent()}
-              />
-            </FormField>
-          </FormRow>
-
-          <div className="flex items-center gap-3">
-            <Button
-              onClick={handleTestConnection}
-              disabled={isTesting || !qbUrl || !qbUsername}
-            >
-              {isTesting ? (
-                <>
-                  <Icon name="spinner" size="sm" className="animate-spin -ml-1 mr-2" />
-                  {t("settings.testing")}
-                </>
-              ) : (
-                <>
-                  <Icon name="refresh" size="sm" className="mr-2" />
-                  {t("settings.testConnection")}
-                </>
-              )}
-            </Button>
-            {testResult && (
-              <span className={`text-sm font-medium ${testResult.success ? "text-success" : "text-destructive"}`}>
-                {testResult.message}
-              </span>
-            )}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Telegram Notifications sub-component
-// ---------------------------------------------------------------------------
-
-const DEFAULT_EVENTS = {
-  scan_completed: true,
-  scan_failed: true,
-  scan_cancelled: true,
-  thumbnail_completed: true,
-  thumbnail_failed: true,
-  conversion_completed: true,
-  conversion_failed: true,
-  metadata_approved: true,
-  metadata_batch_completed: true,
-  metadata_batch_failed: true,
-  metadata_refresh_completed: true,
-  metadata_refresh_failed: true,
-};
-
-function TelegramCard({ handleUpdateSetting }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void> }) {
-  const { t } = useTranslation();
-  const [botToken, setBotToken] = useState("");
-  const [chatId, setChatId] = useState("");
-  const [enabled, setEnabled] = useState(false);
-  const [events, setEvents] = useState(DEFAULT_EVENTS);
-  const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [showHelp, setShowHelp] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/settings/telegram")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data) {
-          if (data.bot_token) setBotToken(data.bot_token);
-          if (data.chat_id) setChatId(data.chat_id);
-          if (data.enabled !== undefined) setEnabled(data.enabled);
-          if (data.events) setEvents({ ...DEFAULT_EVENTS, ...data.events });
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  function saveTelegram(token?: string, chat?: string, en?: boolean, ev?: typeof events) {
-    handleUpdateSetting("telegram", {
-      bot_token: token ?? botToken,
-      chat_id: chat ?? chatId,
-      enabled: en ?? enabled,
-      events: ev ?? events,
-    });
-  }
-
-  async function handleTestConnection() {
-    setIsTesting(true);
-    setTestResult(null);
-    try {
-      const resp = await fetch("/api/telegram/test");
-      const data = await resp.json();
-      if (data.error) {
-        setTestResult({ success: false, message: data.error });
-      } else {
-        setTestResult(data);
-      }
-    } catch {
-      setTestResult({ success: false, message: "Failed to connect" });
-    } finally {
-      setIsTesting(false);
-    }
-  }
-
-  return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Icon name="bell" size="md" />
-          {t("settings.telegram")}
-        </CardTitle>
-        <CardDescription>{t("settings.telegramDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          {/* Setup guide */}
-          <div>
-            <button
-              type="button"
-              onClick={() => setShowHelp(!showHelp)}
-              className="text-sm text-primary hover:text-primary/80 flex items-center gap-1 transition-colors"
-            >
-              <Icon name={showHelp ? "chevronDown" : "chevronRight"} size="sm" />
-              {t("settings.telegramHelp")}
-            </button>
-            {showHelp && (
-              <div className="mt-3 p-4 rounded-lg bg-muted/30 space-y-3 text-sm text-foreground">
-                <div>
-                  <p className="font-medium mb-1">1. Bot Token</p>
-                  <p className="text-muted-foreground" dangerouslySetInnerHTML={{ __html: t("settings.telegramHelpBot") }} />
-                </div>
-                <div>
-                  <p className="font-medium mb-1">2. Chat ID</p>
-                  <p className="text-muted-foreground" dangerouslySetInnerHTML={{ __html: t("settings.telegramHelpChat") }} />
-                </div>
-                <div>
-                  <p className="font-medium mb-1">3. Group chat</p>
-                  <p className="text-muted-foreground" dangerouslySetInnerHTML={{ __html: t("settings.telegramHelpGroup") }} />
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-3">
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={enabled}
-                onChange={(e) => {
-                  setEnabled(e.target.checked);
-                  saveTelegram(undefined, undefined, e.target.checked);
-                }}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-muted rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-            </label>
-            <span className="text-sm font-medium text-foreground">{t("settings.telegramEnabled")}</span>
-          </div>
-
-          <FormRow>
-            <FormField className="flex-1">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.botToken")}</label>
-              <FormInput
-                type="password" autoComplete="off"
-                placeholder={t("settings.botTokenPlaceholder")}
-                value={botToken}
-                onChange={(e) => setBotToken(e.target.value)}
-                onBlur={() => saveTelegram()}
-              />
-            </FormField>
-          </FormRow>
-          <FormRow>
-            <FormField className="flex-1">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.chatId")}</label>
-              <FormInput
-                type="text"
-                placeholder={t("settings.chatIdPlaceholder")}
-                value={chatId}
-                onChange={(e) => setChatId(e.target.value)}
-                onBlur={() => saveTelegram()}
-              />
-            </FormField>
-          </FormRow>
-
-          {/* Event toggles grouped by category */}
-          <div className="border-t border-border/50 pt-4">
-            <h4 className="text-sm font-medium text-foreground mb-4">{t("settings.telegramEvents")}</h4>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-5">
-              {([
-                {
-                  category: t("settings.eventCategoryScan"),
-                  icon: "search" as const,
-                  items: [
-                    { key: "scan_completed" as const, label: t("settings.eventCompleted") },
-                    { key: "scan_failed" as const, label: t("settings.eventFailed") },
-                    { key: "scan_cancelled" as const, label: t("settings.eventCancelled") },
-                  ],
-                },
-                {
-                  category: t("settings.eventCategoryThumbnail"),
-                  icon: "image" as const,
-                  items: [
-                    { key: "thumbnail_completed" as const, label: t("settings.eventCompleted") },
-                    { key: "thumbnail_failed" as const, label: t("settings.eventFailed") },
-                  ],
-                },
-                {
-                  category: t("settings.eventCategoryConversion"),
-                  icon: "refresh" as const,
-                  items: [
-                    { key: "conversion_completed" as const, label: t("settings.eventCompleted") },
-                    { key: "conversion_failed" as const, label: t("settings.eventFailed") },
-                  ],
-                },
-                {
-                  category: t("settings.eventCategoryMetadata"),
-                  icon: "tag" as const,
-                  items: [
-                    { key: "metadata_approved" as const, label: t("settings.eventLinked") },
-                    { key: "metadata_batch_completed" as const, label: t("settings.eventBatchCompleted") },
-                    { key: "metadata_batch_failed" as const, label: t("settings.eventBatchFailed") },
-                    { key: "metadata_refresh_completed" as const, label: t("settings.eventRefreshCompleted") },
-                    { key: "metadata_refresh_failed" as const, label: t("settings.eventRefreshFailed") },
-                  ],
-                },
-              ]).map(({ category, icon, items }) => (
-                <div key={category}>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                    <Icon name={icon} size="sm" className="text-muted-foreground" />
-                    {category}
-                  </p>
-                  <div className="space-y-1">
-                    {items.map(({ key, label }) => (
-                      <label key={key} className="flex items-center justify-between py-1.5 cursor-pointer group">
-                        <span className="text-sm text-foreground group-hover:text-foreground/80">{label}</span>
-                        <div className="relative">
-                          <input
-                            type="checkbox"
-                            checked={events[key]}
-                            onChange={(e) => {
-                              const updated = { ...events, [key]: e.target.checked };
-                              setEvents(updated);
-                              saveTelegram(undefined, undefined, undefined, updated);
-                            }}
-                            className="sr-only peer"
-                          />
-                          <div className="w-9 h-5 bg-muted rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary" />
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button
-              onClick={handleTestConnection}
-              disabled={isTesting || !botToken || !chatId || !enabled}
-            >
-              {isTesting ? (
-                <>
-                  <Icon name="spinner" size="sm" className="animate-spin -ml-1 mr-2" />
-                  {t("settings.testing")}
-                </>
-              ) : (
-                <>
-                  <Icon name="refresh" size="sm" className="mr-2" />
-                  {t("settings.testConnection")}
-                </>
-              )}
-            </Button>
-            {testResult && (
-              <span className={`text-sm font-medium ${testResult.success ? "text-success" : "text-destructive"}`}>
-                {testResult.message}
-              </span>
-            )}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// AniList sub-component
-// ---------------------------------------------------------------------------
-
-function AnilistTab({
-  handleUpdateSetting,
-  users,
-}: {
-  handleUpdateSetting: (key: string, value: unknown) => Promise<void>;
-  users: UserDto[];
-}) {
-  const { t } = useTranslation();
-
-  const [clientId, setClientId] = useState("");
-  const [token, setToken] = useState("");
-  const [userId, setUserId] = useState("");
-  const [localUserId, setLocalUserId] = useState("");
-  const [isTesting, setIsTesting] = useState(false);
-  const [viewer, setViewer] = useState<AnilistStatusDto | null>(null);
-  const [testError, setTestError] = useState<string | null>(null);
-
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncReport, setSyncReport] = useState<AnilistSyncReportDto | null>(null);
-  const [isPulling, setIsPulling] = useState(false);
-  const [pullReport, setPullReport] = useState<AnilistPullReportDto | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [isPreviewing, setIsPreviewing] = useState(false);
-  const [previewItems, setPreviewItems] = useState<AnilistSyncPreviewItemDto[] | null>(null);
-
-
-  useEffect(() => {
-    fetch("/api/settings/anilist")
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        if (data) {
-          if (data.client_id) setClientId(String(data.client_id));
-          if (data.access_token) setToken(data.access_token);
-          if (data.user_id) setUserId(String(data.user_id));
-          if (data.local_user_id) setLocalUserId(String(data.local_user_id));
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  function buildAnilistSettings() {
-    return {
-      client_id: clientId || undefined,
-      access_token: token || undefined,
-      user_id: userId ? Number(userId) : undefined,
-      local_user_id: localUserId || undefined,
-    };
-  }
-
-  function handleConnect() {
-    if (!clientId) return;
-    // Save client_id first, then open OAuth URL
-    handleUpdateSetting("anilist", buildAnilistSettings()).then(() => {
-      window.location.href = `https://anilist.co/api/v2/oauth/authorize?client_id=${encodeURIComponent(clientId)}&response_type=token`;
-    });
-  }
-
-  async function handleSaveToken() {
-    await handleUpdateSetting("anilist", buildAnilistSettings());
-  }
-
-  async function handleTestConnection() {
-    setIsTesting(true);
-    setViewer(null);
-    setTestError(null);
-    try {
-      // Save token first so the API reads the current value
-      await handleUpdateSetting("anilist", buildAnilistSettings());
-      const resp = await fetch("/api/anilist/status");
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || "Connection failed");
-      setViewer(data);
-      if (!userId && data.user_id) setUserId(String(data.user_id));
-    } catch (e) {
-      setTestError(e instanceof Error ? e.message : "Connection failed");
-    } finally {
-      setIsTesting(false);
-    }
-  }
-
-  async function handlePreview() {
-    setIsPreviewing(true);
-    setPreviewItems(null);
-    setActionError(null);
-    try {
-      const resp = await fetch("/api/anilist/sync/preview");
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || "Preview failed");
-      setPreviewItems(data);
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Preview failed");
-    } finally {
-      setIsPreviewing(false);
-    }
-  }
-
-  async function handleSync() {
-    setIsSyncing(true);
-    setSyncReport(null);
-    setActionError(null);
-    try {
-      const resp = await fetch("/api/anilist/sync", { method: "POST" });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || "Sync failed");
-      setSyncReport(data);
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Sync failed");
-    } finally {
-      setIsSyncing(false);
-    }
-  }
-
-  async function handlePull() {
-    setIsPulling(true);
-    setPullReport(null);
-    setActionError(null);
-    try {
-      const resp = await fetch("/api/anilist/pull", { method: "POST" });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || "Pull failed");
-      setPullReport(data);
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Pull failed");
-    } finally {
-      setIsPulling(false);
-    }
-  }
-
-  return (
-    <>
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Icon name="link" size="md" />
-            {t("settings.anilistTitle")}
-          </CardTitle>
-          <CardDescription>{t("settings.anilistDesc")}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">{t("settings.anilistConnectDesc")}</p>
-          {/* Redirect URL info */}
-          <div className="rounded-md bg-muted/50 border px-3 py-2 text-xs text-muted-foreground space-y-1">
-            <p className="font-medium text-foreground">{t("settings.anilistRedirectUrlLabel")}</p>
-            <code className="select-all font-mono">{typeof window !== "undefined" ? `${window.location.origin}/anilist/callback` : "/anilist/callback"}</code>
-            <p>{t("settings.anilistRedirectUrlHint")}</p>
-          </div>
-          <FormRow>
-            <FormField className="flex-1">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.anilistClientId")}</label>
-              <FormInput
-                type="text"
-                autoComplete="off"
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                placeholder={t("settings.anilistClientIdPlaceholder")}
-              />
-            </FormField>
-          </FormRow>
-          <div className="flex items-center gap-3 flex-wrap">
-            <Button onClick={handleConnect} disabled={!clientId}>
-              <Icon name="link" size="sm" className="mr-2" />
-              {t("settings.anilistConnectButton")}
-            </Button>
-            <Button onClick={handleTestConnection} disabled={isTesting || !token} variant="secondary">
-              {isTesting ? (
-                <><Icon name="spinner" size="sm" className="animate-spin mr-2" />{t("settings.testing")}</>
-              ) : (
-                <><Icon name="refresh" size="sm" className="mr-2" />{t("settings.anilistTestConnection")}</>
-              )}
-            </Button>
-            {viewer && (
-              <span className="text-sm text-success font-medium">
-                {t("settings.anilistConnected")} <strong>{viewer.username}</strong>
-                {" · "}
-                <a href={viewer.site_url} target="_blank" rel="noopener noreferrer" className="underline">AniList</a>
-              </span>
-            )}
-            {token && !viewer && (
-              <span className="text-sm text-muted-foreground">{t("settings.anilistTokenPresent")}</span>
-            )}
-            {testError && <span className="text-sm text-destructive">{testError}</span>}
-          </div>
-          <details className="group">
-            <summary className="text-sm text-muted-foreground cursor-pointer hover:text-foreground select-none">
-              {t("settings.anilistManualToken")}
-            </summary>
-            <div className="mt-3 space-y-3">
-              <FormRow>
-                <FormField className="flex-1">
-                  <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.anilistToken")}</label>
-                  <FormInput
-                    type="password"
-                    autoComplete="off"
-                    value={token}
-                    onChange={(e) => setToken(e.target.value)}
-                    placeholder={t("settings.anilistTokenPlaceholder")}
-                  />
-                </FormField>
-                <FormField className="flex-1">
-                  <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.anilistUserId")}</label>
-                  <FormInput
-                    type="text"
-                    autoComplete="off"
-                    value={userId}
-                    onChange={(e) => setUserId(e.target.value)}
-                    placeholder={t("settings.anilistUserIdPlaceholder")}
-                  />
-                </FormField>
-              </FormRow>
-              <Button onClick={handleSaveToken} disabled={!token}>
-                {t("common.save")}
-              </Button>
-            </div>
-          </details>
-          <div className="border-t border-border/50 pt-4 mt-2">
-            <p className="text-sm font-medium text-foreground mb-1">{t("settings.anilistLocalUserTitle")}</p>
-            <p className="text-xs text-muted-foreground mb-3">{t("settings.anilistLocalUserDesc")}</p>
-            <div className="flex items-center gap-3">
-              <select
-                value={localUserId}
-                onChange={(e) => setLocalUserId(e.target.value)}
-                autoComplete="off"
-                className="flex-1 text-sm border border-border rounded-lg px-3 py-2.5 bg-background focus:outline-none focus:ring-2 focus:ring-ring h-10"
-              >
-                <option value="">{t("settings.anilistLocalUserNone")}</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>{u.username}</option>
-                ))}
-              </select>
-              <Button onClick={() => handleUpdateSetting("anilist", buildAnilistSettings())} disabled={!localUserId}>
-                {t("common.save")}
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Icon name="refresh" size="md" />
-            {t("settings.anilistSyncTitle")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">{t("settings.anilistSyncDesc")}</p>
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button onClick={handlePreview} disabled={isPreviewing} variant="secondary">
-                  {isPreviewing ? (
-                    <><Icon name="spinner" size="sm" className="animate-spin mr-2" />{t("settings.anilistPreviewing")}</>
-                  ) : (
-                    <><Icon name="eye" size="sm" className="mr-2" />{t("settings.anilistPreviewButton")}</>
-                  )}
-                </Button>
-                <Button onClick={handleSync} disabled={isSyncing}>
-                  {isSyncing ? (
-                    <><Icon name="spinner" size="sm" className="animate-spin mr-2" />{t("settings.anilistSyncing")}</>
-                  ) : (
-                    <><Icon name="refresh" size="sm" className="mr-2" />{t("settings.anilistSyncButton")}</>
-                  )}
-                </Button>
-              </div>
-              {syncReport && (
-                <div className="mt-2 border rounded-lg overflow-hidden">
-                  <div className="px-4 py-2 bg-muted/50 flex items-center gap-3">
-                    <span className="text-sm text-success font-medium">{t("settings.anilistSynced", { count: String(syncReport.synced) })}</span>
-                    {syncReport.skipped > 0 && <span className="text-sm text-muted-foreground">{t("settings.anilistSkipped", { count: String(syncReport.skipped) })}</span>}
-                    {syncReport.errors.length > 0 && <span className="text-sm text-destructive">{t("settings.anilistErrors", { count: String(syncReport.errors.length) })}</span>}
-                  </div>
-                  {syncReport.items.length > 0 && (
-                    <div className="divide-y max-h-60 overflow-y-auto">
-                      {syncReport.items.map((item: AnilistSyncItemDto) => (
-                        <div key={item.series_name} className="flex items-center justify-between px-4 py-2 text-sm">
-                          <a
-                            href={item.anilist_url ?? `https://anilist.co/manga/`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="truncate font-medium hover:underline min-w-0 mr-3"
-                          >
-                            {item.anilist_title ?? item.series_name}
-                          </a>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                              item.status === "COMPLETED" ? "bg-green-500/15 text-green-600" :
-                              item.status === "CURRENT" ? "bg-blue-500/15 text-blue-600" :
-                              "bg-muted text-muted-foreground"
-                            }`}>{item.status}</span>
-                            {item.progress_volumes > 0 && (
-                              <span className="text-xs text-muted-foreground">{item.progress_volumes} vol.</span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {syncReport.errors.map((err: string, i: number) => (
-                    <p key={i} className="text-xs text-destructive px-4 py-1 border-t">{err}</p>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">{t("settings.anilistPullDesc")}</p>
-              <Button onClick={handlePull} disabled={isPulling}>
-                {isPulling ? (
-                  <><Icon name="spinner" size="sm" className="animate-spin mr-2" />{t("settings.anilistPulling")}</>
-                ) : (
-                  <><Icon name="refresh" size="sm" className="mr-2" />{t("settings.anilistPullButton")}</>
-                )}
-              </Button>
-              {pullReport && (
-                <div className="mt-2 border rounded-lg overflow-hidden">
-                  <div className="px-4 py-2 bg-muted/50 flex items-center gap-3">
-                    <span className="text-sm text-success font-medium">{t("settings.anilistUpdated", { count: String(pullReport.updated) })}</span>
-                    {pullReport.skipped > 0 && <span className="text-sm text-muted-foreground">{t("settings.anilistSkipped", { count: String(pullReport.skipped) })}</span>}
-                    {pullReport.errors.length > 0 && <span className="text-sm text-destructive">{t("settings.anilistErrors", { count: String(pullReport.errors.length) })}</span>}
-                  </div>
-                  {pullReport.items.length > 0 && (
-                    <div className="divide-y max-h-60 overflow-y-auto">
-                      {pullReport.items.map((item: AnilistPullItemDto) => (
-                        <div key={item.series_name} className="flex items-center justify-between px-4 py-2 text-sm">
-                          <a
-                            href={item.anilist_url ?? `https://anilist.co/manga/`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="truncate font-medium hover:underline min-w-0 mr-3"
-                          >
-                            {item.anilist_title ?? item.series_name}
-                          </a>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                              item.anilist_status === "COMPLETED" ? "bg-green-500/15 text-green-600" :
-                              item.anilist_status === "CURRENT" ? "bg-blue-500/15 text-blue-600" :
-                              item.anilist_status === "PLANNING" ? "bg-amber-500/15 text-amber-600" :
-                              "bg-muted text-muted-foreground"
-                            }`}>{item.anilist_status}</span>
-                            <span className="text-xs text-muted-foreground">{item.books_updated} {t("dashboard.books").toLowerCase()}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {pullReport.errors.map((err: string, i: number) => (
-                    <p key={i} className="text-xs text-destructive px-4 py-1 border-t">{err}</p>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-          {actionError && <p className="text-sm text-destructive">{actionError}</p>}
-          {previewItems !== null && (
-            <div className="mt-2 border rounded-lg overflow-hidden">
-              <div className="px-4 py-2 bg-muted/50 flex items-center justify-between">
-                <span className="text-sm font-medium">{t("settings.anilistPreviewTitle", { count: String(previewItems.length) })}</span>
-                <button onClick={() => setPreviewItems(null)} className="text-xs text-muted-foreground hover:text-foreground">✕</button>
-              </div>
-              {previewItems.length === 0 ? (
-                <p className="text-sm text-muted-foreground px-4 py-3">{t("settings.anilistPreviewEmpty")}</p>
-              ) : (
-                <div className="divide-y">
-                  {previewItems.map((item) => (
-                    <div key={`${item.anilist_id}-${item.series_name}`} className="flex items-center justify-between px-4 py-2 text-sm">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <a
-                          href={item.anilist_url ?? `https://anilist.co/manga/${item.anilist_id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="truncate font-medium hover:underline"
-                        >
-                          {item.anilist_title ?? item.series_name}
-                        </a>
-                        {item.anilist_title && item.anilist_title !== item.series_name && (
-                          <span className="text-muted-foreground truncate hidden sm:inline">— {item.series_name}</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0 ml-3">
-                        <span className="text-xs text-muted-foreground">{item.books_read}/{item.book_count}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                          item.status === "COMPLETED" ? "bg-success/15 text-success" :
-                          item.status === "CURRENT" ? "bg-blue-500/15 text-blue-600" :
-                          "bg-muted text-muted-foreground"
-                        }`}>
-                          {item.status}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
+        <KomgaSyncCard users={users} />
+      </>)}
     </>
   );
 }

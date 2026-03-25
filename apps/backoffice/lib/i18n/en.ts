@@ -474,6 +474,9 @@ const en: Record<TranslationKey, string> = {
   "settings.title": "Settings",
   "settings.general": "General",
   "settings.integrations": "Integrations",
+  "settings.downloadTools": "Download Tools",
+  "settings.metadata": "Metadata",
+  "settings.readingStatus": "Reading Status",
   "settings.savedSuccess": "Settings saved successfully",
   "settings.savedError": "Failed to save settings",
   "settings.saveError": "Error saving settings",
@@ -651,7 +654,7 @@ const en: Record<TranslationKey, string> = {
 
   // Settings - AniList
   "settings.anilist": "Reading status",
-  "settings.anilistTitle": "AniList Sync",
+  "settings.anilistTitle": "AniList Config",
   "settings.anilistDesc": "Sync your reading progress with AniList. Get a personal access token at anilist.co/settings/developer.",
   "settings.anilistToken": "Personal Access Token",
   "settings.anilistTokenPlaceholder": "AniList token...",
@@ -666,7 +669,7 @@ const en: Record<TranslationKey, string> = {
   "settings.anilistLocalUserTitle": "Local user",
   "settings.anilistLocalUserDesc": "Select the local user whose reading progress is synced with this AniList account",
   "settings.anilistLocalUserNone": "— Select a user —",
-  "settings.anilistSyncTitle": "Sync",
+  "settings.anilistSyncTitle": "AniList Sync",
   "settings.anilistSyncDesc": "Push local reading progress to AniList. Rules: none read → PLANNING · at least 1 read → CURRENT (progress = volumes read) · all published volumes read (total_volumes known) → COMPLETED.",
   "settings.anilistSyncButton": "Sync to AniList",
   "settings.anilistPullButton": "Pull from AniList",

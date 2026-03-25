@@ -472,6 +472,9 @@ const fr = {
   "settings.title": "Paramètres",
   "settings.general": "Général",
   "settings.integrations": "Intégrations",
+  "settings.downloadTools": "Outils de téléchargement",
+  "settings.metadata": "Métadonnées",
+  "settings.readingStatus": "Statut de lecture",
   "settings.savedSuccess": "Paramètres enregistrés avec succès",
   "settings.savedError": "Échec de l'enregistrement des paramètres",
   "settings.saveError": "Erreur lors de l'enregistrement des paramètres",
@@ -649,7 +652,7 @@ const fr = {
 
   // Settings - AniList
   "settings.anilist": "État de lecture",
-  "settings.anilistTitle": "Synchronisation AniList",
+  "settings.anilistTitle": "AniList Config",
   "settings.anilistDesc": "Synchronisez votre progression de lecture avec AniList. Obtenez un token d'accès personnel sur anilist.co/settings/developer.",
   "settings.anilistToken": "Token d'accès personnel",
   "settings.anilistTokenPlaceholder": "Token AniList...",
@@ -664,7 +667,7 @@ const fr = {
   "settings.anilistLocalUserTitle": "Utilisateur local",
   "settings.anilistLocalUserDesc": "Choisir l'utilisateur local dont la progression est synchronisée avec ce compte AniList",
   "settings.anilistLocalUserNone": "— Sélectionner un utilisateur —",
-  "settings.anilistSyncTitle": "Synchronisation",
+  "settings.anilistSyncTitle": "AniList Sync",
   "settings.anilistSyncDesc": "Envoyer la progression locale vers AniList. Règles : aucun lu → PLANNING · au moins 1 lu → CURRENT (progression = nbre de tomes lus) · tous les tomes publiés lus (total_volumes connu) → COMPLETED.",
   "settings.anilistSyncButton": "Synchroniser vers AniList",
   "settings.anilistPullButton": "Importer depuis AniList",
