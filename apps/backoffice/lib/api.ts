@@ -1066,6 +1066,42 @@ export async function startMetadataRefresh(libraryId: string) {
   });
 }
 
+export async function startReadingStatusMatch(libraryId: string) {
+  return apiFetch<{ id: string; status: string }>("/reading-status/match", {
+    method: "POST",
+    body: JSON.stringify({ library_id: libraryId }),
+  });
+}
+
+export type ReadingStatusMatchReportDto = {
+  job_id: string;
+  status: string;
+  total_series: number;
+  linked: number;
+  already_linked: number;
+  no_results: number;
+  ambiguous: number;
+  errors: number;
+};
+
+export type ReadingStatusMatchResultDto = {
+  id: string;
+  series_name: string;
+  status: "linked" | "already_linked" | "no_results" | "ambiguous" | "error";
+  anilist_id: number | null;
+  anilist_title: string | null;
+  anilist_url: string | null;
+  error_message: string | null;
+};
+
+export async function getReadingStatusMatchReport(jobId: string) {
+  return apiFetch<ReadingStatusMatchReportDto>(`/reading-status/match/${jobId}/report`);
+}
+
+export async function getReadingStatusMatchResults(jobId: string) {
+  return apiFetch<ReadingStatusMatchResultDto[]>(`/reading-status/match/${jobId}/results`);
+}
+
 export type RefreshFieldDiff = {
   field: string;
   old?: unknown;

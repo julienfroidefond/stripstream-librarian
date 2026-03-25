@@ -259,6 +259,9 @@ const en: Record<TranslationKey, string> = {
   "jobs.generateThumbnailsDescription": "Generates thumbnails only for books that don't have one yet. Existing thumbnails are not affected. Useful after an import or if some thumbnails are missing.",
   "jobs.regenerateThumbnailsDescription": "Regenerates all thumbnails from scratch, replacing existing ones. Useful if thumbnail quality or size has changed in the configuration, or if thumbnails are corrupted.",
   "jobs.batchMetadataDescription": "Automatically searches metadata for each series in the library from the configured provider (with fallback if configured). Only results with a unique 100% confidence match are applied automatically. Already linked series are skipped. A detailed per-series report is available at the end of the job. <strong>Requires a specific library</strong> (does not work on \"All libraries\").",
+  "jobs.groupReadingStatus": "Reading status",
+  "jobs.matchReadingStatus": "Match series",
+  "jobs.matchReadingStatusShort": "Auto-link unmatched series to the reading status provider",
 
   // Jobs list
   "jobsList.id": "ID",
@@ -360,6 +363,11 @@ const en: Record<TranslationKey, string> = {
   "jobDetail.match": "Match: {{title}}",
   "jobDetail.fileErrors": "File errors ({{count}})",
   "jobDetail.fileErrorsDesc": "Errors encountered while processing files",
+  "jobDetail.readingStatusMatch": "Series matching",
+  "jobDetail.readingStatusMatchDesc": "Searching each series against the reading status provider",
+  "jobDetail.readingStatusMatchReport": "Match report",
+  "jobDetail.linked": "Linked",
+  "jobDetail.ambiguous": "Ambiguous",
 
   // Job types
   "jobType.rebuild": "Indexing",
@@ -386,6 +394,9 @@ const en: Record<TranslationKey, string> = {
   "jobType.metadata_batchDesc": "Searches external metadata providers for all series in the library and automatically applies 100% confidence matches.",
   "jobType.metadata_refreshLabel": "Metadata refresh",
   "jobType.metadata_refreshDesc": "Re-downloads and updates metadata for all series already linked to an external provider.",
+  "jobType.reading_status_match": "Reading status match",
+  "jobType.reading_status_matchLabel": "Series matching (reading status)",
+  "jobType.reading_status_matchDesc": "Automatically searches each series in the library against the configured reading status provider (e.g. AniList) and creates links for unambiguously identified series.",
 
   // Status badges
   "statusBadge.extracting_pages": "Extracting pages",

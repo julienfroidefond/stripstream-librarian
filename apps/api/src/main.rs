@@ -18,6 +18,7 @@ mod pages;
 mod prowlarr;
 mod qbittorrent;
 mod reading_progress;
+mod reading_status_match;
 mod search;
 mod series;
 mod settings;
@@ -145,6 +146,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/metadata/batch/:id/results", get(metadata_batch::get_batch_results))
         .route("/metadata/refresh", axum::routing::post(metadata_refresh::start_refresh))
         .route("/metadata/refresh/:id/report", get(metadata_refresh::get_refresh_report))
+        .route("/reading-status/match", axum::routing::post(reading_status_match::start_match))
+        .route("/reading-status/match/:id/report", get(reading_status_match::get_match_report))
+        .route("/reading-status/match/:id/results", get(reading_status_match::get_match_results))
         .merge(settings::settings_routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),

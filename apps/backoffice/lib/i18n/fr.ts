@@ -257,6 +257,9 @@ const fr = {
   "jobs.generateThumbnailsDescription": "Génère les miniatures uniquement pour les livres qui n'en ont pas encore. Les miniatures existantes ne sont pas touchées. Utile après un import ou si certaines miniatures sont manquantes.",
   "jobs.regenerateThumbnailsDescription": "Regénère toutes les miniatures depuis zéro, en remplaçant les existantes. Utile si la qualité ou la taille des miniatures a changé dans la configuration, ou si des miniatures sont corrompues.",
   "jobs.batchMetadataDescription": "Recherche automatiquement les métadonnées de chaque série de la bibliothèque auprès du provider configuré (avec fallback si configuré). Seuls les résultats avec un match unique à 100% de confiance sont appliqués automatiquement. Les séries déjà liées sont ignorées. Un rapport détaillé par série est disponible à la fin du job. <strong>Requiert une bibliothèque spécifique</strong> (ne fonctionne pas sur \u00ab Toutes les bibliothèques \u00bb).",
+  "jobs.groupReadingStatus": "Statut de lecture",
+  "jobs.matchReadingStatus": "Correspondance des séries",
+  "jobs.matchReadingStatusShort": "Lier automatiquement les séries non associées au provider",
 
   // Jobs list
   "jobsList.id": "ID",
@@ -358,6 +361,11 @@ const fr = {
   "jobDetail.match": "Correspondance : {{title}}",
   "jobDetail.fileErrors": "Erreurs de fichiers ({{count}})",
   "jobDetail.fileErrorsDesc": "Erreurs rencontrées lors du traitement des fichiers",
+  "jobDetail.readingStatusMatch": "Correspondance des séries",
+  "jobDetail.readingStatusMatchDesc": "Recherche de chaque série sur le provider de statut de lecture",
+  "jobDetail.readingStatusMatchReport": "Rapport de correspondance",
+  "jobDetail.linked": "Liées",
+  "jobDetail.ambiguous": "Ambiguës",
 
   // Job types
   "jobType.rebuild": "Indexation",
@@ -384,6 +392,9 @@ const fr = {
   "jobType.metadata_batchDesc": "Recherche les métadonnées auprès des fournisseurs externes pour toutes les séries de la bibliothèque et applique automatiquement les correspondances à 100% de confiance.",
   "jobType.metadata_refreshLabel": "Rafraîchissement métadonnées",
   "jobType.metadata_refreshDesc": "Re-télécharge et met à jour les métadonnées pour toutes les séries déjà liées à un fournisseur externe.",
+  "jobType.reading_status_match": "Correspondance statut lecture",
+  "jobType.reading_status_matchLabel": "Correspondance des séries (statut lecture)",
+  "jobType.reading_status_matchDesc": "Recherche automatiquement chaque série de la bibliothèque sur le provider de statut de lecture configuré (ex. AniList) et crée les liens pour les séries identifiées sans ambiguïté.",
 
   // Status badges
   "statusBadge.extracting_pages": "Extraction des pages",

@@ -43,6 +43,10 @@ pub struct EventToggles {
     pub metadata_refresh_completed: bool,
     #[serde(default = "default_true")]
     pub metadata_refresh_failed: bool,
+    #[serde(default = "default_true")]
+    pub reading_status_match_completed: bool,
+    #[serde(default = "default_true")]
+    pub reading_status_match_failed: bool,
 }
 
 fn default_true() -> bool {
@@ -63,6 +67,8 @@ fn default_events() -> EventToggles {
         metadata_batch_failed: true,
         metadata_refresh_completed: true,
         metadata_refresh_failed: true,
+        reading_status_match_completed: true,
+        reading_status_match_failed: true,
     }
 }
 
@@ -246,6 +252,16 @@ pub enum NotificationEvent {
         errors: i32,
     },
     MetadataRefreshFailed {
+        library_name: Option<String>,
+        error: String,
+    },
+    // Reading status match (auto-link series to provider)
+    ReadingStatusMatchCompleted {
+        library_name: Option<String>,
+        total_series: i32,
+        linked: i32,
+    },
+    ReadingStatusMatchFailed {
         library_name: Option<String>,
         error: String,
     },
@@ -464,6 +480,37 @@ fn format_event(event: &NotificationEvent) -> String {
             ]
             .join("\n")
         }
+        NotificationEvent::ReadingStatusMatchCompleted {
+            library_name,
+            total_series,
+            linked,
+        } => {
+            let lib = library_name.as_deref().unwrap_or("All libraries");
+            [
+                format!("✅ <b>Reading status match completed</b>"),
+                format!("━━━━━━━━━━━━━━━━━━━━"),
+                format!("📂 <b>Library:</b> {lib}"),
+                String::new(),
+                format!("📊 <b>Results</b>"),
+                format!("  🔗 Linked: <b>{linked}</b> / <b>{total_series}</b> series"),
+            ]
+            .join("\n")
+        }
+        NotificationEvent::ReadingStatusMatchFailed {
+            library_name,
+            error,
+        } => {
+            let lib = library_name.as_deref().unwrap_or("All libraries");
+            let err = truncate(error, 200);
+            [
+                format!("🚨 <b>Reading status match failed</b>"),
+                format!("━━━━━━━━━━━━━━━━━━━━"),
+                format!("📂 <b>Library:</b> {lib}"),
+                String::new(),
+                format!("💬 <code>{err}</code>"),
+            ]
+            .join("\n")
+        }
     }
 }
 
@@ -504,6 +551,8 @@ fn is_event_enabled(config: &TelegramConfig, event: &NotificationEvent) -> bool 
         NotificationEvent::MetadataBatchFailed { .. } => config.events.metadata_batch_failed,
         NotificationEvent::MetadataRefreshCompleted { .. } => config.events.metadata_refresh_completed,
         NotificationEvent::MetadataRefreshFailed { .. } => config.events.metadata_refresh_failed,
+        NotificationEvent::ReadingStatusMatchCompleted { .. } => config.events.reading_status_match_completed,
+        NotificationEvent::ReadingStatusMatchFailed { .. } => config.events.reading_status_match_failed,
     }
 }
 

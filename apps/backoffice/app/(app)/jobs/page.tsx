@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, IndexJobDto, LibraryDto } from "@/lib/api";
+import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startReadingStatusMatch, IndexJobDto, LibraryDto } from "@/lib/api";
 import { JobsList } from "@/app/components/JobsList";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, FormField, FormSelect } from "@/app/components/ui";
 import { getServerTranslations } from "@/lib/i18n/server";
@@ -16,6 +16,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   ]);
 
   const libraryMap = new Map(libraries.map(l => [l.id, l.name]));
+  const readingStatusLibraries = libraries.filter(l => l.reading_status_provider);
 
   async function triggerRebuild(formData: FormData) {
     "use server";
@@ -111,6 +112,36 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
           if (result.status !== "already_running") lastId = result.id;
         } catch {
           // Library may have metadata disabled or no approved links — skip
+        }
+      }
+      revalidatePath("/jobs");
+      redirect(lastId ? `/jobs?highlight=${lastId}` : "/jobs");
+    }
+  }
+
+  async function triggerReadingStatusMatch(formData: FormData) {
+    "use server";
+    const libraryId = formData.get("library_id") as string;
+    if (libraryId) {
+      let result;
+      try {
+        result = await startReadingStatusMatch(libraryId);
+      } catch {
+        return;
+      }
+      revalidatePath("/jobs");
+      redirect(`/jobs?highlight=${result.id}`);
+    } else {
+      // All libraries — only those with reading_status_provider configured
+      const allLibraries = await fetchLibraries().catch(() => [] as LibraryDto[]);
+      let lastId: string | undefined;
+      for (const lib of allLibraries) {
+        if (!lib.reading_status_provider) continue;
+        try {
+          const result = await startReadingStatusMatch(lib.id);
+          if (result.status !== "already_running") lastId = result.id;
+        } catch {
+          // Skip libraries with errors
         }
       }
       revalidatePath("/jobs");
@@ -253,6 +284,30 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                   </button>
                 </div>
               </div>
+
+              {/* Reading status group — only shown if at least one library has a provider configured */}
+              {readingStatusLibraries.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {t("jobs.groupReadingStatus")}
+                  </div>
+                  <div className="space-y-2">
+                    <button type="submit" formAction={triggerReadingStatusMatch}
+                      className="w-full text-left rounded-lg border border-input bg-background p-3 hover:bg-accent/50 transition-colors group cursor-pointer">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                        </svg>
+                        <span className="font-medium text-sm text-foreground">{t("jobs.matchReadingStatus")}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1 ml-6">{t("jobs.matchReadingStatusShort")}</p>
+                    </button>
+                  </div>
+                </div>
+              )}
 
             </div>
           </form>

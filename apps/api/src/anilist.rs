@@ -13,7 +13,7 @@ use crate::{error::ApiError, state::AppState};
 
 const ANILIST_API: &str = "https://graphql.anilist.co";
 
-async fn anilist_graphql(
+pub(crate) async fn anilist_graphql(
     token: &str,
     query: &str,
     variables: Value,
@@ -55,7 +55,7 @@ async fn anilist_graphql(
 }
 
 /// Load AniList settings from DB: (access_token, anilist_user_id, local_user_id)
-async fn load_anilist_settings(pool: &sqlx::PgPool) -> Result<(String, Option<i64>, Option<Uuid>), ApiError> {
+pub(crate) async fn load_anilist_settings(pool: &sqlx::PgPool) -> Result<(String, Option<i64>, Option<Uuid>), ApiError> {
     let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'anilist'")
         .fetch_optional(pool)
         .await?;
