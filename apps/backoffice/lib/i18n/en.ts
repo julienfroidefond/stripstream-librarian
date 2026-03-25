@@ -262,6 +262,8 @@ const en: Record<TranslationKey, string> = {
   "jobs.groupReadingStatus": "Reading status",
   "jobs.matchReadingStatus": "Match series",
   "jobs.matchReadingStatusShort": "Auto-link unmatched series to the reading status provider",
+  "jobs.pushReadingStatus": "Push reading statuses",
+  "jobs.pushReadingStatusShort": "Push changed reading statuses to AniList (differential push)",
 
   // Jobs list
   "jobsList.id": "ID",
@@ -368,6 +370,12 @@ const en: Record<TranslationKey, string> = {
   "jobDetail.readingStatusMatchReport": "Match report",
   "jobDetail.linked": "Linked",
   "jobDetail.ambiguous": "Ambiguous",
+  "jobDetail.readingStatusPush": "Reading status push",
+  "jobDetail.readingStatusPushDesc": "Differential push of reading statuses to AniList",
+  "jobDetail.readingStatusPushReport": "Push report",
+  "jobDetail.pushed": "Pushed",
+  "jobDetail.skipped": "Skipped",
+  "jobDetail.noBooks": "No books",
 
   // Job types
   "jobType.rebuild": "Indexing",
@@ -397,6 +405,9 @@ const en: Record<TranslationKey, string> = {
   "jobType.reading_status_match": "Reading status match",
   "jobType.reading_status_matchLabel": "Series matching (reading status)",
   "jobType.reading_status_matchDesc": "Automatically searches each series in the library against the configured reading status provider (e.g. AniList) and creates links for unambiguously identified series.",
+  "jobType.reading_status_push": "Reading status push",
+  "jobType.reading_status_pushLabel": "Reading status push",
+  "jobType.reading_status_pushDesc": "Differentially pushes changed reading statuses (or new series) to AniList.",
 
   // Status badges
   "statusBadge.extracting_pages": "Extracting pages",

@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { apiFetch, getMetadataBatchReport, getMetadataBatchResults, getMetadataRefreshReport, getReadingStatusMatchReport, getReadingStatusMatchResults, MetadataBatchReportDto, MetadataBatchResultDto, MetadataRefreshReportDto, ReadingStatusMatchReportDto, ReadingStatusMatchResultDto } from "@/lib/api";
+import { apiFetch, getMetadataBatchReport, getMetadataBatchResults, getMetadataRefreshReport, getReadingStatusMatchReport, getReadingStatusMatchResults, getReadingStatusPushReport, getReadingStatusPushResults, MetadataBatchReportDto, MetadataBatchResultDto, MetadataRefreshReportDto, ReadingStatusMatchReportDto, ReadingStatusMatchResultDto, ReadingStatusPushReportDto, ReadingStatusPushResultDto } from "@/lib/api";
 import {
   Card, CardHeader, CardTitle, CardDescription, CardContent,
   StatusBadge, JobTypeBadge, StatBox, ProgressBar
@@ -137,11 +137,17 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
       description: t("jobType.reading_status_matchDesc"),
       isThumbnailOnly: false,
     },
+    reading_status_push: {
+      label: t("jobType.reading_status_pushLabel"),
+      description: t("jobType.reading_status_pushDesc"),
+      isThumbnailOnly: false,
+    },
   };
 
   const isMetadataBatch = job.type === "metadata_batch";
   const isMetadataRefresh = job.type === "metadata_refresh";
   const isReadingStatusMatch = job.type === "reading_status_match";
+  const isReadingStatusPush = job.type === "reading_status_push";
 
   // Fetch batch report & results for metadata_batch jobs
   let batchReport: MetadataBatchReportDto | null = null;
@@ -166,6 +172,16 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     [readingStatusReport, readingStatusResults] = await Promise.all([
       getReadingStatusMatchReport(id).catch(() => null),
       getReadingStatusMatchResults(id).catch(() => []),
+    ]);
+  }
+
+  // Fetch reading status push report & results
+  let readingStatusPushReport: ReadingStatusPushReportDto | null = null;
+  let readingStatusPushResults: ReadingStatusPushResultDto[] = [];
+  if (isReadingStatusPush) {
+    [readingStatusPushReport, readingStatusPushResults] = await Promise.all([
+      getReadingStatusPushReport(id).catch(() => null),
+      getReadingStatusPushResults(id).catch(() => []),
     ]);
   }
 
@@ -195,6 +211,8 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     ? t("jobDetail.metadataRefresh")
     : isReadingStatusMatch
     ? t("jobDetail.readingStatusMatch")
+    : isReadingStatusPush
+    ? t("jobDetail.readingStatusPush")
     : isThumbnailOnly
       ? t("jobType.thumbnail_rebuild")
       : isExtractingPages
@@ -209,6 +227,8 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     ? t("jobDetail.metadataRefreshDesc")
     : isReadingStatusMatch
     ? t("jobDetail.readingStatusMatchDesc")
+    : isReadingStatusPush
+    ? t("jobDetail.readingStatusPushDesc")
     : isThumbnailOnly
       ? undefined
       : isExtractingPages
@@ -265,7 +285,12 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
                 — {readingStatusReport.linked} {t("jobDetail.linked").toLowerCase()}, {readingStatusReport.no_results} {t("jobDetail.noResults").toLowerCase()}, {readingStatusReport.ambiguous} {t("jobDetail.ambiguous").toLowerCase()}, {readingStatusReport.errors} {t("jobDetail.errors").toLowerCase()}
               </span>
             )}
-            {!isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && job.stats_json && (
+            {isReadingStatusPush && readingStatusPushReport && (
+              <span className="ml-2 text-success/80">
+                — {readingStatusPushReport.pushed} {t("jobDetail.pushed").toLowerCase()}, {readingStatusPushReport.no_books} {t("jobDetail.noBooks").toLowerCase()}, {readingStatusPushReport.errors} {t("jobDetail.errors").toLowerCase()}
+              </span>
+            )}
+            {!isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && job.stats_json && (
               <span className="ml-2 text-success/80">
                 — {job.stats_json.scanned_files} {t("jobDetail.scanned").toLowerCase()}, {job.stats_json.indexed_files} {t("jobDetail.indexed").toLowerCase()}
                 {job.stats_json.removed_files > 0 && `, ${job.stats_json.removed_files} ${t("jobDetail.removed").toLowerCase()}`}
@@ -274,7 +299,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
                 {job.total_files != null && job.total_files > 0 && `, ${job.total_files} ${t("jobType.thumbnail_rebuild").toLowerCase()}`}
               </span>
             )}
-            {!isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !job.stats_json && isThumbnailOnly && job.total_files != null && (
+            {!isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && !job.stats_json && isThumbnailOnly && job.total_files != null && (
               <span className="ml-2 text-success/80">
                 — {job.processed_files ?? job.total_files} {t("jobDetail.generated").toLowerCase()}
               </span>
@@ -539,7 +564,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
         )}
 
         {/* Index Statistics — index jobs only */}
-        {job.stats_json && !isThumbnailOnly && !isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && (
+        {job.stats_json && !isThumbnailOnly && !isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && (
           <Card>
             <CardHeader>
               <CardTitle>{t("jobDetail.indexStats")}</CardTitle>
@@ -816,6 +841,92 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
                         <span className="text-success">{r.anilist_title}</span>
                       )}
                       {r.anilist_id && <span className="text-muted-foreground/60">#{r.anilist_id}</span>}
+                    </div>
+                  )}
+                  {r.error_message && (
+                    <p className="text-xs text-destructive/80 mt-1">{r.error_message}</p>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Reading status push — summary report */}
+        {isReadingStatusPush && readingStatusPushReport && (
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("jobDetail.readingStatusPushReport")}</CardTitle>
+              <CardDescription>{t("jobDetail.seriesAnalyzed", { count: String(readingStatusPushReport.total_series) })}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <StatBox value={readingStatusPushReport.pushed} label={t("jobDetail.pushed")} variant="success" />
+                <StatBox value={readingStatusPushReport.skipped} label={t("jobDetail.skipped")} variant="primary" />
+                <StatBox value={readingStatusPushReport.no_books} label={t("jobDetail.noBooks")} />
+                <StatBox value={readingStatusPushReport.errors} label={t("jobDetail.errors")} variant={readingStatusPushReport.errors > 0 ? "error" : "default"} />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Reading status push — per-series detail */}
+        {isReadingStatusPush && readingStatusPushResults.length > 0 && (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>{t("jobDetail.resultsBySeries")}</CardTitle>
+              <CardDescription>{t("jobDetail.seriesProcessed", { count: String(readingStatusPushResults.length) })}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 max-h-[600px] overflow-y-auto">
+              {readingStatusPushResults.map((r) => (
+                <div
+                  key={r.id}
+                  className={`p-3 rounded-lg border ${
+                    r.status === "pushed" ? "bg-success/10 border-success/20" :
+                    r.status === "error" ? "bg-destructive/10 border-destructive/20" :
+                    r.status === "skipped" ? "bg-primary/10 border-primary/20" :
+                    "bg-muted/50 border-border/60"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    {job.library_id ? (
+                      <Link
+                        href={`/libraries/${job.library_id}/series/${encodeURIComponent(r.series_name)}`}
+                        className="font-medium text-sm text-primary hover:underline truncate"
+                      >
+                        {r.series_name}
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-sm text-foreground truncate">{r.series_name}</span>
+                    )}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${
+                      r.status === "pushed" ? "bg-success/20 text-success" :
+                      r.status === "skipped" ? "bg-primary/20 text-primary" :
+                      r.status === "no_books" ? "bg-muted text-muted-foreground" :
+                      r.status === "error" ? "bg-destructive/20 text-destructive" :
+                      "bg-muted text-muted-foreground"
+                    }`}>
+                      {r.status === "pushed" ? t("jobDetail.pushed") :
+                       r.status === "skipped" ? t("jobDetail.skipped") :
+                       r.status === "no_books" ? t("jobDetail.noBooks") :
+                       r.status === "error" ? t("common.error") :
+                       r.status}
+                    </span>
+                  </div>
+                  {r.status === "pushed" && r.anilist_title && (
+                    <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <svg className="w-3 h-3 text-success shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      {r.anilist_url ? (
+                        <a href={r.anilist_url} target="_blank" rel="noopener noreferrer" className="text-success hover:underline">
+                          {r.anilist_title}
+                        </a>
+                      ) : (
+                        <span className="text-success">{r.anilist_title}</span>
+                      )}
+                      {r.anilist_status && <span className="text-muted-foreground/70 font-medium">{r.anilist_status}</span>}
+                      {r.progress_volumes != null && <span className="text-muted-foreground/60">vol. {r.progress_volumes}</span>}
                     </div>
                   )}
                   {r.error_message && (

@@ -118,6 +118,7 @@ export function JobTypeBadge({ type, className = "" }: JobTypeBadgeProps) {
     metadata_batch: t("jobType.metadata_batch"),
     metadata_refresh: t("jobType.metadata_refresh"),
     reading_status_match: t("jobType.reading_status_match"),
+    reading_status_push: t("jobType.reading_status_push"),
   };
   const label = jobTypeLabels[key] ?? type;
   return <Badge variant={variant} className={className}>{label}</Badge>;

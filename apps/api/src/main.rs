@@ -19,6 +19,7 @@ mod prowlarr;
 mod qbittorrent;
 mod reading_progress;
 mod reading_status_match;
+mod reading_status_push;
 mod search;
 mod series;
 mod settings;
@@ -149,6 +150,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/reading-status/match", axum::routing::post(reading_status_match::start_match))
         .route("/reading-status/match/:id/report", get(reading_status_match::get_match_report))
         .route("/reading-status/match/:id/results", get(reading_status_match::get_match_results))
+        .route("/reading-status/push", axum::routing::post(reading_status_push::start_push))
+        .route("/reading-status/push/:id/report", get(reading_status_push::get_push_report))
+        .route("/reading-status/push/:id/results", get(reading_status_push::get_push_results))
         .merge(settings::settings_routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),

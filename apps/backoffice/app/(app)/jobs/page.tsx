@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startReadingStatusMatch, IndexJobDto, LibraryDto } from "@/lib/api";
+import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startReadingStatusMatch, startReadingStatusPush, IndexJobDto, LibraryDto } from "@/lib/api";
 import { JobsList } from "@/app/components/JobsList";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, FormField, FormSelect } from "@/app/components/ui";
 import { getServerTranslations } from "@/lib/i18n/server";
@@ -139,6 +139,36 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
         if (!lib.reading_status_provider) continue;
         try {
           const result = await startReadingStatusMatch(lib.id);
+          if (result.status !== "already_running") lastId = result.id;
+        } catch {
+          // Skip libraries with errors
+        }
+      }
+      revalidatePath("/jobs");
+      redirect(lastId ? `/jobs?highlight=${lastId}` : "/jobs");
+    }
+  }
+
+  async function triggerReadingStatusPush(formData: FormData) {
+    "use server";
+    const libraryId = formData.get("library_id") as string;
+    if (libraryId) {
+      let result;
+      try {
+        result = await startReadingStatusPush(libraryId);
+      } catch {
+        return;
+      }
+      revalidatePath("/jobs");
+      redirect(`/jobs?highlight=${result.id}`);
+    } else {
+      // All libraries — only those with reading_status_provider configured
+      const allLibraries = await fetchLibraries().catch(() => [] as LibraryDto[]);
+      let lastId: string | undefined;
+      for (const lib of allLibraries) {
+        if (!lib.reading_status_provider) continue;
+        try {
+          const result = await startReadingStatusPush(lib.id);
           if (result.status !== "already_running") lastId = result.id;
         } catch {
           // Skip libraries with errors
@@ -304,6 +334,16 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                         <span className="font-medium text-sm text-foreground">{t("jobs.matchReadingStatus")}</span>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1 ml-6">{t("jobs.matchReadingStatusShort")}</p>
+                    </button>
+                    <button type="submit" formAction={triggerReadingStatusPush}
+                      className="w-full text-left rounded-lg border border-input bg-background p-3 hover:bg-accent/50 transition-colors group cursor-pointer">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-4 h-4 text-success shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <span className="font-medium text-sm text-foreground">{t("jobs.pushReadingStatus")}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1 ml-6">{t("jobs.pushReadingStatusShort")}</p>
                     </button>
                   </div>
                 </div>

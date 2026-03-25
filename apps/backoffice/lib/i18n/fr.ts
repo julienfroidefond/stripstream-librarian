@@ -260,6 +260,8 @@ const fr = {
   "jobs.groupReadingStatus": "Statut de lecture",
   "jobs.matchReadingStatus": "Correspondance des séries",
   "jobs.matchReadingStatusShort": "Lier automatiquement les séries non associées au provider",
+  "jobs.pushReadingStatus": "Push des états de lecture",
+  "jobs.pushReadingStatusShort": "Envoyer les états de lecture modifiés vers AniList (push différentiel)",
 
   // Jobs list
   "jobsList.id": "ID",
@@ -366,6 +368,12 @@ const fr = {
   "jobDetail.readingStatusMatchReport": "Rapport de correspondance",
   "jobDetail.linked": "Liées",
   "jobDetail.ambiguous": "Ambiguës",
+  "jobDetail.readingStatusPush": "Push des états de lecture",
+  "jobDetail.readingStatusPushDesc": "Envoi différentiel des états de lecture vers AniList",
+  "jobDetail.readingStatusPushReport": "Rapport de push",
+  "jobDetail.pushed": "Envoyés",
+  "jobDetail.skipped": "Ignorés",
+  "jobDetail.noBooks": "Sans livres",
 
   // Job types
   "jobType.rebuild": "Indexation",
@@ -395,6 +403,9 @@ const fr = {
   "jobType.reading_status_match": "Correspondance statut lecture",
   "jobType.reading_status_matchLabel": "Correspondance des séries (statut lecture)",
   "jobType.reading_status_matchDesc": "Recherche automatiquement chaque série de la bibliothèque sur le provider de statut de lecture configuré (ex. AniList) et crée les liens pour les séries identifiées sans ambiguïté.",
+  "jobType.reading_status_push": "Push statut lecture",
+  "jobType.reading_status_pushLabel": "Push des états de lecture",
+  "jobType.reading_status_pushDesc": "Envoie les états de lecture modifiés (ou nouvelles séries) vers AniList de façon différentielle.",
 
   // Status badges
   "statusBadge.extracting_pages": "Extraction des pages",

@@ -1102,6 +1102,43 @@ export async function getReadingStatusMatchResults(jobId: string) {
   return apiFetch<ReadingStatusMatchResultDto[]>(`/reading-status/match/${jobId}/results`);
 }
 
+export async function startReadingStatusPush(libraryId: string) {
+  return apiFetch<{ id: string; status: string }>("/reading-status/push", {
+    method: "POST",
+    body: JSON.stringify({ library_id: libraryId }),
+  });
+}
+
+export type ReadingStatusPushReportDto = {
+  job_id: string;
+  status: string;
+  total_series: number;
+  pushed: number;
+  skipped: number;
+  no_books: number;
+  errors: number;
+};
+
+export type ReadingStatusPushResultDto = {
+  id: string;
+  series_name: string;
+  status: "pushed" | "skipped" | "no_books" | "error";
+  anilist_id: number | null;
+  anilist_title: string | null;
+  anilist_url: string | null;
+  anilist_status: string | null;
+  progress_volumes: number | null;
+  error_message: string | null;
+};
+
+export async function getReadingStatusPushReport(jobId: string) {
+  return apiFetch<ReadingStatusPushReportDto>(`/reading-status/push/${jobId}/report`);
+}
+
+export async function getReadingStatusPushResults(jobId: string) {
+  return apiFetch<ReadingStatusPushResultDto[]>(`/reading-status/push/${jobId}/results`);
+}
+
 export type RefreshFieldDiff = {
   field: string;
   old?: unknown;

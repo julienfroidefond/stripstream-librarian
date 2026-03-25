@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { apiFetch, IndexJobDto, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startReadingStatusMatch } from "@/lib/api";
+import { apiFetch, IndexJobDto, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startReadingStatusMatch, startReadingStatusPush } from "@/lib/api";
 
 export async function POST(
   _request: NextRequest,
@@ -32,6 +32,9 @@ export async function POST(
       case "reading_status_match":
         if (!libraryId) return NextResponse.json({ error: "Library ID required for reading status match" }, { status: 400 });
         return NextResponse.json(await startReadingStatusMatch(libraryId));
+      case "reading_status_push":
+        if (!libraryId) return NextResponse.json({ error: "Library ID required for reading status push" }, { status: 400 });
+        return NextResponse.json(await startReadingStatusPush(libraryId));
       default:
         return NextResponse.json({ error: `Cannot replay job type: ${job.type}` }, { status: 400 });
     }
