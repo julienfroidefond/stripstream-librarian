@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 import { apiFetch, LibraryDto } from "@/lib/api";
 
@@ -12,6 +13,7 @@ export async function PATCH(
       method: "PATCH",
       body: JSON.stringify(body),
     });
+    revalidatePath("/libraries");
     return NextResponse.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update metadata provider";

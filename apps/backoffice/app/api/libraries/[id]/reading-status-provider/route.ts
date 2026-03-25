@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { apiFetch } from "@/lib/api";
 
@@ -13,6 +14,7 @@ export async function PATCH(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    revalidatePath("/libraries");
     return NextResponse.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update reading status provider";

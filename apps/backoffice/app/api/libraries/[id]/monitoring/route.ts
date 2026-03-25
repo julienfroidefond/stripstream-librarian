@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 import { updateLibraryMonitoring } from "@/lib/api";
 
@@ -9,6 +10,7 @@ export async function PATCH(
   try {
     const { monitor_enabled, scan_mode, watcher_enabled, metadata_refresh_mode } = await request.json();
     const data = await updateLibraryMonitoring(id, monitor_enabled, scan_mode, watcher_enabled, metadata_refresh_mode);
+    revalidatePath("/libraries");
     return NextResponse.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update monitoring settings";
