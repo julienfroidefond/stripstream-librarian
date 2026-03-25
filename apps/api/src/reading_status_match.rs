@@ -120,11 +120,13 @@ pub async fn start_match(
     tokio::spawn(async move {
         if let Err(e) = process_reading_status_match(&pool, job_id, library_id).await {
             warn!("[READING_STATUS_MATCH] job {job_id} failed: {e}");
+            let partial_stats = build_match_stats(&pool, job_id).await;
             let _ = sqlx::query(
-                "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
+                "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW(), stats_json = $3 WHERE id = $1",
             )
             .bind(job_id)
             .bind(e.to_string())
+            .bind(&partial_stats)
             .execute(&pool)
             .await;
             notifications::notify(
@@ -600,6 +602,50 @@ fn normalize_title(s: &str) -> String {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+async fn build_match_stats(pool: &PgPool, job_id: Uuid) -> serde_json::Value {
+    let total: Option<i32> = sqlx::query_scalar("SELECT total_files FROM index_jobs WHERE id = $1")
+        .bind(job_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+
+    let counts = sqlx::query(
+        "SELECT status, COUNT(*) as cnt FROM reading_status_match_results WHERE job_id = $1 GROUP BY status",
+    )
+    .bind(job_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let mut linked = 0i64;
+    let mut already_linked = 0i64;
+    let mut no_results = 0i64;
+    let mut ambiguous = 0i64;
+    let mut errors = 0i64;
+    for row in &counts {
+        let s: String = row.get("status");
+        let c: i64 = row.get("cnt");
+        match s.as_str() {
+            "linked" => linked = c,
+            "already_linked" => already_linked = c,
+            "no_results" => no_results = c,
+            "ambiguous" => ambiguous = c,
+            "error" => errors = c,
+            _ => {}
+        }
+    }
+
+    serde_json::json!({
+        "total_series": total.unwrap_or(0) as i64,
+        "linked": linked,
+        "already_linked": already_linked,
+        "no_results": no_results,
+        "ambiguous": ambiguous,
+        "errors": errors,
+    })
 }
 
 async fn is_job_cancelled(pool: &PgPool, job_id: Uuid) -> bool {

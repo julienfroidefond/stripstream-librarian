@@ -127,11 +127,13 @@ pub async fn start_push(
     tokio::spawn(async move {
         if let Err(e) = process_reading_status_push(&pool, job_id, library_id).await {
             warn!("[READING_STATUS_PUSH] job {job_id} failed: {e}");
+            let partial_stats = build_push_stats(&pool, job_id).await;
             let _ = sqlx::query(
-                "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
+                "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW(), stats_json = $3 WHERE id = $1",
             )
             .bind(job_id)
             .bind(e.to_string())
+            .bind(&partial_stats)
             .execute(&pool)
             .await;
             notifications::notify(
@@ -628,6 +630,47 @@ async fn insert_push_result(
     .bind(error_message)
     .execute(pool)
     .await;
+}
+
+async fn build_push_stats(pool: &PgPool, job_id: Uuid) -> serde_json::Value {
+    let total: Option<i32> = sqlx::query_scalar("SELECT total_files FROM index_jobs WHERE id = $1")
+        .bind(job_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+
+    let counts = sqlx::query(
+        "SELECT status, COUNT(*) as cnt FROM reading_status_push_results WHERE job_id = $1 GROUP BY status",
+    )
+    .bind(job_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let mut pushed = 0i64;
+    let mut skipped = 0i64;
+    let mut no_books = 0i64;
+    let mut errors = 0i64;
+    for row in &counts {
+        let s: String = row.get("status");
+        let c: i64 = row.get("cnt");
+        match s.as_str() {
+            "pushed" => pushed = c,
+            "skipped" => skipped = c,
+            "no_books" => no_books = c,
+            "error" => errors = c,
+            _ => {}
+        }
+    }
+
+    serde_json::json!({
+        "total_series": total.unwrap_or(0) as i64,
+        "pushed": pushed,
+        "skipped": skipped,
+        "no_books": no_books,
+        "errors": errors,
+    })
 }
 
 async fn is_job_cancelled(pool: &PgPool, job_id: Uuid) -> bool {
