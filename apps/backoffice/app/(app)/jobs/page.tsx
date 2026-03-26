@@ -99,7 +99,8 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
       try {
         result = await startMetadataRefresh(libraryId);
       } catch {
-        return;
+        revalidatePath("/jobs");
+        redirect("/jobs");
       }
       revalidatePath("/jobs");
       redirect(`/jobs?highlight=${result.id}`);
