@@ -563,7 +563,7 @@ export type ThumbnailStats = {
 };
 
 export async function getSettings() {
-  return apiFetch<Settings>("/settings", { next: { revalidate: 60 } });
+  return apiFetch<Settings>("/settings", { cache: "no-store" });
 }
 
 export async function updateSetting(key: string, value: unknown) {
@@ -574,7 +574,7 @@ export async function updateSetting(key: string, value: unknown) {
 }
 
 export async function getCacheStats() {
-  return apiFetch<CacheStats>("/settings/cache/stats", { next: { revalidate: 30 } });
+  return apiFetch<CacheStats>("/settings/cache/stats", { cache: "no-store" });
 }
 
 export async function clearCache() {
@@ -584,7 +584,7 @@ export async function clearCache() {
 }
 
 export async function getThumbnailStats() {
-  return apiFetch<ThumbnailStats>("/settings/thumbnail/stats", { next: { revalidate: 30 } });
+  return apiFetch<ThumbnailStats>("/settings/thumbnail/stats", { cache: "no-store" });
 }
 
 // Status mappings
