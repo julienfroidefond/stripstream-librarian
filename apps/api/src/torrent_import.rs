@@ -1,4 +1,4 @@
-use axum::{extract::State, Json};
+use axum::{extract::{Path, State}, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
@@ -35,6 +35,9 @@ pub struct TorrentDownloadDto {
     pub status: String,
     pub imported_files: Option<serde_json::Value>,
     pub error_message: Option<String>,
+    pub progress: f32,
+    pub download_speed: i64,
+    pub eta: i64,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -102,7 +105,7 @@ pub async fn list_torrent_downloads(
 ) -> Result<Json<Vec<TorrentDownloadDto>>, ApiError> {
     let rows = sqlx::query(
         "SELECT id, library_id, series_name, expected_volumes, qb_hash, content_path, \
-         status, imported_files, error_message, created_at, updated_at \
+         status, imported_files, error_message, progress, download_speed, eta, created_at, updated_at \
          FROM torrent_downloads ORDER BY created_at DESC LIMIT 100",
     )
     .fetch_all(&state.pool)
@@ -126,6 +129,9 @@ pub async fn list_torrent_downloads(
                 status: row.get("status"),
                 imported_files: row.get("imported_files"),
                 error_message: row.get("error_message"),
+                progress: row.get("progress"),
+                download_speed: row.get("download_speed"),
+                eta: row.get("eta"),
                 created_at: created_at.to_rfc3339(),
                 updated_at: updated_at.to_rfc3339(),
             }
@@ -133,6 +139,55 @@ pub async fn list_torrent_downloads(
         .collect();
 
     Ok(Json(dtos))
+}
+
+/// Delete a torrent download entry. If the torrent is still downloading, also remove it from qBittorrent.
+pub async fn delete_torrent_download(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let row = sqlx::query("SELECT qb_hash, status FROM torrent_downloads WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?;
+
+    let Some(row) = row else {
+        return Err(ApiError::not_found("torrent download not found"));
+    };
+
+    let qb_hash: Option<String> = row.get("qb_hash");
+    let status: String = row.get("status");
+
+    // If downloading, try to cancel in qBittorrent
+    if status == "downloading" {
+        if let Some(ref hash) = qb_hash {
+            if let Ok((base_url, username, password)) = load_qbittorrent_config(&state.pool).await {
+                let client = reqwest::Client::builder()
+                    .timeout(Duration::from_secs(10))
+                    .build()
+                    .ok();
+                if let Some(client) = client {
+                    if let Ok(sid) = qbittorrent_login(&client, &base_url, &username, &password).await {
+                        let _ = client
+                            .post(format!("{base_url}/api/v2/torrents/delete"))
+                            .header("Cookie", format!("SID={sid}"))
+                            .form(&[("hashes", hash.as_str()), ("deleteFiles", "true")])
+                            .send()
+                            .await;
+                        info!("Deleted torrent {} from qBittorrent", hash);
+                    }
+                }
+            }
+        }
+    }
+
+    sqlx::query("DELETE FROM torrent_downloads WHERE id = $1")
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+
+    info!("Deleted torrent download {id}");
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 // ─── Background poller ────────────────────────────────────────────────────────
@@ -144,6 +199,12 @@ struct QbTorrentInfo {
     content_path: Option<String>,
     save_path: Option<String>,
     name: Option<String>,
+    #[serde(default)]
+    progress: f64,
+    #[serde(default)]
+    dlspeed: i64,
+    #[serde(default)]
+    eta: i64,
 }
 
 /// Completed states in qBittorrent: torrent is fully downloaded and seeding.
@@ -152,29 +213,35 @@ const QB_COMPLETED_STATES: &[&str] = &[
 ];
 
 pub async fn run_torrent_poller(pool: PgPool, interval_seconds: u64) {
-    let wait = Duration::from_secs(interval_seconds.max(5));
+    let idle_wait = Duration::from_secs(interval_seconds.max(5));
+    let active_wait = Duration::from_secs(2);
     loop {
-        if let Err(e) = poll_qbittorrent_downloads(&pool).await {
-            warn!("[TORRENT_POLLER] {:#}", e);
-        }
-        tokio::time::sleep(wait).await;
+        let has_active = match poll_qbittorrent_downloads(&pool).await {
+            Ok(active) => active,
+            Err(e) => {
+                warn!("[TORRENT_POLLER] {:#}", e);
+                false
+            }
+        };
+        tokio::time::sleep(if has_active { active_wait } else { idle_wait }).await;
     }
 }
 
-async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<()> {
+/// Returns Ok(true) if there are active downloads, Ok(false) otherwise.
+async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
     if !is_torrent_import_enabled(pool).await {
-        return Ok(());
+        return Ok(false);
     }
 
     let rows = sqlx::query(
-        "SELECT id, qb_hash FROM torrent_downloads WHERE status = 'downloading' AND qb_hash IS NOT NULL",
+        "SELECT id, qb_hash FROM torrent_downloads WHERE status = 'downloading'",
     )
     .fetch_all(pool)
     .await?;
 
     if rows.is_empty() {
         trace!("[TORRENT_POLLER] No active downloads to poll");
-        return Ok(());
+        return Ok(false);
     }
 
     let (base_url, username, password) = load_qbittorrent_config(pool)
@@ -188,6 +255,16 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<()> {
     let sid = qbittorrent_login(&client, &base_url, &username, &password)
         .await
         .map_err(|e| anyhow::anyhow!("qBittorrent login: {}", e.message))?;
+
+    // Filter to rows that have a resolved hash
+    let rows: Vec<_> = rows.into_iter().filter(|r| {
+        let qb_hash: Option<String> = r.get("qb_hash");
+        qb_hash.is_some()
+    }).collect();
+
+    if rows.is_empty() {
+        return Ok(true);
+    }
 
     let hashes: Vec<String> = rows
         .iter()
@@ -209,6 +286,25 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<()> {
     let infos: Vec<QbTorrentInfo> = resp.json().await?;
 
     for info in &infos {
+        // Update progress for all active torrents
+        let row = rows.iter().find(|r| {
+            let h: String = r.get("qb_hash");
+            h == info.hash
+        });
+        if let Some(row) = row {
+            let tid: Uuid = row.get("id");
+            let _ = sqlx::query(
+                "UPDATE torrent_downloads SET progress = $1, download_speed = $2, eta = $3, updated_at = NOW() \
+                 WHERE id = $4 AND status = 'downloading'",
+            )
+            .bind(info.progress as f32)
+            .bind(info.dlspeed)
+            .bind(info.eta)
+            .bind(tid)
+            .execute(pool)
+            .await;
+        }
+
         if !QB_COMPLETED_STATES.contains(&info.state.as_str()) {
             continue;
         }
@@ -228,15 +324,15 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<()> {
             continue;
         };
 
-        let row = rows.iter().find(|r| {
+        let Some(row) = rows.iter().find(|r| {
             let h: String = r.get("qb_hash");
             h == info.hash
-        });
-        let Some(row) = row else { continue; };
+        }) else { continue; };
         let torrent_id: Uuid = row.get("id");
 
         let updated = sqlx::query(
-            "UPDATE torrent_downloads SET status = 'completed', content_path = $1, updated_at = NOW() \
+            "UPDATE torrent_downloads SET status = 'completed', content_path = $1, progress = 1, \
+             download_speed = 0, eta = 0, updated_at = NOW() \
              WHERE id = $2 AND status = 'downloading'",
         )
         .bind(&content_path)
@@ -255,7 +351,15 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<()> {
         }
     }
 
-    Ok(())
+    // Still active if any rows remain in 'downloading' status
+    let still_active = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM torrent_downloads WHERE status = 'downloading'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+
+    Ok(still_active > 0)
 }
 
 // ─── Import processing ────────────────────────────────────────────────────────

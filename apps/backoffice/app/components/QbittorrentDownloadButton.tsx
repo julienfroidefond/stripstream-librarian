@@ -21,7 +21,19 @@ export function QbittorrentProvider({ children }: { children: ReactNode }) {
   return <QbConfigContext.Provider value={configured}>{children}</QbConfigContext.Provider>;
 }
 
-export function QbittorrentDownloadButton({ downloadUrl, releaseId }: { downloadUrl: string; releaseId: string }) {
+export function QbittorrentDownloadButton({
+  downloadUrl,
+  releaseId,
+  libraryId,
+  seriesName,
+  expectedVolumes,
+}: {
+  downloadUrl: string;
+  releaseId: string;
+  libraryId?: string;
+  seriesName?: string;
+  expectedVolumes?: number[];
+}) {
   const { t } = useTranslation();
   const configured = useContext(QbConfigContext);
   const [sending, setSending] = useState(false);
@@ -37,7 +49,12 @@ export function QbittorrentDownloadButton({ downloadUrl, releaseId }: { download
       const resp = await fetch("/api/qbittorrent/add", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: downloadUrl }),
+        body: JSON.stringify({
+          url: downloadUrl,
+          ...(libraryId && { library_id: libraryId }),
+          ...(seriesName && { series_name: seriesName }),
+          ...(expectedVolumes && { expected_volumes: expectedVolumes }),
+        }),
       });
       const data = await resp.json();
       if (data.error) {

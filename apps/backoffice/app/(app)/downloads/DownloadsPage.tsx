@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { TorrentDownloadDto } from "@/lib/api";
 import { Card, CardContent, Button, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
@@ -43,6 +44,22 @@ function formatDate(iso: string): string {
   });
 }
 
+function formatSpeed(bytesPerSec: number): string {
+  if (bytesPerSec < 1024) return `${bytesPerSec} B/s`;
+  if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
+  return `${(bytesPerSec / 1024 / 1024).toFixed(1)} MB/s`;
+}
+
+function formatEta(seconds: number): string {
+  if (seconds <= 0 || seconds >= 8640000) return "";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}h${String(m).padStart(2, "0")}m`;
+  if (m > 0) return `${m}m${String(s).padStart(2, "0")}s`;
+  return `${s}s`;
+}
+
 interface DownloadsPageProps {
   initialDownloads: TorrentDownloadDto[];
 }
@@ -67,7 +84,7 @@ export function DownloadsPage({ initialDownloads }: DownloadsPageProps) {
   const hasActive = downloads.some(d => STATUS_ACTIVE.has(d.status));
   useEffect(() => {
     if (!hasActive) return;
-    const id = setInterval(() => refresh(false), 5000);
+    const id = setInterval(() => refresh(false), 2000);
     return () => clearInterval(id);
   }, [hasActive, refresh]);
 
@@ -133,7 +150,7 @@ export function DownloadsPage({ initialDownloads }: DownloadsPageProps) {
       ) : (
         <div className="space-y-3">
           {visible.map(dl => (
-            <DownloadCard key={dl.id} dl={dl} />
+            <DownloadCard key={dl.id} dl={dl} onDeleted={() => refresh(false)} />
           ))}
         </div>
       )}
@@ -141,9 +158,22 @@ export function DownloadsPage({ initialDownloads }: DownloadsPageProps) {
   );
 }
 
-function DownloadCard({ dl }: { dl: TorrentDownloadDto }) {
+function DownloadCard({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: () => void }) {
   const { t } = useTranslation();
+  const [deleting, setDeleting] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const importedCount = Array.isArray(dl.imported_files) ? dl.imported_files.length : 0;
+
+  async function handleDelete() {
+    setDeleting(true);
+    setShowConfirm(false);
+    try {
+      const resp = await fetch(`/api/torrent-downloads/${dl.id}`, { method: "DELETE" });
+      if (resp.ok) onDeleted();
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <Card>
@@ -187,6 +217,28 @@ function DownloadCard({ dl }: { dl: TorrentDownloadDto }) {
               )}
             </div>
 
+            {dl.status === "downloading" && (
+              <div className="mt-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all duration-500"
+                      style={{ width: `${Math.round(dl.progress * 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs font-medium text-foreground tabular-nums w-10 text-right">
+                    {Math.round(dl.progress * 100)}%
+                  </span>
+                </div>
+                {(dl.download_speed > 0 || dl.eta > 0) && (
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    {dl.download_speed > 0 && <span>{formatSpeed(dl.download_speed)}</span>}
+                    {dl.eta > 0 && dl.eta < 8640000 && <span>ETA {formatEta(dl.eta)}</span>}
+                  </div>
+                )}
+              </div>
+            )}
+
             {dl.content_path && dl.status !== "imported" && (
               <p className="mt-1 text-xs font-mono text-muted-foreground truncate" title={dl.content_path}>
                 {dl.content_path}
@@ -208,15 +260,57 @@ function DownloadCard({ dl }: { dl: TorrentDownloadDto }) {
             )}
           </div>
 
-          {/* Timestamp */}
-          <div className="text-xs text-muted-foreground shrink-0 text-right">
-            <p>{formatDate(dl.created_at)}</p>
-            {dl.updated_at !== dl.created_at && (
-              <p className="opacity-60">maj {formatDate(dl.updated_at)}</p>
-            )}
+          {/* Actions */}
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            <div className="text-xs text-muted-foreground text-right">
+              <p>{formatDate(dl.created_at)}</p>
+              {dl.updated_at !== dl.created_at && (
+                <p className="opacity-60">maj {formatDate(dl.updated_at)}</p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowConfirm(true)}
+              disabled={deleting || dl.status === "importing"}
+              className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
+              title={dl.status === "downloading" ? t("downloads.cancel") : t("downloads.delete")}
+            >
+              {deleting ? (
+                <Icon name="spinner" size="sm" className="animate-spin" />
+              ) : (
+                <Icon name="trash" size="sm" />
+              )}
+            </button>
           </div>
         </div>
       </CardContent>
+
+      {showConfirm && createPortal(
+        <>
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50" onClick={() => setShowConfirm(false)} />
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-foreground mb-2">
+                  {dl.status === "downloading" ? t("downloads.cancel") : t("downloads.delete")}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {dl.status === "downloading" ? t("downloads.confirmCancel") : t("downloads.confirmDelete")}
+                </p>
+              </div>
+              <div className="flex justify-end gap-2 px-6 pb-6">
+                <Button variant="outline" size="sm" onClick={() => setShowConfirm(false)}>
+                  {t("common.cancel")}
+                </Button>
+                <Button variant="destructive" size="sm" onClick={handleDelete}>
+                  {dl.status === "downloading" ? t("downloads.cancel") : t("downloads.delete")}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
     </Card>
   );
 }

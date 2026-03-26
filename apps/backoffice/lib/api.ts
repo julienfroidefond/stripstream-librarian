@@ -1295,6 +1295,9 @@ export type TorrentDownloadDto = {
   status: "downloading" | "completed" | "importing" | "imported" | "error";
   imported_files: Array<{ volume: number; source: string; destination: string }> | null;
   error_message: string | null;
+  progress: number;
+  download_speed: number;
+  eta: number;
   created_at: string;
   updated_at: string;
 };

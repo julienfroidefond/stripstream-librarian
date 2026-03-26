@@ -896,6 +896,10 @@ const fr = {
   "downloads.status.importing": "Import en cours",
   "downloads.status.imported": "Importé",
   "downloads.status.error": "Erreur",
+  "downloads.delete": "Supprimer",
+  "downloads.cancel": "Annuler le téléchargement",
+  "downloads.confirmDelete": "Supprimer ce téléchargement ?",
+  "downloads.confirmCancel": "Annuler ce téléchargement ? Le torrent sera aussi supprimé de qBittorrent.",
 
   // Settings - Torrent Import
   "settings.torrentImport": "Import automatique",

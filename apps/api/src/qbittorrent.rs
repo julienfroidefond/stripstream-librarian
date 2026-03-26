@@ -143,10 +143,24 @@ pub async fn add_torrent(
 
     let sid = qbittorrent_login(&client, &base_url, &username, &password).await?;
 
+    // Pre-generate the download ID so we can tag the torrent with it
+    let download_id = if is_managed { Some(Uuid::new_v4()) } else { None };
+    let tag = download_id.map(|id| format!("sl-{id}"));
+
+    // Snapshot existing torrents before adding (for hash resolution)
+    let torrents_before = if is_managed {
+        list_qbittorrent_torrents(&client, &base_url, &sid).await.unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
     let mut form_params: Vec<(&str, &str)> = vec![("urls", &body.url)];
     let savepath = "/downloads";
     if is_managed {
         form_params.push(("savepath", savepath));
+        if let Some(ref t) = tag {
+            form_params.push(("tags", t));
+        }
     }
 
     let resp = client
@@ -172,9 +186,16 @@ pub async fn add_torrent(
         let library_id = body.library_id.unwrap();
         let series_name = body.series_name.as_deref().unwrap();
         let expected_volumes = body.expected_volumes.as_deref().unwrap();
-        let qb_hash = extract_magnet_hash(&body.url);
 
-        let id = Uuid::new_v4();
+        // Try to resolve hash: first from magnet, then by querying qBittorrent
+        let mut qb_hash = extract_magnet_hash(&body.url);
+        if qb_hash.is_none() {
+            // For .torrent URLs: wait briefly then query qBittorrent to find the torrent
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            qb_hash = resolve_hash_from_qbittorrent(&client, &base_url, &sid, &torrents_before, series_name).await;
+        }
+
+        let id = download_id.unwrap();
         sqlx::query(
             "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, qb_hash) \
              VALUES ($1, $2, $3, $4, $5)",
@@ -186,6 +207,8 @@ pub async fn add_torrent(
         .bind(qb_hash.as_deref())
         .execute(&state.pool)
         .await?;
+
+        tracing::info!("Created torrent download {id} for {series_name}, qb_hash={qb_hash:?}");
 
         Some(id)
     } else {
@@ -199,8 +222,9 @@ pub async fn add_torrent(
     }))
 }
 
-/// Extract the info-hash from a magnet link (lowercased, hex or base32).
+/// Extract the info-hash from a magnet link (lowercased hex).
 /// magnet:?xt=urn:btih:HASH...
+/// Handles both hex (40 chars) and base32 (32 chars) encoded hashes.
 fn extract_magnet_hash(url: &str) -> Option<String> {
     let lower = url.to_lowercase();
     let marker = "urn:btih:";
@@ -210,7 +234,119 @@ fn extract_magnet_hash(url: &str) -> Option<String> {
         .find(|c: char| !c.is_alphanumeric())
         .unwrap_or(hash_part.len());
     let hash = &hash_part[..end];
-    if hash.is_empty() { None } else { Some(hash.to_string()) }
+    if hash.is_empty() {
+        return None;
+    }
+    // 40-char hex hash: use as-is
+    if hash.len() == 40 && hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Some(hash.to_string());
+    }
+    // 32-char base32 hash: decode to hex
+    if hash.len() == 32 {
+        if let Some(hex) = base32_to_hex(hash) {
+            return Some(hex);
+        }
+    }
+    // Fallback: return as-is (may not match qBittorrent)
+    Some(hash.to_string())
+}
+
+/// Decode a base32-encoded string to a lowercase hex string.
+fn base32_to_hex(input: &str) -> Option<String> {
+    let input = input.to_uppercase();
+    let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    let mut bits: u64 = 0;
+    let mut bit_count = 0u32;
+    let mut bytes = Vec::with_capacity(20);
+
+    for ch in input.bytes() {
+        let val = alphabet.iter().position(|&c| c == ch)? as u64;
+        bits = (bits << 5) | val;
+        bit_count += 5;
+        if bit_count >= 8 {
+            bit_count -= 8;
+            bytes.push((bits >> bit_count) as u8);
+            bits &= (1u64 << bit_count) - 1;
+        }
+    }
+
+    if bytes.len() != 20 {
+        return None;
+    }
+    Some(bytes.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// Torrent entry from qBittorrent API.
+#[derive(Deserialize, Clone)]
+struct QbTorrentEntry {
+    hash: String,
+    #[serde(default)]
+    name: String,
+}
+
+/// List all torrents currently in qBittorrent.
+async fn list_qbittorrent_torrents(
+    client: &reqwest::Client,
+    base_url: &str,
+    sid: &str,
+) -> Result<Vec<QbTorrentEntry>, ApiError> {
+    let resp = client
+        .get(format!("{base_url}/api/v2/torrents/info"))
+        .header("Cookie", format!("SID={sid}"))
+        .send()
+        .await
+        .map_err(|e| ApiError::internal(format!("qBittorrent list failed: {e}")))?;
+
+    if !resp.status().is_success() {
+        return Ok(Vec::new());
+    }
+
+    Ok(resp.json().await.unwrap_or_default())
+}
+
+/// Resolve the hash of a torrent after adding it to qBittorrent.
+/// Strategy:
+/// 1. Compare before/after snapshots to find the new torrent (works for new torrents)
+/// 2. If no new torrent found (already existed), search by series name in torrent names
+async fn resolve_hash_from_qbittorrent(
+    client: &reqwest::Client,
+    base_url: &str,
+    sid: &str,
+    torrents_before: &[QbTorrentEntry],
+    series_name: &str,
+) -> Option<String> {
+    let torrents_after = list_qbittorrent_torrents(client, base_url, sid).await.ok()?;
+    let before_hashes: std::collections::HashSet<&str> = torrents_before.iter().map(|t| t.hash.as_str()).collect();
+
+    // Strategy 1: diff — find the one new torrent
+    let new_torrents: Vec<&QbTorrentEntry> = torrents_after.iter()
+        .filter(|t| !before_hashes.contains(t.hash.as_str()))
+        .collect();
+    if new_torrents.len() == 1 {
+        tracing::info!("[QBITTORRENT] Resolved hash {} via diff (new torrent: {})", new_torrents[0].hash, new_torrents[0].name);
+        return Some(new_torrents[0].hash.clone());
+    }
+
+    // Strategy 2: torrent already existed — search by series name in torrent names
+    let series_lower = series_name.to_lowercase();
+    // Normalize: "Dandadan" matches "Dandadan.T02.FRENCH.CBZ..."
+    let candidates: Vec<&QbTorrentEntry> = torrents_after.iter()
+        .filter(|t| t.name.to_lowercase().contains(&series_lower))
+        .collect();
+
+    if candidates.len() == 1 {
+        tracing::info!("[QBITTORRENT] Resolved hash {} via name match ({})", candidates[0].hash, candidates[0].name);
+        return Some(candidates[0].hash.clone());
+    }
+
+    if candidates.len() > 1 {
+        tracing::warn!("[QBITTORRENT] Multiple torrents match series '{}': {}", series_name,
+            candidates.iter().map(|c| c.name.as_str()).collect::<Vec<_>>().join(", "));
+    } else {
+        tracing::warn!("[QBITTORRENT] No torrent found matching series '{}'", series_name);
+    }
+
+    None
 }
 
 /// Test connection to qBittorrent

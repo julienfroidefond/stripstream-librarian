@@ -106,7 +106,13 @@ export function DownloadDetectionResultsCard({ results, libraryId, t }: {
                         </div>
                       </div>
                       {release.download_url && (
-                        <QbittorrentDownloadButton downloadUrl={release.download_url} releaseId={`${r.id}-${idx}`} />
+                        <QbittorrentDownloadButton
+                          downloadUrl={release.download_url}
+                          releaseId={`${r.id}-${idx}`}
+                          libraryId={libraryId ?? undefined}
+                          seriesName={r.series_name}
+                          expectedVolumes={release.matched_missing_volumes}
+                        />
                       )}
                     </div>
                   ))}

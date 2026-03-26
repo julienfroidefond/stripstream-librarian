@@ -123,6 +123,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/qbittorrent/add", axum::routing::post(qbittorrent::add_torrent))
         .route("/qbittorrent/test", get(qbittorrent::test_qbittorrent))
         .route("/torrent-downloads", get(torrent_import::list_torrent_downloads))
+        .route("/torrent-downloads/:id", axum::routing::delete(torrent_import::delete_torrent_download))
         .route("/telegram/test", get(telegram::test_telegram))
         .route("/komga/sync", axum::routing::post(komga::sync_komga_read_books))
         .route("/komga/reports", get(komga::list_sync_reports))

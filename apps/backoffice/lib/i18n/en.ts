@@ -898,6 +898,10 @@ const en: Record<TranslationKey, string> = {
   "downloads.status.importing": "Importing",
   "downloads.status.imported": "Imported",
   "downloads.status.error": "Error",
+  "downloads.delete": "Delete",
+  "downloads.cancel": "Cancel download",
+  "downloads.confirmDelete": "Delete this download?",
+  "downloads.confirmCancel": "Cancel this download? The torrent will also be removed from qBittorrent.",
 
   // Settings - Torrent Import
   "settings.torrentImport": "Auto import",
