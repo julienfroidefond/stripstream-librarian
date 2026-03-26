@@ -120,6 +120,31 @@ pub async fn scan_library_discovery(
     .collect();
     let mut seen_new_series: HashSet<String> = HashSet::new();
 
+    // Load series rename mapping: original filesystem name → current DB name.
+    // This prevents the scanner from recreating old series after a user rename.
+    let rename_rows = sqlx::query(
+        "SELECT original_name, name FROM series_metadata WHERE library_id = $1 AND original_name IS NOT NULL",
+    )
+    .bind(library_id)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+    let series_rename_map: HashMap<String, String> = rename_rows
+        .into_iter()
+        .map(|row| {
+            let original: String = row.get("original_name");
+            let current: String = row.get("name");
+            (original, current)
+        })
+        .collect();
+    if !series_rename_map.is_empty() {
+        info!(
+            "[SCAN] Loaded {} series rename mapping(s) for library {}",
+            series_rename_map.len(),
+            library_id
+        );
+    }
+
     let mut seen: HashMap<String, bool> = HashMap::new();
     let mut library_processed_count = 0i32;
     let mut last_progress_update = std::time::Instant::now();
@@ -324,7 +349,19 @@ pub async fn scan_library_discovery(
         seen.insert(lookup_path.clone(), true);
 
         // Fast metadata extraction — no archive I/O
-        let parsed = parse_metadata_fast(&path, format, root);
+        let mut parsed = parse_metadata_fast(&path, format, root);
+
+        // Apply series rename mapping: if the filesystem-derived series name
+        // was renamed by the user, use the current DB name instead.
+        if let Some(ref fs_series) = parsed.series {
+            if let Some(renamed) = series_rename_map.get(fs_series) {
+                debug!(
+                    "[SCAN] Mapping renamed series: '{}' → '{}'",
+                    fs_series, renamed
+                );
+                parsed.series = Some(renamed.clone());
+            }
+        }
 
         if let Some((file_id, book_id, old_fingerprint)) =
             existing.get(&lookup_path).cloned()

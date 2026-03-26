@@ -1015,10 +1015,29 @@ pub async fn update_series(
         .filter(|a| !a.is_empty())
         .collect();
     let locked_fields = body.locked_fields.clone().unwrap_or(serde_json::json!({}));
+
+    // When renaming, preserve the filesystem-derived original name so the scanner
+    // can map files back to the renamed series instead of recreating the old one.
+    let is_rename = name != "unclassified" && new_name != name;
+    let original_name: Option<String> = if is_rename {
+        // Check if the old metadata already has an original_name (chained renames: A→B→C)
+        let existing_original: Option<Option<String>> = sqlx::query_scalar(
+            "SELECT original_name FROM series_metadata WHERE library_id = $1 AND name = $2"
+        )
+        .bind(library_id)
+        .bind(&name)
+        .fetch_optional(&state.pool)
+        .await?;
+        // Use existing original_name if set, otherwise use the old name itself
+        Some(existing_original.flatten().unwrap_or_else(|| name.clone()))
+    } else {
+        None
+    };
+
     sqlx::query(
         r#"
-        INSERT INTO series_metadata (library_id, name, authors, description, publishers, start_year, total_volumes, status, locked_fields, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+        INSERT INTO series_metadata (library_id, name, authors, description, publishers, start_year, total_volumes, status, locked_fields, original_name, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
         ON CONFLICT (library_id, name) DO UPDATE
           SET authors     = EXCLUDED.authors,
               description = EXCLUDED.description,
@@ -1027,6 +1046,7 @@ pub async fn update_series(
               total_volumes = EXCLUDED.total_volumes,
               status      = EXCLUDED.status,
               locked_fields = EXCLUDED.locked_fields,
+              original_name = COALESCE(EXCLUDED.original_name, series_metadata.original_name),
               updated_at  = NOW()
         "#
     )
@@ -1039,11 +1059,12 @@ pub async fn update_series(
     .bind(body.total_volumes)
     .bind(&body.status)
     .bind(&locked_fields)
+    .bind(&original_name)
     .execute(&state.pool)
     .await?;
 
-    // 3. If renamed, move series_metadata from old name to new name
-    if name != "unclassified" && new_name != name {
+    // 3. If renamed, delete the old series_metadata entry
+    if is_rename {
         sqlx::query(
             "DELETE FROM series_metadata WHERE library_id = $1 AND name = $2"
         )
