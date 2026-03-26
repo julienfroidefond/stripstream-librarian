@@ -91,12 +91,18 @@ export function StatusBadge({ status, className = "" }: StatusBadgeProps) {
 }
 
 // Job type badge
-const jobTypeVariants: Record<string, BadgeVariant> = {
-  rebuild: "primary",
-  rescan: "primary",
-  full_rebuild: "warning",
-  thumbnail_rebuild: "secondary",
-  thumbnail_regenerate: "warning",
+const jobTypeStyles: Record<string, string> = {
+  rebuild: "bg-blue-500/80 text-white",
+  rescan: "bg-sky-500/80 text-white",
+  full_rebuild: "bg-orange-500/80 text-white",
+  thumbnail_rebuild: "bg-violet-500/80 text-white",
+  thumbnail_regenerate: "bg-purple-500/80 text-white",
+  cbr_to_cbz: "bg-rose-500/80 text-white",
+  metadata_batch: "bg-teal-500/80 text-white",
+  metadata_refresh: "bg-emerald-500/80 text-white",
+  reading_status_match: "bg-amber-500/80 text-white",
+  reading_status_push: "bg-yellow-500/80 text-white",
+  download_detection: "bg-indigo-500/80 text-white",
 };
 
 interface JobTypeBadgeProps {
@@ -107,7 +113,7 @@ interface JobTypeBadgeProps {
 export function JobTypeBadge({ type, className = "" }: JobTypeBadgeProps) {
   const { t } = useTranslation();
   const key = type.toLowerCase();
-  const variant = jobTypeVariants[key] || "default";
+  const style = jobTypeStyles[key] || "bg-muted/60 text-muted-foreground";
   const jobTypeLabels: Record<string, string> = {
     rebuild: t("jobType.rebuild"),
     rescan: t("jobType.rescan"),
@@ -119,9 +125,14 @@ export function JobTypeBadge({ type, className = "" }: JobTypeBadgeProps) {
     metadata_refresh: t("jobType.metadata_refresh"),
     reading_status_match: t("jobType.reading_status_match"),
     reading_status_push: t("jobType.reading_status_push"),
+    download_detection: t("jobType.download_detection"),
   };
   const label = jobTypeLabels[key] ?? type;
-  return <Badge variant={variant} className={className}>{label}</Badge>;
+  return (
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${style} ${className}`}>
+      {label}
+    </span>
+  );
 }
 
 // Progress badge (shows percentage)
