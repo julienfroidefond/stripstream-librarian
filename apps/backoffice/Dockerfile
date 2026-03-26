@@ -14,7 +14,6 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=7082
 ENV HOST=0.0.0.0
-RUN apk add --no-cache wget
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
