@@ -20,7 +20,6 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
-  { href: "/", labelKey: "nav.dashboard", icon: "dashboard" },
   { href: "/books", labelKey: "nav.books", icon: "books" },
   { href: "/series", labelKey: "nav.series", icon: "series" },
   { href: "/authors", labelKey: "nav.authors", icon: "authors" },
@@ -74,11 +73,13 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
               ))}
             </div>
 
-            <UserSwitcher
-              users={users}
-              activeUserId={activeUserId}
-              setActiveUserAction={setActiveUserAction}
-            />
+            <div className="hidden md:block">
+              <UserSwitcher
+                users={users}
+                activeUserId={activeUserId}
+                setActiveUserAction={setActiveUserAction}
+              />
+            </div>
 
             <div className="flex items-center gap-1 pl-4 ml-2 border-l border-border/60">
               <JobsIndicator />
@@ -91,7 +92,15 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
               </Link>
               <ThemeToggle />
               <LogoutButton />
-              <MobileNav navItems={navItems.map(item => ({ ...item, label: t(item.labelKey) }))} />
+              <MobileNav
+                navItems={[
+                  { href: "/", label: t("nav.dashboard"), icon: "dashboard" },
+                  ...navItems.map(item => ({ ...item, label: t(item.labelKey) })),
+                ]}
+                users={users}
+                activeUserId={activeUserId}
+                setActiveUserAction={setActiveUserAction}
+              />
             </div>
           </div>
         </nav>

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useTransition } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { NavIcon } from "./ui";
 import { useTranslation } from "../../lib/i18n/context";
+import type { UserDto } from "@/lib/api";
 
 type NavItem = {
   href: "/" | "/books" | "/series" | "/authors" | "/libraries" | "/jobs" | "/tokens" | "/settings";
@@ -24,10 +25,24 @@ const XIcon = () => (
   </svg>
 );
 
-export function MobileNav({ navItems }: { navItems: NavItem[] }) {
+export function MobileNav({ navItems, users, activeUserId, setActiveUserAction }: {
+  navItems: NavItem[];
+  users: UserDto[];
+  activeUserId: string | null;
+  setActiveUserAction: (formData: FormData) => Promise<void>;
+}) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [, startTransition] = useTransition();
+
+  function select(userId: string | null) {
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.append("user_id", userId ?? "");
+      await setActiveUserAction(fd);
+    });
+  }
 
   useEffect(() => {
     setMounted(true);
@@ -71,15 +86,49 @@ export function MobileNav({ navItems }: { navItems: NavItem[] }) {
             </Link>
           ))}
 
-          <div className="border-t border-border/40 mt-2 pt-2">
-            <Link
-              href="/settings"
-              className="flex items-center gap-3 px-3 py-3 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-200 active:scale-[0.98]"
-              onClick={() => setIsOpen(false)}
-            >
-              <NavIcon name="settings" />
-              <span className="font-medium">{t("nav.settings")}</span>
-            </Link>
+          <div className="border-t border-border/40 mt-2 pt-2 space-y-1">
+            {users.length > 0 && (
+              <>
+                <p className="px-3 pt-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t("users.title")}</p>
+                <button
+                  onClick={() => { select(null); setIsOpen(false); }}
+                  className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-colors duration-200 active:scale-[0.98] ${
+                    !activeUserId ? "text-foreground bg-accent font-medium" : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                  }`}
+                >
+                  <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                  <span>Admin</span>
+                </button>
+                {users.map((user) => (
+                  <button
+                    key={user.id}
+                    onClick={() => { select(user.id); setIsOpen(false); }}
+                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-colors duration-200 active:scale-[0.98] ${
+                      activeUserId === user.id ? "text-foreground bg-accent font-medium" : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                    }`}
+                  >
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    <span className="truncate">{user.username}</span>
+                  </button>
+                ))}
+              </>
+            )}
+            <div className="border-t border-border/40 mt-2 pt-2">
+              <Link
+                href="/settings"
+                className="flex items-center gap-3 px-3 py-3 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-200 active:scale-[0.98]"
+                onClick={() => setIsOpen(false)}
+              >
+                <NavIcon name="settings" />
+                <span className="font-medium">{t("nav.settings")}</span>
+              </Link>
+            </div>
           </div>
         </nav>
       </div>
