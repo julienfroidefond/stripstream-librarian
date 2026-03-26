@@ -44,8 +44,9 @@ function getSnapshot() {
   return toasts;
 }
 
+const EMPTY_TOASTS: ToastItem[] = [];
 function getServerSnapshot(): ToastItem[] {
-  return [];
+  return EMPTY_TOASTS;
 }
 
 export function toast(message: string, variant?: ToastVariant) {
