@@ -41,7 +41,7 @@ struct BookDiff {
 
 /// Per-series change report
 #[derive(Serialize, Clone)]
-struct SeriesRefreshResult {
+pub(crate) struct SeriesRefreshResult {
     series_name: String,
     provider: String,
     status: String, // "updated", "unchanged", "error"
@@ -300,6 +300,45 @@ pub async fn get_refresh_report(
 }
 
 // ---------------------------------------------------------------------------
+// POST /metadata/refresh-link/:id — Refresh a single metadata link
+// ---------------------------------------------------------------------------
+
+/// Refresh a single approved metadata link by its ID.
+pub async fn refresh_single_link(
+    State(state): State<AppState>,
+    AxumPath(link_id): AxumPath<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let row = sqlx::query(
+        "SELECT library_id, series_name, provider, external_id, status \
+         FROM external_metadata_links WHERE id = $1",
+    )
+    .bind(link_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::not_found("metadata link not found"))?;
+
+    let status: String = row.get("status");
+    if status != "approved" {
+        return Err(ApiError::bad_request("only approved links can be refreshed"));
+    }
+
+    let library_id: Uuid = row.get("library_id");
+    let series_name: String = row.get("series_name");
+    let provider: String = row.get("provider");
+    let external_id: String = row.get("external_id");
+
+    match refresh_link(&state.pool, link_id, library_id, &series_name, &provider, &external_id).await {
+        Ok(result) => {
+            Ok(Json(serde_json::json!({
+                "ok": true,
+                "status": result.status,
+            })))
+        }
+        Err(e) => Err(ApiError::internal(format!("refresh failed: {e}"))),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Background processing
 // ---------------------------------------------------------------------------
 
@@ -437,7 +476,7 @@ pub(crate) async fn process_metadata_refresh(
 }
 
 /// Refresh a single approved metadata link: re-fetch from provider, compare, sync, return diff
-async fn refresh_link(
+pub(crate) async fn refresh_link(
     pool: &PgPool,
     link_id: Uuid,
     library_id: Uuid,

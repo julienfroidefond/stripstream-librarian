@@ -55,6 +55,8 @@ export function MetadataSearchModal({
   const [missing, setMissing] = useState<MissingBooksDto | null>(initialMissing);
   const [showMissingList, setShowMissingList] = useState(false);
   const [syncReport, setSyncReport] = useState<SyncReport | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshDone, setRefreshDone] = useState(false);
 
   // Provider selector: empty string = library default
   const [searchProvider, setSearchProvider] = useState("");
@@ -654,6 +656,37 @@ export function MetadataSearchModal({
                         className="flex-1 p-2.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
                       >
                         {t("metadata.searchAgain")}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={refreshing}
+                        onClick={async () => {
+                          if (!linkId) return;
+                          setRefreshing(true);
+                          setRefreshDone(false);
+                          try {
+                            const resp = await fetch(`/api/metadata/refresh-link/${linkId}`, { method: "POST" });
+                            if (resp.ok) {
+                              setRefreshDone(true);
+                              setTimeout(() => setRefreshDone(false), 3000);
+                            }
+                          } finally {
+                            setRefreshing(false);
+                          }
+                        }}
+                        className={`p-2.5 rounded-lg border text-sm font-medium transition-colors ${
+                          refreshDone
+                            ? "border-success/30 bg-success/5 text-success"
+                            : "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10"
+                        }`}
+                      >
+                        {refreshing ? (
+                          <Icon name="spinner" size="sm" className="animate-spin" />
+                        ) : refreshDone ? (
+                          <Icon name="check" size="sm" />
+                        ) : (
+                          t("metadata.refreshLink")
+                        )}
                       </button>
                       <button
                         type="button"

@@ -847,6 +847,7 @@ const en: Record<TranslationKey, string> = {
   "metadata.viewExternal": "View on external source",
   "metadata.searchAgain": "Search again",
   "metadata.unlink": "Unlink",
+  "metadata.refreshLink": "Refresh",
   "metadata.searchButton": "Search metadata",
   "metadata.metadataButton": "Metadata",
   "metadata.locked": "locked",

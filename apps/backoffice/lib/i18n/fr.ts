@@ -845,6 +845,7 @@ const fr = {
   "metadata.viewExternal": "Voir sur la source externe",
   "metadata.searchAgain": "Rechercher à nouveau",
   "metadata.unlink": "Dissocier",
+  "metadata.refreshLink": "Rafraîchir",
   "metadata.searchButton": "Rechercher les métadonnées",
   "metadata.metadataButton": "Métadonnées",
   "metadata.locked": "verrouillé",

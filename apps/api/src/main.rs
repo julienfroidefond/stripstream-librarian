@@ -150,6 +150,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/metadata/batch/:id/report", get(metadata_batch::get_batch_report))
         .route("/metadata/batch/:id/results", get(metadata_batch::get_batch_results))
         .route("/metadata/refresh", axum::routing::post(metadata_refresh::start_refresh))
+        .route("/metadata/refresh-link/:id", axum::routing::post(metadata_refresh::refresh_single_link))
         .route("/metadata/refresh/:id/report", get(metadata_refresh::get_refresh_report))
         .route("/reading-status/match", axum::routing::post(reading_status_match::start_match))
         .route("/reading-status/match/:id/report", get(reading_status_match::get_match_report))

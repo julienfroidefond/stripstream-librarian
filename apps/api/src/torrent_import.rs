@@ -6,7 +6,7 @@ use std::time::Duration;
 use tracing::{info, trace, warn};
 use uuid::Uuid;
 
-use crate::{error::ApiError, prowlarr::extract_volumes_from_title_pub, qbittorrent::{load_qbittorrent_config, qbittorrent_login}, state::AppState};
+use crate::{error::ApiError, metadata_refresh, prowlarr::extract_volumes_from_title_pub, qbittorrent::{load_qbittorrent_config, qbittorrent_login}, state::AppState};
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -412,20 +412,46 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
             .await?;
 
             // Queue a scan job so the indexer picks up the new files
-            let job_id = Uuid::new_v4();
+            let scan_job_id = Uuid::new_v4();
             sqlx::query(
                 "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'scan', 'pending')",
             )
-            .bind(job_id)
+            .bind(scan_job_id)
             .bind(library_id)
             .execute(&pool)
             .await?;
+
+            // Refresh metadata for this series if it has an approved metadata link
+            let link_row = sqlx::query(
+                "SELECT id, provider, external_id FROM external_metadata_links \
+                 WHERE library_id = $1 AND LOWER(series_name) = LOWER($2) AND status = 'approved' LIMIT 1",
+            )
+            .bind(library_id)
+            .bind(&series_name)
+            .fetch_optional(&pool)
+            .await?;
+
+            if let Some(link) = link_row {
+                let link_id: Uuid = link.get("id");
+                let provider: String = link.get("provider");
+                let external_id: String = link.get("external_id");
+                let pool2 = pool.clone();
+                let sn = series_name.clone();
+                tokio::spawn(async move {
+                    let result = metadata_refresh::refresh_link(&pool2, link_id, library_id, &sn, &provider, &external_id).await;
+                    if let Err(e) = result {
+                        warn!("[IMPORT] Metadata refresh for '{}' failed: {}", sn, e);
+                    } else {
+                        info!("[IMPORT] Metadata refresh for '{}' done", sn);
+                    }
+                });
+            }
 
             info!(
                 "Torrent import {} done: {} files imported, scan job {} queued",
                 torrent_id,
                 imported.len(),
-                job_id
+                scan_job_id
             );
         }
         Err(e) => {
