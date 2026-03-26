@@ -192,9 +192,9 @@ fn extract_volumes_from_title(title: &str) -> Vec<i32> {
                 }
             }
 
-            // Skip optional spaces after prefix
+            // Skip optional spaces or dots after prefix
             let mut i = after;
-            while i < len && chars[i] == ' ' {
+            while i < len && (chars[i] == ' ' || chars[i] == '.') {
                 i += 1;
             }
 
@@ -256,7 +256,7 @@ fn read_vol_prefix_number(chars: &[char], pos: usize) -> Option<(i32, usize)> {
     }
 
     let mut i = pos + prefix_char_count;
-    while i < chars.len() && chars[i] == ' ' {
+    while i < chars.len() && (chars[i] == ' ' || chars[i] == '.') {
         i += 1;
     }
 

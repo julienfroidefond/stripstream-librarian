@@ -902,6 +902,11 @@ const en: Record<TranslationKey, string> = {
   "downloads.cancel": "Cancel download",
   "downloads.confirmDelete": "Delete this download?",
   "downloads.confirmCancel": "Cancel this download? The torrent will also be removed from qBittorrent.",
+  "downloads.availableTitle": "Available for download",
+  "downloads.detectedSeries": "{{count}} series detected",
+  "downloads.missing": "missing",
+  "downloads.showMore": "Show {{count}} more…",
+  "downloads.showLess": "Show less",
 
   // Settings - Torrent Import
   "settings.torrentImport": "Auto import",

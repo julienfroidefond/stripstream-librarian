@@ -158,6 +158,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/reading-status/push/:id/report", get(reading_status_push::get_push_report))
         .route("/reading-status/push/:id/results", get(reading_status_push::get_push_results))
         .route("/download-detection/start", axum::routing::post(download_detection::start_detection))
+        .route("/download-detection/latest-found", get(download_detection::get_latest_found))
         .route("/download-detection/:id/report", get(download_detection::get_detection_report))
         .route("/download-detection/:id/results", get(download_detection::get_detection_results))
         .merge(settings::settings_routes())

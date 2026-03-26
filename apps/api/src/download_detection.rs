@@ -344,6 +344,97 @@ pub async fn get_detection_results(
 }
 
 // ---------------------------------------------------------------------------
+// GET /download-detection/latest-found
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, ToSchema)]
+pub struct LatestFoundPerLibraryDto {
+    #[schema(value_type = String)]
+    pub library_id: Uuid,
+    pub library_name: String,
+    #[schema(value_type = String)]
+    pub job_id: Uuid,
+    pub job_date: String,
+    pub results: Vec<DownloadDetectionResultDto>,
+}
+
+/// Returns "found" results from the latest detection job per library.
+#[utoipa::path(
+    get,
+    path = "/download-detection/latest-found",
+    tag = "download_detection",
+    responses(
+        (status = 200, body = Vec<LatestFoundPerLibraryDto>),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn get_latest_found(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<LatestFoundPerLibraryDto>>, ApiError> {
+    // Get latest completed detection job per library
+    let jobs = sqlx::query(
+        "SELECT DISTINCT ON (j.library_id) j.id, j.library_id, j.created_at, l.name as library_name \
+         FROM index_jobs j \
+         JOIN libraries l ON l.id = j.library_id \
+         WHERE j.type = 'download_detection' AND j.status = 'success' \
+         ORDER BY j.library_id, j.created_at DESC",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let mut output = Vec::new();
+
+    for job in &jobs {
+        let job_id: Uuid = job.get("id");
+        let library_id: Uuid = job.get("library_id");
+        let library_name: String = job.get("library_name");
+        let created_at: chrono::DateTime<chrono::Utc> = job.get("created_at");
+
+        let rows = sqlx::query(
+            "SELECT id, series_name, status, missing_count, available_releases, error_message \
+             FROM download_detection_results \
+             WHERE job_id = $1 AND status = 'found' \
+             ORDER BY series_name",
+        )
+        .bind(job_id)
+        .fetch_all(&state.pool)
+        .await?;
+
+        if rows.is_empty() {
+            continue;
+        }
+
+        let results = rows
+            .iter()
+            .map(|row| {
+                let releases_json: Option<serde_json::Value> = row.get("available_releases");
+                let available_releases = releases_json.and_then(|v| {
+                    serde_json::from_value::<Vec<AvailableReleaseDto>>(v).ok()
+                });
+                DownloadDetectionResultDto {
+                    id: row.get("id"),
+                    series_name: row.get("series_name"),
+                    status: row.get("status"),
+                    missing_count: row.get("missing_count"),
+                    available_releases,
+                    error_message: row.get("error_message"),
+                }
+            })
+            .collect();
+
+        output.push(LatestFoundPerLibraryDto {
+            library_id,
+            library_name,
+            job_id,
+            job_date: created_at.to_rfc3339(),
+            results,
+        });
+    }
+
+    Ok(Json(output))
+}
+
+// ---------------------------------------------------------------------------
 // Background processing
 // ---------------------------------------------------------------------------
 

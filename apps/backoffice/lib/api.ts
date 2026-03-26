@@ -1184,6 +1184,14 @@ export type DownloadDetectionResultDto = {
   error_message: string | null;
 };
 
+export type LatestFoundPerLibraryDto = {
+  library_id: string;
+  library_name: string;
+  job_id: string;
+  job_date: string;
+  results: DownloadDetectionResultDto[];
+};
+
 export async function getDownloadDetectionReport(jobId: string) {
   return apiFetch<DownloadDetectionReportDto>(`/download-detection/${jobId}/report`);
 }

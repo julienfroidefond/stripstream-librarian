@@ -453,16 +453,19 @@ async fn do_import(
 ) -> anyhow::Result<Vec<ImportedFile>> {
     let physical_content = remap_downloads_path(content_path);
 
-    // Find the target directory and reference file (latest volume) from existing book_files.
+    // Find the target directory and reference file from existing book_files.
+    // Exclude volumes we're about to import so we get a different file as naming reference.
     let ref_row = sqlx::query(
         "SELECT bf.abs_path, b.volume \
          FROM book_files bf \
          JOIN books b ON b.id = bf.book_id \
-         WHERE b.library_id = $1 AND b.series = $2 AND b.volume IS NOT NULL \
+         WHERE b.library_id = $1 AND LOWER(b.series) = LOWER($2) AND b.volume IS NOT NULL \
+           AND b.volume != ALL($3) \
          ORDER BY b.volume DESC LIMIT 1",
     )
     .bind(library_id)
     .bind(series_name)
+    .bind(expected_volumes)
     .fetch_optional(pool)
     .await?;
 
@@ -474,9 +477,11 @@ async fn do_import(
             .parent()
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or(physical);
+        info!("[IMPORT] DB reference found: {} (volume {}), target_dir={}", abs_path, volume, parent);
         (parent, Some((abs_path, volume)))
     } else {
-        // No existing files: create series directory inside library root
+        // No existing files in DB: create series directory inside library root
+        info!("[IMPORT] No DB reference for series '{}' in library {}", series_name, library_id);
         let lib_row = sqlx::query("SELECT root_path FROM libraries WHERE id = $1")
             .bind(library_id)
             .fetch_one(pool)
@@ -490,6 +495,21 @@ async fn do_import(
     std::fs::create_dir_all(&target_dir)?;
 
     let expected_set: std::collections::HashSet<i32> = expected_volumes.iter().copied().collect();
+
+    // If DB didn't give us a reference, try to find one from existing files on disk
+    let reference = if reference.is_some() {
+        reference
+    } else {
+        info!("[IMPORT] Trying disk fallback in {}", target_dir);
+        let disk_ref = find_reference_from_disk(&target_dir, &expected_set);
+        if disk_ref.is_none() {
+            info!("[IMPORT] No disk reference found either, using default naming");
+        }
+        disk_ref
+    };
+
+    info!("[IMPORT] Final reference: {:?}", reference);
+
     let mut imported = Vec::new();
 
     for source_path in collect_book_files(&physical_content)? {
@@ -515,9 +535,12 @@ async fn do_import(
             // Single volume: apply naming pattern from reference
             let vol = matched[0];
             if let Some((ref ref_path, ref_vol)) = reference {
-                build_target_filename(ref_path, ref_vol, vol, ext)
-                    .unwrap_or_else(|| default_filename(series_name, vol, ext))
+                let built = build_target_filename(ref_path, ref_vol, vol, ext);
+                info!("[IMPORT] build_target_filename(ref={}, ref_vol={}, new_vol={}, ext={}) => {:?}",
+                    ref_path, ref_vol, vol, ext, built);
+                built.unwrap_or_else(|| default_filename(series_name, vol, ext))
             } else {
+                info!("[IMPORT] No reference, using default_filename for vol {}", vol);
                 default_filename(series_name, vol, ext)
             }
         } else {
@@ -543,6 +566,42 @@ async fn do_import(
     }
 
     Ok(imported)
+}
+
+// ─── Reference from disk ──────────────────────────────────────────────────────
+
+/// Scan a directory for book files and pick the one with the highest extracted volume
+/// as a naming reference, excluding certain volumes. Returns (abs_path, volume).
+fn find_reference_from_disk(dir: &str, exclude_volumes: &std::collections::HashSet<i32>) -> Option<(String, i32)> {
+    let extensions = ["cbz", "cbr", "pdf", "epub"];
+    let entries = std::fs::read_dir(dir).ok()?;
+    let mut best: Option<(String, i32)> = None;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if !extensions.iter().any(|&e| e.eq_ignore_ascii_case(ext)) {
+            continue;
+        }
+        let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let volumes = extract_volumes_from_title_pub(filename);
+        if let Some(&vol) = volumes.iter().max() {
+            if exclude_volumes.contains(&vol) {
+                continue;
+            }
+            if best.as_ref().map_or(true, |(_, v)| vol > *v) {
+                best = Some((path.to_string_lossy().into_owned(), vol));
+            }
+        }
+    }
+
+    if let Some((ref path, vol)) = best {
+        info!("[IMPORT] Found disk reference: {} (volume {})", path, vol);
+    }
+    best
 }
 
 // ─── Filesystem helpers ───────────────────────────────────────────────────────
@@ -670,7 +729,8 @@ fn build_target_filename(
     let (start, end) = last_match?;
     let digit_width = end - start;
     let new_digits = format!("{:0>width$}", new_volume, width = digit_width);
-    let new_stem = format!("{}{}{}", &stem[..start], new_digits, &stem[end..]);
+    // Truncate after the volume number (remove suffixes like ".FR-NoFace696")
+    let new_stem = format!("{}{}", &stem[..start], new_digits);
     Some(format!("{}.{}", new_stem, target_ext))
 }
 
@@ -757,5 +817,16 @@ mod tests {
             "cbz",
         );
         assert_eq!(result, Some("Code 451 - T05.cbz".to_string()));
+    }
+
+    #[test]
+    fn truncates_suffix_after_volume() {
+        let result = build_target_filename(
+            "/libraries/manga/Goblin slayer/Goblin.Slayer.Tome.007.FR-NoFace696.cbr",
+            7,
+            8,
+            "cbz",
+        );
+        assert_eq!(result, Some("Goblin.Slayer.Tome.008.cbz".to_string()));
     }
 }

@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { TorrentDownloadDto } from "@/lib/api";
-import { Card, CardContent, Button, Icon } from "@/app/components/ui";
+import { TorrentDownloadDto, LatestFoundPerLibraryDto } from "@/lib/api";
+import { Card, CardContent, CardHeader, CardTitle, Button, Icon } from "@/app/components/ui";
+import { QbittorrentProvider, QbittorrentDownloadButton } from "@/app/components/QbittorrentDownloadButton";
 import { useTranslation } from "@/lib/i18n/context";
 import type { TranslationKey } from "@/lib/i18n/fr";
 
@@ -62,9 +63,10 @@ function formatEta(seconds: number): string {
 
 interface DownloadsPageProps {
   initialDownloads: TorrentDownloadDto[];
+  initialLatestFound: LatestFoundPerLibraryDto[];
 }
 
-export function DownloadsPage({ initialDownloads }: DownloadsPageProps) {
+export function DownloadsPage({ initialDownloads, initialLatestFound }: DownloadsPageProps) {
   const { t } = useTranslation();
   const [downloads, setDownloads] = useState<TorrentDownloadDto[]>(initialDownloads);
   const [filter, setFilter] = useState<string>("all");
@@ -153,6 +155,23 @@ export function DownloadsPage({ initialDownloads }: DownloadsPageProps) {
             <DownloadCard key={dl.id} dl={dl} onDeleted={() => refresh(false)} />
           ))}
         </div>
+      )}
+
+      {/* Available downloads from latest detection */}
+      {initialLatestFound.length > 0 && (
+        <QbittorrentProvider>
+          <div className="mt-10">
+            <h2 className="text-xl font-bold text-foreground mb-4 flex items-center gap-2">
+              <Icon name="search" size="lg" />
+              {t("downloads.availableTitle")}
+            </h2>
+            <div className="space-y-6">
+              {initialLatestFound.map(lib => (
+                <AvailableLibraryCard key={lib.library_id} lib={lib} />
+              ))}
+            </div>
+          </div>
+        </QbittorrentProvider>
       )}
     </>
   );
@@ -311,6 +330,80 @@ function DownloadCard({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: ()
         </>,
         document.body
       )}
+    </Card>
+  );
+}
+
+function AvailableLibraryCard({ lib }: { lib: LatestFoundPerLibraryDto }) {
+  const { t } = useTranslation();
+  const [collapsed, setCollapsed] = useState(true);
+  const displayResults = collapsed ? lib.results.slice(0, 5) : lib.results;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">{lib.library_name}</CardTitle>
+          <span className="text-xs text-muted-foreground">
+            {t("downloads.detectedSeries", { count: lib.results.length })} — {formatDate(lib.job_date)}
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {displayResults.map(r => (
+          <div key={r.id} className="rounded-lg border border-border/40 bg-background/60 p-3">
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <span className="font-semibold text-sm text-foreground truncate">{r.series_name}</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap bg-warning/20 text-warning shrink-0">
+                {r.missing_count} {t("downloads.missing")}
+              </span>
+            </div>
+            {r.available_releases && r.available_releases.length > 0 && (
+              <div className="space-y-1">
+                {r.available_releases.map((release, idx) => (
+                  <div key={idx} className="flex items-center gap-2 py-1 pl-2 rounded bg-muted/30">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-mono text-foreground truncate" title={release.title}>{release.title}</p>
+                      <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                        {release.indexer && <span className="text-[10px] text-muted-foreground">{release.indexer}</span>}
+                        {release.seeders != null && (
+                          <span className="text-[10px] text-success font-medium">{release.seeders} seeders</span>
+                        )}
+                        <span className="text-[10px] text-muted-foreground">{(release.size / 1024 / 1024).toFixed(0)} MB</span>
+                        <div className="flex items-center gap-1">
+                          {release.matched_missing_volumes.map(vol => (
+                            <span key={vol} className="text-[10px] px-1.5 py-0.5 rounded-full bg-success/20 text-success font-medium">T.{vol}</span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    {release.download_url && (
+                      <QbittorrentDownloadButton
+                        downloadUrl={release.download_url}
+                        releaseId={`${r.id}-${idx}`}
+                        libraryId={lib.library_id}
+                        seriesName={r.series_name}
+                        expectedVolumes={release.matched_missing_volumes}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+        {lib.results.length > 5 && (
+          <button
+            type="button"
+            onClick={() => setCollapsed(c => !c)}
+            className="text-xs text-primary hover:underline w-full text-center py-1"
+          >
+            {collapsed
+              ? t("downloads.showMore", { count: lib.results.length - 5 })
+              : t("downloads.showLess")}
+          </button>
+        )}
+      </CardContent>
     </Card>
   );
 }

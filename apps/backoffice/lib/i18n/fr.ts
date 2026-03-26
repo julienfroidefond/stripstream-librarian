@@ -900,6 +900,11 @@ const fr = {
   "downloads.cancel": "Annuler le téléchargement",
   "downloads.confirmDelete": "Supprimer ce téléchargement ?",
   "downloads.confirmCancel": "Annuler ce téléchargement ? Le torrent sera aussi supprimé de qBittorrent.",
+  "downloads.availableTitle": "Disponibles au téléchargement",
+  "downloads.detectedSeries": "{{count}} séries détectées",
+  "downloads.missing": "manquant(s)",
+  "downloads.showMore": "Voir {{count}} de plus…",
+  "downloads.showLess": "Réduire",
 
   // Settings - Torrent Import
   "settings.torrentImport": "Import automatique",
