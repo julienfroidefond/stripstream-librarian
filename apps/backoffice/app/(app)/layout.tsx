@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { ThemeToggle } from "@/app/theme-toggle";
 import { JobsIndicator } from "@/app/components/JobsIndicator";
 import { NavIcon, Icon } from "@/app/components/ui";
+import { NavLink } from "@/app/components/NavLink";
 import { LogoutButton } from "@/app/components/LogoutButton";
 import { MobileNav } from "@/app/components/MobileNav";
 import { UserSwitcher } from "@/app/components/UserSwitcher";
@@ -14,9 +15,9 @@ import { getServerTranslations } from "@/lib/i18n/server";
 import type { TranslationKey } from "@/lib/i18n/fr";
 
 type NavItem = {
-  href: "/" | "/books" | "/series" | "/authors" | "/libraries" | "/jobs" | "/tokens" | "/settings";
+  href: "/" | "/books" | "/series" | "/authors" | "/libraries" | "/jobs" | "/tokens" | "/settings" | "/downloads";
   labelKey: TranslationKey;
-  icon: "dashboard" | "books" | "series" | "authors" | "libraries" | "jobs" | "tokens" | "settings";
+  icon: "dashboard" | "books" | "series" | "authors" | "libraries" | "jobs" | "tokens" | "settings" | "download";
 };
 
 const navItems: NavItem[] = [
@@ -24,6 +25,7 @@ const navItems: NavItem[] = [
   { href: "/series", labelKey: "nav.series", icon: "series" },
   { href: "/authors", labelKey: "nav.authors", icon: "authors" },
   { href: "/libraries", labelKey: "nav.libraries", icon: "libraries" },
+  { href: "/downloads", labelKey: "nav.downloads", icon: "download" },
   { href: "/jobs", labelKey: "nav.jobs", icon: "jobs" },
   { href: "/tokens", labelKey: "nav.tokens", icon: "tokens" },
 ];
@@ -113,24 +115,3 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   );
 }
 
-function NavLink({ href, title, children }: { href: NavItem["href"]; title?: string; children: React.ReactNode }) {
-  return (
-    <Link
-      href={href}
-      title={title}
-      className="
-        flex items-center
-        px-2 lg:px-3 py-2
-        rounded-lg
-        text-sm font-medium
-        text-muted-foreground
-        hover:text-foreground
-        hover:bg-accent
-        transition-colors duration-200
-        active:scale-[0.98]
-      "
-    >
-      {children}
-    </Link>
-  );
-}

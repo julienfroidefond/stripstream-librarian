@@ -4,6 +4,7 @@ const fr = {
   "nav.books": "Livres",
   "nav.series": "Séries",
   "nav.libraries": "Bibliothèques",
+  "nav.downloads": "Téléchargements",
   "nav.jobs": "Tâches",
   "nav.tokens": "Jetons",
   "nav.users": "Utilisateurs",
@@ -399,6 +400,8 @@ const fr = {
   "jobDetail.downloadAvailableReleases": "Releases disponibles",
   "jobDetail.downloadAvailableReleasesDesc": "{{count}} série(s) avec au moins une release trouvée",
   "jobDetail.downloadMissingCount": "{{count}} manquant(s)",
+  "jobDetail.downloadErrors": "Erreurs de détection",
+  "jobDetail.downloadErrorsDesc": "{{count}} série(s) en erreur lors de la détection",
 
   // Job types
   "jobType.rebuild": "Indexation",
@@ -880,6 +883,25 @@ const fr = {
   "series.metadataAll": "Toutes",
   "series.metadataLinked": "Associée",
   "series.metadataUnlinked": "Non associée",
+
+  // Downloads page
+  "downloads.title": "Téléchargements",
+  "downloads.refresh": "Actualiser",
+  "downloads.filterActive": "En cours",
+  "downloads.empty": "Aucun téléchargement",
+  "downloads.volumes": "Volumes",
+  "downloads.filesImported": "fichiers importés",
+  "downloads.status.downloading": "Téléchargement",
+  "downloads.status.completed": "Terminé",
+  "downloads.status.importing": "Import en cours",
+  "downloads.status.imported": "Importé",
+  "downloads.status.error": "Erreur",
+
+  // Settings - Torrent Import
+  "settings.torrentImport": "Import automatique",
+  "settings.torrentImportDesc": "Lorsqu'activé, les torrents ajoutés via le backoffice sont suivis et les fichiers sont automatiquement importés dans la bibliothèque à la fin du téléchargement.",
+  "settings.torrentImportEnabled": "Activer l'import automatique",
+  "settings.torrentImportPollingInfo": "L'API interroge qBittorrent toutes les 30 secondes pour détecter les téléchargements terminés. Aucune configuration supplémentaire dans qBittorrent n'est nécessaire.",
 } as const;
 
 export type TranslationKey = keyof typeof fr;

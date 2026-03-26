@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, Icon } from "@/app/components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 
 export function QBittorrentCard({ handleUpdateSetting }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void> }) {
@@ -11,6 +11,7 @@ export function QBittorrentCard({ handleUpdateSetting }: { handleUpdateSetting: 
   const [qbPassword, setQbPassword] = useState("");
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [importEnabled, setImportEnabled] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings/qbittorrent")
@@ -22,6 +23,10 @@ export function QBittorrentCard({ handleUpdateSetting }: { handleUpdateSetting: 
           if (data.password) setQbPassword(data.password);
         }
       })
+      .catch(() => {});
+    fetch("/api/settings/torrent_import")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data?.enabled !== undefined) setImportEnabled(data.enabled); })
       .catch(() => {});
   }, []);
 
@@ -116,6 +121,32 @@ export function QBittorrentCard({ handleUpdateSetting }: { handleUpdateSetting: 
               <span className={`text-sm font-medium ${testResult.success ? "text-success" : "text-destructive"}`}>
                 {testResult.message}
               </span>
+            )}
+          </div>
+
+          <div className="border-t border-border/40 pt-4">
+            <FormField className="max-w-xs">
+              <label className="text-sm font-medium text-muted-foreground mb-1 block">
+                {t("settings.torrentImportEnabled")}
+              </label>
+              <FormSelect
+                value={importEnabled ? "true" : "false"}
+                onChange={(e) => {
+                  const val = e.target.value === "true";
+                  setImportEnabled(val);
+                  handleUpdateSetting("torrent_import", { enabled: val });
+                }}
+              >
+                <option value="false">{t("common.disabled")}</option>
+                <option value="true">{t("common.enabled")}</option>
+              </FormSelect>
+            </FormField>
+
+            {importEnabled && (
+              <div className="mt-3 rounded-lg border border-success/20 bg-success/5 p-3 flex items-start gap-2">
+                <Icon name="check" size="sm" className="text-success mt-0.5 shrink-0" />
+                <p className="text-sm text-muted-foreground">{t("settings.torrentImportPollingInfo")}</p>
+              </div>
             )}
           </div>
         </div>

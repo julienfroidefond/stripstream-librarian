@@ -19,6 +19,7 @@ mod pages;
 mod prowlarr;
 mod qbittorrent;
 mod reading_progress;
+mod torrent_import;
 mod reading_status_match;
 mod reading_status_push;
 mod search;
@@ -121,6 +122,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/prowlarr/test", get(prowlarr::test_prowlarr))
         .route("/qbittorrent/add", axum::routing::post(qbittorrent::add_torrent))
         .route("/qbittorrent/test", get(qbittorrent::test_qbittorrent))
+        .route("/torrent-downloads", get(torrent_import::list_torrent_downloads))
         .route("/telegram/test", get(telegram::test_telegram))
         .route("/komga/sync", axum::routing::post(komga::sync_komga_read_books))
         .route("/komga/reports", get(komga::list_sync_reports))
@@ -190,12 +192,14 @@ async fn main() -> anyhow::Result<()> {
 
     // Clone pool before state is moved into the router
     let poller_pool = state.pool.clone();
+    let torrent_poller_pool = state.pool.clone();
 
     let app = Router::new()
         .route("/health", get(handlers::health))
         .route("/ready", get(handlers::ready))
         .route("/metrics", get(handlers::metrics))
         .route("/docs", get(handlers::docs_redirect))
+        .route("/torrent-downloads/notify", axum::routing::post(torrent_import::notify_torrent_done))
         .merge(SwaggerUi::new("/swagger-ui").url("/openapi.json", openapi::ApiDoc::openapi()))
         .merge(admin_routes)
         .merge(read_routes)
@@ -205,6 +209,11 @@ async fn main() -> anyhow::Result<()> {
     // Start background poller for API-only jobs (metadata_batch, metadata_refresh)
     tokio::spawn(async move {
         job_poller::run_job_poller(poller_pool, 5).await;
+    });
+
+    // Start background poller for qBittorrent torrent completions (every 30s)
+    tokio::spawn(async move {
+        torrent_import::run_torrent_poller(torrent_poller_pool, 30).await;
     });
 
     let listener = tokio::net::TcpListener::bind(&config.listen_addr).await?;

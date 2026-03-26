@@ -1282,7 +1282,26 @@ export type ProwlarrTestResponse = {
 export type QBittorrentAddResponse = {
   success: boolean;
   message: string;
+  torrent_download_id?: string | null;
 };
+
+export type TorrentDownloadDto = {
+  id: string;
+  library_id: string;
+  series_name: string;
+  expected_volumes: number[];
+  qb_hash: string | null;
+  content_path: string | null;
+  status: "downloading" | "completed" | "importing" | "imported" | "error";
+  imported_files: Array<{ volume: number; source: string; destination: string }> | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function fetchTorrentDownloads(): Promise<TorrentDownloadDto[]> {
+  return apiFetch<TorrentDownloadDto[]>("/torrent-downloads");
+}
 
 export type QBittorrentTestResponse = {
   success: boolean;

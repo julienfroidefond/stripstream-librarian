@@ -24,6 +24,30 @@ export function DownloadDetectionReportCard({ report, t }: { report: DownloadDet
   );
 }
 
+export function DownloadDetectionErrorsCard({ results, t }: {
+  results: DownloadDetectionResultDto[];
+  t: TranslateFunction;
+}) {
+  if (results.length === 0) return null;
+
+  return (
+    <Card className="lg:col-span-2">
+      <CardHeader>
+        <CardTitle>{t("jobDetail.downloadErrors")}</CardTitle>
+        <CardDescription>{t("jobDetail.downloadErrorsDesc", { count: String(results.length) })}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2 max-h-80 overflow-y-auto">
+        {results.map((r) => (
+          <div key={r.id} className="p-3 bg-destructive/10 rounded-lg border border-destructive/20">
+            <p className="text-sm font-semibold text-destructive mb-1">{r.series_name}</p>
+            <p className="text-sm text-destructive/80">{r.error_message ?? "Erreur inconnue"}</p>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function DownloadDetectionResultsCard({ results, libraryId, t }: {
   results: DownloadDetectionResultDto[];
   libraryId: string | null;

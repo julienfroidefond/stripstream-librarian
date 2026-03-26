@@ -26,6 +26,7 @@ services:
     volumes:
       - ${LIBRARIES_HOST_PATH:-./libraries}:/libraries
       - ${THUMBNAILS_HOST_PATH:-./data/thumbnails}:/data/thumbnails
+      - ${DOWNLOADS_HOST_PATH:-./data/downloads}:/downloads
     depends_on:
       postgres:
         condition: service_healthy

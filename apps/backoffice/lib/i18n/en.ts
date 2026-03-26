@@ -6,6 +6,7 @@ const en: Record<TranslationKey, string> = {
   "nav.books": "Books",
   "nav.series": "Series",
   "nav.libraries": "Libraries",
+  "nav.downloads": "Downloads",
   "nav.jobs": "Jobs",
   "nav.tokens": "Tokens",
   "nav.users": "Users",
@@ -401,6 +402,8 @@ const en: Record<TranslationKey, string> = {
   "jobDetail.downloadAvailableReleases": "Available releases",
   "jobDetail.downloadAvailableReleasesDesc": "{{count}} series with at least one release found",
   "jobDetail.downloadMissingCount": "{{count}} missing",
+  "jobDetail.downloadErrors": "Detection errors",
+  "jobDetail.downloadErrorsDesc": "{{count}} series with errors during detection",
 
   // Job types
   "jobType.rebuild": "Indexing",
@@ -882,6 +885,25 @@ const en: Record<TranslationKey, string> = {
   "series.metadataAll": "All",
   "series.metadataLinked": "Linked",
   "series.metadataUnlinked": "Not linked",
+
+  // Downloads page
+  "downloads.title": "Downloads",
+  "downloads.refresh": "Refresh",
+  "downloads.filterActive": "In progress",
+  "downloads.empty": "No downloads",
+  "downloads.volumes": "Volumes",
+  "downloads.filesImported": "files imported",
+  "downloads.status.downloading": "Downloading",
+  "downloads.status.completed": "Completed",
+  "downloads.status.importing": "Importing",
+  "downloads.status.imported": "Imported",
+  "downloads.status.error": "Error",
+
+  // Settings - Torrent Import
+  "settings.torrentImport": "Auto import",
+  "settings.torrentImportDesc": "When enabled, torrents added via the backoffice are tracked and files are automatically imported into the library when the download completes.",
+  "settings.torrentImportEnabled": "Enable auto import",
+  "settings.torrentImportPollingInfo": "The API polls qBittorrent every 30 seconds to detect completed downloads. No additional configuration in qBittorrent is required.",
 };
 
 export default en;

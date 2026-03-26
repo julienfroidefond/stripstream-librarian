@@ -11,7 +11,7 @@ import { JobTimelineCard } from "./components/JobTimelineCard";
 import { JobProgressCard, IndexStatsCard, ThumbnailStatsCard } from "./components/JobProgressCard";
 import { MetadataBatchReportCard, MetadataBatchResultsCard, MetadataRefreshReportCard, MetadataRefreshChangesCard } from "./components/MetadataReportCards";
 import { ReadingStatusMatchReportCard, ReadingStatusMatchResultsCard, ReadingStatusPushReportCard, ReadingStatusPushResultsCard } from "./components/ReadingStatusReportCards";
-import { DownloadDetectionReportCard, DownloadDetectionResultsCard } from "./components/DownloadDetectionCards";
+import { DownloadDetectionReportCard, DownloadDetectionResultsCard, DownloadDetectionErrorsCard } from "./components/DownloadDetectionCards";
 import { JobErrorsCard } from "./components/JobErrorsCard";
 
 interface JobDetailPageProps {
@@ -148,10 +148,12 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
 
   let downloadDetectionReport: DownloadDetectionReportDto | null = null;
   let downloadDetectionResults: DownloadDetectionResultDto[] = [];
+  let downloadDetectionErrors: DownloadDetectionResultDto[] = [];
   if (isDownloadDetection) {
-    [downloadDetectionReport, downloadDetectionResults] = await Promise.all([
+    [downloadDetectionReport, downloadDetectionResults, downloadDetectionErrors] = await Promise.all([
       getDownloadDetectionReport(id).catch(() => null),
       getDownloadDetectionResults(id, "found").catch(() => []),
+      getDownloadDetectionResults(id, "error").catch(() => []),
     ]);
   }
 
@@ -270,6 +272,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
 
         {/* Download detection */}
         {isDownloadDetection && downloadDetectionReport && <DownloadDetectionReportCard report={downloadDetectionReport} t={t} />}
+        {isDownloadDetection && <DownloadDetectionErrorsCard results={downloadDetectionErrors} t={t} />}
         {isDownloadDetection && <DownloadDetectionResultsCard results={downloadDetectionResults} libraryId={job.library_id} t={t} />}
 
         {/* Metadata batch results */}
