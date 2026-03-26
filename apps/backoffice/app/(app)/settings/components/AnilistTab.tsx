@@ -228,7 +228,14 @@ export function AnilistTab({
             <div className="flex items-center gap-3">
               <select
                 value={localUserId}
-                onChange={(e) => setLocalUserId(e.target.value)}
+                onChange={(e) => {
+                  const newLocalUserId = e.target.value;
+                  setLocalUserId(newLocalUserId);
+                  handleUpdateSetting("anilist", {
+                    ...buildAnilistSettings(),
+                    local_user_id: newLocalUserId || undefined,
+                  });
+                }}
                 autoComplete="off"
                 className="flex-1 text-sm border border-border rounded-lg px-3 py-2.5 bg-background focus:outline-none focus:ring-2 focus:ring-ring h-10"
               >
@@ -237,9 +244,6 @@ export function AnilistTab({
                   <option key={u.id} value={u.id}>{u.username}</option>
                 ))}
               </select>
-              <Button onClick={() => handleUpdateSetting("anilist", buildAnilistSettings())} disabled={!localUserId}>
-                {t("common.save")}
-              </Button>
             </div>
           </div>
         </CardContent>

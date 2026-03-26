@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, FormRow, Icon } from "@/app/components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, FormRow, Icon, toast, Toaster } from "@/app/components/ui";
 import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, UserDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 import type { Locale } from "@/lib/i18n/types";
@@ -36,7 +36,6 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
   const [isClearing, setIsClearing] = useState(false);
   const [clearResult, setClearResult] = useState<ClearCacheResponse | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   const VALID_TABS = ["general", "downloadTools", "metadata", "readingStatus", "notifications"] as const;
   type TabId = typeof VALID_TABS[number];
@@ -55,9 +54,17 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
     router.replace(`?tab=${tab}`, { scroll: false });
   }
 
+  function hasEmptyValue(v: unknown): boolean {
+    if (v === null || v === "") return true;
+    if (typeof v === "object" && v !== null) {
+      return Object.values(v).some((val) => val !== undefined && hasEmptyValue(val));
+    }
+    return false;
+  }
+
   async function handleUpdateSetting(key: string, value: unknown) {
+    if (hasEmptyValue(value)) return;
     setIsSaving(true);
-    setSaveMessage(null);
     try {
       const response = await fetch(`/api/settings/${key}`, {
         method: "POST",
@@ -65,13 +72,12 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         body: JSON.stringify({ value })
       });
       if (response.ok) {
-        setSaveMessage(t("settings.savedSuccess"));
-        setTimeout(() => setSaveMessage(null), 3000);
+        toast(t("settings.savedSuccess"), "success");
       } else {
-        setSaveMessage(t("settings.savedError"));
+        toast(t("settings.savedError"), "error");
       }
     } catch {
-      setSaveMessage(t("settings.saveError"));
+      toast(t("settings.saveError"), "error");
     } finally {
       setIsSaving(false);
     }
@@ -131,14 +137,6 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
           </button>
         ))}
       </div>
-
-      {saveMessage && (
-        <Card className="mb-6 border-success/50 bg-success/5">
-          <CardContent className="pt-6">
-            <p className="text-success">{saveMessage}</p>
-          </CardContent>
-        </Card>
-      )}
 
       {activeTab === "general" && (<>
       {/* Language Selector */}
@@ -546,6 +544,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         <AnilistTab handleUpdateSetting={handleUpdateSetting} users={users} />
         <KomgaSyncCard users={users} />
       </>)}
+
+      <Toaster />
     </>
   );
 }
