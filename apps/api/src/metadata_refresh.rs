@@ -17,7 +17,7 @@ use crate::metadata_batch::{load_provider_config_from_pool, is_job_cancelled, up
 
 #[derive(Deserialize, ToSchema)]
 pub struct MetadataRefreshRequest {
-    pub library_id: String,
+    pub library_id: Option<String>,
 }
 
 /// A single field change: old → new
@@ -83,8 +83,82 @@ pub async fn start_refresh(
     State(state): State<AppState>,
     Json(body): Json<MetadataRefreshRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    // All libraries case
+    if body.library_id.is_none() {
+        let library_ids: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM libraries WHERE metadata_provider IS DISTINCT FROM 'none' ORDER BY name"
+        )
+        .fetch_all(&state.pool)
+        .await?;
+        let mut last_job_id: Option<Uuid> = None;
+        for library_id in library_ids {
+            let link_count: i64 = sqlx::query_scalar(
+                r#"
+                SELECT COUNT(*) FROM external_metadata_links eml
+                LEFT JOIN series_metadata sm
+                    ON sm.library_id = eml.library_id AND sm.name = eml.series_name
+                WHERE eml.library_id = $1
+                  AND eml.status = 'approved'
+                  AND COALESCE(sm.status, 'ongoing') NOT IN ('ended', 'cancelled')
+                "#,
+            )
+            .bind(library_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(0);
+            if link_count == 0 { continue; }
+            let existing: Option<Uuid> = sqlx::query_scalar(
+                "SELECT id FROM index_jobs WHERE library_id = $1 AND type = 'metadata_refresh' AND status IN ('pending', 'running') LIMIT 1",
+            )
+            .bind(library_id)
+            .fetch_optional(&state.pool)
+            .await?;
+            if existing.is_some() { continue; }
+            let job_id = Uuid::new_v4();
+            sqlx::query(
+                "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'metadata_refresh', 'running', NOW())",
+            )
+            .bind(job_id)
+            .bind(library_id)
+            .execute(&state.pool)
+            .await?;
+            let pool = state.pool.clone();
+            let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+                .bind(library_id)
+                .fetch_optional(&state.pool)
+                .await
+                .ok()
+                .flatten();
+            tokio::spawn(async move {
+                if let Err(e) = process_metadata_refresh(&pool, job_id, library_id).await {
+                    warn!("[METADATA_REFRESH] job {job_id} failed: {e}");
+                    let _ = sqlx::query(
+                        "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
+                    )
+                    .bind(job_id)
+                    .bind(e.to_string())
+                    .execute(&pool)
+                    .await;
+                    notifications::notify(
+                        pool.clone(),
+                        notifications::NotificationEvent::MetadataRefreshFailed {
+                            library_name,
+                            error: e.to_string(),
+                        },
+                    );
+                }
+            });
+            last_job_id = Some(job_id);
+        }
+        return Ok(Json(serde_json::json!({
+            "id": last_job_id.map(|id| id.to_string()),
+            "status": "started",
+        })));
+    }
+
     let library_id: Uuid = body
         .library_id
+        .unwrap()
         .parse()
         .map_err(|_| ApiError::bad_request("invalid library_id"))?;
 

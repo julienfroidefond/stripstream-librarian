@@ -63,152 +63,41 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   async function triggerMetadataBatch(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    if (libraryId) {
-      let result;
-      try {
-        result = await startMetadataBatch(libraryId);
-      } catch {
-        // Library may have metadata disabled — ignore silently
-        return;
-      }
-      revalidatePath("/jobs");
-      redirect(`/jobs?highlight=${result.id}`);
-    } else {
-      // All libraries — skip those with metadata disabled
-      const allLibraries = await fetchLibraries().catch(() => [] as LibraryDto[]);
-      let lastId: string | undefined;
-      for (const lib of allLibraries) {
-        if (lib.metadata_provider === "none") continue;
-        try {
-          const result = await startMetadataBatch(lib.id);
-          if (result.status !== "already_running") lastId = result.id;
-        } catch {
-          // Library may have metadata disabled or other issue — skip
-        }
-      }
-      revalidatePath("/jobs");
-      redirect(lastId ? `/jobs?highlight=${lastId}` : "/jobs");
-    }
+    const result = await startMetadataBatch(libraryId || undefined);
+    revalidatePath("/jobs");
+    redirect(result.id ? `/jobs?highlight=${result.id}` : "/jobs");
   }
 
   async function triggerMetadataRefresh(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    if (libraryId) {
-      let result;
-      try {
-        result = await startMetadataRefresh(libraryId);
-      } catch {
-        revalidatePath("/jobs");
-        redirect("/jobs");
-      }
-      revalidatePath("/jobs");
-      redirect(`/jobs?highlight=${result.id}`);
-    } else {
-      // All libraries — skip those with metadata disabled
-      const allLibraries = await fetchLibraries().catch(() => [] as LibraryDto[]);
-      let lastId: string | undefined;
-      for (const lib of allLibraries) {
-        if (lib.metadata_provider === "none") continue;
-        try {
-          const result = await startMetadataRefresh(lib.id);
-          if (result.status !== "already_running") lastId = result.id;
-        } catch {
-          // Library may have metadata disabled or no approved links — skip
-        }
-      }
-      revalidatePath("/jobs");
-      redirect(lastId ? `/jobs?highlight=${lastId}` : "/jobs");
-    }
+    const result = await startMetadataRefresh(libraryId || undefined);
+    revalidatePath("/jobs");
+    redirect(result.id ? `/jobs?highlight=${result.id}` : "/jobs");
   }
 
   async function triggerReadingStatusMatch(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    if (libraryId) {
-      let result;
-      try {
-        result = await startReadingStatusMatch(libraryId);
-      } catch {
-        return;
-      }
-      revalidatePath("/jobs");
-      redirect(`/jobs?highlight=${result.id}`);
-    } else {
-      // All libraries — only those with reading_status_provider configured
-      const allLibraries = await fetchLibraries().catch(() => [] as LibraryDto[]);
-      let lastId: string | undefined;
-      for (const lib of allLibraries) {
-        if (!lib.reading_status_provider) continue;
-        try {
-          const result = await startReadingStatusMatch(lib.id);
-          if (result.status !== "already_running") lastId = result.id;
-        } catch {
-          // Skip libraries with errors
-        }
-      }
-      revalidatePath("/jobs");
-      redirect(lastId ? `/jobs?highlight=${lastId}` : "/jobs");
-    }
+    const result = await startReadingStatusMatch(libraryId || undefined);
+    revalidatePath("/jobs");
+    redirect(result.id ? `/jobs?highlight=${result.id}` : "/jobs");
   }
 
   async function triggerReadingStatusPush(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    if (libraryId) {
-      let result;
-      try {
-        result = await startReadingStatusPush(libraryId);
-      } catch {
-        return;
-      }
-      revalidatePath("/jobs");
-      redirect(`/jobs?highlight=${result.id}`);
-    } else {
-      // All libraries — only those with reading_status_provider configured
-      const allLibraries = await fetchLibraries().catch(() => [] as LibraryDto[]);
-      let lastId: string | undefined;
-      for (const lib of allLibraries) {
-        if (!lib.reading_status_provider) continue;
-        try {
-          const result = await startReadingStatusPush(lib.id);
-          if (result.status !== "already_running") lastId = result.id;
-        } catch {
-          // Skip libraries with errors
-        }
-      }
-      revalidatePath("/jobs");
-      redirect(lastId ? `/jobs?highlight=${lastId}` : "/jobs");
-    }
+    const result = await startReadingStatusPush(libraryId || undefined);
+    revalidatePath("/jobs");
+    redirect(result.id ? `/jobs?highlight=${result.id}` : "/jobs");
   }
 
   async function triggerDownloadDetection(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    if (libraryId) {
-      let result;
-      try {
-        result = await startDownloadDetection(libraryId);
-      } catch {
-        return;
-      }
-      revalidatePath("/jobs");
-      redirect(`/jobs?highlight=${result.id}`);
-    } else {
-      // All libraries
-      const allLibraries = await fetchLibraries().catch(() => [] as LibraryDto[]);
-      let lastId: string | undefined;
-      for (const lib of allLibraries) {
-        try {
-          const result = await startDownloadDetection(lib.id);
-          if (result.status !== "already_running") lastId = result.id;
-        } catch {
-          // Skip libraries with errors (e.g. Prowlarr not configured)
-        }
-      }
-      revalidatePath("/jobs");
-      redirect(lastId ? `/jobs?highlight=${lastId}` : "/jobs");
-    }
+    const result = await startDownloadDetection(libraryId || undefined);
+    revalidatePath("/jobs");
+    redirect(result.id ? `/jobs?highlight=${result.id}` : "/jobs");
   }
 
   return (

@@ -1061,24 +1061,24 @@ export type MetadataBatchResultDto = {
   error_message: string | null;
 };
 
-export async function startMetadataBatch(libraryId: string) {
-  return apiFetch<{ id: string; status: string }>("/metadata/batch", {
+export async function startMetadataBatch(libraryId?: string) {
+  return apiFetch<{ id: string | null; status: string }>("/metadata/batch", {
     method: "POST",
-    body: JSON.stringify({ library_id: libraryId }),
+    body: JSON.stringify(libraryId ? { library_id: libraryId } : {}),
   });
 }
 
-export async function startMetadataRefresh(libraryId: string) {
-  return apiFetch<{ id: string; status: string }>("/metadata/refresh", {
+export async function startMetadataRefresh(libraryId?: string) {
+  return apiFetch<{ id: string | null; status: string }>("/metadata/refresh", {
     method: "POST",
-    body: JSON.stringify({ library_id: libraryId }),
+    body: JSON.stringify(libraryId ? { library_id: libraryId } : {}),
   });
 }
 
-export async function startReadingStatusMatch(libraryId: string) {
-  return apiFetch<{ id: string; status: string }>("/reading-status/match", {
+export async function startReadingStatusMatch(libraryId?: string) {
+  return apiFetch<{ id: string | null; status: string }>("/reading-status/match", {
     method: "POST",
-    body: JSON.stringify({ library_id: libraryId }),
+    body: JSON.stringify(libraryId ? { library_id: libraryId } : {}),
   });
 }
 
@@ -1111,10 +1111,10 @@ export async function getReadingStatusMatchResults(jobId: string) {
   return apiFetch<ReadingStatusMatchResultDto[]>(`/reading-status/match/${jobId}/results`);
 }
 
-export async function startReadingStatusPush(libraryId: string) {
-  return apiFetch<{ id: string; status: string }>("/reading-status/push", {
+export async function startReadingStatusPush(libraryId?: string) {
+  return apiFetch<{ id: string | null; status: string }>("/reading-status/push", {
     method: "POST",
-    body: JSON.stringify({ library_id: libraryId }),
+    body: JSON.stringify(libraryId ? { library_id: libraryId } : {}),
   });
 }
 
@@ -1148,10 +1148,10 @@ export async function getReadingStatusPushResults(jobId: string) {
   return apiFetch<ReadingStatusPushResultDto[]>(`/reading-status/push/${jobId}/results`);
 }
 
-export async function startDownloadDetection(libraryId: string) {
-  return apiFetch<{ id: string; status: string }>("/download-detection/start", {
+export async function startDownloadDetection(libraryId?: string) {
+  return apiFetch<{ id: string | null; status: string }>("/download-detection/start", {
     method: "POST",
-    body: JSON.stringify({ library_id: libraryId }),
+    body: JSON.stringify(libraryId ? { library_id: libraryId } : {}),
   });
 }
 

@@ -123,8 +123,36 @@ pub async fn enqueue_rebuild(
     let is_full = payload.as_ref().and_then(|p| p.0.full).unwrap_or(false);
     let is_rescan = payload.as_ref().and_then(|p| p.0.rescan).unwrap_or(false);
     let job_type = if is_full { "full_rebuild" } else if is_rescan { "rescan" } else { "rebuild" };
-    let id = Uuid::new_v4();
 
+    // When no library specified, create one job per library
+    if library_id.is_none() {
+        let library_ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM libraries ORDER BY name")
+            .fetch_all(&state.pool)
+            .await?;
+        let mut last_id: Option<Uuid> = None;
+        for lib_id in library_ids {
+            let id = Uuid::new_v4();
+            sqlx::query(
+                "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, $3, 'pending')",
+            )
+            .bind(id)
+            .bind(lib_id)
+            .bind(job_type)
+            .execute(&state.pool)
+            .await?;
+            last_id = Some(id);
+        }
+        let last_id = last_id.ok_or_else(|| ApiError::bad_request("No libraries found"))?;
+        let row = sqlx::query(
+            "SELECT id, library_id, book_id, type, status, started_at, finished_at, stats_json, error_opt, created_at FROM index_jobs WHERE id = $1",
+        )
+        .bind(last_id)
+        .fetch_one(&state.pool)
+        .await?;
+        return Ok(Json(map_row(row)));
+    }
+
+    let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, $3, 'pending')",
     )

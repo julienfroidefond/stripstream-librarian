@@ -14,7 +14,7 @@ use crate::{anilist, error::ApiError, state::AppState};
 
 #[derive(Deserialize, ToSchema)]
 pub struct ReadingStatusMatchRequest {
-    pub library_id: String,
+    pub library_id: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -62,8 +62,70 @@ pub async fn start_match(
     State(state): State<AppState>,
     Json(body): Json<ReadingStatusMatchRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    // All libraries case
+    if body.library_id.is_none() {
+        anilist::load_anilist_settings(&state.pool).await?;
+        let library_ids: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM libraries WHERE reading_status_provider IS NOT NULL ORDER BY name"
+        )
+        .fetch_all(&state.pool)
+        .await?;
+        let mut last_job_id: Option<Uuid> = None;
+        for library_id in library_ids {
+            let existing: Option<Uuid> = sqlx::query_scalar(
+                "SELECT id FROM index_jobs WHERE library_id = $1 AND type = 'reading_status_match' AND status IN ('pending', 'running') LIMIT 1",
+            )
+            .bind(library_id)
+            .fetch_optional(&state.pool)
+            .await?;
+            if existing.is_some() { continue; }
+            let job_id = Uuid::new_v4();
+            sqlx::query(
+                "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'reading_status_match', 'running', NOW())",
+            )
+            .bind(job_id)
+            .bind(library_id)
+            .execute(&state.pool)
+            .await?;
+            let pool = state.pool.clone();
+            let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+                .bind(library_id)
+                .fetch_optional(&state.pool)
+                .await
+                .ok()
+                .flatten();
+            tokio::spawn(async move {
+                if let Err(e) = process_reading_status_match(&pool, job_id, library_id).await {
+                    warn!("[READING_STATUS_MATCH] job {job_id} failed: {e}");
+                    let partial_stats = build_match_stats(&pool, job_id).await;
+                    let _ = sqlx::query(
+                        "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW(), stats_json = $3 WHERE id = $1",
+                    )
+                    .bind(job_id)
+                    .bind(e.to_string())
+                    .bind(&partial_stats)
+                    .execute(&pool)
+                    .await;
+                    notifications::notify(
+                        pool.clone(),
+                        notifications::NotificationEvent::ReadingStatusMatchFailed {
+                            library_name,
+                            error: e.to_string(),
+                        },
+                    );
+                }
+            });
+            last_job_id = Some(job_id);
+        }
+        return Ok(Json(serde_json::json!({
+            "id": last_job_id.map(|id| id.to_string()),
+            "status": "started",
+        })));
+    }
+
     let library_id: Uuid = body
         .library_id
+        .unwrap()
         .parse()
         .map_err(|_| ApiError::bad_request("invalid library_id"))?;
 
