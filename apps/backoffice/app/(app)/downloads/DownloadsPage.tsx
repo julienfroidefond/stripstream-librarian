@@ -66,11 +66,14 @@ interface DownloadsPageProps {
   initialLatestFound: LatestFoundPerLibraryDto[];
 }
 
+const PAGE_SIZE = 10;
+
 export function DownloadsPage({ initialDownloads, initialLatestFound }: DownloadsPageProps) {
   const { t } = useTranslation();
   const [downloads, setDownloads] = useState<TorrentDownloadDto[]>(initialDownloads);
   const [filter, setFilter] = useState<string>("all");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [page, setPage] = useState(1);
 
   const refresh = useCallback(async (showSpinner = true) => {
     if (showSpinner) setIsRefreshing(true);
@@ -103,6 +106,12 @@ export function DownloadsPage({ initialDownloads, initialLatestFound }: Download
     return d.status === filter;
   });
 
+  const totalPages = Math.ceil(visible.length / PAGE_SIZE);
+  const paged = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  // Reset to page 1 when filter changes
+  const handleFilterChange = (id: string) => { setFilter(id); setPage(1); };
+
   return (
     <>
       <div className="flex items-center justify-between mb-6">
@@ -125,7 +134,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound }: Download
         {filters.map(f => (
           <button
             key={f.id}
-            onClick={() => setFilter(f.id)}
+            onClick={() => handleFilterChange(f.id)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
               filter === f.id
                 ? "border-primary text-primary"
@@ -150,11 +159,26 @@ export function DownloadsPage({ initialDownloads, initialLatestFound }: Download
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {visible.map(dl => (
-            <DownloadCard key={dl.id} dl={dl} onDeleted={() => refresh(false)} />
-          ))}
-        </div>
+        <>
+          <div className="space-y-1.5">
+            {paged.map(dl => (
+              <DownloadRow key={dl.id} dl={dl} onDeleted={() => refresh(false)} />
+            ))}
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-4">
+              <Button variant="outline" size="xs" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
+                <Icon name="chevronLeft" size="sm" />
+              </Button>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {page} / {totalPages}
+              </span>
+              <Button variant="outline" size="xs" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
+                <Icon name="chevronRight" size="sm" />
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
       {/* Available downloads from latest detection */}
@@ -177,7 +201,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound }: Download
   );
 }
 
-function DownloadCard({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: () => void }) {
+function DownloadRow({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: () => void }) {
   const { t } = useTranslation();
   const [deleting, setDeleting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -194,115 +218,74 @@ function DownloadCard({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: ()
     }
   }
 
+  const statusIcon = dl.status === "importing" ? (
+    <Icon name="spinner" size="sm" className="animate-spin text-primary" />
+  ) : dl.status === "imported" ? (
+    <Icon name="check" size="sm" className="text-success" />
+  ) : dl.status === "error" ? (
+    <Icon name="warning" size="sm" className="text-destructive" />
+  ) : dl.status === "downloading" ? (
+    <Icon name="download" size="sm" className="text-primary" />
+  ) : (
+    <Icon name="refresh" size="sm" className="text-warning" />
+  );
+
   return (
-    <Card>
-      <CardContent className="pt-4">
-        <div className="flex items-start gap-4">
-          {/* Status indicator */}
-          <div className="mt-0.5">
-            {dl.status === "importing" ? (
-              <Icon name="spinner" size="md" className="animate-spin text-primary" />
-            ) : dl.status === "imported" ? (
-              <Icon name="check" size="md" className="text-success" />
-            ) : dl.status === "error" ? (
-              <Icon name="warning" size="md" className="text-destructive" />
-            ) : dl.status === "downloading" ? (
-              <Icon name="download" size="md" className="text-primary" />
-            ) : (
-              <Icon name="refresh" size="md" className="text-warning" />
+    <>
+      <div className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border/40 bg-card hover:bg-accent/30 transition-colors">
+        {statusIcon}
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-foreground truncate">{dl.series_name}</span>
+            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${statusClass(dl.status)}`}>
+              {statusLabel(dl.status, t)}
+            </span>
+            {dl.expected_volumes.length > 0 && (
+              <span className="text-[11px] text-muted-foreground">{formatVolumes(dl.expected_volumes)}</span>
+            )}
+            {dl.status === "imported" && importedCount > 0 && (
+              <span className="text-[11px] text-success">{importedCount} {t("downloads.filesImported")}</span>
             )}
           </div>
 
-          {/* Main info */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-semibold text-foreground truncate">{dl.series_name}</span>
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusClass(dl.status)}`}>
-                {statusLabel(dl.status, t)}
-              </span>
-            </div>
-
-            <div className="mt-1 flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
-              {dl.expected_volumes.length > 0 && (
-                <span>{t("downloads.volumes")} : {formatVolumes(dl.expected_volumes)}</span>
-              )}
-              {dl.status === "imported" && importedCount > 0 && (
-                <span className="text-success">{importedCount} {t("downloads.filesImported")}</span>
-              )}
-              {dl.qb_hash && (
-                <span className="font-mono text-xs opacity-50" title={dl.qb_hash}>
-                  {dl.qb_hash.slice(0, 8)}…
-                </span>
-              )}
-            </div>
-
-            {dl.status === "downloading" && (
-              <div className="mt-2">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary rounded-full transition-all duration-500"
-                      style={{ width: `${Math.round(dl.progress * 100)}%` }}
-                    />
-                  </div>
-                  <span className="text-xs font-medium text-foreground tabular-nums w-10 text-right">
-                    {Math.round(dl.progress * 100)}%
-                  </span>
-                </div>
-                {(dl.download_speed > 0 || dl.eta > 0) && (
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    {dl.download_speed > 0 && <span>{formatSpeed(dl.download_speed)}</span>}
-                    {dl.eta > 0 && dl.eta < 8640000 && <span>ETA {formatEta(dl.eta)}</span>}
-                  </div>
-                )}
+          {dl.status === "downloading" && (
+            <div className="flex items-center gap-2 mt-1">
+              <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden max-w-xs">
+                <div
+                  className="h-full bg-primary rounded-full transition-all duration-500"
+                  style={{ width: `${Math.round(dl.progress * 100)}%` }}
+                />
               </div>
-            )}
-
-            {dl.content_path && dl.status !== "imported" && (
-              <p className="mt-1 text-xs font-mono text-muted-foreground truncate" title={dl.content_path}>
-                {dl.content_path}
-              </p>
-            )}
-
-            {dl.error_message && (
-              <p className="mt-1 text-sm text-destructive">{dl.error_message}</p>
-            )}
-
-            {dl.status === "imported" && Array.isArray(dl.imported_files) && dl.imported_files.length > 0 && (
-              <ul className="mt-2 space-y-0.5">
-                {(dl.imported_files as Array<{ volume: number; destination: string }>).map((f, i) => (
-                  <li key={i} className="text-xs text-muted-foreground font-mono truncate" title={f.destination}>
-                    T{String(f.volume).padStart(2, "0")} → {f.destination.split("/").pop()}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {/* Actions */}
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            <div className="text-xs text-muted-foreground text-right">
-              <p>{formatDate(dl.created_at)}</p>
-              {dl.updated_at !== dl.created_at && (
-                <p className="opacity-60">maj {formatDate(dl.updated_at)}</p>
+              <span className="text-[10px] font-medium text-foreground tabular-nums">
+                {Math.round(dl.progress * 100)}%
+              </span>
+              {dl.download_speed > 0 && (
+                <span className="text-[10px] text-muted-foreground">{formatSpeed(dl.download_speed)}</span>
+              )}
+              {dl.eta > 0 && dl.eta < 8640000 && (
+                <span className="text-[10px] text-muted-foreground">ETA {formatEta(dl.eta)}</span>
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => setShowConfirm(true)}
-              disabled={deleting || dl.status === "importing"}
-              className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
-              title={dl.status === "downloading" ? t("downloads.cancel") : t("downloads.delete")}
-            >
-              {deleting ? (
-                <Icon name="spinner" size="sm" className="animate-spin" />
-              ) : (
-                <Icon name="trash" size="sm" />
-              )}
-            </button>
-          </div>
+          )}
+
+          {dl.error_message && (
+            <p className="text-[11px] text-destructive truncate mt-0.5" title={dl.error_message}>{dl.error_message}</p>
+          )}
         </div>
-      </CardContent>
+
+        <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{formatDate(dl.created_at)}</span>
+
+        <button
+          type="button"
+          onClick={() => setShowConfirm(true)}
+          disabled={deleting || dl.status === "importing"}
+          className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30 shrink-0"
+          title={dl.status === "downloading" ? t("downloads.cancel") : t("downloads.delete")}
+        >
+          {deleting ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="trash" size="sm" />}
+        </button>
+      </div>
 
       {showConfirm && createPortal(
         <>
@@ -330,7 +313,7 @@ function DownloadCard({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: ()
         </>,
         document.body
       )}
-    </Card>
+    </>
   );
 }
 
