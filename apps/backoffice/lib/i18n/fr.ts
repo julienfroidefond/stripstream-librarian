@@ -280,6 +280,9 @@ const fr = {
   "jobsList.duration": "Durée",
   "jobsList.created": "Créé",
   "jobsList.actions": "Actions",
+  "jobsList.allTypes": "Tous les types",
+  "jobsList.allStatuses": "Tous les statuts",
+  "jobsList.allLibraries": "Toutes les bibliothèques",
 
   // Job row
   "jobRow.showProgress": "Afficher la progression",

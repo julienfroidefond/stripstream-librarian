@@ -46,9 +46,19 @@ function formatDuration(start: string, end: string | null): string {
 export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListProps) {
   const { t, locale } = useTranslation();
   const [jobs, setJobs] = useState(initialJobs);
+  const [filterType, setFilterType] = useState<string>("");
+  const [filterStatus, setFilterStatus] = useState<string>("");
+  const [filterLibrary, setFilterLibrary] = useState<string>("");
+
+  const filteredJobs = jobs.filter((job) => {
+    if (filterType && job.type !== filterType) return false;
+    if (filterStatus && job.status !== filterStatus) return false;
+    if (filterLibrary && job.library_id !== filterLibrary) return false;
+    return true;
+  });
 
   const initialPage = highlightJobId
-    ? Math.ceil((initialJobs.findIndex(j => j.id === highlightJobId) + 1) / PAGE_SIZE) || 1
+    ? Math.ceil((filteredJobs.findIndex(j => j.id === highlightJobId) + 1) / PAGE_SIZE) || 1
     : 1;
   const [currentPage, setCurrentPage] = useState(initialPage);
 
@@ -65,9 +75,14 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
     });
   };
 
-  const totalPages = Math.ceil(jobs.length / PAGE_SIZE);
+  // Derive unique types, statuses, libraries for filter options
+  const jobTypes = [...new Set(jobs.map(j => j.type))].sort();
+  const jobStatuses = [...new Set(jobs.map(j => j.status))].sort();
+  const jobLibraryIds = [...new Set(jobs.map(j => j.library_id).filter(Boolean))] as string[];
+
+  const totalPages = Math.ceil(filteredJobs.length / PAGE_SIZE);
   const pageStart = (currentPage - 1) * PAGE_SIZE;
-  const visibleJobs = jobs.slice(pageStart, pageStart + PAGE_SIZE);
+  const visibleJobs = filteredJobs.slice(pageStart, pageStart + PAGE_SIZE);
 
   // Refresh jobs list via SSE
   useEffect(() => {
@@ -128,6 +143,49 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
 
   return (
     <div className="bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-border/60 bg-muted/30 flex-wrap">
+        <select
+          value={filterType}
+          onChange={(e) => { setFilterType(e.target.value); setCurrentPage(1); }}
+          className="text-xs border border-border rounded-md px-2.5 py-1.5 bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          <option value="">{t("jobsList.allTypes")}</option>
+          {jobTypes.map((type) => (
+            <option key={type} value={type}>{t(`jobType.${type}` as never) || type}</option>
+          ))}
+        </select>
+        <select
+          value={filterStatus}
+          onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
+          className="text-xs border border-border rounded-md px-2.5 py-1.5 bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          <option value="">{t("jobsList.allStatuses")}</option>
+          {jobStatuses.map((status) => (
+            <option key={status} value={status}>{status}</option>
+          ))}
+        </select>
+        <select
+          value={filterLibrary}
+          onChange={(e) => { setFilterLibrary(e.target.value); setCurrentPage(1); }}
+          className="text-xs border border-border rounded-md px-2.5 py-1.5 bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          <option value="">{t("jobsList.allLibraries")}</option>
+          {jobLibraryIds.map((id) => (
+            <option key={id} value={id}>{libraries.get(id) || id}</option>
+          ))}
+        </select>
+        {(filterType || filterStatus || filterLibrary) && (
+          <button
+            onClick={() => { setFilterType(""); setFilterStatus(""); setFilterLibrary(""); setCurrentPage(1); }}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {t("common.clear")}
+          </button>
+        )}
+        <span className="text-xs text-muted-foreground ml-auto">
+          {filteredJobs.length} / {jobs.length}
+        </span>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
@@ -163,8 +221,8 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
           <span className="text-xs text-muted-foreground">
             {t("pagination.range", {
               start: pageStart + 1,
-              end: Math.min(pageStart + PAGE_SIZE, jobs.length),
-              total: jobs.length,
+              end: Math.min(pageStart + PAGE_SIZE, filteredJobs.length),
+              total: filteredJobs.length,
             })}
           </span>
           <div className="flex items-center gap-1">

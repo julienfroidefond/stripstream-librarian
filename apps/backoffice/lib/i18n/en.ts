@@ -282,6 +282,9 @@ const en: Record<TranslationKey, string> = {
   "jobsList.duration": "Duration",
   "jobsList.created": "Created",
   "jobsList.actions": "Actions",
+  "jobsList.allTypes": "All types",
+  "jobsList.allStatuses": "All statuses",
+  "jobsList.allLibraries": "All libraries",
 
   // Job row
   "jobRow.showProgress": "Show progress",
