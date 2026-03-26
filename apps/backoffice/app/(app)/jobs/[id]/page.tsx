@@ -8,6 +8,7 @@ import {
   StatusBadge, JobTypeBadge, StatBox, ProgressBar
 } from "@/app/components/ui";
 import { JobDetailLive } from "@/app/components/JobDetailLive";
+import { QbittorrentProvider, QbittorrentDownloadButton } from "@/app/components/QbittorrentDownloadButton";
 import { getServerTranslations } from "@/lib/i18n/server";
 
 interface JobDetailPageProps {
@@ -984,6 +985,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
 
         {/* Download detection — available releases per series */}
         {isDownloadDetection && downloadDetectionResults.length > 0 && (
+          <QbittorrentProvider>
           <Card className="lg:col-span-2">
             <CardHeader>
               <CardTitle>{t("jobDetail.downloadAvailableReleases")}</CardTitle>
@@ -1010,7 +1012,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
                   {r.available_releases && r.available_releases.length > 0 && (
                     <div className="space-y-1.5">
                       {r.available_releases.map((release, idx) => (
-                        <div key={idx} className="flex items-start gap-2 p-2 rounded bg-background/60 border border-border/40">
+                        <div key={idx} className="flex items-center gap-2 p-2 rounded bg-background/60 border border-border/40">
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-mono text-foreground truncate" title={release.title}>{release.title}</p>
                             <div className="flex items-center gap-3 mt-1 flex-wrap">
@@ -1032,6 +1034,9 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
                               </div>
                             </div>
                           </div>
+                          {release.download_url && (
+                            <QbittorrentDownloadButton downloadUrl={release.download_url} releaseId={`${r.id}-${idx}`} />
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1040,6 +1045,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
               ))}
             </CardContent>
           </Card>
+          </QbittorrentProvider>
         )}
 
         {/* Metadata batch results */}

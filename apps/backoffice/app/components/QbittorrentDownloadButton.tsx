@@ -1,0 +1,82 @@
+"use client";
+
+import { useState, useEffect, createContext, useContext, type ReactNode } from "react";
+import { Icon } from "./ui";
+import { useTranslation } from "@/lib/i18n/context";
+
+const QbConfigContext = createContext(false);
+
+export function QbittorrentProvider({ children }: { children: ReactNode }) {
+  const [configured, setConfigured] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings/qbittorrent")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        setConfigured(!!(data && data.url && data.url.trim() && data.username && data.username.trim()));
+      })
+      .catch(() => setConfigured(false));
+  }, []);
+
+  return <QbConfigContext.Provider value={configured}>{children}</QbConfigContext.Provider>;
+}
+
+export function QbittorrentDownloadButton({ downloadUrl, releaseId }: { downloadUrl: string; releaseId: string }) {
+  const { t } = useTranslation();
+  const configured = useContext(QbConfigContext);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!configured) return null;
+
+  async function handleSend() {
+    setSending(true);
+    setError(null);
+    try {
+      const resp = await fetch("/api/qbittorrent/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: downloadUrl }),
+      });
+      const data = await resp.json();
+      if (data.error) {
+        setError(data.error);
+      } else if (data.success) {
+        setSent(true);
+      } else {
+        setError(data.message || t("prowlarr.sentError"));
+      }
+    } catch {
+      setError(t("prowlarr.sentError"));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleSend}
+      disabled={sending || sent}
+      className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors disabled:opacity-50 shrink-0 ${
+        sent
+          ? "text-green-500"
+          : error
+            ? "text-destructive"
+            : "text-primary hover:bg-primary/10"
+      }`}
+      title={sent ? t("prowlarr.sentSuccess") : error || t("prowlarr.sendToQbittorrent")}
+    >
+      {sending ? (
+        <Icon name="spinner" size="sm" className="animate-spin" />
+      ) : sent ? (
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 8l4 4 6-7" />
+        </svg>
+      ) : (
+        <Icon name="download" size="sm" />
+      )}
+    </button>
+  );
+}
