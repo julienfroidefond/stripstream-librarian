@@ -575,13 +575,13 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
 
             <div className="flex items-center gap-4 pt-2 text-sm">
               <a
-                href="https://github.com/julienfroidefond/stripstream-librarian"
+                href="https://git.julienfroidefond.com/julienfroidefond/stripstream-librarian"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary hover:underline flex items-center gap-1.5"
               >
                 <Icon name="externalLink" size="sm" />
-                GitHub
+                Gitea
               </a>
             </div>
           </div>
