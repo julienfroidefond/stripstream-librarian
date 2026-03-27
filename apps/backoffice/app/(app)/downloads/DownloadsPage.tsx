@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { TorrentDownloadDto, LatestFoundPerLibraryDto } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, Button, Icon } from "@/app/components/ui";
 import { QbittorrentProvider, QbittorrentDownloadButton } from "@/app/components/QbittorrentDownloadButton";
@@ -354,7 +355,12 @@ function AvailableLibraryCard({ lib }: { lib: LatestFoundPerLibraryDto }) {
         {displayResults.map(r => (
           <div key={r.id} className="rounded-lg border border-border/40 bg-background/60 p-2 sm:p-3">
             <div className="flex items-center justify-between gap-2 mb-1.5">
-              <span className="font-semibold text-xs sm:text-sm text-foreground truncate">{r.series_name}</span>
+              <Link
+                href={`/libraries/${lib.library_id}/series/${encodeURIComponent(r.series_name)}`}
+                className="font-semibold text-xs sm:text-sm text-primary hover:underline truncate"
+              >
+                {r.series_name}
+              </Link>
               <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap bg-warning/20 text-warning shrink-0">
                 {r.missing_count} {t("downloads.missing")}
               </span>
