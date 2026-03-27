@@ -6,7 +6,7 @@ use std::time::Duration;
 use tracing::{info, trace, warn};
 use uuid::Uuid;
 
-use crate::{error::ApiError, metadata_refresh, prowlarr::extract_volumes_from_title_pub, qbittorrent::{load_qbittorrent_config, qbittorrent_login}, state::AppState};
+use crate::{error::ApiError, metadata_refresh, prowlarr::extract_volumes_from_title_pub, qbittorrent::{load_qbittorrent_config, qbittorrent_login, resolve_hash_by_category}, state::AppState};
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -255,6 +255,33 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
     let sid = qbittorrent_login(&client, &base_url, &username, &password)
         .await
         .map_err(|e| anyhow::anyhow!("qBittorrent login: {}", e.message))?;
+
+    // Try to resolve hash for rows that are missing it (category-based retry)
+    for row in &rows {
+        let qb_hash: Option<String> = row.get("qb_hash");
+        if qb_hash.is_some() {
+            continue;
+        }
+        let tid: Uuid = row.get("id");
+        let category = format!("sl-{tid}");
+        if let Some(hash) = resolve_hash_by_category(&client, &base_url, &sid, &category).await {
+            info!("[TORRENT_POLLER] Late-resolved hash {hash} for torrent {tid} via category {category}");
+            let _ = sqlx::query(
+                "UPDATE torrent_downloads SET qb_hash = $1, updated_at = NOW() WHERE id = $2",
+            )
+            .bind(&hash)
+            .bind(tid)
+            .execute(pool)
+            .await;
+        }
+    }
+
+    // Re-fetch rows to include newly resolved hashes
+    let rows = sqlx::query(
+        "SELECT id, qb_hash FROM torrent_downloads WHERE status = 'downloading'",
+    )
+    .fetch_all(pool)
+    .await?;
 
     // Filter to rows that have a resolved hash
     let rows: Vec<_> = rows.into_iter().filter(|r| {

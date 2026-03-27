@@ -143,23 +143,27 @@ pub async fn add_torrent(
 
     let sid = qbittorrent_login(&client, &base_url, &username, &password).await?;
 
-    // Pre-generate the download ID so we can tag the torrent with it
+    // Pre-generate the download ID; use a unique category per download so we can
+    // reliably match the torrent back (tags/savepath are unreliable on qBittorrent 4.x).
     let download_id = if is_managed { Some(Uuid::new_v4()) } else { None };
-    let tag = download_id.map(|id| format!("sl-{id}"));
+    let category = download_id.as_ref().map(|id| format!("sl-{id}"));
 
-    // Snapshot existing torrents before adding (for hash resolution)
-    let torrents_before = if is_managed {
-        list_qbittorrent_torrents(&client, &base_url, &sid).await.unwrap_or_default()
-    } else {
-        Vec::new()
-    };
+    // Create the category in qBittorrent before adding the torrent
+    if let Some(ref cat) = category {
+        let _ = client
+            .post(format!("{base_url}/api/v2/torrents/createCategory"))
+            .header("Cookie", format!("SID={sid}"))
+            .form(&[("category", cat.as_str()), ("savePath", "/downloads")])
+            .send()
+            .await;
+    }
 
     let mut form_params: Vec<(&str, &str)> = vec![("urls", &body.url)];
     let savepath = "/downloads";
     if is_managed {
         form_params.push(("savepath", savepath));
-        if let Some(ref t) = tag {
-            form_params.push(("tags", t));
+        if let Some(ref cat) = category {
+            form_params.push(("category", cat));
         }
     }
 
@@ -187,12 +191,14 @@ pub async fn add_torrent(
         let series_name = body.series_name.as_deref().unwrap();
         let expected_volumes = body.expected_volumes.as_deref().unwrap();
 
-        // Try to resolve hash: first from magnet, then by querying qBittorrent
+        // Try to resolve hash: first from magnet, then by category in qBittorrent
         let mut qb_hash = extract_magnet_hash(&body.url);
         if qb_hash.is_none() {
-            // For .torrent URLs: wait briefly then query qBittorrent to find the torrent
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            qb_hash = resolve_hash_from_qbittorrent(&client, &base_url, &sid, &torrents_before, series_name).await;
+            if let Some(ref cat) = category {
+                // For .torrent URLs: wait briefly then query qBittorrent by category
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                qb_hash = resolve_hash_by_category(&client, &base_url, &sid, cat).await;
+            }
         }
 
         let id = download_id.unwrap();
@@ -284,68 +290,39 @@ struct QbTorrentEntry {
     name: String,
 }
 
-/// List all torrents currently in qBittorrent.
-async fn list_qbittorrent_torrents(
+/// Resolve the hash of a torrent by its unique category in qBittorrent.
+/// Each managed torrent gets category `sl-{download_id}` at add time,
+/// so we can reliably find it even when multiple torrents are added concurrently.
+pub(crate) async fn resolve_hash_by_category(
     client: &reqwest::Client,
     base_url: &str,
     sid: &str,
-) -> Result<Vec<QbTorrentEntry>, ApiError> {
+    category: &str,
+) -> Option<String> {
     let resp = client
         .get(format!("{base_url}/api/v2/torrents/info"))
+        .query(&[("category", category)])
         .header("Cookie", format!("SID={sid}"))
         .send()
         .await
-        .map_err(|e| ApiError::internal(format!("qBittorrent list failed: {e}")))?;
+        .ok()?;
 
     if !resp.status().is_success() {
-        return Ok(Vec::new());
+        tracing::warn!("[QBITTORRENT] Failed to query torrents by category {category}");
+        return None;
     }
 
-    Ok(resp.json().await.unwrap_or_default())
-}
-
-/// Resolve the hash of a torrent after adding it to qBittorrent.
-/// Strategy:
-/// 1. Compare before/after snapshots to find the new torrent (works for new torrents)
-/// 2. If no new torrent found (already existed), search by series name in torrent names
-async fn resolve_hash_from_qbittorrent(
-    client: &reqwest::Client,
-    base_url: &str,
-    sid: &str,
-    torrents_before: &[QbTorrentEntry],
-    series_name: &str,
-) -> Option<String> {
-    let torrents_after = list_qbittorrent_torrents(client, base_url, sid).await.ok()?;
-    let before_hashes: std::collections::HashSet<&str> = torrents_before.iter().map(|t| t.hash.as_str()).collect();
-
-    // Strategy 1: diff — find the one new torrent
-    let new_torrents: Vec<&QbTorrentEntry> = torrents_after.iter()
-        .filter(|t| !before_hashes.contains(t.hash.as_str()))
-        .collect();
-    if new_torrents.len() == 1 {
-        tracing::info!("[QBITTORRENT] Resolved hash {} via diff (new torrent: {})", new_torrents[0].hash, new_torrents[0].name);
-        return Some(new_torrents[0].hash.clone());
+    let torrents: Vec<QbTorrentEntry> = resp.json().await.unwrap_or_default();
+    if torrents.len() == 1 {
+        tracing::info!("[QBITTORRENT] Resolved hash {} via category {category} ({})", torrents[0].hash, torrents[0].name);
+        return Some(torrents[0].hash.clone());
     }
 
-    // Strategy 2: torrent already existed — search by series name in torrent names
-    let series_lower = series_name.to_lowercase();
-    // Normalize: "Dandadan" matches "Dandadan.T02.FRENCH.CBZ..."
-    let candidates: Vec<&QbTorrentEntry> = torrents_after.iter()
-        .filter(|t| t.name.to_lowercase().contains(&series_lower))
-        .collect();
-
-    if candidates.len() == 1 {
-        tracing::info!("[QBITTORRENT] Resolved hash {} via name match ({})", candidates[0].hash, candidates[0].name);
-        return Some(candidates[0].hash.clone());
-    }
-
-    if candidates.len() > 1 {
-        tracing::warn!("[QBITTORRENT] Multiple torrents match series '{}': {}", series_name,
-            candidates.iter().map(|c| c.name.as_str()).collect::<Vec<_>>().join(", "));
+    if torrents.is_empty() {
+        tracing::warn!("[QBITTORRENT] No torrent found with category {category}");
     } else {
-        tracing::warn!("[QBITTORRENT] No torrent found matching series '{}'", series_name);
+        tracing::warn!("[QBITTORRENT] Multiple torrents with category {category}, expected 1");
     }
-
     None
 }
 
