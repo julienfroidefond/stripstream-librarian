@@ -240,7 +240,7 @@ function DownloadRow({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: () 
         <div className="flex-1 min-w-0">
           {/* Desktop: single row */}
           <div className="hidden sm:flex items-center gap-2">
-            <span className="text-sm font-medium text-foreground truncate">{dl.series_name}</span>
+            <Link href={`/libraries/${dl.library_id}/series/${encodeURIComponent(dl.series_name)}`} className="text-sm font-medium text-primary hover:underline truncate">{dl.series_name}</Link>
             <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${statusClass(dl.status)}`}>
               {statusLabel(dl.status, t)}
             </span>
@@ -255,7 +255,7 @@ function DownloadRow({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: () 
           {/* Mobile: stacked */}
           <div className="sm:hidden">
             <div className="flex items-center gap-1.5">
-              <span className="text-sm font-medium text-foreground truncate">{dl.series_name}</span>
+              <Link href={`/libraries/${dl.library_id}/series/${encodeURIComponent(dl.series_name)}`} className="text-sm font-medium text-primary hover:underline truncate">{dl.series_name}</Link>
               <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${statusClass(dl.status)}`}>
                 {statusLabel(dl.status, t)}
               </span>
