@@ -4,9 +4,14 @@ import { useState, useEffect, createContext, useContext, type ReactNode } from "
 import { Icon } from "./ui";
 import { useTranslation } from "@/lib/i18n/context";
 
-const QbConfigContext = createContext(false);
+interface QbContextValue {
+  configured: boolean;
+  onDownloadStarted?: () => void;
+}
 
-export function QbittorrentProvider({ children, initialConfigured }: { children: ReactNode; initialConfigured?: boolean }) {
+const QbConfigContext = createContext<QbContextValue>({ configured: false });
+
+export function QbittorrentProvider({ children, initialConfigured, onDownloadStarted }: { children: ReactNode; initialConfigured?: boolean; onDownloadStarted?: () => void }) {
   const [configured, setConfigured] = useState(initialConfigured ?? false);
 
   useEffect(() => {
@@ -20,7 +25,7 @@ export function QbittorrentProvider({ children, initialConfigured }: { children:
       .catch(() => setConfigured(false));
   }, [initialConfigured]);
 
-  return <QbConfigContext.Provider value={configured}>{children}</QbConfigContext.Provider>;
+  return <QbConfigContext.Provider value={{ configured, onDownloadStarted }}>{children}</QbConfigContext.Provider>;
 }
 
 export function QbittorrentDownloadButton({
@@ -37,7 +42,7 @@ export function QbittorrentDownloadButton({
   expectedVolumes?: number[];
 }) {
   const { t } = useTranslation();
-  const configured = useContext(QbConfigContext);
+  const { configured, onDownloadStarted } = useContext(QbConfigContext);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +68,7 @@ export function QbittorrentDownloadButton({
         setError(data.error);
       } else if (data.success) {
         setSent(true);
+        onDownloadStarted?.();
       } else {
         setError(data.message || t("prowlarr.sentError"));
       }

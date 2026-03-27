@@ -185,7 +185,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
 
       {/* Available downloads from latest detection */}
       {initialLatestFound.length > 0 && (
-        <QbittorrentProvider initialConfigured={qbConfigured}>
+        <QbittorrentProvider initialConfigured={qbConfigured} onDownloadStarted={() => refresh(false)}>
           <div className="mt-10">
             <h2 className="text-xl font-bold text-foreground mb-4 flex items-center gap-2">
               <Icon name="search" size="lg" />
