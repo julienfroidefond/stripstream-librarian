@@ -68,97 +68,43 @@ pub async fn list_authors(
         .filter(|s| !s.trim().is_empty())
         .map(|s| format!("%{s}%"));
 
-    // Aggregate unique authors from books.authors + books.author + series_metadata.authors
+    // Single query: collect all authors with counts using a windowed total
     let sql = format!(
         r#"
-        WITH all_authors AS (
-            SELECT DISTINCT UNNEST(
+        WITH author_books AS (
+            SELECT UNNEST(
                 COALESCE(
                     NULLIF(authors, '{{}}'),
                     CASE WHEN author IS NOT NULL AND author != '' THEN ARRAY[author] ELSE ARRAY[]::text[] END
                 )
-            ) AS name
+            ) AS author_name, id AS book_id, library_id, series
             FROM books
-            UNION
-            SELECT DISTINCT UNNEST(authors) AS name
-            FROM series_metadata
-            WHERE authors != '{{}}'
         ),
-        filtered AS (
-            SELECT name FROM all_authors
-            WHERE ($1::text IS NULL OR name ILIKE $1)
-        ),
-        book_counts AS (
+        author_agg AS (
             SELECT
-                f.name AS author_name,
-                COUNT(DISTINCT b.id) AS book_count
-            FROM filtered f
-            LEFT JOIN books b ON (
-                f.name = ANY(
-                    COALESCE(
-                        NULLIF(b.authors, '{{}}'),
-                        CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END
-                    )
-                )
-            )
-            GROUP BY f.name
-        ),
-        series_counts AS (
-            SELECT
-                f.name AS author_name,
-                COUNT(DISTINCT (sm.library_id, sm.name)) AS series_count
-            FROM filtered f
-            LEFT JOIN series_metadata sm ON (
-                f.name = ANY(sm.authors) AND sm.authors != '{{}}'
-            )
-            GROUP BY f.name
+                author_name AS name,
+                COUNT(DISTINCT book_id) AS book_count,
+                COUNT(DISTINCT (library_id, series)) AS series_count
+            FROM author_books
+            WHERE ($1::text IS NULL OR author_name ILIKE $1)
+            GROUP BY author_name
         )
-        SELECT
-            f.name,
-            COALESCE(bc.book_count, 0) AS book_count,
-            COALESCE(sc.series_count, 0) AS series_count
-        FROM filtered f
-        LEFT JOIN book_counts bc ON bc.author_name = f.name
-        LEFT JOIN series_counts sc ON sc.author_name = f.name
+        SELECT name, book_count, series_count, COUNT(*) OVER() AS total
+        FROM author_agg
         ORDER BY {order_clause}
         LIMIT $2 OFFSET $3
         "#
     );
 
-    let count_sql = r#"
-        WITH all_authors AS (
-            SELECT DISTINCT UNNEST(
-                COALESCE(
-                    NULLIF(authors, '{}'),
-                    CASE WHEN author IS NOT NULL AND author != '' THEN ARRAY[author] ELSE ARRAY[]::text[] END
-                )
-            ) AS name
-            FROM books
-            UNION
-            SELECT DISTINCT UNNEST(authors) AS name
-            FROM series_metadata
-            WHERE authors != '{}'
-        )
-        SELECT COUNT(*) AS total
-        FROM all_authors
-        WHERE ($1::text IS NULL OR name ILIKE $1)
-    "#;
+    let rows = sqlx::query(&sql)
+        .bind(q_pattern.as_deref())
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|e| ApiError::internal(format!("authors query failed: {e}")))?;
 
-    let (rows, count_row) = tokio::join!(
-        sqlx::query(&sql)
-            .bind(q_pattern.as_deref())
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(&state.pool),
-        sqlx::query(count_sql)
-            .bind(q_pattern.as_deref())
-            .fetch_one(&state.pool)
-    );
-
-    let rows = rows.map_err(|e| ApiError::internal(format!("authors query failed: {e}")))?;
-    let total: i64 = count_row
-        .map_err(|e| ApiError::internal(format!("authors count failed: {e}")))?
-        .get("total");
+    let total: i64 = rows.first().map(|r| r.get("total")).unwrap_or(0);
 
     let items: Vec<AuthorItem> = rows
         .iter()
