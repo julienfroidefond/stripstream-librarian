@@ -15,6 +15,8 @@ interface MissingBookItem {
 interface ProwlarrSearchModalProps {
   seriesName: string;
   missingBooks: MissingBookItem[] | null;
+  initialProwlarrConfigured?: boolean;
+  initialQbConfigured?: boolean;
 }
 
 function formatSize(bytes: number): string {
@@ -24,36 +26,41 @@ function formatSize(bytes: number): string {
   return bytes + " B";
 }
 
-export function ProwlarrSearchModal({ seriesName, missingBooks }: ProwlarrSearchModalProps) {
+export function ProwlarrSearchModal({ seriesName, missingBooks, initialProwlarrConfigured, initialQbConfigured }: ProwlarrSearchModalProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
-  const [isConfigured, setIsConfigured] = useState<boolean | null>(null);
+  const [isConfigured, setIsConfigured] = useState<boolean | null>(initialProwlarrConfigured ?? null);
   const [isSearching, setIsSearching] = useState(false);
   const [results, setResults] = useState<ProwlarrRelease[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   // qBittorrent state
-  const [isQbConfigured, setIsQbConfigured] = useState(false);
+  const [isQbConfigured, setIsQbConfigured] = useState(initialQbConfigured ?? false);
   const [sendingGuid, setSendingGuid] = useState<string | null>(null);
   const [sentGuids, setSentGuids] = useState<Set<string>>(new Set());
   const [sendError, setSendError] = useState<string | null>(null);
 
-  // Check if Prowlarr and qBittorrent are configured on mount
+  // Check if Prowlarr and qBittorrent are configured on mount (skip if server provided)
   useEffect(() => {
-    fetch("/api/settings/prowlarr")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        setIsConfigured(!!(data && data.api_key && data.api_key.trim()));
-      })
-      .catch(() => setIsConfigured(false));
-    fetch("/api/settings/qbittorrent")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        setIsQbConfigured(!!(data && data.url && data.url.trim() && data.username && data.username.trim()));
-      })
-      .catch(() => setIsQbConfigured(false));
-  }, []);
+    if (initialProwlarrConfigured !== undefined && initialQbConfigured !== undefined) return;
+    if (initialProwlarrConfigured === undefined) {
+      fetch("/api/settings/prowlarr")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          setIsConfigured(!!(data && data.api_key && data.api_key.trim()));
+        })
+        .catch(() => setIsConfigured(false));
+    }
+    if (initialQbConfigured === undefined) {
+      fetch("/api/settings/qbittorrent")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          setIsQbConfigured(!!(data && data.url && data.url.trim() && data.username && data.username.trim()));
+        })
+        .catch(() => setIsQbConfigured(false));
+    }
+  }, [initialProwlarrConfigured, initialQbConfigured]);
 
   const [searchInput, setSearchInput] = useState(`"${seriesName}"`);
 

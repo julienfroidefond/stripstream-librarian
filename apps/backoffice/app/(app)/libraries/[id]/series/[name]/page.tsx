@@ -1,4 +1,4 @@
-import { fetchLibraries, fetchBooks, fetchSeriesMetadata, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto } from "@/lib/api";
+import { fetchLibraries, fetchBooks, fetchSeriesMetadata, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto } from "@/lib/api";
 import { BooksGrid, EmptyState } from "@/app/components/BookCard";
 import { MarkSeriesReadButton } from "@/app/components/MarkSeriesReadButton";
 import { MarkBookReadButton } from "@/app/components/MarkBookReadButton";
@@ -41,7 +41,7 @@ export default async function SeriesDetailPage({
 
   const seriesName = decodeURIComponent(name);
 
-  const [library, booksPage, seriesMeta, metadataLinks, readingStatusLink] = await Promise.all([
+  const [library, booksPage, seriesMeta, metadataLinks, readingStatusLink, prowlarrConfigured, qbConfigured] = await Promise.all([
     fetchLibraries().then((libs) => libs.find((l) => l.id === id)),
     fetchBooks(id, seriesName, page, limit).catch(() => ({
       items: [] as BookDto[],
@@ -52,6 +52,12 @@ export default async function SeriesDetailPage({
     fetchSeriesMetadata(id, seriesName).catch(() => null as SeriesMetadataDto | null),
     getMetadataLink(id, seriesName).catch(() => [] as ExternalMetadataLinkDto[]),
     getReadingStatusLink(id, seriesName).catch(() => null as AnilistSeriesLinkDto | null),
+    apiFetch<{ api_key?: string }>("/settings/prowlarr")
+      .then(d => !!(d?.api_key?.trim()))
+      .catch(() => false),
+    apiFetch<{ url?: string; username?: string }>("/settings/qbittorrent")
+      .then(d => !!(d?.url?.trim() && d?.username?.trim()))
+      .catch(() => false),
   ]);
 
   const existingLink = metadataLinks.find((l) => l.status === "approved") ?? metadataLinks[0] ?? null;
@@ -235,6 +241,8 @@ export default async function SeriesDetailPage({
             <ProwlarrSearchModal
               seriesName={seriesName}
               missingBooks={missingData?.missing_books ?? null}
+              initialProwlarrConfigured={prowlarrConfigured}
+              initialQbConfigured={qbConfigured}
             />
             <MetadataSearchModal
               libraryId={id}
