@@ -5,14 +5,21 @@ import packageJson from "../../../package.json";
 export const dynamic = "force-dynamic";
 
 async function fetchIndexerVersion(): Promise<string> {
-  try {
-    const indexerUrl = (process.env.INDEXER_BASE_URL || "http://indexer:7081").replace(/\/$/, "");
-    const res = await fetch(`${indexerUrl}/version`, { signal: AbortSignal.timeout(3000) });
-    if (res.ok) {
-      const data = await res.json();
-      return data?.indexer ?? "?";
-    }
-  } catch { /* ignore */ }
+  const urls = [
+    process.env.INDEXER_BASE_URL,
+    "http://indexer:7081",
+    "http://localhost:7081",
+  ].filter(Boolean).map(u => u!.replace(/\/$/, ""));
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(`${url}/version`, { signal: AbortSignal.timeout(2000) });
+      if (res.ok) {
+        const data = await res.json();
+        return data?.indexer ?? "?";
+      }
+    } catch { /* try next */ }
+  }
   return "?";
 }
 
