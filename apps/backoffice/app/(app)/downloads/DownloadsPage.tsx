@@ -114,28 +114,28 @@ export function DownloadsPage({ initialDownloads, initialLatestFound }: Download
 
   return (
     <>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
-          <Icon name="download" size="xl" />
+      <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
+        <h1 className="text-xl sm:text-3xl font-bold text-foreground flex items-center gap-2 sm:gap-3">
+          <Icon name="download" size="lg" className="sm:hidden" />
+          <Icon name="download" size="xl" className="hidden sm:block" />
           {t("downloads.title")}
         </h1>
-        <Button onClick={() => refresh(true)} disabled={isRefreshing} variant="outline" size="sm">
-          {isRefreshing ? (
-            <Icon name="spinner" size="sm" className="animate-spin" />
-          ) : (
-            <Icon name="refresh" size="sm" />
-          )}
+        <Button onClick={() => refresh(true)} disabled={isRefreshing} variant="outline" size="xs" className="sm:hidden">
+          {isRefreshing ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="refresh" size="sm" />}
+        </Button>
+        <Button onClick={() => refresh(true)} disabled={isRefreshing} variant="outline" size="sm" className="hidden sm:flex">
+          {isRefreshing ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="refresh" size="sm" />}
           <span className="ml-2">{t("downloads.refresh")}</span>
         </Button>
       </div>
 
       {/* Filter bar */}
-      <div className="flex gap-1 mb-4 border-b border-border">
+      <div className="flex gap-1 mb-4 border-b border-border overflow-x-auto scrollbar-none">
         {filters.map(f => (
           <button
             key={f.id}
             onClick={() => handleFilterChange(f.id)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
+            className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${
               filter === f.id
                 ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
@@ -143,7 +143,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound }: Download
           >
             {f.label}
             {f.id !== "all" && (
-              <span className="ml-1.5 text-xs opacity-60">
+              <span className="ml-1 sm:ml-1.5 text-[10px] sm:text-xs opacity-60">
                 {downloads.filter(d => f.id === "active" ? STATUS_ACTIVE.has(d.status) : d.status === f.id).length}
               </span>
             )}
@@ -232,11 +232,12 @@ function DownloadRow({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: () 
 
   return (
     <>
-      <div className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border/40 bg-card hover:bg-accent/30 transition-colors">
-        {statusIcon}
+      <div className="flex items-start sm:items-center gap-2 sm:gap-3 px-3 py-2 rounded-lg border border-border/40 bg-card hover:bg-accent/30 transition-colors">
+        <div className="mt-0.5 sm:mt-0">{statusIcon}</div>
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          {/* Desktop: single row */}
+          <div className="hidden sm:flex items-center gap-2">
             <span className="text-sm font-medium text-foreground truncate">{dl.series_name}</span>
             <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${statusClass(dl.status)}`}>
               {statusLabel(dl.status, t)}
@@ -247,6 +248,23 @@ function DownloadRow({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: () 
             {dl.status === "imported" && importedCount > 0 && (
               <span className="text-[11px] text-success">{importedCount} {t("downloads.filesImported")}</span>
             )}
+          </div>
+
+          {/* Mobile: stacked */}
+          <div className="sm:hidden">
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-medium text-foreground truncate">{dl.series_name}</span>
+              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${statusClass(dl.status)}`}>
+                {statusLabel(dl.status, t)}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
+              {dl.expected_volumes.length > 0 && <span>{formatVolumes(dl.expected_volumes)}</span>}
+              {dl.status === "imported" && importedCount > 0 && (
+                <span className="text-success">{importedCount} {t("downloads.filesImported")}</span>
+              )}
+              <span className="tabular-nums">{formatDate(dl.created_at)}</span>
+            </div>
           </div>
 
           {dl.status === "downloading" && (
@@ -261,7 +279,7 @@ function DownloadRow({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: () 
                 {Math.round(dl.progress * 100)}%
               </span>
               {dl.download_speed > 0 && (
-                <span className="text-[10px] text-muted-foreground">{formatSpeed(dl.download_speed)}</span>
+                <span className="text-[10px] text-muted-foreground hidden sm:inline">{formatSpeed(dl.download_speed)}</span>
               )}
               {dl.eta > 0 && dl.eta < 8640000 && (
                 <span className="text-[10px] text-muted-foreground">ETA {formatEta(dl.eta)}</span>
@@ -274,7 +292,7 @@ function DownloadRow({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: () 
           )}
         </div>
 
-        <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{formatDate(dl.created_at)}</span>
+        <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums hidden sm:block">{formatDate(dl.created_at)}</span>
 
         <button
           type="button"
@@ -324,50 +342,52 @@ function AvailableLibraryCard({ lib }: { lib: LatestFoundPerLibraryDto }) {
 
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base">{lib.library_name}</CardTitle>
-          <span className="text-xs text-muted-foreground">
+      <CardHeader className="pb-3 px-3 sm:px-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+          <CardTitle className="text-sm sm:text-base">{lib.library_name}</CardTitle>
+          <span className="text-[10px] sm:text-xs text-muted-foreground">
             {t("downloads.detectedSeries", { count: lib.results.length })} — {formatDate(lib.job_date)}
           </span>
         </div>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-2 px-3 sm:px-6">
         {displayResults.map(r => (
-          <div key={r.id} className="rounded-lg border border-border/40 bg-background/60 p-3">
+          <div key={r.id} className="rounded-lg border border-border/40 bg-background/60 p-2 sm:p-3">
             <div className="flex items-center justify-between gap-2 mb-1.5">
-              <span className="font-semibold text-sm text-foreground truncate">{r.series_name}</span>
+              <span className="font-semibold text-xs sm:text-sm text-foreground truncate">{r.series_name}</span>
               <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap bg-warning/20 text-warning shrink-0">
                 {r.missing_count} {t("downloads.missing")}
               </span>
             </div>
             {r.available_releases && r.available_releases.length > 0 && (
-              <div className="space-y-1">
+              <div className="space-y-1.5 sm:space-y-1">
                 {r.available_releases.map((release, idx) => (
-                  <div key={idx} className="flex items-center gap-2 py-1 pl-2 rounded bg-muted/30">
+                  <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 py-1 px-2 rounded bg-muted/30">
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-mono text-foreground truncate" title={release.title}>{release.title}</p>
-                      <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                      <p className="text-[11px] sm:text-xs font-mono text-foreground truncate" title={release.title}>{release.title}</p>
+                      <div className="flex items-center gap-2 sm:gap-3 mt-0.5 flex-wrap">
                         {release.indexer && <span className="text-[10px] text-muted-foreground">{release.indexer}</span>}
                         {release.seeders != null && (
-                          <span className="text-[10px] text-success font-medium">{release.seeders} seeders</span>
+                          <span className="text-[10px] text-success font-medium">{release.seeders}S</span>
                         )}
                         <span className="text-[10px] text-muted-foreground">{(release.size / 1024 / 1024).toFixed(0)} MB</span>
                         <div className="flex items-center gap-1">
                           {release.matched_missing_volumes.map(vol => (
-                            <span key={vol} className="text-[10px] px-1.5 py-0.5 rounded-full bg-success/20 text-success font-medium">T.{vol}</span>
+                            <span key={vol} className="text-[10px] px-1 py-0.5 rounded-full bg-success/20 text-success font-medium">T{vol}</span>
                           ))}
                         </div>
                       </div>
                     </div>
                     {release.download_url && (
-                      <QbittorrentDownloadButton
-                        downloadUrl={release.download_url}
-                        releaseId={`${r.id}-${idx}`}
-                        libraryId={lib.library_id}
-                        seriesName={r.series_name}
-                        expectedVolumes={release.matched_missing_volumes}
-                      />
+                      <div className="self-end sm:self-auto shrink-0">
+                        <QbittorrentDownloadButton
+                          downloadUrl={release.download_url}
+                          releaseId={`${r.id}-${idx}`}
+                          libraryId={lib.library_id}
+                          seriesName={r.series_name}
+                          expectedVolumes={release.matched_missing_volumes}
+                        />
+                      </div>
                     )}
                   </div>
                 ))}
