@@ -54,6 +54,9 @@ pub struct ProwlarrRelease {
     pub categories: Option<Vec<ProwlarrCategory>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matched_missing_volumes: Option<Vec<i32>>,
+    /// All volumes extracted from the release title (not just missing ones).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub all_volumes: Vec<i32>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -202,6 +205,12 @@ fn extract_volumes_from_title(title: &str) -> Vec<i32> {
                 continue;
             }
 
+            // Skip "v" inside brackets like [V2] — that's a version, not a volume
+            if needs_boundary && ci > 0 && chars[ci - 1] == '[' {
+                ci += plen;
+                continue;
+            }
+
             // Skip optional spaces, dots, or '#' after prefix
             let mut i = ci + plen;
             while i < len && (chars[i] == ' ' || chars[i] == '.' || chars[i] == '#') {
@@ -301,12 +310,13 @@ fn match_missing_volumes(
     releases
         .into_iter()
         .map(|r| {
+            let title_volumes = extract_volumes_from_title(&r.title);
             let matched = if missing_numbers.is_empty() {
                 None
             } else {
-                let title_volumes = extract_volumes_from_title(&r.title);
                 let matched: Vec<i32> = title_volumes
-                    .into_iter()
+                    .iter()
+                    .copied()
                     .filter(|v| missing_numbers.contains(v))
                     .collect();
                 if matched.is_empty() {
@@ -329,6 +339,7 @@ fn match_missing_volumes(
                 info_url: r.info_url,
                 categories: r.categories,
                 matched_missing_volumes: matched,
+                all_volumes: title_volumes,
             }
         })
         .collect()
@@ -412,19 +423,23 @@ pub async fn search_prowlarr(
     } else {
         raw_releases
             .into_iter()
-            .map(|r| ProwlarrRelease {
-                guid: r.guid,
-                title: r.title,
-                size: r.size,
-                download_url: r.download_url,
-                indexer: r.indexer,
-                seeders: r.seeders,
-                leechers: r.leechers,
-                publish_date: r.publish_date,
-                protocol: r.protocol,
-                info_url: r.info_url,
-                categories: r.categories,
-                matched_missing_volumes: None,
+            .map(|r| {
+                let all_volumes = extract_volumes_from_title(&r.title);
+                ProwlarrRelease {
+                    guid: r.guid,
+                    title: r.title,
+                    size: r.size,
+                    download_url: r.download_url,
+                    indexer: r.indexer,
+                    seeders: r.seeders,
+                    leechers: r.leechers,
+                    publish_date: r.publish_date,
+                    protocol: r.protocol,
+                    info_url: r.info_url,
+                    categories: r.categories,
+                    matched_missing_volumes: None,
+                    all_volumes,
+                }
             })
             .collect()
     };
@@ -551,10 +566,19 @@ mod tests {
     fn tome_hash_with_accented_chars() {
         // Tome #097 with accented characters earlier in the string — the é in
         // "Compressé" shifts byte offsets vs char offsets; this must not break parsing.
+        // [V2] is a version tag, not a volume — must NOT extract 2.
         let v = sorted(extract_volumes_from_title(
             "[Compressé] One Piece [Team Chromatique] - Tome #097 - [V2].cbz",
         ));
         assert!(v.contains(&97), "expected 97 in {:?}", v);
+        assert!(!v.contains(&2), "[V2] should not be extracted as volume 2: {:?}", v);
+    }
+
+    #[test]
+    fn version_in_brackets_ignored() {
+        // [V1], [V2], [V3] are version tags, not volumes
+        let v = extract_volumes_from_title("Naruto T05 [V2].cbz");
+        assert_eq!(v, vec![5]);
     }
 
     #[test]

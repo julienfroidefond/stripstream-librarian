@@ -244,6 +244,7 @@ export default async function SeriesDetailPage({
             />
             <ProwlarrSearchModal
               seriesName={seriesName}
+              libraryId={id}
               missingBooks={missingData?.missing_books ?? null}
               initialProwlarrConfigured={prowlarrConfigured}
               initialQbConfigured={qbConfigured}

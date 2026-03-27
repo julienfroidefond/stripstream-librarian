@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Icon } from "./ui";
 import type { ProwlarrRelease, ProwlarrSearchResponse } from "../../lib/api";
 import { useTranslation } from "../../lib/i18n/context";
+import { QbittorrentProvider, QbittorrentDownloadButton } from "./QbittorrentDownloadButton";
 
 interface MissingBookItem {
   title: string | null;
@@ -14,6 +15,7 @@ interface MissingBookItem {
 
 interface ProwlarrSearchModalProps {
   seriesName: string;
+  libraryId?: string;
   missingBooks: MissingBookItem[] | null;
   initialProwlarrConfigured?: boolean;
   initialQbConfigured?: boolean;
@@ -26,7 +28,7 @@ function formatSize(bytes: number): string {
   return bytes + " B";
 }
 
-export function ProwlarrSearchModal({ seriesName, missingBooks, initialProwlarrConfigured, initialQbConfigured }: ProwlarrSearchModalProps) {
+export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initialProwlarrConfigured, initialQbConfigured }: ProwlarrSearchModalProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [isConfigured, setIsConfigured] = useState<boolean | null>(initialProwlarrConfigured ?? null);
@@ -37,9 +39,6 @@ export function ProwlarrSearchModal({ seriesName, missingBooks, initialProwlarrC
 
   // qBittorrent state
   const [isQbConfigured, setIsQbConfigured] = useState(initialQbConfigured ?? false);
-  const [sendingGuid, setSendingGuid] = useState<string | null>(null);
-  const [sentGuids, setSentGuids] = useState<Set<string>>(new Set());
-  const [sendError, setSendError] = useState<string | null>(null);
 
   // Check if Prowlarr and qBittorrent are configured on mount (skip if server provided)
   useEffect(() => {
@@ -110,30 +109,6 @@ export function ProwlarrSearchModal({ seriesName, missingBooks, initialProwlarrC
 
   function handleClose() {
     setIsOpen(false);
-  }
-
-  async function handleSendToQbittorrent(downloadUrl: string, guid: string) {
-    setSendingGuid(guid);
-    setSendError(null);
-    try {
-      const resp = await fetch("/api/qbittorrent/add", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: downloadUrl }),
-      });
-      const data = await resp.json();
-      if (data.error) {
-        setSendError(data.error);
-      } else if (data.success) {
-        setSentGuids((prev) => new Set(prev).add(guid));
-      } else {
-        setSendError(data.message || t("prowlarr.sentError"));
-      }
-    } catch {
-      setSendError(t("prowlarr.sentError"));
-    } finally {
-      setSendingGuid(null);
-    }
   }
 
   // Don't render button if not configured
@@ -229,6 +204,7 @@ export function ProwlarrSearchModal({ seriesName, missingBooks, initialProwlarrC
 
               {/* Results */}
               {!isSearching && results.length > 0 && (
+                <QbittorrentProvider initialConfigured={isQbConfigured}>
                 <div>
                   <p className="text-sm text-muted-foreground mb-3">
                     {t("prowlarr.resultCount", { count: results.length, plural: results.length !== 1 ? "s" : "" })}
@@ -257,7 +233,7 @@ export function ProwlarrSearchModal({ seriesName, missingBooks, initialProwlarrC
                                 {release.title}
                               </span>
                               {hasMissing && (
-                                <div className="flex items-center gap-1 mt-1">
+                                <div className="flex flex-wrap items-center gap-1 mt-1">
                                   {release.matchedMissingVolumes!.map((vol) => (
                                     <span key={vol} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-600">
                                       {t("prowlarr.missingVol", { vol })}
@@ -295,43 +271,16 @@ export function ProwlarrSearchModal({ seriesName, missingBooks, initialProwlarrC
                             </td>
                             <td className="px-3 py-2">
                               <div className="flex items-center justify-end gap-1.5">
-                                {isQbConfigured && release.downloadUrl && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSendToQbittorrent(release.downloadUrl!, release.guid)}
-                                    disabled={sendingGuid === release.guid || sentGuids.has(release.guid)}
-                                    className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors disabled:opacity-50 ${
-                                      sentGuids.has(release.guid)
-                                        ? "text-green-500"
-                                        : "text-primary hover:bg-primary/10"
-                                    }`}
-                                    title={sentGuids.has(release.guid) ? t("prowlarr.sentSuccess") : t("prowlarr.sendToQbittorrent")}
-                                  >
-                                    {sendingGuid === release.guid ? (
-                                      <Icon name="spinner" size="sm" className="animate-spin" />
-                                    ) : sentGuids.has(release.guid) ? (
-                                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M3 8l4 4 6-7" />
-                                      </svg>
-                                    ) : (
-                                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M14 8V14H2V2H8M10 2H14V6M14 2L7 9" />
-                                      </svg>
-                                    )}
-                                  </button>
-                                )}
                                 {release.downloadUrl && (
-                                  <a
-                                    href={release.downloadUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center justify-center w-7 h-7 rounded-md text-primary hover:bg-primary/10 transition-colors"
-                                    title={t("prowlarr.download")}
-                                  >
-                                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                      <path d="M8 2v8M4 7l4 4 4-4M2 13h12" />
-                                    </svg>
-                                  </a>
+                                  <QbittorrentDownloadButton
+                                    downloadUrl={release.downloadUrl}
+                                    releaseId={release.guid}
+                                    libraryId={libraryId}
+                                    seriesName={seriesName}
+                                    expectedVolumes={release.matchedMissingVolumes ?? release.allVolumes}
+                                    allVolumes={release.allVolumes}
+                                    alwaysShowReplace
+                                  />
                                 )}
                                 {release.infoUrl && (
                                   <a
@@ -353,13 +302,7 @@ export function ProwlarrSearchModal({ seriesName, missingBooks, initialProwlarrC
                     </table>
                   </div>
                 </div>
-              )}
-
-              {/* qBittorrent send error */}
-              {sendError && (
-                <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
-                  {sendError}
-                </div>
+                </QbittorrentProvider>
               )}
 
               {/* No results */}

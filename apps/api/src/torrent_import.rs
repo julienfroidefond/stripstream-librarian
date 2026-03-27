@@ -202,6 +202,9 @@ struct QbTorrentInfo {
     #[serde(default)]
     progress: f64,
     #[serde(default)]
+    #[allow(dead_code)]
+    total_size: i64,
+    #[serde(default)]
     dlspeed: i64,
     #[serde(default)]
     eta: i64,
@@ -320,11 +323,12 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
         });
         if let Some(row) = row {
             let tid: Uuid = row.get("id");
+            let global_progress = info.progress as f32;
             let _ = sqlx::query(
                 "UPDATE torrent_downloads SET progress = $1, download_speed = $2, eta = $3, updated_at = NOW() \
                  WHERE id = $4 AND status = 'downloading'",
             )
-            .bind(info.progress as f32)
+            .bind(global_progress)
             .bind(info.dlspeed)
             .bind(info.eta)
             .bind(tid)
@@ -598,23 +602,22 @@ async fn do_import(
 ) -> anyhow::Result<Vec<ImportedFile>> {
     let physical_content = remap_downloads_path(content_path);
 
-    // Find the target directory and reference file from existing book_files.
-    // Exclude volumes we're about to import so we get a different file as naming reference.
-    let ref_row = sqlx::query(
+    // Find the target directory and a naming reference from existing book_files.
+    // First find ANY existing book to determine the target directory, then pick a
+    // reference file (preferring one outside expected_volumes for naming consistency).
+    let any_row = sqlx::query(
         "SELECT bf.abs_path, b.volume \
          FROM book_files bf \
          JOIN books b ON b.id = bf.book_id \
          WHERE b.library_id = $1 AND LOWER(b.series) = LOWER($2) AND b.volume IS NOT NULL \
-           AND b.volume != ALL($3) \
          ORDER BY b.volume DESC LIMIT 1",
     )
     .bind(library_id)
     .bind(series_name)
-    .bind(expected_volumes)
     .fetch_optional(pool)
     .await?;
 
-    let (target_dir, reference) = if let Some(r) = ref_row {
+    let (target_dir, reference) = if let Some(r) = any_row {
         let abs_path: String = r.get("abs_path");
         let volume: i32 = r.get("volume");
         let physical = remap_libraries_path(&abs_path);

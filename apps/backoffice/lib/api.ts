@@ -1277,6 +1277,7 @@ export type ProwlarrRelease = {
   infoUrl: string | null;
   categories: ProwlarrCategory[] | null;
   matchedMissingVolumes: number[] | null;
+  allVolumes?: number[];
 };
 
 export type ProwlarrSearchResponse = {

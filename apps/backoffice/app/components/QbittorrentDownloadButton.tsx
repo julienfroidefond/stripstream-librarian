@@ -36,6 +36,7 @@ export function QbittorrentDownloadButton({
   seriesName,
   expectedVolumes,
   allVolumes,
+  alwaysShowReplace,
 }: {
   downloadUrl: string;
   releaseId: string;
@@ -43,6 +44,8 @@ export function QbittorrentDownloadButton({
   seriesName?: string;
   expectedVolumes?: number[];
   allVolumes?: number[];
+  /** Show replace button even when allVolumes == expectedVolumes (e.g. in Prowlarr search modal) */
+  alwaysShowReplace?: boolean;
 }) {
   const { t } = useTranslation();
   const { configured, onDownloadStarted } = useContext(QbConfigContext);
@@ -53,8 +56,8 @@ export function QbittorrentDownloadButton({
 
   if (!configured) return null;
 
-  const hasExistingVolumes = allVolumes && expectedVolumes
-    && allVolumes.length > expectedVolumes.length;
+  const showReplaceButton = allVolumes && allVolumes.length > 0
+    && (alwaysShowReplace || (expectedVolumes && allVolumes.length > expectedVolumes.length));
 
   async function handleSend(volumes?: number[], replaceExisting = false) {
     setSending(true);
@@ -115,7 +118,7 @@ export function QbittorrentDownloadButton({
           )}
         </button>
 
-        {hasExistingVolumes && (
+        {showReplaceButton && (
           <button
             type="button"
             onClick={() => setShowConfirm(true)}
