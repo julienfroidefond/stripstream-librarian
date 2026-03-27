@@ -1,11 +1,12 @@
 import { getSettings, getCacheStats, getThumbnailStats, fetchUsers, apiFetch } from "@/lib/api";
 import SettingsPage from "./SettingsPage";
+import packageJson from "../../../package.json";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPageWrapper({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const { tab } = await searchParams;
-  const [settings, cacheStats, thumbnailStats, users, prowlarr, qbittorrent, torrentImport, telegram, anilist, komga, metadataProviders, statusMappings, seriesStatuses, providerStatuses] = await Promise.all([
+  const [settings, cacheStats, thumbnailStats, users, prowlarr, qbittorrent, torrentImport, telegram, anilist, komga, metadataProviders, statusMappings, seriesStatuses, providerStatuses, apiVersion] = await Promise.all([
     getSettings().catch(() => ({
       image_processing: { format: "webp", quality: 85, filter: "lanczos3", max_width: 2160 },
       cache: { enabled: true, directory: "/tmp/stripstream-image-cache", max_size_mb: 10000 },
@@ -25,7 +26,13 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
     apiFetch<unknown[]>("/settings/status-mappings").catch(() => []),
     apiFetch<unknown[]>("/series/statuses").catch(() => []),
     apiFetch<unknown[]>("/series/provider-statuses").catch(() => []),
+    apiFetch<{ api?: string }>("/version").catch(() => ({ api: "?" })),
   ]);
+
+  const versions = {
+    api: apiVersion?.api ?? "?",
+    backoffice: packageJson.version,
+  };
 
   return (
     <SettingsPage
@@ -44,6 +51,7 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
       initialStatusMappings={statusMappings as Record<string, unknown>[]}
       initialSeriesStatuses={seriesStatuses as string[]}
       initialProviderStatuses={providerStatuses as string[]}
+      versions={versions}
     />
   );
 }

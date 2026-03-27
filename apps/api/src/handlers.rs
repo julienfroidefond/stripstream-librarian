@@ -7,6 +7,12 @@ pub async fn health() -> &'static str {
     "ok"
 }
 
+pub async fn version() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "api": env!("CARGO_PKG_VERSION"),
+    }))
+}
+
 pub async fn docs_redirect() -> impl axum::response::IntoResponse {
     axum::response::Redirect::to("/swagger-ui/")
 }

@@ -199,6 +199,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(handlers::health))
+        .route("/version", get(handlers::version))
         .route("/ready", get(handlers::ready))
         .route("/metrics", get(handlers::metrics))
         .route("/docs", get(handlers::docs_redirect))

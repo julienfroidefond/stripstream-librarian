@@ -30,9 +30,10 @@ interface SettingsPageProps {
   initialStatusMappings: Record<string, unknown>[];
   initialSeriesStatuses: string[];
   initialProviderStatuses: string[];
+  versions?: { api: string; backoffice: string };
 }
 
-export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses }: SettingsPageProps) {
+export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, versions }: SettingsPageProps) {
   const { t, locale, setLocale } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -523,6 +524,57 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             <p className="text-sm text-muted-foreground">
               {t("settings.thumbnailsNote")}
             </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* About */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Icon name="document" size="md" />
+            {t("settings.about")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-lg font-semibold text-foreground">Stripstream Librarian</h3>
+              <p className="text-sm text-muted-foreground mt-1">{t("settings.aboutDesc")}</p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/40">
+                <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                  <Icon name="settings" size="sm" className="text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">API</p>
+                  <p className="text-sm font-mono font-medium text-foreground">{versions?.api ?? "?"}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/40">
+                <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                  <Icon name="books" size="sm" className="text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Backoffice</p>
+                  <p className="text-sm font-mono font-medium text-foreground">{versions?.backoffice ?? "?"}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 pt-2 text-sm">
+              <a
+                href="https://github.com/julienfroidefond/stripstream-librarian"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline flex items-center gap-1.5"
+              >
+                <Icon name="externalLink" size="sm" />
+                GitHub
+              </a>
+            </div>
           </div>
         </CardContent>
       </Card>

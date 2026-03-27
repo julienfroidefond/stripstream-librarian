@@ -554,6 +554,10 @@ const en: Record<TranslationKey, string> = {
   "settings.totalSize": "Total size",
   "settings.thumbnailsNote": "Note: Thumbnail settings are used during indexing. Existing thumbnails will not be automatically regenerated. Thumbnail generation concurrency is controlled by the \"Concurrent renders\" setting in Performance limits above.",
 
+  // Settings - About
+  "settings.about": "About",
+  "settings.aboutDesc": "Comic book and ebook library manager. Automatic indexing, metadata from multiple providers, integrated search and download, reading tracking.",
+
   // Settings - Komga
   "settings.komgaSync": "Komga sync",
   "settings.komgaDesc": "Import reading status from a Komga server. Books are matched by title (case-insensitive). Credentials are not stored.",

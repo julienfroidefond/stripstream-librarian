@@ -552,6 +552,10 @@ const fr = {
   "settings.totalSize": "Taille totale",
   "settings.thumbnailsNote": "Note : Les paramètres des miniatures sont utilisés pendant l'indexation. Les miniatures existantes ne seront pas regénérées automatiquement. La concurrence de génération des miniatures est contrôlée par le paramètre « Rendus simultanés » dans les Limites de performance ci-dessus.",
 
+  // Settings - About
+  "settings.about": "A propos",
+  "settings.aboutDesc": "Gestionnaire de bibliothèque de bandes dessinées et ebooks. Indexation automatique, métadonnées depuis plusieurs fournisseurs, recherche et téléchargement intégrés, suivi de lecture.",
+
   // Settings - Komga
   "settings.komgaSync": "Synchronisation Komga",
   "settings.komgaDesc": "Importer le statut de lecture depuis un serveur Komga. Les livres sont associés par titre (insensible à la casse). Les identifiants ne sont pas stockés.",
