@@ -36,6 +36,7 @@ async fn async_main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(api::health))
+        .route("/version", get(api::version))
         .route("/ready", get(api::ready))
         .with_state(state.clone());
 

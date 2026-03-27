@@ -4,9 +4,21 @@ import packageJson from "../../../package.json";
 
 export const dynamic = "force-dynamic";
 
+async function fetchIndexerVersion(): Promise<string> {
+  try {
+    const indexerUrl = (process.env.INDEXER_BASE_URL || "http://indexer:7081").replace(/\/$/, "");
+    const res = await fetch(`${indexerUrl}/version`, { signal: AbortSignal.timeout(3000) });
+    if (res.ok) {
+      const data = await res.json();
+      return data?.indexer ?? "?";
+    }
+  } catch { /* ignore */ }
+  return "?";
+}
+
 export default async function SettingsPageWrapper({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const { tab } = await searchParams;
-  const [settings, cacheStats, thumbnailStats, users, prowlarr, qbittorrent, torrentImport, telegram, anilist, komga, metadataProviders, statusMappings, seriesStatuses, providerStatuses, apiVersion] = await Promise.all([
+  const [settings, cacheStats, thumbnailStats, users, prowlarr, qbittorrent, torrentImport, telegram, anilist, komga, metadataProviders, statusMappings, seriesStatuses, providerStatuses, apiVersion, indexerVersion] = await Promise.all([
     getSettings().catch(() => ({
       image_processing: { format: "webp", quality: 85, filter: "lanczos3", max_width: 2160 },
       cache: { enabled: true, directory: "/tmp/stripstream-image-cache", max_size_mb: 10000 },
@@ -27,10 +39,12 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
     apiFetch<unknown[]>("/series/statuses").catch(() => []),
     apiFetch<unknown[]>("/series/provider-statuses").catch(() => []),
     apiFetch<{ api?: string }>("/version").catch(() => ({ api: "?" })),
+    fetchIndexerVersion(),
   ]);
 
   const versions = {
     api: apiVersion?.api ?? "?",
+    indexer: indexerVersion,
     backoffice: packageJson.version,
   };
 

@@ -30,7 +30,7 @@ interface SettingsPageProps {
   initialStatusMappings: Record<string, unknown>[];
   initialSeriesStatuses: string[];
   initialProviderStatuses: string[];
-  versions?: { api: string; backoffice: string };
+  versions?: { api: string; indexer: string; backoffice: string };
 }
 
 export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, versions }: SettingsPageProps) {
@@ -543,7 +543,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               <p className="text-sm text-muted-foreground mt-1">{t("settings.aboutDesc")}</p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/40">
                 <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
                   <Icon name="settings" size="sm" className="text-primary" />
@@ -551,6 +551,15 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                 <div>
                   <p className="text-xs text-muted-foreground">API</p>
                   <p className="text-sm font-mono font-medium text-foreground">{versions?.api ?? "?"}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/40">
+                <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                  <Icon name="jobs" size="sm" className="text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Indexer</p>
+                  <p className="text-sm font-mono font-medium text-foreground">{versions?.indexer ?? "?"}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/40">
