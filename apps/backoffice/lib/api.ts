@@ -1184,12 +1184,18 @@ export type DownloadDetectionResultDto = {
   error_message: string | null;
 };
 
+export type AvailableDownloadDto = {
+  id: string;
+  series_name: string;
+  missing_count: number;
+  available_releases: AvailableReleaseDto[] | null;
+  updated_at: string;
+};
+
 export type LatestFoundPerLibraryDto = {
   library_id: string;
   library_name: string;
-  job_id: string;
-  job_date: string;
-  results: DownloadDetectionResultDto[];
+  results: AvailableDownloadDto[];
 };
 
 export async function getDownloadDetectionReport(jobId: string) {

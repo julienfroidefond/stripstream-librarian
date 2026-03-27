@@ -448,6 +448,57 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
                 });
             }
 
+            // Update available_downloads: remove imported volumes
+            let imported_vols: Vec<i32> = imported.iter().map(|f| f.volume).collect();
+            if !imported_vols.is_empty() {
+                let ad_row = sqlx::query(
+                    "SELECT id, missing_count, available_releases FROM available_downloads \
+                     WHERE library_id = $1 AND LOWER(series_name) = LOWER($2)",
+                )
+                .bind(library_id)
+                .bind(&series_name)
+                .fetch_optional(&pool)
+                .await
+                .unwrap_or(None);
+
+                if let Some(ad_row) = ad_row {
+                    let ad_id: Uuid = ad_row.get("id");
+                    let releases_json: Option<serde_json::Value> = ad_row.get("available_releases");
+                    if let Some(serde_json::Value::Array(releases)) = releases_json {
+                        let updated: Vec<serde_json::Value> = releases.into_iter().filter_map(|mut release| {
+                            if let Some(matched) = release.get_mut("matched_missing_volumes") {
+                                if let Some(arr) = matched.as_array() {
+                                    let filtered: Vec<serde_json::Value> = arr.iter()
+                                        .filter(|v| !imported_vols.contains(&(v.as_i64().unwrap_or(-1) as i32)))
+                                        .cloned()
+                                        .collect();
+                                    if filtered.is_empty() {
+                                        return None;
+                                    }
+                                    *matched = serde_json::Value::Array(filtered);
+                                }
+                            }
+                            Some(release)
+                        }).collect();
+
+                        if updated.is_empty() {
+                            let _ = sqlx::query("DELETE FROM available_downloads WHERE id = $1")
+                                .bind(ad_id).execute(&pool).await;
+                        } else {
+                            let new_missing = ad_row.get::<i32, _>("missing_count") - imported_vols.len() as i32;
+                            let _ = sqlx::query(
+                                "UPDATE available_downloads SET available_releases = $1, missing_count = GREATEST($2, 0), updated_at = NOW() WHERE id = $3",
+                            )
+                            .bind(serde_json::Value::Array(updated))
+                            .bind(new_missing)
+                            .bind(ad_id)
+                            .execute(&pool)
+                            .await;
+                        }
+                    }
+                }
+            }
+
             // Clean up: remove source directory if it's a subdirectory of /downloads
             let physical_content = remap_downloads_path(&content_path);
             let downloads_root = remap_downloads_path("/downloads");

@@ -348,7 +348,7 @@ function AvailableLibraryCard({ lib }: { lib: LatestFoundPerLibraryDto }) {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
           <CardTitle className="text-sm sm:text-base">{lib.library_name}</CardTitle>
           <span className="text-[10px] sm:text-xs text-muted-foreground">
-            {t("downloads.detectedSeries", { count: lib.results.length })} — {formatDate(lib.job_date)}
+            {t("downloads.detectedSeries", { count: lib.results.length })}
           </span>
         </div>
       </CardHeader>

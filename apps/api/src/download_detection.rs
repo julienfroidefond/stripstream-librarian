@@ -352,13 +352,20 @@ pub struct LatestFoundPerLibraryDto {
     #[schema(value_type = String)]
     pub library_id: Uuid,
     pub library_name: String,
-    #[schema(value_type = String)]
-    pub job_id: Uuid,
-    pub job_date: String,
-    pub results: Vec<DownloadDetectionResultDto>,
+    pub results: Vec<AvailableDownloadDto>,
 }
 
-/// Returns "found" results from the latest detection job per library.
+#[derive(Serialize, ToSchema)]
+pub struct AvailableDownloadDto {
+    #[schema(value_type = String)]
+    pub id: Uuid,
+    pub series_name: String,
+    pub missing_count: i32,
+    pub available_releases: Option<Vec<AvailableReleaseDto>>,
+    pub updated_at: String,
+}
+
+/// Returns available downloads per library from the `available_downloads` table.
 #[utoipa::path(
     get,
     path = "/download-detection/latest-found",
@@ -371,67 +378,42 @@ pub struct LatestFoundPerLibraryDto {
 pub async fn get_latest_found(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<LatestFoundPerLibraryDto>>, ApiError> {
-    // Get latest completed detection job per library
-    let jobs = sqlx::query(
-        "SELECT DISTINCT ON (j.library_id) j.id, j.library_id, j.created_at, l.name as library_name \
-         FROM index_jobs j \
-         JOIN libraries l ON l.id = j.library_id \
-         WHERE j.type = 'download_detection' AND j.status = 'success' \
-         ORDER BY j.library_id, j.created_at DESC",
+    let rows = sqlx::query(
+        "SELECT ad.id, ad.library_id, ad.series_name, ad.missing_count, ad.available_releases, ad.updated_at, \
+                l.name as library_name \
+         FROM available_downloads ad \
+         JOIN libraries l ON l.id = ad.library_id \
+         ORDER BY l.name, ad.series_name",
     )
     .fetch_all(&state.pool)
     .await?;
 
-    let mut output = Vec::new();
+    let mut libs: std::collections::BTreeMap<Uuid, LatestFoundPerLibraryDto> = std::collections::BTreeMap::new();
 
-    for job in &jobs {
-        let job_id: Uuid = job.get("id");
-        let library_id: Uuid = job.get("library_id");
-        let library_name: String = job.get("library_name");
-        let created_at: chrono::DateTime<chrono::Utc> = job.get("created_at");
+    for row in &rows {
+        let library_id: Uuid = row.get("library_id");
+        let updated_at: chrono::DateTime<chrono::Utc> = row.get("updated_at");
+        let releases_json: Option<serde_json::Value> = row.get("available_releases");
+        let available_releases = releases_json.and_then(|v| {
+            serde_json::from_value::<Vec<AvailableReleaseDto>>(v).ok()
+        });
 
-        let rows = sqlx::query(
-            "SELECT id, series_name, status, missing_count, available_releases, error_message \
-             FROM download_detection_results \
-             WHERE job_id = $1 AND status = 'found' \
-             ORDER BY series_name",
-        )
-        .bind(job_id)
-        .fetch_all(&state.pool)
-        .await?;
-
-        if rows.is_empty() {
-            continue;
-        }
-
-        let results = rows
-            .iter()
-            .map(|row| {
-                let releases_json: Option<serde_json::Value> = row.get("available_releases");
-                let available_releases = releases_json.and_then(|v| {
-                    serde_json::from_value::<Vec<AvailableReleaseDto>>(v).ok()
-                });
-                DownloadDetectionResultDto {
-                    id: row.get("id"),
-                    series_name: row.get("series_name"),
-                    status: row.get("status"),
-                    missing_count: row.get("missing_count"),
-                    available_releases,
-                    error_message: row.get("error_message"),
-                }
-            })
-            .collect();
-
-        output.push(LatestFoundPerLibraryDto {
+        let entry = libs.entry(library_id).or_insert_with(|| LatestFoundPerLibraryDto {
             library_id,
-            library_name,
-            job_id,
-            job_date: created_at.to_rfc3339(),
-            results,
+            library_name: row.get("library_name"),
+            results: Vec::new(),
+        });
+
+        entry.results.push(AvailableDownloadDto {
+            id: row.get("id"),
+            series_name: row.get("series_name"),
+            missing_count: row.get("missing_count"),
+            available_releases,
+            updated_at: updated_at.to_rfc3339(),
         });
     }
 
-    Ok(Json(output))
+    Ok(Json(libs.into_values().collect()))
 }
 
 // ---------------------------------------------------------------------------
@@ -546,6 +528,9 @@ pub(crate) async fn process_download_detection(
 
         if missing_rows.is_empty() {
             insert_result(pool, job_id, library_id, series_name, "no_missing", 0, None, None).await;
+            // Series is complete, remove from available_downloads
+            let _ = sqlx::query("DELETE FROM available_downloads WHERE library_id = $1 AND series_name = $2")
+                .bind(library_id).bind(series_name).execute(pool).await;
             continue;
         }
 
@@ -575,13 +560,38 @@ pub(crate) async fn process_download_detection(
                     series_name,
                     "found",
                     missing_count,
-                    releases_json,
+                    releases_json.clone(),
                     None,
                 )
                 .await;
+                // UPSERT into available_downloads
+                if let Some(ref rj) = releases_json {
+                    let _ = sqlx::query(
+                        "INSERT INTO available_downloads (library_id, series_name, missing_count, available_releases, updated_at) \
+                         VALUES ($1, $2, $3, $4, NOW()) \
+                         ON CONFLICT (library_id, series_name) DO UPDATE SET \
+                           missing_count = EXCLUDED.missing_count, \
+                           available_releases = EXCLUDED.available_releases, \
+                           updated_at = NOW()",
+                    )
+                    .bind(library_id)
+                    .bind(series_name)
+                    .bind(missing_count)
+                    .bind(rj)
+                    .execute(pool)
+                    .await;
+                }
             }
             Ok(_) => {
                 insert_result(pool, job_id, library_id, series_name, "not_found", missing_count, None, None).await;
+                // Remove from available_downloads if previously found
+                let _ = sqlx::query(
+                    "DELETE FROM available_downloads WHERE library_id = $1 AND series_name = $2",
+                )
+                .bind(library_id)
+                .bind(series_name)
+                .execute(pool)
+                .await;
             }
             Err(e) => {
                 warn!("[DOWNLOAD_DETECTION] series '{series_name}': {e}");
