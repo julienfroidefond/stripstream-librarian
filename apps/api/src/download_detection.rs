@@ -49,6 +49,8 @@ pub struct AvailableReleaseDto {
     pub indexer: Option<String>,
     pub seeders: Option<i32>,
     pub matched_missing_volumes: Vec<i32>,
+    #[serde(default)]
+    pub all_volumes: Vec<i32>,
 }
 
 // ---------------------------------------------------------------------------
@@ -714,7 +716,8 @@ async fn search_prowlarr_for_series(
         .filter_map(|r| {
             let title_volumes = prowlarr::extract_volumes_from_title_pub(&r.title);
             let matched_vols: Vec<i32> = title_volumes
-                .into_iter()
+                .iter()
+                .copied()
                 .filter(|v| missing_volumes.contains(v))
                 .collect();
             if matched_vols.is_empty() {
@@ -727,6 +730,7 @@ async fn search_prowlarr_for_series(
                     indexer: r.indexer,
                     seeders: r.seeders,
                     matched_missing_volumes: matched_vols,
+                    all_volumes: title_volumes,
                 })
             }
         })

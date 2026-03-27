@@ -383,7 +383,7 @@ function AvailableLibraryCard({ lib }: { lib: LatestFoundPerLibraryDto }) {
                           <span className="text-[10px] text-success font-medium">{release.seeders}S</span>
                         )}
                         <span className="text-[10px] text-muted-foreground">{(release.size / 1024 / 1024).toFixed(0)} MB</span>
-                        <div className="flex items-center gap-1">
+                        <div className="flex flex-wrap items-center gap-1">
                           {release.matched_missing_volumes.map(vol => (
                             <span key={vol} className="text-[10px] px-1 py-0.5 rounded-full bg-success/20 text-success font-medium">T{vol}</span>
                           ))}
@@ -398,6 +398,7 @@ function AvailableLibraryCard({ lib }: { lib: LatestFoundPerLibraryDto }) {
                           libraryId={lib.library_id}
                           seriesName={r.series_name}
                           expectedVolumes={release.matched_missing_volumes}
+                          allVolumes={release.all_volumes}
                         />
                       </div>
                     )}

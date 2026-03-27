@@ -1162,6 +1162,7 @@ export type AvailableReleaseDto = {
   indexer: string | null;
   seeders: number | null;
   matched_missing_volumes: number[];
+  all_volumes: number[];
 };
 
 export type DownloadDetectionReportDto = {

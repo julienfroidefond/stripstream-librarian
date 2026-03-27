@@ -17,6 +17,9 @@ pub struct QBittorrentAddRequest {
     pub library_id: Option<Uuid>,
     pub series_name: Option<String>,
     pub expected_volumes: Option<Vec<i32>>,
+    /// When true, overwrite existing files at destination during import.
+    #[serde(default)]
+    pub replace_existing: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -203,14 +206,15 @@ pub async fn add_torrent(
 
         let id = download_id.unwrap();
         sqlx::query(
-            "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, qb_hash) \
-             VALUES ($1, $2, $3, $4, $5)",
+            "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, qb_hash, replace_existing) \
+             VALUES ($1, $2, $3, $4, $5, $6)",
         )
         .bind(id)
         .bind(library_id)
         .bind(series_name)
         .bind(expected_volumes)
         .bind(qb_hash.as_deref())
+        .bind(body.replace_existing)
         .execute(&state.pool)
         .await?;
 

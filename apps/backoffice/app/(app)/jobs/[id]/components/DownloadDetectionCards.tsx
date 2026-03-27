@@ -113,6 +113,7 @@ export function DownloadDetectionResultsCard({ results, libraryId, qbConfigured,
                           libraryId={libraryId ?? undefined}
                           seriesName={r.series_name}
                           expectedVolumes={release.matched_missing_volumes}
+                          allVolumes={release.all_volumes}
                         />
                       )}
                     </div>

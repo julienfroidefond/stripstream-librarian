@@ -406,7 +406,7 @@ async fn is_torrent_import_enabled(pool: &PgPool) -> bool {
 
 async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Result<()> {
     let row = sqlx::query(
-        "SELECT library_id, series_name, expected_volumes, content_path, qb_hash \
+        "SELECT library_id, series_name, expected_volumes, content_path, qb_hash, replace_existing \
          FROM torrent_downloads WHERE id = $1",
     )
     .bind(torrent_id)
@@ -418,6 +418,7 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
     let expected_volumes: Vec<i32> = row.get("expected_volumes");
     let content_path: Option<String> = row.get("content_path");
     let qb_hash: Option<String> = row.get("qb_hash");
+    let replace_existing: bool = row.get("replace_existing");
     let content_path =
         content_path.ok_or_else(|| anyhow::anyhow!("content_path not set on torrent_download"))?;
 
@@ -428,7 +429,7 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
     .execute(&pool)
     .await?;
 
-    match do_import(&pool, library_id, &series_name, &expected_volumes, &content_path).await {
+    match do_import(&pool, library_id, &series_name, &expected_volumes, &content_path, replace_existing).await {
         Ok(imported) => {
             let json = serde_json::to_value(&imported).unwrap_or(serde_json::json!([]));
             sqlx::query(
@@ -526,19 +527,19 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
                 }
             }
 
-            // Clean up: remove source directory if it's a subdirectory of /downloads
-            let physical_content = remap_downloads_path(&content_path);
+            // Clean up: remove the sl-{id} category directory and all its contents
             let downloads_root = remap_downloads_path("/downloads");
-            let content_p = std::path::Path::new(&physical_content);
+            let category_dir = remap_downloads_path(&format!("/downloads/sl-{torrent_id}"));
+            let category_p = std::path::Path::new(&category_dir);
             let downloads_p = std::path::Path::new(&downloads_root);
-            if content_p.is_dir() && content_p != downloads_p && content_p.starts_with(downloads_p) {
-                match std::fs::remove_dir_all(content_p) {
-                    Ok(()) => info!("[IMPORT] Cleaned up source directory: {}", physical_content),
-                    Err(e) => warn!("[IMPORT] Failed to clean up {}: {}", physical_content, e),
+            if category_p.is_dir() && category_p != downloads_p && category_p.starts_with(downloads_p) {
+                match std::fs::remove_dir_all(category_p) {
+                    Ok(()) => info!("[IMPORT] Cleaned up category directory: {}", category_dir),
+                    Err(e) => warn!("[IMPORT] Failed to clean up {}: {}", category_dir, e),
                 }
             }
 
-            // Remove torrent from qBittorrent
+            // Remove torrent and category from qBittorrent
             if let Some(ref hash) = qb_hash {
                 if let Ok((base_url, username, password)) = load_qbittorrent_config(&pool).await {
                     if let Ok(client) = reqwest::Client::builder().timeout(Duration::from_secs(10)).build() {
@@ -550,6 +551,15 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
                                 .send()
                                 .await;
                             info!("[IMPORT] Removed torrent {} from qBittorrent", hash);
+
+                            // Remove the sl-{id} category
+                            let cat = format!("sl-{torrent_id}");
+                            let _ = client
+                                .post(format!("{base_url}/api/v2/torrents/removeCategories"))
+                                .header("Cookie", format!("SID={sid}"))
+                                .form(&[("categories", cat.as_str())])
+                                .send()
+                                .await;
                         }
                     }
                 }
@@ -584,6 +594,7 @@ async fn do_import(
     series_name: &str,
     expected_volumes: &[i32],
     content_path: &str,
+    replace_existing: bool,
 ) -> anyhow::Result<Vec<ImportedFile>> {
     let physical_content = remap_downloads_path(content_path);
 
@@ -645,6 +656,7 @@ async fn do_import(
     info!("[IMPORT] Final reference: {:?}", reference);
 
     let mut imported = Vec::new();
+    let mut used_destinations: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for source_path in collect_book_files(&physical_content)? {
         let filename = std::path::Path::new(&source_path)
@@ -656,26 +668,37 @@ async fn do_import(
             .and_then(|e| e.to_str())
             .unwrap_or("");
 
-        let matched: Vec<i32> = extract_volumes_from_title_pub(filename)
-            .into_iter()
+        let all_extracted = extract_volumes_from_title_pub(filename);
+        let matched: Vec<i32> = all_extracted
+            .iter()
+            .copied()
             .filter(|v| expected_set.contains(v))
             .collect();
 
         if matched.is_empty() {
+            info!("[IMPORT] Skipping '{}' (extracted volumes {:?}, none in expected set)", filename, all_extracted);
             continue;
         }
 
         let target_filename = if matched.len() == 1 {
             // Single volume: apply naming pattern from reference
             let vol = matched[0];
-            if let Some((ref ref_path, ref_vol)) = reference {
+            let generated = if let Some((ref ref_path, ref_vol)) = reference {
                 let built = build_target_filename(ref_path, ref_vol, vol, ext);
-                info!("[IMPORT] build_target_filename(ref={}, ref_vol={}, new_vol={}, ext={}) => {:?}",
-                    ref_path, ref_vol, vol, ext, built);
+                info!("[IMPORT] build_target_filename(ref={}, ref_vol={}, new_vol={}, ext={}) => {:?} (source='{}')",
+                    ref_path, ref_vol, vol, ext, built, filename);
                 built.unwrap_or_else(|| default_filename(series_name, vol, ext))
             } else {
-                info!("[IMPORT] No reference, using default_filename for vol {}", vol);
+                info!("[IMPORT] No reference, using default_filename for vol {} (source='{}')", vol, filename);
                 default_filename(series_name, vol, ext)
+            };
+
+            // If this destination was already used in this batch, keep original filename
+            if used_destinations.contains(&generated) {
+                info!("[IMPORT] Destination '{}' already used in this batch, keeping original filename '{}'", generated, filename);
+                filename.to_string()
+            } else {
+                generated
             }
         } else {
             // Multi-volume pack: keep original filename (scanner handles ranges)
@@ -684,19 +707,38 @@ async fn do_import(
 
         let dest = format!("{}/{}", target_dir, target_filename);
 
-        if std::path::Path::new(&dest).exists() {
-            info!("Skipping {} (already exists at destination)", dest);
+        if std::path::Path::new(&dest).exists() && !replace_existing {
+            info!("[IMPORT] Skipping '{}' → '{}' (already exists at destination)", filename, dest);
             continue;
         }
 
         move_file(&source_path, &dest)?;
-        info!("Imported {:?} → {}", matched, dest);
+        used_destinations.insert(target_filename);
+        info!("[IMPORT] Imported '{}' [{:?}] → {}", filename, matched, dest);
 
         imported.push(ImportedFile {
             volume: *matched.iter().min().unwrap(),
             source: source_path.clone(),
             destination: unmap_libraries_path(&dest),
         });
+    }
+
+    // Sanity check: warn if many source files collapsed into few volumes
+    // (symptom of a volume extraction bug)
+    let source_count = collect_book_files(&physical_content).map(|f| f.len()).unwrap_or(0);
+    let unique_volumes: std::collections::HashSet<i32> = imported.iter().map(|f| f.volume).collect();
+    if source_count > 5 && unique_volumes.len() > 0 && source_count > unique_volumes.len() * 3 {
+        warn!(
+            "[IMPORT] Suspicious: {} source files mapped to only {} unique volumes ({:?}). \
+             Possible volume extraction issue for series '{}'",
+            source_count, unique_volumes.len(),
+            {
+                let mut v: Vec<i32> = unique_volumes.into_iter().collect();
+                v.sort();
+                v
+            },
+            series_name,
+        );
     }
 
     Ok(imported)

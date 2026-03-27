@@ -175,26 +175,36 @@ fn extract_volumes_from_title(title: &str) -> Vec<i32> {
     }
 
     // Pass 2 — individual volumes not already captured by range expansion
-    let prefixes = ["tome", "vol.", "vol ", "t", "v", "#"];
+    // Note: work entirely with char indices (not byte offsets) to avoid
+    // mismatches when the title contains multi-byte UTF-8 characters.
+    let prefixes: &[(&[char], bool)] = &[
+        (&['t', 'o', 'm', 'e'], false),
+        (&['v', 'o', 'l', '.'], false),
+        (&['v', 'o', 'l', ' '], false),
+        (&['t'], true),
+        (&['v'], true),
+        (&['#'], false),
+    ];
     let len = chars.len();
 
-    for prefix in &prefixes {
-        let mut start = 0;
-        while let Some(pos) = lower[start..].find(prefix) {
-            let abs_pos = start + pos;
-            let after = abs_pos + prefix.len();
-
-            // For single-char prefixes (t, v), ensure it's at a word boundary
-            if prefix.len() == 1 && *prefix != "#" {
-                if abs_pos > 0 && chars[abs_pos - 1].is_alphanumeric() {
-                    start = after;
-                    continue;
-                }
+    for &(prefix, needs_boundary) in prefixes {
+        let plen = prefix.len();
+        let mut ci = 0usize;
+        while ci + plen <= len {
+            if chars[ci..ci + plen] != *prefix {
+                ci += 1;
+                continue;
             }
 
-            // Skip optional spaces or dots after prefix
-            let mut i = after;
-            while i < len && (chars[i] == ' ' || chars[i] == '.') {
+            // For single-char prefixes (t, v), ensure it's at a word boundary
+            if needs_boundary && ci > 0 && chars[ci - 1].is_alphanumeric() {
+                ci += plen;
+                continue;
+            }
+
+            // Skip optional spaces, dots, or '#' after prefix
+            let mut i = ci + plen;
+            while i < len && (chars[i] == ' ' || chars[i] == '.' || chars[i] == '#') {
                 i += 1;
             }
 
@@ -205,14 +215,15 @@ fn extract_volumes_from_title(title: &str) -> Vec<i32> {
             }
 
             if i > digit_start {
-                if let Ok(num) = lower[digit_start..i].parse::<i32>() {
+                let num_str: String = chars[digit_start..i].iter().collect();
+                if let Ok(num) = num_str.parse::<i32>() {
                     if !volumes.contains(&num) {
                         volumes.push(num);
                     }
                 }
             }
 
-            start = after;
+            ci += plen;
         }
     }
 
@@ -534,5 +545,23 @@ mod tests {
         // v2.0 should NOT be treated as a range
         let v = extract_volumes_from_title("tool v2.0 release");
         assert!(!v.contains(&0) || v.len() == 1); // only v2 at most
+    }
+
+    #[test]
+    fn tome_hash_with_accented_chars() {
+        // Tome #097 with accented characters earlier in the string — the é in
+        // "Compressé" shifts byte offsets vs char offsets; this must not break parsing.
+        let v = sorted(extract_volumes_from_title(
+            "[Compressé] One Piece [Team Chromatique] - Tome #097 - [V2].cbz",
+        ));
+        assert!(v.contains(&97), "expected 97 in {:?}", v);
+    }
+
+    #[test]
+    fn tome_hash_single_digit() {
+        let v = sorted(extract_volumes_from_title(
+            "[Compressé] One Piece [Team Chromatique] - Tome #003 (Perfect Edition).cbz",
+        ));
+        assert!(v.contains(&3), "expected 3 in {:?}", v);
     }
 }
