@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, FormField, FormInput, FormSelect, Icon } from "@/app/components/ui";
 import { ProviderIcon } from "@/app/components/ProviderIcon";
 import { useTranslation } from "@/lib/i18n/context";
@@ -11,25 +11,22 @@ export const METADATA_LANGUAGES = [
   { value: "es", label: "Español" },
 ] as const;
 
-export function MetadataProvidersCard({ handleUpdateSetting }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void> }) {
-  const { t } = useTranslation();
-  const [defaultProvider, setDefaultProvider] = useState("google_books");
-  const [metadataLanguage, setMetadataLanguage] = useState("en");
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+function extractInitialApiKeys(data: Record<string, unknown> | null): Record<string, string> {
+  const keys: Record<string, string> = {};
+  if (data) {
+    const comicvine = data.comicvine as Record<string, unknown> | undefined;
+    const googleBooks = data.google_books as Record<string, unknown> | undefined;
+    if (comicvine?.api_key) keys.comicvine = String(comicvine.api_key);
+    if (googleBooks?.api_key) keys.google_books = String(googleBooks.api_key);
+  }
+  return keys;
+}
 
-  useEffect(() => {
-    fetch("/api/settings/metadata_providers")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data) {
-          if (data.default_provider) setDefaultProvider(data.default_provider);
-          if (data.metadata_language) setMetadataLanguage(data.metadata_language);
-          if (data.comicvine?.api_key) setApiKeys((prev) => ({ ...prev, comicvine: data.comicvine.api_key }));
-          if (data.google_books?.api_key) setApiKeys((prev) => ({ ...prev, google_books: data.google_books.api_key }));
-        }
-      })
-      .catch(() => {});
-  }, []);
+export function MetadataProvidersCard({ handleUpdateSetting, initialData }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void>; initialData: Record<string, unknown> | null }) {
+  const { t } = useTranslation();
+  const [defaultProvider, setDefaultProvider] = useState(initialData?.default_provider ? String(initialData.default_provider) : "google_books");
+  const [metadataLanguage, setMetadataLanguage] = useState(initialData?.metadata_language ? String(initialData.metadata_language) : "en");
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>(extractInitialApiKeys(initialData));
 
   function save(provider: string, lang: string, keys: Record<string, string>) {
     const value: Record<string, unknown> = {

@@ -1,34 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 
-export function QBittorrentCard({ handleUpdateSetting }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void> }) {
+export function QBittorrentCard({ handleUpdateSetting, initialQbittorrent, initialTorrentImport }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void>; initialQbittorrent: Record<string, unknown> | null; initialTorrentImport: Record<string, unknown> | null }) {
   const { t } = useTranslation();
-  const [qbUrl, setQbUrl] = useState("");
-  const [qbUsername, setQbUsername] = useState("");
-  const [qbPassword, setQbPassword] = useState("");
+  const [qbUrl, setQbUrl] = useState(initialQbittorrent?.url ? String(initialQbittorrent.url) : "");
+  const [qbUsername, setQbUsername] = useState(initialQbittorrent?.username ? String(initialQbittorrent.username) : "");
+  const [qbPassword, setQbPassword] = useState(initialQbittorrent?.password ? String(initialQbittorrent.password) : "");
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [importEnabled, setImportEnabled] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/settings/qbittorrent")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data) {
-          if (data.url) setQbUrl(data.url);
-          if (data.username) setQbUsername(data.username);
-          if (data.password) setQbPassword(data.password);
-        }
-      })
-      .catch(() => {});
-    fetch("/api/settings/torrent_import")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data?.enabled !== undefined) setImportEnabled(data.enabled); })
-      .catch(() => {});
-  }, []);
+  const [importEnabled, setImportEnabled] = useState(initialTorrentImport?.enabled === true);
 
   function saveQbittorrent() {
     handleUpdateSetting("qbittorrent", {

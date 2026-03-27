@@ -20,9 +20,19 @@ interface SettingsPageProps {
   initialThumbnailStats: ThumbnailStats;
   users: UserDto[];
   initialTab?: string;
+  initialProwlarr: Record<string, unknown> | null;
+  initialQbittorrent: Record<string, unknown> | null;
+  initialTorrentImport: Record<string, unknown> | null;
+  initialTelegram: Record<string, unknown> | null;
+  initialAnilist: Record<string, unknown> | null;
+  initialKomga: Record<string, unknown> | null;
+  initialMetadataProviders: Record<string, unknown> | null;
+  initialStatusMappings: Record<string, unknown>[];
+  initialSeriesStatuses: string[];
+  initialProviderStatuses: string[];
 }
 
-export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab }: SettingsPageProps) {
+export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses }: SettingsPageProps) {
   const { t, locale, setLocale } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -521,28 +531,28 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
 
       {activeTab === "metadata" && (<>
       {/* Metadata Providers */}
-      <MetadataProvidersCard handleUpdateSetting={handleUpdateSetting} />
+      <MetadataProvidersCard handleUpdateSetting={handleUpdateSetting} initialData={initialMetadataProviders} />
 
       {/* Status Mappings */}
-      <StatusMappingsCard />
+      <StatusMappingsCard initialStatusMappings={initialStatusMappings} initialSeriesStatuses={initialSeriesStatuses} initialProviderStatuses={initialProviderStatuses} />
       </>)}
 
       {activeTab === "downloadTools" && (<>
       {/* Prowlarr */}
-      <ProwlarrCard handleUpdateSetting={handleUpdateSetting} />
+      <ProwlarrCard handleUpdateSetting={handleUpdateSetting} initialData={initialProwlarr} />
 
       {/* qBittorrent */}
-      <QBittorrentCard handleUpdateSetting={handleUpdateSetting} />
+      <QBittorrentCard handleUpdateSetting={handleUpdateSetting} initialQbittorrent={initialQbittorrent} initialTorrentImport={initialTorrentImport} />
       </>)}
 
       {activeTab === "notifications" && (<>
       {/* Telegram Notifications */}
-      <TelegramCard handleUpdateSetting={handleUpdateSetting} />
+      <TelegramCard handleUpdateSetting={handleUpdateSetting} initialData={initialTelegram} />
       </>)}
 
       {activeTab === "readingStatus" && (<>
-        <AnilistTab handleUpdateSetting={handleUpdateSetting} users={users} />
-        <KomgaSyncCard users={users} />
+        <AnilistTab handleUpdateSetting={handleUpdateSetting} users={users} initialData={initialAnilist} />
+        <KomgaSyncCard users={users} initialData={initialKomga} />
       </>)}
 
       <Toaster />

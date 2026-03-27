@@ -8,19 +8,21 @@ import { useTranslation } from "@/lib/i18n/context";
 export function AnilistTab({
   handleUpdateSetting,
   users,
+  initialData,
 }: {
   handleUpdateSetting: (key: string, value: unknown) => Promise<void>;
   users: UserDto[];
+  initialData: Record<string, unknown> | null;
 }) {
   const { t } = useTranslation();
 
   const [origin, setOrigin] = useState("");
   useEffect(() => { setOrigin(window.location.origin); }, []);
 
-  const [clientId, setClientId] = useState("");
-  const [token, setToken] = useState("");
-  const [userId, setUserId] = useState("");
-  const [localUserId, setLocalUserId] = useState("");
+  const [clientId, setClientId] = useState(initialData?.client_id ? String(initialData.client_id) : "");
+  const [token, setToken] = useState(initialData?.access_token ? String(initialData.access_token) : "");
+  const [userId, setUserId] = useState(initialData?.user_id ? String(initialData.user_id) : "");
+  const [localUserId, setLocalUserId] = useState(initialData?.local_user_id ? String(initialData.local_user_id) : "");
   const [isTesting, setIsTesting] = useState(false);
   const [viewer, setViewer] = useState<AnilistStatusDto | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
@@ -32,21 +34,6 @@ export function AnilistTab({
   const [actionError, setActionError] = useState<string | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [previewItems, setPreviewItems] = useState<AnilistSyncPreviewItemDto[] | null>(null);
-
-
-  useEffect(() => {
-    fetch("/api/settings/anilist")
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        if (data) {
-          if (data.client_id) setClientId(String(data.client_id));
-          if (data.access_token) setToken(data.access_token);
-          if (data.user_id) setUserId(String(data.user_id));
-          if (data.local_user_id) setLocalUserId(String(data.local_user_id));
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   function buildAnilistSettings() {
     return {

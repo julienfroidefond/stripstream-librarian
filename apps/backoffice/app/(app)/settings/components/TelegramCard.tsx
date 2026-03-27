@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 
@@ -25,29 +25,17 @@ export const DEFAULT_EVENTS = {
   download_detection_failed: true,
 };
 
-export function TelegramCard({ handleUpdateSetting }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void> }) {
+export function TelegramCard({ handleUpdateSetting, initialData }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void>; initialData: Record<string, unknown> | null }) {
   const { t } = useTranslation();
-  const [botToken, setBotToken] = useState("");
-  const [chatId, setChatId] = useState("");
-  const [enabled, setEnabled] = useState(false);
-  const [events, setEvents] = useState(DEFAULT_EVENTS);
+  const [botToken, setBotToken] = useState(initialData?.bot_token ? String(initialData.bot_token) : "");
+  const [chatId, setChatId] = useState(initialData?.chat_id ? String(initialData.chat_id) : "");
+  const [enabled, setEnabled] = useState(initialData?.enabled === true);
+  const [events, setEvents] = useState(
+    initialData?.events ? { ...DEFAULT_EVENTS, ...(initialData.events as Record<string, boolean>) } : DEFAULT_EVENTS
+  );
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showHelp, setShowHelp] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/settings/telegram")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data) {
-          if (data.bot_token) setBotToken(data.bot_token);
-          if (data.chat_id) setChatId(data.chat_id);
-          if (data.enabled !== undefined) setEnabled(data.enabled);
-          if (data.events) setEvents({ ...DEFAULT_EVENTS, ...data.events });
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   function saveTelegram(token?: string, chat?: string, en?: boolean, ev?: typeof events) {
     handleUpdateSetting("telegram", {

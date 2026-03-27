@@ -5,12 +5,12 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, Form
 import { KomgaSyncResponse, KomgaSyncReportSummary, UserDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 
-export function KomgaSyncCard({ users }: { users: UserDto[] }) {
+export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initialData: Record<string, unknown> | null }) {
   const { t, locale } = useTranslation();
-  const [komgaUrl, setKomgaUrl] = useState("");
-  const [komgaUsername, setKomgaUsername] = useState("");
+  const [komgaUrl, setKomgaUrl] = useState(initialData?.url ? String(initialData.url) : "");
+  const [komgaUsername, setKomgaUsername] = useState(initialData?.username ? String(initialData.username) : "");
   const [komgaPassword, setKomgaPassword] = useState("");
-  const [komgaUserId, setKomgaUserId] = useState(users[0]?.id ?? "");
+  const [komgaUserId, setKomgaUserId] = useState(initialData?.user_id ? String(initialData.user_id) : (users[0]?.id ?? ""));
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<KomgaSyncResponse | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -39,13 +39,6 @@ export function KomgaSyncCard({ users }: { users: UserDto[] }) {
 
   useEffect(() => {
     fetchReports();
-    fetch("/api/settings/komga").then(r => r.ok ? r.json() : null).then(data => {
-      if (data) {
-        if (data.url) setKomgaUrl(data.url);
-        if (data.username) setKomgaUsername(data.username);
-        if (data.user_id) setKomgaUserId(data.user_id);
-      }
-    }).catch(() => {});
   }, [fetchReports]);
 
   async function handleViewReport(id: string) {

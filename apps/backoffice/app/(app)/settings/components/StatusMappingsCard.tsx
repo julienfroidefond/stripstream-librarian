@@ -1,36 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, Icon } from "@/app/components/ui";
 import { StatusMappingDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 
-export function StatusMappingsCard() {
+export function StatusMappingsCard({ initialStatusMappings, initialSeriesStatuses, initialProviderStatuses }: { initialStatusMappings: Record<string, unknown>[]; initialSeriesStatuses: string[]; initialProviderStatuses: string[] }) {
   const { t } = useTranslation();
-  const [mappings, setMappings] = useState<StatusMappingDto[]>([]);
-  const [targetStatuses, setTargetStatuses] = useState<string[]>([]);
-  const [providerStatuses, setProviderStatuses] = useState<string[]>([]);
+  const [mappings, setMappings] = useState<StatusMappingDto[]>(initialStatusMappings as unknown as StatusMappingDto[]);
+  const [targetStatuses, setTargetStatuses] = useState<string[]>(initialSeriesStatuses);
+  const [providerStatuses] = useState<string[]>(initialProviderStatuses);
   const [newTargetName, setNewTargetName] = useState("");
-  const [loading, setLoading] = useState(true);
-
-  const loadData = useCallback(async () => {
-    try {
-      const [mRes, sRes, pRes] = await Promise.all([
-        fetch("/api/settings/status-mappings").then((r) => r.ok ? r.json() : []),
-        fetch("/api/series/statuses").then((r) => r.ok ? r.json() : []),
-        fetch("/api/series/provider-statuses").then((r) => r.ok ? r.json() : []),
-      ]);
-      setMappings(mRes);
-      setTargetStatuses(sRes);
-      setProviderStatuses(pRes);
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { loadData(); }, [loadData]);
 
   // Group mappings by target status (only those with a non-null mapped_status)
   const grouped = useMemo(() => {
@@ -106,14 +86,6 @@ export function StatusMappingsCard() {
     const key = `seriesStatus.${status}` as Parameters<typeof t>[0];
     const translated = t(key);
     return translated !== key ? translated : status;
-  }
-
-  if (loading) {
-    return (
-      <Card className="mb-6">
-        <CardContent><p className="text-muted-foreground py-4">{t("common.loading")}</p></CardContent>
-      </Card>
-    );
   }
 
   return (

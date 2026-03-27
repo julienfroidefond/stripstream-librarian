@@ -1,29 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 
-export function ProwlarrCard({ handleUpdateSetting }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void> }) {
+export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void>; initialData: Record<string, unknown> | null }) {
   const { t } = useTranslation();
-  const [prowlarrUrl, setProwlarrUrl] = useState("");
-  const [prowlarrApiKey, setProwlarrApiKey] = useState("");
-  const [prowlarrCategories, setProwlarrCategories] = useState("7030, 7020");
+  const [prowlarrUrl, setProwlarrUrl] = useState(initialData?.url ? String(initialData.url) : "");
+  const [prowlarrApiKey, setProwlarrApiKey] = useState(initialData?.api_key ? String(initialData.api_key) : "");
+  const [prowlarrCategories, setProwlarrCategories] = useState(
+    Array.isArray(initialData?.categories) ? (initialData.categories as number[]).join(", ") : "7030, 7020"
+  );
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-
-  useEffect(() => {
-    fetch("/api/settings/prowlarr")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data) {
-          if (data.url) setProwlarrUrl(data.url);
-          if (data.api_key) setProwlarrApiKey(data.api_key);
-          if (data.categories) setProwlarrCategories(data.categories.join(", "));
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   function saveProwlarr(url?: string, apiKey?: string, cats?: string) {
     const categories = (cats ?? prowlarrCategories)
