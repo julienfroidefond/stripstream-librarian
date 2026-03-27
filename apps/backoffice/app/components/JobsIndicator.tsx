@@ -56,14 +56,27 @@ export function JobsIndicator() {
   useEffect(() => {
     let eventSource: EventSource | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let staleTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const resetStaleTimer = () => {
+      if (staleTimeout) clearTimeout(staleTimeout);
+      // If no message received in 30s, reconnect (heartbeat should come every 15s)
+      staleTimeout = setTimeout(() => {
+        eventSource?.close();
+        eventSource = null;
+        connect();
+      }, 30000);
+    };
 
     const connect = () => {
       if (eventSource) {
         eventSource.close();
       }
       eventSource = new EventSource("/api/jobs/stream");
+      resetStaleTimer();
 
       eventSource.onmessage = (event) => {
+        resetStaleTimer();
         try {
           const allJobs: Job[] = JSON.parse(event.data);
           const active = allJobs.filter(j =>
@@ -79,20 +92,15 @@ export function JobsIndicator() {
       eventSource.onerror = () => {
         eventSource?.close();
         eventSource = null;
-        // Reconnect after 5s on error
-        reconnectTimeout = setTimeout(connect, 5000);
+        // Reconnect after 3s on error
+        reconnectTimeout = setTimeout(connect, 3000);
       };
     };
 
     const disconnect = () => {
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-        reconnectTimeout = null;
-      }
-      if (eventSource) {
-        eventSource.close();
-        eventSource = null;
-      }
+      if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
+      if (staleTimeout) { clearTimeout(staleTimeout); staleTimeout = null; }
+      if (eventSource) { eventSource.close(); eventSource = null; }
     };
 
     const handleVisibilityChange = () => {

@@ -12,6 +12,17 @@ export async function GET(request: NextRequest) {
       let isActive = true;
       let consecutiveErrors = 0;
       let intervalId: ReturnType<typeof setInterval> | null = null;
+      let heartbeatId: ReturnType<typeof setInterval> | null = null;
+
+      const send = (msg: string): boolean => {
+        try {
+          controller.enqueue(new TextEncoder().encode(msg));
+          return true;
+        } catch {
+          isActive = false;
+          return false;
+        }
+      };
 
       const fetchJobs = async () => {
         if (!isActive) return;
@@ -26,23 +37,17 @@ export async function GET(request: NextRequest) {
             const data = await response.json();
             const dataStr = JSON.stringify(data);
 
-            // Send only if data changed
-            if (dataStr !== lastData && isActive) {
+            // Always send data (client needs fresh timestamps for active jobs)
+            if (isActive) {
               lastData = dataStr;
-              try {
-                controller.enqueue(
-                  new TextEncoder().encode(`data: ${dataStr}\n\n`)
-                );
-              } catch {
-                isActive = false;
-              }
+              send(`data: ${dataStr}\n\n`);
             }
 
-            // Adapt interval: 2s when active jobs exist, 15s when idle
+            // Adapt interval: 2s when active jobs exist, 10s when idle
             const hasActiveJobs = data.some((j: { status: string }) =>
               j.status === "running" || j.status === "pending" || j.status === "extracting_pages" || j.status === "generating_thumbnails"
             );
-            const nextInterval = hasActiveJobs ? 2000 : 15000;
+            const nextInterval = hasActiveJobs ? 2000 : 10000;
             restartInterval(nextInterval);
           }
         } catch (error) {
@@ -60,6 +65,11 @@ export async function GET(request: NextRequest) {
         intervalId = setInterval(fetchJobs, ms);
       };
 
+      // Heartbeat every 15s to keep connection alive
+      heartbeatId = setInterval(() => {
+        if (isActive) send(": heartbeat\n\n");
+      }, 15000);
+
       // Initial fetch + start polling
       await fetchJobs();
 
@@ -67,6 +77,7 @@ export async function GET(request: NextRequest) {
       request.signal.addEventListener("abort", () => {
         isActive = false;
         if (intervalId !== null) clearInterval(intervalId);
+        if (heartbeatId !== null) clearInterval(heartbeatId);
         controller.close();
       });
     },
