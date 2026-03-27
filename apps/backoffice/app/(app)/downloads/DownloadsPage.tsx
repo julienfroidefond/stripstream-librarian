@@ -73,6 +73,7 @@ const PAGE_SIZE = 10;
 export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigured }: DownloadsPageProps) {
   const { t } = useTranslation();
   const [downloads, setDownloads] = useState<TorrentDownloadDto[]>(initialDownloads);
+  const [latestFound, setLatestFound] = useState<LatestFoundPerLibraryDto[]>(initialLatestFound);
   const [filter, setFilter] = useState<string>("all");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [page, setPage] = useState(1);
@@ -80,8 +81,12 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
   const refresh = useCallback(async (showSpinner = true) => {
     if (showSpinner) setIsRefreshing(true);
     try {
-      const resp = await fetch("/api/torrent-downloads");
-      if (resp.ok) setDownloads(await resp.json());
+      const [dlResp, lfResp] = await Promise.all([
+        fetch("/api/torrent-downloads"),
+        fetch("/api/download-detection/latest-found"),
+      ]);
+      if (dlResp.ok) setDownloads(await dlResp.json());
+      if (lfResp.ok) setLatestFound(await lfResp.json());
     } finally {
       if (showSpinner) setIsRefreshing(false);
     }
@@ -184,7 +189,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
       )}
 
       {/* Available downloads from latest detection */}
-      {initialLatestFound.length > 0 && (
+      {latestFound.length > 0 && (
         <QbittorrentProvider initialConfigured={qbConfigured} onDownloadStarted={() => refresh(false)}>
           <div className="mt-10">
             <h2 className="text-xl font-bold text-foreground mb-4 flex items-center gap-2">
@@ -192,7 +197,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
               {t("downloads.availableTitle")}
             </h2>
             <div className="space-y-6">
-              {initialLatestFound.map(lib => (
+              {latestFound.map(lib => (
                 <AvailableLibraryCard key={lib.library_id} lib={lib} />
               ))}
             </div>
