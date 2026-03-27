@@ -379,7 +379,7 @@ async fn is_torrent_import_enabled(pool: &PgPool) -> bool {
 
 async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Result<()> {
     let row = sqlx::query(
-        "SELECT library_id, series_name, expected_volumes, content_path \
+        "SELECT library_id, series_name, expected_volumes, content_path, qb_hash \
          FROM torrent_downloads WHERE id = $1",
     )
     .bind(torrent_id)
@@ -390,6 +390,7 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
     let series_name: String = row.get("series_name");
     let expected_volumes: Vec<i32> = row.get("expected_volumes");
     let content_path: Option<String> = row.get("content_path");
+    let qb_hash: Option<String> = row.get("qb_hash");
     let content_path =
         content_path.ok_or_else(|| anyhow::anyhow!("content_path not set on torrent_download"))?;
 
@@ -445,6 +446,35 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
                         info!("[IMPORT] Metadata refresh for '{}' done", sn);
                     }
                 });
+            }
+
+            // Clean up: remove source directory if it's a subdirectory of /downloads
+            let physical_content = remap_downloads_path(&content_path);
+            let downloads_root = remap_downloads_path("/downloads");
+            let content_p = std::path::Path::new(&physical_content);
+            let downloads_p = std::path::Path::new(&downloads_root);
+            if content_p.is_dir() && content_p != downloads_p && content_p.starts_with(downloads_p) {
+                match std::fs::remove_dir_all(content_p) {
+                    Ok(()) => info!("[IMPORT] Cleaned up source directory: {}", physical_content),
+                    Err(e) => warn!("[IMPORT] Failed to clean up {}: {}", physical_content, e),
+                }
+            }
+
+            // Remove torrent from qBittorrent
+            if let Some(ref hash) = qb_hash {
+                if let Ok((base_url, username, password)) = load_qbittorrent_config(&pool).await {
+                    if let Ok(client) = reqwest::Client::builder().timeout(Duration::from_secs(10)).build() {
+                        if let Ok(sid) = qbittorrent_login(&client, &base_url, &username, &password).await {
+                            let _ = client
+                                .post(format!("{base_url}/api/v2/torrents/delete"))
+                                .header("Cookie", format!("SID={sid}"))
+                                .form(&[("hashes", hash.as_str()), ("deleteFiles", "true")])
+                                .send()
+                                .await;
+                            info!("[IMPORT] Removed torrent {} from qBittorrent", hash);
+                        }
+                    }
+                }
             }
 
             info!(
