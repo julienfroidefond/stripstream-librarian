@@ -69,6 +69,7 @@ export function QbittorrentDownloadButton({
       } else if (data.success) {
         setSent(true);
         onDownloadStarted?.();
+        setTimeout(() => setSent(false), 5000);
       } else {
         setError(data.message || t("prowlarr.sentError"));
       }
@@ -83,7 +84,7 @@ export function QbittorrentDownloadButton({
     <button
       type="button"
       onClick={handleSend}
-      disabled={sending || sent}
+      disabled={sending}
       className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors disabled:opacity-50 shrink-0 ${
         sent
           ? "text-green-500"
