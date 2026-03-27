@@ -48,15 +48,16 @@ export function DownloadDetectionErrorsCard({ results, t }: {
   );
 }
 
-export function DownloadDetectionResultsCard({ results, libraryId, t }: {
+export function DownloadDetectionResultsCard({ results, libraryId, qbConfigured, t }: {
   results: DownloadDetectionResultDto[];
   libraryId: string | null;
+  qbConfigured?: boolean;
   t: TranslateFunction;
 }) {
   if (results.length === 0) return null;
 
   return (
-    <QbittorrentProvider>
+    <QbittorrentProvider initialConfigured={qbConfigured}>
       <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle>{t("jobDetail.downloadAvailableReleases")}</CardTitle>

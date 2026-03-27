@@ -6,17 +6,19 @@ import { useTranslation } from "@/lib/i18n/context";
 
 const QbConfigContext = createContext(false);
 
-export function QbittorrentProvider({ children }: { children: ReactNode }) {
-  const [configured, setConfigured] = useState(false);
+export function QbittorrentProvider({ children, initialConfigured }: { children: ReactNode; initialConfigured?: boolean }) {
+  const [configured, setConfigured] = useState(initialConfigured ?? false);
 
   useEffect(() => {
+    // Skip client fetch if server already told us
+    if (initialConfigured !== undefined) return;
     fetch("/api/settings/qbittorrent")
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         setConfigured(!!(data && data.url && data.url.trim() && data.username && data.username.trim()));
       })
       .catch(() => setConfigured(false));
-  }, []);
+  }, [initialConfigured]);
 
   return <QbConfigContext.Provider value={configured}>{children}</QbConfigContext.Provider>;
 }

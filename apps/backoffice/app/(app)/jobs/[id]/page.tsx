@@ -149,11 +149,15 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
   let downloadDetectionReport: DownloadDetectionReportDto | null = null;
   let downloadDetectionResults: DownloadDetectionResultDto[] = [];
   let downloadDetectionErrors: DownloadDetectionResultDto[] = [];
+  let qbConfigured = false;
   if (isDownloadDetection) {
-    [downloadDetectionReport, downloadDetectionResults, downloadDetectionErrors] = await Promise.all([
+    [downloadDetectionReport, downloadDetectionResults, downloadDetectionErrors, qbConfigured] = await Promise.all([
       getDownloadDetectionReport(id).catch(() => null),
       getDownloadDetectionResults(id, "found").catch(() => []),
       getDownloadDetectionResults(id, "error").catch(() => []),
+      apiFetch<{ url?: string; username?: string }>("/settings/qbittorrent")
+        .then(d => !!(d?.url?.trim() && d?.username?.trim()))
+        .catch(() => false),
     ]);
   }
 
@@ -273,7 +277,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
         {/* Download detection */}
         {isDownloadDetection && downloadDetectionReport && <DownloadDetectionReportCard report={downloadDetectionReport} t={t} />}
         {isDownloadDetection && <DownloadDetectionErrorsCard results={downloadDetectionErrors} t={t} />}
-        {isDownloadDetection && <DownloadDetectionResultsCard results={downloadDetectionResults} libraryId={job.library_id} t={t} />}
+        {isDownloadDetection && <DownloadDetectionResultsCard results={downloadDetectionResults} libraryId={job.library_id} qbConfigured={qbConfigured} t={t} />}
 
         {/* Metadata batch results */}
         {isMetadataBatch && <MetadataBatchResultsCard results={batchResults} libraryId={job.library_id} t={t} />}

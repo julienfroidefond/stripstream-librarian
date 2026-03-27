@@ -65,11 +65,12 @@ function formatEta(seconds: number): string {
 interface DownloadsPageProps {
   initialDownloads: TorrentDownloadDto[];
   initialLatestFound: LatestFoundPerLibraryDto[];
+  qbConfigured?: boolean;
 }
 
 const PAGE_SIZE = 10;
 
-export function DownloadsPage({ initialDownloads, initialLatestFound }: DownloadsPageProps) {
+export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigured }: DownloadsPageProps) {
   const { t } = useTranslation();
   const [downloads, setDownloads] = useState<TorrentDownloadDto[]>(initialDownloads);
   const [filter, setFilter] = useState<string>("all");
@@ -184,7 +185,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound }: Download
 
       {/* Available downloads from latest detection */}
       {initialLatestFound.length > 0 && (
-        <QbittorrentProvider>
+        <QbittorrentProvider initialConfigured={qbConfigured}>
           <div className="mt-10">
             <h2 className="text-xl font-bold text-foreground mb-4 flex items-center gap-2">
               <Icon name="search" size="lg" />
