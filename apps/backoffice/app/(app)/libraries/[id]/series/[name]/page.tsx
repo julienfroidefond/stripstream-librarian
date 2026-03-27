@@ -41,7 +41,7 @@ export default async function SeriesDetailPage({
 
   const seriesName = decodeURIComponent(name);
 
-  const [library, booksPage, seriesMeta, metadataLinks, readingStatusLink, prowlarrConfigured, qbConfigured] = await Promise.all([
+  const [library, booksPage, seriesMeta, metadataLinks, readingStatusLink, prowlarrConfigured, qbConfigured, metadataProviders] = await Promise.all([
     fetchLibraries().then((libs) => libs.find((l) => l.id === id)),
     fetchBooks(id, seriesName, page, limit).catch(() => ({
       items: [] as BookDto[],
@@ -58,7 +58,11 @@ export default async function SeriesDetailPage({
     apiFetch<{ url?: string; username?: string }>("/settings/qbittorrent")
       .then(d => !!(d?.url?.trim() && d?.username?.trim()))
       .catch(() => false),
+    apiFetch<{ comicvine?: { api_key?: string } }>("/settings/metadata_providers").catch(() => null),
   ]);
+
+  const hiddenProviders: string[] = [];
+  if (!metadataProviders?.comicvine?.api_key) hiddenProviders.push("comicvine");
 
   const existingLink = metadataLinks.find((l) => l.status === "approved") ?? metadataLinks[0] ?? null;
   let missingData: MissingBooksDto | null = null;
@@ -249,6 +253,7 @@ export default async function SeriesDetailPage({
               seriesName={seriesName}
               existingLink={existingLink}
               initialMissing={missingData}
+              initialHiddenProviders={hiddenProviders}
             />
             <ReadingStatusModal
               libraryId={id}

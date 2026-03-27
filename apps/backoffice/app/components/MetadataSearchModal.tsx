@@ -27,6 +27,7 @@ interface MetadataSearchModalProps {
   seriesName: string;
   existingLink: ExternalMetadataLinkDto | null;
   initialMissing: MissingBooksDto | null;
+  initialHiddenProviders?: string[];
 }
 
 type ModalStep = "idle" | "searching" | "results" | "confirm" | "syncing" | "done" | "linked";
@@ -36,6 +37,7 @@ export function MetadataSearchModal({
   seriesName,
   existingLink,
   initialMissing,
+  initialHiddenProviders,
 }: MetadataSearchModalProps) {
   const { t } = useTranslation();
   const router = useRouter();
@@ -61,21 +63,7 @@ export function MetadataSearchModal({
   // Provider selector: empty string = library default
   const [searchProvider, setSearchProvider] = useState("");
   const [activeProvider, setActiveProvider] = useState("");
-  const [hiddenProviders, setHiddenProviders] = useState<Set<string>>(new Set());
-
-  // Fetch metadata provider settings to hide providers without required API keys
-  useEffect(() => {
-    fetch("/api/settings/metadata_providers")
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        if (!data) return;
-        const hidden = new Set<string>();
-        // ComicVine requires an API key
-        if (!data.comicvine?.api_key) hidden.add("comicvine");
-        setHiddenProviders(hidden);
-      })
-      .catch(() => {});
-  }, []);
+  const [hiddenProviders] = useState<Set<string>>(new Set(initialHiddenProviders ?? []));
 
   const visibleProviders = PROVIDERS.filter((p) => !hiddenProviders.has(p.value));
 
