@@ -28,53 +28,27 @@ export default async function BooksPage({
     fetchLibraries().catch(() => [] as LibraryDto[])
   ]);
 
-  let books: BookDto[] = [];
-  let total = 0;
-  let searchResults: BookDto[] | null = null;
   let seriesHits: SeriesHitDto[] = [];
-  let totalHits: number | null = null;
 
-  if (searchQuery) {
-    const searchResponse = await searchBooks(searchQuery, libraryId, limit).catch(() => null);
-    if (searchResponse) {
-      seriesHits = searchResponse.series_hits ?? [];
-      searchResults = searchResponse.hits.map(hit => ({
-        id: hit.id,
-        library_id: hit.library_id,
-        kind: hit.kind,
-        title: hit.title,
-        author: hit.authors?.[0] ?? null,
-        authors: hit.authors ?? [],
-        series: hit.series,
-        volume: hit.volume,
-        language: hit.language,
-        page_count: null,
-        format: null,
-        file_path: null,
-        file_format: null,
-        file_parse_status: null,
-        updated_at: "",
-        reading_status: "unread" as const,
-        reading_current_page: null,
-        reading_last_read_at: null,
-        summary: null,
-        isbn: null,
-        publish_date: null,
-      }));
-      totalHits = searchResponse.estimated_total_hits;
-    }
-  } else {
-    const booksPage = await fetchBooks(libraryId, undefined, page, limit, readingStatus, sort, undefined, format, metadataProvider).catch(() => ({
+  const [booksPage, searchResponse] = await Promise.all([
+    fetchBooks(libraryId, undefined, page, limit, readingStatus, sort, undefined, format, metadataProvider, searchQuery || undefined).catch(() => ({
       items: [] as BookDto[],
       total: 0,
       page: 1,
       limit,
-    }));
-    books = booksPage.items;
-    total = booksPage.total;
+    })),
+    searchQuery
+      ? searchBooks(searchQuery, libraryId, limit).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+
+  const books = booksPage.items;
+  const total = booksPage.total;
+  if (searchResponse) {
+    seriesHits = searchResponse.series_hits ?? [];
   }
 
-  const displayBooks = (searchResults || books).map(book => ({
+  const displayBooks = books.map(book => ({
     ...book,
     coverUrl: getBookCoverUrl(book.id)
   }));
@@ -142,11 +116,11 @@ export default async function BooksPage({
       </Card>
 
       {/* Résultats */}
-      {searchQuery && totalHits !== null ? (
+      {searchQuery ? (
         <p className="text-sm text-muted-foreground mb-4">
-          {t("books.resultCountFor", { count: String(totalHits), plural: totalHits !== 1 ? "s" : "", query: searchQuery })}
+          {t("books.resultCountFor", { count: String(total), plural: total !== 1 ? "s" : "", query: searchQuery })}
         </p>
-      ) : !searchQuery && (
+      ) : (
         <p className="text-sm text-muted-foreground mb-4">
           {t("books.resultCount", { count: String(total), plural: total !== 1 ? "s" : "" })}
         </p>
@@ -194,14 +168,12 @@ export default async function BooksPage({
           {searchQuery && <h2 className="text-lg font-semibold text-foreground mb-3">{t("books.title")}</h2>}
           <BooksGrid books={displayBooks} />
 
-          {!searchQuery && (
-            <OffsetPagination
-              currentPage={page}
-              totalPages={totalPages}
-              pageSize={limit}
-              totalItems={total}
-            />
-          )}
+          <OffsetPagination
+            currentPage={page}
+            totalPages={totalPages}
+            pageSize={limit}
+            totalItems={total}
+          />
         </>
       ) : (
         <EmptyState message={searchQuery ? t("books.noResults", { query: searchQuery }) : t("books.noBooks")} />

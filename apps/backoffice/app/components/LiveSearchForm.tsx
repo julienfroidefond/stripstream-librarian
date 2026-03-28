@@ -118,8 +118,13 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
   const textFields = fields.filter((f) => f.type === "text");
   const selectFields = fields.filter((f) => f.type === "select");
 
+  // Force remount when URL params change externally (back/forward, cookie redirect)
+  // so that defaultValue stays in sync with the URL.
+  const formKey = searchParams.toString();
+
   return (
     <form
+      key={formKey}
       ref={formRef}
       onSubmit={(e) => {
         e.preventDefault();

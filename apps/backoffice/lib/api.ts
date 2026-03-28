@@ -430,8 +430,10 @@ export async function fetchBooks(
   author?: string,
   format?: string,
   metadataProvider?: string,
+  q?: string,
 ): Promise<BooksPageDto> {
   const params = new URLSearchParams();
+  if (q) params.set("q", q);
   if (libraryId) params.set("library_id", libraryId);
   if (series) params.set("series", series);
   if (readingStatus) params.set("reading_status", readingStatus);

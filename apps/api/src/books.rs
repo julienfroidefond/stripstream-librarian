@@ -9,6 +9,9 @@ use crate::{auth::AuthUser, error::ApiError, index_jobs::IndexJobResponse, state
 
 #[derive(Deserialize, ToSchema)]
 pub struct ListBooksQuery {
+    /// Text search on title, series and author (case-insensitive, partial match)
+    #[schema(value_type = Option<String>, example = "dragon")]
+    pub q: Option<String>,
     #[schema(value_type = Option<String>)]
     pub library_id: Option<Uuid>,
     #[schema(value_type = Option<String>)]
@@ -104,6 +107,7 @@ pub struct BookDetails {
     path = "/books",
     tag = "books",
     params(
+        ("q" = Option<String>, Query, description = "Text search on title, series and author (case-insensitive, partial match)"),
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),
         ("kind" = Option<String>, Query, description = "Filter by book kind (cbz, cbr, pdf, epub)"),
         ("series" = Option<String>, Query, description = "Filter by series name (use 'unclassified' for books without series)"),
@@ -153,6 +157,9 @@ pub async fn list_books(
         Some(_) => { p += 1; format!("AND eml.provider = ${p}") },
         None => String::new(),
     };
+    let q_cond = if query.q.is_some() {
+        p += 1; format!("AND (b.title ILIKE ${p} OR b.series ILIKE ${p} OR b.author ILIKE ${p})")
+    } else { String::new() };
     p += 1;
     let uid_p = p;
 
@@ -176,7 +183,8 @@ pub async fn list_books(
              {series_cond}
              {rs_cond}
              {author_cond}
-             {metadata_cond}"#
+             {metadata_cond}
+             {q_cond}"#
     );
 
     let order_clause = if query.sort.as_deref() == Some("latest") {
@@ -205,6 +213,7 @@ pub async fn list_books(
           {rs_cond}
           {author_cond}
           {metadata_cond}
+          {q_cond}
         ORDER BY {order_clause}
         LIMIT ${limit_p} OFFSET ${offset_p}
         "#
@@ -238,6 +247,11 @@ pub async fn list_books(
             count_builder = count_builder.bind(mp.clone());
             data_builder = data_builder.bind(mp.clone());
         }
+    }
+    if let Some(ref q) = query.q {
+        let pattern = format!("%{q}%");
+        count_builder = count_builder.bind(pattern.clone());
+        data_builder = data_builder.bind(pattern);
     }
     count_builder = count_builder.bind(user_id);
     data_builder = data_builder.bind(user_id).bind(limit).bind(offset);
