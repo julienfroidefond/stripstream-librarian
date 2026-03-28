@@ -55,6 +55,10 @@ pub struct EventToggles {
     pub download_detection_completed: bool,
     #[serde(default = "default_true")]
     pub download_detection_failed: bool,
+    #[serde(default = "default_true")]
+    pub torrent_import_completed: bool,
+    #[serde(default = "default_true")]
+    pub torrent_import_failed: bool,
 }
 
 fn default_true() -> bool {
@@ -81,6 +85,8 @@ fn default_events() -> EventToggles {
         reading_status_push_failed: true,
         download_detection_completed: true,
         download_detection_failed: true,
+        torrent_import_completed: true,
+        torrent_import_failed: true,
     }
 }
 
@@ -294,6 +300,17 @@ pub enum NotificationEvent {
     },
     DownloadDetectionFailed {
         library_name: Option<String>,
+        error: String,
+    },
+    // Torrent import (qBittorrent download completed → files imported into library)
+    TorrentImportCompleted {
+        library_name: Option<String>,
+        series_name: String,
+        imported_count: usize,
+    },
+    TorrentImportFailed {
+        library_name: Option<String>,
+        series_name: String,
         error: String,
     },
 }
@@ -604,6 +621,38 @@ fn format_event(event: &NotificationEvent) -> String {
             ]
             .join("\n")
         }
+        NotificationEvent::TorrentImportCompleted {
+            library_name,
+            series_name,
+            imported_count,
+        } => {
+            let lib = library_name.as_deref().unwrap_or("Unknown");
+            [
+                format!("✅ <b>Torrent import completed</b>"),
+                String::new(),
+                format!("📂 <b>Library:</b> {lib}"),
+                format!("📚 <b>Series:</b> {series_name}"),
+                format!("📥 <b>Files imported:</b> {imported_count}"),
+            ]
+            .join("\n")
+        }
+        NotificationEvent::TorrentImportFailed {
+            library_name,
+            series_name,
+            error,
+        } => {
+            let lib = library_name.as_deref().unwrap_or("Unknown");
+            let err = truncate(error, 200);
+            [
+                format!("🚨 <b>Torrent import failed</b>"),
+                String::new(),
+                format!("📂 <b>Library:</b> {lib}"),
+                format!("📚 <b>Series:</b> {series_name}"),
+                String::new(),
+                format!("💬 <code>{err}</code>"),
+            ]
+            .join("\n")
+        }
     }
 }
 
@@ -650,6 +699,8 @@ fn is_event_enabled(config: &TelegramConfig, event: &NotificationEvent) -> bool 
         NotificationEvent::ReadingStatusPushFailed { .. } => config.events.reading_status_push_failed,
         NotificationEvent::DownloadDetectionCompleted { .. } => config.events.download_detection_completed,
         NotificationEvent::DownloadDetectionFailed { .. } => config.events.download_detection_failed,
+        NotificationEvent::TorrentImportCompleted { .. } => config.events.torrent_import_completed,
+        NotificationEvent::TorrentImportFailed { .. } => config.events.torrent_import_failed,
     }
 }
 

@@ -410,8 +410,8 @@ async fn is_torrent_import_enabled(pool: &PgPool) -> bool {
 
 async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Result<()> {
     let row = sqlx::query(
-        "SELECT library_id, series_name, expected_volumes, content_path, qb_hash, replace_existing \
-         FROM torrent_downloads WHERE id = $1",
+        "SELECT td.library_id, td.series_name, td.expected_volumes, td.content_path, td.qb_hash, td.replace_existing, l.name AS library_name \
+         FROM torrent_downloads td LEFT JOIN libraries l ON l.id = td.library_id WHERE td.id = $1",
     )
     .bind(torrent_id)
     .fetch_one(&pool)
@@ -419,6 +419,7 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
 
     let library_id: Uuid = row.get("library_id");
     let series_name: String = row.get("series_name");
+    let library_name: Option<String> = row.get("library_name");
     let expected_volumes: Vec<i32> = row.get("expected_volumes");
     let content_path: Option<String> = row.get("content_path");
     let qb_hash: Option<String> = row.get("qb_hash");
@@ -569,6 +570,15 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
                 }
             }
 
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::TorrentImportCompleted {
+                    library_name: library_name.clone(),
+                    series_name: series_name.clone(),
+                    imported_count: imported.len(),
+                },
+            );
+
             info!(
                 "Torrent import {} done: {} files imported, scan job {} queued",
                 torrent_id,
@@ -586,6 +596,15 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
             .bind(torrent_id)
             .execute(&pool)
             .await?;
+
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::TorrentImportFailed {
+                    library_name: library_name.clone(),
+                    series_name: series_name.clone(),
+                    error: msg,
+                },
+            );
         }
     }
 
