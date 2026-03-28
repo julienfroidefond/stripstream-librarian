@@ -677,10 +677,15 @@ async fn do_import(
 
     info!("[IMPORT] Final reference: {:?}", reference);
 
+    // Collect all candidate files, then deduplicate by volume keeping the best format.
+    // Priority: cbz > cbr > pdf > epub
+    let all_source_files = collect_book_files(&physical_content)?;
+    let source_files = deduplicate_by_format(&all_source_files, &expected_set);
+
     let mut imported = Vec::new();
     let mut used_destinations: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    for source_path in collect_book_files(&physical_content)? {
+    for source_path in &source_files {
         let filename = std::path::Path::new(&source_path)
             .file_name()
             .and_then(|n| n.to_str())
@@ -764,6 +769,67 @@ async fn do_import(
     }
 
     Ok(imported)
+}
+
+// ─── Format deduplication ─────────────────────────────────────────────────────
+
+/// When a download contains the same volume in multiple formats (e.g. T01.cbz and T01.pdf),
+/// keep only the best format per volume. Priority: cbz > cbr > pdf > epub.
+fn format_priority(ext: &str) -> u8 {
+    match ext.to_ascii_lowercase().as_str() {
+        "cbz" => 0,
+        "cbr" => 1,
+        "pdf" => 2,
+        "epub" => 3,
+        _ => 4,
+    }
+}
+
+fn deduplicate_by_format(
+    files: &[String],
+    expected_set: &std::collections::HashSet<i32>,
+) -> Vec<String> {
+    // Map: volume -> (priority, file_path)
+    let mut best_per_vol: std::collections::HashMap<i32, (u8, &str)> = std::collections::HashMap::new();
+    let mut multi_volume_files: Vec<&str> = Vec::new();
+
+    for path in files {
+        let filename = std::path::Path::new(path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        let ext = std::path::Path::new(path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        let volumes: Vec<i32> = extract_volumes_from_title_pub(filename)
+            .into_iter()
+            .filter(|v| expected_set.contains(v))
+            .collect();
+
+        if volumes.is_empty() {
+            continue;
+        }
+
+        if volumes.len() > 1 {
+            // Multi-volume packs are always kept (no dedup possible)
+            multi_volume_files.push(path);
+            continue;
+        }
+
+        let vol = volumes[0];
+        let prio = format_priority(ext);
+        if best_per_vol.get(&vol).map_or(true, |(p, _)| prio < *p) {
+            best_per_vol.insert(vol, (prio, path));
+        }
+    }
+
+    let mut result: Vec<String> = best_per_vol
+        .into_values()
+        .map(|(_, path)| path.to_string())
+        .collect();
+    result.extend(multi_volume_files.into_iter().map(|s| s.to_string()));
+    result
 }
 
 // ─── Reference from disk ──────────────────────────────────────────────────────
