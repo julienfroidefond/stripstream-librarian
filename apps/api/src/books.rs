@@ -180,7 +180,7 @@ pub async fn list_books(
     );
 
     let order_clause = if query.sort.as_deref() == Some("latest") {
-        "b.updated_at DESC".to_string()
+        "b.created_at DESC".to_string()
     } else {
         "b.volume NULLS LAST, REGEXP_REPLACE(LOWER(b.title), '[0-9].*$', ''), COALESCE((REGEXP_MATCH(LOWER(b.title), '\\d+'))[1]::int, 0), b.title ASC".to_string()
     };

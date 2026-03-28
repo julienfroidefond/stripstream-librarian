@@ -458,7 +458,7 @@ pub async fn list_all_series(
     );
 
     let series_order_clause = if query.sort.as_deref() == Some("latest") {
-        "sc.latest_updated_at DESC".to_string()
+        "sc.latest_created_at DESC".to_string()
     } else {
         "REGEXP_REPLACE(LOWER(sc.name), '[0-9].*$', ''), COALESCE((REGEXP_MATCH(LOWER(sc.name), '\\d+'))[1]::int, 0), sc.name ASC".to_string()
     };
@@ -470,7 +470,7 @@ pub async fn list_all_series(
                 COALESCE(NULLIF(series, ''), 'unclassified') as name,
                 id,
                 library_id,
-                updated_at,
+                created_at,
                 ROW_NUMBER() OVER (
                     PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified')
                     ORDER BY
@@ -488,7 +488,7 @@ pub async fn list_all_series(
                 sb.library_id,
                 COUNT(*) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count,
-                MAX(sb.updated_at) as latest_updated_at
+                MAX(sb.created_at) as latest_created_at
             FROM sorted_books sb
             LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
             GROUP BY sb.name, sb.library_id
