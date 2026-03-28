@@ -161,7 +161,10 @@ fn extract_volumes_from_title(title: &str) -> Vec<i32> {
                 while k < chars.len() && chars[k] == ' ' {
                     k += 1;
                 }
-                if let Some((n2, _)) = read_vol_prefix_number(&chars, k) {
+                // Try prefixed number first (T17-T23), then bare number (T17-23)
+                let n2_result = read_vol_prefix_number(&chars, k)
+                    .or_else(|| read_bare_number(&chars, k));
+                if let Some((n2, _)) = n2_result {
                     if n1 < n2 && n2 - n1 <= 500 {
                         for v in n1..=n2 {
                             if !volumes.contains(&v) {
@@ -237,6 +240,19 @@ fn extract_volumes_from_title(title: &str) -> Vec<i32> {
     }
 
     volumes
+}
+
+/// Read a bare number (no prefix) at `pos`. Returns `(number, position_after_last_digit)`.
+fn read_bare_number(chars: &[char], pos: usize) -> Option<(i32, usize)> {
+    let mut i = pos;
+    while i < chars.len() && chars[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i == pos {
+        return None;
+    }
+    let n: i32 = chars[pos..i].iter().collect::<String>().parse().ok()?;
+    Some((n, i))
 }
 
 /// Try to read a vol-prefixed number starting at `pos` in the `chars` slice.
@@ -555,6 +571,15 @@ mod tests {
         // Tome01.Tome15
         let v = sorted(extract_volumes_from_title("Naruto Tome01.Tome15"));
         assert_eq!(v, (1..=15).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn range_dash_bare_end() {
+        // T17-23 (no prefix on second number) → 17..=23
+        let v = sorted(extract_volumes_from_title(
+            "Compressé.Demon.Slayer.en.couleurs.T17-23.CBZ.Team.Chromatique",
+        ));
+        assert_eq!(v, (17..=23).collect::<Vec<_>>());
     }
 
     #[test]

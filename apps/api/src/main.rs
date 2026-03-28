@@ -162,6 +162,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/download-detection/latest-found", get(download_detection::get_latest_found))
         .route("/download-detection/:id/report", get(download_detection::get_detection_report))
         .route("/download-detection/:id/results", get(download_detection::get_detection_results))
+        .route("/available-downloads/:id", axum::routing::delete(download_detection::delete_available_download))
         .merge(settings::settings_routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),

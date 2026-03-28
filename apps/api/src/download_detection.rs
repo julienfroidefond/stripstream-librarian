@@ -1,4 +1,4 @@
-use axum::{extract::State, Json};
+use axum::{extract::{Path, State}, Json};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 use tracing::{info, warn};
@@ -416,6 +416,82 @@ pub async fn get_latest_found(
     }
 
     Ok(Json(libs.into_values().collect()))
+}
+
+/// Delete an available download entry, or a single release within it.
+///
+/// - Without `?release=N`: deletes the entire series entry.
+/// - With `?release=N`: removes release at index N from the array;
+///   if the array becomes empty, the entire entry is deleted.
+#[utoipa::path(
+    delete,
+    path = "/available-downloads/{id}",
+    tag = "download_detection",
+    params(
+        ("id" = String, Path, description = "Available download ID"),
+        ("release" = Option<usize>, Query, description = "Release index to remove (omit to delete entire entry)"),
+    ),
+    responses(
+        (status = 200, description = "Deleted"),
+        (status = 404, description = "Not found"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn delete_available_download(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    axum::extract::Query(query): axum::extract::Query<DeleteAvailableQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    if let Some(release_idx) = query.release {
+        // Remove a single release from the JSON array
+        let row = sqlx::query("SELECT available_releases FROM available_downloads WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| ApiError::not_found("available download not found"))?;
+
+        let releases_json: Option<serde_json::Value> = row.get("available_releases");
+        if let Some(serde_json::Value::Array(mut releases)) = releases_json {
+            if release_idx >= releases.len() {
+                return Err(ApiError::bad_request("release index out of bounds"));
+            }
+            releases.remove(release_idx);
+
+            if releases.is_empty() {
+                sqlx::query("DELETE FROM available_downloads WHERE id = $1")
+                    .bind(id)
+                    .execute(&state.pool)
+                    .await?;
+            } else {
+                sqlx::query(
+                    "UPDATE available_downloads SET available_releases = $1, updated_at = NOW() WHERE id = $2",
+                )
+                .bind(serde_json::Value::Array(releases))
+                .bind(id)
+                .execute(&state.pool)
+                .await?;
+            }
+        } else {
+            return Err(ApiError::not_found("no releases found"));
+        }
+    } else {
+        // Delete the entire entry
+        let result = sqlx::query("DELETE FROM available_downloads WHERE id = $1")
+            .bind(id)
+            .execute(&state.pool)
+            .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(ApiError::not_found("available download not found"));
+        }
+    }
+
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+pub struct DeleteAvailableQuery {
+    pub release: Option<usize>,
 }
 
 // ---------------------------------------------------------------------------

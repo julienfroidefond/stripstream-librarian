@@ -198,7 +198,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
             </h2>
             <div className="space-y-6">
               {latestFound.map(lib => (
-                <AvailableLibraryCard key={lib.library_id} lib={lib} />
+                <AvailableLibraryCard key={lib.library_id} lib={lib} onDeleted={() => refresh(false)} />
               ))}
             </div>
           </div>
@@ -342,10 +342,22 @@ function DownloadRow({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: () 
   );
 }
 
-function AvailableLibraryCard({ lib }: { lib: LatestFoundPerLibraryDto }) {
+function AvailableLibraryCard({ lib, onDeleted }: { lib: LatestFoundPerLibraryDto; onDeleted: () => void }) {
   const { t } = useTranslation();
   const [collapsed, setCollapsed] = useState(true);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const displayResults = collapsed ? lib.results.slice(0, 5) : lib.results;
+
+  async function handleDeleteRelease(seriesId: string, releaseIdx: number) {
+    const key = `${seriesId}-${releaseIdx}`;
+    setDeletingKey(key);
+    try {
+      const resp = await fetch(`/api/available-downloads/${seriesId}?release=${releaseIdx}`, { method: "DELETE" });
+      if (resp.ok) onDeleted();
+    } finally {
+      setDeletingKey(null);
+    }
+  }
 
   return (
     <Card>
@@ -390,8 +402,8 @@ function AvailableLibraryCard({ lib }: { lib: LatestFoundPerLibraryDto }) {
                         </div>
                       </div>
                     </div>
-                    {release.download_url && (
-                      <div className="self-end sm:self-auto shrink-0">
+                    <div className="flex items-center gap-1 self-end sm:self-auto shrink-0">
+                      {release.download_url && (
                         <QbittorrentDownloadButton
                           downloadUrl={release.download_url}
                           releaseId={`${r.id}-${idx}`}
@@ -400,8 +412,19 @@ function AvailableLibraryCard({ lib }: { lib: LatestFoundPerLibraryDto }) {
                           expectedVolumes={release.matched_missing_volumes}
                           allVolumes={release.all_volumes}
                         />
-                      </div>
-                    )}
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRelease(r.id, idx)}
+                        disabled={deletingKey === `${r.id}-${idx}`}
+                        className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
+                        title={t("downloads.delete")}
+                      >
+                        {deletingKey === `${r.id}-${idx}`
+                          ? <Icon name="spinner" size="sm" className="animate-spin" />
+                          : <Icon name="trash" size="sm" />}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
