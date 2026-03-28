@@ -446,6 +446,22 @@ pub(crate) async fn process_download_detection(
     .await
     .map_err(|e| e.to_string())?;
 
+    // Clean up available_downloads for series that no longer exist in books
+    sqlx::query(
+        r#"
+        DELETE FROM available_downloads
+        WHERE library_id = $1
+          AND series_name NOT IN (
+            SELECT DISTINCT COALESCE(NULLIF(series, ''), 'unclassified')
+            FROM books WHERE library_id = $1
+          )
+        "#,
+    )
+    .bind(library_id)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
     let total = all_series.len() as i32;
     sqlx::query("UPDATE index_jobs SET total_files = $2 WHERE id = $1")
         .bind(job_id)
