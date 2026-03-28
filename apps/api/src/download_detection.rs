@@ -490,6 +490,7 @@ pub(crate) async fn process_download_detection(
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
+        .user_agent("Stripstream-Librarian")
         .build()
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 

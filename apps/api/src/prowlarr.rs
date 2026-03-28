@@ -377,6 +377,7 @@ pub async fn search_prowlarr(
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
+        .user_agent("Stripstream-Librarian")
         .build()
         .map_err(|e| ApiError::internal(format!("failed to build HTTP client: {e}")))?;
 
@@ -466,6 +467,7 @@ pub async fn test_prowlarr(
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
+        .user_agent("Stripstream-Librarian")
         .build()
         .map_err(|e| ApiError::internal(format!("failed to build HTTP client: {e}")))?;
 

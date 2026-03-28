@@ -137,14 +137,47 @@ pub async fn add_torrent(
         && body.series_name.is_some()
         && body.expected_volumes.is_some();
 
-    let (base_url, username, password) = load_qbittorrent_config(&state.pool).await?;
+    tracing::info!("[QBITTORRENT] Add torrent request: url={}, managed={is_managed}", body.url);
+
+    let (base_url, username, password) = load_qbittorrent_config(&state.pool).await.map_err(|e| {
+        tracing::error!("[QBITTORRENT] Failed to load config: {}", e.message);
+        e
+    })?;
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(30))
         .build()
-        .map_err(|e| ApiError::internal(format!("failed to build HTTP client: {e}")))?;
+        .map_err(|e| {
+            tracing::error!("[QBITTORRENT] Failed to build HTTP client: {e}");
+            ApiError::internal(format!("failed to build HTTP client: {e}"))
+        })?;
 
-    let sid = qbittorrent_login(&client, &base_url, &username, &password).await?;
+    // Resolve the URL: if it's an HTTP(S) link (e.g. Prowlarr proxy), follow redirects
+    // and download the .torrent file ourselves, since qBittorrent may not handle redirects.
+    // If the final URL is a magnet, use it directly.
+    let resolved = resolve_torrent_url(&body.url).await.map_err(|e| {
+        tracing::error!("[QBITTORRENT] Failed to resolve torrent URL: {e}");
+        ApiError::internal(format!("Failed to resolve torrent URL: {e}"))
+    })?;
+    let resolved_magnet_url; // keep owned String alive for borrowing
+    let torrent_bytes: Option<Vec<u8>>;
+    match resolved {
+        ResolvedTorrent::Magnet(m) => {
+            tracing::info!("[QBITTORRENT] Resolved to magnet link");
+            resolved_magnet_url = Some(m);
+            torrent_bytes = None;
+        }
+        ResolvedTorrent::TorrentFile(bytes) => {
+            tracing::info!("[QBITTORRENT] Resolved to .torrent file ({} bytes)", bytes.len());
+            resolved_magnet_url = None;
+            torrent_bytes = Some(bytes);
+        }
+    }
+
+    let sid = qbittorrent_login(&client, &base_url, &username, &password).await.map_err(|e| {
+        tracing::error!("[QBITTORRENT] Login failed: {}", e.message);
+        e
+    })?;
 
     // Pre-generate the download ID; use a unique category per download so we can
     // reliably match the torrent back (tags/savepath are unreliable on qBittorrent 4.x).
@@ -161,26 +194,52 @@ pub async fn add_torrent(
             .await;
     }
 
-    let mut form_params: Vec<(&str, &str)> = vec![("urls", &body.url)];
     let savepath = "/downloads";
-    if is_managed {
-        form_params.push(("savepath", savepath));
-        if let Some(ref cat) = category {
-            form_params.push(("category", cat));
-        }
-    }
 
-    let resp = client
-        .post(format!("{base_url}/api/v2/torrents/add"))
-        .header("Cookie", format!("SID={sid}"))
-        .form(&form_params)
-        .send()
-        .await
-        .map_err(|e| ApiError::internal(format!("qBittorrent add request failed: {e}")))?;
+    let resp = if let Some(ref torrent_data) = torrent_bytes {
+        // Upload .torrent file via multipart
+        let mut form = reqwest::multipart::Form::new()
+            .part("torrents", reqwest::multipart::Part::bytes(torrent_data.clone())
+                .file_name("torrent.torrent")
+                .mime_str("application/x-bittorrent")
+                .unwrap());
+        if is_managed {
+            form = form.text("savepath", savepath.to_string());
+            if let Some(ref cat) = category {
+                form = form.text("category", cat.clone());
+            }
+        }
+        client
+            .post(format!("{base_url}/api/v2/torrents/add"))
+            .header("Cookie", format!("SID={sid}"))
+            .multipart(form)
+            .send()
+            .await
+    } else {
+        // Pass magnet URL or original URL directly
+        let url_to_send = resolved_magnet_url.as_deref().unwrap_or(&body.url);
+        let mut form_params: Vec<(&str, &str)> = vec![("urls", url_to_send)];
+        if is_managed {
+            form_params.push(("savepath", savepath));
+            if let Some(ref cat) = category {
+                form_params.push(("category", cat));
+            }
+        }
+        client
+            .post(format!("{base_url}/api/v2/torrents/add"))
+            .header("Cookie", format!("SID={sid}"))
+            .form(&form_params)
+            .send()
+            .await
+    }.map_err(|e| {
+        tracing::error!("[QBITTORRENT] Add torrent request failed: {e}");
+        ApiError::internal(format!("qBittorrent add request failed: {e}"))
+    })?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
+        tracing::error!("[QBITTORRENT] Add torrent failed — status={status}, body={text}");
         return Ok(Json(QBittorrentAddResponse {
             success: false,
             message: format!("qBittorrent returned {status}: {text}"),
@@ -216,9 +275,13 @@ pub async fn add_torrent(
         .bind(qb_hash.as_deref())
         .bind(body.replace_existing)
         .execute(&state.pool)
-        .await?;
+        .await
+        .map_err(|e| {
+            tracing::error!("[QBITTORRENT] Failed to insert torrent_downloads row: {e}");
+            ApiError::from(e)
+        })?;
 
-        tracing::info!("Created torrent download {id} for {series_name}, qb_hash={qb_hash:?}");
+        tracing::info!("[QBITTORRENT] Created torrent download {id} for {series_name}, qb_hash={qb_hash:?}");
 
         Some(id)
     } else {
@@ -230,6 +293,76 @@ pub async fn add_torrent(
         message: "Torrent added to qBittorrent".to_string(),
         torrent_download_id,
     }))
+}
+
+// ─── URL resolution ─────────────────────────────────────────────────────────
+
+enum ResolvedTorrent {
+    Magnet(String),
+    TorrentFile(Vec<u8>),
+}
+
+/// Resolve a torrent URL: if it's already a magnet link, return as-is.
+/// Otherwise follow HTTP redirects. If the final URL is a magnet, return it.
+/// If the response is a .torrent file, return the bytes.
+async fn resolve_torrent_url(
+    url: &str,
+) -> Result<ResolvedTorrent, String> {
+    // Already a magnet link — nothing to resolve
+    if url.starts_with("magnet:") {
+        return Ok(ResolvedTorrent::Magnet(url.to_string()));
+    }
+
+    // Build a client that does NOT follow redirects so we can inspect Location headers
+    let no_redirect_client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent("Stripstream-Librarian")
+        .build()
+        .map_err(|e| format!("failed to build redirect client: {e}"))?;
+
+    let mut current_url = url.to_string();
+    for _ in 0..10 {
+        let resp = no_redirect_client
+            .get(&current_url)
+            .send()
+            .await
+            .map_err(|e| format!("HTTP request failed for {current_url}: {e}"))?;
+
+        let status = resp.status();
+        if status.is_redirection() {
+            if let Some(location) = resp.headers().get("location").and_then(|v| v.to_str().ok()) {
+                let location = location.to_string();
+                if location.starts_with("magnet:") {
+                    tracing::info!("[QBITTORRENT] URL redirected to magnet link");
+                    return Ok(ResolvedTorrent::Magnet(location));
+                }
+                tracing::debug!("[QBITTORRENT] Following redirect: {status} -> {location}");
+                current_url = location;
+                continue;
+            }
+            return Err(format!("redirect {status} without Location header"));
+        }
+
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("HTTP {status}: {text}"));
+        }
+
+        // Successful response — download the .torrent file
+        let bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| format!("failed to read response body: {e}"))?;
+
+        if bytes.is_empty() {
+            return Err("empty response body".to_string());
+        }
+
+        return Ok(ResolvedTorrent::TorrentFile(bytes.to_vec()));
+    }
+
+    Err("too many redirects".to_string())
 }
 
 /// Extract the info-hash from a magnet link (lowercased hex).
