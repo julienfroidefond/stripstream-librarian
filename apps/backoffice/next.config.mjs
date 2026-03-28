@@ -6,6 +6,11 @@ const nextConfig = {
     minimumCacheTTL: 86400,
     unoptimized: true,
   },
+  experimental: {
+    staleTimes: {
+      dynamic: 0,
+    },
+  },
 };
 
 export default nextConfig;
