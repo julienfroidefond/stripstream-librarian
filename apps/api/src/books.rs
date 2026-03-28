@@ -666,3 +666,81 @@ pub async fn get_thumbnail(
 
     Ok((StatusCode::OK, headers, Body::from(data)))
 }
+
+// ─── Delete book ───────────────────────────────────────────────────────────────
+
+/// Delete a book: removes the physical file, the DB record, and queues a library scan.
+#[utoipa::path(
+    delete,
+    path = "/books/{id}",
+    tag = "books",
+    params(("id" = String, Path, description = "Book UUID")),
+    responses(
+        (status = 200, description = "Book deleted"),
+        (status = 404, description = "Book not found"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn delete_book(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    // Fetch the book and its file path
+    let row = sqlx::query(
+        "SELECT b.library_id, b.thumbnail_path, bf.abs_path \
+         FROM books b \
+         LEFT JOIN book_files bf ON bf.book_id = b.id \
+         WHERE b.id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let row = row.ok_or_else(|| ApiError::not_found("book not found"))?;
+    let library_id: Uuid = row.get("library_id");
+    let abs_path: Option<String> = row.get("abs_path");
+    let thumbnail_path: Option<String> = row.get("thumbnail_path");
+
+    // Delete the physical file
+    if let Some(ref path) = abs_path {
+        let physical = remap_libraries_path(path);
+        match std::fs::remove_file(&physical) {
+            Ok(()) => tracing::info!("[BOOKS] Deleted file: {}", physical),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                tracing::warn!("[BOOKS] File already missing: {}", physical);
+            }
+            Err(e) => {
+                tracing::error!("[BOOKS] Failed to delete file {}: {}", physical, e);
+                return Err(ApiError::internal(format!("failed to delete file: {e}")));
+            }
+        }
+    }
+
+    // Delete the thumbnail file
+    if let Some(ref path) = thumbnail_path {
+        let _ = std::fs::remove_file(path);
+    }
+
+    // Delete from DB (book_files cascade via ON DELETE CASCADE)
+    sqlx::query("DELETE FROM books WHERE id = $1")
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+
+    // Queue a scan job for the library so the index stays consistent
+    let scan_job_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'scan', 'pending')",
+    )
+    .bind(scan_job_id)
+    .bind(library_id)
+    .execute(&state.pool)
+    .await?;
+
+    tracing::info!(
+        "[BOOKS] Deleted book {}, scan job {} queued for library {}",
+        id, scan_job_id, library_id
+    );
+
+    Ok(Json(serde_json::json!({ "ok": true })))
+}

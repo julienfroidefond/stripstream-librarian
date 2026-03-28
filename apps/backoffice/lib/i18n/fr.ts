@@ -760,6 +760,8 @@ const fr = {
   "bookDetail.fileFormat": "Format fichier",
   "bookDetail.parsing": "Parsing",
   "bookDetail.updatedAt": "Mis à jour",
+  "bookDetail.delete": "Supprimer",
+  "bookDetail.confirmDelete": "Le fichier sera définitivement supprimé du disque. Cette action est irréversible.",
 
   // Book preview
   "bookPreview.preview": "Aperçu",

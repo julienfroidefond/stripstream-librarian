@@ -100,7 +100,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/libraries/:id/monitoring", axum::routing::patch(libraries::update_monitoring))
         .route("/libraries/:id/metadata-provider", axum::routing::patch(libraries::update_metadata_provider))
         .route("/libraries/:id/reading-status-provider", axum::routing::patch(libraries::update_reading_status_provider))
-        .route("/books/:id", axum::routing::patch(books::update_book))
+        .route("/books/:id", axum::routing::patch(books::update_book).delete(books::delete_book))
         .route("/books/:id/convert", axum::routing::post(books::convert_book))
         .route("/libraries/:library_id/series/:name", axum::routing::patch(series::update_series))
         .route("/index/rebuild", axum::routing::post(index_jobs::enqueue_rebuild))

@@ -628,7 +628,9 @@ async fn do_import(
         "SELECT bf.abs_path, b.volume \
          FROM book_files bf \
          JOIN books b ON b.id = bf.book_id \
-         WHERE b.library_id = $1 AND LOWER(b.series) = LOWER($2) AND b.volume IS NOT NULL \
+         WHERE b.library_id = $1 \
+           AND LOWER(unaccent(b.series)) = LOWER(unaccent($2)) \
+           AND b.volume IS NOT NULL \
          ORDER BY b.volume DESC LIMIT 1",
     )
     .bind(library_id)
@@ -647,7 +649,8 @@ async fn do_import(
         info!("[IMPORT] DB reference found: {} (volume {}), target_dir={}", abs_path, volume, parent);
         (parent, Some((abs_path, volume)))
     } else {
-        // No existing files in DB: create series directory inside library root
+        // No existing files in DB: look for an existing directory (case-insensitive)
+        // inside the library root, then fall back to creating one.
         info!("[IMPORT] No DB reference for series '{}' in library {}", series_name, library_id);
         let lib_row = sqlx::query("SELECT root_path FROM libraries WHERE id = $1")
             .bind(library_id)
@@ -655,7 +658,9 @@ async fn do_import(
             .await?;
         let root_path: String = lib_row.get("root_path");
         let physical_root = remap_libraries_path(&root_path);
-        let dir = format!("{}/{}", physical_root.trim_end_matches('/'), series_name);
+        let dir = find_existing_series_dir(&physical_root, series_name)
+            .unwrap_or_else(|| format!("{}/{}", physical_root.trim_end_matches('/'), series_name));
+        info!("[IMPORT] Target directory: {}", dir);
         (dir, None)
     };
 
@@ -769,6 +774,59 @@ async fn do_import(
     }
 
     Ok(imported)
+}
+
+// ─── Directory matching ───────────────────────────────────────────────────────
+
+/// Find an existing directory in `root` whose name matches `series_name`
+/// case-insensitively and accent-insensitively (e.g. "les géants" matches "les geants").
+fn find_existing_series_dir(root: &str, series_name: &str) -> Option<String> {
+    let target_norm = strip_accents(&series_name.to_lowercase());
+    let entries = std::fs::read_dir(root).ok()?;
+    let mut best: Option<(String, bool)> = None; // (path, is_exact_case_match)
+    for entry in entries.flatten() {
+        if !entry.file_type().ok().map_or(false, |t| t.is_dir()) {
+            continue;
+        }
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        let name_lower = name_str.to_lowercase();
+        let name_norm = strip_accents(&name_lower);
+        if name_norm == target_norm {
+            let path = entry.path().to_string_lossy().into_owned();
+            let exact = name_lower == series_name.to_lowercase();
+            info!("[IMPORT] Found existing directory (normalized match): {} (exact={})", path, exact);
+            // Prefer exact case match over accent-stripped match
+            if exact || best.is_none() {
+                best = Some((path, exact));
+            }
+        }
+    }
+    best.map(|(p, _)| p)
+}
+
+/// Remove diacritical marks from a string (é→e, à→a, ü→u, etc.)
+fn strip_accents(s: &str) -> String {
+    use std::fmt::Write;
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        // Decompose the character and skip combining marks (U+0300..U+036F)
+        // Map common accented chars to their base letter
+        let _ = match c {
+            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' => result.write_char('a'),
+            'è' | 'é' | 'ê' | 'ë' => result.write_char('e'),
+            'ì' | 'í' | 'î' | 'ï' => result.write_char('i'),
+            'ò' | 'ó' | 'ô' | 'õ' | 'ö' => result.write_char('o'),
+            'ù' | 'ú' | 'û' | 'ü' => result.write_char('u'),
+            'ý' | 'ÿ' => result.write_char('y'),
+            'ñ' => result.write_char('n'),
+            'ç' => result.write_char('c'),
+            'æ' => result.write_str("ae"),
+            'œ' => result.write_str("oe"),
+            _ => result.write_char(c),
+        };
+    }
+    result
 }
 
 // ─── Format deduplication ─────────────────────────────────────────────────────

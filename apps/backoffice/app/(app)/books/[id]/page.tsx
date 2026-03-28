@@ -1,6 +1,7 @@
 import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch, ReadingStatus } from "@/lib/api";
 import { BookPreview } from "@/app/components/BookPreview";
 import { ConvertButton } from "@/app/components/ConvertButton";
+import { DeleteBookButton } from "@/app/components/DeleteBookButton";
 import { MarkBookReadButton } from "@/app/components/MarkBookReadButton";
 import nextDynamic from "next/dynamic";
 import { SafeHtml } from "@/app/components/SafeHtml";
@@ -147,6 +148,7 @@ export default async function BookDetailPage({
             )}
             <MarkBookReadButton bookId={book.id} currentStatus={book.reading_status} />
             {book.file_format === "cbr" && <ConvertButton bookId={book.id} />}
+            <DeleteBookButton bookId={book.id} libraryId={book.library_id} />
           </div>
 
           {/* Metadata pills */}
