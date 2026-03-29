@@ -1076,3 +1076,133 @@ pub async fn update_series(
 
     Ok(Json(UpdateSeriesResponse { updated: result.rows_affected() }))
 }
+
+/// Delete an entire series: removes all books (files + DB), the series folder,
+/// and all related metadata (external links, anilist, available downloads).
+#[utoipa::path(
+    delete,
+    path = "/libraries/{library_id}/series/{name}",
+    tag = "series",
+    params(
+        ("library_id" = String, Path, description = "Library UUID"),
+        ("name" = String, Path, description = "Series name (URL-encoded)"),
+    ),
+    responses(
+        (status = 200, description = "Series deleted"),
+        (status = 404, description = "Series not found"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn delete_series(
+    State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
+    Path((library_id, name)): Path<(Uuid, String)>,
+) -> Result<Json<crate::responses::DeletedResponse>, ApiError> {
+    use stripstream_core::paths::remap_libraries_path;
+
+    // Find all books in this series
+    let book_rows = sqlx::query(
+        "SELECT b.id, b.thumbnail_path, bf.abs_path \
+         FROM books b \
+         LEFT JOIN book_files bf ON bf.book_id = b.id \
+         WHERE b.library_id = $1 AND LOWER(COALESCE(NULLIF(b.series, ''), 'unclassified')) = LOWER($2)",
+    )
+    .bind(library_id)
+    .bind(&name)
+    .fetch_all(&state.pool)
+    .await?;
+
+    if book_rows.is_empty() {
+        return Err(ApiError::not_found("series not found or has no books"));
+    }
+
+    // Collect the series directory from the first book's path
+    let mut series_dir: Option<String> = None;
+
+    // Delete each book's physical file and thumbnail
+    for row in &book_rows {
+        let abs_path: Option<String> = row.get("abs_path");
+        let thumbnail_path: Option<String> = row.get("thumbnail_path");
+
+        if let Some(ref path) = abs_path {
+            let physical = remap_libraries_path(path);
+            if series_dir.is_none() {
+                if let Some(parent) = std::path::Path::new(&physical).parent() {
+                    series_dir = Some(parent.to_string_lossy().into_owned());
+                }
+            }
+            match std::fs::remove_file(&physical) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    tracing::warn!("[SERIES] Failed to delete file {}: {}", physical, e);
+                }
+            }
+        }
+
+        if let Some(ref path) = thumbnail_path {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    // Delete the series directory if it's now empty (or only has non-book files)
+    if let Some(ref dir) = series_dir {
+        match std::fs::remove_dir_all(dir) {
+            Ok(()) => tracing::info!("[SERIES] Deleted series directory: {}", dir),
+            Err(e) => tracing::warn!("[SERIES] Failed to delete series directory {}: {}", dir, e),
+        }
+    }
+
+    // Delete all books from DB (cascades to book_files, reading_progress, etc.)
+    let book_ids: Vec<Uuid> = book_rows.iter().map(|r| r.get("id")).collect();
+    sqlx::query("DELETE FROM books WHERE id = ANY($1)")
+        .bind(&book_ids)
+        .execute(&state.pool)
+        .await?;
+
+    // Delete series metadata
+    sqlx::query("DELETE FROM series_metadata WHERE library_id = $1 AND name = $2")
+        .bind(library_id)
+        .bind(&name)
+        .execute(&state.pool)
+        .await?;
+
+    // Delete external metadata links (cascades to external_book_metadata)
+    sqlx::query("DELETE FROM external_metadata_links WHERE library_id = $1 AND LOWER(series_name) = LOWER($2)")
+        .bind(library_id)
+        .bind(&name)
+        .execute(&state.pool)
+        .await?;
+
+    // Delete anilist link
+    let _ = sqlx::query("DELETE FROM anilist_series_links WHERE library_id = $1 AND LOWER(series_name) = LOWER($2)")
+        .bind(library_id)
+        .bind(&name)
+        .execute(&state.pool)
+        .await;
+
+    // Delete available downloads
+    let _ = sqlx::query("DELETE FROM available_downloads WHERE library_id = $1 AND LOWER(series_name) = LOWER($2)")
+        .bind(library_id)
+        .bind(&name)
+        .execute(&state.pool)
+        .await;
+
+    // Queue a scan job for consistency
+    let scan_job_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'scan', 'pending')",
+    )
+    .bind(scan_job_id)
+    .bind(library_id)
+    .execute(&state.pool)
+    .await?;
+
+    tracing::info!(
+        "[SERIES] Deleted series '{}' ({} books) from library {}, scan job {} queued",
+        name, book_ids.len(), library_id, scan_job_id
+    );
+
+    Ok(Json(crate::responses::DeletedResponse::new(library_id)))
+}

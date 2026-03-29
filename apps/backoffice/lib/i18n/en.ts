@@ -764,6 +764,8 @@ const en: Record<TranslationKey, string> = {
   "bookDetail.updatedAt": "Updated",
   "bookDetail.delete": "Delete",
   "bookDetail.confirmDelete": "The file will be permanently deleted from disk. This action cannot be undone.",
+  "seriesDetail.delete": "Delete series",
+  "seriesDetail.confirmDelete": "All books and the series folder will be permanently deleted from disk. This action cannot be undone.",
 
   // Book preview
   "bookPreview.preview": "Preview",

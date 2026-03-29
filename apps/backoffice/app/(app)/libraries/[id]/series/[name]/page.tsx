@@ -21,6 +21,9 @@ const ReadingStatusModal = nextDynamic(
 const ProwlarrSearchModal = nextDynamic(
   () => import("@/app/components/ProwlarrSearchModal").then(m => m.ProwlarrSearchModal)
 );
+const DeleteSeriesButton = nextDynamic(
+  () => import("@/app/components/DeleteSeriesButton").then(m => m.DeleteSeriesButton)
+);
 import { notFound } from "next/navigation";
 import { getServerTranslations } from "@/lib/i18n/server";
 
@@ -261,6 +264,10 @@ export default async function SeriesDetailPage({
               seriesName={seriesName}
               readingStatusProvider={library.reading_status_provider ?? null}
               existingLink={readingStatusLink}
+            />
+            <DeleteSeriesButton
+              libraryId={id}
+              seriesName={seriesName}
             />
           </div>
         </div>

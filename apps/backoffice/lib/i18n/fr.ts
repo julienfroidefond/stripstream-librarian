@@ -762,6 +762,8 @@ const fr = {
   "bookDetail.updatedAt": "Mis à jour",
   "bookDetail.delete": "Supprimer",
   "bookDetail.confirmDelete": "Le fichier sera définitivement supprimé du disque. Cette action est irréversible.",
+  "seriesDetail.delete": "Supprimer la série",
+  "seriesDetail.confirmDelete": "Tous les livres et le dossier de la série seront définitivement supprimés du disque. Cette action est irréversible.",
 
   // Book preview
   "bookPreview.preview": "Aperçu",
