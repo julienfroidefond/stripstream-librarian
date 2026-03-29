@@ -1,5 +1,6 @@
 import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, LibraryDto, SeriesDto, SeriesPageDto, getBookCoverUrl } from "@/lib/api";
 import { getServerTranslations } from "@/lib/i18n/server";
+import { paramString, paramStringOr, paramInt, paramBool } from "@/lib/searchParams";
 import { MarkSeriesReadButton } from "@/app/components/MarkSeriesReadButton";
 import { LiveSearchForm } from "@/app/components/LiveSearchForm";
 import { Card, CardContent, OffsetPagination } from "@/app/components/ui";
@@ -16,16 +17,16 @@ export default async function SeriesPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { t } = await getServerTranslations();
-  const searchParamsAwaited = await searchParams;
-  const libraryId = typeof searchParamsAwaited.library === "string" ? searchParamsAwaited.library : undefined;
-  const searchQuery = typeof searchParamsAwaited.q === "string" ? searchParamsAwaited.q : "";
-  const readingStatus = typeof searchParamsAwaited.status === "string" ? searchParamsAwaited.status : undefined;
-  const sort = typeof searchParamsAwaited.sort === "string" ? searchParamsAwaited.sort : undefined;
-  const seriesStatus = typeof searchParamsAwaited.series_status === "string" ? searchParamsAwaited.series_status : undefined;
-  const hasMissing = searchParamsAwaited.has_missing === "true";
-  const metadataProvider = typeof searchParamsAwaited.metadata_provider === "string" ? searchParamsAwaited.metadata_provider : undefined;
-  const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
-  const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 20;
+  const sp = await searchParams;
+  const libraryId = paramString(sp, "library");
+  const searchQuery = paramStringOr(sp, "q", "");
+  const readingStatus = paramString(sp, "status");
+  const sort = paramString(sp, "sort");
+  const seriesStatus = paramString(sp, "series_status");
+  const hasMissing = paramBool(sp, "has_missing");
+  const metadataProvider = paramString(sp, "metadata_provider");
+  const page = paramInt(sp, "page", 1);
+  const limit = paramInt(sp, "limit", 20);
 
   const [libraries, seriesPage, dbStatuses] = await Promise.all([
     fetchLibraries().catch(() => [] as LibraryDto[]),

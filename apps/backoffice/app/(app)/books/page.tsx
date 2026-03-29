@@ -5,6 +5,7 @@ import { Card, CardContent, OffsetPagination } from "@/app/components/ui";
 import Link from "next/link";
 import Image from "next/image";
 import { getServerTranslations } from "@/lib/i18n/server";
+import { paramString, paramStringOr, paramInt } from "@/lib/searchParams";
 
 export const dynamic = "force-dynamic";
 
@@ -14,15 +15,15 @@ export default async function BooksPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { t } = await getServerTranslations();
-  const searchParamsAwaited = await searchParams;
-  const libraryId = typeof searchParamsAwaited.library === "string" ? searchParamsAwaited.library : undefined;
-  const searchQuery = typeof searchParamsAwaited.q === "string" ? searchParamsAwaited.q : "";
-  const readingStatus = typeof searchParamsAwaited.status === "string" ? searchParamsAwaited.status : undefined;
-  const format = typeof searchParamsAwaited.format === "string" ? searchParamsAwaited.format : undefined;
-  const metadataProvider = typeof searchParamsAwaited.metadata === "string" ? searchParamsAwaited.metadata : undefined;
-  const sort = typeof searchParamsAwaited.sort === "string" ? searchParamsAwaited.sort : undefined;
-  const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
-  const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 20;
+  const sp = await searchParams;
+  const libraryId = paramString(sp, "library");
+  const searchQuery = paramStringOr(sp, "q", "");
+  const readingStatus = paramString(sp, "status");
+  const format = paramString(sp, "format");
+  const metadataProvider = paramString(sp, "metadata");
+  const sort = paramString(sp, "sort");
+  const page = paramInt(sp, "page", 1);
+  const limit = paramInt(sp, "limit", 20);
 
   const [libraries] = await Promise.all([
     fetchLibraries().catch(() => [] as LibraryDto[])

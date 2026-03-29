@@ -1,5 +1,6 @@
 import { fetchAuthors, AuthorsPageDto } from "@/lib/api";
 import { getServerTranslations } from "@/lib/i18n/server";
+import { paramString, paramStringOr, paramInt } from "@/lib/searchParams";
 import { LiveSearchForm } from "@/app/components/LiveSearchForm";
 import { Card, CardContent, OffsetPagination } from "@/app/components/ui";
 import Link from "next/link";
@@ -12,11 +13,11 @@ export default async function AuthorsPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { t } = await getServerTranslations();
-  const searchParamsAwaited = await searchParams;
-  const searchQuery = typeof searchParamsAwaited.q === "string" ? searchParamsAwaited.q : "";
-  const sort = typeof searchParamsAwaited.sort === "string" ? searchParamsAwaited.sort : undefined;
-  const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
-  const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 20;
+  const sp = await searchParams;
+  const searchQuery = paramStringOr(sp, "q", "");
+  const sort = paramString(sp, "sort");
+  const page = paramInt(sp, "page", 1);
+  const limit = paramInt(sp, "limit", 20);
 
   const authorsPage = await fetchAuthors(
     searchQuery || undefined,

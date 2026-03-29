@@ -21,3 +21,4 @@ export { PageIcon, NavIcon, Icon } from "./Icon";
 export { CursorPagination, OffsetPagination } from "./Pagination";
 export { Tooltip } from "./Tooltip";
 export { toast, Toaster } from "./Toast";
+export { Modal } from "./Modal";

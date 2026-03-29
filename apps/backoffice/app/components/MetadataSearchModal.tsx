@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Icon } from "./ui";
+import { Icon, Modal } from "./ui";
 import { ProviderIcon, PROVIDERS, providerLabel } from "./ProviderIcon";
 import type { ExternalMetadataLinkDto, SeriesCandidateDto, MissingBooksDto, SyncReport } from "../../lib/api";
 import { useTranslation } from "../../lib/i18n/context";
@@ -238,26 +237,8 @@ export function MetadataSearchModal({
   }
 
   const modal = isOpen
-    ? createPortal(
-        <>
-          <div
-            className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50"
-            onClick={handleClose}
-          />
-          <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
-            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
-              {/* Header */}
-              <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-muted/30 sticky top-0 z-10">
-                <h3 className="font-semibold text-foreground">
-                  {step === "linked" ? t("metadata.metadataLink") : t("metadata.searchExternal")}
-                </h3>
-                <button type="button" onClick={handleClose}>
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-muted-foreground hover:text-foreground">
-                    <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  </svg>
-                </button>
-              </div>
-
+    ? (
+        <Modal isOpen={isOpen} onClose={handleClose} title={step === "linked" ? t("metadata.metadataLink") : t("metadata.searchExternal")}>
               <div className="p-5 space-y-4">
                 {/* Provider selector — visible during searching & results */}
                 {(step === "searching" || step === "results") && (
@@ -687,10 +668,7 @@ export function MetadataSearchModal({
                   </div>
                 )}
               </div>
-            </div>
-          </div>
-        </>,
-        document.body,
+        </Modal>
       )
     : null;
 
