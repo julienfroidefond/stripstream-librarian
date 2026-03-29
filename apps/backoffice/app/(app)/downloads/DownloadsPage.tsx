@@ -13,6 +13,21 @@ type TFunction = (key: TranslationKey, vars?: Record<string, string | number>) =
 
 const STATUS_ACTIVE = new Set(["downloading", "completed", "importing"]);
 
+/** Group releases by identical title, preserving order of first occurrence. */
+function groupReleasesByTitle<T extends { title: string }>(releases: T[]): { title: string; items: T[]; originalIndices: number[] }[] {
+  const groups: Map<string, { items: T[]; originalIndices: number[] }> = new Map();
+  releases.forEach((r, idx) => {
+    const existing = groups.get(r.title);
+    if (existing) {
+      existing.items.push(r);
+      existing.originalIndices.push(idx);
+    } else {
+      groups.set(r.title, { items: [r], originalIndices: [idx] });
+    }
+  });
+  return Array.from(groups.entries()).map(([title, { items, originalIndices }]) => ({ title, items, originalIndices }));
+}
+
 function statusLabel(status: string, t: TFunction): string {
   const map: Record<string, TranslationKey> = {
     downloading: "downloads.status.downloading",
@@ -385,46 +400,55 @@ function AvailableLibraryCard({ lib, onDeleted }: { lib: LatestFoundPerLibraryDt
             </div>
             {r.available_releases && r.available_releases.length > 0 && (
               <div className="space-y-1.5 sm:space-y-1">
-                {r.available_releases.map((release, idx) => (
-                  <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 py-1 px-2 rounded bg-muted/30">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[11px] sm:text-xs font-mono text-foreground truncate" title={release.title}>{release.title}</p>
-                      <div className="flex items-center gap-2 sm:gap-3 mt-0.5 flex-wrap">
-                        {release.indexer && <span className="text-[10px] text-muted-foreground">{release.indexer}</span>}
-                        {release.seeders != null && (
-                          <span className="text-[10px] text-success font-medium">{release.seeders}S</span>
-                        )}
-                        <span className="text-[10px] text-muted-foreground">{(release.size / 1024 / 1024).toFixed(0)} MB</span>
-                        <div className="flex flex-wrap items-center gap-1">
-                          {release.matched_missing_volumes.map(vol => (
-                            <span key={vol} className="text-[10px] px-1 py-0.5 rounded-full bg-success/20 text-success font-medium">T{vol}</span>
-                          ))}
-                        </div>
+                {groupReleasesByTitle(r.available_releases).map((group) => (
+                  <div key={group.title} className="rounded bg-muted/30 overflow-hidden">
+                    {/* Title + matched volumes (shown once) */}
+                    <div className="flex items-center gap-2 py-1 px-2">
+                      <p className="text-[11px] sm:text-xs font-mono text-foreground truncate flex-1" title={group.title}>{group.title}</p>
+                      <div className="flex flex-wrap items-center gap-1 shrink-0">
+                        {group.items[0].matched_missing_volumes.map(vol => (
+                          <span key={vol} className="text-[10px] px-1 py-0.5 rounded-full bg-success/20 text-success font-medium">T{vol}</span>
+                        ))}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 self-end sm:self-auto shrink-0">
-                      {release.download_url && (
-                        <QbittorrentDownloadButton
-                          downloadUrl={release.download_url}
-                          releaseId={`${r.id}-${idx}`}
-                          libraryId={lib.library_id}
-                          seriesName={r.series_name}
-                          expectedVolumes={release.matched_missing_volumes}
-                          allVolumes={release.all_volumes}
-                        />
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteRelease(r.id, idx)}
-                        disabled={deletingKey === `${r.id}-${idx}`}
-                        className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
-                        title={t("downloads.delete")}
-                      >
-                        {deletingKey === `${r.id}-${idx}`
-                          ? <Icon name="spinner" size="sm" className="animate-spin" />
-                          : <Icon name="trash" size="sm" />}
-                      </button>
-                    </div>
+                    {/* Sources */}
+                    {group.items.map((release, si) => {
+                      const idx = group.originalIndices[si];
+                      return (
+                      <div key={idx} className={`flex items-center gap-2 sm:gap-3 py-0.5 px-2 ${si > 0 ? "border-t border-border/20" : ""}`}>
+                        <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0 flex-wrap">
+                          {release.indexer && <span className="text-[10px] text-muted-foreground">{release.indexer}</span>}
+                          {release.seeders != null && (
+                            <span className="text-[10px] text-success font-medium">{release.seeders}S</span>
+                          )}
+                          <span className="text-[10px] text-muted-foreground">{(release.size / 1024 / 1024).toFixed(0)} MB</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {release.download_url && (
+                            <QbittorrentDownloadButton
+                              downloadUrl={release.download_url}
+                              releaseId={`${r.id}-${idx}`}
+                              libraryId={lib.library_id}
+                              seriesName={r.series_name}
+                              expectedVolumes={release.matched_missing_volumes}
+                              allVolumes={release.all_volumes}
+                            />
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRelease(r.id, idx)}
+                            disabled={deletingKey === `${r.id}-${idx}`}
+                            className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
+                            title={t("downloads.delete")}
+                          >
+                            {deletingKey === `${r.id}-${idx}`
+                              ? <Icon name="spinner" size="sm" className="animate-spin" />
+                              : <Icon name="trash" size="sm" />}
+                          </button>
+                        </div>
+                      </div>
+                      );
+                    })}
                   </div>
                 ))}
               </div>

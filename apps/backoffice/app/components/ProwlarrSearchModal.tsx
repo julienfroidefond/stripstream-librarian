@@ -28,6 +28,21 @@ function formatSize(bytes: number): string {
   return bytes + " B";
 }
 
+/** Group releases by identical title, preserving order of first occurrence. */
+function groupReleasesByTitle<T extends { title: string }>(releases: T[]): { title: string; items: T[] }[] {
+  const groups: Map<string, T[]> = new Map();
+  for (const r of releases) {
+    const key = r.title;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.push(r);
+    } else {
+      groups.set(key, [r]);
+    }
+  }
+  return Array.from(groups.entries()).map(([title, items]) => ({ title, items }));
+}
+
 export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initialProwlarrConfigured, initialQbConfigured }: ProwlarrSearchModalProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
@@ -224,24 +239,27 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
-                        {results.map((release, i) => {
-                          const hasMissing = release.matchedMissingVolumes && release.matchedMissingVolumes.length > 0;
-                          return (
-                          <tr key={release.guid || i} className={`transition-colors ${hasMissing ? "bg-green-500/10 hover:bg-green-500/20 border-l-2 border-l-green-500" : "hover:bg-muted/20"}`}>
-                            <td className="px-3 py-2 max-w-[400px]">
-                              <span className="truncate block" title={release.title}>
-                                {release.title}
-                              </span>
-                              {hasMissing && (
-                                <div className="flex flex-wrap items-center gap-1 mt-1">
-                                  {release.matchedMissingVolumes!.map((vol) => (
-                                    <span key={vol} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-600">
-                                      {t("prowlarr.missingVol", { vol })}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </td>
+                        {groupReleasesByTitle(results).map((group) => {
+                          const first = group.items[0];
+                          const hasMissing = first.matchedMissingVolumes && first.matchedMissingVolumes.length > 0;
+                          return group.items.map((release, si) => (
+                          <tr key={release.guid || `${group.title}-${si}`} className={`transition-colors ${hasMissing ? "bg-green-500/10 hover:bg-green-500/20 border-l-2 border-l-green-500" : "hover:bg-muted/20"}`}>
+                            {si === 0 ? (
+                              <td className="px-3 py-2 max-w-[400px]" rowSpan={group.items.length}>
+                                <span className="truncate block" title={release.title}>
+                                  {release.title}
+                                </span>
+                                {hasMissing && (
+                                  <div className="flex flex-wrap items-center gap-1 mt-1">
+                                    {first.matchedMissingVolumes!.map((vol) => (
+                                      <span key={vol} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-600">
+                                        {t("prowlarr.missingVol", { vol })}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </td>
+                            ) : null}
                             <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
                               {release.indexer || "—"}
                             </td>
@@ -296,7 +314,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                               </div>
                             </td>
                           </tr>
-                          );
+                          ));
                         })}
                       </tbody>
                     </table>
