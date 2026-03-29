@@ -669,7 +669,7 @@ pub async fn get_thumbnail(
 pub async fn delete_book(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<crate::responses::OkResponse>, ApiError> {
     // Fetch the book and its file path
     let row = sqlx::query(
         "SELECT b.library_id, b.thumbnail_path, bf.abs_path \
@@ -727,5 +727,5 @@ pub async fn delete_book(
         id, scan_job_id, library_id
     );
 
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(Json(crate::responses::OkResponse::new()))
 }

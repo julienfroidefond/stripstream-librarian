@@ -3,6 +3,7 @@
 import { useRef, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslation } from "../../lib/i18n/context";
+import { Icon } from "./ui";
 
 // SVG path data for filter icons, keyed by field name
 const FILTER_ICONS: Record<string, string> = {
@@ -137,14 +138,7 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
       {/* Search input with icon */}
       {textFields.map((field) => (
         <div key={field.name} className="relative">
-          <svg
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
+          <Icon name="search" size="md" className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <input
             name={field.name}
             type="text"
@@ -205,9 +199,7 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
                   transition-colors duration-200
                 "
               >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <Icon name="x" size="sm" className="!w-3.5 !h-3.5" />
                 {t("common.clear")}
               </button>
             )}

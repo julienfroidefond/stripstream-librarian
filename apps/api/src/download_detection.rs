@@ -441,7 +441,7 @@ pub async fn delete_available_download(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     axum::extract::Query(query): axum::extract::Query<DeleteAvailableQuery>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<crate::responses::OkResponse>, ApiError> {
     if let Some(release_idx) = query.release {
         // Remove a single release from the JSON array
         let row = sqlx::query("SELECT available_releases FROM available_downloads WHERE id = $1")
@@ -486,7 +486,7 @@ pub async fn delete_available_download(
         }
     }
 
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(Json(crate::responses::OkResponse::new()))
 }
 
 #[derive(Deserialize)]

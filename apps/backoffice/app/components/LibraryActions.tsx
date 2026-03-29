@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { Button } from "../components/ui";
+import { Button, Icon } from "../components/ui";
 import { ProviderIcon } from "../components/ProviderIcon";
 import { useTranslation } from "../../lib/i18n/context";
 
@@ -134,9 +134,7 @@ export function LibraryActions({
                   onClick={() => setIsOpen(false)}
                   className="text-muted-foreground hover:text-foreground transition-colors p-1.5 hover:bg-accent rounded-lg"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <Icon name="x" size="md" />
                 </button>
               </div>
 
@@ -147,9 +145,7 @@ export function LibraryActions({
                   {/* Section: Indexation */}
                   <div className="space-y-5">
                     <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground uppercase tracking-wide">
-                      <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                      </svg>
+                      <Icon name="folder" size="sm" className="text-primary" />
                       {t("libraryActions.sectionIndexation")}
                     </h3>
 
@@ -322,9 +318,7 @@ export function LibraryActions({
                   {/* Section: Prowlarr */}
                   <div className="space-y-5">
                     <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground uppercase tracking-wide">
-                      <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
+                      <Icon name="download" size="sm" className="text-primary" />
                       {t("libraryActions.sectionProwlarr")}
                     </h3>
                     <div>

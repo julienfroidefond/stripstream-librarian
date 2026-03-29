@@ -19,6 +19,7 @@ mod pages;
 mod prowlarr;
 mod qbittorrent;
 mod reading_progress;
+mod responses;
 mod torrent_import;
 mod reading_status_match;
 mod reading_status_push;

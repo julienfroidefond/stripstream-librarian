@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useRef, useEffect } from "react";
 import type { UserDto } from "@/lib/api";
+import { Icon } from "./ui";
 
 export function UserSwitcher({
   users,
@@ -63,9 +64,7 @@ export function UserSwitcher({
         <span className="max-w-[80px] truncate hidden sm:inline">
           {activeUser ? activeUser.username : "Admin"}
         </span>
-        <svg className="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        <Icon name="chevronDown" size="sm" className="!w-3 !h-3 opacity-60" />
       </button>
 
       {open && (
@@ -84,9 +83,7 @@ export function UserSwitcher({
             </svg>
             Admin
             {!isImpersonating && (
-              <svg className="w-3.5 h-3.5 ml-auto text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-              </svg>
+              <Icon name="check" size="sm" className="!w-3.5 !h-3.5 ml-auto text-primary" />
             )}
           </button>
 
@@ -108,9 +105,7 @@ export function UserSwitcher({
               </svg>
               <span className="truncate">{user.username}</span>
               {activeUserId === user.id && (
-                <svg className="w-3.5 h-3.5 ml-auto text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                </svg>
+                <Icon name="check" size="sm" className="!w-3.5 !h-3.5 ml-auto text-primary shrink-0" />
               )}
             </button>
           ))}

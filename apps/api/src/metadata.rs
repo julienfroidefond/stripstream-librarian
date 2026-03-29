@@ -413,7 +413,7 @@ pub async fn approve_metadata(
 pub async fn reject_metadata(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<crate::responses::StatusResponse>, ApiError> {
     let result = sqlx::query(
         "UPDATE external_metadata_links SET status = 'rejected', updated_at = NOW() WHERE id = $1",
     )
@@ -425,7 +425,7 @@ pub async fn reject_metadata(
         return Err(ApiError::not_found("link not found"));
     }
 
-    Ok(Json(serde_json::json!({"status": "rejected"})))
+    Ok(Json(crate::responses::StatusResponse::new("rejected")))
 }
 
 // ---------------------------------------------------------------------------
@@ -571,7 +571,7 @@ pub async fn get_missing_books(
 pub async fn delete_metadata_link(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<crate::responses::DeletedResponse>, ApiError> {
     let result = sqlx::query("DELETE FROM external_metadata_links WHERE id = $1")
         .bind(id)
         .execute(&state.pool)
@@ -581,7 +581,7 @@ pub async fn delete_metadata_link(
         return Err(ApiError::not_found("link not found"));
     }
 
-    Ok(Json(serde_json::json!({"deleted": true, "id": id.to_string()})))
+    Ok(Json(crate::responses::DeletedResponse::new(id)))
 }
 
 // ---------------------------------------------------------------------------

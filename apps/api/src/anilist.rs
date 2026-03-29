@@ -433,7 +433,7 @@ pub async fn link_series(
 pub async fn unlink_series(
     State(state): State<AppState>,
     Path((library_id, series_name)): Path<(Uuid, String)>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<crate::responses::UnlinkedResponse>, ApiError> {
     let result = sqlx::query(
         "DELETE FROM anilist_series_links WHERE library_id = $1 AND series_name = $2",
     )
@@ -446,7 +446,7 @@ pub async fn unlink_series(
         return Err(ApiError::not_found("AniList link not found"));
     }
 
-    Ok(Json(serde_json::json!({"unlinked": true})))
+    Ok(Json(crate::responses::UnlinkedResponse::new()))
 }
 
 /// Toggle AniList sync for a library

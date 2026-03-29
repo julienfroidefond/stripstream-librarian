@@ -38,7 +38,8 @@ type IconName =
   | "bell"
   | "link"
   | "eye"
-  | "download";
+  | "download"
+  | "lock";
 
 type IconSize = "sm" | "md" | "lg" | "xl";
 
@@ -96,6 +97,7 @@ const icons: Record<IconName, string> = {
   link: "M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1",
   eye: "M15 12a3 3 0 11-6 0 3 3 0 016 0zm-3-9C7.477 3 3.268 6.11 1.5 12c1.768 5.89 5.977 9 10.5 9s8.732-3.11 10.5-9C20.732 6.11 16.523 3 12 3z",
   download: "M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4",
+  lock: "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z",
 };
 
 const colorClasses: Partial<Record<IconName, string>> = {

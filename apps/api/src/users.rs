@@ -136,7 +136,7 @@ pub async fn update_user(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(input): Json<CreateUserRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<crate::responses::UpdatedResponse>, ApiError> {
     if input.username.trim().is_empty() {
         return Err(ApiError::bad_request("username is required"));
     }
@@ -159,7 +159,7 @@ pub async fn update_user(
         return Err(ApiError::not_found("user not found"));
     }
 
-    Ok(Json(serde_json::json!({"updated": true, "id": id})))
+    Ok(Json(crate::responses::UpdatedResponse::new(id)))
 }
 
 /// Delete a reader user (cascades on tokens and reading progress)
@@ -181,7 +181,7 @@ pub async fn update_user(
 pub async fn delete_user(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<crate::responses::DeletedResponse>, ApiError> {
     let result = sqlx::query("DELETE FROM users WHERE id = $1")
         .bind(id)
         .execute(&state.pool)
@@ -191,5 +191,5 @@ pub async fn delete_user(
         return Err(ApiError::not_found("user not found"));
     }
 
-    Ok(Json(serde_json::json!({"deleted": true, "id": id})))
+    Ok(Json(crate::responses::DeletedResponse::new(id)))
 }

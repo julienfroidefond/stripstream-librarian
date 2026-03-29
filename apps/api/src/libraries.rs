@@ -188,7 +188,7 @@ pub async fn create_library(
 pub async fn delete_library(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<crate::responses::DeletedResponse>, ApiError> {
     let result = sqlx::query("DELETE FROM libraries WHERE id = $1")
         .bind(id)
         .execute(&state.pool)
@@ -198,7 +198,7 @@ pub async fn delete_library(
         return Err(ApiError::not_found("library not found"));
     }
 
-    Ok(Json(serde_json::json!({"deleted": true, "id": id})))
+    Ok(Json(crate::responses::DeletedResponse::new(id)))
 }
 
 fn canonicalize_library_root(root_path: &str) -> Result<PathBuf, ApiError> {

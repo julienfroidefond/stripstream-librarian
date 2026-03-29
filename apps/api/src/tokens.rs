@@ -176,7 +176,7 @@ pub async fn list_tokens(State(state): State<AppState>) -> Result<Json<Vec<Token
 pub async fn revoke_token(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<crate::responses::RevokedResponse>, ApiError> {
     let result = sqlx::query("UPDATE api_tokens SET revoked_at = NOW() WHERE id = $1 AND revoked_at IS NULL")
         .bind(id)
         .execute(&state.pool)
@@ -186,7 +186,7 @@ pub async fn revoke_token(
         return Err(ApiError::not_found("token not found"));
     }
 
-    Ok(Json(serde_json::json!({"revoked": true, "id": id})))
+    Ok(Json(crate::responses::RevokedResponse::new(id)))
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -216,7 +216,7 @@ pub async fn update_token(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(input): Json<UpdateTokenRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<crate::responses::UpdatedResponse>, ApiError> {
     let result = sqlx::query("UPDATE api_tokens SET user_id = $1 WHERE id = $2")
         .bind(input.user_id)
         .bind(id)
@@ -227,7 +227,7 @@ pub async fn update_token(
         return Err(ApiError::not_found("token not found"));
     }
 
-    Ok(Json(serde_json::json!({"updated": true, "id": id})))
+    Ok(Json(crate::responses::UpdatedResponse::new(id)))
 }
 
 /// Permanently delete a revoked API token
@@ -249,7 +249,7 @@ pub async fn update_token(
 pub async fn delete_token(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<crate::responses::DeletedResponse>, ApiError> {
     let result = sqlx::query("DELETE FROM api_tokens WHERE id = $1 AND revoked_at IS NOT NULL")
         .bind(id)
         .execute(&state.pool)
@@ -259,5 +259,5 @@ pub async fn delete_token(
         return Err(ApiError::not_found("token not found or not revoked"));
     }
 
-    Ok(Json(serde_json::json!({"deleted": true, "id": id})))
+    Ok(Json(crate::responses::DeletedResponse::new(id)))
 }

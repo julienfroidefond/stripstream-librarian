@@ -55,14 +55,14 @@ struct ImportedFile {
 pub async fn notify_torrent_done(
     State(state): State<AppState>,
     Json(body): Json<TorrentNotifyRequest>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<crate::responses::OkResponse>, ApiError> {
     if body.hash.is_empty() {
         return Err(ApiError::bad_request("hash is required"));
     }
 
     if !is_torrent_import_enabled(&state.pool).await {
         info!("Torrent import disabled, ignoring notification for hash {}", body.hash);
-        return Ok(Json(serde_json::json!({ "ok": true })));
+        return Ok(Json(crate::responses::OkResponse::new()));
     }
 
     let row = sqlx::query(
@@ -74,7 +74,7 @@ pub async fn notify_torrent_done(
 
     let Some(row) = row else {
         info!("Torrent notification for unknown hash {}, ignoring", body.hash);
-        return Ok(Json(serde_json::json!({ "ok": true })));
+        return Ok(Json(crate::responses::OkResponse::new()));
     };
 
     let torrent_id: Uuid = row.get("id");
@@ -96,7 +96,7 @@ pub async fn notify_torrent_done(
         }
     });
 
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(Json(crate::responses::OkResponse::new()))
 }
 
 /// List recent torrent downloads (admin).
@@ -145,7 +145,7 @@ pub async fn list_torrent_downloads(
 pub async fn delete_torrent_download(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Json<crate::responses::OkResponse>, ApiError> {
     let row = sqlx::query("SELECT qb_hash, status FROM torrent_downloads WHERE id = $1")
         .bind(id)
         .fetch_optional(&state.pool)
@@ -187,7 +187,7 @@ pub async fn delete_torrent_download(
         .await?;
 
     info!("Deleted torrent download {id}");
-    Ok(Json(serde_json::json!({ "ok": true })))
+    Ok(Json(crate::responses::OkResponse::new()))
 }
 
 // ─── Background poller ────────────────────────────────────────────────────────

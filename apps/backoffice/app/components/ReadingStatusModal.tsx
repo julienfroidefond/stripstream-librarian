@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Button } from "./ui";
+import { Button, Icon } from "./ui";
 import { useTranslation } from "../../lib/i18n/context";
 import type { AnilistMediaResultDto, AnilistSeriesLinkDto } from "../../lib/api";
 
@@ -116,9 +116,7 @@ export function ReadingStatusModal({
         onClick={handleOpen}
         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
       >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-        </svg>
+        <Icon name="link" size="sm" />
         {t("readingStatus.button")}
       </button>
 
@@ -130,15 +128,11 @@ export function ReadingStatusModal({
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-muted/30">
                 <div className="flex items-center gap-2.5">
-                  <svg className="w-5 h-5 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                  </svg>
+                  <Icon name="link" size="md" className="text-cyan-500" />
                   <span className="font-semibold text-lg">{providerLabel} — {seriesName}</span>
                 </div>
                 <button type="button" onClick={handleClose} className="text-muted-foreground hover:text-foreground transition-colors p-1.5 hover:bg-accent rounded-lg">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <Icon name="x" size="md" />
                 </button>
               </div>
 
