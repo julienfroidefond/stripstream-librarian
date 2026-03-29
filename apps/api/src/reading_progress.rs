@@ -211,9 +211,9 @@ pub async fn mark_series_read(
     }
 
     let series_filter = if body.series == "unclassified" {
-        "(series IS NULL OR series = '')"
+        "series_id IS NULL"
     } else {
-        "series = $1"
+        "series_id = $1"
     };
 
     let sql = if body.status == "unread" {
@@ -276,9 +276,10 @@ pub async fn mark_series_read(
             .execute(&state.pool)
             .await?
     } else {
-        // $1 = series, $2 = user_id
+        // $1 = series_id (UUID), $2 = user_id
+        let series_uuid: Uuid = body.series.parse().map_err(|_| ApiError::bad_request("invalid series id"))?;
         sqlx::query(&sql)
-            .bind(&body.series)
+            .bind(series_uuid)
             .bind(auth_user.user_id)
             .execute(&state.pool)
             .await?

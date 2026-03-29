@@ -77,17 +77,15 @@ pub async fn search_books(
     let books_sql = r#"
         SELECT b.id, b.library_id, b.kind, b.title,
             COALESCE(b.authors, CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END) as authors,
-            b.series, b.volume, b.language
+            s.name AS series, b.volume, b.language
         FROM books b
-        LEFT JOIN series_metadata sm
-            ON sm.library_id = b.library_id
-            AND sm.name = COALESCE(NULLIF(b.series, ''), 'unclassified')
+        LEFT JOIN series s ON s.id = b.series_id
         WHERE (
             b.title ILIKE $1
-            OR b.series ILIKE $1
+            OR s.name ILIKE $1
             OR EXISTS (SELECT 1 FROM unnest(
                 COALESCE(b.authors, CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END)
-                || COALESCE(sm.authors, ARRAY[]::text[])
+                || COALESCE(s.authors, ARRAY[]::text[])
             ) AS a WHERE a ILIKE $1)
         )
         AND ($2::uuid IS NULL OR b.library_id = $2)
@@ -101,18 +99,19 @@ pub async fn search_books(
     let series_sql = r#"
         WITH sorted_books AS (
             SELECT
-                library_id,
-                COALESCE(NULLIF(series, ''), 'unclassified') as name,
-                id,
+                b.library_id,
+                COALESCE(s.name, 'unclassified') as name,
+                b.id,
                 ROW_NUMBER() OVER (
-                    PARTITION BY library_id, COALESCE(NULLIF(series, ''), 'unclassified')
+                    PARTITION BY b.library_id, COALESCE(s.name, 'unclassified')
                     ORDER BY
-                        REGEXP_REPLACE(LOWER(title), '[0-9]+', '', 'g'),
-                        COALESCE((REGEXP_MATCH(LOWER(title), '\d+'))[1]::int, 0),
-                        title ASC
+                        REGEXP_REPLACE(LOWER(b.title), '[0-9]+', '', 'g'),
+                        COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),
+                        b.title ASC
                 ) as rn
-            FROM books
-            WHERE ($2::uuid IS NULL OR library_id = $2)
+            FROM books b
+            LEFT JOIN series s ON s.id = b.series_id
+            WHERE ($2::uuid IS NULL OR b.library_id = $2)
         ),
         series_counts AS (
             SELECT

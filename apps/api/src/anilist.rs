@@ -501,15 +501,16 @@ pub async fn list_unlinked(
         SELECT
             l.id AS library_id,
             l.name AS library_name,
-            COALESCE(NULLIF(b.series, ''), 'unclassified') AS series_name
+            COALESCE(s.name, 'unclassified') AS series_name
         FROM books b
         JOIN libraries l ON l.id = b.library_id
+        LEFT JOIN series s ON s.id = b.series_id
         LEFT JOIN anilist_series_links asl
             ON asl.library_id = b.library_id
-            AND asl.series_name = COALESCE(NULLIF(b.series, ''), 'unclassified')
+            AND asl.series_name = COALESCE(s.name, 'unclassified')
         WHERE l.reading_status_provider = 'anilist'
           AND asl.library_id IS NULL
-        GROUP BY l.id, l.name, COALESCE(NULLIF(b.series, ''), 'unclassified')
+        GROUP BY l.id, l.name, COALESCE(s.name, 'unclassified')
         ORDER BY l.name, series_name
         "#,
     )
@@ -576,10 +577,11 @@ pub async fn preview_sync(
             SELECT
                 COUNT(*) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read,
-                (SELECT sm.total_volumes FROM series_metadata sm WHERE sm.library_id = $1 AND sm.name = $2 LIMIT 1) as total_volumes
+                (SELECT sm.total_volumes FROM series sm WHERE sm.library_id = $1 AND sm.name = $2 LIMIT 1) as total_volumes
             FROM books b
+            LEFT JOIN series s ON s.id = b.series_id
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND brp.user_id = $3
-            WHERE b.library_id = $1 AND COALESCE(NULLIF(b.series, ''), 'unclassified') = $2
+            WHERE b.library_id = $1 AND COALESCE(s.name, 'unclassified') = $2
             "#,
         )
         .bind(library_id)
@@ -684,10 +686,11 @@ pub async fn sync_to_anilist(
             SELECT
                 COUNT(*) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read,
-                (SELECT sm.total_volumes FROM series_metadata sm WHERE sm.library_id = $1 AND sm.name = $2 LIMIT 1) as total_volumes
+                (SELECT sm.total_volumes FROM series sm WHERE sm.library_id = $1 AND sm.name = $2 LIMIT 1) as total_volumes
             FROM books b
+            LEFT JOIN series s ON s.id = b.series_id
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND brp.user_id = $3
-            WHERE b.library_id = $1 AND COALESCE(NULLIF(b.series, ''), 'unclassified') = $2
+            WHERE b.library_id = $1 AND COALESCE(s.name, 'unclassified') = $2
             "#,
         )
         .bind(library_id)
@@ -866,7 +869,7 @@ pub async fn pull_from_anilist(
 
         // Get all book IDs for this series, ordered by volume
         let book_rows = sqlx::query(
-            "SELECT id, volume FROM books WHERE library_id = $1 AND COALESCE(NULLIF(series, ''), 'unclassified') = $2 ORDER BY volume NULLS LAST",
+            "SELECT b.id, b.volume FROM books b LEFT JOIN series s ON s.id = b.series_id WHERE b.library_id = $1 AND COALESCE(s.name, 'unclassified') = $2 ORDER BY b.volume NULLS LAST",
         )
         .bind(library_id)
         .bind(series_name)

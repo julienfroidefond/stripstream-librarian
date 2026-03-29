@@ -167,7 +167,7 @@ pub async fn get_stats(
         r#"
         SELECT
             COUNT(*) AS total_books,
-            COUNT(DISTINCT NULLIF(series, '')) AS total_series,
+            COUNT(DISTINCT b.series_id) AS total_series,
             COUNT(DISTINCT library_id) AS total_libraries,
             COALESCE(SUM(page_count), 0)::BIGINT AS total_pages,
             (SELECT COUNT(DISTINCT a) FROM (
@@ -298,14 +298,15 @@ pub async fn get_stats(
     let series_rows = sqlx::query(
         r#"
         SELECT
-            b.series,
+            s.name AS series,
             COUNT(*) AS book_count,
             COUNT(*) FILTER (WHERE brp.status = 'read') AS read_count,
             COALESCE(SUM(b.page_count), 0)::BIGINT AS total_pages
         FROM books b
+        JOIN series s ON s.id = b.series_id
         LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ($1::uuid IS NULL OR brp.user_id = $1)
-        WHERE b.series IS NOT NULL AND b.series != ''
-        GROUP BY b.series
+        WHERE b.series_id IS NOT NULL
+        GROUP BY s.name
         ORDER BY book_count DESC
         LIMIT 10
         "#,
@@ -405,8 +406,8 @@ pub async fn get_stats(
     let meta_row = sqlx::query(
         r#"
         SELECT
-            (SELECT COUNT(DISTINCT NULLIF(series, '')) FROM books) AS total_series,
-            (SELECT COUNT(DISTINCT series_name) FROM external_metadata_links WHERE status = 'approved') AS series_linked,
+            (SELECT COUNT(DISTINCT series_id) FROM books WHERE series_id IS NOT NULL) AS total_series,
+            (SELECT COUNT(DISTINCT series_id) FROM external_metadata_links WHERE status = 'approved') AS series_linked,
             (SELECT COUNT(*) FROM books WHERE summary IS NOT NULL AND summary != '') AS books_with_summary,
             (SELECT COUNT(*) FROM books WHERE isbn IS NOT NULL AND isbn != '') AS books_with_isbn
         "#,
@@ -419,7 +420,7 @@ pub async fn get_stats(
 
     let provider_rows = sqlx::query(
         r#"
-        SELECT provider, COUNT(DISTINCT series_name) AS count
+        SELECT provider, COUNT(DISTINCT series_id) AS count
         FROM external_metadata_links
         WHERE status = 'approved'
         GROUP BY provider
@@ -449,9 +450,10 @@ pub async fn get_stats(
     // Currently reading books
     let reading_rows = sqlx::query(
         r#"
-        SELECT b.id AS book_id, b.title, b.series, brp.current_page, b.page_count, u.username
+        SELECT b.id AS book_id, b.title, s.name AS series, brp.current_page, b.page_count, u.username
         FROM book_reading_progress brp
         JOIN books b ON b.id = brp.book_id
+        LEFT JOIN series s ON s.id = b.series_id
         LEFT JOIN users u ON u.id = brp.user_id
         WHERE brp.status = 'reading' AND brp.current_page IS NOT NULL
           AND ($1::uuid IS NULL OR brp.user_id = $1)
@@ -481,11 +483,12 @@ pub async fn get_stats(
     // Recently read books
     let recent_rows = sqlx::query(
         r#"
-        SELECT b.id AS book_id, b.title, b.series,
+        SELECT b.id AS book_id, b.title, s.name AS series,
                TO_CHAR(brp.last_read_at, 'YYYY-MM-DD') AS last_read_at,
                u.username
         FROM book_reading_progress brp
         JOIN books b ON b.id = brp.book_id
+        LEFT JOIN series s ON s.id = b.series_id
         LEFT JOIN users u ON u.id = brp.user_id
         WHERE brp.status = 'read' AND brp.last_read_at IS NOT NULL
           AND ($1::uuid IS NULL OR brp.user_id = $1)

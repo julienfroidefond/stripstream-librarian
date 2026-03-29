@@ -511,9 +511,10 @@ pub(crate) async fn process_download_detection(
     // Fetch all series with their metadata link status
     let all_series: Vec<String> = sqlx::query_scalar(
         r#"
-        SELECT DISTINCT COALESCE(NULLIF(series, ''), 'unclassified')
-        FROM books
-        WHERE library_id = $1
+        SELECT DISTINCT COALESCE(s.name, 'unclassified')
+        FROM books b
+        LEFT JOIN series s ON s.id = b.series_id
+        WHERE b.library_id = $1
         ORDER BY 1
         "#,
     )
@@ -528,8 +529,10 @@ pub(crate) async fn process_download_detection(
         DELETE FROM available_downloads
         WHERE library_id = $1
           AND series_name NOT IN (
-            SELECT DISTINCT COALESCE(NULLIF(series, ''), 'unclassified')
-            FROM books WHERE library_id = $1
+            SELECT DISTINCT COALESCE(s.name, 'unclassified')
+            FROM books b
+            LEFT JOIN series s ON s.id = b.series_id
+            WHERE b.library_id = $1
           )
         "#,
     )

@@ -141,15 +141,15 @@ pub async fn list_books(
     // Conditions partagées COUNT et DATA — $1=library_id $2=kind $3=format, puis optionnels
     let mut p: usize = 3;
     let series_cond = match query.series.as_deref() {
-        Some("unclassified") => "AND (b.series IS NULL OR b.series = '')".to_string(),
-        Some(_) => { p += 1; format!("AND b.series = ${p}") }
+        Some("unclassified") => "AND b.series_id IS NULL".to_string(),
+        Some(_) => { p += 1; format!("AND b.series_id = ${p}") }
         None => String::new(),
     };
     let rs_cond = if reading_statuses.is_some() {
         p += 1; format!("AND COALESCE(brp.status, 'unread') = ANY(${p})")
     } else { String::new() };
     let author_cond = if query.author.is_some() {
-        p += 1; format!("AND (${p} = ANY(COALESCE(NULLIF(b.authors, '{{}}'), CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END)) OR EXISTS (SELECT 1 FROM series_metadata sm WHERE sm.library_id = b.library_id AND sm.name = b.series AND ${p} = ANY(sm.authors)))")
+        p += 1; format!("AND (${p} = ANY(COALESCE(NULLIF(b.authors, '{{}}'), CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END)) OR (s.id IS NOT NULL AND ${p} = ANY(COALESCE(s.authors, ARRAY[]::text[]))))")
     } else { String::new() };
     let metadata_cond = match query.metadata_provider.as_deref() {
         Some("unlinked") => "AND eml.id IS NULL".to_string(),
@@ -158,25 +158,26 @@ pub async fn list_books(
         None => String::new(),
     };
     let q_cond = if query.q.is_some() {
-        p += 1; format!("AND (b.title ILIKE ${p} OR b.series ILIKE ${p} OR b.author ILIKE ${p})")
+        p += 1; format!("AND (b.title ILIKE ${p} OR s.name ILIKE ${p} OR b.author ILIKE ${p})")
     } else { String::new() };
     p += 1;
     let uid_p = p;
 
     let metadata_links_cte = r#"
         metadata_links AS (
-            SELECT DISTINCT ON (eml.series_name, eml.library_id)
-                eml.series_name, eml.library_id, eml.provider, eml.id
+            SELECT DISTINCT ON (eml.series_id, eml.library_id)
+                eml.series_id, eml.library_id, eml.provider, eml.id
             FROM external_metadata_links eml
             WHERE eml.status = 'approved'
-            ORDER BY eml.series_name, eml.library_id, eml.created_at DESC
+            ORDER BY eml.series_id, eml.library_id, eml.created_at DESC
         )"#;
 
     let count_sql = format!(
         r#"WITH {metadata_links_cte}
            SELECT COUNT(*) FROM books b
+           LEFT JOIN series s ON s.id = b.series_id
            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${uid_p}::uuid IS NOT NULL AND brp.user_id = ${uid_p}
-           LEFT JOIN metadata_links eml ON eml.series_name = b.series AND eml.library_id = b.library_id
+           LEFT JOIN metadata_links eml ON eml.series_id = b.series_id AND eml.library_id = b.library_id
            WHERE ($1::uuid IS NULL OR b.library_id = $1)
              AND ($2::text IS NULL OR b.kind = $2)
              AND ($3::text IS NULL OR b.format = $3)
@@ -199,13 +200,14 @@ pub async fn list_books(
     let data_sql = format!(
         r#"
         WITH {metadata_links_cte}
-        SELECT b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, b.series, b.volume, b.language, b.page_count, b.thumbnail_path, b.updated_at,
+        SELECT b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, s.name AS series, b.volume, b.language, b.page_count, b.thumbnail_path, b.updated_at,
                COALESCE(brp.status, 'unread') AS reading_status,
                brp.current_page AS reading_current_page,
                brp.last_read_at AS reading_last_read_at
         FROM books b
+        LEFT JOIN series s ON s.id = b.series_id
         LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${uid_p}::uuid IS NOT NULL AND brp.user_id = ${uid_p}
-        LEFT JOIN metadata_links eml ON eml.series_name = b.series AND eml.library_id = b.library_id
+        LEFT JOIN metadata_links eml ON eml.series_id = b.series_id AND eml.library_id = b.library_id
         WHERE ($1::uuid IS NULL OR b.library_id = $1)
           AND ($2::text IS NULL OR b.kind = $2)
           AND ($3::text IS NULL OR b.format = $3)
@@ -230,8 +232,9 @@ pub async fn list_books(
 
     if let Some(s) = query.series.as_deref() {
         if s != "unclassified" {
-            count_builder = count_builder.bind(s);
-            data_builder = data_builder.bind(s);
+            let series_uuid: Uuid = s.parse().map_err(|_| ApiError::bad_request("invalid series id"))?;
+            count_builder = count_builder.bind(series_uuid);
+            data_builder = data_builder.bind(series_uuid);
         }
     }
     if let Some(ref statuses) = reading_statuses {
@@ -318,12 +321,13 @@ pub async fn get_book(
     let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
     let row = sqlx::query(
         r#"
-        SELECT b.id, b.library_id, b.kind, b.title, b.author, b.authors, b.series, b.volume, b.language, b.page_count, b.thumbnail_path, b.locked_fields, b.summary, b.isbn, b.publish_date,
+        SELECT b.id, b.library_id, b.kind, b.title, b.author, b.authors, s.name AS series, b.volume, b.language, b.page_count, b.thumbnail_path, b.locked_fields, b.summary, b.isbn, b.publish_date,
                bf.abs_path, bf.format, bf.parse_status,
                COALESCE(brp.status, 'unread') AS reading_status,
                brp.current_page AS reading_current_page,
                brp.last_read_at AS reading_last_read_at
         FROM books b
+        LEFT JOIN series s ON s.id = b.series_id
         LEFT JOIN LATERAL (
           SELECT abs_path, format, parse_status
           FROM book_files
@@ -519,13 +523,39 @@ pub async fn update_book(
     let isbn = body.isbn.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
     let publish_date = body.publish_date.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
     let locked_fields = body.locked_fields.clone().unwrap_or(serde_json::json!({}));
+    // Resolve series name to series_id
+    let series_id: Option<Uuid> = if let Some(ref s) = series {
+        // Look up existing series or create one
+        let book_row = sqlx::query("SELECT library_id FROM books WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| ApiError::not_found("book not found"))?;
+        let lib_id: Uuid = book_row.get("library_id");
+        let sid: Uuid = sqlx::query_scalar(
+            r#"
+            INSERT INTO series (id, library_id, name, created_at, updated_at)
+            VALUES (gen_random_uuid(), $1, $2, NOW(), NOW())
+            ON CONFLICT (library_id, name) DO UPDATE SET updated_at = NOW()
+            RETURNING id
+            "#,
+        )
+        .bind(lib_id)
+        .bind(s)
+        .fetch_one(&state.pool)
+        .await?;
+        Some(sid)
+    } else {
+        None
+    };
+
     let row = sqlx::query(
         r#"
         UPDATE books
-        SET title = $2, author = $3, authors = $4, series = $5, volume = $6, language = $7,
+        SET title = $2, author = $3, authors = $4, series_id = $5, volume = $6, language = $7,
             summary = $8, isbn = $9, publish_date = $10, locked_fields = $11, updated_at = NOW()
         WHERE id = $1
-        RETURNING id, library_id, kind, title, author, authors, series, volume, language, page_count, thumbnail_path,
+        RETURNING id, library_id, kind, title, author, authors, volume, language, page_count, thumbnail_path,
                   summary, isbn, publish_date,
                   'unread' AS reading_status,
                   NULL::integer AS reading_current_page,
@@ -536,7 +566,7 @@ pub async fn update_book(
     .bind(&title)
     .bind(&author)
     .bind(&authors)
-    .bind(&series)
+    .bind(series_id)
     .bind(body.volume)
     .bind(&language)
     .bind(&summary)
@@ -556,7 +586,7 @@ pub async fn update_book(
         title: row.get("title"),
         author: row.get("author"),
         authors: row.get::<Vec<String>, _>("authors"),
-        series: row.get("series"),
+        series: series.clone(),
         volume: row.get("volume"),
         language: row.get("language"),
         page_count: row.get("page_count"),

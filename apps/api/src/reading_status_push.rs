@@ -392,16 +392,18 @@ pub async fn process_reading_status_push(
                 SELECT 1
                 FROM book_reading_progress brp
                 JOIN books b2 ON b2.id = brp.book_id
+                LEFT JOIN series s2 ON s2.id = b2.series_id
                 WHERE b2.library_id = asl.library_id
-                  AND COALESCE(NULLIF(b2.series, ''), 'unclassified') = asl.series_name
+                  AND COALESCE(s2.name, 'unclassified') = asl.series_name
                   AND brp.user_id = $2
                   AND brp.updated_at > asl.synced_at
             )
             OR EXISTS (
                 SELECT 1
                 FROM books b2
+                LEFT JOIN series s2 ON s2.id = b2.series_id
                 WHERE b2.library_id = asl.library_id
-                  AND COALESCE(NULLIF(b2.series, ''), 'unclassified') = asl.series_name
+                  AND COALESCE(s2.name, 'unclassified') = asl.series_name
                   AND b2.created_at > asl.synced_at
             )
           )
@@ -464,10 +466,11 @@ pub async fn process_reading_status_push(
                 COUNT(b.id) AS total_books,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') AS books_read
             FROM books b
+            LEFT JOIN series s ON s.id = b.series_id
             LEFT JOIN book_reading_progress brp
                 ON brp.book_id = b.id AND brp.user_id = $3
             WHERE b.library_id = $1
-              AND COALESCE(NULLIF(b.series, ''), 'unclassified') = $2
+              AND COALESCE(s.name, 'unclassified') = $2
             "#,
         )
         .bind(library_id)

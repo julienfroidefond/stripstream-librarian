@@ -28,6 +28,42 @@ pub struct JobStats {
 
 const BATCH_SIZE: usize = 100;
 
+/// Look up a series by name in the local cache, or INSERT INTO series ... ON CONFLICT DO NOTHING
+/// then SELECT to get the id. Updates the cache on creation.
+async fn get_or_create_series_id(
+    pool: &sqlx::PgPool,
+    library_id: Uuid,
+    name: &str,
+    cache: &mut HashMap<String, Uuid>,
+) -> Result<Uuid> {
+    // Check local cache first
+    if let Some(&id) = cache.get(name) {
+        return Ok(id);
+    }
+
+    // Try to insert; ON CONFLICT DO NOTHING handles races / existing rows
+    sqlx::query(
+        "INSERT INTO series (id, library_id, name) VALUES ($1, $2, $3) ON CONFLICT (library_id, name) DO NOTHING",
+    )
+    .bind(Uuid::new_v4())
+    .bind(library_id)
+    .bind(name)
+    .execute(pool)
+    .await?;
+
+    // Always SELECT to get the actual id (whether we just inserted or it already existed)
+    let id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM series WHERE library_id = $1 AND name = $2",
+    )
+    .bind(library_id)
+    .bind(name)
+    .fetch_one(pool)
+    .await?;
+
+    cache.insert(name.to_string(), id);
+    Ok(id)
+}
+
 /// Phase 1 — Discovery: walk filesystem, extract metadata from filenames only (no archive I/O).
 /// New books are inserted with page_count = NULL so the analyzer phase can fill them in.
 /// Updated books (fingerprint changed) get page_count/thumbnail reset.
@@ -108,22 +144,31 @@ pub async fn scan_library_discovery(
         HashMap::new()
     };
 
-    // Track existing series names for new_series counting
-    let existing_series: HashSet<String> = sqlx::query_scalar(
-        "SELECT DISTINCT COALESCE(NULLIF(series, ''), 'unclassified') FROM books WHERE library_id = $1",
+    // Load existing series for this library: name → id
+    let series_rows = sqlx::query(
+        "SELECT id, name FROM series WHERE library_id = $1",
     )
     .bind(library_id)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default()
-    .into_iter()
-    .collect();
+    .unwrap_or_default();
+    let mut series_map: HashMap<String, Uuid> = series_rows
+        .into_iter()
+        .map(|row| {
+            let name: String = row.get("name");
+            let id: Uuid = row.get("id");
+            (name, id)
+        })
+        .collect();
+
+    // Track existing series names for new_series counting
+    let existing_series: HashSet<String> = series_map.keys().cloned().collect();
     let mut seen_new_series: HashSet<String> = HashSet::new();
 
     // Load series rename mapping: original filesystem name → current DB name.
     // This prevents the scanner from recreating old series after a user rename.
     let rename_rows = sqlx::query(
-        "SELECT original_name, name FROM series_metadata WHERE library_id = $1 AND original_name IS NOT NULL",
+        "SELECT original_name, name FROM series WHERE library_id = $1 AND original_name IS NOT NULL",
     )
     .bind(library_id)
     .fetch_all(&state.pool)
@@ -378,12 +423,22 @@ pub async fn scan_library_discovery(
                 old_fingerprint != fingerprint
             );
 
+            // Resolve series name → series_id
+            let update_series_id = if let Some(ref series_name) = parsed.series {
+                Some(
+                    get_or_create_series_id(&state.pool, library_id, series_name, &mut series_map)
+                        .await?,
+                )
+            } else {
+                None
+            };
+
             books_to_update.push(BookUpdate {
                 book_id,
                 title: parsed.title,
                 kind: utils::kind_from_format(format).to_string(),
                 format: format.as_str().to_string(),
-                series: parsed.series,
+                series_id: update_series_id,
                 volume: parsed.volume,
                 // Reset page_count so analyzer re-processes this book
                 page_count: None,
@@ -439,13 +494,23 @@ pub async fn scan_library_discovery(
             stats.new_series += 1;
         }
 
+        // Resolve series name → series_id
+        let insert_series_id = if let Some(ref series_name) = parsed.series {
+            Some(
+                get_or_create_series_id(&state.pool, library_id, series_name, &mut series_map)
+                    .await?,
+            )
+        } else {
+            None
+        };
+
         books_to_insert.push(BookInsert {
             book_id,
             library_id,
             kind: utils::kind_from_format(format).to_string(),
             format: format.as_str().to_string(),
             title: parsed.title,
-            series: parsed.series,
+            series_id: insert_series_id,
             volume: parsed.volume,
             page_count: None,
             thumbnail_path: None,
@@ -641,5 +706,35 @@ mod tests {
     fn allow_deletions_empty_db() {
         // No existing files in DB — nothing to delete anyway
         assert!(!should_skip_deletions(true, 10, 0, 0));
+    }
+
+    #[test]
+    fn batch_structs_use_series_id() {
+        use crate::batch::{BookInsert, BookUpdate};
+
+        let series_id = Uuid::new_v4();
+        let book = BookInsert {
+            book_id: Uuid::new_v4(),
+            library_id: Uuid::new_v4(),
+            kind: "comic".to_string(),
+            format: "cbz".to_string(),
+            title: "Test".to_string(),
+            series_id: Some(series_id),
+            volume: Some(1),
+            page_count: None,
+            thumbnail_path: None,
+        };
+        assert_eq!(book.series_id, Some(series_id));
+
+        let update = BookUpdate {
+            book_id: Uuid::new_v4(),
+            title: "Test".to_string(),
+            kind: "comic".to_string(),
+            format: "cbz".to_string(),
+            series_id: None,
+            volume: None,
+            page_count: None,
+        };
+        assert_eq!(update.series_id, None);
     }
 }

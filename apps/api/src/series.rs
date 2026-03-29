@@ -7,9 +7,73 @@ use utoipa::ToSchema;
 
 use crate::{auth::AuthUser, books::BookItem, error::ApiError, state::AppState};
 
+// ─── Helper functions ────────────────────────────────────────────────────────
+
+/// Resolve a series UUID from library_id + name. Returns NotFound if no such series exists.
+pub(crate) async fn resolve_series_id(
+    pool: &sqlx::PgPool,
+    library_id: Uuid,
+    name: &str,
+) -> Result<Uuid, ApiError> {
+    sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM series WHERE library_id = $1 AND LOWER(name) = LOWER($2)"
+    )
+    .bind(library_id)
+    .bind(name)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| ApiError::not_found(format!("series '{}' not found", name)))
+}
+
+/// Get or create a series row, returning its UUID.
+pub(crate) async fn get_or_create_series(
+    pool: &sqlx::PgPool,
+    library_id: Uuid,
+    name: &str,
+) -> Result<Uuid, ApiError> {
+    // Try to find existing first
+    if let Some(id) = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM series WHERE library_id = $1 AND LOWER(name) = LOWER($2)"
+    )
+    .bind(library_id)
+    .bind(name)
+    .fetch_optional(pool)
+    .await?
+    {
+        return Ok(id);
+    }
+
+    // Create new
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO series (id, library_id, name) VALUES ($1, $2, $3) \
+         ON CONFLICT (library_id, name) DO UPDATE SET name = EXCLUDED.name \
+         RETURNING id"
+    )
+    .bind(id)
+    .bind(library_id)
+    .bind(name)
+    .execute(pool)
+    .await?;
+
+    // Re-fetch in case of conflict (ON CONFLICT won't return the existing id via execute)
+    sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM series WHERE library_id = $1 AND LOWER(name) = LOWER($2)"
+    )
+    .bind(library_id)
+    .bind(name)
+    .fetch_one(pool)
+    .await
+    .map_err(Into::into)
+}
+
+// ─── Structs ─────────────────────────────────────────────────────────────────
+
 #[derive(Serialize, ToSchema)]
 pub struct SeriesItem {
     pub name: String,
+    #[schema(value_type = String)]
+    pub series_id: Uuid,
     pub book_count: i64,
     pub books_read_count: i64,
     #[schema(value_type = String)]
@@ -98,7 +162,7 @@ pub async fn list_series(
     let mut p: usize = 1;
 
     let q_cond = if query.q.is_some() {
-        p += 1; format!("AND sc.name ILIKE ${p}")
+        p += 1; format!("AND s.name ILIKE ${p}")
     } else { String::new() };
 
     let count_rs_cond = if reading_statuses.is_some() {
@@ -106,7 +170,7 @@ pub async fn list_series(
     } else { String::new() };
 
     let ss_cond = if query.series_status.is_some() {
-        p += 1; format!("AND LOWER(sm.status) = ${p}")
+        p += 1; format!("AND LOWER(s.status) = ${p}")
     } else { String::new() };
 
     let missing_cond = if has_missing {
@@ -126,45 +190,43 @@ pub async fn list_series(
 
     let missing_cte = r#"
         missing_counts AS (
-            SELECT eml.series_name,
+            SELECT eml.series_id,
                 COUNT(ebm.id) FILTER (WHERE ebm.book_id IS NULL) as missing_count
             FROM external_metadata_links eml
             JOIN external_book_metadata ebm ON ebm.link_id = eml.id
             WHERE eml.library_id = $1 AND eml.status = 'approved'
-            GROUP BY eml.series_name
+            GROUP BY eml.series_id
         )
         "#.to_string();
 
     let metadata_links_cte = r#"
         metadata_links AS (
-            SELECT DISTINCT ON (eml.series_name, eml.library_id)
-                eml.series_name, eml.library_id, eml.provider
+            SELECT DISTINCT ON (eml.series_id, eml.library_id)
+                eml.series_id, eml.library_id, eml.provider
             FROM external_metadata_links eml
             WHERE eml.status = 'approved'
-            ORDER BY eml.series_name, eml.library_id, eml.created_at DESC
+            ORDER BY eml.series_id, eml.library_id, eml.created_at DESC
         )
     "#;
 
     let count_sql = format!(
         r#"
-        WITH sorted_books AS (
-            SELECT COALESCE(NULLIF(series, ''), 'unclassified') as name, id
-            FROM books WHERE library_id = $1
-        ),
-        series_counts AS (
-            SELECT sb.name,
-                COUNT(*) as book_count,
+        WITH series_counts AS (
+            SELECT s.id as series_id, s.name,
+                COUNT(b.id) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
-            FROM sorted_books sb
-            LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
-            GROUP BY sb.name
+            FROM series s
+            LEFT JOIN books b ON b.series_id = s.id
+            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
+            WHERE s.library_id = $1
+            GROUP BY s.id, s.name
         ),
         {missing_cte},
         {metadata_links_cte}
         SELECT COUNT(*) FROM series_counts sc
-        LEFT JOIN series_metadata sm ON sm.library_id = $1 AND sm.name = sc.name
-        LEFT JOIN missing_counts mc ON mc.series_name = sc.name
-        LEFT JOIN metadata_links ml ON ml.series_name = sc.name AND ml.library_id = $1
+        LEFT JOIN series s ON s.id = sc.series_id
+        LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
+        LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = $1
         WHERE TRUE {q_cond} {count_rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond}
         "#
     );
@@ -173,46 +235,50 @@ pub async fn list_series(
         r#"
         WITH sorted_books AS (
             SELECT
-                COALESCE(NULLIF(series, ''), 'unclassified') as name,
-                id,
+                b.series_id,
+                b.id,
                 ROW_NUMBER() OVER (
-                    PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified')
+                    PARTITION BY b.series_id
                     ORDER BY
-                        volume NULLS LAST,
-                        REGEXP_REPLACE(LOWER(title), '[0-9].*$', ''),
-                        COALESCE((REGEXP_MATCH(LOWER(title), '\d+'))[1]::int, 0),
-                        title ASC
+                        b.volume NULLS LAST,
+                        REGEXP_REPLACE(LOWER(b.title), '[0-9].*$', ''),
+                        COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),
+                        b.title ASC
                 ) as rn
-            FROM books
-            WHERE library_id = $1
+            FROM books b
+            WHERE b.library_id = $1
         ),
         series_counts AS (
             SELECT
-                sb.name,
-                COUNT(*) as book_count,
+                s.id as series_id,
+                s.name,
+                COUNT(b.id) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
-            FROM sorted_books sb
-            LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
-            GROUP BY sb.name
+            FROM series s
+            LEFT JOIN books b ON b.series_id = s.id
+            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
+            WHERE s.library_id = $1
+            GROUP BY s.id, s.name
         ),
         {missing_cte},
         {metadata_links_cte}
         SELECT
             sc.name,
+            sc.series_id,
             sc.book_count,
             sc.books_read_count,
             sb.id as first_book_id,
-            sm.status as series_status,
+            s.status as series_status,
             mc.missing_count,
             ml.provider as metadata_provider,
             asl.anilist_id,
             asl.anilist_url
         FROM series_counts sc
-        JOIN sorted_books sb ON sb.name = sc.name AND sb.rn = 1
-        LEFT JOIN series_metadata sm ON sm.library_id = $1 AND sm.name = sc.name
-        LEFT JOIN missing_counts mc ON mc.series_name = sc.name
-        LEFT JOIN metadata_links ml ON ml.series_name = sc.name AND ml.library_id = $1
-        LEFT JOIN anilist_series_links asl ON asl.library_id = $1 AND asl.series_name = sc.name AND asl.provider = 'anilist'
+        JOIN sorted_books sb ON sb.series_id = sc.series_id AND sb.rn = 1
+        LEFT JOIN series s ON s.id = sc.series_id
+        LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
+        LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = $1
+        LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
         WHERE TRUE
           {q_cond}
           {count_rs_cond}
@@ -267,6 +333,7 @@ pub async fn list_series(
         .iter()
         .map(|row| SeriesItem {
             name: row.get("name"),
+            series_id: row.get("series_id"),
             book_count: row.get("book_count"),
             books_read_count: row.get("books_read_count"),
             first_book_id: row.get("first_book_id"),
@@ -304,7 +371,7 @@ pub struct ListAllSeriesQuery {
     /// Filter by metadata provider: a provider name (e.g. "google_books"), "linked" (any provider), or "unlinked" (no provider)
     #[schema(value_type = Option<String>, example = "google_books")]
     pub metadata_provider: Option<String>,
-    /// Filter by author name (matches in series_metadata.authors or book-level authors)
+    /// Filter by author name (matches in series.authors or book-level authors)
     #[schema(value_type = Option<String>, example = "Toriyama")]
     pub author: Option<String>,
     #[schema(value_type = Option<i64>, example = 1)]
@@ -326,7 +393,7 @@ pub struct ListAllSeriesQuery {
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),
         ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
         ("metadata_provider" = Option<String>, Query, description = "Filter by metadata provider: a provider name (e.g. 'google_books'), 'linked' (any provider), or 'unlinked' (no provider)"),
-        ("author" = Option<String>, Query, description = "Filter by author name (matches in series_metadata.authors or book-level authors)"),
+        ("author" = Option<String>, Query, description = "Filter by author name (matches in series.authors or book-level authors)"),
         ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
         ("limit" = Option<i64>, Query, description = "Items per page (max 200, default 50)"),
         ("sort" = Option<String>, Query, description = "Sort order: 'title' (default) or 'latest' (most recently added first)"),
@@ -362,13 +429,13 @@ pub async fn list_all_series(
     let mut p: usize = 0;
 
     let lib_cond = if query.library_id.is_some() {
-        p += 1; format!("WHERE library_id = ${p}")
+        p += 1; format!("WHERE s.library_id = ${p}")
     } else {
         "WHERE TRUE".to_string()
     };
 
     let q_cond = if query.q.is_some() {
-        p += 1; format!("AND sc.name ILIKE ${p}")
+        p += 1; format!("AND s.name ILIKE ${p}")
     } else { String::new() };
 
     let rs_cond = if reading_statuses.is_some() {
@@ -376,7 +443,7 @@ pub async fn list_all_series(
     } else { String::new() };
 
     let ss_cond = if query.series_status.is_some() {
-        p += 1; format!("AND LOWER(sm.status) = ${p}")
+        p += 1; format!("AND LOWER(s.status) = ${p}")
     } else { String::new() };
 
     let missing_cond = if has_missing {
@@ -391,41 +458,41 @@ pub async fn list_all_series(
     };
 
     let author_cond = if query.author.is_some() {
-        p += 1; format!("AND (${p} = ANY(sm.authors) OR EXISTS (SELECT 1 FROM books bk WHERE bk.series = sc.name AND bk.library_id = sc.library_id AND ${p} = ANY(COALESCE(NULLIF(bk.authors, '{{}}'), CASE WHEN bk.author IS NOT NULL AND bk.author != '' THEN ARRAY[bk.author] ELSE ARRAY[]::text[] END))))")
+        p += 1; format!("AND (${p} = ANY(s.authors) OR EXISTS (SELECT 1 FROM books bk WHERE bk.series_id = s.id AND ${p} = ANY(COALESCE(NULLIF(bk.authors, '{{}}'), CASE WHEN bk.author IS NOT NULL AND bk.author != '' THEN ARRAY[bk.author] ELSE ARRAY[]::text[] END))))")
     } else { String::new() };
 
     // Missing counts CTE — needs library_id filter when filtering by library
     let missing_cte = if query.library_id.is_some() {
         r#"
             missing_counts AS (
-                SELECT eml.series_name, eml.library_id,
+                SELECT eml.series_id,
                     COUNT(ebm.id) FILTER (WHERE ebm.book_id IS NULL) as missing_count
                 FROM external_metadata_links eml
                 JOIN external_book_metadata ebm ON ebm.link_id = eml.id
                 WHERE eml.library_id = $1 AND eml.status = 'approved'
-                GROUP BY eml.series_name, eml.library_id
+                GROUP BY eml.series_id
             )
             "#.to_string()
     } else {
         r#"
         missing_counts AS (
-            SELECT eml.series_name, eml.library_id,
+            SELECT eml.series_id,
                 COUNT(ebm.id) FILTER (WHERE ebm.book_id IS NULL) as missing_count
             FROM external_metadata_links eml
             JOIN external_book_metadata ebm ON ebm.link_id = eml.id
             WHERE eml.status = 'approved'
-            GROUP BY eml.series_name, eml.library_id
+            GROUP BY eml.series_id
         )
         "#.to_string()
     };
 
     let metadata_links_cte = r#"
         metadata_links AS (
-            SELECT DISTINCT ON (eml.series_name, eml.library_id)
-                eml.series_name, eml.library_id, eml.provider
+            SELECT DISTINCT ON (eml.series_id, eml.library_id)
+                eml.series_id, eml.library_id, eml.provider
             FROM external_metadata_links eml
             WHERE eml.status = 'approved'
-            ORDER BY eml.series_name, eml.library_id, eml.created_at DESC
+            ORDER BY eml.series_id, eml.library_id, eml.created_at DESC
         )
     "#;
 
@@ -435,24 +502,22 @@ pub async fn list_all_series(
 
     let count_sql = format!(
         r#"
-        WITH sorted_books AS (
-            SELECT COALESCE(NULLIF(series, ''), 'unclassified') as name, id, library_id
-            FROM books {lib_cond}
-        ),
-        series_counts AS (
-            SELECT sb.name, sb.library_id,
-                COUNT(*) as book_count,
+        WITH series_counts AS (
+            SELECT s.id as series_id, s.name, s.library_id,
+                COUNT(b.id) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
-            FROM sorted_books sb
-            LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
-            GROUP BY sb.name, sb.library_id
+            FROM series s
+            LEFT JOIN books b ON b.series_id = s.id
+            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
+            {lib_cond}
+            GROUP BY s.id, s.name, s.library_id
         ),
         {missing_cte},
         {metadata_links_cte}
         SELECT COUNT(*) FROM series_counts sc
-        LEFT JOIN series_metadata sm ON sm.library_id = sc.library_id AND sm.name = sc.name
-        LEFT JOIN missing_counts mc ON mc.series_name = sc.name AND mc.library_id = sc.library_id
-        LEFT JOIN metadata_links ml ON ml.series_name = sc.name AND ml.library_id = sc.library_id
+        LEFT JOIN series s ON s.id = sc.series_id
+        LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
+        LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = sc.library_id
         WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {author_cond}
         "#
     );
@@ -467,51 +532,56 @@ pub async fn list_all_series(
         r#"
         WITH sorted_books AS (
             SELECT
-                COALESCE(NULLIF(series, ''), 'unclassified') as name,
-                id,
-                library_id,
-                created_at,
+                b.series_id,
+                b.id,
+                b.library_id,
+                b.created_at,
                 ROW_NUMBER() OVER (
-                    PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified')
+                    PARTITION BY b.series_id
                     ORDER BY
-                        volume NULLS LAST,
-                        REGEXP_REPLACE(LOWER(title), '[0-9].*$', ''),
-                        COALESCE((REGEXP_MATCH(LOWER(title), '\d+'))[1]::int, 0),
-                        title ASC
+                        b.volume NULLS LAST,
+                        REGEXP_REPLACE(LOWER(b.title), '[0-9].*$', ''),
+                        COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),
+                        b.title ASC
                 ) as rn
-            FROM books
+            FROM books b
+            JOIN series s ON s.id = b.series_id
             {lib_cond}
         ),
         series_counts AS (
             SELECT
-                sb.name,
-                sb.library_id,
-                COUNT(*) as book_count,
+                s.id as series_id,
+                s.name,
+                s.library_id,
+                COUNT(b.id) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count,
-                MAX(sb.created_at) as latest_created_at
-            FROM sorted_books sb
-            LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
-            GROUP BY sb.name, sb.library_id
+                MAX(b.created_at) as latest_created_at
+            FROM series s
+            LEFT JOIN books b ON b.series_id = s.id
+            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
+            {lib_cond}
+            GROUP BY s.id, s.name, s.library_id
         ),
         {missing_cte},
         {metadata_links_cte}
         SELECT
             sc.name,
+            sc.series_id,
             sc.book_count,
             sc.books_read_count,
             sb.id as first_book_id,
-            sb.library_id,
-            sm.status as series_status,
+            sc.library_id,
+            s.status as series_status,
             mc.missing_count,
             ml.provider as metadata_provider,
             asl.anilist_id,
             asl.anilist_url
         FROM series_counts sc
-        JOIN sorted_books sb ON sb.name = sc.name AND sb.rn = 1
-        LEFT JOIN series_metadata sm ON sm.library_id = sc.library_id AND sm.name = sc.name
-        LEFT JOIN missing_counts mc ON mc.series_name = sc.name AND mc.library_id = sc.library_id
-        LEFT JOIN metadata_links ml ON ml.series_name = sc.name AND ml.library_id = sc.library_id
-        LEFT JOIN anilist_series_links asl ON asl.library_id = sc.library_id AND asl.series_name = sc.name AND asl.provider = 'anilist'
+        JOIN sorted_books sb ON sb.series_id = sc.series_id AND sb.rn = 1
+        LEFT JOIN series s ON s.id = sc.series_id
+        LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
+        LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = sc.library_id
+        LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
         WHERE TRUE
           {q_cond}
           {rs_cond}
@@ -569,6 +639,7 @@ pub async fn list_all_series(
         .iter()
         .map(|row| SeriesItem {
             name: row.get("name"),
+            series_id: row.get("series_id"),
             book_count: row.get("book_count"),
             books_read_count: row.get("books_read_count"),
             first_book_id: row.get("first_book_id"),
@@ -605,7 +676,7 @@ pub async fn series_statuses(
 ) -> Result<Json<Vec<String>>, ApiError> {
     let rows: Vec<String> = sqlx::query_scalar(
         r#"SELECT DISTINCT s FROM (
-            SELECT LOWER(status) AS s FROM series_metadata WHERE status IS NOT NULL
+            SELECT LOWER(status) AS s FROM series WHERE status IS NOT NULL
             UNION
             SELECT mapped_status AS s FROM status_mappings WHERE mapped_status IS NOT NULL
         ) t ORDER BY s"#,
@@ -673,13 +744,16 @@ pub async fn ongoing_series(
         r#"
         WITH series_stats AS (
             SELECT
-                COALESCE(NULLIF(b.series, ''), 'unclassified') AS name,
+                s.id AS series_id,
+                s.name,
+                s.library_id,
                 COUNT(*) AS book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') AS books_read_count,
                 MAX(brp.last_read_at) AS last_read_at
-            FROM books b
+            FROM series s
+            JOIN books b ON b.series_id = s.id
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
-            GROUP BY COALESCE(NULLIF(b.series, ''), 'unclassified')
+            GROUP BY s.id, s.name, s.library_id
             HAVING (
                 COUNT(brp.book_id) FILTER (WHERE brp.status IN ('read', 'reading')) > 0
                 AND COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') < COUNT(*)
@@ -687,22 +761,22 @@ pub async fn ongoing_series(
         ),
         first_books AS (
             SELECT
-                COALESCE(NULLIF(series, ''), 'unclassified') AS name,
-                id,
-                library_id,
+                b.series_id,
+                b.id,
+                b.library_id,
                 ROW_NUMBER() OVER (
-                    PARTITION BY COALESCE(NULLIF(series, ''), 'unclassified')
+                    PARTITION BY b.series_id
                     ORDER BY
-                        volume NULLS LAST,
-                        REGEXP_REPLACE(LOWER(title), '[0-9].*$', ''),
-                        COALESCE((REGEXP_MATCH(LOWER(title), '\d+'))[1]::int, 0),
-                        title ASC
+                        b.volume NULLS LAST,
+                        REGEXP_REPLACE(LOWER(b.title), '[0-9].*$', ''),
+                        COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),
+                        b.title ASC
                 ) AS rn
-            FROM books
+            FROM books b
         )
-        SELECT ss.name, ss.book_count, ss.books_read_count, fb.id AS first_book_id, fb.library_id
+        SELECT ss.name, ss.series_id, ss.book_count, ss.books_read_count, fb.id AS first_book_id, fb.library_id
         FROM series_stats ss
-        JOIN first_books fb ON fb.name = ss.name AND fb.rn = 1
+        JOIN first_books fb ON fb.series_id = ss.series_id AND fb.rn = 1
         ORDER BY ss.last_read_at DESC NULLS LAST
         LIMIT $1
         "#,
@@ -716,6 +790,7 @@ pub async fn ongoing_series(
         .iter()
         .map(|row| SeriesItem {
             name: row.get("name"),
+            series_id: row.get("series_id"),
             book_count: row.get("book_count"),
             books_read_count: row.get("books_read_count"),
             first_book_id: row.get("first_book_id"),
@@ -757,11 +832,12 @@ pub async fn ongoing_books(
         r#"
         WITH ongoing_series AS (
             SELECT
-                COALESCE(NULLIF(b.series, ''), 'unclassified') AS name,
+                s.id AS series_id,
                 MAX(brp.last_read_at) AS series_last_read_at
-            FROM books b
+            FROM series s
+            JOIN books b ON b.series_id = s.id
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
-            GROUP BY COALESCE(NULLIF(b.series, ''), 'unclassified')
+            GROUP BY s.id
             HAVING (
                 COUNT(brp.book_id) FILTER (WHERE brp.status IN ('read', 'reading')) > 0
                 AND COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') < COUNT(*)
@@ -769,18 +845,19 @@ pub async fn ongoing_books(
         ),
         next_books AS (
             SELECT
-                b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, b.series, b.volume,
+                b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, s.name AS series, b.volume,
                 b.language, b.page_count, b.thumbnail_path, b.updated_at,
                 COALESCE(brp.status, 'unread') AS reading_status,
                 brp.current_page AS reading_current_page,
                 brp.last_read_at AS reading_last_read_at,
                 os.series_last_read_at,
                 ROW_NUMBER() OVER (
-                    PARTITION BY COALESCE(NULLIF(b.series, ''), 'unclassified')
+                    PARTITION BY b.series_id
                     ORDER BY b.volume NULLS LAST, b.title
                 ) AS rn
             FROM books b
-            JOIN ongoing_series os ON COALESCE(NULLIF(b.series, ''), 'unclassified') = os.name
+            JOIN ongoing_series os ON b.series_id = os.series_id
+            JOIN series s ON s.id = b.series_id
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
             WHERE COALESCE(brp.status, 'unread') != 'read'
         )
@@ -847,54 +924,51 @@ pub struct SeriesMetadata {
 /// Get metadata for a specific series
 #[utoipa::path(
     get,
-    path = "/libraries/{library_id}/series/{name}/metadata",
+    path = "/libraries/{library_id}/series/{series_id}/metadata",
     tag = "series",
     params(
         ("library_id" = String, Path, description = "Library UUID"),
-        ("name" = String, Path, description = "Series name"),
+        ("series_id" = String, Path, description = "Series UUID"),
     ),
     responses(
         (status = 200, body = SeriesMetadata),
         (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Series not found"),
     ),
     security(("Bearer" = []))
 )]
 pub async fn get_series_metadata(
     State(state): State<AppState>,
-    Path((library_id, name)): Path<(Uuid, String)>,
+    Path((library_id, series_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<SeriesMetadata>, ApiError> {
-    // author/language from first book of series
-    let books_row = if name == "unclassified" {
-        sqlx::query("SELECT author, language FROM books WHERE library_id = $1 AND (series IS NULL OR series = '') LIMIT 1")
-            .bind(library_id)
-            .fetch_optional(&state.pool)
-            .await?
-    } else {
-        sqlx::query("SELECT author, language FROM books WHERE library_id = $1 AND series = $2 LIMIT 1")
-            .bind(library_id)
-            .bind(&name)
-            .fetch_optional(&state.pool)
-            .await?
-    };
-
-    let meta_row = sqlx::query(
-        "SELECT authors, description, publishers, start_year, total_volumes, status, locked_fields FROM series_metadata WHERE library_id = $1 AND name = $2"
+    // Fetch series row (contains metadata directly)
+    let series_row = sqlx::query(
+        "SELECT authors, description, publishers, start_year, total_volumes, status, locked_fields, book_author, book_language \
+         FROM series WHERE id = $1 AND library_id = $2"
     )
+    .bind(series_id)
     .bind(library_id)
-    .bind(&name)
     .fetch_optional(&state.pool)
     .await?;
 
+    // Fallback: get book_author/book_language from first book if not on series row
+    let books_row = sqlx::query("SELECT author, language FROM books WHERE series_id = $1 LIMIT 1")
+        .bind(series_id)
+        .fetch_optional(&state.pool)
+        .await?;
+
     Ok(Json(SeriesMetadata {
-        authors: meta_row.as_ref().map(|r| r.get::<Vec<String>, _>("authors")).unwrap_or_default(),
-        description: meta_row.as_ref().and_then(|r| r.get("description")),
-        publishers: meta_row.as_ref().map(|r| r.get::<Vec<String>, _>("publishers")).unwrap_or_default(),
-        start_year: meta_row.as_ref().and_then(|r| r.get("start_year")),
-        total_volumes: meta_row.as_ref().and_then(|r| r.get("total_volumes")),
-        status: meta_row.as_ref().and_then(|r| r.get("status")),
-        book_author: books_row.as_ref().and_then(|r| r.get("author")),
-        book_language: books_row.as_ref().and_then(|r| r.get("language")),
-        locked_fields: meta_row.as_ref().map(|r| r.get::<serde_json::Value, _>("locked_fields")).unwrap_or(serde_json::json!({})),
+        authors: series_row.as_ref().map(|r| r.get::<Vec<String>, _>("authors")).unwrap_or_default(),
+        description: series_row.as_ref().and_then(|r| r.get("description")),
+        publishers: series_row.as_ref().map(|r| r.get::<Vec<String>, _>("publishers")).unwrap_or_default(),
+        start_year: series_row.as_ref().and_then(|r| r.get("start_year")),
+        total_volumes: series_row.as_ref().and_then(|r| r.get("total_volumes")),
+        status: series_row.as_ref().and_then(|r| r.get("status")),
+        book_author: series_row.as_ref().and_then(|r| r.get::<Option<String>, _>("book_author"))
+            .or_else(|| books_row.as_ref().and_then(|r| r.get("author"))),
+        book_language: series_row.as_ref().and_then(|r| r.get::<Option<String>, _>("book_language"))
+            .or_else(|| books_row.as_ref().and_then(|r| r.get("language"))),
+        locked_fields: series_row.as_ref().map(|r| r.get::<serde_json::Value, _>("locked_fields")).unwrap_or(serde_json::json!({})),
     }))
 }
 
@@ -903,7 +977,7 @@ pub async fn get_series_metadata(
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateSeriesRequest {
     pub new_name: String,
-    /// Series-level authors list (stored in series_metadata)
+    /// Series-level authors list (stored in series)
     #[serde(default)]
     pub authors: Vec<String>,
     /// Per-book author propagation: absent = keep books unchanged, present = overwrite all books
@@ -932,11 +1006,11 @@ pub struct UpdateSeriesResponse {
 /// Update metadata for all books in a series
 #[utoipa::path(
     patch,
-    path = "/libraries/{library_id}/series/{name}",
+    path = "/libraries/{library_id}/series/{series_id}",
     tag = "series",
     params(
         ("library_id" = String, Path, description = "Library UUID"),
-        ("name" = String, Path, description = "Series name (use 'unclassified' for books without series)"),
+        ("series_id" = String, Path, description = "Series UUID"),
     ),
     request_body = UpdateSeriesRequest,
     responses(
@@ -944,18 +1018,29 @@ pub struct UpdateSeriesResponse {
         (status = 400, description = "Invalid request"),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden - Admin scope required"),
+        (status = 404, description = "Series not found"),
     ),
     security(("Bearer" = []))
 )]
 pub async fn update_series(
     State(state): State<AppState>,
-    Path((library_id, name)): Path<(Uuid, String)>,
+    Path((library_id, series_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateSeriesRequest>,
 ) -> Result<Json<UpdateSeriesResponse>, ApiError> {
     let new_name = body.new_name.trim().to_string();
     if new_name.is_empty() {
         return Err(ApiError::bad_request("series name cannot be empty"));
     }
+
+    // Verify the series exists
+    let old_row = sqlx::query("SELECT name, original_name FROM series WHERE id = $1 AND library_id = $2")
+        .bind(series_id)
+        .bind(library_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| ApiError::not_found("series not found"))?;
+    let old_name: String = old_row.get("name");
+
     // author/language: None = absent (keep books unchanged), Some(v) = apply to all books
     let apply_author = body.author.is_some();
     let author_value = body.author.flatten().as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
@@ -966,92 +1051,58 @@ pub async fn update_series(
         .map(|p| p.trim().to_string())
         .filter(|p| !p.is_empty())
         .collect();
-    let new_series_value: Option<String> = if new_name == "unclassified" { None } else { Some(new_name.clone()) };
-
-    // 1. Update books: always update series name; author/language only if opted-in
-    // $1=library_id, $2=new_series_value, $3=apply_author, $4=author_value,
-    // $5=apply_language, $6=language_value, [$7=old_name]
-    let result = if name == "unclassified" {
-        sqlx::query(
-            "UPDATE books \
-             SET series = $2, \
-                 author = CASE WHEN $3 THEN $4 ELSE author END, \
-                 language = CASE WHEN $5 THEN $6 ELSE language END, \
-                 updated_at = NOW() \
-             WHERE library_id = $1 AND (series IS NULL OR series = '')"
-        )
-        .bind(library_id)
-        .bind(&new_series_value)
-        .bind(apply_author)
-        .bind(&author_value)
-        .bind(apply_language)
-        .bind(&language_value)
-        .execute(&state.pool)
-        .await?
-    } else {
-        sqlx::query(
-            "UPDATE books \
-             SET series = $2, \
-                 author = CASE WHEN $3 THEN $4 ELSE author END, \
-                 language = CASE WHEN $5 THEN $6 ELSE language END, \
-                 updated_at = NOW() \
-             WHERE library_id = $1 AND series = $7"
-        )
-        .bind(library_id)
-        .bind(&new_series_value)
-        .bind(apply_author)
-        .bind(&author_value)
-        .bind(apply_language)
-        .bind(&language_value)
-        .bind(&name)
-        .execute(&state.pool)
-        .await?
-    };
-
-    // 2. Upsert series_metadata (keyed by new_name)
-    let meta_name = new_series_value.as_deref().unwrap_or("unclassified");
     let authors: Vec<String> = body.authors.iter()
         .map(|a| a.trim().to_string())
         .filter(|a| !a.is_empty())
         .collect();
     let locked_fields = body.locked_fields.clone().unwrap_or(serde_json::json!({}));
 
-    // When renaming, preserve the filesystem-derived original name so the scanner
-    // can map files back to the renamed series instead of recreating the old one.
-    let is_rename = name != "unclassified" && new_name != name;
+    // 1. Update books: author/language only if opted-in
+    let result = sqlx::query(
+        "UPDATE books \
+         SET author = CASE WHEN $2 THEN $3 ELSE author END, \
+             language = CASE WHEN $4 THEN $5 ELSE language END, \
+             updated_at = NOW() \
+         WHERE series_id = $1"
+    )
+    .bind(series_id)
+    .bind(apply_author)
+    .bind(&author_value)
+    .bind(apply_language)
+    .bind(&language_value)
+    .execute(&state.pool)
+    .await?;
+
+    // 2. Update the series row (name, metadata, original_name tracking)
+    let is_rename = new_name != old_name;
     let original_name: Option<String> = if is_rename {
-        // Check if the old metadata already has an original_name (chained renames: A→B→C)
-        let existing_original: Option<Option<String>> = sqlx::query_scalar(
-            "SELECT original_name FROM series_metadata WHERE library_id = $1 AND name = $2"
-        )
-        .bind(library_id)
-        .bind(&name)
-        .fetch_optional(&state.pool)
-        .await?;
-        // Use existing original_name if set, otherwise use the old name itself
-        Some(existing_original.flatten().unwrap_or_else(|| name.clone()))
+        // Use existing original_name if set (chained renames: A->B->C), otherwise use old name
+        let existing_original: Option<String> = old_row.get("original_name");
+        Some(existing_original.unwrap_or_else(|| old_name.clone()))
     } else {
         None
     };
 
     sqlx::query(
         r#"
-        INSERT INTO series_metadata (library_id, name, authors, description, publishers, start_year, total_volumes, status, locked_fields, original_name, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-        ON CONFLICT (library_id, name) DO UPDATE
-          SET authors     = EXCLUDED.authors,
-              description = EXCLUDED.description,
-              publishers  = EXCLUDED.publishers,
-              start_year  = EXCLUDED.start_year,
-              total_volumes = EXCLUDED.total_volumes,
-              status      = EXCLUDED.status,
-              locked_fields = EXCLUDED.locked_fields,
-              original_name = COALESCE(EXCLUDED.original_name, series_metadata.original_name),
-              updated_at  = NOW()
+        UPDATE series
+        SET name = $2,
+            authors = $3,
+            description = $4,
+            publishers = $5,
+            start_year = $6,
+            total_volumes = $7,
+            status = $8,
+            locked_fields = $9,
+            book_author = CASE WHEN $10 THEN $11 ELSE book_author END,
+            book_language = CASE WHEN $12 THEN $13 ELSE book_language END,
+            original_name = COALESCE($14, original_name),
+            updated_at = NOW()
+        WHERE id = $1
         "#
     )
-    .bind(library_id)
-    .bind(meta_name)
+    .bind(series_id)
+    .bind(&new_name)
     .bind(&authors)
     .bind(&description)
     .bind(&publishers)
@@ -1059,20 +1110,13 @@ pub async fn update_series(
     .bind(body.total_volumes)
     .bind(&body.status)
     .bind(&locked_fields)
+    .bind(apply_author)
+    .bind(&author_value)
+    .bind(apply_language)
+    .bind(&language_value)
     .bind(&original_name)
     .execute(&state.pool)
     .await?;
-
-    // 3. If renamed, delete the old series_metadata entry
-    if is_rename {
-        sqlx::query(
-            "DELETE FROM series_metadata WHERE library_id = $1 AND name = $2"
-        )
-        .bind(library_id)
-        .bind(&name)
-        .execute(&state.pool)
-        .await?;
-    }
 
     Ok(Json(UpdateSeriesResponse { updated: result.rows_affected() }))
 }
@@ -1081,11 +1125,11 @@ pub async fn update_series(
 /// and all related metadata (external links, anilist, available downloads).
 #[utoipa::path(
     delete,
-    path = "/libraries/{library_id}/series/{name}",
+    path = "/libraries/{library_id}/series/{series_id}",
     tag = "series",
     params(
         ("library_id" = String, Path, description = "Library UUID"),
-        ("name" = String, Path, description = "Series name (URL-encoded)"),
+        ("series_id" = String, Path, description = "Series UUID"),
     ),
     responses(
         (status = 200, description = "Series deleted"),
@@ -1097,24 +1141,32 @@ pub async fn update_series(
 pub async fn delete_series(
     State(state): State<AppState>,
     Extension(_user): Extension<AuthUser>,
-    Path((library_id, name)): Path<(Uuid, String)>,
+    Path((library_id, series_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<crate::responses::DeletedResponse>, ApiError> {
     use stripstream_core::paths::remap_libraries_path;
+
+    // Verify the series exists
+    let series_row = sqlx::query("SELECT name FROM series WHERE id = $1 AND library_id = $2")
+        .bind(series_id)
+        .bind(library_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| ApiError::not_found("series not found"))?;
+    let series_name: String = series_row.get("name");
 
     // Find all books in this series
     let book_rows = sqlx::query(
         "SELECT b.id, b.thumbnail_path, bf.abs_path \
          FROM books b \
          LEFT JOIN book_files bf ON bf.book_id = b.id \
-         WHERE b.library_id = $1 AND LOWER(COALESCE(NULLIF(b.series, ''), 'unclassified')) = LOWER($2)",
+         WHERE b.series_id = $1",
     )
-    .bind(library_id)
-    .bind(&name)
+    .bind(series_id)
     .fetch_all(&state.pool)
     .await?;
 
     if book_rows.is_empty() {
-        return Err(ApiError::not_found("series not found or has no books"));
+        // Series exists but has no books — still delete the series row
     }
 
     // Collect the series directory from the first book's path
@@ -1156,38 +1208,18 @@ pub async fn delete_series(
 
     // Delete all books from DB (cascades to book_files, reading_progress, etc.)
     let book_ids: Vec<Uuid> = book_rows.iter().map(|r| r.get("id")).collect();
-    sqlx::query("DELETE FROM books WHERE id = ANY($1)")
-        .bind(&book_ids)
+    if !book_ids.is_empty() {
+        sqlx::query("DELETE FROM books WHERE id = ANY($1)")
+            .bind(&book_ids)
+            .execute(&state.pool)
+            .await?;
+    }
+
+    // Delete the series row (cascades to external_metadata_links, anilist_series_links, available_downloads via FK)
+    sqlx::query("DELETE FROM series WHERE id = $1")
+        .bind(series_id)
         .execute(&state.pool)
         .await?;
-
-    // Delete series metadata
-    sqlx::query("DELETE FROM series_metadata WHERE library_id = $1 AND name = $2")
-        .bind(library_id)
-        .bind(&name)
-        .execute(&state.pool)
-        .await?;
-
-    // Delete external metadata links (cascades to external_book_metadata)
-    sqlx::query("DELETE FROM external_metadata_links WHERE library_id = $1 AND LOWER(series_name) = LOWER($2)")
-        .bind(library_id)
-        .bind(&name)
-        .execute(&state.pool)
-        .await?;
-
-    // Delete anilist link
-    let _ = sqlx::query("DELETE FROM anilist_series_links WHERE library_id = $1 AND LOWER(series_name) = LOWER($2)")
-        .bind(library_id)
-        .bind(&name)
-        .execute(&state.pool)
-        .await;
-
-    // Delete available downloads
-    let _ = sqlx::query("DELETE FROM available_downloads WHERE library_id = $1 AND LOWER(series_name) = LOWER($2)")
-        .bind(library_id)
-        .bind(&name)
-        .execute(&state.pool)
-        .await;
 
     // Queue a scan job for consistency
     let scan_job_id = Uuid::new_v4();
@@ -1200,9 +1232,61 @@ pub async fn delete_series(
     .await?;
 
     tracing::info!(
-        "[SERIES] Deleted series '{}' ({} books) from library {}, scan job {} queued",
-        name, book_ids.len(), library_id, scan_job_id
+        "[SERIES] Deleted series '{}' ({}) ({} books) from library {}, scan job {} queued",
+        series_name, series_id, book_ids.len(), library_id, scan_job_id
     );
 
     Ok(Json(crate::responses::DeletedResponse::new(library_id)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn series_item_has_series_id() {
+        let item = SeriesItem {
+            name: "Dragon Ball".to_string(),
+            series_id: Uuid::new_v4(),
+            book_count: 42,
+            books_read_count: 10,
+            first_book_id: Uuid::new_v4(),
+            library_id: Uuid::new_v4(),
+            series_status: Some("ended".to_string()),
+            missing_count: Some(0),
+            metadata_provider: None,
+            anilist_id: None,
+            anilist_url: None,
+        };
+        let json = serde_json::to_value(&item).unwrap();
+        assert!(json["series_id"].is_string());
+        assert_eq!(json["name"], "Dragon Ball");
+        assert_eq!(json["book_count"], 42);
+    }
+
+    #[test]
+    fn series_metadata_serializes() {
+        let meta = SeriesMetadata {
+            description: Some("A ninja story".to_string()),
+            authors: vec!["Kishimoto".to_string()],
+            publishers: vec![],
+            book_author: None,
+            book_language: None,
+            start_year: Some(1999),
+            total_volumes: Some(72),
+            status: Some("ended".to_string()),
+            locked_fields: serde_json::json!({}),
+        };
+        let json = serde_json::to_value(&meta).unwrap();
+        assert_eq!(json["total_volumes"], 72);
+        assert_eq!(json["authors"][0], "Kishimoto");
+        assert_eq!(json["status"], "ended");
+    }
+
+    #[test]
+    fn update_series_response_serializes() {
+        let resp = UpdateSeriesResponse { updated: 5 };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["updated"], 5);
+    }
 }

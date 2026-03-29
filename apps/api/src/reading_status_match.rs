@@ -356,9 +356,10 @@ pub(crate) async fn process_reading_status_match(
 
     let series_names: Vec<String> = sqlx::query_scalar(
         r#"
-        SELECT DISTINCT COALESCE(NULLIF(series, ''), 'unclassified')
-        FROM books
-        WHERE library_id = $1
+        SELECT DISTINCT COALESCE(s.name, 'unclassified')
+        FROM books b
+        LEFT JOIN series s ON s.id = b.series_id
+        WHERE b.library_id = $1
         ORDER BY 1
         "#,
     )

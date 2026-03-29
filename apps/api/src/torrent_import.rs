@@ -664,8 +664,9 @@ async fn do_import(
         "SELECT bf.abs_path, b.volume \
          FROM book_files bf \
          JOIN books b ON b.id = bf.book_id \
+         LEFT JOIN series s ON s.id = b.series_id \
          WHERE b.library_id = $1 \
-           AND LOWER(unaccent(b.series)) = LOWER(unaccent($2)) \
+           AND LOWER(unaccent(s.name)) = LOWER(unaccent($2)) \
            AND b.volume IS NOT NULL \
          ORDER BY b.volume DESC LIMIT 1",
     )

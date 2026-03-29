@@ -410,9 +410,10 @@ pub(crate) async fn process_metadata_batch(
     // Get all distinct series names for this library
     let series_names: Vec<String> = sqlx::query_scalar(
         r#"
-        SELECT DISTINCT COALESCE(NULLIF(series, ''), 'unclassified')
-        FROM books
-        WHERE library_id = $1
+        SELECT DISTINCT COALESCE(s.name, 'unclassified')
+        FROM books b
+        LEFT JOIN series s ON s.id = b.series_id
+        WHERE b.library_id = $1
         ORDER BY 1
         "#,
     )
@@ -757,9 +758,10 @@ async fn search_and_evaluate(
         if let Some(ext_total) = best.total_volumes {
             let local_count: Option<i64> = sqlx::query_scalar(
                 r#"
-                SELECT COUNT(*) FROM books
-                WHERE library_id = $1
-                  AND COALESCE(NULLIF(series, ''), 'unclassified') = $2
+                SELECT COUNT(*) FROM books b
+                LEFT JOIN series s ON s.id = b.series_id
+                WHERE b.library_id = $1
+                  AND COALESCE(s.name, 'unclassified') = $2
                 "#,
             )
             .bind(library_id)
@@ -867,35 +869,35 @@ async fn sync_series_from_candidate(
 
     sqlx::query(
         r#"
-        INSERT INTO series_metadata (library_id, name, description, publishers, start_year, total_volumes, status, authors, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+        INSERT INTO series (id, library_id, name, description, publishers, start_year, total_volumes, status, authors, created_at, updated_at)
+        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
         ON CONFLICT (library_id, name)
         DO UPDATE SET
             description = CASE
-                WHEN (series_metadata.locked_fields->>'description')::boolean IS TRUE THEN series_metadata.description
-                ELSE COALESCE(NULLIF(EXCLUDED.description, ''), series_metadata.description)
+                WHEN (series.locked_fields->>'description')::boolean IS TRUE THEN series.description
+                ELSE COALESCE(NULLIF(EXCLUDED.description, ''), series.description)
             END,
             publishers = CASE
-                WHEN (series_metadata.locked_fields->>'publishers')::boolean IS TRUE THEN series_metadata.publishers
+                WHEN (series.locked_fields->>'publishers')::boolean IS TRUE THEN series.publishers
                 WHEN array_length(EXCLUDED.publishers, 1) > 0 THEN EXCLUDED.publishers
-                ELSE series_metadata.publishers
+                ELSE series.publishers
             END,
             start_year = CASE
-                WHEN (series_metadata.locked_fields->>'start_year')::boolean IS TRUE THEN series_metadata.start_year
-                ELSE COALESCE(EXCLUDED.start_year, series_metadata.start_year)
+                WHEN (series.locked_fields->>'start_year')::boolean IS TRUE THEN series.start_year
+                ELSE COALESCE(EXCLUDED.start_year, series.start_year)
             END,
             total_volumes = CASE
-                WHEN (series_metadata.locked_fields->>'total_volumes')::boolean IS TRUE THEN series_metadata.total_volumes
-                ELSE COALESCE(EXCLUDED.total_volumes, series_metadata.total_volumes)
+                WHEN (series.locked_fields->>'total_volumes')::boolean IS TRUE THEN series.total_volumes
+                ELSE COALESCE(EXCLUDED.total_volumes, series.total_volumes)
             END,
             status = CASE
-                WHEN (series_metadata.locked_fields->>'status')::boolean IS TRUE THEN series_metadata.status
-                ELSE COALESCE(EXCLUDED.status, series_metadata.status)
+                WHEN (series.locked_fields->>'status')::boolean IS TRUE THEN series.status
+                ELSE COALESCE(EXCLUDED.status, series.status)
             END,
             authors = CASE
-                WHEN (series_metadata.locked_fields->>'authors')::boolean IS TRUE THEN series_metadata.authors
+                WHEN (series.locked_fields->>'authors')::boolean IS TRUE THEN series.authors
                 WHEN array_length(EXCLUDED.authors, 1) > 0 THEN EXCLUDED.authors
-                ELSE series_metadata.authors
+                ELSE series.authors
             END,
             updated_at = NOW()
         "#,
@@ -944,13 +946,14 @@ async fn sync_books_from_provider(
     // Pre-fetch local books
     let local_books: Vec<(Uuid, Option<i32>, String)> = sqlx::query_as(
         r#"
-        SELECT id, volume, title FROM books
-        WHERE library_id = $1
-          AND COALESCE(NULLIF(series, ''), 'unclassified') = $2
-        ORDER BY volume NULLS LAST,
-                 REGEXP_REPLACE(LOWER(title), '[0-9].*$', ''),
-                 COALESCE((REGEXP_MATCH(LOWER(title), '\d+'))[1]::int, 0),
-                 title ASC
+        SELECT b.id, b.volume, b.title FROM books b
+        LEFT JOIN series s ON s.id = b.series_id
+        WHERE b.library_id = $1
+          AND COALESCE(s.name, 'unclassified') = $2
+        ORDER BY b.volume NULLS LAST,
+                 REGEXP_REPLACE(LOWER(b.title), '[0-9].*$', ''),
+                 COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),
+                 b.title ASC
         "#,
     )
     .bind(library_id)

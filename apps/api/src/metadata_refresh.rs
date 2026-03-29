@@ -95,8 +95,8 @@ pub async fn start_refresh(
             let link_count: i64 = sqlx::query_scalar(
                 r#"
                 SELECT COUNT(*) FROM external_metadata_links eml
-                LEFT JOIN series_metadata sm
-                    ON sm.library_id = eml.library_id AND sm.name = eml.series_name
+                LEFT JOIN series sm
+                    ON sm.library_id = eml.library_id AND sm.id = eml.series_id
                 WHERE eml.library_id = $1
                   AND eml.status = 'approved'
                   AND COALESCE(sm.status, 'ongoing') NOT IN ('ended', 'cancelled')
@@ -188,8 +188,8 @@ pub async fn start_refresh(
     let link_count: i64 = sqlx::query_scalar(
         r#"
         SELECT COUNT(*) FROM external_metadata_links eml
-        LEFT JOIN series_metadata sm
-            ON sm.library_id = eml.library_id AND sm.name = eml.series_name
+        LEFT JOIN series sm
+            ON sm.library_id = eml.library_id AND sm.id = eml.series_id
         WHERE eml.library_id = $1
           AND eml.status = 'approved'
           AND COALESCE(sm.status, 'ongoing') NOT IN ('ended', 'cancelled')
@@ -357,14 +357,14 @@ pub(crate) async fn process_metadata_refresh(
     // Get approved links for this library, only for ongoing series (not ended/cancelled)
     let links: Vec<(Uuid, String, String, String)> = sqlx::query_as(
         r#"
-        SELECT eml.id, eml.series_name, eml.provider, eml.external_id
+        SELECT eml.id, sm.name AS series_name, eml.provider, eml.external_id
         FROM external_metadata_links eml
-        LEFT JOIN series_metadata sm
-            ON sm.library_id = eml.library_id AND sm.name = eml.series_name
+        JOIN series sm
+            ON sm.id = eml.series_id
         WHERE eml.library_id = $1
           AND eml.status = 'approved'
           AND COALESCE(sm.status, 'ongoing') NOT IN ('ended', 'cancelled')
-        ORDER BY eml.series_name
+        ORDER BY sm.name
         "#,
     )
     .bind(library_id)
@@ -541,13 +541,14 @@ pub(crate) async fn refresh_link(
     // Pre-fetch local books
     let local_books: Vec<(Uuid, Option<i32>, String)> = sqlx::query_as(
         r#"
-        SELECT id, volume, title FROM books
-        WHERE library_id = $1
-          AND COALESCE(NULLIF(series, ''), 'unclassified') = $2
-        ORDER BY volume NULLS LAST,
-                 REGEXP_REPLACE(LOWER(title), '[0-9].*$', ''),
-                 COALESCE((REGEXP_MATCH(LOWER(title), '\d+'))[1]::int, 0),
-                 title ASC
+        SELECT b.id, b.volume, b.title FROM books b
+        LEFT JOIN series s ON s.id = b.series_id
+        WHERE b.library_id = $1
+          AND COALESCE(s.name, 'unclassified') = $2
+        ORDER BY b.volume NULLS LAST,
+                 REGEXP_REPLACE(LOWER(b.title), '[0-9].*$', ''),
+                 COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),
+                 b.title ASC
         "#,
     )
     .bind(library_id)
@@ -741,7 +742,7 @@ async fn sync_series_with_diff(
     // Fetch existing series metadata for diffing
     let existing = sqlx::query(
         r#"SELECT description, publishers, start_year, total_volumes, status, authors, locked_fields
-           FROM series_metadata WHERE library_id = $1 AND name = $2"#,
+           FROM series WHERE library_id = $1 AND name = $2"#,
     )
     .bind(library_id)
     .bind(series_name)
@@ -800,35 +801,35 @@ async fn sync_series_with_diff(
     // Now do the actual upsert
     sqlx::query(
         r#"
-        INSERT INTO series_metadata (library_id, name, description, publishers, start_year, total_volumes, status, authors, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+        INSERT INTO series (id, library_id, name, description, publishers, start_year, total_volumes, status, authors, created_at, updated_at)
+        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
         ON CONFLICT (library_id, name)
         DO UPDATE SET
             description = CASE
-                WHEN (series_metadata.locked_fields->>'description')::boolean IS TRUE THEN series_metadata.description
-                ELSE COALESCE(NULLIF(EXCLUDED.description, ''), series_metadata.description)
+                WHEN (series.locked_fields->>'description')::boolean IS TRUE THEN series.description
+                ELSE COALESCE(NULLIF(EXCLUDED.description, ''), series.description)
             END,
             publishers = CASE
-                WHEN (series_metadata.locked_fields->>'publishers')::boolean IS TRUE THEN series_metadata.publishers
+                WHEN (series.locked_fields->>'publishers')::boolean IS TRUE THEN series.publishers
                 WHEN array_length(EXCLUDED.publishers, 1) > 0 THEN EXCLUDED.publishers
-                ELSE series_metadata.publishers
+                ELSE series.publishers
             END,
             start_year = CASE
-                WHEN (series_metadata.locked_fields->>'start_year')::boolean IS TRUE THEN series_metadata.start_year
-                ELSE COALESCE(EXCLUDED.start_year, series_metadata.start_year)
+                WHEN (series.locked_fields->>'start_year')::boolean IS TRUE THEN series.start_year
+                ELSE COALESCE(EXCLUDED.start_year, series.start_year)
             END,
             total_volumes = CASE
-                WHEN (series_metadata.locked_fields->>'total_volumes')::boolean IS TRUE THEN series_metadata.total_volumes
-                ELSE COALESCE(EXCLUDED.total_volumes, series_metadata.total_volumes)
+                WHEN (series.locked_fields->>'total_volumes')::boolean IS TRUE THEN series.total_volumes
+                ELSE COALESCE(EXCLUDED.total_volumes, series.total_volumes)
             END,
             status = CASE
-                WHEN (series_metadata.locked_fields->>'status')::boolean IS TRUE THEN series_metadata.status
-                ELSE COALESCE(EXCLUDED.status, series_metadata.status)
+                WHEN (series.locked_fields->>'status')::boolean IS TRUE THEN series.status
+                ELSE COALESCE(EXCLUDED.status, series.status)
             END,
             authors = CASE
-                WHEN (series_metadata.locked_fields->>'authors')::boolean IS TRUE THEN series_metadata.authors
+                WHEN (series.locked_fields->>'authors')::boolean IS TRUE THEN series.authors
                 WHEN array_length(EXCLUDED.authors, 1) > 0 THEN EXCLUDED.authors
-                ELSE series_metadata.authors
+                ELSE series.authors
             END,
             updated_at = NOW()
         "#,
@@ -967,7 +968,7 @@ pub async fn rematch_unlinked_books(pool: &PgPool, library_id: Uuid) -> Result<i
             FROM external_book_metadata ebm2
             JOIN external_metadata_links eml ON eml.id = ebm2.link_id
             JOIN books b ON b.library_id = eml.library_id
-                AND LOWER(COALESCE(NULLIF(b.series, ''), 'unclassified')) = LOWER(eml.series_name)
+                AND b.series_id = eml.series_id
                 AND b.volume = ebm2.volume_number
             WHERE eml.library_id = $1
               AND ebm2.book_id IS NULL

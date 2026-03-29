@@ -62,16 +62,17 @@ pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<Li
     let rows = sqlx::query(
         "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at, l.watcher_enabled, l.metadata_provider, l.fallback_metadata_provider, l.metadata_refresh_mode, l.next_metadata_refresh_at, l.reading_status_provider, l.reading_status_push_mode, l.next_reading_status_push_at, l.download_detection_mode, l.next_download_detection_at,
                 (SELECT COUNT(*) FROM books b WHERE b.library_id = l.id) as book_count,
-                (SELECT COUNT(DISTINCT COALESCE(NULLIF(b.series, ''), 'unclassified')) FROM books b WHERE b.library_id = l.id) as series_count,
+                (SELECT COUNT(DISTINCT b.series_id) + CASE WHEN EXISTS(SELECT 1 FROM books b WHERE b.library_id = l.id AND b.series_id IS NULL) THEN 1 ELSE 0 END FROM books b WHERE b.library_id = l.id) as series_count,
                 COALESCE((
                     SELECT ARRAY_AGG(first_id ORDER BY series_name)
                     FROM (
-                        SELECT DISTINCT ON (COALESCE(NULLIF(b.series, ''), 'unclassified'))
-                            COALESCE(NULLIF(b.series, ''), 'unclassified') as series_name,
+                        SELECT DISTINCT ON (COALESCE(s.name, 'unclassified'))
+                            COALESCE(s.name, 'unclassified') as series_name,
                             b.id as first_id
                         FROM books b
+                        LEFT JOIN series s ON s.id = b.series_id
                         WHERE b.library_id = l.id
-                        ORDER BY COALESCE(NULLIF(b.series, ''), 'unclassified'),
+                        ORDER BY COALESCE(s.name, 'unclassified'),
                             b.volume NULLS LAST, b.title ASC
                         LIMIT 5
                     ) sub
@@ -377,15 +378,16 @@ pub async fn update_monitoring(
         .fetch_one(&state.pool)
         .await?;
 
-    let series_count: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT COALESCE(NULLIF(series, ''), 'unclassified')) FROM books WHERE library_id = $1")
+    let series_count: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT b.series_id) + CASE WHEN EXISTS(SELECT 1 FROM books b WHERE b.library_id = $1 AND b.series_id IS NULL) THEN 1 ELSE 0 END FROM books b WHERE b.library_id = $1")
         .bind(library_id)
         .fetch_one(&state.pool)
         .await?;
 
     let thumbnail_book_ids: Vec<Uuid> = sqlx::query_scalar(
         "SELECT b.id FROM books b
+         LEFT JOIN series s ON s.id = b.series_id
          WHERE b.library_id = $1
-         ORDER BY COALESCE(NULLIF(b.series, ''), 'unclassified'), b.volume NULLS LAST, b.title ASC
+         ORDER BY COALESCE(s.name, 'unclassified'), b.volume NULLS LAST, b.title ASC
          LIMIT 5"
     )
     .bind(library_id)
@@ -466,15 +468,16 @@ pub async fn update_metadata_provider(
         .fetch_one(&state.pool)
         .await?;
 
-    let series_count: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT COALESCE(NULLIF(series, ''), 'unclassified')) FROM books WHERE library_id = $1")
+    let series_count: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT b.series_id) + CASE WHEN EXISTS(SELECT 1 FROM books b WHERE b.library_id = $1 AND b.series_id IS NULL) THEN 1 ELSE 0 END FROM books b WHERE b.library_id = $1")
         .bind(library_id)
         .fetch_one(&state.pool)
         .await?;
 
     let thumbnail_book_ids: Vec<Uuid> = sqlx::query_scalar(
         "SELECT b.id FROM books b
+         LEFT JOIN series s ON s.id = b.series_id
          WHERE b.library_id = $1
-         ORDER BY COALESCE(NULLIF(b.series, ''), 'unclassified'), b.volume NULLS LAST, b.title ASC
+         ORDER BY COALESCE(s.name, 'unclassified'), b.volume NULLS LAST, b.title ASC
          LIMIT 5"
     )
     .bind(library_id)
