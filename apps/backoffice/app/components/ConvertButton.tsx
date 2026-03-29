@@ -61,13 +61,13 @@ export function ConvertButton({ bookId }: ConvertButtonProps) {
   }
 
   return (
-    <Button
-      variant="secondary"
-      size="sm"
+    <button
+      type="button"
       onClick={handleConvert}
       disabled={state.type === "loading"}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary transition-colors disabled:opacity-50"
     >
       {state.type === "loading" ? t("convert.converting") : t("convert.convertToCbz")}
-    </Button>
+    </button>
   );
 }

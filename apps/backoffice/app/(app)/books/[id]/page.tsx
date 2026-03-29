@@ -94,13 +94,13 @@ export default async function BookDetailPage({
       <div className="flex flex-col sm:flex-row gap-6">
         {/* Cover */}
         <div className="flex-shrink-0">
-          <div className="w-48 aspect-[2/3] relative rounded-xl overflow-hidden shadow-card border border-border">
+          <div className="w-40 aspect-[2/3] relative rounded-xl overflow-hidden shadow-card border border-border">
             <Image
               src={getBookCoverUrl(book.id)}
               alt={t("bookDetail.coverOf", { title: book.title })}
               fill
               className="object-cover"
-              sizes="192px"
+              sizes="160px"
               loading="lazy"
             />
           </div>
@@ -108,36 +108,24 @@ export default async function BookDetailPage({
 
         {/* Info */}
         <div className="flex-1 space-y-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-bold text-foreground">{book.title}</h1>
-              {book.author && (
-                <p className="text-base text-muted-foreground mt-1">{book.author}</p>
-              )}
-            </div>
-            <EditBookForm book={book} />
-          </div>
+          {/* Title */}
+          <h1 className="text-3xl font-bold text-foreground">{book.title}</h1>
 
-          {/* Series + Volume link */}
-          {book.series && (
-            <div className="flex items-center gap-2 text-sm">
+          {/* Author + Series + Volume + Reading status badges */}
+          <div className="flex flex-wrap items-center gap-3">
+            {book.author && (
+              <p className="text-base text-muted-foreground">{book.author}</p>
+            )}
+            {book.series && (
               <Link
                 href={`/libraries/${book.library_id}/series/${encodeURIComponent(book.series)}`}
-                className="text-primary hover:text-primary/80 transition-colors font-medium"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs border border-primary/30 font-medium"
               >
                 {book.series}
+                {book.volume != null && <span className="font-semibold">Vol. {book.volume}</span>}
               </Link>
-              {book.volume != null && (
-                <span className="px-2 py-0.5 bg-primary/10 text-primary rounded-md text-xs font-semibold">
-                  Vol. {book.volume}
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Reading status + actions */}
-          <div className="flex flex-wrap items-center gap-3">
-            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${statusClassName}`}>
+            )}
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClassName}`}>
               {statusLabel}
               {book.reading_status === "reading" && book.reading_current_page != null && ` · p. ${book.reading_current_page}`}
             </span>
@@ -146,35 +134,24 @@ export default async function BookDetailPage({
                 {new Date(book.reading_last_read_at).toLocaleDateString(locale)}
               </span>
             )}
-            <MarkBookReadButton bookId={book.id} currentStatus={book.reading_status} />
-            {book.file_format === "cbr" && <ConvertButton bookId={book.id} />}
-            <DeleteBookButton bookId={book.id} libraryId={book.library_id} />
           </div>
 
-          {/* Metadata pills */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border ${formatColor}`}>
+          {/* Metadata stats */}
+          <div className="flex flex-wrap items-center gap-4 text-sm">
+            <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold border ${formatColor}`}>
               {formatBadge}
             </span>
             {book.page_count && (
-              <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-muted/50 text-muted-foreground border border-border">
-                {book.page_count} {t("dashboard.pages").toLowerCase()}
-              </span>
+              <span className="text-muted-foreground"><span className="font-semibold text-foreground">{book.page_count}</span> {t("dashboard.pages").toLowerCase()}</span>
             )}
             {book.language && (
-              <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-muted/50 text-muted-foreground border border-border">
-                {book.language.toUpperCase()}
-              </span>
+              <span className="text-muted-foreground">{book.language.toUpperCase()}</span>
             )}
             {book.isbn && (
-              <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-mono font-medium bg-muted/50 text-muted-foreground border border-border">
-                ISBN {book.isbn}
-              </span>
+              <span className="text-muted-foreground font-mono">ISBN {book.isbn}</span>
             )}
             {book.publish_date && (
-              <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-muted/50 text-muted-foreground border border-border">
-                {book.publish_date}
-              </span>
+              <span className="text-muted-foreground">{book.publish_date}</span>
             )}
           </div>
 
@@ -182,6 +159,14 @@ export default async function BookDetailPage({
           {book.summary && (
             <SafeHtml html={book.summary} className="text-sm text-muted-foreground leading-relaxed" />
           )}
+
+          {/* Action buttons toolbar */}
+          <div className="flex flex-wrap items-center gap-3">
+            <MarkBookReadButton bookId={book.id} currentStatus={book.reading_status} />
+            <EditBookForm book={book} />
+            {book.file_format === "cbr" && <ConvertButton bookId={book.id} />}
+            <DeleteBookButton bookId={book.id} libraryId={book.library_id} />
+          </div>
         </div>
       </div>
 
