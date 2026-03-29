@@ -645,7 +645,7 @@ const fr = {
   "prowlarr.sentError": "Échec de l'envoi à qBittorrent",
   "prowlarr.replaceAndDownload": "Télécharger et remplacer les existants",
   "prowlarr.confirmReplace": "Cela va retélécharger tous les volumes du pack, y compris ceux déjà présents. Continuer ?",
-  "prowlarr.missingVol": "T{{vol}} manquant",
+  "prowlarr.missingVol": "T{{vol}}",
 
   // Settings - qBittorrent
   "settings.qbittorrent": "qBittorrent",

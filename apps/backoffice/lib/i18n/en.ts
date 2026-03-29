@@ -647,7 +647,7 @@ const en: Record<TranslationKey, string> = {
   "prowlarr.sentError": "Failed to send to qBittorrent",
   "prowlarr.replaceAndDownload": "Download and replace existing",
   "prowlarr.confirmReplace": "This will re-download all volumes in the pack, including those already present. Continue?",
-  "prowlarr.missingVol": "Vol. {{vol}} missing",
+  "prowlarr.missingVol": "Vol. {{vol}}",
 
   // Settings - qBittorrent
   "settings.qbittorrent": "qBittorrent",
