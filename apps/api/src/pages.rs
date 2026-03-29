@@ -21,14 +21,7 @@ use uuid::Uuid;
 
 use crate::{error::ApiError, state::AppState};
 
-fn remap_libraries_path(path: &str) -> String {
-    if let Ok(root) = std::env::var("LIBRARIES_ROOT_PATH") {
-        if path.starts_with("/libraries/") {
-            return path.replacen("/libraries", &root, 1);
-        }
-    }
-    path.to_string()
-}
+use stripstream_core::paths::remap_libraries_path;
 
 fn parse_filter(s: &str) -> image::imageops::FilterType {
     match s {

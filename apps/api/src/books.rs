@@ -262,7 +262,7 @@ pub async fn list_books(
     )?;
     let total: i64 = count_row.get(0);
 
-    let mut items: Vec<BookItem> = rows
+    let items: Vec<BookItem> = rows
         .iter()
         .map(|row| {
             let thumbnail_path: Option<String> = row.get("thumbnail_path");
@@ -288,7 +288,7 @@ pub async fn list_books(
         .collect();
 
     Ok(Json(BooksPage {
-        items: std::mem::take(&mut items),
+        items,
         total,
         page,
         limit,
@@ -369,23 +369,8 @@ pub async fn get_book(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-pub(crate) fn remap_libraries_path(path: &str) -> String {
-    if let Ok(root) = std::env::var("LIBRARIES_ROOT_PATH") {
-        if path.starts_with("/libraries/") {
-            return path.replacen("/libraries", &root, 1);
-        }
-    }
-    path.to_string()
-}
-
-fn unmap_libraries_path(path: &str) -> String {
-    if let Ok(root) = std::env::var("LIBRARIES_ROOT_PATH") {
-        if path.starts_with(&root) {
-            return path.replacen(&root, "/libraries", 1);
-        }
-    }
-    path.to_string()
-}
+pub(crate) use stripstream_core::paths::remap_libraries_path;
+pub(crate) use stripstream_core::paths::unmap_libraries_path;
 
 // ─── Convert CBR → CBZ ───────────────────────────────────────────────────────
 

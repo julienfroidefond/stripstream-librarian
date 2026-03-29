@@ -314,59 +314,39 @@ pub async fn update_monitoring(
     AxumPath(library_id): AxumPath<Uuid>,
     Json(input): Json<UpdateMonitoringRequest>,
 ) -> Result<Json<LibraryResponse>, ApiError> {
+    use stripstream_core::schedule::{validate_schedule_mode, mode_to_interval_minutes};
+
     // Validate scan_mode
-    let valid_modes = ["manual", "hourly", "daily", "weekly"];
-    if !valid_modes.contains(&input.scan_mode.as_str()) {
-        return Err(ApiError::bad_request("scan_mode must be one of: manual, hourly, daily, weekly"));
-    }
+    validate_schedule_mode(&input.scan_mode)
+        .map_err(|e| ApiError::bad_request(format!("scan_mode {e}")))?;
 
     // Validate metadata_refresh_mode
     let metadata_refresh_mode = input.metadata_refresh_mode.as_deref().unwrap_or("manual");
-    if !valid_modes.contains(&metadata_refresh_mode) {
-        return Err(ApiError::bad_request("metadata_refresh_mode must be one of: manual, hourly, daily, weekly"));
-    }
+    validate_schedule_mode(metadata_refresh_mode)
+        .map_err(|e| ApiError::bad_request(format!("metadata_refresh_mode {e}")))?;
 
     // Validate download_detection_mode
     let download_detection_mode = input.download_detection_mode.as_deref().unwrap_or("manual");
-    if !valid_modes.contains(&download_detection_mode) {
-        return Err(ApiError::bad_request("download_detection_mode must be one of: manual, hourly, daily, weekly"));
-    }
+    validate_schedule_mode(download_detection_mode)
+        .map_err(|e| ApiError::bad_request(format!("download_detection_mode {e}")))?;
 
     // Calculate next_scan_at if monitoring is enabled
     let next_scan_at = if input.monitor_enabled {
-        let interval_minutes = match input.scan_mode.as_str() {
-            "hourly" => 60,
-            "daily" => 1440,
-            "weekly" => 10080,
-            _ => 1440,
-        };
-        Some(chrono::Utc::now() + chrono::Duration::minutes(interval_minutes))
+        Some(chrono::Utc::now() + chrono::Duration::minutes(mode_to_interval_minutes(&input.scan_mode)))
     } else {
         None
     };
 
     // Calculate next_metadata_refresh_at
     let next_metadata_refresh_at = if metadata_refresh_mode != "manual" {
-        let interval_minutes = match metadata_refresh_mode {
-            "hourly" => 60,
-            "daily" => 1440,
-            "weekly" => 10080,
-            _ => 1440,
-        };
-        Some(chrono::Utc::now() + chrono::Duration::minutes(interval_minutes))
+        Some(chrono::Utc::now() + chrono::Duration::minutes(mode_to_interval_minutes(metadata_refresh_mode)))
     } else {
         None
     };
 
     // Calculate next_download_detection_at
     let next_download_detection_at = if download_detection_mode != "manual" {
-        let interval_minutes = match download_detection_mode {
-            "hourly" => 60,
-            "daily" => 1440,
-            "weekly" => 10080,
-            _ => 1440,
-        };
-        Some(chrono::Utc::now() + chrono::Duration::minutes(interval_minutes))
+        Some(chrono::Utc::now() + chrono::Duration::minutes(mode_to_interval_minutes(download_detection_mode)))
     } else {
         None
     };
@@ -553,20 +533,14 @@ pub async fn update_reading_status_provider(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let provider = input.reading_status_provider.as_deref().filter(|s| !s.is_empty());
 
-    let valid_modes = ["manual", "hourly", "daily", "weekly"];
+    use stripstream_core::schedule::{validate_schedule_mode, mode_to_interval_minutes};
+
     let push_mode = input.reading_status_push_mode.as_deref().unwrap_or("manual");
-    if !valid_modes.contains(&push_mode) {
-        return Err(ApiError::bad_request("reading_status_push_mode must be one of: manual, hourly, daily, weekly"));
-    }
+    validate_schedule_mode(push_mode)
+        .map_err(|e| ApiError::bad_request(format!("reading_status_push_mode {e}")))?;
 
     let next_push_at = if push_mode != "manual" {
-        let interval_minutes: i64 = match push_mode {
-            "hourly" => 60,
-            "daily" => 1440,
-            "weekly" => 10080,
-            _ => 1440,
-        };
-        Some(chrono::Utc::now() + chrono::Duration::minutes(interval_minutes))
+        Some(chrono::Utc::now() + chrono::Duration::minutes(mode_to_interval_minutes(push_mode)))
     } else {
         None
     };

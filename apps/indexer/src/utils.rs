@@ -5,23 +5,8 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 use chrono::Utc;
 
-pub fn remap_libraries_path(path: &str) -> String {
-    if let Ok(root) = std::env::var("LIBRARIES_ROOT_PATH") {
-        if path.starts_with("/libraries/") {
-            return path.replacen("/libraries", &root, 1);
-        }
-    }
-    path.to_string()
-}
-
-pub fn unmap_libraries_path(path: &str) -> String {
-    if let Ok(root) = std::env::var("LIBRARIES_ROOT_PATH") {
-        if path.starts_with(&root) {
-            return path.replacen(&root, "/libraries", 1);
-        }
-    }
-    path.to_string()
-}
+pub use stripstream_core::paths::remap_libraries_path;
+pub use stripstream_core::paths::unmap_libraries_path;
 
 pub fn compute_fingerprint(path: &Path, size: u64, mtime: &DateTime<Utc>) -> Result<String> {
     // Optimized: only use size + mtime + first bytes of filename for fast fingerprinting

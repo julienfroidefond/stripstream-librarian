@@ -1,5 +1,6 @@
 use anyhow::Result;
 use sqlx::{PgPool, Row};
+use stripstream_core::schedule::mode_to_interval_minutes;
 use tracing::info;
 use uuid::Uuid;
 
@@ -45,12 +46,7 @@ pub async fn check_and_schedule_auto_scans(pool: &PgPool) -> Result<()> {
         .await?;
 
         // Update next_scan_at
-        let interval_minutes = match scan_mode.as_str() {
-            "hourly" => 60,
-            "daily" => 1440,
-            "weekly" => 10080,
-            _ => 1440, // default daily
-        };
+        let interval_minutes = mode_to_interval_minutes(&scan_mode);
 
         sqlx::query(
             "UPDATE libraries SET last_scan_at = NOW(), next_scan_at = NOW() + INTERVAL '1 minute' * $2 WHERE id = $1"
@@ -107,12 +103,7 @@ pub async fn check_and_schedule_reading_status_push(pool: &PgPool) -> Result<()>
         .execute(pool)
         .await?;
 
-        let interval_minutes: i64 = match push_mode.as_str() {
-            "hourly" => 60,
-            "daily" => 1440,
-            "weekly" => 10080,
-            _ => 1440,
-        };
+        let interval_minutes = mode_to_interval_minutes(&push_mode);
 
         sqlx::query(
             "UPDATE libraries SET last_reading_status_push_at = NOW(), next_reading_status_push_at = NOW() + INTERVAL '1 minute' * $2 WHERE id = $1"
@@ -176,12 +167,7 @@ pub async fn check_and_schedule_download_detection(pool: &PgPool) -> Result<()> 
         .execute(pool)
         .await?;
 
-        let interval_minutes: i64 = match detection_mode.as_str() {
-            "hourly" => 60,
-            "daily" => 1440,
-            "weekly" => 10080,
-            _ => 1440,
-        };
+        let interval_minutes = mode_to_interval_minutes(&detection_mode);
 
         sqlx::query(
             "UPDATE libraries SET last_download_detection_at = NOW(), next_download_detection_at = NOW() + INTERVAL '1 minute' * $2 WHERE id = $1"
@@ -238,12 +224,7 @@ pub async fn check_and_schedule_metadata_refreshes(pool: &PgPool) -> Result<()> 
         .execute(pool)
         .await?;
 
-        let interval_minutes = match refresh_mode.as_str() {
-            "hourly" => 60,
-            "daily" => 1440,
-            "weekly" => 10080,
-            _ => 1440,
-        };
+        let interval_minutes = mode_to_interval_minutes(&refresh_mode);
 
         sqlx::query(
             "UPDATE libraries SET last_metadata_refresh_at = NOW(), next_metadata_refresh_at = NOW() + INTERVAL '1 minute' * $2 WHERE id = $1"

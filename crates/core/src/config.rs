@@ -50,38 +50,33 @@ impl Default for ThumbnailConfig {
     }
 }
 
+/// Parse an environment variable with a fallback default value.
+pub fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
+/// Parse an environment variable as a String with a fallback default.
+pub fn env_string_or(key: &str, default: &str) -> String {
+    std::env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
 impl IndexerConfig {
     pub fn from_env() -> Result<Self> {
-        let thumbnail_config = ThumbnailConfig {
-            enabled: std::env::var("THUMBNAIL_ENABLED")
-                .ok()
-                .and_then(|v| v.parse::<bool>().ok())
-                .unwrap_or(true),
-            width: std::env::var("THUMBNAIL_WIDTH")
-                .ok()
-                .and_then(|v| v.parse::<u32>().ok())
-                .unwrap_or(300),
-            height: std::env::var("THUMBNAIL_HEIGHT")
-                .ok()
-                .and_then(|v| v.parse::<u32>().ok())
-                .unwrap_or(400),
-            quality: std::env::var("THUMBNAIL_QUALITY")
-                .ok()
-                .and_then(|v| v.parse::<u8>().ok())
-                .unwrap_or(80),
-            format: std::env::var("THUMBNAIL_FORMAT").unwrap_or_else(|_| "webp".to_string()),
-            directory: std::env::var("THUMBNAIL_DIRECTORY")
-                .unwrap_or_else(|_| "/data/thumbnails".to_string()),
-        };
+        let mut thumbnail_config = ThumbnailConfig::default();
+        thumbnail_config.enabled = env_or("THUMBNAIL_ENABLED", thumbnail_config.enabled);
+        thumbnail_config.width = env_or("THUMBNAIL_WIDTH", thumbnail_config.width);
+        thumbnail_config.height = env_or("THUMBNAIL_HEIGHT", thumbnail_config.height);
+        thumbnail_config.quality = env_or("THUMBNAIL_QUALITY", thumbnail_config.quality);
+        thumbnail_config.format = env_string_or("THUMBNAIL_FORMAT", &thumbnail_config.format);
+        thumbnail_config.directory = env_string_or("THUMBNAIL_DIRECTORY", &thumbnail_config.directory);
 
         Ok(Self {
-            listen_addr: std::env::var("INDEXER_LISTEN_ADDR")
-                .unwrap_or_else(|_| "0.0.0.0:7081".to_string()),
+            listen_addr: env_string_or("INDEXER_LISTEN_ADDR", "0.0.0.0:7081"),
             database_url: std::env::var("DATABASE_URL").context("DATABASE_URL is required")?,
-            scan_interval_seconds: std::env::var("INDEXER_SCAN_INTERVAL_SECONDS")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(5),
+            scan_interval_seconds: env_or("INDEXER_SCAN_INTERVAL_SECONDS", 5),
             thumbnail_config,
         })
     }

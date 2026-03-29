@@ -289,9 +289,7 @@ fn extract_volumes_from_title(title: &str) -> Vec<i32> {
                 j += 1;
             }
             if j > 0 && j < chars.len() {
-                let valid_sep = chars[j] == '.'
-                    || chars[j] == ' '
-                    || (j + 2 < chars.len() && chars[j] == ' ' && chars[j + 1] == '-');
+                let valid_sep = chars[j] == '.' || chars[j] == ' ';
                 if valid_sep {
                     let num_str: String = chars[..j].iter().collect();
                     if let Ok(num) = num_str.parse::<i32>() {

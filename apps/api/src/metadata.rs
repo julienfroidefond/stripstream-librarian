@@ -38,7 +38,6 @@ pub struct SeriesCandidateDto {
 }
 
 #[derive(Deserialize, ToSchema)]
-#[allow(dead_code)]
 pub struct MetadataMatchRequest {
     pub library_id: String,
     pub series_name: String,
@@ -46,6 +45,7 @@ pub struct MetadataMatchRequest {
     pub external_id: String,
     pub external_url: Option<String>,
     pub confidence: Option<f32>,
+    #[allow(dead_code)]
     pub title: String,
     pub metadata_json: serde_json::Value,
     pub total_volumes: Option<i32>,

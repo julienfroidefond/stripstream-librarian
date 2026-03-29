@@ -88,7 +88,7 @@ fn extract_series(path: &Path, library_root: &Path) -> Option<String> {
         } else if let Ok(relative) = parent.strip_prefix(library_root) {
             relative
         } else {
-            eprintln!(
+            tracing::warn!(
                 "[PARSER] Cannot determine series: parent '{}' doesn't start with root '{}'",
                 parent.display(),
                 library_root.display()
