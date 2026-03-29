@@ -5,6 +5,44 @@ use uuid::Uuid;
 
 use crate::{analyzer, converter, scanner, AppState};
 
+/// Re-match external_book_metadata with book_id IS NULL by volume number.
+async fn rematch_unlinked_books(pool: &PgPool, library_id: Uuid) {
+    let result = sqlx::query(
+        r#"
+        UPDATE external_book_metadata ebm
+        SET book_id = matched.book_id
+        FROM (
+            SELECT DISTINCT ON (ebm2.id)
+                ebm2.id AS ebm_id,
+                b.id AS book_id
+            FROM external_book_metadata ebm2
+            JOIN external_metadata_links eml ON eml.id = ebm2.link_id
+            JOIN books b ON b.library_id = eml.library_id
+                AND LOWER(COALESCE(NULLIF(b.series, ''), 'unclassified')) = LOWER(eml.series_name)
+                AND b.volume = ebm2.volume_number
+            WHERE eml.library_id = $1
+              AND ebm2.book_id IS NULL
+              AND ebm2.volume_number IS NOT NULL
+              AND eml.status = 'approved'
+        ) matched
+        WHERE ebm.id = matched.ebm_id
+        "#,
+    )
+    .bind(library_id)
+    .execute(pool)
+    .await;
+
+    match result {
+        Ok(r) if r.rows_affected() > 0 => {
+            info!("[METADATA] Re-matched {} unlinked external books for library {}", r.rows_affected(), library_id);
+        }
+        Err(e) => {
+            error!("[METADATA] Failed to rematch unlinked books: {e}");
+        }
+        _ => {}
+    }
+}
+
 pub async fn cleanup_stale_jobs(pool: &PgPool) -> Result<()> {
     let result = sqlx::query(
         r#"
@@ -378,6 +416,12 @@ pub async fn process_job(
     .await?;
 
     analyzer::analyze_library_books(state, job_id, target_library_id, false).await?;
+
+    // Re-match external book metadata that couldn't be linked during initial metadata fetch
+    // (e.g., metadata was fetched before books were scanned)
+    if let Some(lib_id) = target_library_id {
+        rematch_unlinked_books(&state.pool, lib_id).await;
+    }
 
     sqlx::query(
         "UPDATE index_jobs SET status = 'success', finished_at = NOW(), progress_percent = 100, current_file = NULL WHERE id = $1",

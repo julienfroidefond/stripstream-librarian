@@ -1096,7 +1096,7 @@ pub async fn update_series(
 )]
 pub async fn delete_series(
     State(state): State<AppState>,
-    Extension(user): Extension<AuthUser>,
+    Extension(_user): Extension<AuthUser>,
     Path((library_id, name)): Path<(Uuid, String)>,
 ) -> Result<Json<crate::responses::DeletedResponse>, ApiError> {
     use stripstream_core::paths::remap_libraries_path;

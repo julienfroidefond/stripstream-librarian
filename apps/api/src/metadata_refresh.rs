@@ -643,6 +643,10 @@ pub(crate) async fn refresh_link(
         .await
         .map_err(|e| e.to_string())?;
 
+    // Re-match any external books that couldn't be matched during insert
+    // (e.g., metadata was fetched before books were imported)
+    let _ = rematch_unlinked_books(pool, library_id).await;
+
     let has_changes = !series_changes.is_empty() || !book_changes.is_empty();
 
     Ok(SeriesRefreshResult {
@@ -946,4 +950,41 @@ async fn sync_book_with_diff(
     .map_err(|e| e.to_string())?;
 
     Ok(diffs)
+}
+
+/// Re-match external_book_metadata rows that have book_id IS NULL
+/// by joining on volume number with local books in the same series.
+/// Called after scans/imports to fix metadata that was fetched before books existed.
+pub async fn rematch_unlinked_books(pool: &PgPool, library_id: Uuid) -> Result<i64, String> {
+    let result = sqlx::query(
+        r#"
+        UPDATE external_book_metadata ebm
+        SET book_id = matched.book_id
+        FROM (
+            SELECT DISTINCT ON (ebm2.id)
+                ebm2.id AS ebm_id,
+                b.id AS book_id
+            FROM external_book_metadata ebm2
+            JOIN external_metadata_links eml ON eml.id = ebm2.link_id
+            JOIN books b ON b.library_id = eml.library_id
+                AND LOWER(COALESCE(NULLIF(b.series, ''), 'unclassified')) = LOWER(eml.series_name)
+                AND b.volume = ebm2.volume_number
+            WHERE eml.library_id = $1
+              AND ebm2.book_id IS NULL
+              AND ebm2.volume_number IS NOT NULL
+              AND eml.status = 'approved'
+        ) matched
+        WHERE ebm.id = matched.ebm_id
+        "#,
+    )
+    .bind(library_id)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let count = result.rows_affected() as i64;
+    if count > 0 {
+        info!("[METADATA] Re-matched {count} unlinked external books for library {library_id}");
+    }
+    Ok(count)
 }
