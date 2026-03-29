@@ -56,8 +56,8 @@ export function QbittorrentDownloadButton({
 
   if (!configured) return null;
 
-  const showReplaceButton = allVolumes && allVolumes.length > 0
-    && (alwaysShowReplace || (expectedVolumes && allVolumes.length > expectedVolumes.length));
+  const showReplaceButton = alwaysShowReplace
+    || (allVolumes && allVolumes.length > 0 && expectedVolumes && allVolumes.length > expectedVolumes.length);
 
   async function handleSend(volumes?: number[], replaceExisting = false) {
     setSending(true);
