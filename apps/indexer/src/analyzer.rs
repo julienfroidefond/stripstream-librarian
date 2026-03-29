@@ -353,22 +353,7 @@ pub async fn analyze_library_books(
         total, thumbnail_only, concurrency
     );
 
-    let cancelled_flag = Arc::new(AtomicBool::new(false));
-    let cancel_pool = state.pool.clone();
-    let cancel_flag_for_poller = cancelled_flag.clone();
-    let cancel_handle = tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-            match is_job_cancelled(&cancel_pool, job_id).await {
-                Ok(true) => {
-                    cancel_flag_for_poller.store(true, Ordering::Relaxed);
-                    break;
-                }
-                Ok(false) => {}
-                Err(_) => break,
-            }
-        }
-    });
+    let (cancelled_flag, cancel_handle) = spawn_cancellation_poller(state.pool.clone(), job_id);
 
     #[derive(Clone)]
     struct BookTask {
@@ -844,4 +829,28 @@ pub async fn cleanup_orphaned_thumbnails(state: &AppState) -> Result<()> {
 
     info!("[ANALYZER] Deleted {} orphaned thumbnail files", deleted_count);
     Ok(())
+}
+
+/// Spawn a background task that polls for job cancellation every 2 seconds.
+/// Returns the shared cancellation flag and the task handle.
+fn spawn_cancellation_poller(
+    pool: sqlx::PgPool,
+    job_id: Uuid,
+) -> (Arc<AtomicBool>, tokio::task::JoinHandle<()>) {
+    let flag = Arc::new(AtomicBool::new(false));
+    let flag_clone = flag.clone();
+    let handle = tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            match is_job_cancelled(&pool, job_id).await {
+                Ok(true) => {
+                    flag_clone.store(true, Ordering::Relaxed);
+                    break;
+                }
+                Ok(false) => {}
+                Err(_) => break,
+            }
+        }
+    });
+    (flag, handle)
 }
