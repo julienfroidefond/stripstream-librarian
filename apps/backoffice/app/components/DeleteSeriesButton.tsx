@@ -29,15 +29,15 @@ export function DeleteSeriesButton({ libraryId, seriesName }: { libraryId: strin
 
   return (
     <>
-      <Button
-        variant="destructive"
-        size="sm"
+      <button
+        type="button"
         onClick={() => setShowConfirm(true)}
         disabled={deleting}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-destructive/30 bg-destructive/10 text-destructive text-sm font-medium hover:bg-destructive/20 transition-colors disabled:opacity-50"
       >
         {deleting ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="trash" size="sm" />}
-        <span className="ml-1.5">{t("seriesDetail.delete")}</span>
-      </Button>
+        {t("seriesDetail.delete")}
+      </button>
 
       <Modal isOpen={showConfirm} onClose={() => setShowConfirm(false)} maxWidth="sm">
         <div className="p-6">

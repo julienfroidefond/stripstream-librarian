@@ -340,7 +340,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
       <button
         type="button"
         onClick={handleOpen}
-        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
       >
         <Icon name="search" size="sm" />
         {t("prowlarr.searchButton")}
