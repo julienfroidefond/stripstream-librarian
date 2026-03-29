@@ -97,10 +97,12 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
     if (timerRef.current) clearTimeout(timerRef.current);
     if (immediate) {
       saveFilters();
+      isOwnNavRef.current = true;
       startTransition(() => { router.replace(buildUrl() as any); });
     } else {
       timerRef.current = setTimeout(() => {
         saveFilters();
+        isOwnNavRef.current = true;
         startTransition(() => { router.replace(buildUrl() as any); });
       }, debounceMs);
     }
@@ -120,18 +122,31 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
   const textFields = fields.filter((f) => f.type === "text");
   const selectFields = fields.filter((f) => f.type === "select");
 
-  // Force remount when URL params change externally (back/forward, cookie redirect)
-  // so that defaultValue stays in sync with the URL.
-  const formKey = searchParams.toString();
+  // Track whether the current navigation was initiated by us (not back/forward)
+  const isOwnNavRef = useRef(false);
+
+  // Force remount only on external navigation (back/forward, cookie redirect)
+  // Our own navigations skip remount to preserve focus.
+  const prevParamsRef = useRef(searchParams.toString());
+  const formKey = useRef(0);
+  const currentParams = searchParams.toString();
+  if (currentParams !== prevParamsRef.current) {
+    if (!isOwnNavRef.current) {
+      formKey.current += 1; // External nav → remount
+    }
+    isOwnNavRef.current = false;
+    prevParamsRef.current = currentParams;
+  }
 
   return (
     <form
-      key={formKey}
+      key={formKey.current}
       ref={formRef}
       onSubmit={(e) => {
         e.preventDefault();
         if (timerRef.current) clearTimeout(timerRef.current);
         saveFilters();
+        isOwnNavRef.current = true;
         startTransition(() => { router.replace(buildUrl() as any); });
       }}
       className="space-y-4"
@@ -191,6 +206,7 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
                 onClick={() => {
                   formRef.current?.reset();
                   try { deleteCookie(cookieName); } catch {}
+                  isOwnNavRef.current = true;
                   startTransition(() => { router.replace(basePath as any); });
                 }}
                 className="
