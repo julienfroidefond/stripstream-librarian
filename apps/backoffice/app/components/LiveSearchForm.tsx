@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useCallback, useEffect } from "react";
+import { useRef, useCallback, useEffect, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslation } from "../../lib/i18n/context";
 import { Icon } from "./ui";
@@ -58,6 +58,7 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t } = useTranslation();
+  const [isPending, startTransition] = useTransition();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -96,11 +97,11 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
     if (timerRef.current) clearTimeout(timerRef.current);
     if (immediate) {
       saveFilters();
-      router.replace(buildUrl() as any);
+      startTransition(() => { router.replace(buildUrl() as any); });
     } else {
       timerRef.current = setTimeout(() => {
         saveFilters();
-        router.replace(buildUrl() as any);
+        startTransition(() => { router.replace(buildUrl() as any); });
       }, debounceMs);
     }
   }, [router, buildUrl, debounceMs, saveFilters]);
@@ -131,7 +132,7 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
         e.preventDefault();
         if (timerRef.current) clearTimeout(timerRef.current);
         saveFilters();
-        router.replace(buildUrl() as any);
+        startTransition(() => { router.replace(buildUrl() as any); });
       }}
       className="space-y-4"
     >
@@ -139,6 +140,9 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
       {textFields.map((field) => (
         <div key={field.name} className="relative">
           <Icon name="search" size="md" className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          {isPending && (
+            <Icon name="spinner" size="sm" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground animate-spin pointer-events-none" />
+          )}
           <input
             name={field.name}
             type="text"
@@ -187,7 +191,7 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
                 onClick={() => {
                   formRef.current?.reset();
                   try { deleteCookie(cookieName); } catch {}
-                  router.replace(basePath as any);
+                  startTransition(() => { router.replace(basePath as any); });
                 }}
                 className="
                   inline-flex items-center gap-1
