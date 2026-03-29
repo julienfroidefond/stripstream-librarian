@@ -338,18 +338,27 @@ fn analyze_cbz_streaming(path: &Path) -> Result<(i32, Vec<u8>)> {
     Ok((count, first_bytes))
 }
 
+/// Returns true if the error indicates the file is not a RAR archive (likely a ZIP with .cbr extension).
+fn is_not_rar_error(err_str: &str) -> bool {
+    err_str.contains("Not a RAR archive") || err_str.contains("bad archive")
+}
+
+/// Try to open a CBR file for listing. Returns the archive or an error string.
+/// If the error indicates the file is not actually a RAR archive, the caller can fall back to CBZ.
+fn open_cbr_listing(path: &Path) -> std::result::Result<unrar::OpenArchive<unrar::List, unrar::CursorBeforeHeader>, String> {
+    unrar::Archive::new(path)
+        .open_for_listing()
+        .map_err(|e| format!("unrar listing failed for {}: {}", path.display(), e))
+}
+
 fn analyze_cbr(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {
     // Pass 1: list all image names via unrar (in-process, no subprocess)
     let mut image_names: Vec<String> = {
-        let archive = unrar::Archive::new(path)
-            .open_for_listing()
-            .map_err(|e| anyhow::anyhow!("unrar listing failed for {}: {}", path.display(), e));
         // Some .cbr files are actually ZIP archives with wrong extension — fallback to CBZ parser
-        let archive = match archive {
+        let archive = match open_cbr_listing(path) {
             Ok(a) => a,
-            Err(e) => {
-                let e_str = e.to_string();
-                if allow_fallback && (e_str.contains("Not a RAR archive") || e_str.contains("bad archive")) {
+            Err(e_str) => {
+                if allow_fallback && is_not_rar_error(&e_str) {
                     return analyze_cbz(path, false).map_err(|zip_err| {
                         anyhow::anyhow!(
                             "not a RAR archive and ZIP fallback also failed for {}: RAR={}, ZIP={}",
@@ -359,7 +368,7 @@ fn analyze_cbr(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {
                         )
                     });
                 }
-                return Err(e);
+                return Err(anyhow::anyhow!("{}", e_str));
             }
         };
         let mut names = Vec::new();
@@ -482,18 +491,13 @@ fn parse_cbz_page_count_streaming(path: &Path) -> Result<i32> {
 }
 
 fn parse_cbr_page_count(path: &Path) -> Result<i32> {
-    let archive = unrar::Archive::new(path)
-        .open_for_listing()
-        .map_err(|e| anyhow::anyhow!("unrar listing failed for {}: {}", path.display(), e));
-    // Some .cbr files are actually ZIP archives with wrong extension — fallback to CBZ parser
-    let archive = match archive {
+    let archive = match open_cbr_listing(path) {
         Ok(a) => a,
-        Err(e) => {
-            let e_str = e.to_string();
-            if e_str.contains("Not a RAR archive") || e_str.contains("bad archive") {
+        Err(e_str) => {
+            if is_not_rar_error(&e_str) {
                 return parse_cbz_page_count(path);
             }
-            return Err(e);
+            return Err(anyhow::anyhow!("{}", e_str));
         }
     };
     let count = archive
@@ -603,17 +607,13 @@ fn list_cbz_images_streaming(path: &Path) -> Result<Vec<String>> {
 }
 
 fn list_cbr_images(path: &Path) -> Result<Vec<String>> {
-    let archive = unrar::Archive::new(path)
-        .open_for_listing()
-        .map_err(|e| anyhow::anyhow!("unrar listing failed for {}: {}", path.display(), e));
-    let archive = match archive {
+    let archive = match open_cbr_listing(path) {
         Ok(a) => a,
-        Err(e) => {
-            let e_str = e.to_string();
-            if e_str.contains("Not a RAR archive") || e_str.contains("bad archive") {
+        Err(e_str) => {
+            if is_not_rar_error(&e_str) {
                 return list_cbz_images(path);
             }
-            return Err(e);
+            return Err(anyhow::anyhow!("{}", e_str));
         }
     };
     let mut names: Vec<String> = Vec::new();
@@ -819,13 +819,13 @@ fn extract_cbr_page(path: &Path, page_number: u32, allow_fallback: bool) -> Resu
     let index = page_number as usize - 1;
 
     let mut image_names: Vec<String> = {
-        let archive = match unrar::Archive::new(path).open_for_listing() {
+        let archive = match open_cbr_listing(path) {
             Ok(a) => a,
-            Err(e) => {
-                if allow_fallback {
+            Err(e_str) => {
+                if allow_fallback && is_not_rar_error(&e_str) {
                     return extract_cbz_page(path, page_number, false);
                 }
-                return Err(anyhow::anyhow!("unrar listing failed for {}: {}", path.display(), e));
+                return Err(anyhow::anyhow!("{}", e_str));
             }
         };
         let mut names = Vec::new();
@@ -1385,4 +1385,73 @@ fn clean_title(filename: &str) -> String {
         .unwrap_or(cleaned);
 
     cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_not_rar_detects_not_rar_archive() {
+        assert!(is_not_rar_error("unrar listing failed for /path/file.cbr: Not a RAR archive"));
+    }
+
+    #[test]
+    fn is_not_rar_detects_bad_archive() {
+        assert!(is_not_rar_error("unrar listing failed for /path/file.cbr: bad archive"));
+    }
+
+    #[test]
+    fn is_not_rar_ignores_other_errors() {
+        assert!(!is_not_rar_error("unrar listing failed for /path/file.cbr: file not found"));
+        assert!(!is_not_rar_error("some other error"));
+        assert!(!is_not_rar_error(""));
+    }
+
+    #[test]
+    fn open_cbr_listing_nonexistent_file() {
+        let result = open_cbr_listing(Path::new("/nonexistent/file.cbr"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn detect_format_cbz() {
+        assert_eq!(detect_format(Path::new("test.cbz")), Some(BookFormat::Cbz));
+        assert_eq!(detect_format(Path::new("test.CBZ")), Some(BookFormat::Cbz));
+    }
+
+    #[test]
+    fn detect_format_cbr() {
+        assert_eq!(detect_format(Path::new("test.cbr")), Some(BookFormat::Cbr));
+    }
+
+    #[test]
+    fn detect_format_pdf() {
+        assert_eq!(detect_format(Path::new("test.pdf")), Some(BookFormat::Pdf));
+    }
+
+    #[test]
+    fn detect_format_epub() {
+        assert_eq!(detect_format(Path::new("test.epub")), Some(BookFormat::Epub));
+    }
+
+    #[test]
+    fn detect_format_unknown() {
+        assert_eq!(detect_format(Path::new("test.txt")), None);
+        assert_eq!(detect_format(Path::new("no_extension")), None);
+    }
+
+    #[test]
+    fn is_image_name_accepts_valid() {
+        assert!(is_image_name("page01.jpg"));
+        assert!(is_image_name("cover.png"));
+        assert!(is_image_name("image.webp"));
+    }
+
+    #[test]
+    fn is_image_name_rejects_non_images() {
+        assert!(!is_image_name("readme.txt"));
+        assert!(!is_image_name("metadata.xml"));
+        assert!(!is_image_name(""));
+    }
 }

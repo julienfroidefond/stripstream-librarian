@@ -74,7 +74,25 @@ impl IntoResponse for ApiError {
 
 impl From<sqlx::Error> for ApiError {
     fn from(err: sqlx::Error) -> Self {
-        Self::internal(format!("database error: {err}"))
+        match &err {
+            sqlx::Error::RowNotFound => Self::not_found("resource not found"),
+            sqlx::Error::PoolTimedOut => Self {
+                status: StatusCode::SERVICE_UNAVAILABLE,
+                message: "database pool timed out".to_string(),
+            },
+            sqlx::Error::Database(db_err) => {
+                // PostgreSQL unique_violation = 23505, foreign_key_violation = 23503
+                let code = db_err.code().unwrap_or_default();
+                if code == "23505" {
+                    Self::bad_request(format!("duplicate entry: {}", db_err.message()))
+                } else if code == "23503" {
+                    Self::bad_request(format!("foreign key violation: {}", db_err.message()))
+                } else {
+                    Self::internal(format!("database error: {err}"))
+                }
+            }
+            _ => Self::internal(format!("database error: {err}")),
+        }
     }
 }
 
@@ -87,5 +105,38 @@ impl From<std::io::Error> for ApiError {
 impl From<reqwest::Error> for ApiError {
     fn from(err: reqwest::Error) -> Self {
         Self::internal(format!("HTTP client error: {err}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sqlx_row_not_found_maps_to_404() {
+        let err: ApiError = sqlx::Error::RowNotFound.into();
+        assert_eq!(err.status, StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn sqlx_pool_timeout_maps_to_503() {
+        let err: ApiError = sqlx::Error::PoolTimedOut.into();
+        assert_eq!(err.status, StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[test]
+    fn sqlx_other_error_maps_to_500() {
+        let err: ApiError = sqlx::Error::PoolClosed.into();
+        assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn api_error_constructors() {
+        assert_eq!(ApiError::bad_request("x").status, StatusCode::BAD_REQUEST);
+        assert_eq!(ApiError::not_found("x").status, StatusCode::NOT_FOUND);
+        assert_eq!(ApiError::unauthorized("x").status, StatusCode::UNAUTHORIZED);
+        assert_eq!(ApiError::forbidden("x").status, StatusCode::FORBIDDEN);
+        assert_eq!(ApiError::internal("x").status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(ApiError::unprocessable_entity("x").status, StatusCode::UNPROCESSABLE_ENTITY);
     }
 }

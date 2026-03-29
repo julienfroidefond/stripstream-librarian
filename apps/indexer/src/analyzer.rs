@@ -396,13 +396,15 @@ pub async fn analyze_library_books(
     const BATCH_SIZE: usize = 200;
 
     let phase_a_start = std::time::Instant::now();
-    let _ = sqlx::query(
+    if let Err(e) = sqlx::query(
         "UPDATE index_jobs SET status = 'extracting_pages', total_files = $2, processed_files = 0, current_file = NULL WHERE id = $1",
     )
     .bind(job_id)
     .bind(total)
     .execute(&state.pool)
-    .await;
+    .await {
+        warn!("[ANALYZER] Failed to update job status to extracting_pages: {e}");
+    }
 
     let extracted_count = Arc::new(AtomicI32::new(0));
     let mut all_extracted: Vec<(Uuid, String, i32)> = Vec::new();
@@ -538,14 +540,16 @@ pub async fn analyze_library_books(
                         }
                         let processed = extracted_count.fetch_add(1, Ordering::Relaxed) + 1;
                         let percent = (processed as f64 / total as f64 * 50.0) as i32;
-                        let _ = sqlx::query(
+                        if let Err(e) = sqlx::query(
                             "UPDATE index_jobs SET processed_files = $2, progress_percent = $3 WHERE id = $1",
                         )
                         .bind(job_id)
                         .bind(processed)
                         .bind(percent)
                         .execute(&pool)
-                        .await;
+                        .await {
+                            warn!("[ANALYZER] Failed to update job progress: {e}");
+                        }
 
                         if processed % 25 == 0 || processed == total {
                             info!(
@@ -588,14 +592,16 @@ pub async fn analyze_library_books(
 
                     let processed = extracted_count.fetch_add(1, Ordering::Relaxed) + 1;
                     let percent = (processed as f64 / total as f64 * 50.0) as i32; // first 50%
-                    let _ = sqlx::query(
+                    if let Err(e) = sqlx::query(
                         "UPDATE index_jobs SET processed_files = $2, progress_percent = $3 WHERE id = $1",
                     )
                     .bind(job_id)
                     .bind(processed)
                     .bind(percent)
                     .execute(&pool)
-                    .await;
+                    .await {
+                        warn!("[ANALYZER] Failed to update job progress: {e}");
+                    }
 
                     if processed % 25 == 0 || processed == total {
                         info!(
@@ -649,13 +655,15 @@ pub async fn analyze_library_books(
     // CPU bound — can run at higher concurrency than I/O phase
     // -------------------------------------------------------------------------
     let phase_b_start = std::time::Instant::now();
-    let _ = sqlx::query(
+    if let Err(e) = sqlx::query(
         "UPDATE index_jobs SET status = 'generating_thumbnails', generating_thumbnails_started_at = NOW(), total_files = $2, processed_files = 0, current_file = NULL WHERE id = $1",
     )
     .bind(job_id)
     .bind(extracted_total)
     .execute(&state.pool)
-    .await;
+    .await {
+        warn!("[ANALYZER] Failed to update job status to generating_thumbnails: {e}");
+    }
 
     let resize_count = Arc::new(AtomicI32::new(0));
 
@@ -706,14 +714,16 @@ pub async fn analyze_library_books(
                 let processed = resize_count.fetch_add(1, Ordering::Relaxed) + 1;
                 let percent =
                     50 + (processed as f64 / extracted_total as f64 * 50.0) as i32; // last 50%
-                let _ = sqlx::query(
+                if let Err(e) = sqlx::query(
                     "UPDATE index_jobs SET processed_files = $2, progress_percent = $3 WHERE id = $1",
                 )
                 .bind(job_id)
                 .bind(processed)
                 .bind(percent)
                 .execute(&pool)
-                .await;
+                .await {
+                    warn!("[ANALYZER] Failed to update job progress: {e}");
+                }
 
                 if processed % 25 == 0 || processed == extracted_total {
                     info!(
