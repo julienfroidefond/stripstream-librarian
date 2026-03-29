@@ -63,6 +63,7 @@ export function QbittorrentDownloadButton({
     setSending(true);
     setError(null);
     try {
+      const vols = volumes || expectedVolumes;
       const resp = await fetch("/api/qbittorrent/add", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -70,7 +71,7 @@ export function QbittorrentDownloadButton({
           url: downloadUrl,
           ...(libraryId && { library_id: libraryId }),
           ...(seriesName && { series_name: seriesName }),
-          ...((volumes || expectedVolumes) && { expected_volumes: volumes || expectedVolumes }),
+          ...(vols && vols.length > 0 ? { expected_volumes: vols } : replaceExisting && libraryId ? { expected_volumes: [] } : {}),
           ...(replaceExisting && { replace_existing: true }),
         }),
       });
