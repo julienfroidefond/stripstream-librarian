@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import { useTranslation } from "../../lib/i18n/context";
 
 interface MarkSeriesReadButtonProps {
+  seriesId: string;
   seriesName: string;
   bookCount: number;
   booksReadCount: number;
 }
 
-export function MarkSeriesReadButton({ seriesName, bookCount, booksReadCount }: MarkSeriesReadButtonProps) {
+export function MarkSeriesReadButton({ seriesId, seriesName, bookCount, booksReadCount }: MarkSeriesReadButtonProps) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -27,7 +28,7 @@ export function MarkSeriesReadButton({ seriesName, bookCount, booksReadCount }: 
       const res = await fetch("/api/series/mark-read", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ series: seriesName, status: targetStatus }),
+        body: JSON.stringify({ series: seriesId, status: targetStatus }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: res.statusText }));

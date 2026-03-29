@@ -104,6 +104,27 @@ pub(crate) fn extract_volumes_from_title_pub(title: &str) -> Vec<i32> {
 
 /// Returns true if the title indicates a complete/integral edition
 /// (e.g., "intégrale", "complet", "complete", "integral").
+/// Match a release title against a list of missing volumes.
+/// Returns (matched_volumes, all_volumes_in_title).
+/// For integral releases, matched_volumes = all missing volumes, all_volumes = empty.
+pub(crate) fn match_title_volumes(title: &str, missing_volumes: &[i32]) -> (Vec<i32>, Vec<i32>) {
+    let title_volumes = extract_volumes_from_title(title);
+    let is_integral = is_integral_release(title);
+
+    let matched = if is_integral && !missing_volumes.is_empty() {
+        missing_volumes.to_vec()
+    } else {
+        title_volumes
+            .iter()
+            .copied()
+            .filter(|v| missing_volumes.contains(v))
+            .collect()
+    };
+
+    let all = if is_integral { vec![] } else { title_volumes };
+    (matched, all)
+}
+
 pub(crate) fn is_integral_release(title: &str) -> bool {
     let lower = title.to_lowercase();
     // Strip accents for matching: "intégrale" → "integrale"
@@ -403,21 +424,8 @@ fn match_missing_volumes(
     releases
         .into_iter()
         .map(|r| {
-            let title_volumes = extract_volumes_from_title(&r.title);
-            let matched = if missing_numbers.is_empty() {
-                None
-            } else {
-                let matched: Vec<i32> = title_volumes
-                    .iter()
-                    .copied()
-                    .filter(|v| missing_numbers.contains(v))
-                    .collect();
-                if matched.is_empty() {
-                    None
-                } else {
-                    Some(matched)
-                }
-            };
+            let (matched_vols, all_volumes) = match_title_volumes(&r.title, &missing_numbers);
+            let matched = if matched_vols.is_empty() { None } else { Some(matched_vols) };
 
             ProwlarrRelease {
                 guid: r.guid,
@@ -432,7 +440,7 @@ fn match_missing_volumes(
                 info_url: r.info_url,
                 categories: r.categories,
                 matched_missing_volumes: matched,
-                all_volumes: title_volumes,
+                all_volumes,
             }
         })
         .collect()

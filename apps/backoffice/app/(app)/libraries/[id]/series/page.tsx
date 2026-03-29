@@ -75,8 +75,8 @@ export default async function LibrarySeriesPage({
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
             {series.map((s) => (
               <Link
-                key={s.name}
-                href={`/libraries/${id}/series/${encodeURIComponent(s.name)}`}
+                key={s.series_id}
+                href={`/libraries/${id}/series/${s.series_id}`}
                 className="group"
               >
                 <div className={`bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden hover:shadow-md transition-shadow duration-200 ${s.books_read_count >= s.book_count ? "opacity-50" : ""}`}>
@@ -98,6 +98,7 @@ export default async function LibrarySeriesPage({
                         {t("series.readCount", { read: String(s.books_read_count), total: String(s.book_count), plural: s.book_count !== 1 ? "s" : "" })}
                       </p>
                       <MarkSeriesReadButton
+                        seriesId={s.series_id}
                         seriesName={s.name}
                         bookCount={s.book_count}
                         booksReadCount={s.books_read_count}

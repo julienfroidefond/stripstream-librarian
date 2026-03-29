@@ -17,14 +17,12 @@ async fn rematch_unlinked_books(pool: &PgPool, library_id: Uuid) {
                 b.id AS book_id
             FROM external_book_metadata ebm2
             JOIN external_metadata_links eml ON eml.id = ebm2.link_id
-            JOIN books b ON b.library_id = eml.library_id
+            JOIN books b ON b.series_id = eml.series_id
                 AND b.volume = ebm2.volume_number
-            LEFT JOIN series s ON s.id = b.series_id
             WHERE eml.library_id = $1
               AND ebm2.book_id IS NULL
               AND ebm2.volume_number IS NOT NULL
               AND eml.status = 'approved'
-              AND LOWER(COALESCE(s.name, 'unclassified')) = LOWER(eml.series_name)
         ) matched
         WHERE ebm.id = matched.ebm_id
         "#,

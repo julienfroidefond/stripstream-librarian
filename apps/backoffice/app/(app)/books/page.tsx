@@ -134,8 +134,8 @@ export default async function BooksPage({
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {seriesHits.map((s) => (
               <Link
-                key={`${s.library_id}-${s.name}`}
-                href={`/libraries/${s.library_id}/series/${encodeURIComponent(s.name)}`}
+                key={`${s.library_id}-${s.series_id}`}
+                href={`/libraries/${s.library_id}/series/${s.series_id}`}
                 className="group"
               >
                 <div className="bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden hover:shadow-md transition-shadow duration-200">

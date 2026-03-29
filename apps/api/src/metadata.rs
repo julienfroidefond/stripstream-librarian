@@ -137,7 +137,7 @@ pub struct MissingBookItem {
 #[derive(Deserialize)]
 pub struct MetadataLinkQuery {
     pub library_id: Option<String>,
-    pub series_name: Option<String>,
+    pub series_id: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -234,12 +234,14 @@ pub async fn create_metadata_match(
         .parse()
         .map_err(|_| ApiError::bad_request("invalid library_id"))?;
 
+    let series_id = crate::series::get_or_create_series(&state.pool, library_id, &body.series_name).await?;
+
     let row = sqlx::query(
         r#"
         INSERT INTO external_metadata_links
-            (library_id, series_name, provider, external_id, external_url, status, confidence, metadata_json, total_volumes_external)
+            (library_id, series_id, provider, external_id, external_url, status, confidence, metadata_json, total_volumes_external)
         VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8)
-        ON CONFLICT (library_id, series_name, provider)
+        ON CONFLICT (series_id, provider)
         DO UPDATE SET
             external_id = EXCLUDED.external_id,
             external_url = EXCLUDED.external_url,
@@ -251,12 +253,11 @@ pub async fn create_metadata_match(
             updated_at = NOW(),
             approved_at = NULL,
             synced_at = NULL
-        RETURNING id, library_id, series_name, provider, external_id, external_url, status, confidence,
-                  metadata_json, total_volumes_external, matched_at, approved_at, synced_at
+        RETURNING id
         "#,
     )
     .bind(library_id)
-    .bind(&body.series_name)
+    .bind(series_id)
     .bind(&body.provider)
     .bind(&body.external_id)
     .bind(&body.external_url)
@@ -266,7 +267,22 @@ pub async fn create_metadata_match(
     .fetch_one(&state.pool)
     .await?;
 
-    Ok(Json(row_to_link_dto(&row)))
+    let link_id: Uuid = row.get("id");
+    // Re-fetch with JOIN to get series_name for the DTO
+    let full_row = sqlx::query(
+        r#"
+        SELECT eml.id, eml.library_id, s.name AS series_name, eml.series_id, eml.provider, eml.external_id, eml.external_url, eml.status, eml.confidence,
+               eml.metadata_json, eml.total_volumes_external, eml.matched_at, eml.approved_at, eml.synced_at
+        FROM external_metadata_links eml
+        JOIN series s ON s.id = eml.series_id
+        WHERE eml.id = $1
+        "#,
+    )
+    .bind(link_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(row_to_link_dto(&full_row)))
 }
 
 // ---------------------------------------------------------------------------
@@ -296,7 +312,7 @@ pub async fn approve_metadata(
         UPDATE external_metadata_links
         SET status = 'approved', approved_at = NOW(), updated_at = NOW()
         WHERE id = $1
-        RETURNING library_id, series_name, provider, external_id, metadata_json, total_volumes_external
+        RETURNING library_id, series_id, provider, external_id, metadata_json, total_volumes_external
         "#,
     )
     .bind(id)
@@ -306,7 +322,9 @@ pub async fn approve_metadata(
     let row = result.ok_or_else(|| ApiError::not_found("link not found"))?;
 
     let library_id: Uuid = row.get("library_id");
-    let series_name: String = row.get("series_name");
+    let series_id: Uuid = row.get("series_id");
+    let series_name: String = sqlx::query_scalar("SELECT name FROM series WHERE id = $1")
+        .bind(series_id).fetch_one(&state.pool).await?;
 
     // Reject any other approved links for the same series (only one active link per series)
     // Also clean up their external_book_metadata
@@ -314,12 +332,11 @@ pub async fn approve_metadata(
         r#"
         UPDATE external_metadata_links
         SET status = 'rejected', updated_at = NOW()
-        WHERE library_id = $1 AND series_name = $2 AND id != $3 AND status = 'approved'
+        WHERE series_id = $1 AND id != $2 AND status = 'approved'
         RETURNING id
         "#,
     )
-    .bind(library_id)
-    .bind(&series_name)
+    .bind(series_id)
     .bind(id)
     .fetch_all(&state.pool)
     .await?;
@@ -438,7 +455,7 @@ pub async fn reject_metadata(
     tag = "metadata",
     params(
         ("library_id" = Option<String>, Query, description = "Library UUID"),
-        ("series_name" = Option<String>, Query, description = "Series name"),
+        ("series_id" = Option<String>, Query, description = "Series UUID"),
     ),
     responses(
         (status = 200, body = Vec<ExternalMetadataLinkDto>),
@@ -454,18 +471,21 @@ pub async fn get_metadata_links(
         .as_deref()
         .and_then(|s| s.parse().ok());
 
+    let series_id: Option<Uuid> = query.series_id.as_deref().and_then(|s| s.parse().ok());
+
     let rows = sqlx::query(
         r#"
-        SELECT id, library_id, series_name, provider, external_id, external_url, status, confidence,
-               metadata_json, total_volumes_external, matched_at, approved_at, synced_at
-        FROM external_metadata_links
-        WHERE ($1::uuid IS NULL OR library_id = $1)
-          AND ($2::text IS NULL OR series_name = $2)
-        ORDER BY updated_at DESC
+        SELECT eml.id, eml.library_id, s.name AS series_name, eml.series_id, eml.provider, eml.external_id, eml.external_url, eml.status, eml.confidence,
+               eml.metadata_json, eml.total_volumes_external, eml.matched_at, eml.approved_at, eml.synced_at
+        FROM external_metadata_links eml
+        JOIN series s ON s.id = eml.series_id
+        WHERE ($1::uuid IS NULL OR eml.library_id = $1)
+          AND ($2::uuid IS NULL OR eml.series_id = $2)
+        ORDER BY eml.updated_at DESC
         "#,
     )
     .bind(library_id)
-    .bind(query.series_name.as_deref())
+    .bind(series_id)
     .fetch_all(&state.pool)
     .await?;
 
@@ -495,7 +515,10 @@ pub async fn get_missing_books(
 ) -> Result<Json<MissingBooksDto>, ApiError> {
     // Verify link exists
     let link = sqlx::query(
-        "SELECT library_id, series_name FROM external_metadata_links WHERE id = $1",
+        "SELECT eml.library_id, eml.series_id, s.name AS series_name \
+         FROM external_metadata_links eml \
+         JOIN series s ON s.id = eml.series_id \
+         WHERE eml.id = $1",
     )
     .bind(id)
     .fetch_optional(&state.pool)
@@ -503,6 +526,7 @@ pub async fn get_missing_books(
     .ok_or_else(|| ApiError::not_found("link not found"))?;
 
     let library_id: Uuid = link.get("library_id");
+    let series_id: Uuid = link.get("series_id");
     let series_name: String = link.get("series_name");
 
     // Count external books
@@ -514,10 +538,9 @@ pub async fn get_missing_books(
 
     // Count local books
     let total_local: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM books b LEFT JOIN series s ON s.id = b.series_id WHERE b.library_id = $1 AND COALESCE(s.name, 'unclassified') = $2",
+        "SELECT COUNT(*) FROM books WHERE series_id = $1",
     )
-    .bind(library_id)
-    .bind(&series_name)
+    .bind(series_id)
     .fetch_one(&state.pool)
     .await?;
 

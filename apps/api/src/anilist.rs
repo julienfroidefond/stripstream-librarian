@@ -287,11 +287,11 @@ pub async fn search_manga(
 /// Get AniList link for a specific series
 #[utoipa::path(
     get,
-    path = "/anilist/series/{library_id}/{series_name}",
+    path = "/anilist/series/{library_id}/{series_id}",
     tag = "anilist",
     params(
         ("library_id" = String, Path, description = "Library UUID"),
-        ("series_name" = String, Path, description = "Series name"),
+        ("series_id" = String, Path, description = "Series UUID"),
     ),
     responses(
         (status = 200, body = AnilistSeriesLinkResponse),
@@ -302,15 +302,16 @@ pub async fn search_manga(
 )]
 pub async fn get_series_link(
     State(state): State<AppState>,
-    Path((library_id, series_name)): Path<(Uuid, String)>,
+    Path((library_id, series_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<AnilistSeriesLinkResponse>, ApiError> {
     let row = sqlx::query(
-        "SELECT library_id, series_name, anilist_id, anilist_title, anilist_url, status, linked_at, synced_at
-         FROM anilist_series_links
-         WHERE library_id = $1 AND series_name = $2",
+        "SELECT asl.library_id, s.name AS series_name, asl.anilist_id, asl.anilist_title, asl.anilist_url, asl.status, asl.linked_at, asl.synced_at
+         FROM anilist_series_links asl
+         JOIN series s ON s.id = asl.series_id
+         WHERE asl.library_id = $1 AND asl.series_id = $2",
     )
     .bind(library_id)
-    .bind(&series_name)
+    .bind(series_id)
     .fetch_optional(&state.pool)
     .await?;
 
@@ -331,11 +332,11 @@ pub async fn get_series_link(
 /// Link a series to an AniList media ID
 #[utoipa::path(
     post,
-    path = "/anilist/series/{library_id}/{series_name}/link",
+    path = "/anilist/series/{library_id}/{series_id}/link",
     tag = "anilist",
     params(
         ("library_id" = String, Path, description = "Library UUID"),
-        ("series_name" = String, Path, description = "Series name"),
+        ("series_id" = String, Path, description = "Series UUID"),
     ),
     request_body = AnilistLinkRequest,
     responses(
@@ -346,7 +347,7 @@ pub async fn get_series_link(
 )]
 pub async fn link_series(
     State(state): State<AppState>,
-    Path((library_id, series_name)): Path<(Uuid, String)>,
+    Path((library_id, series_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<AnilistLinkRequest>,
 ) -> Result<Json<AnilistSeriesLinkResponse>, ApiError> {
     // Try to fetch title/url from AniList if not provided
@@ -382,29 +383,36 @@ pub async fn link_series(
 
     let row = sqlx::query(
         r#"
-        INSERT INTO anilist_series_links (library_id, series_name, provider, anilist_id, anilist_title, anilist_url, status, linked_at)
+        INSERT INTO anilist_series_links (library_id, series_id, provider, anilist_id, anilist_title, anilist_url, status, linked_at)
         VALUES ($1, $2, 'anilist', $3, $4, $5, 'linked', NOW())
-        ON CONFLICT (library_id, series_name, provider) DO UPDATE
+        ON CONFLICT (series_id, provider) DO UPDATE
           SET anilist_id = EXCLUDED.anilist_id,
               anilist_title = EXCLUDED.anilist_title,
               anilist_url = EXCLUDED.anilist_url,
               status = 'linked',
               linked_at = NOW(),
               synced_at = NULL
-        RETURNING library_id, series_name, anilist_id, anilist_title, anilist_url, status, linked_at, synced_at
+        RETURNING library_id, series_id, anilist_id, anilist_title, anilist_url, status, linked_at, synced_at
         "#,
     )
     .bind(library_id)
-    .bind(&series_name)
+    .bind(series_id)
     .bind(body.anilist_id)
     .bind(&anilist_title)
     .bind(&anilist_url)
     .fetch_one(&state.pool)
     .await?;
 
+    // Fetch series name for the response
+    let series_name: String = sqlx::query_scalar("SELECT name FROM series WHERE id = $1")
+        .bind(series_id)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap_or_else(|_| "unknown".to_string());
+
     Ok(Json(AnilistSeriesLinkResponse {
         library_id: row.get("library_id"),
-        series_name: row.get("series_name"),
+        series_name,
         anilist_id: row.get("anilist_id"),
         anilist_title: row.get("anilist_title"),
         anilist_url: row.get("anilist_url"),
@@ -417,11 +425,11 @@ pub async fn link_series(
 /// Remove the AniList link for a series
 #[utoipa::path(
     delete,
-    path = "/anilist/series/{library_id}/{series_name}/unlink",
+    path = "/anilist/series/{library_id}/{series_id}/unlink",
     tag = "anilist",
     params(
         ("library_id" = String, Path, description = "Library UUID"),
-        ("series_name" = String, Path, description = "Series name"),
+        ("series_id" = String, Path, description = "Series UUID"),
     ),
     responses(
         (status = 200, description = "Unlinked"),
@@ -432,13 +440,13 @@ pub async fn link_series(
 )]
 pub async fn unlink_series(
     State(state): State<AppState>,
-    Path((library_id, series_name)): Path<(Uuid, String)>,
+    Path((library_id, series_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<crate::responses::UnlinkedResponse>, ApiError> {
     let result = sqlx::query(
-        "DELETE FROM anilist_series_links WHERE library_id = $1 AND series_name = $2",
+        "DELETE FROM anilist_series_links WHERE library_id = $1 AND series_id = $2",
     )
     .bind(library_id)
-    .bind(&series_name)
+    .bind(series_id)
     .execute(&state.pool)
     .await?;
 
@@ -506,10 +514,10 @@ pub async fn list_unlinked(
         JOIN libraries l ON l.id = b.library_id
         LEFT JOIN series s ON s.id = b.series_id
         LEFT JOIN anilist_series_links asl
-            ON asl.library_id = b.library_id
-            AND asl.series_name = COALESCE(s.name, 'unclassified')
+            ON asl.series_id = b.series_id
         WHERE l.reading_status_provider = 'anilist'
-          AND asl.library_id IS NULL
+          AND asl.series_id IS NULL
+          AND b.series_id IS NOT NULL
         GROUP BY l.id, l.name, COALESCE(s.name, 'unclassified')
         ORDER BY l.name, series_name
         "#,
@@ -553,11 +561,12 @@ pub async fn preview_sync(
 
     let links = sqlx::query(
         r#"
-        SELECT asl.library_id, asl.series_name, asl.anilist_id, asl.anilist_title, asl.anilist_url
+        SELECT asl.library_id, asl.series_id, s.name AS series_name, asl.anilist_id, asl.anilist_title, asl.anilist_url
         FROM anilist_series_links asl
+        JOIN series s ON s.id = asl.series_id
         JOIN libraries l ON l.id = asl.library_id
         WHERE l.reading_status_provider = 'anilist'
-        ORDER BY l.name, asl.series_name
+        ORDER BY l.name, s.name
         "#,
     )
     .fetch_all(&state.pool)
@@ -566,7 +575,7 @@ pub async fn preview_sync(
     let mut items: Vec<AnilistSyncPreviewItem> = Vec::new();
 
     for link in &links {
-        let library_id: Uuid = link.get("library_id");
+        let series_id: Uuid = link.get("series_id");
         let series_name: String = link.get("series_name");
         let anilist_id: i32 = link.get("anilist_id");
         let anilist_title: Option<String> = link.get("anilist_title");
@@ -577,15 +586,13 @@ pub async fn preview_sync(
             SELECT
                 COUNT(*) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read,
-                (SELECT sm.total_volumes FROM series sm WHERE sm.library_id = $1 AND sm.name = $2 LIMIT 1) as total_volumes
+                (SELECT sm.total_volumes FROM series sm WHERE sm.id = $1 LIMIT 1) as total_volumes
             FROM books b
-            LEFT JOIN series s ON s.id = b.series_id
-            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND brp.user_id = $3
-            WHERE b.library_id = $1 AND COALESCE(s.name, 'unclassified') = $2
+            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND brp.user_id = $2
+            WHERE b.series_id = $1
             "#,
         )
-        .bind(library_id)
-        .bind(&series_name)
+        .bind(series_id)
         .bind(local_user_id)
         .fetch_one(&state.pool)
         .await;
@@ -649,8 +656,9 @@ pub async fn sync_to_anilist(
     // Get all series that have AniList links in enabled libraries
     let links = sqlx::query(
         r#"
-        SELECT asl.library_id, asl.series_name, asl.anilist_id, asl.anilist_title, asl.anilist_url
+        SELECT asl.library_id, asl.series_id, s.name AS series_name, asl.anilist_id, asl.anilist_title, asl.anilist_url
         FROM anilist_series_links asl
+        JOIN series s ON s.id = asl.series_id
         JOIN libraries l ON l.id = asl.library_id
         WHERE l.reading_status_provider = 'anilist'
         "#,
@@ -674,7 +682,7 @@ pub async fn sync_to_anilist(
     "#;
 
     for link in &links {
-        let library_id: Uuid = link.get("library_id");
+        let series_id: Uuid = link.get("series_id");
         let series_name: String = link.get("series_name");
         let anilist_id: i32 = link.get("anilist_id");
         let anilist_title: Option<String> = link.get("anilist_title");
@@ -686,15 +694,13 @@ pub async fn sync_to_anilist(
             SELECT
                 COUNT(*) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read,
-                (SELECT sm.total_volumes FROM series sm WHERE sm.library_id = $1 AND sm.name = $2 LIMIT 1) as total_volumes
+                (SELECT sm.total_volumes FROM series sm WHERE sm.id = $1 LIMIT 1) as total_volumes
             FROM books b
-            LEFT JOIN series s ON s.id = b.series_id
-            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND brp.user_id = $3
-            WHERE b.library_id = $1 AND COALESCE(s.name, 'unclassified') = $2
+            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND brp.user_id = $2
+            WHERE b.series_id = $1
             "#,
         )
-        .bind(library_id)
-        .bind(&series_name)
+        .bind(series_id)
         .bind(local_user_id)
         .fetch_one(&state.pool)
         .await;
@@ -735,10 +741,10 @@ pub async fn sync_to_anilist(
             Ok(_) => {
                 // Update synced_at
                 let _ = sqlx::query(
-                    "UPDATE anilist_series_links SET status = 'synced', synced_at = NOW() WHERE library_id = $1 AND series_name = $2",
+                    "UPDATE anilist_series_links SET status = 'synced', synced_at = NOW() WHERE library_id = $1 AND series_id = $2",
                 )
-                .bind(library_id)
-                .bind(&series_name)
+                .bind(link.get::<Uuid, _>("library_id"))
+                .bind(series_id)
                 .execute(&state.pool)
                 .await;
                 items.push(AnilistSyncItem {
@@ -752,10 +758,10 @@ pub async fn sync_to_anilist(
             }
             Err(e) => {
                 let _ = sqlx::query(
-                    "UPDATE anilist_series_links SET status = 'error' WHERE library_id = $1 AND series_name = $2",
+                    "UPDATE anilist_series_links SET status = 'error' WHERE library_id = $1 AND series_id = $2",
                 )
-                .bind(library_id)
-                .bind(&series_name)
+                .bind(link.get::<Uuid, _>("library_id"))
+                .bind(series_id)
                 .execute(&state.pool)
                 .await;
                 errors.push(format!("{series_name}: {}", e.message));
@@ -824,8 +830,9 @@ pub async fn pull_from_anilist(
     // Find local series linked to these anilist IDs (in enabled libraries)
     let link_rows = sqlx::query(
         r#"
-        SELECT asl.library_id, asl.series_name, asl.anilist_id, asl.anilist_title, asl.anilist_url
+        SELECT asl.library_id, asl.series_id, s.name AS series_name, asl.anilist_id, asl.anilist_title, asl.anilist_url
         FROM anilist_series_links asl
+        JOIN series s ON s.id = asl.series_id
         JOIN libraries l ON l.id = asl.library_id
         WHERE l.reading_status_provider = 'anilist'
         "#,
@@ -833,16 +840,16 @@ pub async fn pull_from_anilist(
     .fetch_all(&state.pool)
     .await?;
 
-    // Build map: anilist_id → (library_id, series_name, anilist_title, anilist_url)
+    // Build map: anilist_id → (series_id, series_name, anilist_title, anilist_url)
     let mut link_map: std::collections::HashMap<i32, (Uuid, String, Option<String>, Option<String>)> =
         std::collections::HashMap::new();
     for row in &link_rows {
         let aid: i32 = row.get("anilist_id");
-        let lib: Uuid = row.get("library_id");
+        let sid: Uuid = row.get("series_id");
         let name: String = row.get("series_name");
         let title: Option<String> = row.get("anilist_title");
         let url: Option<String> = row.get("anilist_url");
-        link_map.insert(aid, (lib, name, title, url));
+        link_map.insert(aid, (sid, name, title, url));
     }
 
     let mut updated = 0i32;
@@ -851,7 +858,7 @@ pub async fn pull_from_anilist(
     let mut items: Vec<AnilistPullItem> = Vec::new();
 
     for (anilist_id, anilist_status, progress_volumes) in &entries {
-        let Some((library_id, series_name, anilist_title, anilist_url)) = link_map.get(anilist_id) else {
+        let Some((series_id, series_name, anilist_title, anilist_url)) = link_map.get(anilist_id) else {
             skipped += 1;
             continue;
         };
@@ -869,10 +876,9 @@ pub async fn pull_from_anilist(
 
         // Get all book IDs for this series, ordered by volume
         let book_rows = sqlx::query(
-            "SELECT b.id, b.volume FROM books b LEFT JOIN series s ON s.id = b.series_id WHERE b.library_id = $1 AND COALESCE(s.name, 'unclassified') = $2 ORDER BY b.volume NULLS LAST",
+            "SELECT b.id, b.volume FROM books b WHERE b.series_id = $1 ORDER BY b.volume NULLS LAST",
         )
-        .bind(library_id)
-        .bind(series_name)
+        .bind(series_id)
         .fetch_all(&state.pool)
         .await;
 
@@ -946,9 +952,10 @@ pub async fn list_links(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<AnilistSeriesLinkResponse>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT library_id, series_name, anilist_id, anilist_title, anilist_url, status, linked_at, synced_at
-         FROM anilist_series_links
-         ORDER BY linked_at DESC",
+        "SELECT asl.library_id, s.name AS series_name, asl.anilist_id, asl.anilist_title, asl.anilist_url, asl.status, asl.linked_at, asl.synced_at
+         FROM anilist_series_links asl
+         JOIN series s ON s.id = asl.series_id
+         ORDER BY asl.linked_at DESC",
     )
     .fetch_all(&state.pool)
     .await?;

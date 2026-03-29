@@ -77,14 +77,14 @@ pub async fn list_authors(
                     NULLIF(authors, '{{}}'),
                     CASE WHEN author IS NOT NULL AND author != '' THEN ARRAY[author] ELSE ARRAY[]::text[] END
                 )
-            ) AS author_name, id AS book_id, library_id, series
+            ) AS author_name, id AS book_id, series_id
             FROM books
         ),
         author_agg AS (
             SELECT
                 author_name AS name,
                 COUNT(DISTINCT book_id) AS book_count,
-                COUNT(DISTINCT (library_id, series)) AS series_count
+                COUNT(DISTINCT series_id) AS series_count
             FROM author_books
             WHERE ($1::text IS NULL OR author_name ILIKE $1)
             GROUP BY author_name

@@ -97,6 +97,7 @@ export type BookDto = {
   reading_status: ReadingStatus;
   reading_current_page: number | null;
   reading_last_read_at: string | null;
+  series_id: string | null;
   summary: string | null;
   isbn: string | null;
   publish_date: string | null;
@@ -122,6 +123,7 @@ export type SearchHitDto = {
 };
 
 export type SeriesHitDto = {
+  series_id: string;
   library_id: string;
   name: string;
   book_count: number;
@@ -137,6 +139,7 @@ export type SearchResponseDto = {
 };
 
 export type SeriesDto = {
+  series_id: string;
   name: string;
   book_count: number;
   books_read_count: number;
@@ -802,6 +805,7 @@ export async function updateBook(bookId: string, data: UpdateBookRequest) {
 }
 
 export type SeriesMetadataDto = {
+  series_name: string;
   authors: string[];
   description: string | null;
   publishers: string[];
@@ -813,9 +817,9 @@ export type SeriesMetadataDto = {
   locked_fields: Record<string, boolean>;
 };
 
-export async function fetchSeriesMetadata(libraryId: string, seriesName: string) {
+export async function fetchSeriesMetadata(libraryId: string, seriesId: string) {
   return apiFetch<SeriesMetadataDto>(
-    `/libraries/${libraryId}/series/${encodeURIComponent(seriesName)}/metadata`
+    `/libraries/${libraryId}/series/${seriesId}/metadata`
   );
 }
 
@@ -831,17 +835,23 @@ export type UpdateSeriesRequest = {
   locked_fields?: Record<string, boolean>;
 };
 
-export async function updateSeries(libraryId: string, seriesName: string, data: UpdateSeriesRequest) {
-  return apiFetch<{ updated: number }>(`/libraries/${libraryId}/series/${encodeURIComponent(seriesName)}`, {
+export async function updateSeries(libraryId: string, seriesId: string, data: UpdateSeriesRequest) {
+  return apiFetch<{ updated: number }>(`/libraries/${libraryId}/series/${seriesId}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
 }
 
-export async function markSeriesRead(seriesName: string, status: "read" | "unread" = "read") {
+export async function deleteSeries(libraryId: string, seriesId: string) {
+  return apiFetch<void>(`/libraries/${libraryId}/series/${seriesId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function markSeriesRead(seriesId: string, status: "read" | "unread" = "read") {
   return apiFetch<{ updated: number }>("/series/mark-read", {
     method: "POST",
-    body: JSON.stringify({ series: seriesName, status }),
+    body: JSON.stringify({ series: seriesId, status }),
   });
 }
 
@@ -1003,16 +1013,16 @@ export async function rejectMetadataMatch(id: string) {
   });
 }
 
-export async function getMetadataLink(libraryId: string, seriesName: string) {
+export async function getMetadataLink(libraryId: string, seriesId: string) {
   const params = new URLSearchParams();
   params.set("library_id", libraryId);
-  params.set("series_name", seriesName);
+  params.set("series_id", seriesId);
   return apiFetch<ExternalMetadataLinkDto[]>(`/metadata/links?${params.toString()}`);
 }
 
-export async function getReadingStatusLink(libraryId: string, seriesName: string) {
+export async function getReadingStatusLink(libraryId: string, seriesId: string) {
   return apiFetch<AnilistSeriesLinkDto>(
-    `/anilist/series/${libraryId}/${encodeURIComponent(seriesName)}`
+    `/anilist/series/${libraryId}/${seriesId}`
   );
 }
 
@@ -1052,6 +1062,7 @@ export type MetadataBatchReportDto = {
 
 export type MetadataBatchResultDto = {
   id: string;
+  series_id?: string;
   series_name: string;
   status: string;
   provider_used: string | null;
@@ -1097,6 +1108,7 @@ export type ReadingStatusMatchReportDto = {
 
 export type ReadingStatusMatchResultDto = {
   id: string;
+  series_id?: string;
   series_name: string;
   status: "linked" | "already_linked" | "no_results" | "ambiguous" | "error";
   anilist_id: number | null;
@@ -1132,6 +1144,7 @@ export type ReadingStatusPushReportDto = {
 
 export type ReadingStatusPushResultDto = {
   id: string;
+  series_id?: string;
   series_name: string;
   status: "pushed" | "skipped" | "no_books" | "error";
   anilist_id: number | null;
@@ -1180,6 +1193,7 @@ export type DownloadDetectionReportDto = {
 
 export type DownloadDetectionResultDto = {
   id: string;
+  series_id?: string;
   series_name: string;
   status: "found" | "not_found" | "no_missing" | "no_metadata" | "error";
   missing_count: number;
@@ -1189,6 +1203,7 @@ export type DownloadDetectionResultDto = {
 
 export type AvailableDownloadDto = {
   id: string;
+  series_id?: string;
   series_name: string;
   missing_count: number;
   available_releases: AvailableReleaseDto[] | null;
@@ -1226,6 +1241,7 @@ export type RefreshBookDiff = {
 };
 
 export type RefreshSeriesResult = {
+  series_id?: string;
   series_name: string;
   provider: string;
   status: string; // "updated" | "unchanged" | "error"
@@ -1306,6 +1322,7 @@ export type QBittorrentAddResponse = {
 export type TorrentDownloadDto = {
   id: string;
   library_id: string;
+  series_id?: string;
   series_name: string;
   expected_volumes: number[];
   qb_hash: string | null;

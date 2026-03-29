@@ -303,10 +303,11 @@ pub async fn get_detection_results(
 ) -> Result<Json<Vec<DownloadDetectionResultDto>>, ApiError> {
     let rows = if let Some(status_filter) = &query.status {
         sqlx::query(
-            "SELECT id, series_name, status, missing_count, available_releases, error_message
-             FROM download_detection_results
-             WHERE job_id = $1 AND status = $2
-             ORDER BY series_name",
+            "SELECT ddr.id, COALESCE(s.name, 'unknown') AS series_name, ddr.status, ddr.missing_count, ddr.available_releases, ddr.error_message
+             FROM download_detection_results ddr
+             LEFT JOIN series s ON s.id = ddr.series_id
+             WHERE ddr.job_id = $1 AND ddr.status = $2
+             ORDER BY s.name",
         )
         .bind(job_id)
         .bind(status_filter)
@@ -314,10 +315,11 @@ pub async fn get_detection_results(
         .await?
     } else {
         sqlx::query(
-            "SELECT id, series_name, status, missing_count, available_releases, error_message
-             FROM download_detection_results
-             WHERE job_id = $1
-             ORDER BY status, series_name",
+            "SELECT ddr.id, COALESCE(s.name, 'unknown') AS series_name, ddr.status, ddr.missing_count, ddr.available_releases, ddr.error_message
+             FROM download_detection_results ddr
+             LEFT JOIN series s ON s.id = ddr.series_id
+             WHERE ddr.job_id = $1
+             ORDER BY ddr.status, s.name",
         )
         .bind(job_id)
         .fetch_all(&state.pool)
@@ -381,11 +383,12 @@ pub async fn get_latest_found(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<LatestFoundPerLibraryDto>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT ad.id, ad.library_id, ad.series_name, ad.missing_count, ad.available_releases, ad.updated_at, \
+        "SELECT ad.id, ad.library_id, s.name AS series_name, ad.series_id, ad.missing_count, ad.available_releases, ad.updated_at, \
                 l.name as library_name \
          FROM available_downloads ad \
          JOIN libraries l ON l.id = ad.library_id \
-         ORDER BY l.name, ad.series_name",
+         JOIN series s ON s.id = ad.series_id \
+         ORDER BY l.name, s.name",
     )
     .fetch_all(&state.pool)
     .await?;
@@ -509,9 +512,9 @@ pub(crate) async fn process_download_detection(
             .map_err(|e| e.message)?;
 
     // Fetch all series with their metadata link status
-    let all_series: Vec<String> = sqlx::query_scalar(
+    let all_series_rows: Vec<(String, Option<uuid::Uuid>)> = sqlx::query_as(
         r#"
-        SELECT DISTINCT COALESCE(s.name, 'unclassified')
+        SELECT DISTINCT COALESCE(s.name, 'unclassified') AS name, b.series_id
         FROM books b
         LEFT JOIN series s ON s.id = b.series_id
         WHERE b.library_id = $1
@@ -528,11 +531,10 @@ pub(crate) async fn process_download_detection(
         r#"
         DELETE FROM available_downloads
         WHERE library_id = $1
-          AND series_name NOT IN (
-            SELECT DISTINCT COALESCE(s.name, 'unclassified')
+          AND series_id NOT IN (
+            SELECT DISTINCT b.series_id
             FROM books b
-            LEFT JOIN series s ON s.id = b.series_id
-            WHERE b.library_id = $1
+            WHERE b.library_id = $1 AND b.series_id IS NOT NULL
           )
         "#,
     )
@@ -541,6 +543,10 @@ pub(crate) async fn process_download_detection(
     .await
     .map_err(|e| e.to_string())?;
 
+    let all_series: Vec<String> = all_series_rows.iter().map(|(name, _)| name.clone()).collect();
+    let series_id_map: std::collections::HashMap<String, Uuid> = all_series_rows.iter()
+        .filter_map(|(name, id)| id.map(|id| (name.clone(), id)))
+        .collect();
     let total = all_series.len() as i32;
     sqlx::query("UPDATE index_jobs SET total_files = $2 WHERE id = $1")
         .bind(job_id)
@@ -551,7 +557,9 @@ pub(crate) async fn process_download_detection(
 
     // Fetch approved metadata links for this library (series_name -> link_id)
     let links: Vec<(String, Uuid)> = sqlx::query(
-        "SELECT series_name, id FROM external_metadata_links WHERE library_id = $1 AND status = 'approved'",
+        "SELECT s.name AS series_name, eml.id FROM external_metadata_links eml \
+         JOIN series s ON s.id = eml.series_id \
+         WHERE eml.library_id = $1 AND eml.status = 'approved'",
     )
     .bind(library_id)
     .fetch_all(pool)
@@ -602,7 +610,7 @@ pub(crate) async fn process_download_detection(
 
         // Skip unclassified
         if series_name == "unclassified" {
-            insert_result(pool, job_id, library_id, series_name, "no_metadata", 0, None, None).await;
+            insert_result(pool, job_id, library_id, series_id_map.get(series_name).copied(), "no_metadata", 0, None, None).await;
             continue;
         }
 
@@ -610,7 +618,7 @@ pub(crate) async fn process_download_detection(
         let link_id = match link_map.get(series_name) {
             Some(id) => *id,
             None => {
-                insert_result(pool, job_id, library_id, series_name, "no_metadata", 0, None, None).await;
+                insert_result(pool, job_id, library_id, series_id_map.get(series_name).copied(), "no_metadata", 0, None, None).await;
                 continue;
             }
         };
@@ -625,10 +633,12 @@ pub(crate) async fn process_download_detection(
         .map_err(|e| e.to_string())?;
 
         if missing_rows.is_empty() {
-            insert_result(pool, job_id, library_id, series_name, "no_missing", 0, None, None).await;
+            insert_result(pool, job_id, library_id, series_id_map.get(series_name).copied(), "no_missing", 0, None, None).await;
             // Series is complete, remove from available_downloads
-            let _ = sqlx::query("DELETE FROM available_downloads WHERE library_id = $1 AND series_name = $2")
-                .bind(library_id).bind(series_name).execute(pool).await;
+            if let Some(&sid) = series_id_map.get(series_name) {
+                let _ = sqlx::query("DELETE FROM available_downloads WHERE series_id = $1")
+                    .bind(sid).execute(pool).await;
+            }
             continue;
         }
 
@@ -655,7 +665,7 @@ pub(crate) async fn process_download_detection(
                     pool,
                     job_id,
                     library_id,
-                    series_name,
+                    series_id_map.get(series_name).copied(),
                     "found",
                     missing_count,
                     releases_json.clone(),
@@ -663,17 +673,17 @@ pub(crate) async fn process_download_detection(
                 )
                 .await;
                 // UPSERT into available_downloads
-                if let Some(ref rj) = releases_json {
+                if let (Some(ref rj), Some(&sid)) = (&releases_json, series_id_map.get(series_name)) {
                     let _ = sqlx::query(
-                        "INSERT INTO available_downloads (library_id, series_name, missing_count, available_releases, updated_at) \
+                        "INSERT INTO available_downloads (library_id, series_id, missing_count, available_releases, updated_at) \
                          VALUES ($1, $2, $3, $4, NOW()) \
-                         ON CONFLICT (library_id, series_name) DO UPDATE SET \
+                         ON CONFLICT (series_id) DO UPDATE SET \
                            missing_count = EXCLUDED.missing_count, \
                            available_releases = EXCLUDED.available_releases, \
                            updated_at = NOW()",
                     )
                     .bind(library_id)
-                    .bind(series_name)
+                    .bind(sid)
                     .bind(missing_count)
                     .bind(rj)
                     .execute(pool)
@@ -681,19 +691,20 @@ pub(crate) async fn process_download_detection(
                 }
             }
             Ok(_) => {
-                insert_result(pool, job_id, library_id, series_name, "not_found", missing_count, None, None).await;
+                insert_result(pool, job_id, library_id, series_id_map.get(series_name).copied(), "not_found", missing_count, None, None).await;
                 // Remove from available_downloads if previously found
+                if let Some(&sid) = series_id_map.get(series_name) {
                 let _ = sqlx::query(
-                    "DELETE FROM available_downloads WHERE library_id = $1 AND series_name = $2",
+                    "DELETE FROM available_downloads WHERE series_id = $1",
                 )
-                .bind(library_id)
-                .bind(series_name)
+                .bind(sid)
                 .execute(pool)
                 .await;
+                }
             }
             Err(e) => {
                 warn!("[DOWNLOAD_DETECTION] series '{series_name}': {e}");
-                insert_result(pool, job_id, library_id, series_name, "error", missing_count, None, Some(&e)).await;
+                insert_result(pool, job_id, library_id, series_id_map.get(series_name).copied(), "error", missing_count, None, Some(&e)).await;
             }
         }
     }
@@ -810,20 +821,7 @@ async fn search_prowlarr_for_series(
     let matched: Vec<AvailableReleaseDto> = raw_releases
         .into_iter()
         .filter_map(|r| {
-            let title_volumes = prowlarr::extract_volumes_from_title_pub(&r.title);
-
-            // "Intégrale" / "Complet" releases match ALL missing volumes
-            let is_integral = prowlarr::is_integral_release(&r.title);
-
-            let matched_vols: Vec<i32> = if is_integral && !missing_volumes.is_empty() {
-                missing_volumes.to_vec()
-            } else {
-                title_volumes
-                    .iter()
-                    .copied()
-                    .filter(|v| missing_volumes.contains(v))
-                    .collect()
-            };
+            let (matched_vols, all_volumes) = prowlarr::match_title_volumes(&r.title, missing_volumes);
 
             if matched_vols.is_empty() {
                 None
@@ -835,7 +833,7 @@ async fn search_prowlarr_for_series(
                     indexer: r.indexer,
                     seeders: r.seeders,
                     matched_missing_volumes: matched_vols,
-                    all_volumes: if is_integral { vec![] } else { title_volumes },
+                    all_volumes,
                 })
             }
         })
@@ -849,7 +847,7 @@ async fn insert_result(
     pool: &PgPool,
     job_id: Uuid,
     library_id: Uuid,
-    series_name: &str,
+    series_id: Option<Uuid>,
     status: &str,
     missing_count: i32,
     available_releases: Option<serde_json::Value>,
@@ -858,13 +856,13 @@ async fn insert_result(
     let _ = sqlx::query(
         r#"
         INSERT INTO download_detection_results
-            (job_id, library_id, series_name, status, missing_count, available_releases, error_message)
+            (job_id, library_id, series_id, status, missing_count, available_releases, error_message)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         "#,
     )
     .bind(job_id)
     .bind(library_id)
-    .bind(series_name)
+    .bind(series_id)
     .bind(status)
     .bind(missing_count)
     .bind(&available_releases)

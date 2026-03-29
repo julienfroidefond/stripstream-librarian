@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button, Icon, Modal } from "./ui";
 import { useTranslation } from "@/lib/i18n/context";
 
-export function DeleteSeriesButton({ libraryId, seriesName }: { libraryId: string; seriesName: string }) {
+export function DeleteSeriesButton({ libraryId, seriesId }: { libraryId: string; seriesId: string }) {
   const { t } = useTranslation();
   const router = useRouter();
   const [showConfirm, setShowConfirm] = useState(false);
@@ -16,7 +16,7 @@ export function DeleteSeriesButton({ libraryId, seriesName }: { libraryId: strin
     setShowConfirm(false);
     try {
       const resp = await fetch(
-        `/api/libraries/${libraryId}/series/${encodeURIComponent(seriesName)}`,
+        `/api/libraries/${libraryId}/series/${seriesId}`,
         { method: "DELETE" }
       );
       if (resp.ok) {

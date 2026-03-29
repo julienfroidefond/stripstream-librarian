@@ -6,6 +6,7 @@ import { Icon } from "./ui";
 import type { ProwlarrRelease, ProwlarrSearchResponse } from "../../lib/api";
 import { useTranslation } from "../../lib/i18n/context";
 import { QbittorrentProvider, QbittorrentDownloadButton } from "./QbittorrentDownloadButton";
+import { compressVolumes } from "@/lib/volumeRanges";
 
 interface MissingBookItem {
   title: string | null;
@@ -251,9 +252,9 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                                 </span>
                                 {hasMissing && (
                                   <div className="flex flex-wrap items-center gap-1 mt-1">
-                                    {first.matchedMissingVolumes!.map((vol) => (
-                                      <span key={vol} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-600">
-                                        {t("prowlarr.missingVol", { vol })}
+                                    {compressVolumes(first.matchedMissingVolumes!).map((range) => (
+                                      <span key={range} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-600">
+                                        {range}
                                       </span>
                                     ))}
                                   </div>

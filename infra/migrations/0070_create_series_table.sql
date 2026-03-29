@@ -3,6 +3,10 @@
 -- Fuses series_metadata into series. All related tables get series_id FK.
 -- =============================================================================
 
+-- 0. Safety: backup reading progress before any schema changes
+CREATE TABLE IF NOT EXISTS _backup_book_reading_progress AS
+    SELECT * FROM book_reading_progress;
+
 -- 1. Create the series table (fusion of series_metadata)
 CREATE TABLE IF NOT EXISTS series (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -432,7 +432,7 @@ pub(crate) async fn process_metadata_batch(
 
     // Get series that already have an approved link (skip them)
     let already_linked: std::collections::HashSet<String> = sqlx::query_scalar(
-        "SELECT series_name FROM external_metadata_links WHERE library_id = $1 AND status = 'approved'",
+        "SELECT s.name FROM external_metadata_links eml JOIN series s ON s.id = eml.series_id WHERE eml.library_id = $1 AND eml.status = 'approved'",
     )
     .bind(library_id)
     .fetch_all(pool)
@@ -797,14 +797,25 @@ async fn auto_apply(
     provider_name: &str,
     candidate: &metadata_providers::SeriesCandidate,
 ) -> Result<Uuid, String> {
+    // Resolve series_id from series name
+    let series_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM series WHERE library_id = $1 AND name = $2",
+    )
+    .bind(library_id)
+    .bind(series_name)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| format!("Series '{}' not found in library", series_name))?;
+
     // Create the external_metadata_link
     let metadata_json = &candidate.metadata_json;
     let row = sqlx::query(
         r#"
         INSERT INTO external_metadata_links
-            (library_id, series_name, provider, external_id, external_url, status, confidence, metadata_json, total_volumes_external)
+            (library_id, series_id, provider, external_id, external_url, status, confidence, metadata_json, total_volumes_external)
         VALUES ($1, $2, $3, $4, $5, 'approved', $6, $7, $8)
-        ON CONFLICT (library_id, series_name, provider)
+        ON CONFLICT (series_id, provider)
         DO UPDATE SET
             external_id = EXCLUDED.external_id,
             external_url = EXCLUDED.external_url,
@@ -819,7 +830,7 @@ async fn auto_apply(
         "#,
     )
     .bind(library_id)
-    .bind(series_name)
+    .bind(series_id)
     .bind(provider_name)
     .bind(&candidate.external_id)
     .bind(&candidate.external_url)

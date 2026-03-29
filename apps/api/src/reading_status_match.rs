@@ -377,7 +377,7 @@ pub(crate) async fn process_reading_status_match(
         .map_err(|e| e.to_string())?;
 
     let already_linked: std::collections::HashSet<String> = sqlx::query_scalar(
-        "SELECT series_name FROM anilist_series_links WHERE library_id = $1",
+        "SELECT s.name FROM anilist_series_links asl JOIN series s ON s.id = asl.series_id WHERE asl.library_id = $1",
     )
     .bind(library_id)
     .fetch_all(pool)
@@ -636,15 +636,24 @@ async fn search_and_link(
         .map(String::from);
     let anilist_url = candidate["siteUrl"].as_str().map(String::from);
 
-    sqlx::query(
-        r#"
-        INSERT INTO anilist_series_links (library_id, series_name, provider, anilist_id, anilist_title, anilist_url, status, linked_at)
-        VALUES ($1, $2, 'anilist', $3, $4, $5, 'linked', NOW())
-        ON CONFLICT (library_id, series_name, provider) DO NOTHING
-        "#,
+    let series_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM series WHERE library_id = $1 AND name = $2",
     )
     .bind(library_id)
     .bind(series_name)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| format!("series lookup failed for '{}': {}", series_name, e))?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO anilist_series_links (library_id, series_id, provider, anilist_id, anilist_title, anilist_url, status, linked_at)
+        VALUES ($1, $2, 'anilist', $3, $4, $5, 'linked', NOW())
+        ON CONFLICT (series_id, provider) DO NOTHING
+        "#,
+    )
+    .bind(library_id)
+    .bind(series_id)
     .bind(anilist_id)
     .bind(&anilist_title)
     .bind(&anilist_url)

@@ -180,6 +180,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/books/:id/pages/:n", get(pages::get_page))
         .route("/books/:id/progress", get(reading_progress::get_reading_progress).patch(reading_progress::update_reading_progress))
         .route("/libraries/:library_id/series", get(series::list_series))
+        .route("/libraries/:library_id/series/by-name/:name", get(series::get_series_by_name))
         .route("/libraries/:library_id/series/:series_id/metadata", get(series::get_series_metadata))
         .route("/series", get(series::list_all_series))
         .route("/series/ongoing", get(series::ongoing_series))

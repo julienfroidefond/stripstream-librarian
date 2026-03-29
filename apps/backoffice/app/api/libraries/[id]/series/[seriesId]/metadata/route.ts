@@ -3,11 +3,11 @@ import { fetchSeriesMetadata } from "@/lib/api";
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: Promise<{ id: string; name: string }> }
+  { params }: { params: Promise<{ id: string; seriesId: string }> }
 ) {
-  const { id, name } = await params;
+  const { id, seriesId } = await params;
   try {
-    const data = await fetchSeriesMetadata(id, name);
+    const data = await fetchSeriesMetadata(id, seriesId);
     return NextResponse.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch series metadata";

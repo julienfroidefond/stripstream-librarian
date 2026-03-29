@@ -67,6 +67,53 @@ pub(crate) async fn get_or_create_series(
     .map_err(Into::into)
 }
 
+// ─── Lookup by name ──────────────────────────────────────────────────────────
+
+#[derive(Serialize, ToSchema)]
+pub struct SeriesLookup {
+    #[schema(value_type = String)]
+    pub id: Uuid,
+    #[schema(value_type = String)]
+    pub library_id: Uuid,
+    pub name: String,
+}
+
+/// Look up a series by name within a library. Returns its UUID and name.
+#[utoipa::path(
+    get,
+    path = "/libraries/{library_id}/series/by-name/{name}",
+    tag = "series",
+    params(
+        ("library_id" = String, Path, description = "Library UUID"),
+        ("name" = String, Path, description = "Series name (URL-encoded)"),
+    ),
+    responses(
+        (status = 200, body = SeriesLookup),
+        (status = 404, description = "Series not found"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn get_series_by_name(
+    State(state): State<AppState>,
+    Path((library_id, name)): Path<(Uuid, String)>,
+) -> Result<Json<SeriesLookup>, ApiError> {
+    let row = sqlx::query(
+        "SELECT id, library_id, name FROM series WHERE library_id = $1 AND LOWER(name) = LOWER($2)"
+    )
+    .bind(library_id)
+    .bind(&name)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::not_found(format!("series '{}' not found", name)))?;
+
+    Ok(Json(SeriesLookup {
+        id: row.get("id"),
+        library_id: row.get("library_id"),
+        name: row.get("name"),
+    }))
+}
+
 // ─── Structs ─────────────────────────────────────────────────────────────────
 
 #[derive(Serialize, ToSchema)]
@@ -906,6 +953,8 @@ pub async fn ongoing_books(
 
 #[derive(Serialize, ToSchema)]
 pub struct SeriesMetadata {
+    /// Name of the series
+    pub series_name: String,
     /// Authors of the series (series-level metadata, distinct from per-book author field)
     pub authors: Vec<String>,
     pub description: Option<String>,
@@ -943,7 +992,7 @@ pub async fn get_series_metadata(
 ) -> Result<Json<SeriesMetadata>, ApiError> {
     // Fetch series row (contains metadata directly)
     let series_row = sqlx::query(
-        "SELECT authors, description, publishers, start_year, total_volumes, status, locked_fields, book_author, book_language \
+        "SELECT name, authors, description, publishers, start_year, total_volumes, status, locked_fields, book_author, book_language \
          FROM series WHERE id = $1 AND library_id = $2"
     )
     .bind(series_id)
@@ -958,6 +1007,7 @@ pub async fn get_series_metadata(
         .await?;
 
     Ok(Json(SeriesMetadata {
+        series_name: series_row.as_ref().map(|r| r.get::<String, _>("name")).unwrap_or_default(),
         authors: series_row.as_ref().map(|r| r.get::<Vec<String>, _>("authors")).unwrap_or_default(),
         description: series_row.as_ref().and_then(|r| r.get("description")),
         publishers: series_row.as_ref().map(|r| r.get::<Vec<String>, _>("publishers")).unwrap_or_default(),
@@ -1267,6 +1317,7 @@ mod tests {
     #[test]
     fn series_metadata_serializes() {
         let meta = SeriesMetadata {
+            series_name: "Naruto".to_string(),
             description: Some("A ninja story".to_string()),
             authors: vec!["Kishimoto".to_string()],
             publishers: vec![],

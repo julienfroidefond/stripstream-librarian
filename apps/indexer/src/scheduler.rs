@@ -122,7 +122,7 @@ pub async fn check_and_schedule_reading_status_push(pool: &PgPool) -> Result<()>
 pub async fn check_and_schedule_download_detection(pool: &PgPool) -> Result<()> {
     // Only schedule if Prowlarr is configured
     let prowlarr_configured: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM settings WHERE key = 'prowlarr' AND value->>'base_url' IS NOT NULL AND value->>'base_url' != '')"
+        "SELECT EXISTS(SELECT 1 FROM app_settings WHERE key = 'prowlarr' AND value->>'base_url' IS NOT NULL AND value->>'base_url' != '')"
     )
     .fetch_one(pool)
     .await

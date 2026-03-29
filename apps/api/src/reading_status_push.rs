@@ -357,6 +357,7 @@ pub async fn get_push_results(
 // ---------------------------------------------------------------------------
 
 struct SeriesInfo {
+    series_id: Uuid,
     series_name: String,
     anilist_id: i32,
     anilist_title: Option<String>,
@@ -379,11 +380,13 @@ pub async fn process_reading_status_push(
     let series_to_push: Vec<SeriesInfo> = sqlx::query(
         r#"
         SELECT
-            asl.series_name,
+            asl.series_id,
+            s.name AS series_name,
             asl.anilist_id,
             asl.anilist_title,
             asl.anilist_url
         FROM anilist_series_links asl
+        JOIN series s ON s.id = asl.series_id
         WHERE asl.library_id = $1
           AND asl.anilist_id IS NOT NULL
           AND (
@@ -392,22 +395,18 @@ pub async fn process_reading_status_push(
                 SELECT 1
                 FROM book_reading_progress brp
                 JOIN books b2 ON b2.id = brp.book_id
-                LEFT JOIN series s2 ON s2.id = b2.series_id
-                WHERE b2.library_id = asl.library_id
-                  AND COALESCE(s2.name, 'unclassified') = asl.series_name
+                WHERE b2.series_id = asl.series_id
                   AND brp.user_id = $2
                   AND brp.updated_at > asl.synced_at
             )
             OR EXISTS (
                 SELECT 1
                 FROM books b2
-                LEFT JOIN series s2 ON s2.id = b2.series_id
-                WHERE b2.library_id = asl.library_id
-                  AND COALESCE(s2.name, 'unclassified') = asl.series_name
+                WHERE b2.series_id = asl.series_id
                   AND b2.created_at > asl.synced_at
             )
           )
-        ORDER BY asl.series_name
+        ORDER BY s.name
         "#,
     )
     .bind(library_id)
@@ -417,6 +416,7 @@ pub async fn process_reading_status_push(
     .map_err(|e| e.to_string())?
     .into_iter()
     .map(|row| SeriesInfo {
+        series_id: row.get("series_id"),
         series_name: row.get("series_name"),
         anilist_id: row.get("anilist_id"),
         anilist_title: row.get("anilist_title"),
@@ -466,15 +466,12 @@ pub async fn process_reading_status_push(
                 COUNT(b.id) AS total_books,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') AS books_read
             FROM books b
-            LEFT JOIN series s ON s.id = b.series_id
             LEFT JOIN book_reading_progress brp
-                ON brp.book_id = b.id AND brp.user_id = $3
-            WHERE b.library_id = $1
-              AND COALESCE(s.name, 'unclassified') = $2
+                ON brp.book_id = b.id AND brp.user_id = $2
+            WHERE b.series_id = $1
             "#,
         )
-        .bind(library_id)
-        .bind(&series.series_name)
+        .bind(series.series_id)
         .bind(local_user_id)
         .fetch_one(pool)
         .await
@@ -513,10 +510,9 @@ pub async fn process_reading_status_push(
             Ok(()) => {
                 // Update synced_at
                 let _ = sqlx::query(
-                    "UPDATE anilist_series_links SET synced_at = NOW() WHERE library_id = $1 AND series_name = $2",
+                    "UPDATE anilist_series_links SET synced_at = NOW() WHERE series_id = $1",
                 )
-                .bind(library_id)
-                .bind(&series.series_name)
+                .bind(series.series_id)
                 .execute(pool)
                 .await;
 
@@ -532,10 +528,9 @@ pub async fn process_reading_status_push(
                 match push_to_anilist(&token, series.anilist_id, anilist_status, progress_volumes).await {
                     Ok(()) => {
                         let _ = sqlx::query(
-                            "UPDATE anilist_series_links SET synced_at = NOW() WHERE library_id = $1 AND series_name = $2",
+                            "UPDATE anilist_series_links SET synced_at = NOW() WHERE series_id = $1",
                         )
-                        .bind(library_id)
-                        .bind(&series.series_name)
+                        .bind(series.series_id)
                         .execute(pool)
                         .await;
 

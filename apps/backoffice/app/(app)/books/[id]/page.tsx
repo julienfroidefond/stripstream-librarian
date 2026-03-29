@@ -76,10 +76,10 @@ export default async function BookDetailPage({
             <span className="text-muted-foreground">/</span>
           </>
         )}
-        {book.series && (
+        {book.series && book.series_id && (
           <>
             <Link
-              href={`/libraries/${book.library_id}/series/${encodeURIComponent(book.series)}`}
+              href={`/libraries/${book.library_id}/series/${book.series_id}`}
               className="text-muted-foreground hover:text-primary transition-colors"
             >
               {book.series}
@@ -116,9 +116,9 @@ export default async function BookDetailPage({
             {book.author && (
               <p className="text-base text-muted-foreground">{book.author}</p>
             )}
-            {book.series && (
+            {book.series && book.series_id && (
               <Link
-                href={`/libraries/${book.library_id}/series/${encodeURIComponent(book.series)}`}
+                href={`/libraries/${book.library_id}/series/${book.series_id}`}
                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs border border-primary/30 font-medium"
               >
                 {book.series}

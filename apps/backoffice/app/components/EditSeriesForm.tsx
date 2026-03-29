@@ -44,6 +44,7 @@ const SERIES_STATUS_VALUES = ["", "ongoing", "ended", "hiatus", "cancelled", "up
 
 interface EditSeriesFormProps {
   libraryId: string;
+  seriesId: string;
   seriesName: string;
   currentAuthors: string[];
   currentPublishers: string[];
@@ -58,6 +59,7 @@ interface EditSeriesFormProps {
 
 export function EditSeriesForm({
   libraryId,
+  seriesId,
   seriesName,
   currentAuthors,
   currentPublishers,
@@ -199,7 +201,7 @@ export function EditSeriesForm({
         }
 
         const res = await fetch(
-          `/api/libraries/${libraryId}/series/${encodeURIComponent(seriesName)}`,
+          `/api/libraries/${libraryId}/series/${seriesId}`,
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -212,12 +214,7 @@ export function EditSeriesForm({
           return;
         }
         setIsOpen(false);
-
-        if (effectiveName !== seriesName) {
-          router.push(`/libraries/${libraryId}/series/${encodeURIComponent(effectiveName)}` as any);
-        } else {
-          router.refresh();
-        }
+        router.refresh();
       } catch {
         setError(t("common.networkError"));
       }

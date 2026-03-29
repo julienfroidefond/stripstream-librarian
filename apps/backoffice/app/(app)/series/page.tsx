@@ -124,7 +124,7 @@ export default async function SeriesPage({
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
             {series.map((s) => (
-              <div key={s.name} className="group relative">
+              <div key={s.series_id} className="group relative">
                 <div
                   className={`bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden group-hover:shadow-md group-hover:-translate-y-1 transition-all duration-200 ${
                     s.books_read_count >= s.book_count ? "opacity-50" : ""
@@ -149,6 +149,7 @@ export default async function SeriesPage({
                       </p>
                       <div className="relative z-20">
                         <MarkSeriesReadButton
+                          seriesId={s.series_id}
                           seriesName={s.name}
                           bookCount={s.book_count}
                           booksReadCount={s.books_read_count}
@@ -190,7 +191,7 @@ export default async function SeriesPage({
                 </div>
                 {/* Link overlay covering the full card — below interactive elements */}
                 <Link
-                  href={`/libraries/${s.library_id}/series/${encodeURIComponent(s.name)}`}
+                  href={`/libraries/${s.library_id}/series/${s.series_id}`}
                   className="absolute inset-0 z-10 rounded-xl"
                   aria-label={s.name === "unclassified" ? t("books.unclassified") : s.name}
                 />

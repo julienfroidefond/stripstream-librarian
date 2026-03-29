@@ -3,6 +3,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, StatBox } fr
 import { QbittorrentProvider, QbittorrentDownloadButton } from "@/app/components/QbittorrentDownloadButton";
 import type { DownloadDetectionReportDto, DownloadDetectionResultDto } from "@/lib/api";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
+import { compressVolumes } from "@/lib/volumeRanges";
 
 export function DownloadDetectionReportCard({ report, t }: { report: DownloadDetectionReportDto; t: TranslateFunction }) {
   return (
@@ -69,7 +70,7 @@ export function DownloadDetectionResultsCard({ results, libraryId, qbConfigured,
               <div className="flex items-center justify-between gap-2 mb-2">
                 {libraryId ? (
                   <Link
-                    href={`/libraries/${libraryId}/series/${encodeURIComponent(r.series_name)}`}
+                    href={`/libraries/${libraryId}/series/${r.series_id ?? encodeURIComponent(r.series_name)}`}
                     className="font-semibold text-sm text-primary hover:underline truncate"
                   >
                     {r.series_name}
@@ -97,10 +98,10 @@ export function DownloadDetectionResultsCard({ results, libraryId, qbConfigured,
                           <span className="text-[10px] text-muted-foreground">
                             {(release.size / 1024 / 1024).toFixed(0)} MB
                           </span>
-                          <div className="flex items-center gap-1">
-                            {release.matched_missing_volumes.map((vol) => (
-                              <span key={vol} className="text-[10px] px-1.5 py-0.5 rounded-full bg-success/20 text-success font-medium">
-                                T.{vol}
+                          <div className="flex flex-wrap items-center gap-1">
+                            {compressVolumes(release.matched_missing_volumes).map((range) => (
+                              <span key={range} className="text-[10px] px-1.5 py-0.5 rounded-full bg-success/20 text-success font-medium">
+                                {range}
                               </span>
                             ))}
                           </div>

@@ -309,8 +309,10 @@ pub async fn refresh_single_link(
     AxumPath(link_id): AxumPath<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let row = sqlx::query(
-        "SELECT library_id, series_name, provider, external_id, status \
-         FROM external_metadata_links WHERE id = $1",
+        "SELECT eml.library_id, s.name AS series_name, eml.provider, eml.external_id, eml.status \
+         FROM external_metadata_links eml \
+         JOIN series s ON s.id = eml.series_id \
+         WHERE eml.id = $1",
     )
     .bind(link_id)
     .fetch_optional(&state.pool)

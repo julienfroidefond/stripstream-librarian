@@ -77,8 +77,8 @@ export default async function AuthorDetailPage({
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
             {authorSeries.map((s) => (
               <Link
-                key={`${s.library_id}-${s.name}`}
-                href={`/libraries/${s.library_id}/series/${encodeURIComponent(s.name)}`}
+                key={`${s.library_id}-${s.series_id}`}
+                href={`/libraries/${s.library_id}/series/${s.series_id}`}
                 className="group"
               >
                 <div className="bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden hover:shadow-md hover:-translate-y-1 transition-all duration-200">

@@ -9,6 +9,7 @@ import type { AnilistMediaResultDto, AnilistSeriesLinkDto } from "../../lib/api"
 
 interface ReadingStatusModalProps {
   libraryId: string;
+  seriesId: string;
   seriesName: string;
   readingStatusProvider: string | null;
   existingLink: AnilistSeriesLinkDto | null;
@@ -18,6 +19,7 @@ type ModalStep = "idle" | "searching" | "results" | "linked";
 
 export function ReadingStatusModal({
   libraryId,
+  seriesId,
   seriesName,
   readingStatusProvider,
   existingLink,
@@ -67,7 +69,7 @@ export function ReadingStatusModal({
     setError(null);
     try {
       const resp = await fetch(
-        `/api/anilist/series/${libraryId}/${encodeURIComponent(seriesName)}`,
+        `/api/anilist/series/${libraryId}/${seriesId}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -91,7 +93,7 @@ export function ReadingStatusModal({
     setError(null);
     try {
       const resp = await fetch(
-        `/api/anilist/series/${libraryId}/${encodeURIComponent(seriesName)}`,
+        `/api/anilist/series/${libraryId}/${seriesId}`,
         { method: "DELETE" }
       );
       if (!resp.ok) throw new Error("Unlink failed");

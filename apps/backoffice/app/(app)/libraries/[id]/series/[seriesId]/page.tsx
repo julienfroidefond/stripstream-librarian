@@ -33,28 +33,20 @@ export default async function SeriesDetailPage({
   params,
   searchParams,
 }: {
-  params: Promise<{ id: string; name: string }>;
+  params: Promise<{ id: string; seriesId: string }>;
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const { id, name } = await params;
+  const { id, seriesId } = await params;
   const { t } = await getServerTranslations();
   const searchParamsAwaited = await searchParams;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 50;
 
-  const seriesName = decodeURIComponent(name);
-
-  const [library, booksPage, seriesMeta, metadataLinks, readingStatusLink, prowlarrConfigured, qbConfigured, metadataProviders] = await Promise.all([
+  const [library, seriesMeta, metadataLinks, readingStatusLink, prowlarrConfigured, qbConfigured, metadataProviders] = await Promise.all([
     fetchLibraries().then((libs) => libs.find((l) => l.id === id)),
-    fetchBooks(id, seriesName, page, limit).catch(() => ({
-      items: [] as BookDto[],
-      total: 0,
-      page: 1,
-      limit,
-    })),
-    fetchSeriesMetadata(id, seriesName).catch(() => null as SeriesMetadataDto | null),
-    getMetadataLink(id, seriesName).catch(() => [] as ExternalMetadataLinkDto[]),
-    getReadingStatusLink(id, seriesName).catch(() => null as AnilistSeriesLinkDto | null),
+    fetchSeriesMetadata(id, seriesId).catch(() => null as SeriesMetadataDto | null),
+    getMetadataLink(id, seriesId).catch(() => [] as ExternalMetadataLinkDto[]),
+    getReadingStatusLink(id, seriesId).catch(() => null as AnilistSeriesLinkDto | null),
     apiFetch<{ api_key?: string }>("/settings/prowlarr")
       .then(d => !!(d?.api_key?.trim()))
       .catch(() => false),
@@ -63,6 +55,17 @@ export default async function SeriesDetailPage({
       .catch(() => false),
     apiFetch<{ comicvine?: { api_key?: string } }>("/settings/metadata_providers").catch(() => null),
   ]);
+
+  // Get series name from metadata for display
+  const seriesName = seriesMeta?.series_name ?? "";
+
+  // Fetch books using seriesId for the filter query
+  const booksPage = await fetchBooks(id, seriesId, page, limit).catch(() => ({
+    items: [] as BookDto[],
+    total: 0,
+    page: 1,
+    limit,
+  }));
 
   const hiddenProviders: string[] = [];
   if (!metadataProviders?.comicvine?.api_key) hiddenProviders.push("comicvine");
@@ -228,12 +231,14 @@ export default async function SeriesDetailPage({
 
           <div className="flex flex-wrap items-center gap-3">
             <MarkSeriesReadButton
+              seriesId={seriesId}
               seriesName={seriesName}
               bookCount={booksPage.total}
               booksReadCount={booksReadCount}
             />
             <EditSeriesForm
               libraryId={id}
+              seriesId={seriesId}
               seriesName={seriesName}
               currentAuthors={seriesMeta?.authors ?? []}
               currentPublishers={seriesMeta?.publishers ?? []}
@@ -261,13 +266,14 @@ export default async function SeriesDetailPage({
             />
             <ReadingStatusModal
               libraryId={id}
+              seriesId={seriesId}
               seriesName={seriesName}
               readingStatusProvider={library.reading_status_provider ?? null}
               existingLink={readingStatusLink}
             />
             <DeleteSeriesButton
               libraryId={id}
-              seriesName={seriesName}
+              seriesId={seriesId}
             />
           </div>
         </div>
