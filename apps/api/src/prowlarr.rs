@@ -102,6 +102,22 @@ pub(crate) fn extract_volumes_from_title_pub(title: &str) -> Vec<i32> {
     extract_volumes_from_title(title)
 }
 
+/// Returns true if the title indicates a complete/integral edition
+/// (e.g., "intégrale", "complet", "complete", "integral").
+pub(crate) fn is_integral_release(title: &str) -> bool {
+    let lower = title.to_lowercase();
+    // Strip accents for matching: "intégrale" → "integrale"
+    let normalized = lower
+        .replace('é', "e")
+        .replace('è', "e");
+    let keywords = ["integrale", "integral", "complet", "complete", "l'integrale"];
+    keywords.iter().any(|kw| {
+        // Match as whole word: check boundaries
+        normalized.split(|c: char| !c.is_alphanumeric() && c != '\'')
+            .any(|word| word == *kw)
+    })
+}
+
 async fn load_prowlarr_config(
     pool: &sqlx::PgPool,
 ) -> Result<(String, String, Vec<i32>), ApiError> {
@@ -710,5 +726,35 @@ mod tests {
         // When a prefix match exists, bare number pass should NOT run
         let v = extract_volumes_from_title("Naruto T05 - some 99 extra.cbz");
         assert_eq!(v, vec![5], "should only find T05, not bare 99");
+    }
+
+    use super::is_integral_release;
+
+    #[test]
+    fn integral_french_accent() {
+        assert!(is_integral_release("One Piece - Intégrale [CBZ]"));
+        assert!(is_integral_release("Naruto Integrale FR"));
+    }
+
+    #[test]
+    fn integral_complet() {
+        assert!(is_integral_release("Dragon Ball Complet [PDF]"));
+        assert!(is_integral_release("Bleach Complete Edition"));
+    }
+
+    #[test]
+    fn integral_not_false_positive() {
+        assert!(!is_integral_release("One Piece T05"));
+        assert!(!is_integral_release("Naruto Tome 12"));
+        assert!(!is_integral_release("Les Géants - 07 - Moon.cbz"));
+        // "intégr" alone is not enough
+        assert!(!is_integral_release("Naruto integration test"));
+    }
+
+    #[test]
+    fn integral_case_insensitive() {
+        assert!(is_integral_release("INTEGRALE"));
+        assert!(is_integral_release("COMPLET"));
+        assert!(is_integral_release("Intégrale"));
     }
 }

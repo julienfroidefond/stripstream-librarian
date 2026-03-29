@@ -808,11 +808,20 @@ async fn search_prowlarr_for_series(
         .into_iter()
         .filter_map(|r| {
             let title_volumes = prowlarr::extract_volumes_from_title_pub(&r.title);
-            let matched_vols: Vec<i32> = title_volumes
-                .iter()
-                .copied()
-                .filter(|v| missing_volumes.contains(v))
-                .collect();
+
+            // "Intégrale" / "Complet" releases match ALL missing volumes
+            let is_integral = prowlarr::is_integral_release(&r.title);
+
+            let matched_vols: Vec<i32> = if is_integral && !missing_volumes.is_empty() {
+                missing_volumes.to_vec()
+            } else {
+                title_volumes
+                    .iter()
+                    .copied()
+                    .filter(|v| missing_volumes.contains(v))
+                    .collect()
+            };
+
             if matched_vols.is_empty() {
                 None
             } else {
@@ -823,7 +832,7 @@ async fn search_prowlarr_for_series(
                     indexer: r.indexer,
                     seeders: r.seeders,
                     matched_missing_volumes: matched_vols,
-                    all_volumes: title_volumes,
+                    all_volumes: if is_integral { vec![] } else { title_volumes },
                 })
             }
         })
