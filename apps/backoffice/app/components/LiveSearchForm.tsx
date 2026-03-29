@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useCallback, useEffect, useTransition } from "react";
+import { useRef, useCallback, useEffect, useTransition, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslation } from "../../lib/i18n/context";
 import { Icon } from "./ui";
@@ -61,6 +61,9 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
   const [isPending, startTransition] = useTransition();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  // Incremented to force remount only on external navigation
+  const [formKey, setFormKey] = useState(0);
+  const lastNavParamsRef = useRef<string | null>(null);
 
   const cookieName = filterCookieName(basePath);
 
@@ -93,26 +96,40 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
     } catch {}
   }, [cookieName]);
 
+  const doNavigate = useCallback((url: string) => {
+    lastNavParamsRef.current = new URL(url, "http://x").search.replace(/^\?/, "");
+    startTransition(() => { router.replace(url as any); });
+  }, [router]);
+
   const navigate = useCallback((immediate: boolean) => {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (immediate) {
       saveFilters();
-      isOwnNavRef.current = true;
-      startTransition(() => { router.replace(buildUrl() as any); });
+      doNavigate(buildUrl());
     } else {
       timerRef.current = setTimeout(() => {
         saveFilters();
-        isOwnNavRef.current = true;
-        startTransition(() => { router.replace(buildUrl() as any); });
+        doNavigate(buildUrl());
       }, debounceMs);
     }
-  }, [router, buildUrl, debounceMs, saveFilters]);
+  }, [buildUrl, debounceMs, saveFilters, doNavigate]);
 
   useEffect(() => {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);
+
+  // Detect external navigation (back/forward) and remount form to sync values.
+  // Our own navigations store the expected params so we can skip the remount.
+  useEffect(() => {
+    const current = searchParams.toString();
+    if (lastNavParamsRef.current !== null && lastNavParamsRef.current !== current) {
+      // Params changed externally → remount to sync defaultValues
+      setFormKey(k => k + 1);
+    }
+    lastNavParamsRef.current = null;
+  }, [searchParams]);
 
   const hasFilters = fields.some((f) => {
     const val = searchParams.get(f.name);
@@ -122,32 +139,15 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
   const textFields = fields.filter((f) => f.type === "text");
   const selectFields = fields.filter((f) => f.type === "select");
 
-  // Track whether the current navigation was initiated by us (not back/forward)
-  const isOwnNavRef = useRef(false);
-
-  // Force remount only on external navigation (back/forward, cookie redirect)
-  // Our own navigations skip remount to preserve focus.
-  const prevParamsRef = useRef(searchParams.toString());
-  const formKey = useRef(0);
-  const currentParams = searchParams.toString();
-  if (currentParams !== prevParamsRef.current) {
-    if (!isOwnNavRef.current) {
-      formKey.current += 1; // External nav → remount
-    }
-    isOwnNavRef.current = false;
-    prevParamsRef.current = currentParams;
-  }
-
   return (
     <form
-      key={formKey.current}
+      key={formKey}
       ref={formRef}
       onSubmit={(e) => {
         e.preventDefault();
         if (timerRef.current) clearTimeout(timerRef.current);
         saveFilters();
-        isOwnNavRef.current = true;
-        startTransition(() => { router.replace(buildUrl() as any); });
+        doNavigate(buildUrl());
       }}
       className="space-y-4"
     >
@@ -206,8 +206,10 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
                 onClick={() => {
                   formRef.current?.reset();
                   try { deleteCookie(cookieName); } catch {}
-                  isOwnNavRef.current = true;
-                  startTransition(() => { router.replace(basePath as any); });
+                  // Navigate to base path without any params
+                  doNavigate(basePath);
+                  // Force remount so defaultValues reset to empty
+                  setFormKey(k => k + 1);
                 }}
                 className="
                   inline-flex items-center gap-1
