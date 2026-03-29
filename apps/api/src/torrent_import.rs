@@ -215,6 +215,11 @@ const QB_COMPLETED_STATES: &[&str] = &[
     "uploading", "stalledUP", "pausedUP", "queuedUP", "checkingUP", "forcedUP",
 ];
 
+/// Failed/stalled states: torrent cannot make progress (no seeds, stalled download).
+const QB_FAILED_STATES: &[&str] = &[
+    "stalledDL", "pausedDL", "error", "missingFiles",
+];
+
 pub async fn run_torrent_poller(pool: PgPool, interval_seconds: u64) {
     let idle_wait = Duration::from_secs(interval_seconds.max(5));
     let active_wait = Duration::from_secs(2);
@@ -316,6 +321,8 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
     let infos: Vec<QbTorrentInfo> = resp.json().await?;
 
     for info in &infos {
+        info!("[TORRENT_POLLER] Torrent {} state='{}' progress={:.2} name={:?}", info.hash, info.state, info.progress, info.name);
+
         // Update progress for all active torrents
         let row = rows.iter().find(|r| {
             let h: String = r.get("qb_hash");
@@ -334,6 +341,35 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
             .bind(tid)
             .execute(pool)
             .await;
+        }
+
+        if QB_FAILED_STATES.contains(&info.state.as_str()) {
+            let Some(row) = rows.iter().find(|r| {
+                let h: String = r.get("qb_hash");
+                h == info.hash
+            }) else { continue; };
+            let tid: Uuid = row.get("id");
+            let msg = format!("Torrent stalled in qBittorrent (state: {})", info.state);
+            warn!("[TORRENT_POLLER] Torrent {} failed: {}", info.hash, msg);
+            let _ = sqlx::query(
+                "UPDATE torrent_downloads SET status = 'error', error_message = $1, \
+                 download_speed = 0, eta = 0, updated_at = NOW() \
+                 WHERE id = $2 AND status = 'downloading'",
+            )
+            .bind(&msg)
+            .bind(tid)
+            .execute(pool)
+            .await;
+
+            // Remove torrent from qBittorrent
+            let _ = client
+                .post(format!("{base_url}/api/v2/torrents/delete"))
+                .header("Cookie", format!("SID={sid}"))
+                .form(&[("hashes", info.hash.as_str()), ("deleteFiles", "true")])
+                .send()
+                .await;
+            info!("[TORRENT_POLLER] Removed failed torrent {} from qBittorrent", info.hash);
+            continue;
         }
 
         if !QB_COMPLETED_STATES.contains(&info.state.as_str()) {
@@ -681,11 +717,20 @@ async fn do_import(
     };
 
     info!("[IMPORT] Final reference: {:?}", reference);
+    info!("[IMPORT] Expected volumes: {:?}", expected_set);
+    info!("[IMPORT] Physical content path: {}", physical_content);
 
     // Collect all candidate files, then deduplicate by volume keeping the best format.
     // Priority: cbz > cbr > pdf > epub
     let all_source_files = collect_book_files(&physical_content)?;
+    info!("[IMPORT] Found {} source files: {:?}", all_source_files.len(), all_source_files);
+    for f in &all_source_files {
+        let fname = std::path::Path::new(f).file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let extracted = extract_volumes_from_title_pub(fname);
+        info!("[IMPORT]   '{}' => extracted volumes: {:?}", fname, extracted);
+    }
     let source_files = deduplicate_by_format(&all_source_files, &expected_set);
+    info!("[IMPORT] After dedup: {} files kept", source_files.len());
 
     let mut imported = Vec::new();
     let mut used_destinations: std::collections::HashSet<String> = std::collections::HashSet::new();

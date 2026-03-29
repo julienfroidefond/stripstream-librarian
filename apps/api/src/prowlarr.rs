@@ -239,6 +239,69 @@ fn extract_volumes_from_title(title: &str) -> Vec<i32> {
         }
     }
 
+    // Pass 3 — bare number patterns (only if passes 1 & 2 found nothing)
+    // Handles:
+    //   "Les Géants - 07 - Moon.cbz"  →  7
+    //   "06. yatho.cbz"               →  6
+    if volumes.is_empty() {
+        // Pattern A: " - NN - " or " - NN." (number between dash separators)
+        let dash_num_re = |chars: &[char]| -> Vec<i32> {
+            let mut found = Vec::new();
+            let mut i = 0;
+            while i + 4 < chars.len() {
+                // Look for " - "
+                if chars[i] == ' ' && chars[i + 1] == '-' && chars[i + 2] == ' ' {
+                    let mut j = i + 3;
+                    // Skip leading spaces
+                    while j < chars.len() && chars[j] == ' ' {
+                        j += 1;
+                    }
+                    let digit_start = j;
+                    while j < chars.len() && chars[j].is_ascii_digit() {
+                        j += 1;
+                    }
+                    if j > digit_start {
+                        // Ensure followed by " - ", ".", or end-ish (space + non-digit)
+                        let valid_end = j >= chars.len()
+                            || (j + 2 < chars.len() && chars[j] == ' ' && chars[j + 1] == '-' && chars[j + 2] == ' ')
+                            || chars[j] == '.'
+                            || (chars[j] == ' ' && (j + 1 >= chars.len() || !chars[j + 1].is_ascii_digit()));
+                        if valid_end {
+                            let num_str: String = chars[digit_start..j].iter().collect();
+                            if let Ok(num) = num_str.parse::<i32>() {
+                                if !found.contains(&num) {
+                                    found.push(num);
+                                }
+                            }
+                        }
+                    }
+                }
+                i += 1;
+            }
+            found
+        };
+        volumes.extend(dash_num_re(&chars));
+
+        // Pattern B: "NN. " or "NN - " at the very start of the string
+        if volumes.is_empty() {
+            let mut j = 0;
+            while j < chars.len() && chars[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > 0 && j < chars.len() {
+                let valid_sep = chars[j] == '.'
+                    || chars[j] == ' '
+                    || (j + 2 < chars.len() && chars[j] == ' ' && chars[j + 1] == '-');
+                if valid_sep {
+                    let num_str: String = chars[..j].iter().collect();
+                    if let Ok(num) = num_str.parse::<i32>() {
+                        volumes.push(num);
+                    }
+                }
+            }
+        }
+    }
+
     volumes
 }
 
@@ -614,5 +677,40 @@ mod tests {
             "[Compressé] One Piece [Team Chromatique] - Tome #003 (Perfect Edition).cbz",
         ));
         assert!(v.contains(&3), "expected 3 in {:?}", v);
+    }
+
+    #[test]
+    fn bare_number_between_dashes() {
+        // "Les Géants - 07 - Moon.cbz" → 7
+        let v = extract_volumes_from_title("Les Géants - 07 - Moon.cbz");
+        assert_eq!(v, vec![7]);
+    }
+
+    #[test]
+    fn bare_number_dash_then_dot() {
+        // "Les Géants - 07.cbz" → 7
+        let v = extract_volumes_from_title("Les Géants - 07.cbz");
+        assert_eq!(v, vec![7]);
+    }
+
+    #[test]
+    fn bare_number_at_start_dot() {
+        // "06. yatho.cbz" → 6
+        let v = extract_volumes_from_title("06. yatho.cbz");
+        assert_eq!(v, vec![6]);
+    }
+
+    #[test]
+    fn bare_number_at_start_dash() {
+        // "07 - Moon.cbz" → 7
+        let v = extract_volumes_from_title("07 - Moon.cbz");
+        assert_eq!(v, vec![7]);
+    }
+
+    #[test]
+    fn bare_number_no_false_positive_with_prefix() {
+        // When a prefix match exists, bare number pass should NOT run
+        let v = extract_volumes_from_title("Naruto T05 - some 99 extra.cbz");
+        assert_eq!(v, vec![5], "should only find T05, not bare 99");
     }
 }
