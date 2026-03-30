@@ -282,7 +282,7 @@ export default async function SeriesDetailPage({
       {/* Books Grid */}
       {books.length > 0 ? (
         <>
-          <BooksGrid books={books} />
+          <BooksGrid books={books} compact />
           <OffsetPagination
             currentPage={page}
             totalPages={totalPages}

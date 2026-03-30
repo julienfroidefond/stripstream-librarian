@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { BookDto, ReadingStatus } from "../../lib/api";
 import { useTranslation } from "../../lib/i18n/context";
+import { MarkBookReadButton } from "./MarkBookReadButton";
 
 const readingStatusOverlayClasses: Record<ReadingStatus, string | null> = {
   unread: null,
@@ -17,7 +18,7 @@ interface BookCardProps {
   readingStatus?: ReadingStatus;
 }
 
-const BookImage = memo(function BookImage({ src, alt }: { src: string; alt: string }) {
+const BookImage = memo(function BookImage({ src, alt, dimmed }: { src: string; alt: string; dimmed?: boolean }) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
 
@@ -46,7 +47,7 @@ const BookImage = memo(function BookImage({ src, alt }: { src: string; alt: stri
         alt={alt}
         fill
         className={`object-cover group-hover:scale-105 transition-transform duration-300 ${
-          isLoaded ? 'opacity-100' : 'opacity-0'
+          isLoaded ? (dimmed ? 'opacity-40' : 'opacity-100') : 'opacity-0'
         }`}
         sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 16vw"
         onLoad={() => setIsLoaded(true)}
@@ -56,7 +57,7 @@ const BookImage = memo(function BookImage({ src, alt }: { src: string; alt: stri
   );
 });
 
-export const BookCard = memo(function BookCard({ book, readingStatus }: BookCardProps) {
+export const BookCard = memo(function BookCard({ book, readingStatus, compact }: BookCardProps & { compact?: boolean }) {
   const { t } = useTranslation();
   const coverUrl = book.coverUrl || `/api/books/${book.id}/thumbnail`;
   const status = readingStatus ?? book.reading_status;
@@ -69,44 +70,94 @@ export const BookCard = memo(function BookCard({ book, readingStatus }: BookCard
 
   const isRead = status === "read";
 
+  if (compact) {
+    return (
+      <div className="group bg-card rounded-xl border border-border/60 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-200 overflow-hidden">
+        <Link href={`/books/${book.id}`} className="block">
+          <div className="relative">
+            <BookImage
+              src={coverUrl}
+              alt={t("books.coverOf", { name: book.title })}
+              dimmed={isRead}
+            />
+            {overlayClass && status && (
+              <span className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide ${overlayClass}`}>
+                {statusLabels[status]}
+              </span>
+            )}
+          </div>
+        </Link>
+        <div className="px-2 py-1.5">
+          <Link href={`/books/${book.id}`}>
+            <h3 className="font-medium text-foreground truncate text-xs hover:text-primary transition-colors" title={book.title}>
+              {book.title}
+            </h3>
+          </Link>
+          <div className="flex items-center justify-between mt-0.5">
+            <div className="flex items-center gap-1">
+              {(book.format ?? book.kind) && (
+                <span className={`
+                  px-1 py-0.5 text-[9px] font-bold uppercase rounded-full
+                  ${(book.format ?? book.kind) === 'cbz' ? 'bg-success/10 text-success' : ''}
+                  ${(book.format ?? book.kind) === 'cbr' ? 'bg-warning/10 text-warning' : ''}
+                  ${(book.format ?? book.kind) === 'pdf' ? 'bg-destructive/10 text-destructive' : ''}
+                  ${(book.format ?? book.kind) === 'epub' ? 'bg-info/10 text-info' : ''}
+                `}>
+                  {book.format ?? book.kind}
+                </span>
+              )}
+              {book.volume && (
+                <span className="text-[10px] text-muted-foreground">#{book.volume}</span>
+              )}
+            </div>
+            <MarkBookReadButton
+              bookId={book.id}
+              currentStatus={status ?? "unread"}
+              compact
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Link
       href={`/books/${book.id}`}
-      className={`group block bg-card rounded-xl border border-border/60 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-200 overflow-hidden ${isRead ? "opacity-50" : ""}`}
+      className="group block bg-card rounded-xl border border-border/60 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-200 overflow-hidden"
     >
       <div className="relative">
         <BookImage
           src={coverUrl}
           alt={t("books.coverOf", { name: book.title })}
+          dimmed={isRead}
         />
         {overlayClass && status && (
-          <span className={`absolute bottom-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide ${overlayClass}`}>
+          <span className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide ${overlayClass}`}>
             {statusLabels[status]}
           </span>
         )}
       </div>
-      
-      {/* Book Info */}
+
       <div className="p-4">
-        <h3 
-          className="font-semibold text-foreground mb-1 line-clamp-2 min-h-[2.5rem]" 
+        <h3
+          className="font-semibold text-foreground line-clamp-2 min-h-[2.5rem]"
           title={book.title}
         >
           {book.title}
         </h3>
-        
+
         {book.author && (
           <p className="text-sm text-muted-foreground mb-1 truncate">{book.author}</p>
         )}
-        
+
         {book.series && (
           <p className="text-xs text-muted-foreground/80 truncate mb-2">
             {book.series}
             {book.volume && <span className="text-primary font-medium"> #{book.volume}</span>}
           </p>
         )}
-        
-        {/* Meta Tags */}
+
         <div className="flex items-center gap-2 mt-2">
           {(book.format ?? book.kind) && (
             <span className={`
@@ -132,13 +183,14 @@ export const BookCard = memo(function BookCard({ book, readingStatus }: BookCard
 
 interface BooksGridProps {
   books: (BookDto & { coverUrl?: string })[];
+  compact?: boolean;
 }
 
-export function BooksGrid({ books }: BooksGridProps) {
+export function BooksGrid({ books, compact }: BooksGridProps) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
       {books.map((book) => (
-        <BookCard key={book.id} book={book} />
+        <BookCard key={book.id} book={book} compact={compact} />
       ))}
     </div>
   );
