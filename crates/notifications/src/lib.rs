@@ -704,6 +704,36 @@ fn is_event_enabled(config: &TelegramConfig, event: &NotificationEvent) -> bool 
     }
 }
 
+/// Returns whether this event carries meaningful information worth notifying about.
+/// Filters out "empty" successes (e.g. a scan that found nothing new).
+fn is_noteworthy(event: &NotificationEvent) -> bool {
+    match event {
+        // Scan: only notify if something changed (new books, removals, new series, errors)
+        NotificationEvent::ScanCompleted { stats, .. } => {
+            stats.indexed_files > 0
+                || stats.removed_files > 0
+                || stats.new_series > 0
+                || stats.errors > 0
+        }
+        // Cancelled by user — they already know
+        NotificationEvent::ScanCancelled { .. } => false,
+        // Metadata batch: only if something was actually matched
+        NotificationEvent::MetadataBatchCompleted { processed, .. } => *processed > 0,
+        // Metadata refresh: only if something changed or errored
+        NotificationEvent::MetadataRefreshCompleted {
+            refreshed, errors, ..
+        } => *refreshed > 0 || *errors > 0,
+        // Reading status match: only if new links were made
+        NotificationEvent::ReadingStatusMatchCompleted { linked, .. } => *linked > 0,
+        // Reading status push: only if something was pushed
+        NotificationEvent::ReadingStatusPushCompleted { pushed, .. } => *pushed > 0,
+        // Download detection: only if releases were found
+        NotificationEvent::DownloadDetectionCompleted { found, .. } => *found > 0,
+        // All failures, conversions, imports, manual actions → always noteworthy
+        _ => true,
+    }
+}
+
 /// Extract thumbnail path from event if present and file exists on disk.
 fn event_thumbnail(event: &NotificationEvent) -> Option<&str> {
     let path = match event {
@@ -724,6 +754,11 @@ pub fn notify(pool: PgPool, event: NotificationEvent) {
         };
 
         if !is_event_enabled(&config, &event) {
+            return;
+        }
+
+        if !is_noteworthy(&event) {
+            info!("[TELEGRAM] Skipping non-noteworthy event");
             return;
         }
 
