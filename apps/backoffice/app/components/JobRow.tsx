@@ -47,7 +47,6 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
 
   const handleComplete = () => {
     setShowProgress(false);
-    window.location.reload();
   };
 
   // Calculate duration
