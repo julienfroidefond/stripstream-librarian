@@ -856,6 +856,8 @@ const en: Record<TranslationKey, string> = {
   // Mark read buttons
   "markRead.markUnread": "Mark unread",
   "markRead.markAllRead": "Mark all read",
+  "markRead.read": "Read",
+  "markRead.unread": "Unread",
   "markRead.markAsRead": "Mark as read",
 
   // Metadata search modal

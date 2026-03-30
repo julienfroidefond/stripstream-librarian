@@ -854,6 +854,8 @@ const fr = {
   // Mark read buttons
   "markRead.markUnread": "Marquer non lu",
   "markRead.markAllRead": "Tout marquer lu",
+  "markRead.read": "Lu",
+  "markRead.unread": "Non lu",
   "markRead.markAsRead": "Marquer comme lu",
 
   // Metadata search modal
