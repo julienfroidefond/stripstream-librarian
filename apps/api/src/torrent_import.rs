@@ -28,6 +28,7 @@ pub struct TorrentNotifyRequest {
 pub struct TorrentDownloadDto {
     pub id: String,
     pub library_id: String,
+    pub series_id: Option<String>,
     pub series_name: String,
     pub expected_volumes: Vec<i32>,
     pub qb_hash: Option<String>,
@@ -104,9 +105,12 @@ pub async fn list_torrent_downloads(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TorrentDownloadDto>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT id, library_id, series_name, expected_volumes, qb_hash, content_path, \
-         status, imported_files, error_message, progress, download_speed, eta, created_at, updated_at \
-         FROM torrent_downloads ORDER BY created_at DESC LIMIT 100",
+        "SELECT td.id, td.library_id, td.series_name, td.expected_volumes, td.qb_hash, td.content_path, \
+         td.status, td.imported_files, td.error_message, td.progress, td.download_speed, td.eta, \
+         td.created_at, td.updated_at, s.id AS series_id \
+         FROM torrent_downloads td \
+         LEFT JOIN series s ON s.library_id = td.library_id AND LOWER(s.name) = LOWER(td.series_name) \
+         ORDER BY td.created_at DESC LIMIT 100",
     )
     .fetch_all(&state.pool)
     .await?;
@@ -116,12 +120,14 @@ pub async fn list_torrent_downloads(
         .map(|row| {
             let id: Uuid = row.get("id");
             let library_id: Uuid = row.get("library_id");
+            let series_id: Option<Uuid> = row.get("series_id");
             let expected_volumes: Vec<i32> = row.get("expected_volumes");
             let created_at: DateTime<Utc> = row.get("created_at");
             let updated_at: DateTime<Utc> = row.get("updated_at");
             TorrentDownloadDto {
                 id: id.to_string(),
                 library_id: library_id.to_string(),
+                series_id: series_id.map(|u| u.to_string()),
                 series_name: row.get("series_name"),
                 expected_volumes,
                 qb_hash: row.get("qb_hash"),
