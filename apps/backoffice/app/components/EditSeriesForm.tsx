@@ -201,7 +201,7 @@ export function EditSeriesForm({
         }
 
         const res = await fetch(
-          `/api/libraries/${libraryId}/series/${seriesId}`,
+          `/api/series/${seriesId}`,
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },

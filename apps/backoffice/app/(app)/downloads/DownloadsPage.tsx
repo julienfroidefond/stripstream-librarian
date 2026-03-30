@@ -261,7 +261,7 @@ function DownloadRow({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: () 
         <div className="flex-1 min-w-0">
           {/* Desktop: single row */}
           <div className="hidden sm:flex items-center gap-2">
-            <Link href={`/libraries/${dl.library_id}/series/${dl.series_id ?? encodeURIComponent(dl.series_name)}`} className="text-sm font-medium text-primary hover:underline truncate">{dl.series_name}</Link>
+            <Link href={`/series/${dl.series_id ?? encodeURIComponent(dl.series_name)}`} className="text-sm font-medium text-primary hover:underline truncate">{dl.series_name}</Link>
             <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${statusClass(dl.status)}`}>
               {statusLabel(dl.status, t)}
             </span>
@@ -276,7 +276,7 @@ function DownloadRow({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: () 
           {/* Mobile: stacked */}
           <div className="sm:hidden">
             <div className="flex items-center gap-1.5">
-              <Link href={`/libraries/${dl.library_id}/series/${dl.series_id ?? encodeURIComponent(dl.series_name)}`} className="text-sm font-medium text-primary hover:underline truncate">{dl.series_name}</Link>
+              <Link href={`/series/${dl.series_id ?? encodeURIComponent(dl.series_name)}`} className="text-sm font-medium text-primary hover:underline truncate">{dl.series_name}</Link>
               <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${statusClass(dl.status)}`}>
                 {statusLabel(dl.status, t)}
               </span>
@@ -390,7 +390,7 @@ function AvailableLibraryCard({ lib, onDeleted }: { lib: LatestFoundPerLibraryDt
           <div key={r.id} className="rounded-lg border border-border/40 bg-background/60 p-2 sm:p-3">
             <div className="flex items-center justify-between gap-2 mb-1.5">
               <Link
-                href={`/libraries/${lib.library_id}/series/${r.series_id ?? encodeURIComponent(r.series_name)}`}
+                href={`/series/${r.series_id ?? encodeURIComponent(r.series_name)}`}
                 className="font-semibold text-xs sm:text-sm text-primary hover:underline truncate"
               >
                 {r.series_name}

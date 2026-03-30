@@ -51,7 +51,7 @@ export function ReadingStatusMatchResultsCard({ results, libraryId, t }: {
             <div className="flex items-center justify-between gap-2">
               {libraryId ? (
                 <Link
-                  href={`/libraries/${libraryId}/series/${r.series_id ?? encodeURIComponent(r.series_name)}`}
+                  href={`/series/${r.series_id ?? encodeURIComponent(r.series_name)}`}
                   className="font-medium text-sm text-primary hover:underline truncate"
                 >
                   {r.series_name}
@@ -146,7 +146,7 @@ export function ReadingStatusPushResultsCard({ results, libraryId, t }: {
             <div className="flex items-center justify-between gap-2">
               {libraryId ? (
                 <Link
-                  href={`/libraries/${libraryId}/series/${r.series_id ?? encodeURIComponent(r.series_name)}`}
+                  href={`/series/${r.series_id ?? encodeURIComponent(r.series_name)}`}
                   className="font-medium text-sm text-primary hover:underline truncate"
                 >
                   {r.series_name}

@@ -76,7 +76,7 @@ export default async function LibrarySeriesPage({
             {series.map((s) => (
               <Link
                 key={s.series_id}
-                href={`/libraries/${id}/series/${s.series_id}`}
+                href={`/series/${s.series_id}`}
                 className="group"
               >
                 <div className={`bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden hover:shadow-md transition-shadow duration-200 ${s.books_read_count >= s.book_count ? "opacity-50" : ""}`}>

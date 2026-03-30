@@ -284,11 +284,12 @@ pub async fn search_manga(
     Ok(Json(results))
 }
 
-/// Get AniList link for a specific series
+/// Get AniList link for a specific series (deprecated: use GET /series/{series_id}/anilist)
+#[deprecated]
 #[utoipa::path(
     get,
     path = "/anilist/series/{library_id}/{series_id}",
-    tag = "anilist",
+    tag = "anilist (deprecated)",
     params(
         ("library_id" = String, Path, description = "Library UUID"),
         ("series_id" = String, Path, description = "Series UUID"),
@@ -329,11 +330,12 @@ pub async fn get_series_link(
     }))
 }
 
-/// Link a series to an AniList media ID
+/// Link a series to an AniList media ID (deprecated: use POST /series/{series_id}/anilist/link)
+#[deprecated]
 #[utoipa::path(
     post,
     path = "/anilist/series/{library_id}/{series_id}/link",
-    tag = "anilist",
+    tag = "anilist (deprecated)",
     params(
         ("library_id" = String, Path, description = "Library UUID"),
         ("series_id" = String, Path, description = "Series UUID"),
@@ -422,11 +424,12 @@ pub async fn link_series(
     }))
 }
 
-/// Remove the AniList link for a series
+/// Remove the AniList link for a series (deprecated: use DELETE /series/{series_id}/anilist/unlink)
+#[deprecated]
 #[utoipa::path(
     delete,
     path = "/anilist/series/{library_id}/{series_id}/unlink",
-    tag = "anilist",
+    tag = "anilist (deprecated)",
     params(
         ("library_id" = String, Path, description = "Library UUID"),
         ("series_id" = String, Path, description = "Series UUID"),
@@ -455,6 +458,81 @@ pub async fn unlink_series(
     }
 
     Ok(Json(crate::responses::UnlinkedResponse::new()))
+}
+
+// ─── Direct series-by-ID AniList endpoints ──────────────────────────────────
+
+/// Get AniList link for a series by its UUID
+#[utoipa::path(
+    get,
+    path = "/series/{series_id}/anilist",
+    tag = "anilist",
+    params(
+        ("series_id" = String, Path, description = "Series UUID"),
+    ),
+    responses(
+        (status = 200, body = AnilistSeriesLinkResponse),
+        (status = 404, description = "No AniList link for this series"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+#[allow(deprecated)]
+pub async fn get_series_link_by_id(
+    state: State<AppState>,
+    Path(series_id): Path<Uuid>,
+) -> Result<Json<AnilistSeriesLinkResponse>, ApiError> {
+    let library_id = crate::series::resolve_library_id(&state.pool, series_id).await?;
+    get_series_link(state, Path((library_id, series_id))).await
+}
+
+/// Link a series to AniList by its UUID
+#[utoipa::path(
+    post,
+    path = "/series/{series_id}/anilist/link",
+    tag = "anilist",
+    params(
+        ("series_id" = String, Path, description = "Series UUID"),
+    ),
+    request_body = AnilistLinkRequest,
+    responses(
+        (status = 200, body = AnilistSeriesLinkResponse),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+#[allow(deprecated)]
+pub async fn link_series_by_id(
+    state: State<AppState>,
+    Path(series_id): Path<Uuid>,
+    body: Json<AnilistLinkRequest>,
+) -> Result<Json<AnilistSeriesLinkResponse>, ApiError> {
+    let library_id = crate::series::resolve_library_id(&state.pool, series_id).await?;
+    link_series(state, Path((library_id, series_id)), body).await
+}
+
+/// Remove AniList link for a series by its UUID
+#[utoipa::path(
+    delete,
+    path = "/series/{series_id}/anilist/unlink",
+    tag = "anilist",
+    params(
+        ("series_id" = String, Path, description = "Series UUID"),
+    ),
+    responses(
+        (status = 200, description = "Unlinked"),
+        (status = 404, description = "Link not found"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+#[allow(deprecated)]
+pub async fn unlink_series_by_id(
+    state: State<AppState>,
+    Path(series_id): Path<Uuid>,
+) -> Result<Json<crate::responses::UnlinkedResponse>, ApiError> {
+    let library_id = crate::series::resolve_library_id(&state.pool, series_id).await?;
+    unlink_series(state, Path((library_id, series_id))).await
 }
 
 /// Toggle AniList sync for a library

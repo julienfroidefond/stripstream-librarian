@@ -98,6 +98,18 @@ pub async fn get_series_by_name(
     }))
 }
 
+/// Resolve library_id from a series UUID. Used by the new direct-access endpoints.
+pub(crate) async fn resolve_library_id(
+    pool: &sqlx::PgPool,
+    series_id: Uuid,
+) -> Result<Uuid, ApiError> {
+    sqlx::query_scalar::<_, Uuid>("SELECT library_id FROM series WHERE id = $1")
+        .bind(series_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| ApiError::not_found("series not found"))
+}
+
 // ─── Structs ─────────────────────────────────────────────────────────────────
 
 #[derive(Serialize, ToSchema)]
@@ -954,11 +966,12 @@ pub struct SeriesMetadata {
     pub locked_fields: serde_json::Value,
 }
 
-/// Get metadata for a specific series
+/// Get metadata for a specific series (deprecated: use GET /series/{series_id}/metadata)
+#[deprecated]
 #[utoipa::path(
     get,
     path = "/libraries/{library_id}/series/{series_id}/metadata",
-    tag = "series",
+    tag = "series (deprecated)",
     params(
         ("library_id" = String, Path, description = "Library UUID"),
         ("series_id" = String, Path, description = "Series UUID"),
@@ -1037,11 +1050,12 @@ pub struct UpdateSeriesResponse {
     pub updated: u64,
 }
 
-/// Update metadata for all books in a series
+/// Update metadata for all books in a series (deprecated: use PATCH /series/{series_id})
+#[deprecated]
 #[utoipa::path(
     patch,
     path = "/libraries/{library_id}/series/{series_id}",
-    tag = "series",
+    tag = "series (deprecated)",
     params(
         ("library_id" = String, Path, description = "Library UUID"),
         ("series_id" = String, Path, description = "Series UUID"),
@@ -1155,12 +1169,12 @@ pub async fn update_series(
     Ok(Json(UpdateSeriesResponse { updated: result.rows_affected() }))
 }
 
-/// Delete an entire series: removes all books (files + DB), the series folder,
-/// and all related metadata (external links, anilist, available downloads).
+/// Delete an entire series (deprecated: use DELETE /series/{series_id})
+#[deprecated]
 #[utoipa::path(
     delete,
     path = "/libraries/{library_id}/series/{series_id}",
-    tag = "series",
+    tag = "series (deprecated)",
     params(
         ("library_id" = String, Path, description = "Library UUID"),
         ("series_id" = String, Path, description = "Series UUID"),
@@ -1273,6 +1287,172 @@ pub async fn delete_series(
     Ok(Json(crate::responses::DeletedResponse::new(library_id)))
 }
 
+// ─── Direct series-by-ID endpoints (no library_id in path) ──────────────────
+
+/// Get a series by its UUID (resolves library_id internally)
+#[utoipa::path(
+    get,
+    path = "/series/{series_id}/details",
+    tag = "series",
+    params(
+        ("series_id" = String, Path, description = "Series UUID"),
+    ),
+    responses(
+        (status = 200, body = SeriesItem),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Series not found"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn get_series_by_id(
+    State(state): State<AppState>,
+    user: Option<Extension<AuthUser>>,
+    Path(series_id): Path<Uuid>,
+) -> Result<Json<SeriesItem>, ApiError> {
+    let user_id: Option<Uuid> = user.map(|u| u.0.user_id);
+
+    let row = sqlx::query(
+        r#"
+        WITH series_counts AS (
+            SELECT
+                s.id as series_id, s.name, s.library_id, s.status as series_status,
+                COUNT(b.id) as book_count,
+                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
+            FROM series s
+            LEFT JOIN books b ON b.series_id = s.id
+            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
+            WHERE s.id = $1
+            GROUP BY s.id, s.name, s.library_id, s.status
+        ),
+        first_book AS (
+            SELECT b.id, b.series_id
+            FROM books b WHERE b.series_id = $1
+            ORDER BY b.volume NULLS LAST, b.title ASC
+            LIMIT 1
+        )
+        SELECT sc.name, sc.series_id, sc.book_count, sc.books_read_count,
+               COALESCE(fb.id, '00000000-0000-0000-0000-000000000000'::uuid) as first_book_id,
+               sc.library_id, sc.series_status,
+               mc.missing_count,
+               ml.provider as metadata_provider,
+               asl.anilist_id, asl.anilist_url
+        FROM series_counts sc
+        LEFT JOIN first_book fb ON fb.series_id = sc.series_id
+        LEFT JOIN (
+            SELECT eml.series_id, COUNT(ebm.id) FILTER (WHERE ebm.book_id IS NULL) as missing_count
+            FROM external_metadata_links eml
+            JOIN external_book_metadata ebm ON ebm.link_id = eml.id
+            WHERE eml.series_id = $1 AND eml.status = 'approved'
+            GROUP BY eml.series_id
+        ) mc ON mc.series_id = sc.series_id
+        LEFT JOIN (
+            SELECT DISTINCT ON (eml.series_id) eml.series_id, eml.provider
+            FROM external_metadata_links eml
+            WHERE eml.series_id = $1 AND eml.status = 'approved'
+            ORDER BY eml.series_id, eml.created_at DESC
+        ) ml ON ml.series_id = sc.series_id
+        LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
+        "#
+    )
+    .bind(series_id)
+    .bind(user_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::not_found("series not found"))?;
+
+    Ok(Json(SeriesItem {
+        name: row.get("name"),
+        series_id: row.get("series_id"),
+        book_count: row.get("book_count"),
+        books_read_count: row.get("books_read_count"),
+        first_book_id: row.get("first_book_id"),
+        library_id: row.get("library_id"),
+        series_status: row.get("series_status"),
+        missing_count: row.get("missing_count"),
+        metadata_provider: row.get("metadata_provider"),
+        anilist_id: row.get("anilist_id"),
+        anilist_url: row.get("anilist_url"),
+    }))
+}
+
+/// Get metadata for a series by its UUID (resolves library_id internally)
+#[utoipa::path(
+    get,
+    path = "/series/{series_id}/metadata",
+    tag = "series",
+    params(
+        ("series_id" = String, Path, description = "Series UUID"),
+    ),
+    responses(
+        (status = 200, body = SeriesMetadata),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Series not found"),
+    ),
+    security(("Bearer" = []))
+)]
+#[allow(deprecated)]
+pub async fn get_series_metadata_by_id(
+    state: State<AppState>,
+    _user: Option<Extension<AuthUser>>,
+    Path(series_id): Path<Uuid>,
+) -> Result<Json<SeriesMetadata>, ApiError> {
+    let library_id = resolve_library_id(&state.pool, series_id).await?;
+    get_series_metadata(state, Path((library_id, series_id))).await
+}
+
+/// Update a series by its UUID (resolves library_id internally)
+#[utoipa::path(
+    patch,
+    path = "/series/{series_id}",
+    tag = "series",
+    params(
+        ("series_id" = String, Path, description = "Series UUID"),
+    ),
+    request_body = UpdateSeriesRequest,
+    responses(
+        (status = 200, body = UpdateSeriesResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+        (status = 404, description = "Series not found"),
+    ),
+    security(("Bearer" = []))
+)]
+#[allow(deprecated)]
+pub async fn update_series_by_id(
+    state: State<AppState>,
+    Path(series_id): Path<Uuid>,
+    body: Json<UpdateSeriesRequest>,
+) -> Result<Json<UpdateSeriesResponse>, ApiError> {
+    let library_id = resolve_library_id(&state.pool, series_id).await?;
+    update_series(state, Path((library_id, series_id)), body).await
+}
+
+/// Delete a series by its UUID (resolves library_id internally)
+#[utoipa::path(
+    delete,
+    path = "/series/{series_id}",
+    tag = "series",
+    params(
+        ("series_id" = String, Path, description = "Series UUID"),
+    ),
+    responses(
+        (status = 200, description = "Series deleted"),
+        (status = 404, description = "Series not found"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+#[allow(deprecated)]
+pub async fn delete_series_by_id(
+    state: State<AppState>,
+    user: Extension<AuthUser>,
+    Path(series_id): Path<Uuid>,
+) -> Result<Json<crate::responses::DeletedResponse>, ApiError> {
+    let library_id = resolve_library_id(&state.pool, series_id).await?;
+    delete_series(state, user, Path((library_id, series_id))).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1323,5 +1503,29 @@ mod tests {
         let resp = UpdateSeriesResponse { updated: 5 };
         let json = serde_json::to_value(&resp).unwrap();
         assert_eq!(json["updated"], 5);
+    }
+
+    #[test]
+    fn series_item_includes_library_id() {
+        let lib_id = Uuid::new_v4();
+        let item = SeriesItem {
+            name: "One Piece".to_string(),
+            series_id: Uuid::new_v4(),
+            book_count: 100,
+            books_read_count: 50,
+            first_book_id: Uuid::new_v4(),
+            library_id: lib_id,
+            series_status: Some("ongoing".to_string()),
+            missing_count: Some(5),
+            metadata_provider: Some("google_books".to_string()),
+            anilist_id: Some(12345),
+            anilist_url: Some("https://anilist.co/manga/12345".to_string()),
+        };
+        let json = serde_json::to_value(&item).unwrap();
+        assert_eq!(json["library_id"], lib_id.to_string());
+        assert_eq!(json["series_status"], "ongoing");
+        assert_eq!(json["missing_count"], 5);
+        assert_eq!(json["metadata_provider"], "google_books");
+        assert_eq!(json["anilist_id"], 12345);
     }
 }

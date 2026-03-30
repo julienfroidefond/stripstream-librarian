@@ -69,7 +69,7 @@ export function ReadingStatusModal({
     setError(null);
     try {
       const resp = await fetch(
-        `/api/anilist/series/${libraryId}/${seriesId}`,
+        `/api/series/${seriesId}/anilist`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -93,7 +93,7 @@ export function ReadingStatusModal({
     setError(null);
     try {
       const resp = await fetch(
-        `/api/anilist/series/${libraryId}/${seriesId}`,
+        `/api/series/${seriesId}/anilist`,
         { method: "DELETE" }
       );
       if (!resp.ok) throw new Error("Unlink failed");

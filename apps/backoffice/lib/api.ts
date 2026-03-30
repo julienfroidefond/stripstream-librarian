@@ -502,6 +502,10 @@ export async function fetchAllSeries(
   return apiFetch<SeriesPageDto>(`/series?${params.toString()}`);
 }
 
+export async function fetchSeriesById(seriesId: string): Promise<SeriesDto> {
+  return apiFetch<SeriesDto>(`/series/${seriesId}/details`);
+}
+
 export async function fetchSeriesStatuses(): Promise<string[]> {
   return apiFetch<string[]>("/series/statuses", { next: { revalidate: 300 } });
 }
@@ -836,9 +840,9 @@ export type SeriesMetadataDto = {
   locked_fields: Record<string, boolean>;
 };
 
-export async function fetchSeriesMetadata(libraryId: string, seriesId: string) {
+export async function fetchSeriesMetadata(seriesId: string) {
   return apiFetch<SeriesMetadataDto>(
-    `/libraries/${libraryId}/series/${seriesId}/metadata`
+    `/series/${seriesId}/metadata`
   );
 }
 
@@ -854,15 +858,15 @@ export type UpdateSeriesRequest = {
   locked_fields?: Record<string, boolean>;
 };
 
-export async function updateSeries(libraryId: string, seriesId: string, data: UpdateSeriesRequest) {
-  return apiFetch<{ updated: number }>(`/libraries/${libraryId}/series/${seriesId}`, {
+export async function updateSeries(seriesId: string, data: UpdateSeriesRequest) {
+  return apiFetch<{ updated: number }>(`/series/${seriesId}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
 }
 
-export async function deleteSeries(libraryId: string, seriesId: string) {
-  return apiFetch<void>(`/libraries/${libraryId}/series/${seriesId}`, {
+export async function deleteSeries(seriesId: string) {
+  return apiFetch<void>(`/series/${seriesId}`, {
     method: "DELETE",
   });
 }
@@ -1032,16 +1036,15 @@ export async function rejectMetadataMatch(id: string) {
   });
 }
 
-export async function getMetadataLink(libraryId: string, seriesId: string) {
+export async function getMetadataLink(seriesId: string) {
   const params = new URLSearchParams();
-  params.set("library_id", libraryId);
   params.set("series_id", seriesId);
   return apiFetch<ExternalMetadataLinkDto[]>(`/metadata/links?${params.toString()}`);
 }
 
-export async function getReadingStatusLink(libraryId: string, seriesId: string) {
+export async function getReadingStatusLink(seriesId: string) {
   return apiFetch<AnilistSeriesLinkDto>(
-    `/anilist/series/${libraryId}/${seriesId}`
+    `/series/${seriesId}/anilist`
   );
 }
 

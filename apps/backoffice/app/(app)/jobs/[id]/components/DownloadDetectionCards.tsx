@@ -70,7 +70,7 @@ export function DownloadDetectionResultsCard({ results, libraryId, qbConfigured,
               <div className="flex items-center justify-between gap-2 mb-2">
                 {libraryId ? (
                   <Link
-                    href={`/libraries/${libraryId}/series/${r.series_id ?? encodeURIComponent(r.series_name)}`}
+                    href={`/series/${r.series_id ?? encodeURIComponent(r.series_name)}`}
                     className="font-semibold text-sm text-primary hover:underline truncate"
                   >
                     {r.series_name}

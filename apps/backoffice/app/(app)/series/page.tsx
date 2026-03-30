@@ -135,7 +135,7 @@ export default async function SeriesPage({
             {series.map((s) => (
               <div key={s.series_id} className="group">
                 <div className="bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden group-hover:shadow-md group-hover:-translate-y-1 transition-all duration-200">
-                  <Link href={`/libraries/${s.library_id}/series/${s.series_id}`} className="block">
+                  <Link href={`/series/${s.series_id}`} className="block">
                     <div className="aspect-[2/3] relative bg-muted/50">
                       <Image
                         src={getBookCoverUrl(s.first_book_id)}
@@ -168,7 +168,7 @@ export default async function SeriesPage({
                     </div>
                   </Link>
                   <div className="px-2 py-1.5">
-                    <Link href={`/libraries/${s.library_id}/series/${s.series_id}`}>
+                    <Link href={`/series/${s.series_id}`}>
                       <h3 className="font-medium text-foreground truncate text-xs hover:text-primary transition-colors" title={s.name}>
                         {s.name === "unclassified" ? t("books.unclassified") : s.name}
                       </h3>

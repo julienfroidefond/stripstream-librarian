@@ -53,6 +53,7 @@ use tracing::info;
 use crate::state::{load_concurrent_renders, load_dynamic_settings, AppState, Metrics, ReadRateLimit};
 
 #[tokio::main]
+#[allow(deprecated)] // Old library-scoped series routes kept for backward compat
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -104,6 +105,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/books/:id", axum::routing::patch(books::update_book).delete(books::delete_book))
         .route("/books/:id/convert", axum::routing::post(books::convert_book))
         .route("/libraries/:library_id/series/:series_id", axum::routing::patch(series::update_series).delete(series::delete_series))
+        .route("/series/:series_id", axum::routing::patch(series::update_series_by_id).delete(series::delete_series_by_id))
         .route("/index/rebuild", axum::routing::post(index_jobs::enqueue_rebuild))
         .route("/index/thumbnails/rebuild", axum::routing::post(thumbnails::start_thumbnails_rebuild))
         .route("/index/thumbnails/regenerate", axum::routing::post(thumbnails::start_thumbnails_regenerate))
@@ -140,6 +142,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/anilist/series/:library_id/:series_name", get(anilist::get_series_link))
         .route("/anilist/series/:library_id/:series_name/link", axum::routing::post(anilist::link_series))
         .route("/anilist/series/:library_id/:series_name/unlink", delete(anilist::unlink_series))
+        .route("/series/:series_id/anilist", get(anilist::get_series_link_by_id))
+        .route("/series/:series_id/anilist/link", axum::routing::post(anilist::link_series_by_id))
+        .route("/series/:series_id/anilist/unlink", delete(anilist::unlink_series_by_id))
         .route("/metadata/search", axum::routing::post(metadata::search_metadata))
         .route("/metadata/match", axum::routing::post(metadata::create_metadata_match))
         .route("/metadata/approve/:id", axum::routing::post(metadata::approve_metadata))
@@ -183,6 +188,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/libraries/:library_id/series/by-name/:name", get(series::get_series_by_name))
         .route("/libraries/:library_id/series/:series_id/metadata", get(series::get_series_metadata))
         .route("/series", get(series::list_all_series))
+        .route("/series/:series_id/details", get(series::get_series_by_id))
+        .route("/series/:series_id/metadata", get(series::get_series_metadata_by_id))
         .route("/series/ongoing", get(series::ongoing_series))
         .route("/series/statuses", get(series::series_statuses))
         .route("/series/provider-statuses", get(series::provider_statuses))
