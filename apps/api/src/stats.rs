@@ -127,6 +127,26 @@ pub struct JobTimePoint {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct DownloadStats {
+    pub active_downloads: i64,
+    pub imported_downloads: i64,
+    pub error_downloads: i64,
+    pub total_downloads: i64,
+    pub available_series: i64,
+    pub total_missing_volumes: i64,
+    pub recent_downloads: Vec<RecentDownloadItem>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RecentDownloadItem {
+    pub id: String,
+    pub series_name: String,
+    pub status: String,
+    pub expected_volumes: Vec<i32>,
+    pub created_at: String,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct StatsResponse {
     pub overview: StatsOverview,
     pub reading_status: ReadingStatusStats,
@@ -141,6 +161,7 @@ pub struct StatsResponse {
     pub jobs_over_time: Vec<JobTimePoint>,
     pub metadata: MetadataStats,
     pub users_reading_over_time: Vec<UserMonthlyReading>,
+    pub downloads: DownloadStats,
 }
 
 /// Get collection statistics for the dashboard
@@ -826,6 +847,67 @@ pub async fn get_stats(
         })
         .collect();
 
+    // Download stats
+    let dl_row = sqlx::query(
+        r#"
+        SELECT
+            COUNT(*) FILTER (WHERE status IN ('downloading', 'importing')) AS active_downloads,
+            COUNT(*) FILTER (WHERE status = 'imported') AS imported_downloads,
+            COUNT(*) FILTER (WHERE status = 'error') AS error_downloads,
+            COUNT(*) AS total_downloads
+        FROM torrent_downloads
+        "#,
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    let avail_row = sqlx::query(
+        r#"
+        SELECT
+            COUNT(*) AS available_series,
+            COALESCE(SUM(missing_count), 0)::BIGINT AS total_missing_volumes
+        FROM available_downloads
+        "#,
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    let recent_dl_rows = sqlx::query(
+        r#"
+        SELECT id, series_name, status, expected_volumes,
+               TO_CHAR(created_at, 'YYYY-MM-DD') AS created_at
+        FROM torrent_downloads
+        ORDER BY created_at DESC
+        LIMIT 5
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let recent_downloads: Vec<RecentDownloadItem> = recent_dl_rows
+        .iter()
+        .map(|r| {
+            let id: uuid::Uuid = r.get("id");
+            RecentDownloadItem {
+                id: id.to_string(),
+                series_name: r.get("series_name"),
+                status: r.get("status"),
+                expected_volumes: r.get("expected_volumes"),
+                created_at: r.get::<Option<String>, _>("created_at").unwrap_or_default(),
+            }
+        })
+        .collect();
+
+    let downloads = DownloadStats {
+        active_downloads: dl_row.get("active_downloads"),
+        imported_downloads: dl_row.get("imported_downloads"),
+        error_downloads: dl_row.get("error_downloads"),
+        total_downloads: dl_row.get("total_downloads"),
+        available_series: avail_row.get("available_series"),
+        total_missing_volumes: avail_row.get("total_missing_volumes"),
+        recent_downloads,
+    };
+
     Ok(Json(StatsResponse {
         overview,
         reading_status,
@@ -840,5 +922,6 @@ pub async fn get_stats(
         jobs_over_time,
         metadata,
         users_reading_over_time,
+        downloads,
     }))
 }

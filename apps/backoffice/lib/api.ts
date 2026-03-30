@@ -731,6 +731,24 @@ export type JobTimePoint = {
   other: number;
 };
 
+export type RecentDownloadItem = {
+  id: string;
+  series_name: string;
+  status: string;
+  expected_volumes: number[];
+  created_at: string;
+};
+
+export type DownloadStats = {
+  active_downloads: number;
+  imported_downloads: number;
+  error_downloads: number;
+  total_downloads: number;
+  available_series: number;
+  total_missing_volumes: number;
+  recent_downloads: RecentDownloadItem[];
+};
+
 export type StatsResponse = {
   overview: StatsOverview;
   reading_status: ReadingStatusStats;
@@ -745,6 +763,7 @@ export type StatsResponse = {
   additions_over_time: MonthlyAdditions[];
   jobs_over_time: JobTimePoint[];
   metadata: MetadataStats;
+  downloads: DownloadStats;
 };
 
 export async function fetchStats(period?: "day" | "week" | "month") {

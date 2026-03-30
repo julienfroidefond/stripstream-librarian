@@ -107,6 +107,7 @@ export default async function DashboardPage({
     additions_over_time,
     jobs_over_time = [],
     metadata = { total_series: 0, series_linked: 0, series_unlinked: 0, books_with_summary: 0, books_with_isbn: 0, by_provider: [] },
+    downloads = { active_downloads: 0, imported_downloads: 0, error_downloads: 0, total_downloads: 0, available_series: 0, total_missing_volumes: 0, recent_downloads: [] },
   } = stats;
 
   const readingColors = ["hsl(220 13% 70%)", "hsl(45 93% 47%)", "hsl(142 60% 45%)"];
@@ -411,6 +412,73 @@ export default async function DashboardPage({
         </Card>
       </div>
 
+      {/* Downloads section */}
+      {(downloads.total_downloads > 0 || downloads.available_series > 0) && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <StatCard icon="download" label={t("dashboard.totalDownloads")} value={formatNumber(downloads.total_downloads, locale)} color="primary" />
+            <StatCard icon="active" label={t("dashboard.activeDownloads")} value={formatNumber(downloads.active_downloads, locale)} color="warning" />
+            <StatCard icon="imported" label={t("dashboard.importedDownloads")} value={formatNumber(downloads.imported_downloads, locale)} color="success" />
+            <StatCard icon="error" label={t("dashboard.errorDownloads")} value={formatNumber(downloads.error_downloads, locale)} color="warning" />
+            <StatCard icon="available" label={t("dashboard.availableSeries")} value={formatNumber(downloads.available_series, locale)} color="primary" />
+            <StatCard icon="missing" label={t("dashboard.missingVolumes")} value={formatNumber(downloads.total_missing_volumes, locale)} color="warning" />
+          </div>
+
+          {downloads.recent_downloads.length > 0 && (
+            <Card hover={false}>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  {t("dashboard.recentDownloads")}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {downloads.recent_downloads.map((dl) => {
+                    const statusColors: Record<string, string> = {
+                      downloading: "bg-blue-500/10 text-blue-600",
+                      completed: "bg-amber-500/10 text-amber-600",
+                      importing: "bg-purple-500/10 text-purple-600",
+                      imported: "bg-success/10 text-success",
+                      error: "bg-destructive/10 text-destructive",
+                    };
+                    const statusMap: Record<string, string> = {
+                      downloading: t("dashboard.downloadStatus.downloading"),
+                      completed: t("dashboard.downloadStatus.completed"),
+                      importing: t("dashboard.downloadStatus.importing"),
+                      imported: t("dashboard.downloadStatus.imported"),
+                      error: t("dashboard.downloadStatus.error"),
+                    };
+                    const statusLabel = statusMap[dl.status] || dl.status;
+                    return (
+                      <div key={dl.id} className="flex items-center justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <Link href={`/downloads` as any} className="font-medium text-sm text-foreground hover:text-primary transition-colors truncate block">
+                            {dl.series_name}
+                          </Link>
+                          <p className="text-xs text-muted-foreground">
+                            {dl.expected_volumes.length > 0 && (
+                              <span>{t("dashboard.volumes")} {dl.expected_volumes.join(", ")}</span>
+                            )}
+                            {dl.expected_volumes.length > 0 && dl.created_at && <span> · </span>}
+                            {dl.created_at && <span>{dl.created_at}</span>}
+                          </p>
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${statusColors[dl.status] || "bg-muted text-muted-foreground"}`}>
+                          {statusLabel}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
       {/* Additions line chart – full width */}
       <Card hover={false}>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
@@ -466,6 +534,12 @@ function StatCard({ icon, label, value, color }: { icon: string; label: string; 
     pages: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />,
     author: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />,
     size: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />,
+    download: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />,
+    active: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />,
+    imported: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />,
+    error: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />,
+    available: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />,
+    missing: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />,
   };
 
   const colorClasses: Record<string, string> = {
