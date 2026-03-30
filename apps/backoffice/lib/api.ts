@@ -1203,7 +1203,7 @@ export type DownloadDetectionResultDto = {
 
 export type AvailableDownloadDto = {
   id: string;
-  series_id?: string;
+  series_id: string;
   series_name: string;
   missing_count: number;
   available_releases: AvailableReleaseDto[] | null;

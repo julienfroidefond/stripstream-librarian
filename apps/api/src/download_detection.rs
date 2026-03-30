@@ -363,6 +363,8 @@ pub struct LatestFoundPerLibraryDto {
 pub struct AvailableDownloadDto {
     #[schema(value_type = String)]
     pub id: Uuid,
+    #[schema(value_type = String)]
+    pub series_id: Uuid,
     pub series_name: String,
     pub missing_count: i32,
     pub available_releases: Option<Vec<AvailableReleaseDto>>,
@@ -411,6 +413,7 @@ pub async fn get_latest_found(
 
         entry.results.push(AvailableDownloadDto {
             id: row.get("id"),
+            series_id: row.get("series_id"),
             series_name: row.get("series_name"),
             missing_count: row.get("missing_count"),
             available_releases,
