@@ -1,6 +1,9 @@
 import type { TranslationKey } from "./fr";
 
 const en: Record<TranslationKey, string> = {
+  // Auth
+  "auth.logout": "Log out",
+
   // Navigation
   "nav.dashboard": "Dashboard",
   "nav.books": "Books",

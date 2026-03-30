@@ -3,6 +3,7 @@
 import { useState, useEffect, useTransition } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { NavIcon } from "./ui";
 import { useTranslation } from "../../lib/i18n/context";
 import type { UserDto } from "@/lib/api";
@@ -32,9 +33,16 @@ export function MobileNav({ navItems, users, activeUserId, setActiveUserAction }
   setActiveUserAction: (formData: FormData) => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [, startTransition] = useTransition();
+
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  }
 
   function select(userId: string | null) {
     startTransition(async () => {
@@ -128,6 +136,17 @@ export function MobileNav({ navItems, users, activeUserId, setActiveUserAction }
                 <NavIcon name="settings" />
                 <span className="font-medium">{t("nav.settings")}</span>
               </Link>
+              <button
+                onClick={() => { setIsOpen(false); handleLogout(); }}
+                className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-200 active:scale-[0.98]"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                <span className="font-medium">{t("auth.logout")}</span>
+              </button>
             </div>
           </div>
         </nav>

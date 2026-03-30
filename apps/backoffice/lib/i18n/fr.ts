@@ -1,4 +1,7 @@
 const fr = {
+  // Auth
+  "auth.logout": "Se déconnecter",
+
   // Navigation
   "nav.dashboard": "Tableau de bord",
   "nav.books": "Livres",

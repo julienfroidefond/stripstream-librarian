@@ -93,7 +93,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
                 <Icon name="settings" size="md" />
               </Link>
               <ThemeToggle />
-              <LogoutButton />
+              <div className="hidden md:block">
+                <LogoutButton />
+              </div>
               <MobileNav
                 navItems={[
                   { href: "/", label: t("nav.dashboard"), icon: "dashboard" },
