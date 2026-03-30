@@ -475,6 +475,17 @@ const en: Record<TranslationKey, string> = {
   "jobsIndicator.thumbnails": "Thumbnails",
   "jobsIndicator.regeneration": "Regeneration",
 
+  // Downloads Indicator
+  "downloadsIndicator.viewAll": "View downloads",
+  "downloadsIndicator.activeDownloads": "Active downloads",
+  "downloadsIndicator.downloadingAndImporting": "{{downloading}} downloading, {{importing}} importing",
+  "downloadsIndicator.downloadingCount": "{{count}} download{{plural}} in progress",
+  "downloadsIndicator.importingCount": "{{count}} import{{plural}} in progress",
+  "downloadsIndicator.overallProgress": "Overall progress",
+  "downloadsIndicator.viewAllLink": "View all →",
+  "downloadsIndicator.autoRefresh": "Auto-refresh every 2s",
+  "downloadsIndicator.downloadCount": "{{count}} active download{{plural}}",
+
   // Time
   "time.justNow": "Just now",
   "time.minutesAgo": "{{count}}m ago",

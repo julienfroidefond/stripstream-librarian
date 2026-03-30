@@ -473,6 +473,17 @@ const fr = {
   "jobsIndicator.thumbnails": "Miniatures",
   "jobsIndicator.regeneration": "Regénération",
 
+  // Downloads Indicator
+  "downloadsIndicator.viewAll": "Voir les téléchargements",
+  "downloadsIndicator.activeDownloads": "Téléchargements actifs",
+  "downloadsIndicator.downloadingAndImporting": "{{downloading}} en téléchargement, {{importing}} en import",
+  "downloadsIndicator.downloadingCount": "{{count}} téléchargement{{plural}} en cours",
+  "downloadsIndicator.importingCount": "{{count}} import{{plural}} en cours",
+  "downloadsIndicator.overallProgress": "Progression globale",
+  "downloadsIndicator.viewAllLink": "Tout voir →",
+  "downloadsIndicator.autoRefresh": "Actualisation automatique toutes les 2s",
+  "downloadsIndicator.downloadCount": "{{count}} téléchargement{{plural}} actif{{plural}}",
+
   // Time
   "time.justNow": "À l'instant",
   "time.minutesAgo": "il y a {{count}}m",

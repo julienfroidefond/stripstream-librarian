@@ -4,31 +4,29 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useTranslation } from "../../lib/i18n/context";
-import { Badge } from "./ui/Badge";
 import { ProgressBar } from "./ui/ProgressBar";
 
-interface Job {
+interface Download {
   id: string;
-  library_id: string | null;
-  type: string;
-  status: string;
-  current_file: string | null;
-  progress_percent: number | null;
-  processed_files: number | null;
-  total_files: number | null;
-  stats_json: {
-    scanned_files: number;
-    indexed_files: number;
-    errors: number;
-    warnings: number;
-  } | null;
+  library_id: string;
+  series_id?: string;
+  series_name: string;
+  expected_volumes: number[];
+  status: "downloading" | "completed" | "importing" | "imported" | "error";
+  progress: number;
+  download_speed: number;
+  eta: number;
+  error_message: string | null;
 }
 
+const STATUS_ACTIVE = new Set(["downloading", "completed", "importing"]);
+
 // Icons
-const JobsIcon = ({ className }: { className?: string }) => (
+const DownloadIcon = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-    <rect x="2" y="3" width="20" height="18" rx="2" />
-    <path d="M6 8h12M6 12h12M6 16h8" strokeLinecap="round" />
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" strokeLinecap="round" strokeLinejoin="round" />
+    <polyline points="7 10 12 15 17 10" strokeLinecap="round" strokeLinejoin="round" />
+    <line x1="12" y1="15" x2="12" y2="3" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
 
@@ -45,9 +43,25 @@ const ChevronIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-export function JobsIndicator() {
+function formatSpeed(bytesPerSec: number): string {
+  if (bytesPerSec < 1024) return `${bytesPerSec} B/s`;
+  if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
+  return `${(bytesPerSec / 1024 / 1024).toFixed(1)} MB/s`;
+}
+
+function formatEta(seconds: number): string {
+  if (seconds <= 0 || seconds >= 8640000) return "";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}h${String(m).padStart(2, "0")}m`;
+  if (m > 0) return `${m}m${String(s).padStart(2, "0")}s`;
+  return `${s}s`;
+}
+
+export function DownloadsIndicator() {
   const { t } = useTranslation();
-  const [activeJobs, setActiveJobs] = useState<Job[]>([]);
+  const [activeDownloads, setActiveDownloads] = useState<Download[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popinRef = useRef<HTMLDivElement>(null);
@@ -60,7 +74,6 @@ export function JobsIndicator() {
 
     const resetStaleTimer = () => {
       if (staleTimeout) clearTimeout(staleTimeout);
-      // If no message received in 30s, reconnect (heartbeat should come every 15s)
       staleTimeout = setTimeout(() => {
         eventSource?.close();
         eventSource = null;
@@ -72,18 +85,15 @@ export function JobsIndicator() {
       if (eventSource) {
         eventSource.close();
       }
-      eventSource = new EventSource("/api/jobs/stream");
+      eventSource = new EventSource("/api/torrent-downloads/stream");
       resetStaleTimer();
 
       eventSource.onmessage = (event) => {
         resetStaleTimer();
         try {
-          const allJobs: Job[] = JSON.parse(event.data);
-          const active = allJobs.filter(j =>
-            j.status === "running" || j.status === "pending" ||
-            j.status === "extracting_pages" || j.status === "generating_thumbnails"
-          );
-          setActiveJobs(active);
+          const allDownloads: Download[] = JSON.parse(event.data);
+          const active = allDownloads.filter(d => STATUS_ACTIVE.has(d.status));
+          setActiveDownloads(active);
         } catch {
           // ignore malformed data
         }
@@ -92,7 +102,6 @@ export function JobsIndicator() {
       eventSource.onerror = () => {
         eventSource?.close();
         eventSource = null;
-        // Reconnect after 3s on error
         reconnectTimeout = setTimeout(connect, 3000);
       };
     };
@@ -134,13 +143,12 @@ export function JobsIndicator() {
         right: "12px",
       });
     } else {
-      // Align right edge of popin with right edge of button
       const rightEdge = window.innerWidth - rect.right;
       setPopinStyle({
         position: "fixed",
         top: `${rect.bottom + 8}px`,
         right: `${Math.max(rightEdge, 12)}px`,
-        width: "384px", // w-96
+        width: "384px",
       });
     }
   }, []);
@@ -182,18 +190,18 @@ export function JobsIndicator() {
     return () => document.removeEventListener("keydown", handleEsc);
   }, [isOpen]);
 
-  const runningJobs = activeJobs.filter(j => j.status === "running" || j.status === "extracting_pages" || j.status === "generating_thumbnails");
-  const pendingJobs = activeJobs.filter(j => j.status === "pending");
-  const totalCount = activeJobs.length;
+  const downloadingItems = activeDownloads.filter(d => d.status === "downloading");
+  const importingItems = activeDownloads.filter(d => d.status === "importing" || d.status === "completed");
+  const totalCount = activeDownloads.length;
 
-  const totalProgress = runningJobs.reduce((acc, job) => {
-    return acc + (job.progress_percent || 0);
-  }, 0) / (runningJobs.length || 1);
+  const totalProgress = downloadingItems.length > 0
+    ? downloadingItems.reduce((acc, d) => acc + d.progress, 0) / downloadingItems.length
+    : 0;
 
   if (totalCount === 0) {
     return (
       <Link
-        href="/jobs"
+        href="/downloads"
         className="
           flex items-center justify-center
           px-2.5 py-1.5
@@ -204,9 +212,9 @@ export function JobsIndicator() {
           hover:bg-accent
           transition-colors duration-200
         "
-        title={t("jobsIndicator.viewAll")}
+        title={t("downloadsIndicator.viewAll")}
       >
-        <JobsIcon className="w-3.5 h-3.5" />
+        <DownloadIcon className="w-3.5 h-3.5" />
       </Link>
     );
   }
@@ -237,103 +245,95 @@ export function JobsIndicator() {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/60 bg-muted/50">
           <div className="flex items-center gap-3">
-            <span className="text-xl">📊</span>
+            <span className="text-xl">⬇️</span>
             <div>
-              <h3 className="font-semibold text-foreground">{t("jobsIndicator.activeTasks")}</h3>
+              <h3 className="font-semibold text-foreground">{t("downloadsIndicator.activeDownloads")}</h3>
               <p className="text-xs text-muted-foreground">
-                {runningJobs.length > 0
-                  ? t("jobsIndicator.runningAndPending", { running: runningJobs.length, pending: pendingJobs.length })
-                  : t("jobsIndicator.pendingTasks", { count: pendingJobs.length, plural: pendingJobs.length !== 1 ? "s" : "" })
+                {downloadingItems.length > 0 && importingItems.length > 0
+                  ? t("downloadsIndicator.downloadingAndImporting", { downloading: downloadingItems.length, importing: importingItems.length })
+                  : downloadingItems.length > 0
+                    ? t("downloadsIndicator.downloadingCount", { count: downloadingItems.length, plural: downloadingItems.length !== 1 ? "s" : "" })
+                    : t("downloadsIndicator.importingCount", { count: importingItems.length, plural: importingItems.length !== 1 ? "s" : "" })
                 }
               </p>
             </div>
           </div>
           <Link
-            href="/jobs"
+            href="/downloads"
             className="text-sm font-medium text-primary hover:text-primary/80 transition-colors"
             onClick={() => setIsOpen(false)}
           >
-            {t("jobsIndicator.viewAllLink")}
+            {t("downloadsIndicator.viewAllLink")}
           </Link>
         </div>
 
-        {/* Overall progress bar if running */}
-        {runningJobs.length > 0 && (
+        {/* Overall progress bar if downloading */}
+        {downloadingItems.length > 0 && (
           <div className="px-4 py-3 border-b border-border/60">
             <div className="flex items-center justify-between text-sm mb-2">
-              <span className="text-muted-foreground">{t("jobsIndicator.overallProgress")}</span>
-              <span className="font-semibold text-foreground">{Math.round(totalProgress)}%</span>
+              <span className="text-muted-foreground">{t("downloadsIndicator.overallProgress")}</span>
+              <span className="font-semibold text-foreground">{Math.round(totalProgress * 100)}%</span>
             </div>
-            <ProgressBar value={totalProgress} size="sm" variant="success" />
+            <ProgressBar value={totalProgress * 100} size="sm" variant="default" />
           </div>
         )}
 
-        {/* Job List */}
+        {/* Download List */}
         <div className="max-h-80 overflow-y-auto scrollbar-hide">
-          {activeJobs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-              <span className="text-4xl mb-2">✅</span>
-              <p>{t("jobsIndicator.noActiveTasks")}</p>
-            </div>
-          ) : (
-            <ul className="divide-y divide-border/60">
-              {activeJobs.map(job => (
-                <li key={job.id}>
-                  <Link
-                    href={`/jobs/${job.id}`}
-                    className="block px-4 py-3 hover:bg-accent/50 transition-colors duration-200"
-                    onClick={() => setIsOpen(false)}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5">
-                        {(job.status === "running" || job.status === "extracting_pages" || job.status === "generating_thumbnails") && <span className="animate-spin inline-block">⏳</span>}
-                        {job.status === "pending" && <span>⏸</span>}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <code className="text-xs px-1.5 py-0.5 bg-muted rounded font-mono">{job.id.slice(0, 8)}</code>
-                          <Badge variant={job.type === 'rebuild' ? 'primary' : job.type === 'thumbnail_regenerate' ? 'warning' : 'secondary'} className="text-[10px]">
-                            {t(`jobType.${job.type}` as any) !== `jobType.${job.type}` ? t(`jobType.${job.type}` as any) : job.type}
-                          </Badge>
-                        </div>
-
-                        {(job.status === "running" || job.status === "extracting_pages" || job.status === "generating_thumbnails") && job.progress_percent != null && (
-                          <div className="flex items-center gap-2 mt-2">
-                            <MiniProgressBar value={job.progress_percent} />
-                            <span className="text-xs font-medium text-muted-foreground">{job.progress_percent}%</span>
-                          </div>
-                        )}
-
-                        {job.current_file && (
-                          <p className="text-xs text-muted-foreground mt-1.5 truncate" title={job.current_file}>
-                            📄 {job.current_file}
-                          </p>
-                        )}
-
-                        {job.stats_json && (
-                          <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
-                            <span>✓ {job.stats_json.indexed_files}</span>
-                            {(job.stats_json.warnings ?? 0) > 0 && (
-                              <span className="text-warning">⚠ {job.stats_json.warnings}</span>
-                            )}
-                            {job.stats_json.errors > 0 && (
-                              <span className="text-destructive">✕ {job.stats_json.errors}</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
+          <ul className="divide-y divide-border/60">
+            {activeDownloads.map(dl => (
+              <li key={dl.id}>
+                <Link
+                  href="/downloads"
+                  className="block px-4 py-3 hover:bg-accent/50 transition-colors duration-200"
+                  onClick={() => setIsOpen(false)}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5">
+                      {dl.status === "downloading" && <span className="animate-pulse inline-block">⬇️</span>}
+                      {dl.status === "importing" && <span className="animate-spin inline-block">⏳</span>}
+                      {dl.status === "completed" && <span>✅</span>}
                     </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-medium text-foreground truncate">{dl.series_name}</span>
+                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${statusClass(dl.status)}`}>
+                          {statusLabel(dl.status, t)}
+                        </span>
+                      </div>
+
+                      {dl.expected_volumes.length > 0 && (
+                        <p className="text-[11px] text-muted-foreground mb-1">
+                          {formatVolumes(dl.expected_volumes)}
+                        </p>
+                      )}
+
+                      {dl.status === "downloading" && (
+                        <div className="flex items-center gap-2 mt-1">
+                          <MiniProgressBar value={dl.progress * 100} />
+                          <span className="text-xs font-medium text-muted-foreground tabular-nums">
+                            {Math.round(dl.progress * 100)}%
+                          </span>
+                          {dl.download_speed > 0 && (
+                            <span className="text-[10px] text-muted-foreground">{formatSpeed(dl.download_speed)}</span>
+                          )}
+                          {dl.eta > 0 && dl.eta < 8640000 && (
+                            <span className="text-[10px] text-muted-foreground">ETA {formatEta(dl.eta)}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
         </div>
 
         {/* Footer */}
         <div className="px-4 py-2 border-t border-border/60 bg-muted/50">
-          <p className="text-xs text-muted-foreground text-center">{t("jobsIndicator.autoRefresh")}</p>
+          <p className="text-xs text-muted-foreground text-center">{t("downloadsIndicator.autoRefresh")}</p>
         </div>
       </div>
     </>
@@ -350,22 +350,22 @@ export function JobsIndicator() {
           border
           text-xs font-medium
           transition-all duration-200
-          ${runningJobs.length > 0
-            ? 'border-success/40 bg-success/10 text-success hover:bg-success/15'
+          ${downloadingItems.length > 0
+            ? 'border-primary/40 bg-primary/10 text-primary hover:bg-primary/15'
             : 'border-warning/40 bg-warning/10 text-warning hover:bg-warning/15'
           }
           ${isOpen ? 'ring-2 ring-ring ring-offset-2 ring-offset-background' : ''}
         `}
         onClick={() => setIsOpen(!isOpen)}
-        title={t("jobsIndicator.taskCount", { count: totalCount, plural: totalCount !== 1 ? "s" : "" })}
+        title={t("downloadsIndicator.downloadCount", { count: totalCount, plural: totalCount !== 1 ? "s" : "" })}
       >
-        {runningJobs.length > 0 && (
+        {downloadingItems.length > 0 && (
           <div className="w-3.5 h-3.5 animate-spin">
             <SpinnerIcon className="w-3.5 h-3.5" />
           </div>
         )}
 
-        <JobsIcon className="w-3.5 h-3.5" />
+        <DownloadIcon className="w-3.5 h-3.5" />
 
         <span className="flex items-center justify-center min-w-4 h-4 px-1 text-[10px] font-bold bg-current rounded-full">
           <span className="text-background">{totalCount > 99 ? "99+" : totalCount}</span>
@@ -381,12 +381,34 @@ export function JobsIndicator() {
   );
 }
 
+function statusClass(status: string): string {
+  switch (status) {
+    case "downloading": return "bg-primary/10 text-primary";
+    case "completed":   return "bg-warning/10 text-warning";
+    case "importing":   return "bg-primary/10 text-primary";
+    default:            return "bg-muted/30 text-muted-foreground";
+  }
+}
+
+function statusLabel(status: string, t: (key: any, vars?: Record<string, string | number>) => string): string {
+  const map: Record<string, string> = {
+    downloading: "downloads.status.downloading",
+    completed:   "downloads.status.completed",
+    importing:   "downloads.status.importing",
+  };
+  return t(map[status] ?? status);
+}
+
+function formatVolumes(vols: number[]): string {
+  return [...vols].sort((a, b) => a - b).map(v => `T${String(v).padStart(2, "0")}`).join(", ");
+}
+
 // Mini progress bar for dropdown
 function MiniProgressBar({ value }: { value: number }) {
   return (
     <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
       <div
-        className="h-full bg-success rounded-full transition-all duration-300"
+        className="h-full bg-primary rounded-full transition-all duration-300"
         style={{ width: `${value}%` }}
       />
     </div>

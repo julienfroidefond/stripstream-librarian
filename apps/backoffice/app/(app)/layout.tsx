@@ -5,8 +5,10 @@ import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { ThemeToggle } from "@/app/theme-toggle";
 import { JobsIndicator } from "@/app/components/JobsIndicator";
+import { DownloadsIndicator } from "@/app/components/DownloadsIndicator";
 import { NavIcon, Icon } from "@/app/components/ui";
 import { NavLink } from "@/app/components/NavLink";
+import { CollapsibleNav, CollapsibleNavProvider, NavToggleButton } from "@/app/components/CollapsibleNav";
 import { LogoutButton } from "@/app/components/LogoutButton";
 import { MobileNav } from "@/app/components/MobileNav";
 import { UserSwitcher } from "@/app/components/UserSwitcher";
@@ -28,6 +30,7 @@ const navItems: NavItem[] = [
   { href: "/downloads", labelKey: "nav.downloads", icon: "download" },
   { href: "/jobs", labelKey: "nav.jobs", icon: "jobs" },
   { href: "/tokens", labelKey: "nav.tokens", icon: "tokens" },
+  { href: "/settings", labelKey: "nav.settings", icon: "settings" },
 ];
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
@@ -50,31 +53,24 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <>
+      <CollapsibleNavProvider>
       <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/70 backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-background/60">
-        <nav className="container mx-auto flex h-16 items-center justify-between px-4">
+        {/* Row 1: Logo + actions */}
+        <div className="container mx-auto flex h-12 items-center justify-between px-4">
           <Link
             href="/"
             className="flex items-center gap-3 hover:opacity-80 transition-opacity duration-200"
           >
-            <Image src="/logo.png" alt="StripStream" width={36} height={36} className="rounded-lg" />
+            <Image src="/logo.png" alt="StripStream" width={32} height={32} className="rounded-lg" />
             <div className="flex items-baseline gap-2">
-              <span className="text-xl font-bold tracking-tight text-foreground">StripStream</span>
+              <span className="text-lg font-bold tracking-tight text-foreground">StripStream</span>
               <span className="text-sm text-muted-foreground font-medium hidden xl:inline">
                 {t("common.backoffice")}
               </span>
             </div>
           </Link>
 
-          <div className="flex items-center gap-2">
-            <div className="hidden md:flex items-center gap-1">
-              {navItems.map((item) => (
-                <NavLink key={item.href} href={item.href} title={t(item.labelKey)}>
-                  <NavIcon name={item.icon} />
-                  <span className="ml-2 hidden xl:inline">{t(item.labelKey)}</span>
-                </NavLink>
-              ))}
-            </div>
-
+          <div className="flex items-center gap-1.5">
             <div className="hidden md:block">
               <UserSwitcher
                 users={users}
@@ -82,33 +78,36 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
                 setActiveUserAction={setActiveUserAction}
               />
             </div>
-
-            <div className="flex items-center gap-1 pl-4 ml-2 border-l border-border/60">
-              <JobsIndicator />
-              <Link
-                href="/settings"
-                className="hidden xl:flex p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                title={t("nav.settings")}
-              >
-                <Icon name="settings" size="md" />
-              </Link>
-              <ThemeToggle />
-              <div className="hidden md:block">
-                <LogoutButton />
-              </div>
-              <MobileNav
-                navItems={[
-                  { href: "/", label: t("nav.dashboard"), icon: "dashboard" },
-                  ...navItems.map(item => ({ ...item, label: t(item.labelKey) })),
-                ]}
-                users={users}
-                activeUserId={activeUserId}
-                setActiveUserAction={setActiveUserAction}
-              />
+            <DownloadsIndicator />
+            <JobsIndicator />
+            <ThemeToggle />
+            <div className="hidden md:block">
+              <LogoutButton />
             </div>
+            <MobileNav
+              navItems={[
+                { href: "/", label: t("nav.dashboard"), icon: "dashboard" },
+                ...navItems.map(item => ({ ...item, label: t(item.labelKey) })),
+              ]}
+              users={users}
+              activeUserId={activeUserId}
+              setActiveUserAction={setActiveUserAction}
+            />
+            <NavToggleButton />
           </div>
-        </nav>
+        </div>
+
+        {/* Row 2: Collapsible navigation */}
+        <CollapsibleNav>
+          {navItems.map((item) => (
+            <NavLink key={item.href} href={item.href} title={t(item.labelKey)}>
+              <NavIcon name={item.icon} />
+              <span className="ml-2 hidden xl:inline">{t(item.labelKey)}</span>
+            </NavLink>
+          ))}
+        </CollapsibleNav>
       </header>
+      </CollapsibleNavProvider>
 
       <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-16">
         {children}
