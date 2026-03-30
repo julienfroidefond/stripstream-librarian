@@ -515,19 +515,14 @@ pub async fn get_missing_books(
 ) -> Result<Json<MissingBooksDto>, ApiError> {
     // Verify link exists
     let link = sqlx::query(
-        "SELECT eml.library_id, eml.series_id, s.name AS series_name \
-         FROM external_metadata_links eml \
-         JOIN series s ON s.id = eml.series_id \
-         WHERE eml.id = $1",
+        "SELECT eml.series_id FROM external_metadata_links eml WHERE eml.id = $1",
     )
     .bind(id)
     .fetch_optional(&state.pool)
     .await?
     .ok_or_else(|| ApiError::not_found("link not found"))?;
 
-    let library_id: Uuid = link.get("library_id");
     let series_id: Uuid = link.get("series_id");
-    let series_name: String = link.get("series_name");
 
     // Count external books
     let total_external: i64 =

@@ -9,22 +9,6 @@ use crate::{auth::AuthUser, books::BookItem, error::ApiError, state::AppState};
 
 // ─── Helper functions ────────────────────────────────────────────────────────
 
-/// Resolve a series UUID from library_id + name. Returns NotFound if no such series exists.
-pub(crate) async fn resolve_series_id(
-    pool: &sqlx::PgPool,
-    library_id: Uuid,
-    name: &str,
-) -> Result<Uuid, ApiError> {
-    sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM series WHERE library_id = $1 AND LOWER(name) = LOWER($2)"
-    )
-    .bind(library_id)
-    .bind(name)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| ApiError::not_found(format!("series '{}' not found", name)))
-}
-
 /// Get or create a series row, returning its UUID.
 pub(crate) async fn get_or_create_series(
     pool: &sqlx::PgPool,
