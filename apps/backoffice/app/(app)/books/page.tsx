@@ -104,6 +104,14 @@ export default async function BooksPage({
         <CardContent className="pt-6">
           <LiveSearchForm
             basePath="/books"
+            initialValues={{
+              q: searchQuery,
+              library: libraryId || "",
+              status: readingStatus || "",
+              format: format || "",
+              metadata: metadataProvider || "",
+              sort: sort || "",
+            }}
             fields={[
               { name: "q", type: "text", label: t("common.search"), placeholder: t("books.searchPlaceholder") },
               { name: "library", type: "select", label: t("books.library"), options: libraryOptions },

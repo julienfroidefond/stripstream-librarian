@@ -100,6 +100,15 @@ export default async function SeriesPage({
         <CardContent className="pt-6">
           <LiveSearchForm
             basePath="/series"
+            initialValues={{
+              q: searchQuery,
+              library: libraryId || "",
+              status: readingStatus || "",
+              series_status: seriesStatus || "",
+              has_missing: hasMissing ? "true" : "",
+              metadata_provider: metadataProvider || "",
+              sort: sort || "",
+            }}
             fields={[
               { name: "q", type: "text", label: t("common.search"), placeholder: t("series.searchPlaceholder") },
               { name: "library", type: "select", label: t("books.library"), options: libraryOptions },

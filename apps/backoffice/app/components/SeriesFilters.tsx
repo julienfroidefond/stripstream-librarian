@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useCallback } from "react";
 import { useTranslation } from "../../lib/i18n/context";
 
@@ -13,11 +13,10 @@ interface SeriesFiltersProps {
 
 export function SeriesFilters({ basePath, currentSeriesStatus, currentHasMissing, seriesStatusOptions }: SeriesFiltersProps) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { t } = useTranslation();
 
   const updateFilter = useCallback((key: string, value: string) => {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
     if (value) {
       params.set(key, value);
     } else {
@@ -26,7 +25,7 @@ export function SeriesFilters({ basePath, currentSeriesStatus, currentHasMissing
     params.delete("page");
     const qs = params.toString();
     router.push(`${basePath}${qs ? `?${qs}` : ""}` as any);
-  }, [router, searchParams, basePath]);
+  }, [router, basePath]);
 
   return (
     <div className="flex flex-wrap gap-3">

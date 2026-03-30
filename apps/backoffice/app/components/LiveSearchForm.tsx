@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useCallback, useEffect, useTransition, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useTranslation } from "../../lib/i18n/context";
 import { Icon } from "./ui";
 
@@ -38,6 +38,7 @@ interface LiveSearchFormProps {
   fields: FieldDef[];
   basePath: string;
   debounceMs?: number;
+  initialValues?: Record<string, string>;
 }
 
 /** Convert a basePath to a cookie name: /series → filters_series */
@@ -54,18 +55,20 @@ function deleteCookie(name: string) {
   document.cookie = `${name}=;path=/;expires=Thu, 01 Jan 1970 00:00:00 GMT`;
 }
 
-export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearchFormProps) {
+export function LiveSearchForm({ fields, basePath, debounceMs = 300, initialValues = {} }: LiveSearchFormProps) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { t } = useTranslation();
   const [isPending, startTransition] = useTransition();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
-  // Incremented to force remount only on external navigation
   const [formKey, setFormKey] = useState(0);
-  const lastNavParamsRef = useRef<string | null>(null);
+  const isOwnNavRef = useRef(false);
+  const isFirstRender = useRef(true);
 
   const cookieName = filterCookieName(basePath);
+
+  // Serialize initialValues for effect dependency
+  const initialValuesKey = JSON.stringify(initialValues);
 
   const buildUrl = useCallback((): string => {
     if (!formRef.current) return basePath;
@@ -97,7 +100,7 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
   }, [cookieName]);
 
   const doNavigate = useCallback((url: string) => {
-    lastNavParamsRef.current = new URL(url, "http://x").search.replace(/^\?/, "");
+    isOwnNavRef.current = true;
     startTransition(() => { router.replace(url as any); });
   }, [router]);
 
@@ -114,25 +117,39 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
     }
   }, [buildUrl, debounceMs, saveFilters, doNavigate]);
 
+  // Cleanup timer on unmount
   useEffect(() => {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);
 
-  // Detect external navigation (back/forward) and remount form to sync values.
-  // Our own navigations store the expected params so we can skip the remount.
+  // Detect back/forward navigation via popstate
   useEffect(() => {
-    const current = searchParams.toString();
-    if (lastNavParamsRef.current !== null && lastNavParamsRef.current !== current) {
-      // Params changed externally → remount to sync defaultValues
-      setFormKey(k => k + 1);
+    const handlePopState = () => {
+      isOwnNavRef.current = false;
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  // When initialValues change (from server re-render after navigation),
+  // remount form only if it was an external navigation (back/forward)
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
     }
-    lastNavParamsRef.current = null;
-  }, [searchParams]);
+    if (isOwnNavRef.current) {
+      isOwnNavRef.current = false;
+      return;
+    }
+    // External navigation (back/forward) — remount to sync form values
+    setFormKey(k => k + 1);
+  }, [initialValuesKey]);
 
   const hasFilters = fields.some((f) => {
-    const val = searchParams.get(f.name);
+    const val = initialValues[f.name];
     return val && val.trim() !== "";
   });
 
@@ -143,6 +160,8 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
     <form
       key={formKey}
       ref={formRef}
+      action={basePath}
+      method="GET"
       onSubmit={(e) => {
         e.preventDefault();
         if (timerRef.current) clearTimeout(timerRef.current);
@@ -162,7 +181,7 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
             name={field.name}
             type="text"
             placeholder={field.placeholder}
-            defaultValue={searchParams.get(field.name) || ""}
+            defaultValue={initialValues[field.name] || ""}
             onChange={() => navigate(false)}
             className="flex h-11 w-full rounded-lg border border-input bg-background pl-10 pr-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           />
@@ -188,7 +207,7 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
                 </label>
                 <select
                   name={field.name}
-                  defaultValue={searchParams.get(field.name) || ""}
+                  defaultValue={initialValues[field.name] || ""}
                   onChange={() => navigate(true)}
                   className="h-8 rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
@@ -206,9 +225,7 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300 }: LiveSearc
                 onClick={() => {
                   formRef.current?.reset();
                   try { deleteCookie(cookieName); } catch {}
-                  // Navigate to base path without any params
                   doNavigate(basePath);
-                  // Force remount so defaultValues reset to empty
                   setFormKey(k => k + 1);
                 }}
                 className="

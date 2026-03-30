@@ -1,9 +1,15 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Button } from "./Button";
 import { IconButton } from "./Button";
 import { useTranslation } from "../../../lib/i18n/context";
+
+/** Read current URL search params from the browser location (safe in event handlers). */
+function getCurrentParams(): URLSearchParams {
+  if (typeof window === "undefined") return new URLSearchParams();
+  return new URLSearchParams(window.location.search);
+}
 
 interface CursorPaginationProps {
   hasNextPage: boolean;
@@ -23,24 +29,23 @@ export function CursorPagination({
   nextCursor,
 }: CursorPaginationProps) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { t } = useTranslation();
 
   const goToNext = () => {
     if (!nextCursor) return;
-    const params = new URLSearchParams(searchParams);
+    const params = getCurrentParams();
     params.set("cursor", nextCursor);
     router.push(`?${params.toString()}`);
   };
 
   const goToFirst = () => {
-    const params = new URLSearchParams(searchParams);
+    const params = getCurrentParams();
     params.delete("cursor");
     router.push(`?${params.toString()}`);
   };
 
   const changePageSize = (size: number) => {
-    const params = new URLSearchParams(searchParams);
+    const params = getCurrentParams();
     params.set("limit", size.toString());
     params.delete("cursor");
     router.push(`?${params.toString()}`);
@@ -116,17 +121,16 @@ export function OffsetPagination({
   pageSizeOptions = [20, 50, 100],
 }: OffsetPaginationProps) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { t } = useTranslation();
 
   const goToPage = (page: number) => {
-    const params = new URLSearchParams(searchParams);
+    const params = getCurrentParams();
     params.set("page", page.toString());
     router.push(`?${params.toString()}`);
   };
 
   const changePageSize = (size: number) => {
-    const params = new URLSearchParams(searchParams);
+    const params = getCurrentParams();
     params.set("limit", size.toString());
     params.set("page", "1");
     router.push(`?${params.toString()}`);

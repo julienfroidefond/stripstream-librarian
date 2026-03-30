@@ -49,6 +49,10 @@ export default async function AuthorsPage({
         <CardContent className="pt-6">
           <LiveSearchForm
             basePath="/authors"
+            initialValues={{
+              q: searchQuery,
+              sort: sort || "",
+            }}
             fields={[
               { name: "q", type: "text", label: t("common.search"), placeholder: t("authors.searchPlaceholder") },
               { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },

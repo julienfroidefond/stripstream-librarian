@@ -1,9 +1,9 @@
 type RawSearchParams = { [key: string]: string | string[] | undefined };
 
-/** Extract a string param, returning undefined if missing or not a string. */
+/** Extract a string param, returning undefined if missing, not a string, or empty. */
 export function paramString(params: RawSearchParams, key: string): string | undefined {
   const v = params[key];
-  return typeof v === "string" ? v : undefined;
+  return typeof v === "string" && v !== "" ? v : undefined;
 }
 
 /** Extract a string param with a default value. */
