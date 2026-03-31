@@ -23,6 +23,7 @@ mod responses;
 mod torrent_import;
 mod reading_status_match;
 mod reading_status_push;
+mod rename;
 mod search;
 mod series;
 mod settings;
@@ -106,6 +107,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/books/:id/convert", axum::routing::post(books::convert_book))
         .route("/libraries/:library_id/series/:series_id", axum::routing::patch(series::update_series).delete(series::delete_series))
         .route("/series/:series_id", axum::routing::patch(series::update_series_by_id).delete(series::delete_series_by_id))
+        .route("/series/:series_id/rename-books", axum::routing::post(rename::rename_books))
         .route("/index/rebuild", axum::routing::post(index_jobs::enqueue_rebuild))
         .route("/index/thumbnails/rebuild", axum::routing::post(thumbnails::start_thumbnails_rebuild))
         .route("/index/thumbnails/regenerate", axum::routing::post(thumbnails::start_thumbnails_regenerate))
@@ -156,6 +158,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/metadata/batch/:id/report", get(metadata_batch::get_batch_report))
         .route("/metadata/batch/:id/results", get(metadata_batch::get_batch_results))
         .route("/metadata/refresh", axum::routing::post(metadata_refresh::start_refresh))
+        .route("/metadata/refresh-all", axum::routing::post(metadata_refresh::start_refresh_all))
         .route("/metadata/refresh-link/:id", axum::routing::post(metadata_refresh::refresh_single_link))
         .route("/metadata/refresh/:id/report", get(metadata_refresh::get_refresh_report))
         .route("/reading-status/match", axum::routing::post(reading_status_match::start_match))

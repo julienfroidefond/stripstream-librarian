@@ -38,7 +38,7 @@ interface JobRowProps {
   formatDuration: (start: string, end: string | null) => string;
 }
 
-const REPLAYABLE_TYPES = new Set(["rebuild", "full_rebuild", "rescan", "scan", "thumbnail_rebuild", "thumbnail_regenerate", "metadata_batch", "metadata_refresh", "reading_status_match", "reading_status_push", "download_detection"]);
+const REPLAYABLE_TYPES = new Set(["rebuild", "full_rebuild", "rescan", "scan", "thumbnail_rebuild", "thumbnail_regenerate", "metadata_batch", "metadata_refresh", "metadata_refresh_all", "reading_status_match", "reading_status_push", "download_detection"]);
 
 export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, formatDate, formatDuration }: JobRowProps) {
   const { t } = useTranslation();
@@ -66,7 +66,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
   const hasThumbnailPhase = isPhase2 || isThumbnailJob;
 
   const isMetadataBatch = job.type === "metadata_batch";
-  const isMetadataRefresh = job.type === "metadata_refresh";
+  const isMetadataRefresh = job.type === "metadata_refresh" || job.type === "metadata_refresh_all";
   const isReadingStatusMatch = job.type === "reading_status_match";
   const isReadingStatusPush = job.type === "reading_status_push";
   const isDownloadDetection = job.type === "download_detection";

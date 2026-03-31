@@ -35,6 +35,14 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                             )
                             .await
                         }
+                        "metadata_refresh_all" => {
+                            metadata_refresh::process_metadata_refresh_all(
+                                &pool_clone,
+                                job_id,
+                                library_id,
+                            )
+                            .await
+                        }
                         "metadata_batch" => {
                             metadata_batch::process_metadata_batch(
                                 &pool_clone,
@@ -74,7 +82,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                         .await;
 
                         match job_type.as_str() {
-                            "metadata_refresh" => {
+                            "metadata_refresh" | "metadata_refresh_all" => {
                                 notifications::notify(
                                     pool_clone,
                                     notifications::NotificationEvent::MetadataRefreshFailed {
@@ -127,7 +135,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
     }
 }
 
-const API_JOB_TYPES: &[&str] = &["metadata_batch", "metadata_refresh", "reading_status_push", "download_detection"];
+const API_JOB_TYPES: &[&str] = &["metadata_batch", "metadata_refresh", "metadata_refresh_all", "reading_status_push", "download_detection"];
 
 async fn claim_next_api_job(pool: &PgPool) -> Result<Option<(Uuid, String, Uuid)>, sqlx::Error> {
     let mut tx = pool.begin().await?;
@@ -166,4 +174,34 @@ async fn claim_next_api_job(pool: &PgPool) -> Result<Option<(Uuid, String, Uuid)
 
     tx.commit().await?;
     Ok(Some((id, job_type, library_id)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn api_job_types_contains_metadata_refresh_all() {
+        assert!(
+            API_JOB_TYPES.contains(&"metadata_refresh_all"),
+            "API_JOB_TYPES must include metadata_refresh_all"
+        );
+    }
+
+    #[test]
+    fn api_job_types_contains_all_expected_types() {
+        let expected = &[
+            "metadata_batch",
+            "metadata_refresh",
+            "metadata_refresh_all",
+            "reading_status_push",
+            "download_detection",
+        ];
+        for t in expected {
+            assert!(
+                API_JOB_TYPES.contains(t),
+                "API_JOB_TYPES is missing: {t}"
+            );
+        }
+    }
 }

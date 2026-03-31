@@ -74,7 +74,7 @@ pub async fn cleanup_stale_jobs(pool: &PgPool) -> Result<()> {
 }
 
 /// Job types processed by the API, not the indexer.
-const API_ONLY_JOB_TYPES: &[&str] = &["metadata_batch", "metadata_refresh"];
+const API_ONLY_JOB_TYPES: &[&str] = &["metadata_batch", "metadata_refresh", "metadata_refresh_all"];
 
 /// Job types that modify book/thumbnail data and must not run concurrently.
 const EXCLUSIVE_JOB_TYPES: &[&str] = &[
@@ -430,4 +430,36 @@ pub async fn process_job(
     .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn api_only_job_types_contains_metadata_refresh_all() {
+        assert!(
+            API_ONLY_JOB_TYPES.contains(&"metadata_refresh_all"),
+            "API_ONLY_JOB_TYPES must include metadata_refresh_all"
+        );
+    }
+
+    #[test]
+    fn api_only_job_types_contains_all_expected_types() {
+        let expected = &["metadata_batch", "metadata_refresh", "metadata_refresh_all"];
+        for t in expected {
+            assert!(
+                API_ONLY_JOB_TYPES.contains(t),
+                "API_ONLY_JOB_TYPES is missing: {t}"
+            );
+        }
+    }
+
+    #[test]
+    fn metadata_refresh_all_is_not_exclusive() {
+        assert!(
+            !EXCLUSIVE_JOB_TYPES.contains(&"metadata_refresh_all"),
+            "metadata_refresh_all should not be an exclusive job type"
+        );
+    }
 }

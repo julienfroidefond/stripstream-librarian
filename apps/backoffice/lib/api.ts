@@ -1110,6 +1110,13 @@ export async function startMetadataRefresh(libraryId?: string) {
   });
 }
 
+export async function startMetadataRefreshAll(libraryId?: string) {
+  return apiFetch<{ id: string | null; status: string }>("/metadata/refresh-all", {
+    method: "POST",
+    body: JSON.stringify(libraryId ? { library_id: libraryId } : {}),
+  });
+}
+
 export async function startReadingStatusMatch(libraryId?: string) {
   return apiFetch<{ id: string | null; status: string }>("/reading-status/match", {
     method: "POST",

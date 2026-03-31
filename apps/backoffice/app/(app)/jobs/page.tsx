@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startReadingStatusMatch, startReadingStatusPush, startDownloadDetection, apiFetch, IndexJobDto, LibraryDto } from "@/lib/api";
+import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startMetadataRefreshAll, startReadingStatusMatch, startReadingStatusPush, startDownloadDetection, apiFetch, IndexJobDto, LibraryDto } from "@/lib/api";
 import { JobsList } from "@/app/components/JobsList";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, FormField, FormSelect } from "@/app/components/ui";
 import { getServerTranslations } from "@/lib/i18n/server";
@@ -72,6 +72,14 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     "use server";
     const libraryId = formData.get("library_id") as string;
     const result = await startMetadataRefresh(libraryId || undefined);
+    revalidatePath("/jobs");
+    redirect(result.id ? `/jobs?highlight=${result.id}` : "/jobs");
+  }
+
+  async function triggerMetadataRefreshAll(formData: FormData) {
+    "use server";
+    const libraryId = formData.get("library_id") as string;
+    const result = await startMetadataRefreshAll(libraryId || undefined);
     revalidatePath("/jobs");
     redirect(result.id ? `/jobs?highlight=${result.id}` : "/jobs");
   }
@@ -232,6 +240,16 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                       <span className="font-medium text-sm text-foreground">{t("jobs.refreshMetadata")}</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1 ml-6">{t("jobs.refreshMetadataShort")}</p>
+                  </button>
+                  <button type="submit" formAction={triggerMetadataRefreshAll}
+                    className="w-full text-left rounded-lg border border-warning/30 bg-warning/5 p-3 hover:bg-warning/10 transition-colors group cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-background">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4 text-warning shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      <span className="font-medium text-sm text-warning">{t("jobs.refreshMetadataAll")}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 ml-6">{t("jobs.refreshMetadataAllShort")}</p>
                   </button>
                 </div>
               </div>

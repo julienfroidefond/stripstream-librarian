@@ -247,6 +247,181 @@ pub async fn start_refresh(
 }
 
 // ---------------------------------------------------------------------------
+// POST /metadata/refresh-all — Trigger a metadata refresh for ALL series (including ended/cancelled)
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    post,
+    path = "/metadata/refresh-all",
+    tag = "metadata",
+    request_body = MetadataRefreshRequest,
+    responses(
+        (status = 200, description = "Job created"),
+        (status = 400, description = "Bad request"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn start_refresh_all(
+    State(state): State<AppState>,
+    Json(body): Json<MetadataRefreshRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    // All libraries case
+    if body.library_id.is_none() {
+        let library_ids: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM libraries WHERE metadata_provider IS DISTINCT FROM 'none' ORDER BY name"
+        )
+        .fetch_all(&state.pool)
+        .await?;
+        let mut last_job_id: Option<Uuid> = None;
+        for library_id in library_ids {
+            let link_count: i64 = sqlx::query_scalar(
+                r#"
+                SELECT COUNT(*) FROM external_metadata_links eml
+                WHERE eml.library_id = $1
+                  AND eml.status = 'approved'
+                "#,
+            )
+            .bind(library_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(0);
+            if link_count == 0 { continue; }
+            let existing: Option<Uuid> = sqlx::query_scalar(
+                "SELECT id FROM index_jobs WHERE library_id = $1 AND type = 'metadata_refresh_all' AND status IN ('pending', 'running') LIMIT 1",
+            )
+            .bind(library_id)
+            .fetch_optional(&state.pool)
+            .await?;
+            if existing.is_some() { continue; }
+            let job_id = Uuid::new_v4();
+            sqlx::query(
+                "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'metadata_refresh_all', 'running', NOW())",
+            )
+            .bind(job_id)
+            .bind(library_id)
+            .execute(&state.pool)
+            .await?;
+            let pool = state.pool.clone();
+            let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+                .bind(library_id)
+                .fetch_optional(&state.pool)
+                .await
+                .ok()
+                .flatten();
+            tokio::spawn(async move {
+                if let Err(e) = process_metadata_refresh_all(&pool, job_id, library_id).await {
+                    warn!("[METADATA_REFRESH_ALL] job {job_id} failed: {e}");
+                    let _ = sqlx::query(
+                        "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
+                    )
+                    .bind(job_id)
+                    .bind(e.to_string())
+                    .execute(&pool)
+                    .await;
+                    notifications::notify(
+                        pool.clone(),
+                        notifications::NotificationEvent::MetadataRefreshFailed {
+                            library_name,
+                            error: e.to_string(),
+                        },
+                    );
+                }
+            });
+            last_job_id = Some(job_id);
+        }
+        return Ok(Json(serde_json::json!({
+            "id": last_job_id.map(|id| id.to_string()),
+            "status": "started",
+        })));
+    }
+
+    let library_id: Uuid = body
+        .library_id
+        .unwrap()
+        .parse()
+        .map_err(|_| ApiError::bad_request("invalid library_id"))?;
+
+    // Verify library exists
+    sqlx::query("SELECT 1 FROM libraries WHERE id = $1")
+        .bind(library_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| ApiError::not_found("library not found"))?;
+
+    // Check no existing running metadata_refresh_all job for this library
+    let existing: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM index_jobs WHERE library_id = $1 AND type = 'metadata_refresh_all' AND status IN ('pending', 'running') LIMIT 1",
+    )
+    .bind(library_id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    if let Some(existing_id) = existing {
+        return Ok(Json(serde_json::json!({
+            "id": existing_id.to_string(),
+            "status": "already_running",
+        })));
+    }
+
+    // Check there are approved links to refresh (ALL series, no status filter)
+    let link_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*) FROM external_metadata_links eml
+        WHERE eml.library_id = $1
+          AND eml.status = 'approved'
+        "#,
+    )
+    .bind(library_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    if link_count == 0 {
+        return Err(ApiError::bad_request("No approved metadata links to refresh for this library"));
+    }
+
+    let job_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'metadata_refresh_all', 'running', NOW())",
+    )
+    .bind(job_id)
+    .bind(library_id)
+    .execute(&state.pool)
+    .await?;
+
+    let pool = state.pool.clone();
+    let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+        .bind(library_id)
+        .fetch_optional(&state.pool)
+        .await
+        .ok()
+        .flatten();
+    tokio::spawn(async move {
+        if let Err(e) = process_metadata_refresh_all(&pool, job_id, library_id).await {
+            warn!("[METADATA_REFRESH_ALL] job {job_id} failed: {e}");
+            let _ = sqlx::query(
+                "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
+            )
+            .bind(job_id)
+            .bind(e.to_string())
+            .execute(&pool)
+            .await;
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::MetadataRefreshFailed {
+                    library_name,
+                    error: e.to_string(),
+                },
+            );
+        }
+    });
+
+    Ok(Json(serde_json::json!({
+        "id": job_id.to_string(),
+        "status": "pending",
+    })))
+}
+
+// ---------------------------------------------------------------------------
 // GET /metadata/refresh/:id/report — Refresh report from stats_json
 // ---------------------------------------------------------------------------
 
@@ -266,7 +441,7 @@ pub async fn get_refresh_report(
     AxumPath(job_id): AxumPath<Uuid>,
 ) -> Result<Json<MetadataRefreshReportDto>, ApiError> {
     let row = sqlx::query(
-        "SELECT status, stats_json, total_files FROM index_jobs WHERE id = $1 AND type = 'metadata_refresh'",
+        "SELECT status, stats_json, total_files FROM index_jobs WHERE id = $1 AND type IN ('metadata_refresh', 'metadata_refresh_all')",
     )
     .bind(job_id)
     .fetch_optional(&state.pool)
@@ -349,6 +524,23 @@ pub(crate) async fn process_metadata_refresh(
     job_id: Uuid,
     library_id: Uuid,
 ) -> Result<(), String> {
+    process_metadata_refresh_inner(pool, job_id, library_id, false).await
+}
+
+pub(crate) async fn process_metadata_refresh_all(
+    pool: &PgPool,
+    job_id: Uuid,
+    library_id: Uuid,
+) -> Result<(), String> {
+    process_metadata_refresh_inner(pool, job_id, library_id, true).await
+}
+
+async fn process_metadata_refresh_inner(
+    pool: &PgPool,
+    job_id: Uuid,
+    library_id: Uuid,
+    include_all: bool,
+) -> Result<(), String> {
     // Set job to running
     sqlx::query("UPDATE index_jobs SET status = 'running', started_at = NOW() WHERE id = $1")
         .bind(job_id)
@@ -356,8 +548,20 @@ pub(crate) async fn process_metadata_refresh(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Get approved links for this library, only for ongoing series (not ended/cancelled)
-    let links: Vec<(Uuid, String, String, String)> = sqlx::query_as(
+    // Get approved links for this library
+    let query = if include_all {
+        // Refresh ALL series regardless of status
+        r#"
+        SELECT eml.id, sm.name AS series_name, eml.provider, eml.external_id
+        FROM external_metadata_links eml
+        JOIN series sm
+            ON sm.id = eml.series_id
+        WHERE eml.library_id = $1
+          AND eml.status = 'approved'
+        ORDER BY sm.name
+        "#
+    } else {
+        // Only ongoing series (not ended/cancelled)
         r#"
         SELECT eml.id, sm.name AS series_name, eml.provider, eml.external_id
         FROM external_metadata_links eml
@@ -367,8 +571,9 @@ pub(crate) async fn process_metadata_refresh(
           AND eml.status = 'approved'
           AND COALESCE(sm.status, 'ongoing') NOT IN ('ended', 'cancelled')
         ORDER BY sm.name
-        "#,
-    )
+        "#
+    };
+    let links: Vec<(Uuid, String, String, String)> = sqlx::query_as(query)
     .bind(library_id)
     .fetch_all(pool)
     .await
@@ -990,4 +1195,112 @@ pub async fn rematch_unlinked_books(pool: &PgPool, library_id: Uuid) -> Result<i
         info!("[METADATA] Re-matched {count} unlinked external books for library {library_id}");
     }
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn report_dto_serializes() {
+        let dto = MetadataRefreshReportDto {
+            job_id: Uuid::nil(),
+            status: "success".to_string(),
+            total_links: 10,
+            refreshed: 3,
+            unchanged: 6,
+            errors: 1,
+            changes: serde_json::json!([]),
+        };
+        let json = serde_json::to_value(&dto).unwrap();
+        assert_eq!(json["status"], "success");
+        assert_eq!(json["total_links"], 10);
+        assert_eq!(json["refreshed"], 3);
+        assert_eq!(json["unchanged"], 6);
+        assert_eq!(json["errors"], 1);
+        assert_eq!(json["changes"], serde_json::json!([]));
+        assert_eq!(json["job_id"], Uuid::nil().to_string());
+    }
+
+    #[test]
+    fn series_refresh_result_serializes_updated() {
+        let result = SeriesRefreshResult {
+            series_name: "Blacksad".to_string(),
+            provider: "google_books".to_string(),
+            status: "updated".to_string(),
+            series_changes: vec![FieldDiff {
+                field: "title".to_string(),
+                old: Some(serde_json::json!("Blacksad old")),
+                new: Some(serde_json::json!("Blacksad")),
+            }],
+            book_changes: vec![],
+            error: None,
+        };
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["series_name"], "Blacksad");
+        assert_eq!(json["status"], "updated");
+        assert_eq!(json["series_changes"][0]["field"], "title");
+        // error field should be absent (skip_serializing_if = None)
+        assert!(json.get("error").is_none());
+    }
+
+    #[test]
+    fn series_refresh_result_serializes_error() {
+        let result = SeriesRefreshResult {
+            series_name: "Test".to_string(),
+            provider: "anilist".to_string(),
+            status: "error".to_string(),
+            series_changes: vec![],
+            book_changes: vec![],
+            error: Some("provider timeout".to_string()),
+        };
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["error"], "provider timeout");
+    }
+
+    #[test]
+    fn field_diff_skips_none_values() {
+        let diff = FieldDiff {
+            field: "summary".to_string(),
+            old: None,
+            new: Some(serde_json::json!("A new summary")),
+        };
+        let json = serde_json::to_value(&diff).unwrap();
+        assert!(json.get("old").is_none());
+        assert_eq!(json["new"], "A new summary");
+    }
+
+    #[test]
+    fn book_diff_serializes() {
+        let diff = BookDiff {
+            book_id: "abc-123".to_string(),
+            title: "Volume 1".to_string(),
+            volume: Some(1),
+            changes: vec![FieldDiff {
+                field: "page_count".to_string(),
+                old: Some(serde_json::json!(100)),
+                new: Some(serde_json::json!(120)),
+            }],
+        };
+        let json = serde_json::to_value(&diff).unwrap();
+        assert_eq!(json["book_id"], "abc-123");
+        assert_eq!(json["volume"], 1);
+        assert_eq!(json["changes"][0]["old"], 100);
+        assert_eq!(json["changes"][0]["new"], 120);
+    }
+
+    #[test]
+    fn request_dto_deserializes_without_library_id() {
+        let json = serde_json::json!({});
+        let req: MetadataRefreshRequest = serde_json::from_value(json).unwrap();
+        assert!(req.library_id.is_none());
+    }
+
+    #[test]
+    fn request_dto_deserializes_with_library_id() {
+        let json = serde_json::json!({"library_id": "abc-123"});
+        let req: MetadataRefreshRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(req.library_id.unwrap(), "abc-123");
+    }
 }
