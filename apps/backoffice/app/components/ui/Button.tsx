@@ -18,18 +18,15 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantStyles: Record<ButtonVariant, string> = {
-  // shadcn/ui compatible variants
-  default: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm hover:shadow-md",
-  destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-sm",
-  outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
-  secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/85 shadow-sm",
-  ghost: "hover:bg-accent hover:text-accent-foreground",
-  link: "text-primary underline-offset-4 hover:underline",
-  
-  // Legacy variants (mapped to new ones for compatibility)
-  primary: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm hover:shadow-md",
-  danger: "bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-sm",
-  warning: "bg-warning text-white hover:bg-warning/90 shadow-sm",
+  default: "border-0 bg-primary text-primary-foreground hover:bg-primary/90",
+  destructive: "border-0 bg-destructive text-destructive-foreground hover:bg-destructive/90",
+  outline: "ring-1 ring-input border-0 bg-background hover:bg-accent hover:text-accent-foreground",
+  secondary: "border-0 bg-secondary text-secondary-foreground hover:bg-secondary/85",
+  ghost: "border-0 hover:bg-accent hover:text-accent-foreground",
+  link: "border-0 text-primary underline-offset-4 hover:underline",
+  primary: "border-0 bg-primary text-primary-foreground hover:bg-primary/90",
+  danger: "border-0 bg-destructive text-destructive-foreground hover:bg-destructive/90",
+  warning: "border-0 bg-warning text-white hover:bg-warning/90",
 };
 
 const sizeStyles: Record<string, string> = {

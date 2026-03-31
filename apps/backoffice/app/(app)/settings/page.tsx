@@ -25,7 +25,7 @@ async function fetchIndexerVersion(): Promise<string> {
 
 export default async function SettingsPageWrapper({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const { tab } = await searchParams;
-  const [settings, cacheStats, thumbnailStats, users, prowlarr, qbittorrent, torrentImport, telegram, anilist, komga, metadataProviders, statusMappings, seriesStatuses, providerStatuses, apiVersion, indexerVersion] = await Promise.all([
+  const [settings, cacheStats, thumbnailStats, users, prowlarr, qbittorrent, torrentImport, telegram, anilist, komga, metadataProviders, statusMappings, seriesStatuses, providerStatuses, apiVersion, indexerVersion, renameFormat] = await Promise.all([
     getSettings().catch(() => ({
       image_processing: { format: "webp", quality: 85, filter: "lanczos3", max_width: 2160 },
       cache: { enabled: true, directory: "/tmp/stripstream-image-cache", max_size_mb: 10000 },
@@ -47,6 +47,7 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
     apiFetch<unknown[]>("/series/provider-statuses").catch(() => []),
     apiFetch<{ api?: string }>("/version").catch(() => ({ api: "?" })),
     fetchIndexerVersion(),
+    apiFetch<string>("/settings/rename_format").catch(() => null),
   ]);
 
   const versions = {
@@ -72,6 +73,7 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
       initialStatusMappings={statusMappings as Record<string, unknown>[]}
       initialSeriesStatuses={seriesStatuses as string[]}
       initialProviderStatuses={providerStatuses as string[]}
+      initialRenameFormat={typeof renameFormat === "string" ? renameFormat : null}
       versions={versions}
     />
   );

@@ -19,7 +19,6 @@ parsers = { path = "../../crates/parsers" }
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
 sqlx.workspace = true
 stripstream-core = { path = "../../crates/core" }
 tokio.workspace = true

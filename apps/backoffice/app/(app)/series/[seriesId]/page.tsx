@@ -24,6 +24,9 @@ const ProwlarrSearchModal = nextDynamic(
 const DeleteSeriesButton = nextDynamic(
   () => import("@/app/components/DeleteSeriesButton").then(m => m.DeleteSeriesButton)
 );
+const RenameSeriesBooksModal = nextDynamic(
+  () => import("@/app/components/RenameSeriesBooksModal").then(m => m.RenameSeriesBooksModal)
+);
 import { notFound } from "next/navigation";
 import { getServerTranslations } from "@/lib/i18n/server";
 
@@ -49,7 +52,7 @@ export default async function SeriesDetailPage({
   }
   const libraryId = seriesDto.library_id;
 
-  const [library, seriesMeta, metadataLinks, readingStatusLink, prowlarrConfigured, qbConfigured, metadataProviders] = await Promise.all([
+  const [library, seriesMeta, metadataLinks, readingStatusLink, prowlarrConfigured, qbConfigured, metadataProviders, renameFormat] = await Promise.all([
     fetchLibraries().then((libs) => libs.find((l) => l.id === libraryId)),
     fetchSeriesMetadata(seriesId).catch(() => null as SeriesMetadataDto | null),
     getMetadataLink(seriesId).catch(() => [] as ExternalMetadataLinkDto[]),
@@ -61,6 +64,7 @@ export default async function SeriesDetailPage({
       .then(d => !!(d?.url?.trim() && d?.username?.trim()))
       .catch(() => false),
     apiFetch<{ comicvine?: { api_key?: string } }>("/settings/metadata_providers").catch(() => null),
+    apiFetch<string>("/settings/rename_format").catch(() => null),
   ]);
 
   // Get series name from metadata for display
@@ -277,6 +281,11 @@ export default async function SeriesDetailPage({
               seriesName={seriesName}
               readingStatusProvider={library.reading_status_provider ?? null}
               existingLink={readingStatusLink}
+            />
+            <RenameSeriesBooksModal
+              seriesId={seriesId}
+              seriesName={seriesName}
+              initialFormat={typeof renameFormat === "string" ? renameFormat : null}
             />
             <DeleteSeriesButton
               seriesId={seriesId}

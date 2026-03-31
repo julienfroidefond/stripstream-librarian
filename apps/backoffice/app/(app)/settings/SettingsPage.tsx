@@ -13,6 +13,7 @@ import { QBittorrentCard } from "./components/QBittorrentCard";
 import { TelegramCard } from "./components/TelegramCard";
 import { KomgaSyncCard } from "./components/KomgaSyncCard";
 import { AnilistTab } from "./components/AnilistTab";
+import { RenameFormatCard } from "./components/RenameFormatCard";
 
 interface SettingsPageProps {
   initialSettings: Settings;
@@ -30,10 +31,11 @@ interface SettingsPageProps {
   initialStatusMappings: Record<string, unknown>[];
   initialSeriesStatuses: string[];
   initialProviderStatuses: string[];
+  initialRenameFormat: string | null;
   versions?: { api: string; indexer: string; backoffice: string };
 }
 
-export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, versions }: SettingsPageProps) {
+export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, versions }: SettingsPageProps) {
   const { t, locale, setLocale } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -527,6 +529,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
           </div>
         </CardContent>
       </Card>
+
+      {/* Rename Format */}
+      <RenameFormatCard handleUpdateSetting={handleUpdateSetting} initialRenameFormat={initialRenameFormat} />
 
       {/* About */}
       <Card>
