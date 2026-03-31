@@ -177,6 +177,8 @@ async fn search_series_impl(
 
             let authors = extract_authors(m);
 
+            let genres = extract_genres(m);
+
             let confidence = compute_confidence(&title, &query_lower);
 
             // Use volumes if known, otherwise fall back to chapters count
@@ -204,6 +206,7 @@ async fn search_series_impl(
                     "chapters": chapters,
                     "volumes": volumes,
                     "volume_source": volume_source,
+                    "genres": genres,
                 }),
             })
         })
@@ -324,6 +327,144 @@ fn extract_authors(media: &serde_json::Value) -> Vec<String> {
         }
     }
     authors
+}
+
+// ─── Trending ───────────────────────────────────────────────────────────────
+
+const TRENDING_QUERY: &str = r#"
+query ($perPage: Int) {
+  Page(perPage: $perPage) {
+    media(type: MANGA, sort: TRENDING_DESC) {
+      id
+      title { romaji english native }
+      description(asHtml: false)
+      coverImage { large medium }
+      startDate { year }
+      status
+      volumes
+      chapters
+      staff { edges { node { name { full } } role } }
+      siteUrl
+      genres
+    }
+  }
+}
+"#;
+
+/// Fetch trending manga from AniList. Does not go through the MetadataProvider trait.
+pub async fn fetch_trending(limit: i32) -> Result<Vec<SeriesCandidate>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("failed to build HTTP client: {e}"))?;
+
+    let data = graphql_request(
+        &client,
+        TRENDING_QUERY,
+        serde_json::json!({ "perPage": limit.min(50) }),
+    )
+    .await?;
+
+    let media = match data
+        .get("data")
+        .and_then(|d| d.get("Page"))
+        .and_then(|p| p.get("media"))
+        .and_then(|m| m.as_array())
+    {
+        Some(media) => media,
+        None => return Ok(vec![]),
+    };
+
+    let candidates: Vec<SeriesCandidate> = media
+        .iter()
+        .filter_map(|m| parse_media_to_candidate(m, 0.5))
+        .collect();
+
+    Ok(candidates)
+}
+
+/// Parse a single AniList media JSON object into a SeriesCandidate.
+fn parse_media_to_candidate(m: &serde_json::Value, default_confidence: f32) -> Option<SeriesCandidate> {
+    let id = m.get("id").and_then(|id| id.as_i64())?;
+    let title_obj = m.get("title")?;
+    let title = title_obj
+        .get("english")
+        .and_then(|t| t.as_str())
+        .or_else(|| title_obj.get("romaji").and_then(|t| t.as_str()))?
+        .to_string();
+
+    let description = m
+        .get("description")
+        .and_then(|d| d.as_str())
+        .map(|d| d.replace("\\n", "\n").trim().to_string())
+        .filter(|d| !d.is_empty());
+
+    let cover_url = m
+        .get("coverImage")
+        .and_then(|ci| ci.get("large").or_else(|| ci.get("medium")))
+        .and_then(|u| u.as_str())
+        .map(String::from);
+
+    let start_year = m
+        .get("startDate")
+        .and_then(|sd| sd.get("year"))
+        .and_then(|y| y.as_i64())
+        .map(|y| y as i32);
+
+    let volumes = m.get("volumes").and_then(|v| v.as_i64()).map(|v| v as i32);
+    let chapters = m.get("chapters").and_then(|v| v.as_i64()).map(|v| v as i32);
+
+    let status = m
+        .get("status")
+        .and_then(|s| s.as_str())
+        .unwrap_or("UNKNOWN")
+        .to_string();
+
+    let site_url = m.get("siteUrl").and_then(|u| u.as_str()).map(String::from);
+    let authors = extract_authors(m);
+    let genres = extract_genres(m);
+
+    let (total_volumes, volume_source) = match volumes {
+        Some(v) => (Some(v), "volumes"),
+        None => match chapters {
+            Some(c) => (Some(c), "chapters"),
+            None => (None, "unknown"),
+        },
+    };
+
+    Some(SeriesCandidate {
+        external_id: id.to_string(),
+        title,
+        authors,
+        description,
+        publishers: vec![],
+        start_year,
+        total_volumes,
+        cover_url,
+        external_url: site_url,
+        confidence: default_confidence,
+        metadata_json: serde_json::json!({
+            "status": status,
+            "chapters": chapters,
+            "volumes": volumes,
+            "volume_source": volume_source,
+            "genres": genres,
+        }),
+    })
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+fn extract_genres(media: &serde_json::Value) -> Vec<String> {
+    media
+        .get("genres")
+        .and_then(|g| g.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn compute_confidence(title: &str, query: &str) -> f32 {

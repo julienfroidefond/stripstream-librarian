@@ -973,6 +973,24 @@ const fr = {
   "rename.unchanged": "Inchangé",
   "rename.examplePreview": "Aperçu d'exemple",
 
+  // Discovery
+  "nav.discovery": "Découvrir",
+  "discovery.title": "Découverte de séries",
+  "discovery.trending": "Tendances",
+  "discovery.similar": "Similaire à votre bibliothèque",
+  "discovery.recommendations": "Recommandations",
+  "discovery.addToLibrary": "Ajouter à la bibliothèque",
+  "discovery.adding": "Ajout...",
+  "discovery.added": "Ajouté !",
+  "discovery.alreadyOwned": "Déjà dans la bibliothèque",
+  "discovery.noResults": "Aucune suggestion trouvée",
+  "discovery.selectLibrary": "Choisir une bibliothèque",
+  "discovery.volumes": "{{count}} tome(s)",
+  "discovery.suggestionsFor": "Suggestions pour {{name}}",
+  "discovery.seeAll": "Voir tout",
+  "library.tags": "Tags",
+  "library.tagsPlaceholder": "Ajouter un tag...",
+
   // Settings - Torrent Import
   "settings.torrentImport": "Import automatique",
   "settings.torrentImportDesc": "Lorsqu'activé, les torrents ajoutés via le backoffice sont suivis et les fichiers sont automatiquement importés dans la bibliothèque à la fin du téléchargement.",

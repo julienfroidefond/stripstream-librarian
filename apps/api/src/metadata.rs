@@ -731,6 +731,15 @@ pub(crate) async fn sync_series_metadata(
         .get("start_year")
         .and_then(|y| y.as_i64())
         .map(|y| y as i32);
+    let genres: Vec<String> = metadata_json
+        .get("genres")
+        .and_then(|a| a.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
     let status = if let Some(raw) = metadata_json.get("status").and_then(|s| s.as_str()) {
         Some(normalize_series_status(&state.pool, raw).await)
     } else {
@@ -750,8 +759,8 @@ pub(crate) async fn sync_series_metadata(
     // Respect locked_fields: only update fields that are NOT locked
     sqlx::query(
         r#"
-        INSERT INTO series (id, library_id, name, description, publishers, start_year, total_volumes, status, authors, created_at, updated_at)
-        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+        INSERT INTO series (id, library_id, name, description, publishers, start_year, total_volumes, status, authors, genres, created_at, updated_at)
+        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
         ON CONFLICT (library_id, name)
         DO UPDATE SET
             description = CASE
@@ -780,6 +789,10 @@ pub(crate) async fn sync_series_metadata(
                 WHEN array_length(EXCLUDED.authors, 1) > 0 THEN EXCLUDED.authors
                 ELSE series.authors
             END,
+            genres = CASE
+                WHEN array_length(EXCLUDED.genres, 1) > 0 THEN EXCLUDED.genres
+                ELSE series.genres
+            END,
             updated_at = NOW()
         "#,
     )
@@ -791,6 +804,7 @@ pub(crate) async fn sync_series_metadata(
     .bind(total_volumes)
     .bind(&status)
     .bind(&authors)
+    .bind(&genres)
     .execute(&state.pool)
     .await?;
 

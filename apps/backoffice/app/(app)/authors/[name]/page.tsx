@@ -84,7 +84,7 @@ export default async function AuthorDetailPage({
                 <div className="bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden hover:shadow-md hover:-translate-y-1 transition-all duration-200">
                   <div className="aspect-[2/3] relative bg-muted/50">
                     <Image
-                      src={getBookCoverUrl(s.first_book_id)}
+                      src={s.first_book_id ? getBookCoverUrl(s.first_book_id) : (s.cover_url || "")}
                       alt={s.name}
                       fill
                       className="object-cover"

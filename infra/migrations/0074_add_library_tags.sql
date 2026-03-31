@@ -1,0 +1,1 @@
+ALTER TABLE libraries ADD COLUMN tags TEXT[] NOT NULL DEFAULT '{}';

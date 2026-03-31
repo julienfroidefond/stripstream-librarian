@@ -19,6 +19,7 @@ export type LibraryDto = {
   next_reading_status_push_at: string | null;
   download_detection_mode: string;
   next_download_detection_at: string | null;
+  tags: string[];
 };
 
 export type IndexJobDto = {
@@ -143,13 +144,14 @@ export type SeriesDto = {
   name: string;
   book_count: number;
   books_read_count: number;
-  first_book_id: string;
+  first_book_id: string | null;
   library_id: string;
   series_status: string | null;
   missing_count: number | null;
   metadata_provider: string | null;
   anilist_id: number | null;
   anilist_url: string | null;
+  cover_url: string | null;
 };
 
 export type AnilistStatusDto = {

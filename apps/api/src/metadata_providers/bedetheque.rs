@@ -669,3 +669,147 @@ fn compute_confidence(title: &str, query: &str) -> f32 {
         (common as f32 / max_len as f32).clamp(0.1, 0.6)
     }
 }
+
+// ─── Discovery: Indispensables ──────────────────────────────────────────────
+
+/// Fetch the "Indispensables" (top voted series) from Bédéthèque.
+/// Optionally filter by genre slug (e.g., "Manga", "Policier", "Science-fiction").
+pub async fn fetch_indispensables(
+    genre: Option<&str>,
+    limit: usize,
+) -> Result<Vec<SeriesCandidate>, String> {
+    let client = build_client()?;
+
+    let url = match genre {
+        Some(g) => format!(
+            "https://www.bedetheque.com/indispensables-style-{}.html",
+            urlencoded(g)
+        ),
+        None => "https://www.bedetheque.com/indispensables.html".to_string(),
+    };
+
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch indispensables: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Indispensables page returned {}", resp.status()));
+    }
+
+    let html = resp
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read indispensables page: {e}"))?;
+
+    // Check for rate limiting
+    if html.contains("<title></title>") {
+        return Err("Bedetheque: IP may be rate-limited, please retry later".to_string());
+    }
+
+    let document = Html::parse_document(&html);
+
+    // Parse entries: each series has span.numero, span.serie > a, span.votants, span.style
+    let serie_sel = Selector::parse("span.serie a").unwrap();
+    let numero_sel = Selector::parse("span.numero").unwrap();
+    let style_sel = Selector::parse("span.style").unwrap();
+
+    // Also get cover images from the gallery
+    let gallery_sel = Selector::parse("ul.gallery-couv li a").unwrap();
+    let img_sel = Selector::parse("img").unwrap();
+
+    // Collect cover URLs indexed by series URL
+    let mut cover_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for a_el in document.select(&gallery_sel) {
+        if let Some(href) = a_el.value().attr("href") {
+            if let Some(img) = a_el.select(&img_sel).next() {
+                if let Some(src) = img.value().attr("src") {
+                    cover_map.insert(href.to_string(), src.to_string());
+                }
+            }
+        }
+    }
+
+    // Parse the ranked list
+    // The ranking entries are inside the main content, structured as siblings
+    // We need to find all span.serie > a elements and their surrounding context
+    let mut candidates: Vec<SeriesCandidate> = Vec::new();
+    let mut seen_ids = std::collections::HashSet::new();
+
+    // Walk through all serie links in the page
+    for serie_a in document.select(&serie_sel) {
+        let title = serie_a.text().collect::<String>().trim().to_string();
+        if title.is_empty() {
+            continue;
+        }
+
+        let href = match serie_a.value().attr("href") {
+            Some(h) => h.to_string(),
+            None => continue,
+        };
+
+        // Extract series ID from URL
+        let series_id = SERIES_URL_RE
+            .captures(&href)
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str().to_string());
+
+        let Some(sid) = &series_id else { continue };
+        if !seen_ids.insert(sid.clone()) {
+            continue; // deduplicate
+        }
+
+        // Get cover from gallery, fallback to series thumbnail URL
+        let cover_url = cover_map.get(&href).cloned().or_else(|| {
+            Some(format!(
+                "https://www.bedetheque.com/cache/thb_series/PlancheS_{}.jpg",
+                sid
+            ))
+        });
+
+        // Try to get genre from the sibling span.style
+        // Navigate to parent and find span.style
+        let genre_text = serie_a
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|grandparent| {
+                scraper::ElementRef::wrap(grandparent)
+                    .and_then(|el| el.select(&style_sel).next())
+                    .map(|s| s.text().collect::<String>().trim().to_string())
+            })
+            .filter(|g| !g.is_empty());
+
+        let genres = genre_text.map(|g| vec![g]).unwrap_or_default();
+
+        // Confidence based on rank position (first = 1.0, decreasing)
+        let rank = candidates.len();
+        let confidence = (1.0 - (rank as f32 / 100.0)).clamp(0.1, 1.0);
+
+        candidates.push(SeriesCandidate {
+            external_id: sid.clone(),
+            title,
+            authors: vec![],
+            description: None,
+            publishers: vec![],
+            start_year: None,
+            total_volumes: None,
+            cover_url,
+            external_url: Some(href),
+            confidence,
+            metadata_json: serde_json::json!({
+                "genres": genres,
+                "source": "indispensables",
+            }),
+        });
+
+        if candidates.len() >= limit {
+            break;
+        }
+    }
+
+    Ok(candidates)
+}
+
+static SERIES_URL_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"/serie-(\d+)-").unwrap());

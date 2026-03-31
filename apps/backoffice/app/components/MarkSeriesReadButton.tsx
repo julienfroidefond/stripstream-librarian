@@ -17,7 +17,7 @@ export function MarkSeriesReadButton({ seriesId, seriesName, bookCount, booksRea
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const allRead = booksReadCount >= bookCount;
+  const allRead = bookCount > 0 && booksReadCount >= bookCount;
   const targetStatus = allRead ? "unread" : "read";
   const label = allRead
     ? t(compact ? "markRead.unread" as any : "markRead.markUnread")

@@ -17,6 +17,7 @@ interface LibraryActionsProps {
   readingStatusProvider: string | null;
   readingStatusPushMode: string;
   downloadDetectionMode: string;
+  tags: string[];
   onUpdate?: () => void;
 }
 
@@ -31,11 +32,25 @@ export function LibraryActions({
   readingStatusProvider,
   readingStatusPushMode,
   downloadDetectionMode,
+  tags: initialTags,
 }: LibraryActionsProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [tags, setTags] = useState<string[]>(initialTags);
+
+  const PREDEFINED_TAGS = [
+    "manga",
+    "manhwa",
+    "manhua",
+    "bd-jeunesse",
+    "bd-adulte",
+    "bd-franco-belge",
+    "comics",
+    "webtoon",
+    "light-novel",
+  ];
 
   const handleSubmit = (formData: FormData) => {
     setSaveError(null);
@@ -75,6 +90,11 @@ export function LibraryActions({
               reading_status_provider: newReadingStatusProvider,
               reading_status_push_mode: newReadingStatusPushMode,
             }),
+          }),
+          fetch(`/api/libraries/${libraryId}/tags`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tags }),
           }),
         ]);
 
@@ -266,6 +286,37 @@ export function LibraryActions({
                         </select>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1.5">{t("libraryActions.metadataRefreshDesc")}</p>
+                    </div>
+                  </div>
+
+                  <hr className="border-border/40" />
+
+                  {/* Section: Tags */}
+                  <div className="space-y-5">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground uppercase tracking-wide">
+                      <Icon name="tag" size="sm" className="text-primary" />
+                      {t("library.tags")}
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {PREDEFINED_TAGS.map((tag) => {
+                        const active = tags.includes(tag);
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() =>
+                              setTags(active ? tags.filter((t) => t !== tag) : [...tags, tag])
+                            }
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                              active
+                                ? "bg-primary/15 text-primary border-primary/30"
+                                : "bg-card text-muted-foreground border-border hover:border-primary/30"
+                            }`}
+                          >
+                            {tag}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 

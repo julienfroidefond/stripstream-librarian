@@ -149,6 +149,7 @@ export default async function LibrariesPage() {
                       readingStatusProvider={lib.reading_status_provider}
                       readingStatusPushMode={lib.reading_status_push_mode}
                       downloadDetectionMode={lib.download_detection_mode ?? "manual"}
+                      tags={lib.tags ?? []}
                     />
                     <form>
                       <input type="hidden" name="id" value={lib.id} />
@@ -219,6 +220,12 @@ export default async function LibrariesPage() {
                       {t("libraries.nextScan", { time: formatNextScan(lib.next_scan_at, t("libraries.imminent")) })}
                     </span>
                   )}
+
+                  {(lib.tags ?? []).map((tag) => (
+                    <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-accent text-accent-foreground">
+                      {tag}
+                    </span>
+                  ))}
                 </div>
               </CardContent>
             </Card>

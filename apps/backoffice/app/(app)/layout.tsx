@@ -17,9 +17,9 @@ import { getServerTranslations } from "@/lib/i18n/server";
 import type { TranslationKey } from "@/lib/i18n/fr";
 
 type NavItem = {
-  href: "/" | "/books" | "/series" | "/authors" | "/libraries" | "/jobs" | "/tokens" | "/settings" | "/downloads";
+  href: "/" | "/books" | "/series" | "/authors" | "/libraries" | "/discovery" | "/jobs" | "/tokens" | "/settings" | "/downloads";
   labelKey: TranslationKey;
-  icon: "dashboard" | "books" | "series" | "authors" | "libraries" | "jobs" | "tokens" | "settings" | "download";
+  icon: "dashboard" | "books" | "series" | "authors" | "libraries" | "search" | "jobs" | "tokens" | "settings" | "download";
 };
 
 const navItems: NavItem[] = [
@@ -27,6 +27,7 @@ const navItems: NavItem[] = [
   { href: "/series", labelKey: "nav.series", icon: "series" },
   { href: "/authors", labelKey: "nav.authors", icon: "authors" },
   { href: "/libraries", labelKey: "nav.libraries", icon: "libraries" },
+  { href: "/discovery", labelKey: "nav.discovery", icon: "search" },
   { href: "/downloads", labelKey: "nav.downloads", icon: "download" },
   { href: "/jobs", labelKey: "nav.jobs", icon: "jobs" },
   { href: "/tokens", labelKey: "nav.tokens", icon: "tokens" },

@@ -2,6 +2,7 @@ mod anilist;
 mod auth;
 mod authors;
 mod books;
+mod discovery;
 mod download_detection;
 mod error;
 mod handlers;
@@ -103,6 +104,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/libraries/:id/monitoring", axum::routing::patch(libraries::update_monitoring))
         .route("/libraries/:id/metadata-provider", axum::routing::patch(libraries::update_metadata_provider))
         .route("/libraries/:id/reading-status-provider", axum::routing::patch(libraries::update_reading_status_provider))
+        .route("/libraries/:id/tags", axum::routing::patch(libraries::update_tags))
         .route("/books/:id", axum::routing::patch(books::update_book).delete(books::delete_book))
         .route("/books/:id/convert", axum::routing::post(books::convert_book))
         .route("/libraries/:library_id/series/:series_id", axum::routing::patch(series::update_series).delete(series::delete_series))
@@ -172,6 +174,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/download-detection/:id/report", get(download_detection::get_detection_report))
         .route("/download-detection/:id/results", get(download_detection::get_detection_results))
         .route("/available-downloads/:id", axum::routing::delete(download_detection::delete_available_download))
+        .route("/discovery/trending", get(discovery::trending))
+        .route("/discovery/add-to-library", axum::routing::post(discovery::add_to_library))
         .merge(settings::settings_routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),

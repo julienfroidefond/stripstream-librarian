@@ -37,6 +37,7 @@ pub struct LibraryResponse {
     pub download_detection_mode: String,
     #[schema(value_type = Option<String>)]
     pub next_download_detection_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub tags: Vec<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -60,7 +61,7 @@ pub struct CreateLibraryRequest {
 )]
 pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<LibraryResponse>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at, l.watcher_enabled, l.metadata_provider, l.fallback_metadata_provider, l.metadata_refresh_mode, l.next_metadata_refresh_at, l.reading_status_provider, l.reading_status_push_mode, l.next_reading_status_push_at, l.download_detection_mode, l.next_download_detection_at,
+        "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at, l.watcher_enabled, l.metadata_provider, l.fallback_metadata_provider, l.metadata_refresh_mode, l.next_metadata_refresh_at, l.reading_status_provider, l.reading_status_push_mode, l.next_reading_status_push_at, l.download_detection_mode, l.next_download_detection_at, l.tags,
                 (SELECT COUNT(*) FROM books b WHERE b.library_id = l.id) as book_count,
                 (SELECT COUNT(DISTINCT b.series_id) + CASE WHEN EXISTS(SELECT 1 FROM books b WHERE b.library_id = l.id AND b.series_id IS NULL) THEN 1 ELSE 0 END FROM books b WHERE b.library_id = l.id) as series_count,
                 COALESCE((
@@ -105,6 +106,7 @@ pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<Li
             next_reading_status_push_at: row.get("next_reading_status_push_at"),
             download_detection_mode: row.get("download_detection_mode"),
             next_download_detection_at: row.get("next_download_detection_at"),
+            tags: row.get("tags"),
         })
         .collect();
 
@@ -167,6 +169,7 @@ pub async fn create_library(
         next_reading_status_push_at: None,
         download_detection_mode: "manual".to_string(),
         next_download_detection_at: None,
+        tags: vec![],
     }))
 }
 
@@ -355,7 +358,7 @@ pub async fn update_monitoring(
     let watcher_enabled = input.watcher_enabled.unwrap_or(false);
 
     let result = sqlx::query(
-        "UPDATE libraries SET monitor_enabled = $2, scan_mode = $3, next_scan_at = $4, watcher_enabled = $5, metadata_refresh_mode = $6, next_metadata_refresh_at = $7, download_detection_mode = $8, next_download_detection_at = $9 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at, reading_status_provider, reading_status_push_mode, next_reading_status_push_at, download_detection_mode, next_download_detection_at"
+        "UPDATE libraries SET monitor_enabled = $2, scan_mode = $3, next_scan_at = $4, watcher_enabled = $5, metadata_refresh_mode = $6, next_metadata_refresh_at = $7, download_detection_mode = $8, next_download_detection_at = $9 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at, reading_status_provider, reading_status_push_mode, next_reading_status_push_at, download_detection_mode, next_download_detection_at, tags"
     )
     .bind(library_id)
     .bind(input.monitor_enabled)
@@ -416,6 +419,7 @@ pub async fn update_monitoring(
         next_reading_status_push_at: row.get("next_reading_status_push_at"),
         download_detection_mode: row.get("download_detection_mode"),
         next_download_detection_at: row.get("next_download_detection_at"),
+        tags: row.get("tags"),
     }))
 }
 
@@ -451,7 +455,7 @@ pub async fn update_metadata_provider(
     let fallback = input.fallback_metadata_provider.as_deref().filter(|s| !s.is_empty());
 
     let result = sqlx::query(
-        "UPDATE libraries SET metadata_provider = $2, fallback_metadata_provider = $3 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at, reading_status_provider, reading_status_push_mode, next_reading_status_push_at, download_detection_mode, next_download_detection_at"
+        "UPDATE libraries SET metadata_provider = $2, fallback_metadata_provider = $3 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at, reading_status_provider, reading_status_push_mode, next_reading_status_push_at, download_detection_mode, next_download_detection_at, tags"
     )
     .bind(library_id)
     .bind(provider)
@@ -506,6 +510,7 @@ pub async fn update_metadata_provider(
         next_reading_status_push_at: row.get("next_reading_status_push_at"),
         download_detection_mode: row.get("download_detection_mode"),
         next_download_detection_at: row.get("next_download_detection_at"),
+        tags: row.get("tags"),
     }))
 }
 
@@ -566,4 +571,31 @@ pub async fn update_reading_status_provider(
         "reading_status_provider": provider,
         "reading_status_push_mode": push_mode,
     })))
+}
+
+// ─── Tags ───────────────────────────────────────────────────────────────────
+
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateTagsRequest {
+    pub tags: Vec<String>,
+}
+
+pub async fn update_tags(
+    State(state): State<AppState>,
+    AxumPath(library_id): AxumPath<Uuid>,
+    Json(input): Json<UpdateTagsRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let result = sqlx::query(
+        "UPDATE libraries SET tags = $2 WHERE id = $1",
+    )
+    .bind(library_id)
+    .bind(&input.tags)
+    .execute(&state.pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(ApiError::not_found("library not found"));
+    }
+
+    Ok(Json(serde_json::json!({ "tags": input.tags })))
 }

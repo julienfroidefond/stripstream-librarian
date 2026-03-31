@@ -119,8 +119,8 @@ pub struct SeriesItem {
     pub series_id: Uuid,
     pub book_count: i64,
     pub books_read_count: i64,
-    #[schema(value_type = String)]
-    pub first_book_id: Uuid,
+    #[schema(value_type = Option<String>)]
+    pub first_book_id: Option<Uuid>,
     #[schema(value_type = String)]
     pub library_id: Uuid,
     pub series_status: Option<String>,
@@ -128,6 +128,7 @@ pub struct SeriesItem {
     pub metadata_provider: Option<String>,
     pub anilist_id: Option<i32>,
     pub anilist_url: Option<String>,
+    pub cover_url: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -315,7 +316,8 @@ pub async fn list_series(
             mc.missing_count,
             ml.provider as metadata_provider,
             asl.anilist_id,
-            asl.anilist_url
+            asl.anilist_url,
+            s.cover_url
         FROM series_counts sc
         JOIN sorted_books sb ON sb.series_id = sc.series_id AND sb.rn = 1
         LEFT JOIN series s ON s.id = sc.series_id
@@ -386,6 +388,7 @@ pub async fn list_series(
             metadata_provider: row.get("metadata_provider"),
             anilist_id: row.get("anilist_id"),
             anilist_url: row.get("anilist_url"),
+            cover_url: row.get("cover_url"),
         })
         .collect();
 
@@ -618,9 +621,10 @@ pub async fn list_all_series(
             mc.missing_count,
             ml.provider as metadata_provider,
             asl.anilist_id,
-            asl.anilist_url
+            asl.anilist_url,
+            s.cover_url
         FROM series_counts sc
-        JOIN sorted_books sb ON sb.series_id = sc.series_id AND sb.rn = 1
+        LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id AND sb.rn = 1
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
         LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = sc.library_id
@@ -692,6 +696,7 @@ pub async fn list_all_series(
             metadata_provider: row.get("metadata_provider"),
             anilist_id: row.get("anilist_id"),
             anilist_url: row.get("anilist_url"),
+            cover_url: row.get("cover_url"),
         })
         .collect();
 
@@ -843,6 +848,7 @@ pub async fn ongoing_series(
             metadata_provider: None,
             anilist_id: None,
             anilist_url: None,
+            cover_url: None,
         })
         .collect();
 
@@ -1188,7 +1194,7 @@ pub async fn update_series(
 )]
 pub async fn delete_series(
     State(state): State<AppState>,
-    Extension(_user): Extension<AuthUser>,
+    _user: Option<Extension<AuthUser>>,
     Path((library_id, series_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<crate::responses::DeletedResponse>, ApiError> {
     use stripstream_core::paths::remap_libraries_path;
@@ -1335,8 +1341,10 @@ pub async fn get_series_by_id(
                sc.library_id, sc.series_status,
                mc.missing_count,
                ml.provider as metadata_provider,
-               asl.anilist_id, asl.anilist_url
+               asl.anilist_id, asl.anilist_url,
+               s.cover_url
         FROM series_counts sc
+        LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN first_book fb ON fb.series_id = sc.series_id
         LEFT JOIN (
             SELECT eml.series_id, COUNT(ebm.id) FILTER (WHERE ebm.book_id IS NULL) as missing_count
@@ -1372,6 +1380,7 @@ pub async fn get_series_by_id(
         metadata_provider: row.get("metadata_provider"),
         anilist_id: row.get("anilist_id"),
         anilist_url: row.get("anilist_url"),
+        cover_url: row.get("cover_url"),
     }))
 }
 
@@ -1446,7 +1455,7 @@ pub async fn update_series_by_id(
 #[allow(deprecated)]
 pub async fn delete_series_by_id(
     state: State<AppState>,
-    user: Extension<AuthUser>,
+    user: Option<Extension<AuthUser>>,
     Path(series_id): Path<Uuid>,
 ) -> Result<Json<crate::responses::DeletedResponse>, ApiError> {
     let library_id = resolve_library_id(&state.pool, series_id).await?;
@@ -1471,6 +1480,7 @@ mod tests {
             metadata_provider: None,
             anilist_id: None,
             anilist_url: None,
+            cover_url: None,
         };
         let json = serde_json::to_value(&item).unwrap();
         assert!(json["series_id"].is_string());
@@ -1520,6 +1530,7 @@ mod tests {
             metadata_provider: Some("google_books".to_string()),
             anilist_id: Some(12345),
             anilist_url: Some("https://anilist.co/manga/12345".to_string()),
+            cover_url: None,
         };
         let json = serde_json::to_value(&item).unwrap();
         assert_eq!(json["library_id"], lib_id.to_string());

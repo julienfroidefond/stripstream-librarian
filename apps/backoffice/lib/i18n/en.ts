@@ -975,6 +975,24 @@ const en: Record<TranslationKey, string> = {
   "rename.unchanged": "Unchanged",
   "rename.examplePreview": "Example preview",
 
+  // Discovery
+  "nav.discovery": "Discover",
+  "discovery.title": "Series Discovery",
+  "discovery.trending": "Trending",
+  "discovery.similar": "Similar to your library",
+  "discovery.recommendations": "Recommendations",
+  "discovery.addToLibrary": "Add to library",
+  "discovery.adding": "Adding...",
+  "discovery.added": "Added!",
+  "discovery.alreadyOwned": "Already in library",
+  "discovery.noResults": "No suggestions found",
+  "discovery.selectLibrary": "Select a library",
+  "discovery.volumes": "{{count}} volume(s)",
+  "discovery.suggestionsFor": "Suggestions for {{name}}",
+  "discovery.seeAll": "See all",
+  "library.tags": "Tags",
+  "library.tagsPlaceholder": "Add a tag...",
+
   // Settings - Torrent Import
   "settings.torrentImport": "Auto import",
   "settings.torrentImportDesc": "When enabled, torrents added via the backoffice are tracked and files are automatically imported into the library when the download completes.",

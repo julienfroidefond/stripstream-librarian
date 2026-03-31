@@ -138,10 +138,10 @@ export default async function SeriesPage({
                   <Link href={`/series/${s.series_id}`} className="block">
                     <div className="aspect-[2/3] relative bg-muted/50">
                       <Image
-                        src={getBookCoverUrl(s.first_book_id)}
+                        src={s.first_book_id ? getBookCoverUrl(s.first_book_id) : (s.cover_url || "")}
                         alt={t("books.coverOf", { name: s.name })}
                         fill
-                        className={`object-cover ${s.books_read_count >= s.book_count ? "opacity-40" : ""}`}
+                        className={`object-cover ${s.book_count > 0 && s.books_read_count >= s.book_count ? "opacity-40" : ""}`}
                         sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 16vw"
                       />
                       {(s.series_status || (s.missing_count != null && s.missing_count > 0)) && (

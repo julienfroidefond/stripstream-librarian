@@ -79,10 +79,10 @@ export default async function LibrarySeriesPage({
                 href={`/series/${s.series_id}`}
                 className="group"
               >
-                <div className={`bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden hover:shadow-md transition-shadow duration-200 ${s.books_read_count >= s.book_count ? "opacity-50" : ""}`}>
+                <div className={`bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden hover:shadow-md transition-shadow duration-200 ${s.book_count > 0 && s.books_read_count >= s.book_count ? "opacity-50" : ""}`}>
                   <div className="aspect-[2/3] relative bg-muted/50">
                     <Image
-                      src={getBookCoverUrl(s.first_book_id)}
+                      src={s.first_book_id ? getBookCoverUrl(s.first_book_id) : (s.cover_url || "")}
                       alt={t("books.coverOf", { name: s.name })}
                       fill
                       className="object-cover"
