@@ -48,14 +48,16 @@ export function DiscoveryGrid({
     router.replace(`?${params.toString()}`, { scroll: false });
   }
 
-  const fetchProvider = useCallback(async (providerId: string) => {
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchProvider = useCallback(async (providerId: string, nocache = false) => {
     setActiveProvider(providerId);
     setActiveTab("trending");
     updateUrl("trending", providerId);
     setLoading(true);
     setAddedIds(new Set());
     try {
-      const resp = await fetch(`/api/discovery/trending?provider=${providerId}&limit=30`);
+      const resp = await fetch(`/api/discovery/trending?provider=${providerId}&limit=30${nocache ? "&nocache=true" : ""}`);
       if (resp.ok) {
         const data = await resp.json();
         setSuggestions(data);
@@ -68,6 +70,32 @@ export function DiscoveryGrid({
       setLoading(false);
     }
   }, []);
+
+  async function handleHardRefresh() {
+    setRefreshing(true);
+    if (activeTab === "prowlarr") {
+      setProwlarrKey((k) => k + 1);
+      setRefreshing(false);
+    } else {
+      setLoading(true);
+      setAddedIds(new Set());
+      try {
+        const resp = await fetch(`/api/discovery/trending?provider=${activeProvider}&limit=30&nocache=true`);
+        if (resp.ok) {
+          setSuggestions(await resp.json());
+        } else {
+          setSuggestions([]);
+        }
+      } catch {
+        setSuggestions([]);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    }
+  }
+
+  const [prowlarrKey, setProwlarrKey] = useState(0);
 
   function handleAdded(externalId: string) {
     setAddedIds((prev) => new Set(prev).add(externalId));
@@ -82,8 +110,8 @@ export function DiscoveryGrid({
 
   return (
     <div className="space-y-4">
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-border">
+      {/* Tabs + refresh */}
+      <div className="flex items-center gap-1 border-b border-border">
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -97,6 +125,18 @@ export function DiscoveryGrid({
             {tab.label}
           </button>
         ))}
+        <button
+          onClick={handleHardRefresh}
+          disabled={refreshing || loading}
+          className="ml-auto mb-px px-2 py-1.5 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+          title={t("discovery.hardRefresh")}
+        >
+          {refreshing ? (
+            <Icon name="spinner" size="sm" className="animate-spin" />
+          ) : (
+            <Icon name="refresh" size="sm" />
+          )}
+        </button>
       </div>
 
       {activeTab === "trending" && (
@@ -142,7 +182,7 @@ export function DiscoveryGrid({
         </>
       )}
 
-      {activeTab === "prowlarr" && <ProwlarrDiscoveryList libraries={libraries} />}
+      {activeTab === "prowlarr" && <ProwlarrDiscoveryList key={prowlarrKey} libraries={libraries} nocache={prowlarrKey > 0} />}
     </div>
   );
 }

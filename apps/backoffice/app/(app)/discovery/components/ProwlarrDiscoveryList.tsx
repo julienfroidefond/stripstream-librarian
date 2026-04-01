@@ -38,7 +38,7 @@ function formatVolumes(volumes: number[]): string {
   return `${min}-${max} (${volumes.length})`;
 }
 
-export function ProwlarrDiscoveryList({ libraries }: { libraries: Library[] }) {
+export function ProwlarrDiscoveryList({ libraries, nocache = false }: { libraries: Library[]; nocache?: boolean }) {
   const { t } = useTranslation();
   const [items, setItems] = useState<ProwlarrItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,7 +51,7 @@ export function ProwlarrDiscoveryList({ libraries }: { libraries: Library[] }) {
       setLoading(true);
       setError(null);
       try {
-        const resp = await fetch("/api/discovery/prowlarr?limit=100");
+        const resp = await fetch(`/api/discovery/prowlarr?limit=100${nocache ? "&nocache=true" : ""}`);
         if (!resp.ok) {
           const data = await resp.json().catch(() => ({}));
           setError(data?.error || `Error ${resp.status}`);

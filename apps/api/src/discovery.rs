@@ -30,6 +30,7 @@ pub struct DiscoverySuggestionDto {
 pub struct TrendingQuery {
     pub provider: Option<String>,
     pub limit: Option<i32>,
+    pub nocache: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -122,11 +123,14 @@ pub async fn trending(
     }
 
     let cache_key = format!("trending:{provider}");
+    let skip_cache = params.nocache.as_deref() == Some("true");
 
-    // Check cache
-    if let Some(cached) = get_cached(&state.pool, &cache_key).await {
-        let filtered = filter_already_owned(&state.pool, provider, cached).await;
-        return Ok(Json(filtered));
+    // Check cache (unless nocache requested)
+    if !skip_cache {
+        if let Some(cached) = get_cached(&state.pool, &cache_key).await {
+            let filtered = filter_already_owned(&state.pool, provider, cached).await;
+            return Ok(Json(filtered));
+        }
     }
 
     // Fetch from provider
@@ -202,6 +206,7 @@ pub struct ProwlarrDiscoveryItem {
 #[derive(Deserialize)]
 pub struct ProwlarrDiscoveryQuery {
     pub limit: Option<usize>,
+    pub nocache: Option<String>,
 }
 
 /// GET /discovery/prowlarr — search Prowlarr indexers and group by series name
@@ -212,11 +217,14 @@ pub async fn prowlarr_discovery(
     let limit = params.limit.unwrap_or(100).min(200);
 
     let cache_key = "discovery:prowlarr".to_string();
+    let skip_cache = params.nocache.as_deref() == Some("true");
 
-    // Check cache
-    if let Some(cached) = get_cached_raw::<Vec<ProwlarrDiscoveryItem>>(&state.pool, &cache_key).await {
-        let filtered = filter_prowlarr_owned(&state.pool, cached).await;
-        return Ok(Json(filtered.into_iter().take(limit).collect()));
+    // Check cache (unless nocache requested)
+    if !skip_cache {
+        if let Some(cached) = get_cached_raw::<Vec<ProwlarrDiscoveryItem>>(&state.pool, &cache_key).await {
+            let filtered = filter_prowlarr_owned(&state.pool, cached).await;
+            return Ok(Json(filtered.into_iter().take(limit).collect()));
+        }
     }
 
     // Load Prowlarr config
@@ -375,11 +383,15 @@ pub async fn prowlarr_discovery(
     }
     items.sort_by(|a, b| b.best_seeders.cmp(&a.best_seeders));
 
+    tracing::info!("[DISCOVERY] Prowlarr: {} series found from {} raw releases", items.len(), raw.len());
+
     // Cache for 6 hours
     set_cached_raw(&state.pool, &cache_key, "prowlarr", "discovery", &items, 6).await;
 
     // Filter out already-owned
+    let before_filter = items.len();
     let filtered = filter_prowlarr_owned(&state.pool, items).await;
+    tracing::info!("[DISCOVERY] Prowlarr: {} after filter (was {})", filtered.len(), before_filter);
     Ok(Json(filtered.into_iter().take(limit).collect()))
 }
 
@@ -388,20 +400,29 @@ pub async fn prowlarr_discovery(
 /// Guess a more specific category from the torrent title keywords.
 fn guess_category_from_title(title: &str) -> Option<String> {
     let lower = title.to_lowercase();
-    if lower.contains("manga") || lower.contains("[jp]") || lower.contains(".jp.") {
+    // Manga indicators
+    if lower.contains("manga") || lower.contains("[jp]") || lower.contains(".jp.")
+        || lower.contains("nagatoro") || lower.contains("tome") && lower.contains("ebook")
+    {
         return Some("Manga".to_string());
     }
+    // Comics indicators
     if lower.contains("comics") || lower.contains("marvel") || lower.contains("dc comics")
         || lower.contains("[en]") || lower.contains(".en.")
     {
         return Some("Comics".to_string());
     }
+    // BD indicators (French bande dessinée)
     if lower.contains(" bd ") || lower.contains("[bd]") || lower.contains("-bd-")
         || lower.contains("bande dessinée") || lower.contains("bande dessinee")
+        || lower.contains("cbz") || lower.contains("cbr")
     {
         return Some("BD".to_string());
     }
-    if lower.contains("[fr]") || lower.contains(".fr.") || lower.contains("fr.[") {
+    // French language markers → likely BD
+    if lower.contains("[fr]") || lower.contains(".fr.") || lower.contains("/fr")
+        || lower.contains("- fr") || lower.ends_with(" fr")
+    {
         return Some("BD".to_string());
     }
     None

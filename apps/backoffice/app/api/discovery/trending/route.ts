@@ -6,7 +6,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const provider = searchParams.get("provider") || "anilist";
     const limit = searchParams.get("limit") || "20";
-    const data = await apiFetch(`/discovery/trending?provider=${provider}&limit=${limit}`);
+    const nocache = searchParams.get("nocache") || "";
+    const data = await apiFetch(`/discovery/trending?provider=${provider}&limit=${limit}${nocache ? "&nocache=true" : ""}`);
     return NextResponse.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch trending";

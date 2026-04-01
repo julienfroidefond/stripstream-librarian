@@ -996,6 +996,7 @@ const fr = {
   "discovery.prowlarrSeeders": "Seeders",
   "discovery.prowlarrSize": "Taille",
   "discovery.prowlarrBestRelease": "Meilleure release",
+  "discovery.hardRefresh": "Rafraîchir (ignorer le cache)",
   "library.tags": "Tags",
   "library.tagsPlaceholder": "Ajouter un tag...",
 
