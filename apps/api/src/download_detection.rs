@@ -675,14 +675,14 @@ pub(crate) async fn process_download_detection(
                     None,
                 )
                 .await;
-                // UPSERT into available_downloads
+                // UPSERT into available_downloads — merge new releases with existing ones
                 if let (Some(ref rj), Some(&sid)) = (&releases_json, series_id_map.get(series_name)) {
                     let _ = sqlx::query(
                         "INSERT INTO available_downloads (library_id, series_id, missing_count, available_releases, updated_at) \
                          VALUES ($1, $2, $3, $4, NOW()) \
                          ON CONFLICT (series_id) DO UPDATE SET \
                            missing_count = EXCLUDED.missing_count, \
-                           available_releases = EXCLUDED.available_releases, \
+                           available_releases = merge_releases(available_downloads.available_releases, EXCLUDED.available_releases), \
                            updated_at = NOW()",
                     )
                     .bind(library_id)
@@ -695,12 +695,14 @@ pub(crate) async fn process_download_detection(
             }
             Ok(_) => {
                 insert_result(pool, job_id, library_id, series_id_map.get(series_name).copied(), "not_found", missing_count, None, None).await;
-                // Remove from available_downloads if previously found
+                // Don't delete — keep previous results even if this run found nothing
+                // Only update missing_count
                 if let Some(&sid) = series_id_map.get(series_name) {
                 let _ = sqlx::query(
-                    "DELETE FROM available_downloads WHERE series_id = $1",
+                    "UPDATE available_downloads SET missing_count = $2, updated_at = NOW() WHERE series_id = $1",
                 )
                 .bind(sid)
+                .bind(missing_count)
                 .execute(pool)
                 .await;
                 }
