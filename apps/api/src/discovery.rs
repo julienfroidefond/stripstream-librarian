@@ -358,8 +358,18 @@ pub async fn prowlarr_discovery(
         }
     }
 
-    // Sort volumes and sort items by best_seeders descending
+    // Enrich categories by guessing from torrent title when indexer only returns generic categories
     let mut items: Vec<ProwlarrDiscoveryItem> = series_map.into_values().collect();
+    for item in &mut items {
+        let guessed = guess_category_from_title(&item.best_release_title);
+        if let Some(cat) = guessed {
+            if !item.categories.contains(&cat) {
+                item.categories.insert(0, cat);
+            }
+        }
+    }
+
+    // Sort volumes and sort items by best_seeders descending
     for item in &mut items {
         item.volumes_found.sort_unstable();
     }
@@ -375,6 +385,28 @@ pub async fn prowlarr_discovery(
 
 /// Extract a probable series name from a torrent title.
 /// E.g. "Largo Winch - BD Tome 1 à 23 + HS" → "Largo Winch"
+/// Guess a more specific category from the torrent title keywords.
+fn guess_category_from_title(title: &str) -> Option<String> {
+    let lower = title.to_lowercase();
+    if lower.contains("manga") || lower.contains("[jp]") || lower.contains(".jp.") {
+        return Some("Manga".to_string());
+    }
+    if lower.contains("comics") || lower.contains("marvel") || lower.contains("dc comics")
+        || lower.contains("[en]") || lower.contains(".en.")
+    {
+        return Some("Comics".to_string());
+    }
+    if lower.contains(" bd ") || lower.contains("[bd]") || lower.contains("-bd-")
+        || lower.contains("bande dessinée") || lower.contains("bande dessinee")
+    {
+        return Some("BD".to_string());
+    }
+    if lower.contains("[fr]") || lower.contains(".fr.") || lower.contains("fr.[") {
+        return Some("BD".to_string());
+    }
+    None
+}
+
 pub fn extract_series_name_from_torrent(title: &str) -> String {
     let lower = title.to_lowercase();
     // Split on common delimiters that separate series name from volume info
