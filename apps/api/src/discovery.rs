@@ -175,7 +175,7 @@ pub async fn trending(
         .collect();
 
     // Cache results
-    set_cached(&state.pool, &cache_key, provider, "trending", &suggestions, 6).await;
+    set_cached(&state.pool, &cache_key, provider, "trending", &suggestions, 168).await; // 7 days
 
     // Lazy cleanup
     cleanup_expired(&state.pool).await;

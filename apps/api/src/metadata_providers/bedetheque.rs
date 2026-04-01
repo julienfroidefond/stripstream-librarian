@@ -205,6 +205,9 @@ async fn search_series_impl(
                 if let Some(count) = details.album_count {
                     c.total_volumes = Some(count);
                 }
+                if let Some(cover) = details.cover_url {
+                    c.cover_url = Some(cover);
+                }
                 c.metadata_json = serde_json::json!({
                     "description": c.description,
                     "authors": c.authors,
@@ -243,6 +246,7 @@ struct SeriesDetails {
     status: Option<String>,
     origin: Option<String>,
     language: Option<String>,
+    cover_url: Option<String>,
 }
 
 async fn fetch_series_details(
@@ -288,7 +292,18 @@ async fn fetch_series_details(
         status: None,
         origin: None,
         language: None,
+        cover_url: None,
     };
+
+    // Cover: first itemprop="image" (album cover from the series listing, not sidebar/recommendations)
+    if let Ok(sel) = Selector::parse(r#"img[itemprop="image"]"#) {
+        if let Some(el) = doc.select(&sel).next() {
+            if let Some(src) = el.value().attr("src") {
+                // Replace thumbnail with full-size cover
+                details.cover_url = Some(src.replace("/cache/thb_couv/", "/media/Couvertures/").to_string());
+            }
+        }
+    }
 
     // Description from <meta name="description"> — format: "Tout sur la série {name} : {description}"
     if let Ok(sel) = Selector::parse(r#"meta[name="description"]"#) {
@@ -708,11 +723,13 @@ pub async fn fetch_indispensables(
         return Err("Bedetheque: IP may be rate-limited, please retry later".to_string());
     }
 
+    // Parse in a block to drop non-Send types (Html, Selector) before async enrichment
+    let mut candidates = Vec::new();
+    {
     let document = Html::parse_document(&html);
 
-    // Parse entries: each series has span.numero, span.serie > a, span.votants, span.style
     let serie_sel = Selector::parse("span.serie a").unwrap();
-    let numero_sel = Selector::parse("span.numero").unwrap();
+    let _numero_sel = Selector::parse("span.numero").unwrap();
     let style_sel = Selector::parse("span.style").unwrap();
 
     // Also get cover images from the gallery
@@ -734,7 +751,6 @@ pub async fn fetch_indispensables(
     // Parse the ranked list
     // The ranking entries are inside the main content, structured as siblings
     // We need to find all span.serie > a elements and their surrounding context
-    let mut candidates: Vec<SeriesCandidate> = Vec::new();
     let mut seen_ids = std::collections::HashSet::new();
 
     // Walk through all serie links in the page
@@ -807,8 +823,39 @@ pub async fn fetch_indispensables(
             break;
         }
     }
+    } // drop document, selectors (non-Send) before async enrichment
+
+    // Enrich covers for candidates that only have the PlancheS_ fallback (top 20)
+    for c in candidates.iter_mut() {
+        if c.cover_url.as_ref().map_or(false, |u| u.contains("/Couvertures/") || u.contains("/thb_couv/")) {
+            continue;
+        }
+        let Some(ref url) = c.external_url else { continue };
+        let page_url = url.replace(".html", "__10000.html");
+        let cover = fetch_series_cover(&client, &page_url).await;
+        if let Some(cover) = cover {
+            c.cover_url = Some(cover);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    }
 
     Ok(candidates)
+}
+
+/// Fetch the real album cover URL from a series page (itemprop="image" of the first tome).
+async fn fetch_series_cover(client: &reqwest::Client, page_url: &str) -> Option<String> {
+    let resp = client.get(page_url).send().await.ok()?;
+    let html = resp.text().await.ok()?;
+    if html.contains("<title></title>") { return None; }
+    // Parse in a block to drop non-Send types before any .await
+    let cover = {
+        let doc = Html::parse_document(&html);
+        let sel = Selector::parse(r#"img[itemprop="image"]"#).ok()?;
+        doc.select(&sel).next()
+            .and_then(|el| el.value().attr("src"))
+            .map(|src| src.replace("/cache/thb_couv/", "/media/Couvertures/").to_string())
+    };
+    cover
 }
 
 static SERIES_URL_RE: std::sync::LazyLock<regex::Regex> =
