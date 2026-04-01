@@ -529,15 +529,13 @@ pub(crate) async fn process_download_detection(
     .await
     .map_err(|e| e.to_string())?;
 
-    // Clean up available_downloads for series that no longer exist in books
+    // Clean up available_downloads for series that no longer exist
     sqlx::query(
         r#"
         DELETE FROM available_downloads
         WHERE library_id = $1
           AND series_id NOT IN (
-            SELECT DISTINCT b.series_id
-            FROM books b
-            WHERE b.library_id = $1 AND b.series_id IS NOT NULL
+            SELECT id FROM series WHERE library_id = $1
           )
         "#,
     )
