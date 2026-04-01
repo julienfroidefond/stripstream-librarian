@@ -181,6 +181,234 @@ pub async fn trending(
     Ok(Json(filtered))
 }
 
+// ─── Prowlarr discovery ─────────────────────────────────────────────────────
+
+#[derive(Serialize, Deserialize)]
+pub struct ProwlarrDiscoveryItem {
+    pub series_name: String,
+    pub release_count: usize,
+    pub best_seeders: i32,
+    pub total_seeders: i32,
+    pub categories: Vec<String>,
+    pub indexers: Vec<String>,
+    pub best_release_title: String,
+    pub best_download_url: Option<String>,
+    pub best_size: i64,
+}
+
+#[derive(Deserialize)]
+pub struct ProwlarrDiscoveryQuery {
+    pub limit: Option<usize>,
+}
+
+/// GET /discovery/prowlarr — search Prowlarr indexers and group by series name
+pub async fn prowlarr_discovery(
+    State(state): State<AppState>,
+    Query(params): Query<ProwlarrDiscoveryQuery>,
+) -> Result<Json<Vec<ProwlarrDiscoveryItem>>, ApiError> {
+    let limit = params.limit.unwrap_or(100).min(200);
+
+    let cache_key = "discovery:prowlarr".to_string();
+
+    // Check cache
+    if let Some(cached) = get_cached_raw::<Vec<ProwlarrDiscoveryItem>>(&state.pool, &cache_key).await {
+        let filtered = filter_prowlarr_owned(&state.pool, cached).await;
+        return Ok(Json(filtered.into_iter().take(limit).collect()));
+    }
+
+    // Load Prowlarr config
+    let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'prowlarr'")
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| ApiError::bad_request("Prowlarr is not configured"))?;
+    let value: serde_json::Value = row.get("value");
+    let prowlarr_url = value.get("url").and_then(|u| u.as_str()).unwrap_or("").trim_end_matches('/').to_string();
+    let api_key = value.get("api_key").and_then(|k| k.as_str()).unwrap_or("").to_string();
+    let categories: Vec<i32> = value.get("categories")
+        .and_then(|c| c.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_i64().map(|n| n as i32)).collect())
+        .unwrap_or_else(|| vec![7030, 7020]);
+
+    if prowlarr_url.is_empty() || api_key.is_empty() {
+        return Err(ApiError::bad_request("Prowlarr URL and API key must be configured"));
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| ApiError::internal(format!("HTTP client error: {e}")))?;
+
+    // Search Prowlarr with empty query (returns recent/popular releases)
+    let mut params_vec: Vec<(&str, String)> = vec![
+        ("query", String::new()),
+        ("type", "search".to_string()),
+    ];
+    for cat in &categories {
+        params_vec.push(("categories", cat.to_string()));
+    }
+
+    let resp = client
+        .get(format!("{prowlarr_url}/api/v1/search"))
+        .query(&params_vec)
+        .header("X-Api-Key", &api_key)
+        .send()
+        .await
+        .map_err(|e| ApiError::internal(format!("Prowlarr request failed: {e}")))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(ApiError::internal(format!("Prowlarr returned {status}: {text}")));
+    }
+
+    let raw: Vec<serde_json::Value> = resp.json().await.unwrap_or_default();
+
+    // Group by extracted series name
+    let mut series_map: std::collections::HashMap<String, ProwlarrDiscoveryItem> = std::collections::HashMap::new();
+
+    for release in &raw {
+        let title = release.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string();
+        let seeders = release.get("seeders").and_then(|s| s.as_i64()).unwrap_or(0) as i32;
+        let size = release.get("size").and_then(|s| s.as_i64()).unwrap_or(0);
+        let download_url = release.get("downloadUrl").and_then(|u| u.as_str()).map(String::from);
+        let indexer = release.get("indexer").and_then(|i| i.as_str()).unwrap_or("").to_string();
+        let cats: Vec<String> = release.get("categories")
+            .and_then(|c| c.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.get("name").and_then(|n| n.as_str()).map(String::from)).collect())
+            .unwrap_or_default();
+
+        // Extract series name from torrent title (take everything before " - ", " T", " Tome", etc.)
+        let series_name = extract_series_name_from_torrent(&title);
+        if series_name.is_empty() {
+            continue;
+        }
+
+        let key = series_name.to_lowercase();
+        let entry = series_map.entry(key).or_insert_with(|| ProwlarrDiscoveryItem {
+            series_name: series_name.clone(),
+            release_count: 0,
+            best_seeders: 0,
+            total_seeders: 0,
+            categories: Vec::new(),
+            indexers: Vec::new(),
+            best_release_title: String::new(),
+            best_download_url: None,
+            best_size: 0,
+        });
+
+        entry.release_count += 1;
+        entry.total_seeders += seeders;
+        if seeders > entry.best_seeders {
+            entry.best_seeders = seeders;
+            entry.best_release_title = title.clone();
+            entry.best_download_url = download_url;
+            entry.best_size = size;
+        }
+        for cat in &cats {
+            if !entry.categories.contains(cat) {
+                entry.categories.push(cat.clone());
+            }
+        }
+        if !indexer.is_empty() && !entry.indexers.contains(&indexer) {
+            entry.indexers.push(indexer);
+        }
+    }
+
+    // Sort by best_seeders descending
+    let mut items: Vec<ProwlarrDiscoveryItem> = series_map.into_values().collect();
+    items.sort_by(|a, b| b.best_seeders.cmp(&a.best_seeders));
+
+    // Cache for 6 hours
+    set_cached_raw(&state.pool, &cache_key, "prowlarr", "discovery", &items, 6).await;
+
+    // Filter out already-owned
+    let filtered = filter_prowlarr_owned(&state.pool, items).await;
+    Ok(Json(filtered.into_iter().take(limit).collect()))
+}
+
+/// Extract a probable series name from a torrent title.
+/// E.g. "Largo Winch - BD Tome 1 à 23 + HS" → "Largo Winch"
+fn extract_series_name_from_torrent(title: &str) -> String {
+    let lower = title.to_lowercase();
+    // Split on common delimiters that separate series name from volume info
+    let separators = [" - bd ", " - tome ", " - t0", " - t1", " - t2", " - t3", " - t4", " - t5", " - t6", " - t7", " - t8", " - t9",
+        " -bd ", " tome ", " vol.", " vol ", " [", " (", " intégrale", " integrale", " complet"];
+    let mut best_pos = title.len();
+    for sep in &separators {
+        if let Some(pos) = lower.find(sep) {
+            if pos > 0 && pos < best_pos {
+                best_pos = pos;
+            }
+        }
+    }
+    title[..best_pos].trim().to_string()
+}
+
+/// Filter out Prowlarr results for series already in the library
+async fn filter_prowlarr_owned(
+    pool: &sqlx::PgPool,
+    items: Vec<ProwlarrDiscoveryItem>,
+) -> Vec<ProwlarrDiscoveryItem> {
+    if items.is_empty() {
+        return items;
+    }
+
+    let names: Vec<String> = items.iter().map(|i| i.series_name.to_lowercase()).collect();
+    let owned: Vec<String> = sqlx::query_scalar(
+        "SELECT LOWER(name) FROM series WHERE LOWER(name) = ANY($1)",
+    )
+    .bind(&names)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    items
+        .into_iter()
+        .filter(|i| !owned.contains(&i.series_name.to_lowercase()))
+        .collect()
+}
+
+// ─── Generic cache helpers for typed data ───────────────────────────────────
+
+async fn get_cached_raw<T: serde::de::DeserializeOwned>(pool: &sqlx::PgPool, cache_key: &str) -> Option<T> {
+    let row = sqlx::query(
+        "SELECT results FROM discovery_cache WHERE cache_key = $1 AND expires_at > NOW()",
+    )
+    .bind(cache_key)
+    .fetch_optional(pool)
+    .await
+    .ok()??;
+
+    let results: serde_json::Value = row.get("results");
+    serde_json::from_value(results).ok()
+}
+
+async fn set_cached_raw<T: serde::Serialize>(
+    pool: &sqlx::PgPool,
+    cache_key: &str,
+    provider: &str,
+    query_type: &str,
+    results: &T,
+    ttl_hours: i64,
+) {
+    let results_json = serde_json::to_value(results).unwrap_or_default();
+    let _ = sqlx::query(
+        r#"
+        INSERT INTO discovery_cache (cache_key, provider, query_type, results, fetched_at, expires_at)
+        VALUES ($1, $2, $3, $4, NOW(), NOW() + make_interval(hours => $5))
+        ON CONFLICT (cache_key)
+        DO UPDATE SET results = $4, fetched_at = NOW(), expires_at = NOW() + make_interval(hours => $5)
+        "#,
+    )
+    .bind(cache_key)
+    .bind(provider)
+    .bind(query_type)
+    .bind(results_json)
+    .bind(ttl_hours as i32)
+    .execute(pool)
+    .await;
+}
+
 /// POST /discovery/add-to-library
 pub async fn add_to_library(
     State(state): State<AppState>,

@@ -28,9 +28,12 @@ export default async function DiscoveryPage({
   const params = await searchParams;
   const provider = (typeof params.provider === "string" ? params.provider : "anilist");
 
-  const [libraries, trending] = await Promise.all([
+  const [libraries, trending, prowlarrConfigured] = await Promise.all([
     fetchLibraries().catch(() => []),
     apiFetch<DiscoverySuggestion[]>(`/discovery/trending?provider=${provider}&limit=30`).catch(() => []),
+    apiFetch<{ api_key?: string }>("/settings/prowlarr")
+      .then(d => !!(d?.api_key?.trim()))
+      .catch(() => false),
   ]);
 
   return (
@@ -44,6 +47,7 @@ export default async function DiscoveryPage({
         initialSuggestions={trending}
         libraries={libraries}
         provider={provider}
+        prowlarrConfigured={prowlarrConfigured}
       />
     </div>
   );

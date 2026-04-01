@@ -175,6 +175,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/download-detection/:id/results", get(download_detection::get_detection_results))
         .route("/available-downloads/:id", axum::routing::delete(download_detection::delete_available_download))
         .route("/discovery/trending", get(discovery::trending))
+        .route("/discovery/prowlarr", get(discovery::prowlarr_discovery))
         .route("/discovery/add-to-library", axum::routing::post(discovery::add_to_library))
         .merge(settings::settings_routes())
         .route_layer(middleware::from_fn_with_state(
