@@ -257,9 +257,15 @@ pub async fn add_torrent(
         let mut qb_hash = extract_magnet_hash(&body.url);
         if qb_hash.is_none() {
             if let Some(ref cat) = category {
-                // For .torrent URLs: wait briefly then query qBittorrent by category
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                qb_hash = resolve_hash_by_category(&client, &base_url, &sid, cat).await;
+                // Magnet links take time to be resolved by qBittorrent.
+                // Retry with increasing delays to give qBittorrent time to register the torrent.
+                for delay_secs in [2, 3, 5] {
+                    tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
+                    qb_hash = resolve_hash_by_category(&client, &base_url, &sid, cat).await;
+                    if qb_hash.is_some() {
+                        break;
+                    }
+                }
             }
         }
 
