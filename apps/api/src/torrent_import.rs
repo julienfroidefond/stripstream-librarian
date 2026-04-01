@@ -228,16 +228,25 @@ const QB_FAILED_STATES: &[&str] = &[
 
 pub async fn run_torrent_poller(pool: PgPool, interval_seconds: u64) {
     let idle_wait = Duration::from_secs(interval_seconds.max(5));
-    let active_wait = Duration::from_secs(2);
+    let active_wait = Duration::from_secs(5);
+    let error_wait = Duration::from_secs(10);
     loop {
-        let has_active = match poll_qbittorrent_downloads(&pool).await {
-            Ok(active) => active,
+        let wait = match poll_qbittorrent_downloads(&pool).await {
+            Ok(true) => active_wait,
+            Ok(false) => idle_wait,
             Err(e) => {
                 warn!("[TORRENT_POLLER] {:#}", e);
-                false
+                // Check if there are active downloads — if so, retry faster
+                let has_rows = sqlx::query_scalar::<_, i64>(
+                    "SELECT COUNT(*) FROM torrent_downloads WHERE status = 'downloading'"
+                )
+                .fetch_one(&pool)
+                .await
+                .unwrap_or(0);
+                if has_rows > 0 { error_wait } else { idle_wait }
             }
         };
-        tokio::time::sleep(if has_active { active_wait } else { idle_wait }).await;
+        tokio::time::sleep(wait).await;
     }
 }
 
