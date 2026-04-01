@@ -131,7 +131,7 @@ export function DiscoveryGrid({
         </>
       )}
 
-      {activeTab === "prowlarr" && <ProwlarrDiscoveryList />}
+      {activeTab === "prowlarr" && <ProwlarrDiscoveryList libraries={libraries} />}
     </div>
   );
 }

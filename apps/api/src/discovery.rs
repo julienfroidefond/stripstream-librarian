@@ -194,6 +194,8 @@ pub struct ProwlarrDiscoveryItem {
     pub best_release_title: String,
     pub best_download_url: Option<String>,
     pub best_size: i64,
+    pub best_publish_date: Option<String>,
+    pub volumes_found: Vec<i32>,
 }
 
 #[derive(Deserialize)]
@@ -238,50 +240,80 @@ pub async fn prowlarr_discovery(
         .build()
         .map_err(|e| ApiError::internal(format!("HTTP client error: {e}")))?;
 
-    // Search Prowlarr with empty query (returns recent/popular releases)
-    let mut params_vec: Vec<(&str, String)> = vec![
-        ("query", String::new()),
-        ("type", "search".to_string()),
+    // Search Prowlarr with multiple queries to get a broad set of results.
+    // Empty query returns recent releases; named queries find popular series.
+    let queries = vec![
+        "".to_string(),      // recent releases
+        "manga".to_string(),
+        "bd".to_string(),
+        "comics".to_string(),
+        "tome".to_string(),
     ];
-    for cat in &categories {
-        params_vec.push(("categories", cat.to_string()));
+
+    let mut raw: Vec<serde_json::Value> = Vec::new();
+
+    for query in &queries {
+        let mut params_vec: Vec<(&str, String)> = vec![
+            ("query", query.clone()),
+            ("type", "search".to_string()),
+        ];
+        for cat in &categories {
+            params_vec.push(("categories", cat.to_string()));
+        }
+
+        let resp = client
+            .get(format!("{prowlarr_url}/api/v1/search"))
+            .query(&params_vec)
+            .header("X-Api-Key", &api_key)
+            .send()
+            .await;
+
+        if let Ok(resp) = resp {
+            if resp.status().is_success() {
+                let results: Vec<serde_json::Value> = resp.json().await.unwrap_or_default();
+                raw.extend(results);
+            }
+        }
+
+        // Small delay between requests to avoid rate limiting
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 
-    let resp = client
-        .get(format!("{prowlarr_url}/api/v1/search"))
-        .query(&params_vec)
-        .header("X-Api-Key", &api_key)
-        .send()
-        .await
-        .map_err(|e| ApiError::internal(format!("Prowlarr request failed: {e}")))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(ApiError::internal(format!("Prowlarr returned {status}: {text}")));
+    if raw.is_empty() {
+        return Ok(Json(vec![]));
     }
-
-    let raw: Vec<serde_json::Value> = resp.json().await.unwrap_or_default();
 
     // Group by extracted series name
     let mut series_map: std::collections::HashMap<String, ProwlarrDiscoveryItem> = std::collections::HashMap::new();
 
+    // Deduplicate by GUID to avoid counting the same release from multiple queries
+    let mut seen_guids = std::collections::HashSet::new();
+
     for release in &raw {
+        let guid = release.get("guid").and_then(|g| g.as_str()).unwrap_or("").to_string();
+        if !guid.is_empty() && !seen_guids.insert(guid) {
+            continue; // already processed
+        }
+
         let title = release.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string();
         let seeders = release.get("seeders").and_then(|s| s.as_i64()).unwrap_or(0) as i32;
         let size = release.get("size").and_then(|s| s.as_i64()).unwrap_or(0);
         let download_url = release.get("downloadUrl").and_then(|u| u.as_str()).map(String::from);
         let indexer = release.get("indexer").and_then(|i| i.as_str()).unwrap_or("").to_string();
+        let publish_date = release.get("publishDate").and_then(|d| d.as_str()).map(String::from);
         let cats: Vec<String> = release.get("categories")
             .and_then(|c| c.as_array())
             .map(|arr| arr.iter().filter_map(|v| v.get("name").and_then(|n| n.as_str()).map(String::from)).collect())
             .unwrap_or_default();
 
-        // Extract series name from torrent title (take everything before " - ", " T", " Tome", etc.)
+        // Extract series name from torrent title
         let series_name = extract_series_name_from_torrent(&title);
         if series_name.is_empty() {
             continue;
         }
+
+        // Extract volume numbers from the title
+        let volumes = crate::prowlarr::extract_volumes_from_title_pub(&title);
 
         let key = series_name.to_lowercase();
         let entry = series_map.entry(key).or_insert_with(|| ProwlarrDiscoveryItem {
@@ -294,6 +326,8 @@ pub async fn prowlarr_discovery(
             best_release_title: String::new(),
             best_download_url: None,
             best_size: 0,
+            best_publish_date: None,
+            volumes_found: Vec::new(),
         });
 
         entry.release_count += 1;
@@ -303,6 +337,12 @@ pub async fn prowlarr_discovery(
             entry.best_release_title = title.clone();
             entry.best_download_url = download_url;
             entry.best_size = size;
+            entry.best_publish_date = publish_date;
+        }
+        for vol in &volumes {
+            if !entry.volumes_found.contains(vol) {
+                entry.volumes_found.push(*vol);
+            }
         }
         for cat in &cats {
             if !entry.categories.contains(cat) {
@@ -314,8 +354,11 @@ pub async fn prowlarr_discovery(
         }
     }
 
-    // Sort by best_seeders descending
+    // Sort volumes and sort items by best_seeders descending
     let mut items: Vec<ProwlarrDiscoveryItem> = series_map.into_values().collect();
+    for item in &mut items {
+        item.volumes_found.sort_unstable();
+    }
     items.sort_by(|a, b| b.best_seeders.cmp(&a.best_seeders));
 
     // Cache for 6 hours

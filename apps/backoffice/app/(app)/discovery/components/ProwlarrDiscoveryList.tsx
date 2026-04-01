@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Icon } from "@/app/components/ui";
+import { Button, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 
 interface ProwlarrItem {
@@ -14,6 +14,13 @@ interface ProwlarrItem {
   best_release_title: string;
   best_download_url: string | null;
   best_size: number;
+  best_publish_date: string | null;
+  volumes_found: number[];
+}
+
+interface Library {
+  id: string;
+  name: string;
 }
 
 function formatSize(bytes: number): string {
@@ -22,11 +29,21 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-export function ProwlarrDiscoveryList() {
+function formatVolumes(volumes: number[]): string {
+  if (volumes.length === 0) return "—";
+  if (volumes.length <= 3) return volumes.join(", ");
+  const min = volumes[0];
+  const max = volumes[volumes.length - 1];
+  return `${min}-${max} (${volumes.length})`;
+}
+
+export function ProwlarrDiscoveryList({ libraries }: { libraries: Library[] }) {
   const { t } = useTranslation();
   const [items, setItems] = useState<ProwlarrItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [addingSet, setAddingSet] = useState<Set<string>>(new Set());
+  const [addedSet, setAddedSet] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     async function fetchData() {
@@ -50,6 +67,44 @@ export function ProwlarrDiscoveryList() {
     fetchData();
   }, []);
 
+  async function handleAdd(item: ProwlarrItem, libraryId: string) {
+    const key = item.series_name;
+    setAddingSet((prev) => new Set(prev).add(key));
+    try {
+      const resp = await fetch("/api/discovery/add-to-library", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          library_id: libraryId,
+          provider: "prowlarr",
+          external_id: `prowlarr:${item.series_name}`,
+          title: item.series_name,
+          description: null,
+          authors: [],
+          publishers: [],
+          genres: item.categories,
+          start_year: null,
+          total_volumes: (item.volumes_found?.length ?? 0) > 0 ? Math.max(...item.volumes_found) : null,
+          status: null,
+          cover_url: null,
+          external_url: null,
+        }),
+      });
+      if (resp.ok) {
+        setAddedSet((prev) => new Set(prev).add(key));
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        console.error("[Prowlarr add]", err?.error || resp.status);
+      }
+    } finally {
+      setAddingSet((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -60,66 +115,105 @@ export function ProwlarrDiscoveryList() {
 
   if (error) {
     return (
-      <div className="text-center py-8 text-muted-foreground text-sm">
-        {error}
-      </div>
+      <div className="text-center py-8 text-muted-foreground text-sm">{error}</div>
     );
   }
 
   if (items.length === 0) {
     return (
-      <div className="text-center py-12 text-muted-foreground">
-        {t("discovery.noResults")}
-      </div>
+      <div className="text-center py-12 text-muted-foreground">{t("discovery.noResults")}</div>
     );
   }
 
   return (
     <div className="border border-border rounded-xl overflow-hidden">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/50">
-          <tr>
-            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">#</th>
-            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrSeries")}</th>
-            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrCategories")}</th>
-            <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrReleases")}</th>
-            <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrSeeders")}</th>
-            <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrSize")}</th>
-            <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrBestRelease")}</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {items.map((item, idx) => (
-            <tr key={item.series_name} className="hover:bg-muted/30 transition-colors">
-              <td className="px-4 py-2 text-muted-foreground text-xs">{idx + 1}</td>
-              <td className="px-4 py-2 font-medium text-foreground">{item.series_name}</td>
-              <td className="px-4 py-2">
-                <div className="flex flex-wrap gap-1">
-                  {item.categories.slice(0, 3).map((cat) => (
-                    <span key={cat} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                      {cat}
-                    </span>
-                  ))}
-                </div>
-              </td>
-              <td className="px-4 py-2 text-right text-muted-foreground">{item.release_count}</td>
-              <td className="px-4 py-2 text-right">
-                <span className={`font-medium ${
-                  item.best_seeders >= 10 ? "text-green-600" :
-                  item.best_seeders >= 3 ? "text-amber-600" :
-                  "text-red-500"
-                }`}>
-                  {item.best_seeders}
-                </span>
-              </td>
-              <td className="px-4 py-2 text-right text-muted-foreground text-xs">{formatSize(item.best_size)}</td>
-              <td className="px-4 py-2 text-xs text-muted-foreground max-w-xs truncate" title={item.best_release_title}>
-                {item.best_release_title}
-              </td>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50">
+            <tr>
+              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-8">#</th>
+              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrSeries")}</th>
+              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrCategories")}</th>
+              <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.volumes", { count: "" })}</th>
+              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrReleases")}</th>
+              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrSeeders")}</th>
+              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrSize")}</th>
+              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground w-24"></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {items.filter((i) => !addedSet.has(i.series_name)).map((item, idx) => (
+              <tr key={item.series_name} className="hover:bg-muted/30 transition-colors">
+                <td className="px-3 py-2 text-muted-foreground text-xs">{idx + 1}</td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-10 rounded bg-muted/50 flex items-center justify-center shrink-0">
+                      <Icon name="books" size="sm" className="text-muted-foreground/40" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">{item.series_name}</p>
+                      <p className="text-[10px] text-muted-foreground truncate max-w-xs" title={item.best_release_title}>
+                        {item.best_release_title}
+                      </p>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex flex-wrap gap-1">
+                    {item.categories.slice(0, 2).map((cat) => (
+                      <span key={cat} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                        {cat}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+                <td className="px-3 py-2 text-center text-xs text-muted-foreground">
+                  {formatVolumes(item.volumes_found ?? [])}
+                </td>
+                <td className="px-3 py-2 text-right text-muted-foreground">{item.release_count}</td>
+                <td className="px-3 py-2 text-right">
+                  <span className={`font-medium ${
+                    item.best_seeders >= 10 ? "text-green-600" :
+                    item.best_seeders >= 3 ? "text-amber-600" :
+                    "text-red-500"
+                  }`}>
+                    {item.best_seeders}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-right text-muted-foreground text-xs">{formatSize(item.best_size)}</td>
+                <td className="px-3 py-2 text-right">
+                  {addingSet.has(item.series_name) ? (
+                    <Icon name="spinner" size="sm" className="animate-spin text-muted-foreground" />
+                  ) : libraries.length === 1 ? (
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      onClick={() => handleAdd(item, libraries[0].id)}
+                    >
+                      +
+                    </Button>
+                  ) : (
+                    <div className="relative group">
+                      <Button variant="outline" size="xs">+</Button>
+                      <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-lg p-1 hidden group-hover:block z-10 min-w-32">
+                        {libraries.map((lib) => (
+                          <button
+                            key={lib.id}
+                            onClick={() => handleAdd(item, lib.id)}
+                            className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted transition-colors"
+                          >
+                            {lib.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
