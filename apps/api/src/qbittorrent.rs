@@ -133,9 +133,44 @@ pub async fn add_torrent(
         return Err(ApiError::bad_request("url is required"));
     }
 
-    let is_managed = body.library_id.is_some()
-        && body.series_name.is_some()
-        && body.expected_volumes.is_some();
+    // Always track the torrent. Infer missing fields from the URL/title if needed.
+    let inferred_series_name = body.series_name.clone().or_else(|| {
+        // Extract series name from the URL filename param or the URL itself
+        let url = &body.url;
+        url.split("file=").nth(1)
+            .map(|f| {
+                let encoded = f.split('&').next().unwrap_or(f);
+                // Simple percent-decode + '+' to space
+                let decoded = encoded.replace('+', " ");
+                let mut result = String::new();
+                let mut chars = decoded.chars();
+                while let Some(c) = chars.next() {
+                    if c == '%' {
+                        let hex: String = chars.by_ref().take(2).collect();
+                        if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                            result.push(byte as char);
+                        }
+                    } else {
+                        result.push(c);
+                    }
+                }
+                result
+            })
+            .map(|f| crate::discovery::extract_series_name_from_torrent(&f))
+            .filter(|s| !s.is_empty())
+    });
+    let inferred_library_id = match body.library_id {
+        Some(id) => Some(id),
+        None => {
+            // Use the first library as fallback
+            sqlx::query_scalar::<_, Uuid>("SELECT id FROM libraries ORDER BY created_at LIMIT 1")
+                .fetch_optional(&state.pool)
+                .await
+                .ok()
+                .flatten()
+        }
+    };
+    let is_managed = inferred_library_id.is_some() && inferred_series_name.is_some();
 
     tracing::info!("[QBITTORRENT] Add torrent request: url={}, managed={is_managed}", body.url);
 
@@ -249,9 +284,9 @@ pub async fn add_torrent(
 
     // If managed download: record in torrent_downloads
     let torrent_download_id = if is_managed {
-        let library_id = body.library_id.unwrap();
-        let series_name = body.series_name.as_deref().unwrap();
-        let expected_volumes = body.expected_volumes.as_deref().unwrap();
+        let library_id = inferred_library_id.unwrap();
+        let series_name = inferred_series_name.as_deref().unwrap();
+        let expected_volumes = body.expected_volumes.as_deref().unwrap_or(&[]);
 
         // Try to resolve hash: first from magnet, then by category in qBittorrent
         let mut qb_hash = extract_magnet_hash(&body.url);

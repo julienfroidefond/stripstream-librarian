@@ -371,7 +371,7 @@ pub async fn prowlarr_discovery(
 
 /// Extract a probable series name from a torrent title.
 /// E.g. "Largo Winch - BD Tome 1 à 23 + HS" → "Largo Winch"
-fn extract_series_name_from_torrent(title: &str) -> String {
+pub fn extract_series_name_from_torrent(title: &str) -> String {
     let lower = title.to_lowercase();
     // Split on common delimiters that separate series name from volume info
     let separators = [" - bd ", " - tome ", " - t0", " - t1", " - t2", " - t3", " - t4", " - t5", " - t6", " - t7", " - t8", " - t9",
