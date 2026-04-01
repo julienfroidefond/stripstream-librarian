@@ -143,12 +143,9 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
           <Icon name="download" size="xl" className="hidden sm:block" />
           {t("downloads.title")}
         </h1>
-        <Button onClick={() => refresh(true)} disabled={isRefreshing} variant="outline" size="xs" className="sm:hidden">
+        <Button onClick={() => refresh(true)} disabled={isRefreshing} variant="outline" size="sm">
           {isRefreshing ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="refresh" size="sm" />}
-        </Button>
-        <Button onClick={() => refresh(true)} disabled={isRefreshing} variant="outline" size="sm" className="hidden sm:flex">
-          {isRefreshing ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="refresh" size="sm" />}
-          <span className="ml-2">{t("downloads.refresh")}</span>
+          <span className="ml-2 hidden sm:inline">{t("downloads.refresh")}</span>
         </Button>
       </div>
 
