@@ -431,6 +431,10 @@ struct QbTorrentEntry {
     hash: String,
     #[serde(default)]
     name: String,
+    #[serde(default)]
+    save_path: String,
+    #[serde(default)]
+    category: String,
 }
 
 /// Resolve the hash of a torrent by its unique category in qBittorrent.
@@ -461,11 +465,47 @@ pub(crate) async fn resolve_hash_by_category(
         return Some(torrents[0].hash.clone());
     }
 
-    if torrents.is_empty() {
-        tracing::warn!("[QBITTORRENT] No torrent found with category {category}");
-    } else {
+    if !torrents.is_empty() {
         tracing::warn!("[QBITTORRENT] Multiple torrents with category {category}, expected 1");
+        return None;
     }
+
+    // Fallback: search ALL torrents and match by save_path containing the download ID
+    // This handles cases where qBittorrent didn't associate the category (magnet links)
+    let download_id = category.strip_prefix("sl-").unwrap_or(category);
+    let all_resp = client
+        .get(format!("{base_url}/api/v2/torrents/info"))
+        .header("Cookie", format!("SID={sid}"))
+        .send()
+        .await
+        .ok();
+
+    if let Some(all_resp) = all_resp {
+        if all_resp.status().is_success() {
+            let all_torrents: Vec<QbTorrentEntry> = all_resp.json().await.unwrap_or_default();
+            // Look for a torrent whose save_path contains our download ID
+            let matched: Vec<&QbTorrentEntry> = all_torrents
+                .iter()
+                .filter(|t| t.save_path.contains(download_id) || t.category.contains(download_id))
+                .collect();
+            if matched.len() == 1 {
+                tracing::info!(
+                    "[QBITTORRENT] Resolved hash {} via save_path fallback for {category} ({})",
+                    matched[0].hash, matched[0].name
+                );
+                // Also fix the category on the torrent for future lookups
+                let _ = client
+                    .post(format!("{base_url}/api/v2/torrents/setCategory"))
+                    .header("Cookie", format!("SID={sid}"))
+                    .form(&[("hashes", matched[0].hash.as_str()), ("category", category)])
+                    .send()
+                    .await;
+                return Some(matched[0].hash.clone());
+            }
+        }
+    }
+
+    tracing::warn!("[QBITTORRENT] No torrent found with category {category} (even with save_path fallback)");
     None
 }
 
