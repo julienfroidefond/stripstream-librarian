@@ -45,6 +45,8 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
   const [error, setError] = useState<string | null>(null);
   const [addingSet, setAddingSet] = useState<Set<string>>(new Set());
   const [addedSet, setAddedSet] = useState<Set<string>>(new Set());
+  const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [filterSearch, setFilterSearch] = useState("");
 
   useEffect(() => {
     async function fetchData() {
@@ -126,7 +128,55 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
     );
   }
 
+  // Collect all unique categories for filter
+  const allCategories = [...new Set(items.flatMap((i) => i.categories))].sort();
+
+  const filteredItems = items
+    .filter((i) => !addedSet.has(i.series_name))
+    .filter((i) => filterCategory === "all" || i.categories.includes(filterCategory))
+    .filter((i) => !filterSearch || i.series_name.toLowerCase().includes(filterSearch.toLowerCase()));
+
   return (
+    <div className="space-y-3">
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          value={filterSearch}
+          onChange={(e) => setFilterSearch(e.target.value)}
+          placeholder={t("common.search")}
+          className="text-sm border border-border rounded-lg px-3 py-1.5 bg-background w-48"
+        />
+        <div className="flex flex-wrap gap-1">
+          <button
+            onClick={() => setFilterCategory("all")}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+              filterCategory === "all"
+                ? "bg-primary/15 text-primary border-primary/30"
+                : "bg-card text-muted-foreground border-border hover:border-primary/30"
+            }`}
+          >
+            {t("common.all")} ({items.filter((i) => !addedSet.has(i.series_name)).length})
+          </button>
+          {allCategories.map((cat) => {
+            const count = items.filter((i) => !addedSet.has(i.series_name) && i.categories.includes(cat)).length;
+            return (
+              <button
+                key={cat}
+                onClick={() => setFilterCategory(cat === filterCategory ? "all" : cat)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                  filterCategory === cat
+                    ? "bg-primary/15 text-primary border-primary/30"
+                    : "bg-card text-muted-foreground border-border hover:border-primary/30"
+                }`}
+              >
+                {cat} ({count})
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
     <div className="border border-border rounded-xl overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -143,12 +193,13 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {items.filter((i) => !addedSet.has(i.series_name)).map((item, idx) => (
+            {filteredItems.map((item, idx) => (
               <ProwlarrRow key={item.series_name} item={item} idx={idx} libraries={libraries} adding={addingSet.has(item.series_name)} onAdd={handleAdd} />
             ))}
           </tbody>
         </table>
       </div>
+    </div>
     </div>
   );
 }
