@@ -15,6 +15,7 @@ interface ProwlarrItem {
   best_download_url: string | null;
   best_size: number;
   best_publish_date: string | null;
+  best_info_url: string | null;
   volumes_found: number[];
 }
 
@@ -153,7 +154,18 @@ export function ProwlarrDiscoveryList({ libraries }: { libraries: Library[] }) {
                     <div>
                       <p className="font-medium text-foreground">{item.series_name}</p>
                       <p className="text-[10px] text-muted-foreground truncate max-w-xs" title={item.best_release_title}>
-                        {item.best_release_title}
+                        {item.best_info_url ? (
+                          <a
+                            href={item.best_info_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:text-primary transition-colors"
+                          >
+                            {item.best_release_title} ↗
+                          </a>
+                        ) : (
+                          item.best_release_title
+                        )}
                       </p>
                     </div>
                   </div>

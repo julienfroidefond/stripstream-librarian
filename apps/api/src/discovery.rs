@@ -195,6 +195,7 @@ pub struct ProwlarrDiscoveryItem {
     pub best_download_url: Option<String>,
     pub best_size: i64,
     pub best_publish_date: Option<String>,
+    pub best_info_url: Option<String>,
     pub volumes_found: Vec<i32>,
 }
 
@@ -301,6 +302,7 @@ pub async fn prowlarr_discovery(
         let download_url = release.get("downloadUrl").and_then(|u| u.as_str()).map(String::from);
         let indexer = release.get("indexer").and_then(|i| i.as_str()).unwrap_or("").to_string();
         let publish_date = release.get("publishDate").and_then(|d| d.as_str()).map(String::from);
+        let info_url = release.get("infoUrl").and_then(|u| u.as_str()).map(String::from);
         let cats: Vec<String> = release.get("categories")
             .and_then(|c| c.as_array())
             .map(|arr| arr.iter().filter_map(|v| v.get("name").and_then(|n| n.as_str()).map(String::from)).collect())
@@ -327,6 +329,7 @@ pub async fn prowlarr_discovery(
             best_download_url: None,
             best_size: 0,
             best_publish_date: None,
+            best_info_url: None,
             volumes_found: Vec::new(),
         });
 
@@ -338,6 +341,7 @@ pub async fn prowlarr_discovery(
             entry.best_download_url = download_url;
             entry.best_size = size;
             entry.best_publish_date = publish_date;
+            entry.best_info_url = info_url;
         }
         for vol in &volumes {
             if !entry.volumes_found.contains(vol) {
