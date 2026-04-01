@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 import type { DiscoverySuggestion } from "../page";
@@ -32,15 +33,25 @@ export function DiscoveryGrid({
   prowlarrConfigured: boolean;
 }) {
   const { t } = useTranslation();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [suggestions, setSuggestions] = useState(initialSuggestions);
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
-  const [activeProvider, setActiveProvider] = useState(initialProvider);
-  const [activeTab, setActiveTab] = useState<TabId>("trending");
+  const [activeProvider, setActiveProvider] = useState(searchParams.get("provider") || initialProvider);
+  const [activeTab, setActiveTab] = useState<TabId>((searchParams.get("tab") as TabId) || "trending");
   const [loading, setLoading] = useState(false);
+
+  function updateUrl(tab: TabId, provider?: string) {
+    const params = new URLSearchParams();
+    params.set("tab", tab);
+    if (provider) params.set("provider", provider);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }
 
   const fetchProvider = useCallback(async (providerId: string) => {
     setActiveProvider(providerId);
     setActiveTab("trending");
+    updateUrl("trending", providerId);
     setLoading(true);
     setAddedIds(new Set());
     try {
@@ -76,7 +87,7 @@ export function DiscoveryGrid({
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => { setActiveTab(tab.id); updateUrl(tab.id, activeProvider); }}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
               activeTab === tab.id
                 ? "border-primary text-primary"
