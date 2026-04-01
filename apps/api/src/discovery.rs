@@ -386,7 +386,7 @@ pub async fn prowlarr_discovery(
     tracing::info!("[DISCOVERY] Prowlarr: {} series found from {} raw releases", items.len(), raw.len());
 
     // Cache for 6 hours
-    set_cached_raw(&state.pool, &cache_key, "prowlarr", "discovery", &items, 6).await;
+    set_cached_raw(&state.pool, &cache_key, "prowlarr", "discovery", &items, 168).await; // 7 days
 
     // Filter out already-owned
     let before_filter = items.len();
