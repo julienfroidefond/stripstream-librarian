@@ -8,9 +8,22 @@ SERVICES=("api" "indexer" "backoffice")
 # ─── Version bump ───────────────────────────────────────────────────────────
 CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
 IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
-NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
 
 echo "=== Stripstream Librarian Docker Push ==="
+echo "Current: $CURRENT_VERSION"
+echo ""
+echo "  1) patch → $MAJOR.$MINOR.$((PATCH + 1))"
+echo "  2) minor → $MAJOR.$((MINOR + 1)).0"
+echo "  3) major → $((MAJOR + 1)).0.0"
+echo ""
+read -rp "Bump [1/2/3]: " BUMP
+case "$BUMP" in
+    2) NEW_VERSION="$MAJOR.$((MINOR + 1)).0" ;;
+    3) NEW_VERSION="$((MAJOR + 1)).0.0" ;;
+    *) NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))" ;;
+esac
+
+echo ""
 echo "Version: $CURRENT_VERSION → $NEW_VERSION"
 echo "Services: ${SERVICES[*]}"
 echo ""
