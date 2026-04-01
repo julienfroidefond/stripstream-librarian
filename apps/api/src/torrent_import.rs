@@ -764,14 +764,20 @@ async fn do_import(
             .unwrap_or("");
 
         let all_extracted = extract_volumes_from_title_pub(filename);
-        let matched: Vec<i32> = all_extracted
-            .iter()
-            .copied()
-            .filter(|v| expected_set.contains(v))
-            .collect();
+        let matched: Vec<i32> = if expected_set.is_empty() {
+            all_extracted.clone() // No filter — import everything
+        } else {
+            all_extracted.iter().copied().filter(|v| expected_set.contains(v)).collect()
+        };
 
-        if matched.is_empty() {
+        if matched.is_empty() && !expected_set.is_empty() {
             info!("[IMPORT] Skipping '{}' (extracted volumes {:?}, none in expected set)", filename, all_extracted);
+            continue;
+        }
+        if matched.is_empty() && expected_set.is_empty() && all_extracted.is_empty() {
+            // No volume detected and no expected set — keep the file as-is (e.g. HS)
+            // Skip for now, will be handled by a future HS import feature
+            info!("[IMPORT] Skipping '{}' (no volume detected, no expected set)", filename);
             continue;
         }
 
@@ -923,12 +929,20 @@ fn deduplicate_by_format(
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("");
-        let volumes: Vec<i32> = extract_volumes_from_title_pub(filename)
-            .into_iter()
-            .filter(|v| expected_set.contains(v))
-            .collect();
+        let all_volumes = extract_volumes_from_title_pub(filename);
+        // If expected_set is empty, keep all files (no filtering)
+        let volumes: Vec<i32> = if expected_set.is_empty() {
+            all_volumes
+        } else {
+            all_volumes.into_iter().filter(|v| expected_set.contains(v)).collect()
+        };
 
-        if volumes.is_empty() {
+        if volumes.is_empty() && !expected_set.is_empty() {
+            continue;
+        }
+        // For files with no extracted volume and empty expected_set, keep them
+        if volumes.is_empty() && expected_set.is_empty() {
+            multi_volume_files.push(path);
             continue;
         }
 
