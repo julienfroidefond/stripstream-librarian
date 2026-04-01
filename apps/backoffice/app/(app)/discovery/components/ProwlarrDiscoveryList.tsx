@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 
@@ -88,7 +88,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
           total_volumes: (item.volumes_found?.length ?? 0) > 0 ? Math.max(...item.volumes_found) : null,
           status: null,
           cover_url: null,
-          external_url: null,
+          external_url: item.best_info_url || null,
         }),
       });
       if (resp.ok) {
@@ -144,88 +144,71 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
           </thead>
           <tbody className="divide-y divide-border">
             {items.filter((i) => !addedSet.has(i.series_name)).map((item, idx) => (
-              <tr key={item.series_name} className="hover:bg-muted/30 transition-colors">
-                <td className="px-3 py-2 text-muted-foreground text-xs">{idx + 1}</td>
-                <td className="px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-10 rounded bg-muted/50 flex items-center justify-center shrink-0">
-                      <Icon name="books" size="sm" className="text-muted-foreground/40" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground">{item.series_name}</p>
-                      <p className="text-[10px] text-muted-foreground truncate max-w-xs" title={item.best_release_title}>
-                        {item.best_info_url ? (
-                          <a
-                            href={item.best_info_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="hover:text-primary transition-colors"
-                          >
-                            {item.best_release_title} ↗
-                          </a>
-                        ) : (
-                          item.best_release_title
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-3 py-2">
-                  <div className="flex flex-wrap gap-1">
-                    {item.categories.slice(0, 2).map((cat) => (
-                      <span key={cat} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                        {cat}
-                      </span>
-                    ))}
-                  </div>
-                </td>
-                <td className="px-3 py-2 text-center text-xs text-muted-foreground">
-                  {formatVolumes(item.volumes_found ?? [])}
-                </td>
-                <td className="px-3 py-2 text-right text-muted-foreground">{item.release_count}</td>
-                <td className="px-3 py-2 text-right">
-                  <span className={`font-medium ${
-                    item.best_seeders >= 10 ? "text-green-600" :
-                    item.best_seeders >= 3 ? "text-amber-600" :
-                    "text-red-500"
-                  }`}>
-                    {item.best_seeders}
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-right text-muted-foreground text-xs">{formatSize(item.best_size)}</td>
-                <td className="px-3 py-2 text-right">
-                  {addingSet.has(item.series_name) ? (
-                    <Icon name="spinner" size="sm" className="animate-spin text-muted-foreground" />
-                  ) : libraries.length === 1 ? (
-                    <Button
-                      variant="outline"
-                      size="xs"
-                      onClick={() => handleAdd(item, libraries[0].id)}
-                    >
-                      +
-                    </Button>
-                  ) : (
-                    <div className="relative group">
-                      <Button variant="outline" size="xs">+</Button>
-                      <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-lg p-1 hidden group-hover:block z-10 min-w-32">
-                        {libraries.map((lib) => (
-                          <button
-                            key={lib.id}
-                            onClick={() => handleAdd(item, lib.id)}
-                            className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted transition-colors"
-                          >
-                            {lib.name}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </td>
-              </tr>
+              <ProwlarrRow key={item.series_name} item={item} idx={idx} libraries={libraries} adding={addingSet.has(item.series_name)} onAdd={handleAdd} />
             ))}
           </tbody>
         </table>
       </div>
     </div>
+  );
+}
+
+function ProwlarrRow({ item, idx, libraries, adding, onAdd }: {
+  item: ProwlarrItem;
+  idx: number;
+  libraries: Library[];
+  adding: boolean;
+  onAdd: (item: ProwlarrItem, libraryId: string) => void;
+}) {
+  return (
+    <tr className="hover:bg-muted/30 transition-colors">
+      <td className="px-3 py-2 text-muted-foreground text-xs">{idx + 1}</td>
+      <td className="px-3 py-2">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-10 rounded bg-muted/50 flex items-center justify-center shrink-0">
+            <Icon name="books" size="sm" className="text-muted-foreground/40" />
+          </div>
+          <div>
+            <p className="font-medium text-foreground">{item.series_name}</p>
+            <p className="text-[10px] text-muted-foreground truncate max-w-xs" title={item.best_release_title}>
+              {item.best_release_title}
+            </p>
+          </div>
+        </div>
+      </td>
+      <td className="px-3 py-2">
+        <div className="flex flex-wrap gap-1">
+          {item.categories.slice(0, 2).map((cat) => (
+            <span key={cat} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{cat}</span>
+          ))}
+        </div>
+      </td>
+      <td className="px-3 py-2 text-center text-xs text-muted-foreground">{formatVolumes(item.volumes_found ?? [])}</td>
+      <td className="px-3 py-2 text-right text-muted-foreground">{item.release_count}</td>
+      <td className="px-3 py-2 text-right">
+        <span className={`font-medium ${item.best_seeders >= 10 ? "text-green-600" : item.best_seeders >= 3 ? "text-amber-600" : "text-red-500"}`}>
+          {item.best_seeders}
+        </span>
+      </td>
+      <td className="px-3 py-2 text-right text-muted-foreground text-xs">{formatSize(item.best_size)}</td>
+      <td className="px-3 py-2 text-right">
+        {adding ? (
+          <Icon name="spinner" size="sm" className="animate-spin text-muted-foreground" />
+        ) : libraries.length === 1 ? (
+          <Button variant="outline" size="xs" onClick={() => onAdd(item, libraries[0].id)}>+</Button>
+        ) : (
+          <div className="relative group">
+            <Button variant="outline" size="xs">+</Button>
+            <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-lg p-1 hidden group-hover:block z-10 min-w-32">
+              {libraries.map((lib) => (
+                <button key={lib.id} onClick={() => onAdd(item, lib.id)} className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted transition-colors">
+                  {lib.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </td>
+    </tr>
   );
 }

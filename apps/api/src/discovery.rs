@@ -395,8 +395,6 @@ pub async fn prowlarr_discovery(
     Ok(Json(filtered.into_iter().take(limit).collect()))
 }
 
-/// Extract a probable series name from a torrent title.
-/// E.g. "Largo Winch - BD Tome 1 à 23 + HS" → "Largo Winch"
 /// Guess a more specific category from the torrent title keywords.
 fn guess_category_from_title(title: &str) -> Option<String> {
     let lower = title.to_lowercase();
