@@ -281,15 +281,15 @@ fn extract_volumes_from_title(title: &str) -> Vec<i32> {
     //   "Les Géants - 07 - Moon.cbz"  →  7
     //   "06. yatho.cbz"               →  6
     if volumes.is_empty() {
-        // Pattern A: " - NN - " or " - NN." (number between dash separators)
+        // Pattern A: " - NN - ", " - NN.", or " -NN- " (number between dash separators)
         let dash_num_re = |chars: &[char]| -> Vec<i32> {
             let mut found = Vec::new();
             let mut i = 0;
-            while i + 4 < chars.len() {
-                // Look for " - "
-                if chars[i] == ' ' && chars[i + 1] == '-' && chars[i + 2] == ' ' {
-                    let mut j = i + 3;
-                    // Skip leading spaces
+            while i + 3 < chars.len() {
+                // Look for " -" or " - " (dash preceded by space)
+                if chars[i] == ' ' && chars[i + 1] == '-' {
+                    let mut j = i + 2;
+                    // Skip optional space after dash
                     while j < chars.len() && chars[j] == ' ' {
                         j += 1;
                     }
@@ -298,9 +298,10 @@ fn extract_volumes_from_title(title: &str) -> Vec<i32> {
                         j += 1;
                     }
                     if j > digit_start {
-                        // Ensure followed by " - ", ".", or end-ish (space + non-digit)
+                        // Ensure followed by "- ", " - ", ".", or end-ish
                         let valid_end = j >= chars.len()
                             || (j + 2 < chars.len() && chars[j] == ' ' && chars[j + 1] == '-' && chars[j + 2] == ' ')
+                            || (j + 1 < chars.len() && chars[j] == '-' && chars[j + 1] == ' ')
                             || chars[j] == '.'
                             || (chars[j] == ' ' && (j + 1 >= chars.len() || !chars[j + 1].is_ascii_digit()));
                         if valid_end {
@@ -748,6 +749,14 @@ mod tests {
     fn integral_complet() {
         assert!(is_integral_release("Dragon Ball Complet [PDF]"));
         assert!(is_integral_release("Bleach Complete Edition"));
+    }
+
+    #[test]
+    fn dash_number_dash_no_spaces() {
+        // "Largo Winch -21- L'étoile du matin.cbr" → 21
+        assert_eq!(sorted(extract_volumes_from_title("Largo Winch -21- L'étoile du matin.cbr")), vec![21]);
+        assert_eq!(sorted(extract_volumes_from_title("Largo Winch -05- H.cbr")), vec![5]);
+        assert_eq!(sorted(extract_volumes_from_title("Largo winch -22- Les Voiles écarlates.cbz")), vec![22]);
     }
 
     #[test]

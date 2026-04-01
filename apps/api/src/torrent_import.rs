@@ -499,8 +499,9 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
 
             // Refresh metadata for this series if it has an approved metadata link
             let link_row = sqlx::query(
-                "SELECT id, provider, external_id FROM external_metadata_links \
-                 WHERE library_id = $1 AND LOWER(series_name) = LOWER($2) AND status = 'approved' LIMIT 1",
+                "SELECT eml.id, eml.provider, eml.external_id FROM external_metadata_links eml \
+                 JOIN series s ON s.id = eml.series_id \
+                 WHERE s.library_id = $1 AND LOWER(s.name) = LOWER($2) AND eml.status = 'approved' LIMIT 1",
             )
             .bind(library_id)
             .bind(&series_name)
@@ -527,8 +528,9 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
             let imported_vols: Vec<i32> = imported.iter().map(|f| f.volume).collect();
             if !imported_vols.is_empty() {
                 let ad_row = sqlx::query(
-                    "SELECT id, missing_count, available_releases FROM available_downloads \
-                     WHERE library_id = $1 AND LOWER(series_name) = LOWER($2)",
+                    "SELECT ad.id, ad.missing_count, ad.available_releases FROM available_downloads ad \
+                     JOIN series s ON s.id = ad.series_id \
+                     WHERE s.library_id = $1 AND LOWER(s.name) = LOWER($2)",
                 )
                 .bind(library_id)
                 .bind(&series_name)
