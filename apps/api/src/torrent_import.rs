@@ -228,7 +228,7 @@ const QB_FAILED_STATES: &[&str] = &[
 
 pub async fn run_torrent_poller(pool: PgPool, interval_seconds: u64) {
     let idle_wait = Duration::from_secs(interval_seconds.max(5));
-    let active_wait = Duration::from_secs(5);
+    let active_wait = Duration::from_secs(3);
     let error_wait = Duration::from_secs(10);
     loop {
         let wait = match poll_qbittorrent_downloads(&pool).await {
