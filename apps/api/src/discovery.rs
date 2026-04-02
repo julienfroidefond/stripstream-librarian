@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::error::ApiError;
 use crate::metadata_providers::anilist;
 use crate::metadata_providers::bedetheque;
+use crate::metadata_providers::senscritique;
 use crate::series::get_or_create_series;
 use crate::state::AppState;
 
@@ -30,6 +31,8 @@ pub struct DiscoverySuggestionDto {
 pub struct TrendingQuery {
     pub provider: Option<String>,
     pub limit: Option<i32>,
+    pub offset: Option<i32>,
+    pub period: Option<String>,
     pub nocache: Option<String>,
 }
 
@@ -112,9 +115,15 @@ pub async fn trending(
     Query(params): Query<TrendingQuery>,
 ) -> Result<Json<Vec<DiscoverySuggestionDto>>, ApiError> {
     let provider = params.provider.as_deref().unwrap_or("anilist");
-    let limit = params.limit.unwrap_or(20).min(50);
+    let limit = params.limit.unwrap_or(100).min(200) as usize;
+    let offset = params.offset.unwrap_or(0).max(0) as usize;
 
-    let supported = ["anilist", "bedetheque"];
+    let supported = [
+        "anilist", "bedetheque",
+        "senscritique", "senscritique_bd",
+        "sc_trending_bd", "sc_trending_manga",
+        "sc_best_bd", "sc_best_manga",
+    ];
     if !supported.contains(&provider) {
         return Err(ApiError::bad_request(format!(
             "trending not supported for provider '{provider}'. Supported: {}",
@@ -122,25 +131,83 @@ pub async fn trending(
         )));
     }
 
-    let cache_key = format!("trending:{provider}");
+    // Period and sort parameters for sc_trending_* providers
+    let period = params.period.as_deref().unwrap_or("month");
+    let gql_period = match period {
+        "week" => "OUTBYWEEK",
+        "year" => "OUTBYYEAR",
+        _ => "OUTOFMONTH",
+    };
+    let gql_sort = if provider.starts_with("sc_best") { "RATING" } else { "POPULARITY" };
+
+    // Include period in cache key for providers with period sub-filter
+    let cache_key = if provider.starts_with("sc_trending") || provider.starts_with("sc_best") {
+        format!("trending:{provider}:{period}")
+    } else {
+        format!("trending:{provider}")
+    };
     let skip_cache = params.nocache.as_deref() == Some("true");
 
-    // Check cache (unless nocache requested)
-    if !skip_cache {
+    // Try cache first (unless nocache requested)
+    let all_suggestions = if !skip_cache {
         if let Some(cached) = get_cached(&state.pool, &cache_key).await {
-            let filtered = filter_already_owned(&state.pool, provider, cached).await;
-            return Ok(Json(filtered));
+            cached
+        } else {
+            fetch_and_cache_trending(&state.pool, provider, &cache_key, gql_period, gql_sort).await?
         }
-    }
+    } else {
+        fetch_and_cache_trending(&state.pool, provider, &cache_key, gql_period, gql_sort).await?
+    };
 
-    // Fetch from provider
+    // Filter out already-owned, then paginate
+    let filtered = filter_already_owned(&state.pool, provider, all_suggestions).await;
+    let page = filtered.into_iter().skip(offset).take(limit).collect();
+
+    // Lazy cleanup
+    cleanup_expired(&state.pool).await;
+
+    Ok(Json(page))
+}
+
+/// Fetch trending from provider and cache the full result set.
+async fn fetch_and_cache_trending(
+    pool: &sqlx::PgPool,
+    provider: &str,
+    cache_key: &str,
+    gql_period: &str,
+    gql_sort: &str,
+) -> Result<Vec<DiscoverySuggestionDto>, ApiError> {
+    // Fetch maximum from provider
+    let fetch_limit = match provider {
+        "bedetheque" => 100,
+        "senscritique" | "senscritique_bd" | "sc_trending_bd" | "sc_trending_manga" | "sc_best_bd" | "sc_best_manga" => 100,
+        _ => 50,
+    };
     let candidates = match provider {
-        "anilist" => anilist::fetch_trending(limit)
+        "anilist" => anilist::fetch_trending(fetch_limit)
             .await
             .map_err(|e| ApiError::internal(format!("trending fetch failed: {e}")))?,
-        "bedetheque" => bedetheque::fetch_indispensables(None, limit as usize)
+        "bedetheque" => bedetheque::fetch_indispensables(None, fetch_limit as usize)
             .await
             .map_err(|e| ApiError::internal(format!("indispensables fetch failed: {e}")))?,
+        "senscritique" => senscritique::fetch_top_mangas(fetch_limit as usize)
+            .await
+            .map_err(|e| ApiError::internal(format!("senscritique fetch failed: {e}")))?,
+        "senscritique_bd" => senscritique::fetch_top_bd(fetch_limit as usize)
+            .await
+            .map_err(|e| ApiError::internal(format!("senscritique_bd fetch failed: {e}")))?,
+        "sc_trending_bd" => senscritique::fetch_trending("comicBook", gql_period, gql_sort, Some("BD franco-belge"), fetch_limit as usize)
+            .await
+            .map_err(|e| ApiError::internal(format!("sc_trending_bd fetch failed: {e}")))?,
+        "sc_trending_manga" => senscritique::fetch_trending("comicBook", gql_period, gql_sort, Some("Manga"), fetch_limit as usize)
+            .await
+            .map_err(|e| ApiError::internal(format!("sc_trending_manga fetch failed: {e}")))?,
+        "sc_best_bd" => senscritique::fetch_trending("comicBook", gql_period, "RATING", Some("BD franco-belge"), fetch_limit as usize)
+            .await
+            .map_err(|e| ApiError::internal(format!("sc_best_bd fetch failed: {e}")))?,
+        "sc_best_manga" => senscritique::fetch_trending("comicBook", gql_period, "RATING", Some("Manga"), fetch_limit as usize)
+            .await
+            .map_err(|e| ApiError::internal(format!("sc_best_manga fetch failed: {e}")))?,
         _ => unreachable!(),
     };
 
@@ -174,15 +241,10 @@ pub async fn trending(
         })
         .collect();
 
-    // Cache results
-    set_cached(&state.pool, &cache_key, provider, "trending", &suggestions, 168).await; // 7 days
-
-    // Lazy cleanup
-    cleanup_expired(&state.pool).await;
-
-    // Filter out already-owned
-    let filtered = filter_already_owned(&state.pool, provider, suggestions).await;
-    Ok(Json(filtered))
+    // Trending/best providers get 24h TTL; top/poll lists get infinite cache
+    let ttl_hours = if provider.starts_with("sc_trending") || provider.starts_with("sc_best") { 24 } else { 87600 };
+    set_cached(pool, cache_key, provider, "trending", &suggestions, ttl_hours).await;
+    Ok(suggestions)
 }
 
 // ─── Prowlarr discovery ─────────────────────────────────────────────────────

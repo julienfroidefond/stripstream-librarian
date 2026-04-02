@@ -3,6 +3,7 @@ pub mod bedetheque;
 pub mod comicvine;
 pub mod google_books;
 pub mod open_library;
+pub mod senscritique;
 
 use serde::{Deserialize, Serialize};
 

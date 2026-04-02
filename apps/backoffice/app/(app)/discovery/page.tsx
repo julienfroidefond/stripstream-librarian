@@ -26,11 +26,11 @@ export default async function DiscoveryPage({
 }) {
   const { t } = await getServerTranslations();
   const params = await searchParams;
-  const provider = (typeof params.provider === "string" ? params.provider : "anilist");
+  const provider = (typeof params.provider === "string" ? params.provider : "sc_trending_bd");
 
   const [libraries, trending, prowlarrConfigured] = await Promise.all([
     fetchLibraries().catch(() => []),
-    apiFetch<DiscoverySuggestion[]>(`/discovery/trending?provider=${provider}&limit=30`).catch(() => []),
+    apiFetch<DiscoverySuggestion[]>(`/discovery/trending?provider=${provider}&limit=100`).catch(() => []),
     apiFetch<{ api_key?: string }>("/settings/prowlarr")
       .then(d => !!(d?.api_key?.trim()))
       .catch(() => false),

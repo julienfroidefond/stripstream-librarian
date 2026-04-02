@@ -17,8 +17,19 @@ interface Library {
 type TabId = "trending" | "prowlarr";
 
 const PROVIDERS = [
-  { id: "anilist", label: "AniList", description: "Manga" },
-  { id: "bedetheque", label: "Bédéthèque", description: "BD franco-belge" },
+  { id: "sc_trending_bd", label: "Nouveautés BD", description: "", hasPeriod: true },
+  { id: "sc_trending_manga", label: "Nouveautés Manga", description: "", hasPeriod: true },
+  { id: "sc_best_bd", label: "Meilleures BD", description: "", hasPeriod: true },
+  { id: "sc_best_manga", label: "Meilleurs Manga", description: "", hasPeriod: true },
+  { id: "bedetheque", label: "Bédéthèque", description: "Top BD", hasPeriod: false },
+  { id: "senscritique_bd", label: "SensCritique", description: "Top BD", hasPeriod: false },
+  { id: "senscritique", label: "SensCritique", description: "Top Manga", hasPeriod: false },
+  { id: "anilist", label: "AniList", description: "Top Manga", hasPeriod: false },
+];
+
+const PERIODS = [
+  { id: "month", label: "Mois" },
+  { id: "year", label: "Année" },
 ];
 
 export function DiscoveryGrid({
@@ -39,7 +50,10 @@ export function DiscoveryGrid({
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
   const [activeProvider, setActiveProvider] = useState(searchParams.get("provider") || initialProvider);
   const [activeTab, setActiveTab] = useState<TabId>((searchParams.get("tab") as TabId) || "trending");
+  const [activePeriod, setActivePeriod] = useState("month");
   const [loading, setLoading] = useState(false);
+
+  const activeProviderDef = PROVIDERS.find((p) => p.id === activeProvider);
 
   function updateUrl(tab: TabId, provider?: string) {
     const params = new URLSearchParams();
@@ -50,17 +64,15 @@ export function DiscoveryGrid({
 
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchProvider = useCallback(async (providerId: string, nocache = false) => {
-    setActiveProvider(providerId);
-    setActiveTab("trending");
-    updateUrl("trending", providerId);
+  const fetchData = useCallback(async (providerId: string, period?: string, nocache = false) => {
     setLoading(true);
     setAddedIds(new Set());
+    const provDef = PROVIDERS.find((p) => p.id === providerId);
+    const periodParam = provDef?.hasPeriod && period ? `&period=${period}` : "";
     try {
-      const resp = await fetch(`/api/discovery/trending?provider=${providerId}&limit=30${nocache ? "&nocache=true" : ""}`);
+      const resp = await fetch(`/api/discovery/trending?provider=${providerId}&limit=100${periodParam}${nocache ? "&nocache=true" : ""}`);
       if (resp.ok) {
-        const data = await resp.json();
-        setSuggestions(data);
+        setSuggestions(await resp.json());
       } else {
         setSuggestions([]);
       }
@@ -71,27 +83,29 @@ export function DiscoveryGrid({
     }
   }, []);
 
+  function handleProviderClick(providerId: string) {
+    setActiveProvider(providerId);
+    setActiveTab("trending");
+    updateUrl("trending", providerId);
+    const provDef = PROVIDERS.find((p) => p.id === providerId);
+    const period = provDef?.hasPeriod ? activePeriod : undefined;
+    fetchData(providerId, period);
+  }
+
+  function handlePeriodClick(period: string) {
+    setActivePeriod(period);
+    fetchData(activeProvider, period);
+  }
+
   async function handleHardRefresh() {
     setRefreshing(true);
     if (activeTab === "prowlarr") {
       setProwlarrKey((k) => k + 1);
       setRefreshing(false);
     } else {
-      setLoading(true);
-      setAddedIds(new Set());
-      try {
-        const resp = await fetch(`/api/discovery/trending?provider=${activeProvider}&limit=30&nocache=true`);
-        if (resp.ok) {
-          setSuggestions(await resp.json());
-        } else {
-          setSuggestions([]);
-        }
-      } catch {
-        setSuggestions([]);
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
+      const period = activeProviderDef?.hasPeriod ? activePeriod : undefined;
+      await fetchData(activeProvider, period, true);
+      setRefreshing(false);
     }
   }
 
@@ -146,7 +160,7 @@ export function DiscoveryGrid({
             {PROVIDERS.map((p) => (
               <button
                 key={p.id}
-                onClick={() => fetchProvider(p.id)}
+                onClick={() => handleProviderClick(p.id)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
                   activeProvider === p.id
                     ? "bg-primary/15 text-primary border-primary/30"
@@ -154,10 +168,33 @@ export function DiscoveryGrid({
                 }`}
               >
                 {p.label}
-                <span className="ml-1.5 text-xs opacity-60">{p.description}</span>
+                {p.description && <span className="ml-1.5 text-xs opacity-60">{p.description}</span>}
+                {activeProvider === p.id && !loading && visibleSuggestions.length > 0 && (
+                  <span className="ml-1.5 text-xs opacity-50">({visibleSuggestions.length})</span>
+                )}
               </button>
             ))}
           </div>
+
+          {/* Period sub-filter for trending providers */}
+          {activeProviderDef?.hasPeriod && (
+            <div className="flex items-center gap-1.5">
+              {PERIODS.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => handlePeriodClick(p.id)}
+                  disabled={loading}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                    activePeriod === p.id
+                      ? "bg-primary/15 text-primary border-primary/30"
+                      : "bg-card text-muted-foreground border-border hover:border-primary/30"
+                  } disabled:opacity-50`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           {loading ? (
             <div className="flex justify-center py-12">
