@@ -77,6 +77,7 @@ pub fn get_provider(name: &str) -> Option<Box<dyn MetadataProvider>> {
         "comicvine" => Some(Box::new(comicvine::ComicVineProvider)),
         "anilist" => Some(Box::new(anilist::AniListProvider)),
         "bedetheque" => Some(Box::new(bedetheque::BedethequeProvider)),
+        "senscritique" => Some(Box::new(senscritique::SensCritiqueProvider)),
         _ => None,
     }
 }

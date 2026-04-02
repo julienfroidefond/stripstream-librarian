@@ -96,6 +96,15 @@ export function ProviderIcon({ provider, size = 16, className = "" }: ProviderIc
         </svg>
       );
 
+    case "senscritique":
+      // SC stylized rating badge
+      return (
+        <svg viewBox="0 0 24 24" style={style} className={className}>
+          <rect x="3" y="3" width="18" height="18" rx="3" fill="#1A1A2E" opacity="0.15" />
+          <text x="12" y="16" textAnchor="middle" fontSize="11" fontWeight="bold" fill="#E4003A" fontFamily="sans-serif">SC</text>
+        </svg>
+      );
+
     default:
       // Generic globe
       return (
@@ -113,6 +122,7 @@ export const PROVIDERS = [
   { value: "comicvine", label: "ComicVine" },
   { value: "anilist", label: "AniList" },
   { value: "bedetheque", label: "Bédéthèque" },
+  { value: "senscritique", label: "SensCritique" },
 ] as const;
 
 export function providerLabel(value: string) {

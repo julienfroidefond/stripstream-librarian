@@ -60,6 +60,7 @@ export function MetadataProvidersCard({ handleUpdateSetting, initialData }: { ha
                 { value: "comicvine", label: "ComicVine" },
                 { value: "anilist", label: "AniList" },
                 { value: "bedetheque", label: "Bédéthèque" },
+                { value: "senscritique", label: "SensCritique" },
               ] as const).map((p) => (
                 <button
                   key={p.value}
@@ -155,6 +156,11 @@ export function MetadataProvidersCard({ handleUpdateSetting, initialData }: { ha
                 <div className="flex items-center gap-1.5">
                   <ProviderIcon provider="bedetheque" size={16} />
                   <span className="text-xs font-medium text-foreground">Bédéthèque</span>
+                </div>
+                <span className="text-xs text-muted-foreground">{t("common.and")}</span>
+                <div className="flex items-center gap-1.5">
+                  <ProviderIcon provider="senscritique" size={16} />
+                  <span className="text-xs font-medium text-foreground">SensCritique</span>
                 </div>
                 <span className="text-xs text-muted-foreground">{t("settings.freeProviders")}</span>
               </div>

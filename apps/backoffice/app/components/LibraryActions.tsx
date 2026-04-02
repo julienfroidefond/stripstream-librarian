@@ -242,6 +242,7 @@ export function LibraryActions({
                           <option value="open_library">Open Library</option>
                           <option value="anilist">AniList</option>
                           <option value="bedetheque">Bédéthèque</option>
+                          <option value="senscritique">SensCritique</option>
                         </select>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1.5">{t("libraryActions.providerDesc")}</p>
@@ -265,6 +266,7 @@ export function LibraryActions({
                           <option value="open_library">Open Library</option>
                           <option value="anilist">AniList</option>
                           <option value="bedetheque">Bédéthèque</option>
+                          <option value="senscritique">SensCritique</option>
                         </select>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1.5">{t("libraryActions.fallbackDesc")}</p>
