@@ -211,6 +211,7 @@ function ProwlarrRow({ item, idx, libraries, adding, onAdd }: {
   adding: boolean;
   onAdd: (item: ProwlarrItem, libraryId: string) => void;
 }) {
+  const [showPicker, setShowPicker] = useState(false);
   return (
     <tr className="hover:bg-muted/30 transition-colors">
       <td className="px-3 py-2 text-muted-foreground text-xs">{idx + 1}</td>
@@ -248,15 +249,17 @@ function ProwlarrRow({ item, idx, libraries, adding, onAdd }: {
         ) : libraries.length === 1 ? (
           <Button variant="outline" size="xs" onClick={() => onAdd(item, libraries[0].id)}>+</Button>
         ) : (
-          <div className="relative group">
-            <Button variant="outline" size="xs">+</Button>
-            <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-lg p-1 hidden group-hover:block z-10 min-w-32">
-              {libraries.map((lib) => (
-                <button key={lib.id} onClick={() => onAdd(item, lib.id)} className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted transition-colors">
-                  {lib.name}
-                </button>
-              ))}
-            </div>
+          <div className="relative">
+            <Button variant="outline" size="xs" onClick={() => setShowPicker((v) => !v)}>+</Button>
+            {showPicker && (
+              <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-lg p-1 z-10 min-w-32">
+                {libraries.map((lib) => (
+                  <button key={lib.id} onClick={() => { onAdd(item, lib.id); setShowPicker(false); }} className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted transition-colors">
+                    {lib.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </td>
