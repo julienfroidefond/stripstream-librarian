@@ -101,7 +101,10 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300, initialValu
 
   const doNavigate = useCallback((url: string) => {
     isOwnNavRef.current = true;
-    startTransition(() => { router.replace(url as any); });
+    window.history.replaceState(null, "", url);
+    startTransition(() => {
+      router.refresh();
+    });
   }, [router]);
 
   const navigate = useCallback((immediate: boolean) => {
