@@ -45,7 +45,7 @@ export function DiscoveryCard({
           total_volumes: suggestion.total_volumes,
           status: suggestion.status,
           cover_url: suggestion.cover_url,
-          external_url: suggestion.external_url,
+          external_url: suggestion.provider === "bedetheque" ? suggestion.external_url : null,
         }),
       });
       if (resp.ok) {

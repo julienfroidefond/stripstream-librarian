@@ -90,7 +90,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
           total_volumes: (item.volumes_found?.length ?? 0) > 0 ? Math.max(...item.volumes_found) : null,
           status: null,
           cover_url: null,
-          external_url: item.best_info_url || null,
+          external_url: null,
         }),
       });
       if (resp.ok) {
