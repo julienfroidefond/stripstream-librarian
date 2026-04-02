@@ -866,6 +866,7 @@ const fr = {
   // Metadata search modal
   "metadata.metadataLink": "Lien métadonnées",
   "metadata.searchExternal": "Rechercher les métadonnées externes",
+  "metadata.searchPlaceholder": "Rechercher une série…",
   "metadata.provider": "Fournisseur :",
   "metadata.searching": "Recherche de \"{{name}}\"...",
   "metadata.noResults": "Aucun résultat trouvé.",

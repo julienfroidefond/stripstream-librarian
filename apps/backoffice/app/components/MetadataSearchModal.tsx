@@ -63,17 +63,19 @@ export function MetadataSearchModal({
   const [searchProvider, setSearchProvider] = useState("");
   const [activeProvider, setActiveProvider] = useState("");
   const [hiddenProviders] = useState<Set<string>>(new Set(initialHiddenProviders ?? []));
+  const [searchInput, setSearchInput] = useState(seriesName);
 
   const visibleProviders = PROVIDERS.filter((p) => !hiddenProviders.has(p.value));
 
   const handleOpen = useCallback(() => {
     setIsOpen(true);
+    setSearchInput(seriesName);
     if (existingLink && existingLink.status === "approved") {
       setStep("linked");
     } else {
-      doSearch("");
+      doSearch("", seriesName);
     }
-  }, [existingLink]);
+  }, [existingLink, seriesName]);
 
   const handleClose = useCallback(() => {
     setIsOpen(false);
@@ -94,14 +96,15 @@ export function MetadataSearchModal({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, handleClose]);
 
-  async function doSearch(provider: string) {
+  async function doSearch(provider: string, customQuery?: string) {
     setStep("searching");
     setError(null);
     setActiveProvider(provider);
+    const queryTerm = customQuery ?? searchInput;
     try {
       const body: Record<string, string> = {
         library_id: libraryId,
-        series_name: seriesName,
+        series_name: queryTerm,
       };
       if (provider) body.provider = provider;
 
@@ -240,30 +243,56 @@ export function MetadataSearchModal({
     ? (
         <Modal isOpen={isOpen} onClose={handleClose} title={step === "linked" ? t("metadata.metadataLink") : t("metadata.searchExternal")}>
               <div className="p-5 space-y-4">
-                {/* Provider selector — visible during searching & results */}
+                {/* Search input + Provider selector — visible during searching & results */}
                 {(step === "searching" || step === "results") && (
-                  <div className="flex items-center gap-2">
-                    <label className="text-sm text-muted-foreground whitespace-nowrap">{t("metadata.provider")}</label>
-                    <div className="flex gap-1 flex-wrap">
-                      {visibleProviders.map((p) => (
-                        <button
-                          key={p.value}
-                          type="button"
-                          disabled={step === "searching"}
-                          onClick={() => {
-                            setSearchProvider(p.value);
-                            doSearch(p.value);
-                          }}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
-                            (activeProvider || searchProvider) === p.value
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/50"
-                          }`}
-                        >
-                          <ProviderIcon provider={p.value} size={14} />
-                          {p.label}
-                        </button>
-                      ))}
+                  <div className="space-y-3">
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (searchInput.trim()) doSearch(activeProvider || searchProvider);
+                      }}
+                      className="flex items-center gap-2"
+                    >
+                      <input
+                        type="text"
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
+                        disabled={step === "searching"}
+                        className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary disabled:opacity-50"
+                        placeholder={t("metadata.searchPlaceholder")}
+                      />
+                      <button
+                        type="submit"
+                        disabled={step === "searching" || !searchInput.trim()}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                      >
+                        <Icon name="search" size="sm" />
+                        {t("common.search")}
+                      </button>
+                    </form>
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm text-muted-foreground whitespace-nowrap">{t("metadata.provider")}</label>
+                      <div className="flex gap-1 flex-wrap">
+                        {visibleProviders.map((p) => (
+                          <button
+                            key={p.value}
+                            type="button"
+                            disabled={step === "searching"}
+                            onClick={() => {
+                              setSearchProvider(p.value);
+                              doSearch(p.value);
+                            }}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
+                              (activeProvider || searchProvider) === p.value
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/50"
+                            }`}
+                          >
+                            <ProviderIcon provider={p.value} size={14} />
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -272,7 +301,7 @@ export function MetadataSearchModal({
                 {step === "searching" && (
                   <div className="flex items-center justify-center py-12">
                     <Icon name="spinner" size="lg" className="animate-spin text-primary" />
-                    <span className="ml-3 text-muted-foreground">{t("metadata.searching", { name: seriesName })}</span>
+                    <span className="ml-3 text-muted-foreground">{t("metadata.searching", { name: searchInput })}</span>
                   </div>
                 )}
 

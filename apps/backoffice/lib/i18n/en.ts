@@ -868,6 +868,7 @@ const en: Record<TranslationKey, string> = {
   // Metadata search modal
   "metadata.metadataLink": "Metadata link",
   "metadata.searchExternal": "Search external metadata",
+  "metadata.searchPlaceholder": "Search for a series…",
   "metadata.provider": "Provider:",
   "metadata.searching": "Searching \"{{name}}\"...",
   "metadata.noResults": "No results found.",
