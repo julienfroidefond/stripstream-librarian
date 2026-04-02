@@ -952,6 +952,8 @@ const en: Record<TranslationKey, string> = {
   "downloads.availableTitle": "Available for download",
   "downloads.detectedSeries": "{{count}} series detected",
   "downloads.missing": "missing",
+  "downloads.failed": "failed",
+  "downloads.failedBefore": "{{count}} previous failed download(s)",
   "downloads.showMore": "Show {{count}} more…",
   "downloads.showLess": "Show less",
 

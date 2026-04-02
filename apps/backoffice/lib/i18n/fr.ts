@@ -950,6 +950,8 @@ const fr = {
   "downloads.availableTitle": "Disponibles au téléchargement",
   "downloads.detectedSeries": "{{count}} séries détectées",
   "downloads.missing": "manquant(s)",
+  "downloads.failed": "échec(s)",
+  "downloads.failedBefore": "{{count}} téléchargement(s) échoué(s) précédemment",
   "downloads.showMore": "Voir {{count}} de plus…",
   "downloads.showLess": "Réduire",
 

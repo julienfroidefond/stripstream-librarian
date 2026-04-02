@@ -369,6 +369,7 @@ pub struct AvailableDownloadDto {
     pub missing_count: i32,
     pub available_releases: Option<Vec<AvailableReleaseDto>>,
     pub updated_at: String,
+    pub failed_download_count: i64,
 }
 
 /// Returns available downloads per library from the `available_downloads` table.
@@ -386,10 +387,18 @@ pub async fn get_latest_found(
 ) -> Result<Json<Vec<LatestFoundPerLibraryDto>>, ApiError> {
     let rows = sqlx::query(
         "SELECT ad.id, ad.library_id, s.name AS series_name, ad.series_id, ad.missing_count, ad.available_releases, ad.updated_at, \
-                l.name as library_name \
+                l.name as library_name, \
+                COALESCE(td_err.failed_count, 0) AS failed_download_count \
          FROM available_downloads ad \
          JOIN libraries l ON l.id = ad.library_id \
          JOIN series s ON s.id = ad.series_id \
+         LEFT JOIN LATERAL ( \
+             SELECT COUNT(*) AS failed_count \
+             FROM torrent_downloads td \
+             WHERE td.library_id = ad.library_id \
+               AND LOWER(td.series_name) = LOWER(s.name) \
+               AND td.status = 'error' \
+         ) td_err ON TRUE \
          ORDER BY l.name, s.name",
     )
     .fetch_all(&state.pool)
@@ -418,6 +427,7 @@ pub async fn get_latest_found(
             missing_count: row.get("missing_count"),
             available_releases,
             updated_at: updated_at.to_rfc3339(),
+            failed_download_count: row.get("failed_download_count"),
         });
     }
 

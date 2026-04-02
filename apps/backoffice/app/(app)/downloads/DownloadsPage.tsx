@@ -392,9 +392,16 @@ function AvailableLibraryCard({ lib, onDeleted }: { lib: LatestFoundPerLibraryDt
               >
                 {r.series_name}
               </Link>
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap bg-warning/20 text-warning shrink-0">
-                {r.missing_count} {t("downloads.missing")}
-              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {r.failed_download_count > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap bg-destructive/20 text-destructive" title={t("downloads.failedBefore", { count: r.failed_download_count })}>
+                    {r.failed_download_count} {t("downloads.failed")}
+                  </span>
+                )}
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap bg-warning/20 text-warning">
+                  {r.missing_count} {t("downloads.missing")}
+                </span>
+              </div>
             </div>
             {r.available_releases && r.available_releases.length > 0 && (
               <div className="space-y-1.5 sm:space-y-1">

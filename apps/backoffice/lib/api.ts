@@ -1239,6 +1239,7 @@ export type AvailableDownloadDto = {
   missing_count: number;
   available_releases: AvailableReleaseDto[] | null;
   updated_at: string;
+  failed_download_count: number;
 };
 
 export type LatestFoundPerLibraryDto = {
