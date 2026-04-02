@@ -547,45 +547,52 @@ pub async fn add_to_library(
     .execute(&state.pool)
     .await?;
 
-    // 3. Create external_metadata_link (approved)
-    let link_id: Uuid = sqlx::query_scalar(
-        r#"
-        INSERT INTO external_metadata_links
-            (library_id, series_id, provider, external_id, external_url, status, confidence, metadata_json, total_volumes_external, matched_at, approved_at, synced_at)
-        VALUES ($1, $2, $3, $4, $5, 'approved', 1.0, $6, $7, NOW(), NOW(), NOW())
-        ON CONFLICT (series_id, provider) DO UPDATE SET
-            external_id = EXCLUDED.external_id,
-            external_url = EXCLUDED.external_url,
-            status = 'approved',
-            total_volumes_external = EXCLUDED.total_volumes_external,
-            approved_at = NOW(),
-            synced_at = NOW()
-        RETURNING id
-        "#,
-    )
-    .bind(req.library_id)
-    .bind(series_id)
-    .bind(&req.provider)
-    .bind(&req.external_id)
-    .bind(&req.external_url)
-    .bind(serde_json::json!({
-        "genres": genres,
-        "status": req.status,
-    }))
-    .bind(req.total_volumes)
-    .fetch_one(&state.pool)
-    .await?;
+    // 3. Create external_metadata_link (approved) — only for providers that
+    //    offer useful metadata links (skip prowlarr, anilist, etc.)
+    let link_id: Option<Uuid> = if req.provider == "bedetheque" {
+        let id: Uuid = sqlx::query_scalar(
+            r#"
+            INSERT INTO external_metadata_links
+                (library_id, series_id, provider, external_id, external_url, status, confidence, metadata_json, total_volumes_external, matched_at, approved_at, synced_at)
+            VALUES ($1, $2, $3, $4, $5, 'approved', 1.0, $6, $7, NOW(), NOW(), NOW())
+            ON CONFLICT (series_id, provider) DO UPDATE SET
+                external_id = EXCLUDED.external_id,
+                external_url = EXCLUDED.external_url,
+                status = 'approved',
+                total_volumes_external = EXCLUDED.total_volumes_external,
+                approved_at = NOW(),
+                synced_at = NOW()
+            RETURNING id
+            "#,
+        )
+        .bind(req.library_id)
+        .bind(series_id)
+        .bind(&req.provider)
+        .bind(&req.external_id)
+        .bind(&req.external_url)
+        .bind(serde_json::json!({
+            "genres": genres,
+            "status": req.status,
+        }))
+        .bind(req.total_volumes)
+        .fetch_one(&state.pool)
+        .await?;
+        Some(id)
+    } else {
+        None
+    };
 
     tracing::info!(
-        "[DISCOVERY] Added series '{}' to library {} from provider {}",
+        "[DISCOVERY] Added series '{}' to library {} from provider {}{}",
         req.title,
         req.library_id,
-        req.provider
+        req.provider,
+        if link_id.is_some() { " (metadata link created)" } else { "" }
     );
 
     Ok(Json(AddToLibraryResponse {
         series_id,
-        metadata_link_id: link_id,
+        metadata_link_id: link_id.unwrap_or(series_id),
     }))
 }
 
