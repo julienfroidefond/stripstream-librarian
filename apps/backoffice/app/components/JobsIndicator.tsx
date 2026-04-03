@@ -10,6 +10,7 @@ import { ProgressBar } from "./ui/ProgressBar";
 interface Job {
   id: string;
   library_id: string | null;
+  library_name: string | null;
   type: string;
   status: string;
   current_file: string | null;
@@ -292,10 +293,12 @@ export function JobsIndicator() {
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <code className="text-xs px-1.5 py-0.5 bg-muted rounded font-mono">{job.id.slice(0, 8)}</code>
                           <Badge variant={job.type === 'rebuild' ? 'primary' : job.type === 'thumbnail_regenerate' ? 'warning' : 'secondary'} className="text-[10px]">
                             {t(`jobType.${job.type}` as any) !== `jobType.${job.type}` ? t(`jobType.${job.type}` as any) : job.type}
                           </Badge>
+                          {job.library_name && (
+                            <span className="text-xs text-muted-foreground truncate">{job.library_name}</span>
+                          )}
                         </div>
 
                         {(job.status === "running" || job.status === "extracting_pages" || job.status === "generating_thumbnails") && job.progress_percent != null && (

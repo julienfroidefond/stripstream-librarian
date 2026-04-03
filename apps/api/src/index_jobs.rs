@@ -28,6 +28,7 @@ pub struct IndexJobResponse {
     pub id: Uuid,
     #[schema(value_type = Option<String>)]
     pub library_id: Option<Uuid>,
+    pub library_name: Option<String>,
     #[schema(value_type = Option<String>)]
     pub book_id: Option<Uuid>,
     pub r#type: String,
@@ -144,7 +145,7 @@ pub async fn enqueue_rebuild(
         }
         let last_id = last_id.ok_or_else(|| ApiError::bad_request("No libraries found"))?;
         let row = sqlx::query(
-            "SELECT id, library_id, book_id, type, status, started_at, finished_at, stats_json, error_opt, created_at FROM index_jobs WHERE id = $1",
+            "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id WHERE j.id = $1",
         )
         .bind(last_id)
         .fetch_one(&state.pool)
@@ -163,7 +164,7 @@ pub async fn enqueue_rebuild(
     .await?;
 
     let row = sqlx::query(
-        "SELECT id, library_id, book_id, type, status, started_at, finished_at, stats_json, error_opt, created_at FROM index_jobs WHERE id = $1",
+        "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id WHERE j.id = $1",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -186,7 +187,7 @@ pub async fn enqueue_rebuild(
 )]
 pub async fn list_index_jobs(State(state): State<AppState>) -> Result<Json<Vec<IndexJobResponse>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT id, library_id, book_id, type, status, started_at, finished_at, stats_json, error_opt, created_at, progress_percent, processed_files, total_files FROM index_jobs ORDER BY created_at DESC LIMIT 100",
+        "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at, j.progress_percent, j.processed_files, j.total_files FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id ORDER BY j.created_at DESC LIMIT 100",
     )
     .fetch_all(&state.pool)
     .await?;
@@ -226,7 +227,7 @@ pub async fn cancel_job(
     }
 
     let row = sqlx::query(
-        "SELECT id, library_id, book_id, type, status, started_at, finished_at, stats_json, error_opt, created_at, progress_percent, processed_files, total_files FROM index_jobs WHERE id = $1",
+        "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at, j.progress_percent, j.processed_files, j.total_files FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id WHERE j.id = $1",
     )
     .bind(id.0)
     .fetch_one(&state.pool)
@@ -346,6 +347,7 @@ pub fn map_row(row: sqlx::postgres::PgRow) -> IndexJobResponse {
     IndexJobResponse {
         id: row.get("id"),
         library_id: row.get("library_id"),
+        library_name: row.try_get("library_name").ok().flatten(),
         book_id: row.try_get("book_id").ok().flatten(),
         r#type: row.get("type"),
         status: row.get("status"),
@@ -395,10 +397,10 @@ fn map_row_detail(row: sqlx::postgres::PgRow) -> IndexJobDetailResponse {
 )]
 pub async fn get_active_jobs(State(state): State<AppState>) -> Result<Json<Vec<IndexJobResponse>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT id, library_id, book_id, type, status, started_at, finished_at, stats_json, error_opt, created_at, progress_percent, processed_files, total_files
-         FROM index_jobs
-         WHERE status IN ('pending', 'running', 'extracting_pages', 'generating_thumbnails')
-         ORDER BY created_at ASC"
+        "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at, j.progress_percent, j.processed_files, j.total_files
+         FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id
+         WHERE j.status IN ('pending', 'running', 'extracting_pages', 'generating_thumbnails')
+         ORDER BY j.created_at ASC"
     )
     .fetch_all(&state.pool)
     .await?;
