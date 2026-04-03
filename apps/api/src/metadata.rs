@@ -1128,3 +1128,336 @@ pub(crate) async fn sync_books_metadata(
     let unmatched = books.len() as i64 - matched_count;
     Ok((matched_count, book_reports, unmatched))
 }
+
+/// Check if a field is locked based on the locked_fields JSON object.
+/// Extracted for testability.
+pub(crate) fn is_field_locked(locked_fields: &serde_json::Value, field: &str) -> bool {
+    locked_fields
+        .get(field)
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+/// Build a FieldChange and classify it as updated or skipped based on lock status.
+/// Returns (is_skipped, change). Returns None if new_value is None (nothing to sync).
+pub(crate) fn classify_field_change(
+    field: &str,
+    old_value: Option<serde_json::Value>,
+    new_value: Option<serde_json::Value>,
+    locked_fields: &serde_json::Value,
+) -> Option<(bool, FieldChange)> {
+    let new_value = new_value?;
+    let change = FieldChange {
+        field: field.to_string(),
+        old_value: old_value.clone(),
+        new_value: Some(new_value.clone()),
+    };
+    if is_field_locked(locked_fields, field) {
+        Some((true, change)) // skipped
+    } else if old_value.as_ref() != Some(&new_value) {
+        Some((false, change)) // updated
+    } else {
+        None // no change
+    }
+}
+
+/// Extract authors from metadata JSON as Vec<String>.
+pub(crate) fn extract_string_array(metadata: &serde_json::Value, key: &str) -> Vec<String> {
+    metadata
+        .get(key)
+        .and_then(|a| a.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // -----------------------------------------------------------------------
+    // is_field_locked
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn field_locked_when_true() {
+        let locked = json!({"description": true, "authors": false});
+        assert!(is_field_locked(&locked, "description"));
+    }
+
+    #[test]
+    fn field_not_locked_when_false() {
+        let locked = json!({"description": false});
+        assert!(!is_field_locked(&locked, "description"));
+    }
+
+    #[test]
+    fn field_not_locked_when_absent() {
+        let locked = json!({});
+        assert!(!is_field_locked(&locked, "description"));
+    }
+
+    #[test]
+    fn field_not_locked_when_null() {
+        let locked = json!({"description": null});
+        assert!(!is_field_locked(&locked, "description"));
+    }
+
+    #[test]
+    fn field_not_locked_when_non_boolean() {
+        let locked = json!({"description": "true"});
+        assert!(!is_field_locked(&locked, "description"));
+    }
+
+    // -----------------------------------------------------------------------
+    // classify_field_change
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn classify_returns_none_when_new_is_none() {
+        let locked = json!({});
+        let result = classify_field_change("title", Some(json!("old")), None, &locked);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn classify_returns_updated_when_values_differ() {
+        let locked = json!({});
+        let result = classify_field_change(
+            "description",
+            Some(json!("old desc")),
+            Some(json!("new desc")),
+            &locked,
+        );
+        let (is_skipped, change) = result.expect("should return Some");
+        assert!(!is_skipped);
+        assert_eq!(change.field, "description");
+        assert_eq!(change.old_value, Some(json!("old desc")));
+        assert_eq!(change.new_value, Some(json!("new desc")));
+    }
+
+    #[test]
+    fn classify_returns_skipped_when_locked() {
+        let locked = json!({"description": true});
+        let result = classify_field_change(
+            "description",
+            Some(json!("old")),
+            Some(json!("new")),
+            &locked,
+        );
+        let (is_skipped, change) = result.expect("should return Some");
+        assert!(is_skipped);
+        assert_eq!(change.field, "description");
+    }
+
+    #[test]
+    fn classify_returns_none_when_values_equal_and_unlocked() {
+        let locked = json!({});
+        let result = classify_field_change(
+            "title",
+            Some(json!("same")),
+            Some(json!("same")),
+            &locked,
+        );
+        assert!(result.is_none(), "identical values should produce no change");
+    }
+
+    #[test]
+    fn classify_updated_from_none_to_some() {
+        let locked = json!({});
+        let result = classify_field_change("isbn", None, Some(json!("978-123")), &locked);
+        let (is_skipped, change) = result.expect("should return Some");
+        assert!(!is_skipped);
+        assert!(change.old_value.is_none());
+        assert_eq!(change.new_value, Some(json!("978-123")));
+    }
+
+    #[test]
+    fn classify_locked_field_still_reported_even_when_old_is_none() {
+        let locked = json!({"isbn": true});
+        let result = classify_field_change("isbn", None, Some(json!("978-123")), &locked);
+        let (is_skipped, _change) = result.expect("should return Some");
+        assert!(is_skipped);
+    }
+
+    // -----------------------------------------------------------------------
+    // extract_string_array
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn extract_string_array_present() {
+        let metadata = json!({"authors": ["Alice", "Bob"]});
+        let result = extract_string_array(&metadata, "authors");
+        assert_eq!(result, vec!["Alice", "Bob"]);
+    }
+
+    #[test]
+    fn extract_string_array_missing_key() {
+        let metadata = json!({"title": "test"});
+        let result = extract_string_array(&metadata, "authors");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_string_array_not_array() {
+        let metadata = json!({"authors": "single author"});
+        let result = extract_string_array(&metadata, "authors");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_string_array_filters_non_strings() {
+        let metadata = json!({"authors": ["Alice", 42, null, "Bob"]});
+        let result = extract_string_array(&metadata, "authors");
+        assert_eq!(result, vec!["Alice", "Bob"]);
+    }
+
+    #[test]
+    fn extract_string_array_empty_array() {
+        let metadata = json!({"authors": []});
+        let result = extract_string_array(&metadata, "authors");
+        assert!(result.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // FieldChange serialization
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn field_change_skips_none_values_in_json() {
+        let change = FieldChange {
+            field: "title".to_string(),
+            old_value: None,
+            new_value: Some(json!("new")),
+        };
+        let json = serde_json::to_value(&change).unwrap();
+        assert!(!json.as_object().unwrap().contains_key("old_value"));
+        assert!(json.as_object().unwrap().contains_key("new_value"));
+    }
+
+    #[test]
+    fn field_change_includes_both_when_present() {
+        let change = FieldChange {
+            field: "description".to_string(),
+            old_value: Some(json!("old")),
+            new_value: Some(json!("new")),
+        };
+        let json = serde_json::to_value(&change).unwrap();
+        assert_eq!(json["field"], "description");
+        assert_eq!(json["old_value"], "old");
+        assert_eq!(json["new_value"], "new");
+    }
+
+    // -----------------------------------------------------------------------
+    // SyncReport / SeriesSyncReport defaults
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn sync_report_default_is_empty() {
+        let report = SyncReport::default();
+        assert!(report.series.is_none());
+        assert!(report.books.is_empty());
+        assert_eq!(report.books_matched, 0);
+        assert_eq!(report.books_unmatched, 0);
+        assert!(report.books_message.is_none());
+    }
+
+    #[test]
+    fn series_sync_report_default_is_empty() {
+        let report = SeriesSyncReport::default();
+        assert!(report.fields_updated.is_empty());
+        assert!(report.fields_skipped.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // ApproveRequest deserialization
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn approve_request_defaults_to_false() {
+        let json = r#"{}"#;
+        let req: ApproveRequest = serde_json::from_str(json).unwrap();
+        assert!(!req.sync_series);
+        assert!(!req.sync_books);
+    }
+
+    #[test]
+    fn approve_request_with_both_true() {
+        let json = r#"{"sync_series": true, "sync_books": true}"#;
+        let req: ApproveRequest = serde_json::from_str(json).unwrap();
+        assert!(req.sync_series);
+        assert!(req.sync_books);
+    }
+
+    // -----------------------------------------------------------------------
+    // MetadataSearchRequest deserialization
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn search_request_requires_library_and_series() {
+        let json = r#"{"library_id": "550e8400-e29b-41d4-a716-446655440000", "series_name": "Naruto"}"#;
+        let req: MetadataSearchRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.series_name, "Naruto");
+        assert!(req.provider.is_none());
+    }
+
+    #[test]
+    fn search_request_with_provider_override() {
+        let json = r#"{"library_id": "550e8400-e29b-41d4-a716-446655440000", "series_name": "test", "provider": "myanimelist"}"#;
+        let req: MetadataSearchRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.provider.as_deref(), Some("myanimelist"));
+    }
+
+    // -----------------------------------------------------------------------
+    // MetadataMatchRequest deserialization
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn match_request_deserializes_fully() {
+        let json = r#"{
+            "library_id": "550e8400-e29b-41d4-a716-446655440000",
+            "series_name": "One Piece",
+            "provider": "google_books",
+            "external_id": "ext123",
+            "title": "One Piece",
+            "metadata_json": {"authors": ["Oda"]},
+            "total_volumes": 105
+        }"#;
+        let req: MetadataMatchRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.provider, "google_books");
+        assert_eq!(req.total_volumes, Some(105));
+        assert!(req.external_url.is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // ExternalMetadataLinkDto serialization
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn link_dto_serializes_optional_fields() {
+        let dto = ExternalMetadataLinkDto {
+            id: Uuid::nil(),
+            library_id: Uuid::nil(),
+            series_name: "test".to_string(),
+            provider: "google_books".to_string(),
+            external_id: "ext1".to_string(),
+            external_url: None,
+            status: "pending".to_string(),
+            confidence: Some(0.95),
+            metadata_json: json!({}),
+            total_volumes_external: None,
+            matched_at: "2024-01-01T00:00:00Z".to_string(),
+            approved_at: None,
+            synced_at: None,
+        };
+        let json = serde_json::to_value(&dto).unwrap();
+        assert_eq!(json["status"], "pending");
+        let confidence = json["confidence"].as_f64().unwrap();
+        assert!((confidence - 0.95).abs() < 0.001, "confidence should be ~0.95, got {confidence}");
+        assert!(json["external_url"].is_null());
+    }
+}
