@@ -456,16 +456,19 @@ pub(crate) async fn process_metadata_batch(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Get series that already have an approved link (skip them)
-    let already_linked: std::collections::HashSet<String> = sqlx::query_scalar(
-        "SELECT s.name FROM external_metadata_links eml JOIN series s ON s.id = eml.series_id WHERE eml.library_id = $1 AND eml.status = 'approved'",
+    // Get series that already have an approved link — map name → provider
+    let linked_rows = sqlx::query(
+        "SELECT s.name, eml.provider FROM external_metadata_links eml JOIN series s ON s.id = eml.series_id WHERE eml.library_id = $1 AND eml.status = 'approved'",
     )
     .bind(library_id)
     .fetch_all(pool)
     .await
-    .map_err(|e| e.to_string())?
-    .into_iter()
-    .collect();
+    .map_err(|e| e.to_string())?;
+
+    let already_linked: std::collections::HashMap<String, String> = linked_rows
+        .into_iter()
+        .map(|row| (row.get::<String, _>("name"), row.get::<String, _>("provider")))
+        .collect();
 
     let mut processed = 0i32;
 
@@ -506,8 +509,16 @@ pub(crate) async fn process_metadata_batch(
             continue;
         }
 
-        // Skip already linked (unless force_rematch)
-        if !force_rematch && already_linked.contains(series_name) {
+        // Skip already linked:
+        // - Normal mode: skip any linked series
+        // - Rematch mode: skip only if already linked to the TARGET provider (no point re-matching)
+        let linked_provider = already_linked.get(series_name.as_str());
+        let should_skip = if force_rematch {
+            linked_provider.map(|p| p == &primary_name).unwrap_or(false)
+        } else {
+            linked_provider.is_some()
+        };
+        if should_skip {
             processed += 1;
             update_progress(pool, job_id, processed, total, series_name).await;
             insert_result(
@@ -1378,42 +1389,75 @@ mod tests {
         assert_eq!(provider, "senscritique");
     }
 
-    /// Test that without rematch, already_linked series are skipped.
+    /// Test that without rematch, already_linked series are skipped regardless of provider.
     #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn already_linked_set_contains_approved_series(pool: sqlx::PgPool) {
+    async fn normal_mode_skips_any_linked_series(pool: sqlx::PgPool) {
         let lib_id = create_lib(&pool, "test").await;
         let series_id = create_series(&pool, lib_id, "Astérix").await;
         let _link = create_link(&pool, lib_id, series_id, "bedetheque").await;
 
-        // Same query as process_metadata_batch
-        let already_linked: std::collections::HashSet<String> = sqlx::query_scalar(
-            "SELECT s.name FROM external_metadata_links eml JOIN series s ON s.id = eml.series_id WHERE eml.library_id = $1 AND eml.status = 'approved'",
-        ).bind(lib_id).fetch_all(&pool).await.unwrap().into_iter().collect();
+        let linked_rows = sqlx::query(
+            "SELECT s.name, eml.provider FROM external_metadata_links eml JOIN series s ON s.id = eml.series_id WHERE eml.library_id = $1 AND eml.status = 'approved'",
+        ).bind(lib_id).fetch_all(&pool).await.unwrap();
+        let already_linked: std::collections::HashMap<String, String> = linked_rows.into_iter()
+            .map(|row| (row.get::<String, _>("name"), row.get::<String, _>("provider"))).collect();
 
-        assert!(already_linked.contains("Astérix"));
+        let force_rematch = false;
+        let linked_provider = already_linked.get("Astérix");
+        let should_skip = if force_rematch {
+            linked_provider.map(|p| p == "senscritique").unwrap_or(false) // target provider
+        } else {
+            linked_provider.is_some()
+        };
+        assert!(should_skip, "normal mode should skip any linked series");
     }
 
-    /// Test that force_rematch=true skips the already_linked check.
+    /// Test that rematch skips series already linked to the TARGET provider.
     #[sqlx::test(migrations = "../../infra/migrations")]
-    async fn force_rematch_does_not_skip_linked(pool: sqlx::PgPool) {
+    async fn rematch_skips_if_already_on_target_provider(pool: sqlx::PgPool) {
+        let lib_id = create_lib(&pool, "test").await;
+        let series_id = create_series(&pool, lib_id, "Naruto").await;
+        let _link = create_link(&pool, lib_id, series_id, "senscritique").await;
+
+        let linked_rows = sqlx::query(
+            "SELECT s.name, eml.provider FROM external_metadata_links eml JOIN series s ON s.id = eml.series_id WHERE eml.library_id = $1 AND eml.status = 'approved'",
+        ).bind(lib_id).fetch_all(&pool).await.unwrap();
+        let already_linked: std::collections::HashMap<String, String> = linked_rows.into_iter()
+            .map(|row| (row.get::<String, _>("name"), row.get::<String, _>("provider"))).collect();
+
+        let primary_name = "senscritique";
+        let force_rematch = true;
+        let linked_provider = already_linked.get("Naruto");
+        let should_skip = if force_rematch {
+            linked_provider.map(|p| p == primary_name).unwrap_or(false)
+        } else {
+            linked_provider.is_some()
+        };
+        assert!(should_skip, "rematch should skip if already linked to the target provider");
+    }
+
+    /// Test that rematch does NOT skip series linked to a DIFFERENT provider.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn rematch_does_not_skip_if_linked_to_different_provider(pool: sqlx::PgPool) {
         let lib_id = create_lib(&pool, "test").await;
         let series_id = create_series(&pool, lib_id, "One Piece").await;
         let _link = create_link(&pool, lib_id, series_id, "anilist").await;
 
-        let already_linked: std::collections::HashSet<String> = sqlx::query_scalar(
-            "SELECT s.name FROM external_metadata_links eml JOIN series s ON s.id = eml.series_id WHERE eml.library_id = $1 AND eml.status = 'approved'",
-        ).bind(lib_id).fetch_all(&pool).await.unwrap().into_iter().collect();
+        let linked_rows = sqlx::query(
+            "SELECT s.name, eml.provider FROM external_metadata_links eml JOIN series s ON s.id = eml.series_id WHERE eml.library_id = $1 AND eml.status = 'approved'",
+        ).bind(lib_id).fetch_all(&pool).await.unwrap();
+        let already_linked: std::collections::HashMap<String, String> = linked_rows.into_iter()
+            .map(|row| (row.get::<String, _>("name"), row.get::<String, _>("provider"))).collect();
 
-        let series_name = "One Piece";
+        let primary_name = "senscritique"; // target is senscritique, linked is anilist
         let force_rematch = true;
-
-        // Normal mode: would skip
-        let would_skip_normal = !false && already_linked.contains(series_name);
-        assert!(would_skip_normal, "normal mode should skip already linked");
-
-        // Rematch mode: should NOT skip
-        let would_skip_rematch = !force_rematch && already_linked.contains(series_name);
-        assert!(!would_skip_rematch, "rematch mode should NOT skip already linked");
+        let linked_provider = already_linked.get("One Piece");
+        let should_skip = if force_rematch {
+            linked_provider.map(|p| p == primary_name).unwrap_or(false)
+        } else {
+            linked_provider.is_some()
+        };
+        assert!(!should_skip, "rematch should NOT skip if linked to a different provider");
     }
 
     /// Regression test: metadata_batch_rematch must be an allowed job type in DB.
