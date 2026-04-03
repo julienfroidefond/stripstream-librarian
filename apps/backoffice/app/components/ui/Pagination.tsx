@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useTransition } from "react";
 import { Button } from "./Button";
 import { IconButton } from "./Button";
 import { useTranslation } from "../../../lib/i18n/context";
@@ -9,6 +10,17 @@ import { useTranslation } from "../../../lib/i18n/context";
 function getCurrentParams(): URLSearchParams {
   if (typeof window === "undefined") return new URLSearchParams();
   return new URLSearchParams(window.location.search);
+}
+
+/** Navigate by updating the URL and forcing a server re-render.
+ *  Works around Next.js 16 production bug where router.push/replace silently fails. */
+function useNavigate() {
+  const router = useRouter();
+  const [, startTransition] = useTransition();
+  return (url: string) => {
+    window.history.pushState(null, "", url);
+    startTransition(() => { router.refresh(); });
+  };
 }
 
 interface CursorPaginationProps {
@@ -28,27 +40,27 @@ export function CursorPagination({
   pageSizeOptions = [20, 50, 100],
   nextCursor,
 }: CursorPaginationProps) {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { t } = useTranslation();
 
   const goToNext = () => {
     if (!nextCursor) return;
     const params = getCurrentParams();
     params.set("cursor", nextCursor);
-    router.push(`?${params.toString()}`);
+    navigate(`?${params.toString()}`);
   };
 
   const goToFirst = () => {
     const params = getCurrentParams();
     params.delete("cursor");
-    router.push(`?${params.toString()}`);
+    navigate(`?${params.toString()}`);
   };
 
   const changePageSize = (size: number) => {
     const params = getCurrentParams();
     params.set("limit", size.toString());
     params.delete("cursor");
-    router.push(`?${params.toString()}`);
+    navigate(`?${params.toString()}`);
   };
 
   return (
@@ -120,20 +132,20 @@ export function OffsetPagination({
   totalItems,
   pageSizeOptions = [20, 50, 100],
 }: OffsetPaginationProps) {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { t } = useTranslation();
 
   const goToPage = (page: number) => {
     const params = getCurrentParams();
     params.set("page", page.toString());
-    router.push(`?${params.toString()}`);
+    navigate(`?${params.toString()}`);
   };
 
   const changePageSize = (size: number) => {
     const params = getCurrentParams();
     params.set("limit", size.toString());
     params.set("page", "1");
-    router.push(`?${params.toString()}`);
+    navigate(`?${params.toString()}`);
   };
 
   const startItem = (currentPage - 1) * pageSize + 1;
