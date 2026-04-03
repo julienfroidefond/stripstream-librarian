@@ -86,7 +86,7 @@ The backoffice will be available at http://localhost:7082
 ### Libraries
 - Multi-library management with per-library configuration
 - Incremental and full scanning, real-time filesystem watcher
-- Per-library metadata provider selection (Google Books, ComicVine, BedéThèque, AniList, Open Library)
+- Per-library metadata provider selection (Google Books, ComicVine, BedéThèque, AniList, Open Library, SensCritique)
 
 ### Books & Series
 - **Formats**: CBZ, CBR, PDF, EPUB
@@ -104,6 +104,7 @@ The backoffice will be available at http://localhost:7082
 - Full-text search across titles, authors, and series (PostgreSQL `pg_trgm`)
 - Author listing with book/series counts
 - Filtering by reading status, series status, format, metadata provider
+- **Discovery**: browse trending/best-rated BD and manga from SensCritique (new releases, top 100) and AniList, with one-click add to library
 
 ### External Metadata
 - Search, match, approve/reject workflow with confidence scoring
@@ -119,8 +120,9 @@ The backoffice will be available at http://localhost:7082
 ### External Integrations
 - **AniList**: bidirectional reading status sync — pull progress from AniList or push local statuses (PLANNING/CURRENT/COMPLETED) with differential detection and configurable auto-push schedule
 - **Komga**: import reading progress
-- **Prowlarr**: search for missing volumes manually from series pages, or run a **download detection job** to automatically scan all series with missing volumes and report available releases
-- **qBittorrent**: add torrents directly from search results
+- **Prowlarr**: search for missing volumes manually from series pages, or run a **download detection job** to automatically scan all series with missing volumes and report available releases. Failed download indicator on available releases.
+- **qBittorrent**: add torrents directly from search results, with replace-all mode to import every volume in a torrent
+- **SensCritique**: metadata provider via GraphQL API — search series, get volumes, infer ongoing/ended status from latest release date
 
 ### Background Jobs
 - Rebuild, rescan, thumbnail generation, metadata batch, CBR conversion, AniList reading status sync/push, download detection (Prowlarr)

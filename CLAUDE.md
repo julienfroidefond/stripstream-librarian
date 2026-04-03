@@ -15,7 +15,11 @@ Stripstream Librarian — gestionnaire de bibliothèque de bandes dessinées/ebo
 | Backoffice | `apps/backoffice/` | 7082 | Next.js 16 / React 19 |
 | PostgreSQL | infra | 6432 | — |
 
-Crates partagés : `crates/core` (config env), `crates/parsers` (CBZ/CBR/PDF), `crates/notifications` (Telegram).
+Crates partagés : `crates/core` (config env, paths), `crates/parsers` (CBZ/CBR/PDF/EPUB), `crates/notifications` (Telegram).
+
+### Metadata Providers
+
+6 providers dans `apps/api/src/metadata_providers/` : `google_books`, `open_library`, `comicvine`, `anilist`, `bedetheque`, `senscritique`. Tous implémentent le trait `MetadataProvider` (`search_series` + `get_series_books`). SensCritique utilise l'API GraphQL (`apollo.senscritique.com`), Bedetheque du scraping HTML.
 
 ### Indexer 2-Phase Pipeline
 
@@ -104,12 +108,56 @@ std → external crates → workspace crates → local (`crate::`)
 
 ## Tests
 
-La couverture de tests est actuellement faible. Lors de tout ajout ou modification de code, **ajouter des tests unitaires** pour le code touché. Priorités :
-- Fonctions utilitaires et logique pure (parsing, fingerprint, remapping, extraction volume)
-- Handlers API (réponses attendues, cas d'erreur)
-- Opérations batch et logique DB (via mocks ou tests d'intégration)
+**Les tests sont un réflexe obligatoire.** Toute modification ou ajout de code **doit** s'accompagner de tests. Toujours lancer les tests avant de commit.
 
-Utiliser `#[cfg(test)]` pour les modules de test intégrés. Pour les tests nécessitant une DB, documenter les prérequis dans le test.
+```bash
+# Tests unitaires (pas de DB nécessaire)
+cargo test --workspace                    # tous les tests
+cargo test -p api                         # crate spécifique
+cargo test -p api -- series::tests        # module spécifique
+cargo test -p api -- test_name            # test unique
+cargo test -- --nocapture                 # avec stdout
+
+# Tests d'intégration DB (nécessite PostgreSQL sur localhost:6432)
+DATABASE_URL="postgres://stripstream:stripstream@localhost:6432/stripstream" cargo test --workspace
+```
+
+### Tests unitaires (`#[test]`)
+Pour la logique pure : parsing, matching, extraction volumes, normalisation, calculs.
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ma_fonction_edge_case() {
+        assert_eq!(ma_fonction("input"), expected);
+    }
+}
+```
+
+### Tests d'intégration DB (`#[sqlx::test]`)
+Pour tester les requêtes SQL réelles. Chaque test reçoit sa propre DB temporaire avec migrations appliquées.
+```rust
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn series_case_insensitive(pool: sqlx::PgPool) {
+    // Setup: créer les données de test
+    let lib_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
+        .bind(lib_id).bind("test").bind("/libraries/test")
+        .execute(&pool).await.unwrap();
+    // Test + Assert
+    let id1 = get_or_create_series(&pool, lib_id, "Astérix").await.unwrap();
+    let id2 = get_or_create_series(&pool, lib_id, "Asterix").await.unwrap();
+    assert_eq!(id1, id2);
+}
+```
+Le user PostgreSQL doit avoir le droit `CREATEDB` : `ALTER USER stripstream CREATEDB;`
+
+### Quoi tester
+- **Fonctions pures** : parsing volumes, matching titres, normalisation accents, dédup formats
+- **Queries SQL** : matching case/accent insensitive, upserts, joins latéraux
+- **Logique métier** : import torrent (expected_volumes vs replace mode), création séries (dédup), providers metadata
 
 ## Gotchas
 
@@ -122,6 +170,10 @@ Utiliser `#[cfg(test)]` pour les modules de test intégrés. Pour les tests néc
 - **Migrations** : dossier `infra/migrations/`, géré par sqlx. Toujours migrer avant de démarrer les services.
 - **Recherche** : full-text via PostgreSQL (`ILIKE` + `pg_trgm`), pas de moteur de recherche externe.
 - **Auth tokens** : format `stl_<prefix>_<secret>`, hash argon2 en DB, scopes `admin` ou `read`.
+- **Series matching** : toujours `LOWER(unaccent(name))` pour comparer les noms de séries. Ne jamais matcher en exact — les torrents, providers et UI ont des casses/accents différents.
+- **Next.js 16 production** : `router.replace()` ne fonctionne pas en mode standalone. Utiliser `window.history.replaceState()` + `router.refresh()` pour la navigation côté client (voir `LiveSearchForm.tsx`).
+- **Discovery providers** : les providers `sc_*` (sc_trending_bd, sc_best_manga, etc.) sont normalisés vers `"senscritique"` pour les metadata links. SensCritique utilise une API GraphQL publique (`apollo.senscritique.com`).
+- **Torrent import replace mode** : quand `replace_existing=true`, ne PAS filtrer par `expected_volumes` — importer tous les fichiers du torrent.
 
 > Voir `AGENTS.md` pour les conventions de code détaillées et les patterns par module.
 > Des `AGENTS.md` spécifiques existent dans `apps/api/`, `apps/indexer/`, `apps/backoffice/`, `crates/parsers/`.

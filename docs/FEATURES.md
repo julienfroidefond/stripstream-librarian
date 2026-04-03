@@ -35,10 +35,11 @@
 - **Title**: derived from filename or external metadata
 - **Series**: derived from directory structure (first directory level under library root)
 - **Volume**: extracted from filename with pattern detection:
-  - `T##` (Tome) — most common for French comics
+  - `Tome ##`, `Tome.##` — French comics (priorité haute)
+  - `T##` (Tome abrégé) — most common for French comics
   - `Vol.##`, `Vol ##`, `Volume ##`
-  - `###` (standalone number)
-  - `-## ` (dash-separated)
+  - `###` (hash prefix)
+  - `-## ` (dash-separated at end)
 - **Author(s)**: single scalar and array support
 - **Page count**: extracted from archive analysis
 - **Language**, **kind** (ebook, comic, bd)
@@ -119,13 +120,20 @@
 ## External Metadata
 
 ### Supported Providers
-| Provider | Focus |
-|----------|-------|
-| Google Books | General books (default fallback) |
-| ComicVine | Comics |
-| BedéThèque | Franco-Belgian comics |
-| AniList | Manga/anime |
-| Open Library | General books |
+| Provider | Focus | API |
+|----------|-------|-----|
+| Google Books | General books (default fallback) | REST |
+| ComicVine | Comics | REST (API key required) |
+| BedéThèque | Franco-Belgian comics | HTML scraping |
+| AniList | Manga/anime | GraphQL |
+| Open Library | General books | REST |
+| SensCritique | BD, manga, comics | GraphQL (`apollo.senscritique.com`) |
+
+#### SensCritique Provider
+- **Search**: `searchAutocomplete` with franchise deduplication (groups volumes into series)
+- **Volumes**: `groupProducts` by franchise, deduplicates editions (keeps original), extracts volume numbers from titles
+- **Series status**: inferred from latest release date — if within 18 months → `ongoing`, otherwise → `ended`
+- **Description**: uses synopsis of the lowest-numbered volume (typically tome 1) since SensCritique has no series-level description
 
 ### Provider Configuration
 - Global default provider with library-level override
@@ -175,6 +183,37 @@ Integration with AniList to synchronize reading progress in both directions for 
 
 ---
 
+## Discovery
+
+Browse and add series to your library from external sources.
+
+### Sources
+| Tab | Source | Sort | Period filter |
+|-----|--------|------|---------------|
+| Nouveautés BD | SensCritique `productsByRelease` | Popularity | Month / Year |
+| Nouveautés Manga | SensCritique `productsByRelease` | Popularity | Month / Year |
+| Meilleures BD | SensCritique `productsByRelease` | Rating | Month / Year |
+| Meilleurs Manga | SensCritique `productsByRelease` | Rating | Month / Year |
+| Bédéthèque | Bédéthèque indispensables | Rank | — |
+| SensCritique Top BD | SensCritique `top` (TOP_100_OUT_OF_TOP_10) | Rank | — |
+| SensCritique Top Manga | SensCritique `poll` (id: 192836) | Rank | — |
+| AniList | AniList trending manga | Popularity | — |
+| Prowlarr | Prowlarr aggregated releases | Seeders | — |
+
+### Caching
+- **Top/poll lists**: cache infini (invalidation manuelle via bouton refresh)
+- **Trending/best**: cache 24h
+- **Prowlarr**: cache 7 jours
+- Already-owned series filtered out server-side
+
+### Add to Library
+- Crée la série + metadata (description, auteurs, genres, statut, cover)
+- Crée un metadata link pour `bedetheque` et `senscritique` (providers `sc_*` normalisés vers `senscritique`)
+- Pas de metadata link pour `anilist` et `prowlarr`
+- Revalidation des pages `/series` et `/libraries` après ajout
+
+---
+
 ## External Integrations
 
 ### Komga Sync
@@ -184,12 +223,24 @@ Integration with AniList to synchronize reading progress in both directions for 
 
 ### Prowlarr (Indexer Search)
 - Search Prowlarr for missing volumes in a series
-- Volume pattern matching against release titles
+- Volume pattern matching against release titles (supports `T##`, `Tome ##`, `Vol ##`, ranges `1-10`, intégrales)
 - Results: title, size, seeders/leechers, download URL, matched missing volumes
+- **Download detection job**: auto-scan all series with missing volumes, report available releases in `available_downloads`
+- **Failed download indicator**: badge on available releases that had previous download errors (via `torrent_downloads` lateral join)
 
 ### qBittorrent
-- Add torrents directly from Prowlarr search results
+- Add torrents directly from Prowlarr search results or available downloads
+- **Replace mode**: import all volumes from a torrent (bypass expected_volumes filter)
 - Connection test endpoint
+
+### Torrent Import Pipeline
+1. qBittorrent poller detects completed torrents
+2. Volume extraction from filenames
+3. Series matching via `LOWER(unaccent())` (case + accent insensitive)
+4. File naming from existing book reference (preserves naming convention)
+5. Deduplication by format (cbz > cbr > pdf > epub)
+6. Cleanup: remove torrent from qBittorrent, delete download directory
+7. Post-import: scan job queued, metadata refresh if linked, `available_downloads` updated
 
 ---
 
@@ -356,6 +407,7 @@ Integration with AniList to synchronize reading progress in both directions for 
 - PostgreSQL with `pg_trgm` for full-text search (no external search engine)
 - All deletions cascade from libraries
 - Unique constraints: file paths, token prefixes, metadata links (library + series + provider)
+- **Series name matching**: always `LOWER(unaccent(name))` — case and accent insensitive to prevent duplicates from different sources (discovery, torrent import, scanner)
 - Directory mtime caching for incremental scan optimization
 - Connection pool: 10 (API), 20 (indexer)
 
