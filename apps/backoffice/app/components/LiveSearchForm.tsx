@@ -226,10 +226,18 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300, initialValu
               <button
                 type="button"
                 onClick={() => {
-                  formRef.current?.reset();
+                  // Immediately clear all visible inputs for instant feedback
+                  if (formRef.current) {
+                    for (const el of formRef.current.elements) {
+                      if (el instanceof HTMLInputElement) el.value = "";
+                      if (el instanceof HTMLSelectElement) el.selectedIndex = 0;
+                    }
+                  }
                   try { deleteCookie(cookieName); } catch {}
+                  // Navigate to base path — server re-render will update initialValues,
+                  // triggering the useEffect to remount the form with clean defaults
+                  isOwnNavRef.current = false; // allow useEffect to detect this as external nav
                   doNavigate(basePath);
-                  setFormKey(k => k + 1);
                 }}
                 className="
                   inline-flex items-center gap-1
