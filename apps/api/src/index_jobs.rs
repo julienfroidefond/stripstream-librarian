@@ -574,3 +574,74 @@ pub async fn stream_job_progress(
 
     Ok(Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default()))
 }
+
+#[cfg(test)]
+mod tests {
+    use uuid::Uuid;
+
+    async fn create_test_library(pool: &sqlx::PgPool, name: &str) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
+            .bind(id)
+            .bind(name)
+            .bind(format!("/libraries/{name}"))
+            .execute(pool)
+            .await
+            .unwrap();
+        id
+    }
+
+    /// The list query used in list_index_jobs / get_active_jobs / cancel_job.
+    const LIST_JOBS_SQL: &str =
+        "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at, j.progress_percent, j.processed_files, j.total_files FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id WHERE j.id = $1";
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn job_with_library_has_library_name(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "My Comics").await;
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'scan', 'pending')",
+        )
+        .bind(job_id)
+        .bind(lib_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let row = sqlx::query(LIST_JOBS_SQL)
+            .bind(job_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        let resp = super::map_row(row);
+        assert_eq!(resp.id, job_id);
+        assert_eq!(resp.library_id, Some(lib_id));
+        assert_eq!(resp.library_name.as_deref(), Some("My Comics"));
+        assert_eq!(resp.r#type, "scan");
+        assert_eq!(resp.status, "pending");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn job_without_library_has_null_library_name(pool: sqlx::PgPool) {
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, NULL, 'scan', 'pending')",
+        )
+        .bind(job_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let row = sqlx::query(LIST_JOBS_SQL)
+            .bind(job_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        let resp = super::map_row(row);
+        assert_eq!(resp.id, job_id);
+        assert!(resp.library_id.is_none());
+        assert!(resp.library_name.is_none(), "library_name should be null when no library_id");
+    }
+}
