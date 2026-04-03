@@ -1007,4 +1007,72 @@ mod tests {
         let series_name: String = row.get("series_name");
         assert_eq!(series_name, "Naruto");
     }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn has_failed_flag_on_releases(pool: sqlx::PgPool) {
+        // Setup: library + series
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Test', '/libraries/test')")
+            .bind(library_id).execute(&pool).await.unwrap();
+
+        let series_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Blacksad')")
+            .bind(series_id).bind(library_id).execute(&pool).await.unwrap();
+
+        // Two releases: one matching failed volumes, one not
+        let releases = serde_json::json!([
+            { "title": "Blacksad T01-T03", "size": 100, "seeders": 10, "matched_missing_volumes": [1, 2, 3], "all_volumes": [1, 2, 3] },
+            { "title": "Blacksad T05", "size": 50, "seeders": 5, "matched_missing_volumes": [5], "all_volumes": [5] }
+        ]);
+
+        sqlx::query(
+            "INSERT INTO available_downloads (id, library_id, series_id, missing_count, available_releases, updated_at) \
+             VALUES ($1, $2, $3, 5, $4, NOW())",
+        )
+        .bind(Uuid::new_v4()).bind(library_id).bind(series_id).bind(&releases)
+        .execute(&pool).await.unwrap();
+
+        // Failed torrent had volumes 2, 3 — overlaps with release 1 but not release 2
+        sqlx::query(
+            "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, status, error_message) \
+             VALUES ($1, $2, 'Blacksad', '{2,3}', 'error', 'stalled')",
+        )
+        .bind(Uuid::new_v4()).bind(library_id)
+        .execute(&pool).await.unwrap();
+
+        // Run the actual query from get_latest_found
+        let rows = sqlx::query(
+            "SELECT ad.available_releases, \
+                    COALESCE(td_err.failed_volumes, ARRAY[]::integer[]) AS failed_volumes \
+             FROM available_downloads ad \
+             JOIN series s ON s.id = ad.series_id \
+             LEFT JOIN LATERAL ( \
+                 SELECT array_agg(DISTINCT vol) FILTER (WHERE vol IS NOT NULL) AS failed_volumes \
+                 FROM torrent_downloads td, unnest(td.expected_volumes) AS vol \
+                 WHERE td.library_id = ad.library_id \
+                   AND LOWER(td.series_name) = LOWER(s.name) \
+                   AND td.status = 'error' \
+             ) td_err ON TRUE \
+             WHERE ad.series_id = $1",
+        )
+        .bind(series_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let failed_volumes: Vec<i32> = rows.get("failed_volumes");
+        assert!(failed_volumes.contains(&2));
+        assert!(failed_volumes.contains(&3));
+        assert!(!failed_volumes.contains(&5), "volume 5 was not in a failed torrent");
+
+        // Simulate the Rust-side enrichment
+        let releases_json: serde_json::Value = rows.get("available_releases");
+        let mut releases: Vec<AvailableReleaseDto> = serde_json::from_value(releases_json).unwrap();
+        for r in &mut releases {
+            r.has_failed = r.matched_missing_volumes.iter().any(|v| failed_volumes.contains(v));
+        }
+
+        assert!(releases[0].has_failed, "release T01-T03 should be flagged (volumes 2,3 overlap)");
+        assert!(!releases[1].has_failed, "release T05 should NOT be flagged (volume 5 not failed)");
+    }
 }
