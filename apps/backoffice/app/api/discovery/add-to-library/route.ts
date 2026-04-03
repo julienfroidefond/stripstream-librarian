@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
+import { revalidatePath } from "next/cache";
 import { apiFetch } from "@/lib/api";
 
 export async function POST(request: NextRequest) {
@@ -8,6 +9,8 @@ export async function POST(request: NextRequest) {
       method: "POST",
       body: JSON.stringify(body),
     });
+    revalidatePath("/series");
+    revalidatePath("/libraries");
     return NextResponse.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to add series";
