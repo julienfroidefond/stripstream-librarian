@@ -83,6 +83,7 @@ export default async function SeriesPage({
     { value: "comicvine", label: "ComicVine" },
     { value: "anilist", label: "AniList" },
     { value: "bedetheque", label: "Bédéthèque" },
+    { value: "senscritique", label: "SensCritique" },
   ];
 
   return (
