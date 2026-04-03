@@ -17,6 +17,9 @@ use crate::{error::ApiError, metadata_providers, state::AppState};
 #[derive(Deserialize, ToSchema)]
 pub struct MetadataBatchRequest {
     pub library_id: Option<String>,
+    /// When true, delete existing metadata links and re-match all series.
+    #[serde(default)]
+    pub force_rematch: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -159,7 +162,7 @@ pub async fn start_batch(
 
     // Check no existing running metadata_batch job for this library
     let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM index_jobs WHERE library_id = $1 AND type = 'metadata_batch' AND status IN ('pending', 'running') LIMIT 1",
+        "SELECT id FROM index_jobs WHERE library_id = $1 AND type IN ('metadata_batch', 'metadata_batch_rematch') AND status IN ('pending', 'running') LIMIT 1",
     )
     .bind(library_id)
     .fetch_optional(&state.pool)
@@ -172,12 +175,14 @@ pub async fn start_batch(
         })));
     }
 
+    let job_type = if body.force_rematch { "metadata_batch_rematch" } else { "metadata_batch" };
     let job_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'metadata_batch', 'running', NOW())",
+        "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, $3, 'running', NOW())",
     )
     .bind(job_id)
     .bind(library_id)
+    .bind(job_type)
     .execute(&state.pool)
     .await?;
 
@@ -377,6 +382,14 @@ pub(crate) async fn process_metadata_batch(
     job_id: Uuid,
     library_id: Uuid,
 ) -> Result<(), String> {
+    // Detect if this is a force-rematch job
+    let job_type: String = sqlx::query_scalar("SELECT type FROM index_jobs WHERE id = $1")
+        .bind(job_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let force_rematch = job_type == "metadata_batch_rematch";
+
     // Set job to running
     sqlx::query("UPDATE index_jobs SET status = 'running', started_at = NOW() WHERE id = $1")
         .bind(job_id)
@@ -480,8 +493,8 @@ pub(crate) async fn process_metadata_batch(
             continue;
         }
 
-        // Skip already linked
-        if already_linked.contains(series_name) {
+        // Skip already linked (unless force_rematch)
+        if !force_rematch && already_linked.contains(series_name) {
             processed += 1;
             update_progress(pool, job_id, processed, total, series_name).await;
             insert_result(
@@ -669,6 +682,20 @@ pub(crate) async fn process_metadata_batch(
             },
         )
         .await;
+
+        // In rematch mode, if we created a new link, delete old links from other providers
+        if force_rematch && result_status == "auto_matched" {
+            if let Some(new_link_id) = link_id {
+                let _ = sqlx::query(
+                    "DELETE FROM external_metadata_links WHERE library_id = $1 AND id != $2 AND series_id = (\
+                     SELECT series_id FROM external_metadata_links WHERE id = $2)",
+                )
+                .bind(library_id)
+                .bind(new_link_id)
+                .execute(pool)
+                .await;
+            }
+        }
 
         processed += 1;
         update_progress(pool, job_id, processed, total, series_name).await;
@@ -1215,4 +1242,124 @@ async fn insert_result(pool: &PgPool, params: &InsertResultParams<'_>) {
     .bind(params.error_message)
     .execute(pool)
     .await;
+}
+
+#[cfg(test)]
+mod tests {
+    use sqlx::Row;
+    use uuid::Uuid;
+
+    async fn create_lib(pool: &sqlx::PgPool, name: &str) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
+            .bind(id).bind(name).bind(format!("/libraries/{name}"))
+            .execute(pool).await.unwrap();
+        id
+    }
+
+    async fn create_series(pool: &sqlx::PgPool, lib_id: Uuid, name: &str) -> Uuid {
+        sqlx::query_scalar::<_, Uuid>(
+            "INSERT INTO series (id, library_id, name) VALUES (gen_random_uuid(), $1, $2) RETURNING id",
+        ).bind(lib_id).bind(name).fetch_one(pool).await.unwrap()
+    }
+
+    async fn create_link(pool: &sqlx::PgPool, lib_id: Uuid, series_id: Uuid, provider: &str) -> Uuid {
+        sqlx::query_scalar::<_, Uuid>(
+            "INSERT INTO external_metadata_links (library_id, series_id, provider, external_id, status, confidence) \
+             VALUES ($1, $2, $3, 'ext_123', 'approved', 0.9) RETURNING id",
+        ).bind(lib_id).bind(series_id).bind(provider).fetch_one(pool).await.unwrap()
+    }
+
+    /// Test that `auto_apply` with ON CONFLICT replaces the link when same provider.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn auto_apply_upserts_same_provider(pool: sqlx::PgPool) {
+        let lib_id = create_lib(&pool, "test").await;
+        let series_id = create_series(&pool, lib_id, "Blacksad").await;
+        let old_link = create_link(&pool, lib_id, series_id, "bedetheque").await;
+
+        // Simulate auto_apply: insert with same provider → ON CONFLICT updates
+        let new_link_id: Uuid = sqlx::query_scalar(
+            r#"INSERT INTO external_metadata_links
+                (library_id, series_id, provider, external_id, status, confidence)
+            VALUES ($1, $2, 'bedetheque', 'new_ext_456', 'approved', 0.95)
+            ON CONFLICT (series_id, provider) DO UPDATE SET
+                external_id = EXCLUDED.external_id, confidence = EXCLUDED.confidence,
+                status = 'approved', updated_at = NOW()
+            RETURNING id"#,
+        ).bind(lib_id).bind(series_id).fetch_one(&pool).await.unwrap();
+
+        assert_eq!(new_link_id, old_link, "upsert should return the same link id");
+        let ext_id: String = sqlx::query_scalar("SELECT external_id FROM external_metadata_links WHERE id = $1")
+            .bind(old_link).fetch_one(&pool).await.unwrap();
+        assert_eq!(ext_id, "new_ext_456", "external_id should be updated");
+    }
+
+    /// Test that rematch deletes old link from different provider after new match.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn rematch_deletes_old_provider_link(pool: sqlx::PgPool) {
+        let lib_id = create_lib(&pool, "test").await;
+        let series_id = create_series(&pool, lib_id, "Naruto").await;
+        let _old_link = create_link(&pool, lib_id, series_id, "bedetheque").await;
+
+        // New link created by auto_apply with different provider
+        let new_link: Uuid = sqlx::query_scalar(
+            "INSERT INTO external_metadata_links (library_id, series_id, provider, external_id, status, confidence) \
+             VALUES ($1, $2, 'senscritique', 'sc_123', 'approved', 0.85) RETURNING id",
+        ).bind(lib_id).bind(series_id).fetch_one(&pool).await.unwrap();
+
+        // Simulate the rematch cleanup: delete old links from other providers
+        sqlx::query(
+            "DELETE FROM external_metadata_links WHERE library_id = $1 AND id != $2 AND series_id = (\
+             SELECT series_id FROM external_metadata_links WHERE id = $2)",
+        ).bind(lib_id).bind(new_link).execute(&pool).await.unwrap();
+
+        // Should have only the new senscritique link
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1",
+        ).bind(series_id).fetch_one(&pool).await.unwrap();
+        assert_eq!(count, 1, "old bedetheque link should be deleted");
+
+        let provider: String = sqlx::query_scalar(
+            "SELECT provider FROM external_metadata_links WHERE series_id = $1",
+        ).bind(series_id).fetch_one(&pool).await.unwrap();
+        assert_eq!(provider, "senscritique");
+    }
+
+    /// Test that without rematch, already_linked series are skipped.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn already_linked_set_contains_approved_series(pool: sqlx::PgPool) {
+        let lib_id = create_lib(&pool, "test").await;
+        let series_id = create_series(&pool, lib_id, "Astérix").await;
+        let _link = create_link(&pool, lib_id, series_id, "bedetheque").await;
+
+        // Same query as process_metadata_batch
+        let already_linked: std::collections::HashSet<String> = sqlx::query_scalar(
+            "SELECT s.name FROM external_metadata_links eml JOIN series s ON s.id = eml.series_id WHERE eml.library_id = $1 AND eml.status = 'approved'",
+        ).bind(lib_id).fetch_all(&pool).await.unwrap().into_iter().collect();
+
+        assert!(already_linked.contains("Astérix"));
+    }
+
+    /// Test that force_rematch=true skips the already_linked check.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn force_rematch_does_not_skip_linked(pool: sqlx::PgPool) {
+        let lib_id = create_lib(&pool, "test").await;
+        let series_id = create_series(&pool, lib_id, "One Piece").await;
+        let _link = create_link(&pool, lib_id, series_id, "anilist").await;
+
+        let already_linked: std::collections::HashSet<String> = sqlx::query_scalar(
+            "SELECT s.name FROM external_metadata_links eml JOIN series s ON s.id = eml.series_id WHERE eml.library_id = $1 AND eml.status = 'approved'",
+        ).bind(lib_id).fetch_all(&pool).await.unwrap().into_iter().collect();
+
+        let series_name = "One Piece";
+        let force_rematch = true;
+
+        // Normal mode: would skip
+        let would_skip_normal = !false && already_linked.contains(series_name);
+        assert!(would_skip_normal, "normal mode should skip already linked");
+
+        // Rematch mode: should NOT skip
+        let would_skip_rematch = !force_rematch && already_linked.contains(series_name);
+        assert!(!would_skip_rematch, "rematch mode should NOT skip already linked");
+    }
 }

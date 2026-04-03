@@ -1098,10 +1098,13 @@ export type MetadataBatchResultDto = {
   error_message: string | null;
 };
 
-export async function startMetadataBatch(libraryId?: string) {
+export async function startMetadataBatch(libraryId?: string, forceRematch = false) {
+  const payload: Record<string, unknown> = {};
+  if (libraryId) payload.library_id = libraryId;
+  if (forceRematch) payload.force_rematch = true;
   return apiFetch<{ id: string | null; status: string }>("/metadata/batch", {
     method: "POST",
-    body: JSON.stringify(libraryId ? { library_id: libraryId } : {}),
+    body: JSON.stringify(payload),
   });
 }
 

@@ -43,7 +43,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                             )
                             .await
                         }
-                        "metadata_batch" => {
+                        "metadata_batch" | "metadata_batch_rematch" => {
                             metadata_batch::process_metadata_batch(
                                 &pool_clone,
                                 job_id,
@@ -91,7 +91,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                                     },
                                 );
                             }
-                            "metadata_batch" => {
+                            "metadata_batch" | "metadata_batch_rematch" => {
                                 notifications::notify(
                                     pool_clone,
                                     notifications::NotificationEvent::MetadataBatchFailed {
@@ -135,7 +135,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
     }
 }
 
-const API_JOB_TYPES: &[&str] = &["metadata_batch", "metadata_refresh", "metadata_refresh_all", "reading_status_push", "download_detection"];
+const API_JOB_TYPES: &[&str] = &["metadata_batch", "metadata_batch_rematch", "metadata_refresh", "metadata_refresh_all", "reading_status_push", "download_detection"];
 
 async fn claim_next_api_job(pool: &PgPool) -> Result<Option<(Uuid, String, Uuid)>, sqlx::Error> {
     let mut tx = pool.begin().await?;
