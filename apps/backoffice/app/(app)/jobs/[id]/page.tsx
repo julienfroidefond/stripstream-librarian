@@ -12,7 +12,7 @@ import { JobProgressCard, IndexStatsCard, ThumbnailStatsCard } from "./component
 import { MetadataBatchReportCard, MetadataBatchResultsCard, MetadataRefreshReportCard, MetadataRefreshChangesCard } from "./components/MetadataReportCards";
 import { ReadingStatusMatchReportCard, ReadingStatusMatchResultsCard, ReadingStatusPushReportCard, ReadingStatusPushResultsCard } from "./components/ReadingStatusReportCards";
 import { DownloadDetectionReportCard, DownloadDetectionErrorsCard } from "./components/DownloadDetectionCards";
-import { AvailableDownloadsSection } from "@/app/(app)/downloads/DownloadsPage";
+import { DownloadDetectionAvailableResults } from "./components/DownloadDetectionAvailableResults";
 import { JobErrorsCard } from "./components/JobErrorsCard";
 
 interface JobDetailPageProps {
@@ -282,21 +282,10 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
         {isDownloadDetection && downloadDetectionReport && <DownloadDetectionReportCard report={downloadDetectionReport} t={t} />}
         {isDownloadDetection && <DownloadDetectionErrorsCard results={downloadDetectionErrors} t={t} />}
         {isDownloadDetection && downloadDetectionResults.length > 0 && (
-          <AvailableDownloadsSection
-            latestFound={[{
-              library_id: job.library_id || "",
-              library_name: job.library_name || "",
-              results: downloadDetectionResults.map(r => ({
-                id: r.id,
-                series_id: r.series_id || r.id,
-                series_name: r.series_name,
-                missing_count: r.missing_count,
-                available_releases: r.available_releases,
-                updated_at: new Date().toISOString(),
-                failed_download_count: 0,
-              })),
-            }]}
-            onDeleted={() => {}}
+          <DownloadDetectionAvailableResults
+            results={downloadDetectionResults}
+            libraryId={job.library_id || ""}
+            libraryName={job.library_name || ""}
           />
         )}
 
