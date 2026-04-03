@@ -25,6 +25,7 @@ export type LibraryDto = {
 export type IndexJobDto = {
   id: string;
   library_id: string | null;
+  library_name: string | null;
   book_id: string | null;
   type: string;
   status: string;

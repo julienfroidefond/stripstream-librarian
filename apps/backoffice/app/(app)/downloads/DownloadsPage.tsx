@@ -347,7 +347,7 @@ function DownloadRow({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: () 
 
 type AvailableSortKey = "seeders" | "missing" | "name";
 
-function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFound: LatestFoundPerLibraryDto[]; onDeleted: () => void }) {
+export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFound: LatestFoundPerLibraryDto[]; onDeleted: () => void }) {
   const { t } = useTranslation();
   const [sort, setSort] = useState<AvailableSortKey>("seeders");
   const [filterLib, setFilterLib] = useState<string>("all");

@@ -11,7 +11,8 @@ import { JobTimelineCard } from "./components/JobTimelineCard";
 import { JobProgressCard, IndexStatsCard, ThumbnailStatsCard } from "./components/JobProgressCard";
 import { MetadataBatchReportCard, MetadataBatchResultsCard, MetadataRefreshReportCard, MetadataRefreshChangesCard } from "./components/MetadataReportCards";
 import { ReadingStatusMatchReportCard, ReadingStatusMatchResultsCard, ReadingStatusPushReportCard, ReadingStatusPushResultsCard } from "./components/ReadingStatusReportCards";
-import { DownloadDetectionReportCard, DownloadDetectionResultsCard, DownloadDetectionErrorsCard } from "./components/DownloadDetectionCards";
+import { DownloadDetectionReportCard, DownloadDetectionErrorsCard } from "./components/DownloadDetectionCards";
+import { AvailableDownloadsSection } from "@/app/(app)/downloads/DownloadsPage";
 import { JobErrorsCard } from "./components/JobErrorsCard";
 
 interface JobDetailPageProps {
@@ -21,6 +22,7 @@ interface JobDetailPageProps {
 interface JobDetails {
   id: string;
   library_id: string | null;
+  library_name: string | null;
   book_id: string | null;
   type: string;
   status: string;
@@ -279,7 +281,24 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
         {/* Download detection */}
         {isDownloadDetection && downloadDetectionReport && <DownloadDetectionReportCard report={downloadDetectionReport} t={t} />}
         {isDownloadDetection && <DownloadDetectionErrorsCard results={downloadDetectionErrors} t={t} />}
-        {isDownloadDetection && <DownloadDetectionResultsCard results={downloadDetectionResults} libraryId={job.library_id} qbConfigured={qbConfigured} t={t} />}
+        {isDownloadDetection && downloadDetectionResults.length > 0 && (
+          <AvailableDownloadsSection
+            latestFound={[{
+              library_id: job.library_id || "",
+              library_name: job.library_name || "",
+              results: downloadDetectionResults.map(r => ({
+                id: r.id,
+                series_id: r.series_id || r.id,
+                series_name: r.series_name,
+                missing_count: r.missing_count,
+                available_releases: r.available_releases,
+                updated_at: new Date().toISOString(),
+                failed_download_count: 0,
+              })),
+            }]}
+            onDeleted={() => {}}
+          />
+        )}
 
         {/* Metadata batch results */}
         {isMetadataBatch && <MetadataBatchResultsCard results={batchResults} libraryId={job.library_id} t={t} />}
