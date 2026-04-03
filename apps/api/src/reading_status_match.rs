@@ -808,4 +808,116 @@ mod tests {
     fn normalize_consecutive_special_chars() {
         assert_eq!(normalize_title("title---subtitle"), "title subtitle");
     }
+
+    /// Regression: series_id must be populated via LEFT JOIN series when the series exists.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn series_id_returned_when_series_exists(pool: sqlx::PgPool) {
+        use sqlx::Row;
+        use uuid::Uuid;
+
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'TestLib', '/libraries/test')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let series_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Naruto')")
+            .bind(series_id)
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'reading_status_match', 'success', NOW())",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO reading_status_match_results (job_id, library_id, series_name, status) \
+             VALUES ($1, $2, 'Naruto', 'linked')",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Run the actual query from get_match_results (no status filter)
+        let rows = sqlx::query(
+            "SELECT r.id, r.series_name, r.status, r.anilist_id, r.anilist_title, r.anilist_url, r.error_message, s.id AS series_id
+             FROM reading_status_match_results r
+             LEFT JOIN series s ON s.library_id = $2 AND LOWER(s.name) = LOWER(r.series_name)
+             WHERE r.job_id = $1
+             ORDER BY r.status, r.series_name",
+        )
+        .bind(job_id)
+        .bind(Some(library_id))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(rows.len(), 1);
+        let returned_series_id: Option<Uuid> = rows[0].get("series_id");
+        assert_eq!(returned_series_id, Some(series_id), "series_id should match the created series");
+    }
+
+    /// Regression: series_id should be None when no matching series exists.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn series_id_none_when_series_missing(pool: sqlx::PgPool) {
+        use sqlx::Row;
+        use uuid::Uuid;
+
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'TestLib', '/libraries/test')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'reading_status_match', 'success', NOW())",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Insert result with a series_name that does NOT exist in series table
+        sqlx::query(
+            "INSERT INTO reading_status_match_results (job_id, library_id, series_name, status) \
+             VALUES ($1, $2, 'NonExistentSeries', 'no_results')",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let rows = sqlx::query(
+            "SELECT r.id, r.series_name, r.status, r.anilist_id, r.anilist_title, r.anilist_url, r.error_message, s.id AS series_id
+             FROM reading_status_match_results r
+             LEFT JOIN series s ON s.library_id = $2 AND LOWER(s.name) = LOWER(r.series_name)
+             WHERE r.job_id = $1
+             ORDER BY r.status, r.series_name",
+        )
+        .bind(job_id)
+        .bind(Some(library_id))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(rows.len(), 1);
+        let returned_series_id: Option<Uuid> = rows[0].get("series_id");
+        assert!(returned_series_id.is_none(), "series_id should be None when series does not exist");
+    }
 }

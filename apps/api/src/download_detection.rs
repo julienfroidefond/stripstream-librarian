@@ -1078,4 +1078,109 @@ mod tests {
         assert!(releases[0].has_failed, "release T01-T03 should be flagged (volumes 2,3 overlap)");
         assert!(!releases[1].has_failed, "release T05 should NOT be flagged (volume 5 not failed)");
     }
+
+    /// Regression: series_id must be returned from the detection results query.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn series_id_returned_when_series_exists(pool: sqlx::PgPool) {
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'TestLib', '/libraries/test')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let series_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'OnePiece')")
+            .bind(series_id)
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'download_detection', 'success', NOW())",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO download_detection_results (job_id, library_id, series_id, status, missing_count) \
+             VALUES ($1, $2, $3, 'found', 3)",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .bind(series_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Run the actual query from get_detection_results (no status filter)
+        let rows = sqlx::query(
+            "SELECT ddr.id, ddr.series_id, COALESCE(s.name, 'unknown') AS series_name, ddr.status, ddr.missing_count, ddr.available_releases, ddr.error_message
+             FROM download_detection_results ddr
+             LEFT JOIN series s ON s.id = ddr.series_id
+             WHERE ddr.job_id = $1
+             ORDER BY ddr.status, s.name",
+        )
+        .bind(job_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(rows.len(), 1);
+        let returned_series_id: Option<Uuid> = rows[0].get("series_id");
+        assert_eq!(returned_series_id, Some(series_id), "series_id should match the created series");
+    }
+
+    /// Regression: series_id should be None when series_id column is NULL.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn series_id_none_when_series_missing(pool: sqlx::PgPool) {
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'TestLib', '/libraries/test')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'download_detection', 'success', NOW())",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Insert with series_id = NULL
+        sqlx::query(
+            "INSERT INTO download_detection_results (job_id, library_id, series_id, status, missing_count) \
+             VALUES ($1, $2, NULL, 'not_found', 0)",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let rows = sqlx::query(
+            "SELECT ddr.id, ddr.series_id, COALESCE(s.name, 'unknown') AS series_name, ddr.status, ddr.missing_count, ddr.available_releases, ddr.error_message
+             FROM download_detection_results ddr
+             LEFT JOIN series s ON s.id = ddr.series_id
+             WHERE ddr.job_id = $1
+             ORDER BY ddr.status, s.name",
+        )
+        .bind(job_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(rows.len(), 1);
+        let returned_series_id: Option<Uuid> = rows[0].get("series_id");
+        assert!(returned_series_id.is_none(), "series_id should be None when no series is linked");
+    }
 }

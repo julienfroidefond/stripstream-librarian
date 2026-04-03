@@ -1392,4 +1392,111 @@ mod tests {
         .await
         .expect("metadata_batch_rematch should be allowed by index_jobs_type_check constraint");
     }
+
+    /// Regression: series_id must be populated via LEFT JOIN series when the series exists.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn series_id_returned_when_series_exists(pool: sqlx::PgPool) {
+        let lib_id = create_lib(&pool, "test_series_id").await;
+        let series_id = create_series(&pool, lib_id, "Blacksad").await;
+
+        // Create a job
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'metadata_batch', 'success', NOW())",
+        )
+        .bind(job_id)
+        .bind(lib_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Insert a batch result with series_name matching the series
+        sqlx::query(
+            "INSERT INTO metadata_batch_results (job_id, library_id, series_name, status, fallback_used, candidates_count) \
+             VALUES ($1, $2, 'Blacksad', 'auto_matched', false, 1)",
+        )
+        .bind(job_id)
+        .bind(lib_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Run the actual query from get_batch_results
+        let rows = sqlx::query(
+            r#"
+            SELECT mbr.id, mbr.series_name, mbr.status, mbr.provider_used, mbr.fallback_used, mbr.candidates_count,
+                   mbr.best_confidence, mbr.best_candidate_json, mbr.link_id, mbr.error_message,
+                   s.id AS series_id
+            FROM metadata_batch_results mbr
+            LEFT JOIN series s ON s.library_id = $5 AND LOWER(s.name) = LOWER(mbr.series_name)
+            WHERE mbr.job_id = $1 AND ($2::text IS NULL OR mbr.status = $2)
+            ORDER BY mbr.series_name ASC
+            LIMIT $3 OFFSET $4
+            "#,
+        )
+        .bind(job_id)
+        .bind(None::<&str>)
+        .bind(100i64)
+        .bind(0i64)
+        .bind(Some(lib_id))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(rows.len(), 1);
+        let returned_series_id: Option<Uuid> = rows[0].get("series_id");
+        assert_eq!(returned_series_id, Some(series_id), "series_id should match the created series");
+    }
+
+    /// Regression: series_id should be None when no matching series exists.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn series_id_none_when_series_missing(pool: sqlx::PgPool) {
+        let lib_id = create_lib(&pool, "test_no_series").await;
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'metadata_batch', 'success', NOW())",
+        )
+        .bind(job_id)
+        .bind(lib_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Insert a batch result with a series_name that does NOT exist in series table
+        sqlx::query(
+            "INSERT INTO metadata_batch_results (job_id, library_id, series_name, status, fallback_used, candidates_count) \
+             VALUES ($1, $2, 'NonExistentSeries', 'no_results', false, 0)",
+        )
+        .bind(job_id)
+        .bind(lib_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let rows = sqlx::query(
+            r#"
+            SELECT mbr.id, mbr.series_name, mbr.status, mbr.provider_used, mbr.fallback_used, mbr.candidates_count,
+                   mbr.best_confidence, mbr.best_candidate_json, mbr.link_id, mbr.error_message,
+                   s.id AS series_id
+            FROM metadata_batch_results mbr
+            LEFT JOIN series s ON s.library_id = $5 AND LOWER(s.name) = LOWER(mbr.series_name)
+            WHERE mbr.job_id = $1 AND ($2::text IS NULL OR mbr.status = $2)
+            ORDER BY mbr.series_name ASC
+            LIMIT $3 OFFSET $4
+            "#,
+        )
+        .bind(job_id)
+        .bind(None::<&str>)
+        .bind(100i64)
+        .bind(0i64)
+        .bind(Some(lib_id))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(rows.len(), 1);
+        let returned_series_id: Option<Uuid> = rows[0].get("series_id");
+        assert!(returned_series_id.is_none(), "series_id should be None when series does not exist");
+    }
 }
