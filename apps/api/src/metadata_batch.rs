@@ -1362,4 +1362,21 @@ mod tests {
         let would_skip_rematch = !force_rematch && already_linked.contains(series_name);
         assert!(!would_skip_rematch, "rematch mode should NOT skip already linked");
     }
+
+    /// Regression test: metadata_batch_rematch must be an allowed job type in DB.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn rematch_job_type_accepted_by_db(pool: sqlx::PgPool) {
+        let lib_id = create_lib(&pool, "test").await;
+        let job_id = Uuid::new_v4();
+        // This INSERT would fail with a CHECK constraint violation if
+        // 'metadata_batch_rematch' is not in the allowed job types.
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'metadata_batch_rematch', 'pending')",
+        )
+        .bind(job_id)
+        .bind(lib_id)
+        .execute(&pool)
+        .await
+        .expect("metadata_batch_rematch should be allowed by index_jobs_type_check constraint");
+    }
 }
