@@ -611,7 +611,14 @@ pub async fn add_to_library(
 
     // 3. Create external_metadata_link (approved) — only for providers that
     //    offer useful metadata links (skip prowlarr, anilist, etc.)
-    let link_id: Option<Uuid> = if req.provider == "bedetheque" {
+    // Normalize provider name: sc_trending_bd, sc_best_manga, etc. → senscritique
+    let metadata_provider = if req.provider.starts_with("sc_") {
+        "senscritique".to_string()
+    } else {
+        req.provider.clone()
+    };
+    let is_linkable_provider = metadata_provider == "bedetheque" || metadata_provider == "senscritique";
+    let link_id: Option<Uuid> = if is_linkable_provider {
         let id: Uuid = sqlx::query_scalar(
             r#"
             INSERT INTO external_metadata_links
@@ -629,7 +636,7 @@ pub async fn add_to_library(
         )
         .bind(req.library_id)
         .bind(series_id)
-        .bind(&req.provider)
+        .bind(&metadata_provider)
         .bind(&req.external_id)
         .bind(&req.external_url)
         .bind(serde_json::json!({
