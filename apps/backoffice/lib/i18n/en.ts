@@ -957,6 +957,11 @@ const en: Record<TranslationKey, string> = {
   "downloads.failedBefore": "{{count}} previous failed download(s)",
   "downloads.showMore": "Show {{count}} more…",
   "downloads.showLess": "Show less",
+  "downloads.sortSeeders": "Seeders",
+  "downloads.sortMissing": "Missing",
+  "downloads.sortName": "Name",
+  "downloads.deleteAll": "Remove this series",
+  "downloads.dismissAll": "Dismiss these results",
 
   // Rename
   "rename.button": "Rename books",

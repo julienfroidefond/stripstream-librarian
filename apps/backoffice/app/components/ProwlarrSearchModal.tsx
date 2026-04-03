@@ -55,6 +55,8 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
 
   // qBittorrent state
   const [isQbConfigured, setIsQbConfigured] = useState(initialQbConfigured ?? false);
+  const [sortCol, setSortCol] = useState<"title" | "vol" | "seeders" | "size">("seeders");
+  const [sortAsc, setSortAsc] = useState(false);
 
   // Check if Prowlarr and qBittorrent are configured on mount (skip if server provided)
   useEffect(() => {
@@ -230,37 +232,61 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-muted/50 text-left">
-                          <th className="px-3 py-2 font-medium text-muted-foreground">{t("prowlarr.columnTitle")}</th>
-                          <th className="px-3 py-2 font-medium text-muted-foreground">{t("prowlarr.columnIndexer")}</th>
-                          <th className="px-3 py-2 font-medium text-muted-foreground text-right">{t("prowlarr.columnSize")}</th>
-                          <th className="px-3 py-2 font-medium text-muted-foreground text-center">{t("prowlarr.columnSeeders")}</th>
-                          <th className="px-3 py-2 font-medium text-muted-foreground text-center">{t("prowlarr.columnLeechers")}</th>
-                          <th className="px-3 py-2 font-medium text-muted-foreground">{t("prowlarr.columnProtocol")}</th>
+                          {([
+                            { id: "title" as const, label: t("prowlarr.columnTitle"), align: "" },
+                            { id: "vol" as const, label: "Vol.", align: "text-center" },
+                            { id: null, label: t("prowlarr.columnIndexer"), align: "" },
+                            { id: "size" as const, label: t("prowlarr.columnSize"), align: "text-right" },
+                            { id: "seeders" as const, label: t("prowlarr.columnSeeders"), align: "text-center" },
+                          ] as const).map((col, i) => (
+                            <th
+                              key={i}
+                              className={`px-3 py-2 font-medium text-muted-foreground ${col.align} ${col.id ? "cursor-pointer hover:text-foreground select-none" : ""}`}
+                              onClick={col.id ? () => {
+                                if (sortCol === col.id) setSortAsc(!sortAsc);
+                                else { setSortCol(col.id); setSortAsc(false); }
+                              } : undefined}
+                            >
+                              {col.label}
+                              {col.id && sortCol === col.id && (
+                                <span className="ml-0.5 text-[10px]">{sortAsc ? "▲" : "▼"}</span>
+                              )}
+                            </th>
+                          ))}
                           <th className="px-3 py-2 font-medium text-muted-foreground text-right"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
-                        {groupReleasesByTitle(results).map((group) => {
-                          const first = group.items[0];
-                          const hasMissing = first.matchedMissingVolumes && first.matchedMissingVolumes.length > 0;
-                          return group.items.map((release, si) => (
-                          <tr key={release.guid || `${group.title}-${si}`} className={`transition-colors ${hasMissing ? "bg-green-500/10 hover:bg-green-500/20 border-l-2 border-l-green-500" : "hover:bg-muted/20"}`}>
-                            {si === 0 ? (
-                              <td className="px-3 py-2 max-w-[400px]" rowSpan={group.items.length}>
-                                <span className="truncate block" title={release.title}>
-                                  {release.title}
-                                </span>
-                                {hasMissing && (
-                                  <div className="flex flex-wrap items-center gap-1 mt-1">
-                                    {compressVolumes(first.matchedMissingVolumes!).map((range) => (
-                                      <span key={range} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-600">
-                                        {range}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </td>
-                            ) : null}
+                        {[...results].sort((a, b) => {
+                          const dir = sortAsc ? 1 : -1;
+                          switch (sortCol) {
+                            case "title": return dir * a.title.localeCompare(b.title);
+                            case "vol": return dir * ((a.allVolumes?.length ?? 0) - (b.allVolumes?.length ?? 0));
+                            case "size": return dir * (a.size - b.size);
+                            case "seeders": return dir * ((a.seeders ?? 0) - (b.seeders ?? 0));
+                            default: return 0;
+                          }
+                        }).map((release) => {
+                          const hasMissing = release.matchedMissingVolumes && release.matchedMissingVolumes.length > 0;
+                          return (
+                          <tr key={release.guid} className={`transition-colors ${hasMissing ? "bg-green-500/10 hover:bg-green-500/20 border-l-2 border-l-green-500" : "hover:bg-muted/20"}`}>
+                            <td className="px-3 py-2 max-w-[400px]">
+                              <span className="truncate block" title={release.title}>
+                                {release.title}
+                              </span>
+                              {hasMissing && (
+                                <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                                  {compressVolumes(release.matchedMissingVolumes!).map((range) => (
+                                    <span key={range} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-600">
+                                      {range}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-center text-muted-foreground whitespace-nowrap">
+                              {release.allVolumes && release.allVolumes.length > 0 ? release.allVolumes.length : "—"}
+                            </td>
                             <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
                               {release.indexer || "—"}
                             </td>
@@ -273,20 +299,6 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                                   {release.seeders}
                                 </span>
                               ) : "—"}
-                            </td>
-                            <td className="px-3 py-2 text-center text-muted-foreground">
-                              {release.leechers != null ? release.leechers : "—"}
-                            </td>
-                            <td className="px-3 py-2">
-                              {release.protocol && (
-                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                                  release.protocol === "torrent"
-                                    ? "bg-blue-500/15 text-blue-600"
-                                    : "bg-amber-500/15 text-amber-600"
-                                }`}>
-                                  {release.protocol}
-                                </span>
-                              )}
                             </td>
                             <td className="px-3 py-2">
                               <div className="flex items-center justify-end gap-1.5">
@@ -315,7 +327,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                               </div>
                             </td>
                           </tr>
-                          ));
+                          );
                         })}
                       </tbody>
                     </table>

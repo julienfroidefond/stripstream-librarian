@@ -204,17 +204,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
       {/* Available downloads from latest detection */}
       {latestFound.length > 0 && (
         <QbittorrentProvider initialConfigured={qbConfigured} onDownloadStarted={() => refresh(false)}>
-          <div className="mt-10">
-            <h2 className="text-xl font-bold text-foreground mb-4 flex items-center gap-2">
-              <Icon name="search" size="lg" />
-              {t("downloads.availableTitle")}
-            </h2>
-            <div className="space-y-6">
-              {latestFound.map(lib => (
-                <AvailableLibraryCard key={lib.library_id} lib={lib} onDeleted={() => refresh(false)} />
-              ))}
-            </div>
-          </div>
+          <AvailableDownloadsSection latestFound={latestFound} onDeleted={() => refresh(false)} />
         </QbittorrentProvider>
       )}
     </>
@@ -355,11 +345,35 @@ function DownloadRow({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: () 
   );
 }
 
-function AvailableLibraryCard({ lib, onDeleted }: { lib: LatestFoundPerLibraryDto; onDeleted: () => void }) {
+type AvailableSortKey = "seeders" | "missing" | "name";
+
+function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFound: LatestFoundPerLibraryDto[]; onDeleted: () => void }) {
   const { t } = useTranslation();
-  const [collapsed, setCollapsed] = useState(true);
+  const [sort, setSort] = useState<AvailableSortKey>("seeders");
+  const [filterLib, setFilterLib] = useState<string>("all");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
-  const displayResults = collapsed ? lib.results.slice(0, 5) : lib.results;
+
+  // Flatten all results with library info
+  const allResults = latestFound.flatMap(lib =>
+    lib.results.map(r => ({ ...r, library_id: lib.library_id, library_name: lib.library_name }))
+  );
+
+  const bestSeeders = (r: typeof allResults[0]) =>
+    r.available_releases?.reduce((max, rel) => Math.max(max, rel.seeders ?? 0), 0) ?? 0;
+
+  const filtered = allResults.filter(r => filterLib === "all" || r.library_id === filterLib);
+
+  const sorted = [...filtered].sort((a, b) => {
+    switch (sort) {
+      case "seeders": return bestSeeders(b) - bestSeeders(a);
+      case "missing": return b.missing_count - a.missing_count;
+      case "name": return a.series_name.localeCompare(b.series_name);
+      default: return 0;
+    }
+  });
+
+  const libraries = latestFound.map(l => ({ id: l.library_id, name: l.library_name }));
 
   async function handleDeleteRelease(seriesId: string, releaseIdx: number) {
     const key = `${seriesId}-${releaseIdx}`;
@@ -372,106 +386,183 @@ function AvailableLibraryCard({ lib, onDeleted }: { lib: LatestFoundPerLibraryDt
     }
   }
 
+  async function handleDeleteSeries(seriesId: string) {
+    setDeletingKey(seriesId);
+    try {
+      const resp = await fetch(`/api/available-downloads/${seriesId}`, { method: "DELETE" });
+      if (resp.ok) onDeleted();
+    } finally {
+      setDeletingKey(null);
+    }
+  }
+
+  const sortOptions: { id: AvailableSortKey; label: string }[] = [
+    { id: "seeders", label: t("downloads.sortSeeders") },
+    { id: "missing", label: t("downloads.sortMissing") },
+    { id: "name", label: t("downloads.sortName") },
+  ];
+
   return (
-    <Card>
-      <CardHeader className="pb-3 px-3 sm:px-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-          <CardTitle className="text-sm sm:text-base">{lib.library_name}</CardTitle>
-          <span className="text-[10px] sm:text-xs text-muted-foreground">
-            {t("downloads.detectedSeries", { count: lib.results.length })}
-          </span>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-2 px-3 sm:px-6">
-        {displayResults.map(r => (
-          <div key={r.id} className="rounded-lg border border-border/40 bg-background/60 p-2 sm:p-3">
-            <div className="flex items-center justify-between gap-2 mb-1.5">
-              <Link
-                href={`/series/${r.series_id ?? encodeURIComponent(r.series_name)}`}
-                className="font-semibold text-xs sm:text-sm text-primary hover:underline truncate"
+    <div className="mt-10">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+        <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+          <Icon name="search" size="lg" />
+          {t("downloads.availableTitle")}
+          <span className="text-sm font-normal text-muted-foreground">({sorted.length})</span>
+        </h2>
+        <div className="flex items-center gap-2">
+          {libraries.length > 1 && (
+            <select
+              value={filterLib}
+              onChange={(e) => setFilterLib(e.target.value)}
+              className="text-xs border border-border rounded-lg px-2 py-1.5 bg-background"
+            >
+              <option value="all">{t("common.all")}</option>
+              {libraries.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          )}
+          <div className="flex gap-0.5">
+            {sortOptions.map(s => (
+              <button
+                key={s.id}
+                onClick={() => setSort(s.id)}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                  sort === s.id
+                    ? "bg-primary/15 text-primary border-primary/30"
+                    : "bg-card text-muted-foreground border-border hover:border-primary/30"
+                }`}
               >
-                {r.series_name}
-              </Link>
-              <div className="flex items-center gap-1.5 shrink-0">
-                {r.failed_download_count > 0 && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap bg-destructive/20 text-destructive" title={t("downloads.failedBefore", { count: r.failed_download_count })}>
-                    {r.failed_download_count} {t("downloads.failed")}
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="border border-border rounded-xl overflow-hidden">
+        {sorted.map((r) => {
+          const isExpanded = expandedId === r.id;
+          const topSeeders = bestSeeders(r);
+          const releaseCount = r.available_releases?.length ?? 0;
+
+          return (
+            <div key={r.id} className={`${isExpanded ? "bg-muted/20" : ""}`}>
+              {/* Summary row */}
+              <button
+                type="button"
+                onClick={() => setExpandedId(isExpanded ? null : r.id)}
+                className={`w-full flex items-center gap-2 sm:gap-3 px-2.5 sm:px-3 py-2 text-left hover:bg-muted/30 transition-colors border-b border-border/40 ${isExpanded ? "bg-muted/20" : ""}`}
+              >
+                <Icon
+                  name={isExpanded ? "chevronDown" : "chevronRight"}
+                  size="sm"
+                  className="text-muted-foreground shrink-0 !w-3.5 !h-3.5"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/series/${r.series_id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-sm font-semibold text-primary hover:underline truncate"
+                    >
+                      {r.series_name}
+                    </Link>
+                    {libraries.length > 1 && (
+                      <span className="text-[10px] text-muted-foreground hidden sm:inline shrink-0">{r.library_name}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
+                    <span>{releaseCount} release{releaseCount > 1 ? "s" : ""}</span>
+                    {r.available_releases && r.available_releases.length > 0 && (
+                      <span className="hidden sm:inline truncate max-w-xs" title={r.available_releases[0].title}>
+                        {r.available_releases[0].title}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {r.failed_download_count > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-destructive/20 text-destructive" title={`${r.failed_download_count} failed`}>
+                      {r.failed_download_count}!
+                    </span>
+                  )}
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-warning/20 text-warning" title={`${r.missing_count} missing`}>
+                    {r.missing_count} {t("downloads.missing")}
                   </span>
-                )}
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap bg-warning/20 text-warning">
-                  {r.missing_count} {t("downloads.missing")}
-                </span>
-              </div>
-            </div>
-            {r.available_releases && r.available_releases.length > 0 && (
-              <div className="space-y-1.5 sm:space-y-1">
-                {groupReleasesByTitle(r.available_releases).map((group) => (
-                  <div key={group.title} className="rounded bg-muted/30 overflow-hidden">
-                    {/* Title + matched volumes (shown once) */}
-                    <div className="py-1 px-2">
-                      <p className="text-[11px] sm:text-xs font-mono text-foreground break-all">{group.title}</p>
-                      <div className="flex flex-wrap items-center gap-1 mt-1">
-                        {compressVolumes(group.items[0].matched_missing_volumes).map(range => (
-                          <span key={range} className="text-[10px] px-1 py-0.5 rounded-full bg-success/20 text-success font-medium">{range}</span>
+                  {topSeeders > 0 && (
+                    <span className={`text-xs font-bold tabular-nums ${
+                      topSeeders >= 10 ? "text-green-600" : topSeeders >= 3 ? "text-amber-600" : "text-red-500"
+                    }`}>
+                      {topSeeders}S
+                    </span>
+                  )}
+                </div>
+              </button>
+
+              {/* Expanded: one flat line per release */}
+              {isExpanded && r.available_releases && r.available_releases.length > 0 && (
+                <div className="border-b border-border/40">
+                  {r.available_releases.map((release, idx) => (
+                    <div key={idx} className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-0.5 pl-7 sm:pl-9 text-[10px] hover:bg-muted/20 border-b border-border/10 last:border-b-0">
+                      <div className="flex items-center gap-1 shrink-0">
+                        {compressVolumes(release.matched_missing_volumes).map(range => (
+                          <span key={range} className="px-1 py-px rounded bg-success/20 text-success font-medium">{range}</span>
                         ))}
                       </div>
-                    </div>
-                    {/* Sources */}
-                    {group.items.map((release, si) => {
-                      const idx = group.originalIndices[si];
-                      return (
-                      <div key={idx} className={`flex items-center gap-2 sm:gap-3 py-0.5 px-2 ${si > 0 ? "border-t border-border/20" : ""}`}>
-                        <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0 flex-wrap">
-                          {release.indexer && <span className="text-[10px] text-muted-foreground">{release.indexer}</span>}
-                          {release.seeders != null && (
-                            <span className="text-[10px] text-success font-medium">{release.seeders}S</span>
-                          )}
-                          <span className="text-[10px] text-muted-foreground">{(release.size / 1024 / 1024).toFixed(0)} MB</span>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {release.download_url && (
-                            <QbittorrentDownloadButton
-                              downloadUrl={release.download_url}
-                              releaseId={`${r.id}-${idx}`}
-                              libraryId={lib.library_id}
-                              seriesName={r.series_name}
-                              expectedVolumes={release.matched_missing_volumes}
-                              allVolumes={release.all_volumes}
-                            />
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteRelease(r.id, idx)}
-                            disabled={deletingKey === `${r.id}-${idx}`}
-                            className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
-                            title={t("downloads.delete")}
-                          >
-                            {deletingKey === `${r.id}-${idx}`
-                              ? <Icon name="spinner" size="sm" className="animate-spin" />
-                              : <Icon name="trash" size="sm" />}
-                          </button>
-                        </div>
+                      <span className="text-muted-foreground truncate min-w-0 flex-1 hidden sm:block" title={release.title}>{release.title}</span>
+                      {release.all_volumes.length > 0 && (
+                        <span className="text-muted-foreground shrink-0">{release.all_volumes.length} vol.</span>
+                      )}
+                      {release.indexer && <span className="text-muted-foreground shrink-0">{release.indexer}</span>}
+                      {release.seeders != null && (
+                        <span className={`font-medium shrink-0 ${
+                          release.seeders >= 10 ? "text-green-600" : release.seeders >= 3 ? "text-amber-600" : "text-red-500"
+                        }`}>{release.seeders}S</span>
+                      )}
+                      <span className="text-muted-foreground shrink-0">{(release.size / 1024 / 1024).toFixed(0)}MB</span>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {release.download_url && (
+                          <QbittorrentDownloadButton
+                            downloadUrl={release.download_url}
+                            releaseId={`${r.id}-${idx}`}
+                            libraryId={r.library_id}
+                            seriesName={r.series_name}
+                            expectedVolumes={release.matched_missing_volumes}
+                            allVolumes={release.all_volumes}
+                          />
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRelease(r.id, idx)}
+                          disabled={deletingKey === `${r.id}-${idx}`}
+                          className="inline-flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
+                        >
+                          {deletingKey === `${r.id}-${idx}`
+                            ? <Icon name="spinner" size="sm" className="animate-spin !w-3 !h-3" />
+                            : <Icon name="trash" size="sm" className="!w-3 !h-3" />}
+                        </button>
                       </div>
-                      );
-                    })}
+                    </div>
+                  ))}
+                  <div className="flex justify-end px-2 sm:px-3 py-0.5 pl-7 sm:pl-9">
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSeries(r.id)}
+                      disabled={deletingKey === r.id}
+                      className="text-[10px] text-muted-foreground hover:text-destructive transition-colors disabled:opacity-30"
+                    >
+                      {deletingKey === r.id
+                        ? <Icon name="spinner" size="sm" className="animate-spin !w-3 !h-3" />
+                        : t("downloads.dismissAll")}
+                    </button>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-        {lib.results.length > 5 && (
-          <button
-            type="button"
-            onClick={() => setCollapsed(c => !c)}
-            className="text-xs text-primary hover:underline w-full text-center py-1"
-          >
-            {collapsed
-              ? t("downloads.showMore", { count: lib.results.length - 5 })
-              : t("downloads.showLess")}
-          </button>
-        )}
-      </CardContent>
-    </Card>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

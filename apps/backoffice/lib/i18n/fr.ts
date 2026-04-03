@@ -955,6 +955,11 @@ const fr = {
   "downloads.failedBefore": "{{count}} téléchargement(s) échoué(s) précédemment",
   "downloads.showMore": "Voir {{count}} de plus…",
   "downloads.showLess": "Réduire",
+  "downloads.sortSeeders": "Seeders",
+  "downloads.sortMissing": "Manquants",
+  "downloads.sortName": "Nom",
+  "downloads.deleteAll": "Supprimer cette série",
+  "downloads.dismissAll": "Masquer ces résultats",
 
   // Rename
   "rename.button": "Renommer les livres",
