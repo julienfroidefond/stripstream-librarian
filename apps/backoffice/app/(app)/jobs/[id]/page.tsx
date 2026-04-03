@@ -282,11 +282,13 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
         {isDownloadDetection && downloadDetectionReport && <DownloadDetectionReportCard report={downloadDetectionReport} t={t} />}
         {isDownloadDetection && <DownloadDetectionErrorsCard results={downloadDetectionErrors} t={t} />}
         {isDownloadDetection && downloadDetectionResults.length > 0 && (
-          <DownloadDetectionAvailableResults
-            results={downloadDetectionResults}
-            libraryId={job.library_id || ""}
-            libraryName={job.library_name || ""}
-          />
+          <div className="lg:col-span-2">
+            <DownloadDetectionAvailableResults
+              results={downloadDetectionResults}
+              libraryId={job.library_id || ""}
+              libraryName={job.library_name || ""}
+            />
+          </div>
         )}
 
         {/* Metadata batch results */}
