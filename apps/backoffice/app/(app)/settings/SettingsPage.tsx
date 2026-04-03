@@ -366,7 +366,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                 <FormInput
                   type="number"
                   min={5}
-                  max={60}
+                  max={300}
                   value={settings.limits.timeout_seconds}
                   onChange={(e) => {
                     const timeout_seconds = parseInt(e.target.value) || 12;
