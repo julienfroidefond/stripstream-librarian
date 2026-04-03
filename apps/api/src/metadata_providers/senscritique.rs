@@ -426,7 +426,7 @@ async fn fetch_single_book(client: &reqwest::Client, product_id: i64) -> Result<
 /// Fetch the SensCritique "meilleurs mangas" top list via GraphQL.
 pub async fn fetch_top_mangas(limit: usize) -> Result<Vec<SeriesCandidate>, String> {
     let query = serde_json::json!({
-        "query": "{ poll(id: POLL_ID, limit: LIMIT, offset: 0) { products { id title url medias { picture } authors { name } dateRelease rating } } }"
+        "query": "{ poll(id: POLL_ID, limit: LIMIT, offset: 0) { products { id title url medias { picture } authors { name } dateRelease rating synopsis } } }"
             .replace("POLL_ID", &POLL_ID_MANGA.to_string())
             .replace("LIMIT", &limit.to_string()),
     });
@@ -446,7 +446,7 @@ pub async fn fetch_top_mangas(limit: usize) -> Result<Vec<SeriesCandidate>, Stri
 pub async fn fetch_top_bd(limit: usize) -> Result<Vec<SeriesCandidate>, String> {
     let query = serde_json::json!({
         "query": format!(
-            "{{ top(universe: \"comicBook\", subtype: TOP_100_OUT_OF_TOP_10, limit: {limit}, offset: 0) {{ id title url medias {{ picture }} authors {{ name }} dateRelease rating }} }}"
+            "{{ top(universe: \"comicBook\", subtype: TOP_100_OUT_OF_TOP_10, limit: {limit}, offset: 0) {{ id title url medias {{ picture }} authors {{ name }} dateRelease rating synopsis }} }}"
         ),
     });
 
@@ -473,7 +473,7 @@ pub async fn fetch_trending(
 
     let query = serde_json::json!({
         "query": format!(
-            "{{ productsByRelease(universe: \"{universe}\", limit: {fetch_limit}, offset: 0, sortBy: {sort_by}, byPeriod: true, period: {period}) {{ items {{ id title url category medias {{ picture }} authors {{ name }} dateRelease rating }} }} }}"
+            "{{ productsByRelease(universe: \"{universe}\", limit: {fetch_limit}, offset: 0, sortBy: {sort_by}, byPeriod: true, period: {period}) {{ items {{ id title url category medias {{ picture }} authors {{ name }} dateRelease rating synopsis }} }} }}"
         ),
     });
 
@@ -644,6 +644,11 @@ fn parse_products(items: &[serde_json::Value], limit: usize) -> Vec<SeriesCandid
                 .get("category")
                 .and_then(|c| c.as_str())
                 .map(String::from);
+            let description = product
+                .get("synopsis")
+                .and_then(|s| s.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from);
 
             let confidence = 1.0 - (i as f32 / 100.0).clamp(0.0, 0.9);
 
@@ -651,7 +656,7 @@ fn parse_products(items: &[serde_json::Value], limit: usize) -> Vec<SeriesCandid
                 external_id: id.to_string(),
                 title,
                 authors,
-                description: None,
+                description,
                 publishers: vec![],
                 start_year: year,
                 total_volumes: None,
