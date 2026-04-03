@@ -211,8 +211,12 @@ async fn search_series_impl(query: &str) -> Result<Vec<SeriesCandidate>, String>
         }
     }
 
+    // Fetch latest release dates for all franchises in one GraphQL query to infer status
+    let franchise_ids: Vec<i64> = franchise_map.keys().copied().collect();
+    let latest_dates = fetch_franchise_latest_dates(&client, &franchise_ids).await;
+
     // Merge: franchises first (sorted by confidence), then standalone
-    // Apply tome 1 descriptions to franchise candidates
+    // Apply tome 1 descriptions and inferred status
     let mut results: Vec<SeriesCandidate> = franchise_map
         .into_iter()
         .map(|(fid, (mut c, _))| {
@@ -220,6 +224,11 @@ async fn search_series_impl(query: &str) -> Result<Vec<SeriesCandidate>, String>
                 if let Some((_, desc)) = franchise_descriptions.remove(&fid) {
                     c.description = Some(desc);
                 }
+            }
+            // Infer status from latest release date
+            if let Some(date_str) = latest_dates.get(&fid) {
+                let status = infer_status_from_date(date_str);
+                c.metadata_json["status"] = serde_json::json!(status);
             }
             c
         })
@@ -493,6 +502,64 @@ pub async fn fetch_trending(
     }
 
     Ok(candidates)
+}
+
+/// Fetch the latest release date for each franchise in a single batched GraphQL query.
+async fn fetch_franchise_latest_dates(
+    client: &reqwest::Client,
+    franchise_ids: &[i64],
+) -> HashMap<i64, String> {
+    if franchise_ids.is_empty() {
+        return HashMap::new();
+    }
+
+    // Build a batched query with aliases: f_123: groupProducts(franchiseId: 123, ...)
+    let fields: Vec<String> = franchise_ids
+        .iter()
+        .map(|fid| {
+            format!(
+                "f_{fid}: groupProducts(franchiseId: {fid}, universe: \"comicBook\", limit: 1, offset: 0, order: DATE_RELEASE_DESC) {{ items {{ dateRelease }} }}"
+            )
+        })
+        .collect();
+
+    let query = format!("{{ {} }}", fields.join(" "));
+    let gql = serde_json::json!({ "query": query });
+
+    let data = match graphql_request(client, &gql).await {
+        Ok(d) => d,
+        Err(_) => return HashMap::new(),
+    };
+
+    let mut result = HashMap::new();
+    if let Some(obj) = data.get("data").and_then(|d| d.as_object()) {
+        for fid in franchise_ids {
+            let key = format!("f_{fid}");
+            if let Some(date) = obj
+                .get(&key)
+                .and_then(|gp| gp.get("items"))
+                .and_then(|items| items.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|item| item.get("dateRelease"))
+                .and_then(|d| d.as_str())
+            {
+                result.insert(*fid, date.to_string());
+            }
+        }
+    }
+
+    result
+}
+
+/// Infer series status from the latest release date.
+/// If the latest volume was released within the last 18 months → "ongoing", otherwise "ended".
+fn infer_status_from_date(date_str: &str) -> &'static str {
+    use chrono::{NaiveDate, Utc};
+    let cutoff = Utc::now().date_naive() - chrono::Duration::days(18 * 30);
+    match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+        Ok(date) if date > cutoff => "ongoing",
+        _ => "ended",
+    }
 }
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
