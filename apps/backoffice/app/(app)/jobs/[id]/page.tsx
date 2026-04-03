@@ -102,6 +102,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     thumbnail_regenerate: { label: t("jobType.thumbnail_regenerateLabel"), description: t("jobType.thumbnail_regenerateDesc"), isThumbnailOnly: true },
     cbr_to_cbz: { label: t("jobType.cbr_to_cbzLabel"), description: t("jobType.cbr_to_cbzDesc"), isThumbnailOnly: false },
     metadata_batch: { label: t("jobType.metadata_batchLabel"), description: t("jobType.metadata_batchDesc"), isThumbnailOnly: false },
+    metadata_batch_rematch: { label: t("jobType.metadata_batch_rematchLabel"), description: t("jobType.metadata_batch_rematchDesc"), isThumbnailOnly: false },
     metadata_refresh: { label: t("jobType.metadata_refreshLabel"), description: t("jobType.metadata_refreshDesc"), isThumbnailOnly: false },
     metadata_refresh_all: { label: t("jobType.metadata_refresh_allLabel"), description: t("jobType.metadata_refresh_allDesc"), isThumbnailOnly: false },
     reading_status_match: { label: t("jobType.reading_status_matchLabel"), description: t("jobType.reading_status_matchDesc"), isThumbnailOnly: false },
@@ -109,7 +110,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     download_detection: { label: t("jobType.download_detectionLabel"), description: t("jobType.download_detectionDesc"), isThumbnailOnly: false },
   };
 
-  const isMetadataBatch = job.type === "metadata_batch";
+  const isMetadataBatch = job.type === "metadata_batch" || job.type === "metadata_batch_rematch";
   const isMetadataRefresh = job.type === "metadata_refresh" || job.type === "metadata_refresh_all";
   const isReadingStatusMatch = job.type === "reading_status_match";
   const isReadingStatusPush = job.type === "reading_status_push";

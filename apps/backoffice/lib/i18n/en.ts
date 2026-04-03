@@ -452,6 +452,8 @@ const en: Record<TranslationKey, string> = {
   "jobType.cbr_to_cbzDesc": "Converts a CBR archive to the open CBZ format.",
   "jobType.metadata_batchLabel": "Batch metadata",
   "jobType.metadata_batchDesc": "Searches external metadata providers for all series in the library and automatically applies 100% confidence matches.",
+  "jobType.metadata_batch_rematchLabel": "Re-match metadata",
+  "jobType.metadata_batch_rematchDesc": "Re-matches all series with the current provider. Series without a new match keep their existing link.",
   "jobType.metadata_refreshLabel": "Metadata refresh",
   "jobType.metadata_refreshDesc": "Re-downloads and updates metadata for ongoing series already linked to an external provider.",
   "jobType.metadata_refresh_allLabel": "Metadata refresh (all)",

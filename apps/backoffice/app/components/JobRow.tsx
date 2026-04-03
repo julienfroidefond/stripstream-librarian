@@ -65,7 +65,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
   const isThumbnailJob = job.type === "thumbnail_rebuild" || job.type === "thumbnail_regenerate";
   const hasThumbnailPhase = isPhase2 || isThumbnailJob;
 
-  const isMetadataBatch = job.type === "metadata_batch";
+  const isMetadataBatch = job.type === "metadata_batch" || job.type === "metadata_batch_rematch";
   const isMetadataRefresh = job.type === "metadata_refresh" || job.type === "metadata_refresh_all";
   const isReadingStatusMatch = job.type === "reading_status_match";
   const isReadingStatusPush = job.type === "reading_status_push";

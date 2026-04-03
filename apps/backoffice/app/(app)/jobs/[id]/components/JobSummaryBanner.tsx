@@ -33,7 +33,7 @@ export function JobSummaryBanner({
   const isCompleted = job.status === "success";
   const isFailed = job.status === "failed";
   const isCancelled = job.status === "cancelled";
-  const isMetadataBatch = job.type === "metadata_batch";
+  const isMetadataBatch = job.type === "metadata_batch" || job.type === "metadata_batch_rematch";
   const isMetadataRefresh = job.type === "metadata_refresh" || job.type === "metadata_refresh_all";
   const isReadingStatusMatch = job.type === "reading_status_match";
   const isReadingStatusPush = job.type === "reading_status_push";

@@ -450,6 +450,8 @@ const fr = {
   "jobType.cbr_to_cbzDesc": "Convertit une archive CBR au format ouvert CBZ.",
   "jobType.metadata_batchLabel": "Métadonnées en lot",
   "jobType.metadata_batchDesc": "Recherche les métadonnées auprès des fournisseurs externes pour toutes les séries de la bibliothèque et applique automatiquement les correspondances à 100% de confiance.",
+  "jobType.metadata_batch_rematchLabel": "Re-match métadonnées",
+  "jobType.metadata_batch_rematchDesc": "Re-matche toutes les séries avec le provider actuel. Les séries sans nouveau match conservent leur lien existant.",
   "jobType.metadata_refreshLabel": "Rafraîchissement métadonnées",
   "jobType.metadata_refreshDesc": "Re-télécharge et met à jour les métadonnées pour les séries en cours déjà liées à un fournisseur externe.",
   "jobType.metadata_refresh_allLabel": "Rafraîchissement métadonnées (toutes)",
