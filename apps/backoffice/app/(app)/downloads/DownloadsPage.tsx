@@ -504,7 +504,10 @@ function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFound: La
               {isExpanded && r.available_releases && r.available_releases.length > 0 && (
                 <div className="border-b border-border/40">
                   {r.available_releases.map((release, idx) => (
-                    <div key={idx} className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-0.5 pl-7 sm:pl-9 text-[10px] hover:bg-muted/20 border-b border-border/10 last:border-b-0">
+                    <div key={idx} className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-0.5 pl-7 sm:pl-9 text-[10px] hover:bg-muted/20 border-b border-border/10 last:border-b-0 ${release.has_failed ? "bg-destructive/5" : ""}`}>
+                      {release.has_failed && (
+                        <span className="px-1 py-px rounded bg-destructive/20 text-destructive font-medium shrink-0" title={t("downloads.failedBefore", { count: 1 })}>!</span>
+                      )}
                       <div className="flex items-center gap-1 shrink-0">
                         {compressVolumes(release.matched_missing_volumes).map(range => (
                           <span key={range} className="px-1 py-px rounded bg-success/20 text-success font-medium">{range}</span>

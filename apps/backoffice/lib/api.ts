@@ -1209,6 +1209,7 @@ export type AvailableReleaseDto = {
   seeders: number | null;
   matched_missing_volumes: number[];
   all_volumes: number[];
+  has_failed?: boolean;
 };
 
 export type DownloadDetectionReportDto = {

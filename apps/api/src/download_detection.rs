@@ -51,6 +51,9 @@ pub struct AvailableReleaseDto {
     pub matched_missing_volumes: Vec<i32>,
     #[serde(default)]
     pub all_volumes: Vec<i32>,
+    /// True if a previous download of overlapping volumes failed for this series.
+    #[serde(default)]
+    pub has_failed: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -388,13 +391,15 @@ pub async fn get_latest_found(
     let rows = sqlx::query(
         "SELECT ad.id, ad.library_id, s.name AS series_name, ad.series_id, ad.missing_count, ad.available_releases, ad.updated_at, \
                 l.name as library_name, \
-                COALESCE(td_err.failed_count, 0) AS failed_download_count \
+                COALESCE(td_err.failed_count, 0) AS failed_download_count, \
+                COALESCE(td_err.failed_volumes, ARRAY[]::integer[]) AS failed_volumes \
          FROM available_downloads ad \
          JOIN libraries l ON l.id = ad.library_id \
          JOIN series s ON s.id = ad.series_id \
          LEFT JOIN LATERAL ( \
-             SELECT COUNT(*) AS failed_count \
-             FROM torrent_downloads td \
+             SELECT COUNT(*) AS failed_count, \
+                    array_agg(DISTINCT vol) FILTER (WHERE vol IS NOT NULL) AS failed_volumes \
+             FROM torrent_downloads td, unnest(td.expected_volumes) AS vol \
              WHERE td.library_id = ad.library_id \
                AND LOWER(td.series_name) = LOWER(s.name) \
                AND td.status = 'error' \
@@ -410,8 +415,17 @@ pub async fn get_latest_found(
         let library_id: Uuid = row.get("library_id");
         let updated_at: chrono::DateTime<chrono::Utc> = row.get("updated_at");
         let releases_json: Option<serde_json::Value> = row.get("available_releases");
+        let failed_volumes: Vec<i32> = row.get("failed_volumes");
         let available_releases = releases_json.and_then(|v| {
             serde_json::from_value::<Vec<AvailableReleaseDto>>(v).ok()
+        }).map(|releases| {
+            releases.into_iter().map(|mut r| {
+                // Mark release as previously failed if any of its matched volumes overlap with failed volumes
+                if !failed_volumes.is_empty() {
+                    r.has_failed = r.matched_missing_volumes.iter().any(|v| failed_volumes.contains(v));
+                }
+                r
+            }).collect()
         });
 
         let entry = libs.entry(library_id).or_insert_with(|| LatestFoundPerLibraryDto {
@@ -847,6 +861,7 @@ async fn search_prowlarr_for_series(
                     seeders: r.seeders,
                     matched_missing_volumes: matched_vols,
                     all_volumes,
+                    has_failed: false,
                 })
             }
         })
