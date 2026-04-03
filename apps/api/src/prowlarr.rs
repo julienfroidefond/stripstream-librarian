@@ -189,6 +189,10 @@ fn extract_volumes_from_title(title: &str) -> Vec<i32> {
             } else if j < chars.len() && chars[j] == '\u{00e0}' {
                 // 'à' (U+00E0) — French "à" as in "Tome 01 à Tome 15"
                 Some(j + 1)
+            } else if j < chars.len() && chars[j] == 'a' && j > 0 && chars[j - 1] == ' '
+                && j + 1 < chars.len() && (chars[j + 1] == ' ' || chars[j + 1].is_ascii_digit()) {
+                // 'a' without accent — French "T01 a T34" (space before, space or digit after)
+                Some(j + 1)
             } else {
                 None
             };
@@ -1069,6 +1073,13 @@ mod tests {
         // "T01 - T10" with spaces around dash
         let v = sorted(extract_volumes_from_title("Pack T01 - T10 [FR]"));
         assert_eq!(v, (1..=10).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn range_with_a_no_accent() {
+        // "T01 a T34" — French "a" without accent as range separator
+        let v = sorted(extract_volumes_from_title("Tom Tom et Nana - T01 a T34 [PDF] Fr"));
+        assert_eq!(v, (1..=34).collect::<Vec<_>>());
     }
 
     #[test]
