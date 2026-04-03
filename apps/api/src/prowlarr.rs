@@ -320,14 +320,14 @@ fn extract_volumes_from_title(title: &str) -> Vec<i32> {
         };
         volumes.extend(dash_num_re(&chars));
 
-        // Pattern B: "NN. " or "NN - " at the very start of the string
+        // Pattern B: "NN. ", "NN_", or "NN - " at the very start of the string
         if volumes.is_empty() {
             let mut j = 0;
             while j < chars.len() && chars[j].is_ascii_digit() {
                 j += 1;
             }
             if j > 0 && j < chars.len() {
-                let valid_sep = chars[j] == '.' || chars[j] == ' ';
+                let valid_sep = chars[j] == '.' || chars[j] == ' ' || chars[j] == '_';
                 if valid_sep {
                     let num_str: String = chars[..j].iter().collect();
                     if let Ok(num) = num_str.parse::<i32>() {
@@ -1049,6 +1049,19 @@ mod tests {
         // "03 title.cbz" — number at start followed by space
         let v = extract_volumes_from_title("03 title.cbz");
         assert_eq!(v, vec![3]);
+    }
+
+    #[test]
+    fn bare_number_at_start_underscore() {
+        // "34_Increvables.pdf" — number at start followed by underscore
+        let v = extract_volumes_from_title("34_Increvables.pdf");
+        assert_eq!(v, vec![34]);
+    }
+
+    #[test]
+    fn bare_number_underscore_various() {
+        assert_eq!(extract_volumes_from_title("1_Tom_tom.pdf"), vec![1]);
+        assert_eq!(extract_volumes_from_title("07_Dr_le_de_cirque.pdf"), vec![7]);
     }
 
     #[test]

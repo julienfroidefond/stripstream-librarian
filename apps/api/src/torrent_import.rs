@@ -720,7 +720,7 @@ async fn do_import(
 
     std::fs::create_dir_all(&target_dir)?;
 
-    let expected_set: std::collections::HashSet<i32> = expected_volumes.iter().copied().collect();
+    let mut expected_set: std::collections::HashSet<i32> = expected_volumes.iter().copied().collect();
 
     // If DB didn't give us a reference, try to find one from existing files on disk
     let reference = if reference.is_some() {
@@ -735,7 +735,7 @@ async fn do_import(
     };
 
     info!("[IMPORT] Final reference: {:?}", reference);
-    info!("[IMPORT] Expected volumes: {:?}", expected_set);
+    info!("[IMPORT] Expected volumes (from download): {:?}", expected_set);
     info!("[IMPORT] Physical content path: {}", physical_content);
 
     // Collect all candidate files, then deduplicate by volume keeping the best format.
@@ -747,6 +747,43 @@ async fn do_import(
         let extracted = extract_volumes_from_title_pub(fname);
         info!("[IMPORT]   '{}' => extracted volumes: {:?}", fname, extracted);
     }
+
+    // Expand expected_set: also import volumes found in the torrent that are missing
+    // from the library (not just the volumes originally expected by the download detection)
+    if !replace_existing && !expected_set.is_empty() {
+        let all_torrent_volumes: std::collections::HashSet<i32> = all_source_files.iter()
+            .flat_map(|f| {
+                let fname = std::path::Path::new(f).file_name().and_then(|n| n.to_str()).unwrap_or("");
+                extract_volumes_from_title_pub(fname)
+            })
+            .collect();
+
+        if !all_torrent_volumes.is_empty() {
+            let existing_volumes: Vec<i32> = sqlx::query_scalar(
+                "SELECT DISTINCT b.volume FROM books b \
+                 LEFT JOIN series s ON s.id = b.series_id \
+                 WHERE b.library_id = $1 AND LOWER(unaccent(s.name)) = LOWER(unaccent($2)) AND b.volume IS NOT NULL"
+            )
+            .bind(library_id)
+            .bind(series_name)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+            let existing_set: std::collections::HashSet<i32> = existing_volumes.into_iter().collect();
+            let missing_in_library: Vec<i32> = all_torrent_volumes.iter()
+                .filter(|v| !existing_set.contains(v))
+                .copied()
+                .collect();
+
+            if !missing_in_library.is_empty() {
+                info!("[IMPORT] Expanding expected_set with {} additional missing volumes: {:?}", missing_in_library.len(), missing_in_library);
+                expected_set.extend(missing_in_library);
+            }
+        }
+    }
+    info!("[IMPORT] Final expected volumes: {:?}", expected_set);
+
     // In replace mode, don't filter by expected volumes — import all files
     let dedup_set = if replace_existing { std::collections::HashSet::new() } else { expected_set.clone() };
     let source_files = deduplicate_by_format(&all_source_files, &dedup_set);
@@ -1640,5 +1677,63 @@ mod tests {
         let volume: i32 = row.get("volume");
         assert_eq!(volume, 104, "should return highest volume");
         assert_eq!(abs_path, "/libraries/bd/One Piece/One Piece - T104.cbz");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn expand_expected_volumes_with_missing(pool: sqlx::PgPool) {
+        // Setup: library + series with volumes 1, 2, 5 (missing 3, 4, 6, 7, 8)
+        let lib_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'test', '/libraries/test')")
+            .bind(lib_id).execute(&pool).await.unwrap();
+
+        let series_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Tom-Tom et Nana')")
+            .bind(series_id).bind(lib_id).execute(&pool).await.unwrap();
+
+        // Insert existing books: volumes 1, 2, 5
+        for vol in [1, 2, 5] {
+            let book_id = Uuid::new_v4();
+            sqlx::query("INSERT INTO books (id, library_id, series_id, title, kind, volume) VALUES ($1, $2, $3, $4, 'comic', $5)")
+                .bind(book_id).bind(lib_id).bind(series_id)
+                .bind(format!("Tom-Tom et Nana - T{:02}", vol)).bind(vol)
+                .execute(&pool).await.unwrap();
+        }
+
+        // Simulate: torrent has volumes 1-8, expected_volumes from detection was only {7}
+        let mut expected_set: std::collections::HashSet<i32> = [7].into_iter().collect();
+        let torrent_volumes: std::collections::HashSet<i32> = (1..=8).collect();
+
+        // Query existing volumes (same logic as in do_import)
+        let existing_volumes: Vec<i32> = sqlx::query_scalar(
+            "SELECT DISTINCT b.volume FROM books b \
+             LEFT JOIN series s ON s.id = b.series_id \
+             WHERE b.library_id = $1 AND LOWER(unaccent(s.name)) = LOWER(unaccent($2)) AND b.volume IS NOT NULL"
+        )
+        .bind(lib_id)
+        .bind("Tom-Tom et Nana")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        let existing_set: std::collections::HashSet<i32> = existing_volumes.into_iter().collect();
+        assert_eq!(existing_set, [1, 2, 5].into_iter().collect::<std::collections::HashSet<i32>>());
+
+        // Expand expected_set with missing volumes from library
+        let missing_in_library: Vec<i32> = torrent_volumes.iter()
+            .filter(|v| !existing_set.contains(v))
+            .copied()
+            .collect();
+        expected_set.extend(missing_in_library);
+
+        // Should now contain 3, 4, 6, 7, 8 (all missing from library that torrent has)
+        assert!(expected_set.contains(&3), "volume 3 missing from library, should be in expected_set");
+        assert!(expected_set.contains(&4), "volume 4 missing from library, should be in expected_set");
+        assert!(expected_set.contains(&6), "volume 6 missing from library, should be in expected_set");
+        assert!(expected_set.contains(&7), "volume 7 was originally expected");
+        assert!(expected_set.contains(&8), "volume 8 missing from library, should be in expected_set");
+        // Should NOT contain existing volumes
+        assert!(!expected_set.contains(&1), "volume 1 exists in library, should NOT be imported");
+        assert!(!expected_set.contains(&2), "volume 2 exists in library, should NOT be imported");
+        assert!(!expected_set.contains(&5), "volume 5 exists in library, should NOT be imported");
     }
 }
