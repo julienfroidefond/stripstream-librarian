@@ -511,9 +511,6 @@ function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFound: La
                         ))}
                       </div>
                       <span className="text-muted-foreground truncate min-w-0 flex-1 hidden sm:block" title={release.title}>{release.title}</span>
-                      {release.all_volumes.length > 0 && (
-                        <span className="text-muted-foreground shrink-0">{release.all_volumes.length} vol.</span>
-                      )}
                       {release.indexer && <span className="text-muted-foreground shrink-0">{release.indexer}</span>}
                       {release.seeders != null && (
                         <span className={`font-medium shrink-0 ${

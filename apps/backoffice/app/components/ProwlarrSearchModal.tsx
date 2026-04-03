@@ -55,7 +55,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
 
   // qBittorrent state
   const [isQbConfigured, setIsQbConfigured] = useState(initialQbConfigured ?? false);
-  const [sortCol, setSortCol] = useState<"title" | "vol" | "seeders" | "size">("seeders");
+  const [sortCol, setSortCol] = useState<"title" | "seeders" | "size">("seeders");
   const [sortAsc, setSortAsc] = useState(false);
 
   // Check if Prowlarr and qBittorrent are configured on mount (skip if server provided)
@@ -234,7 +234,6 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                         <tr className="bg-muted/50 text-left">
                           {([
                             { id: "title" as const, label: t("prowlarr.columnTitle"), align: "" },
-                            { id: "vol" as const, label: "Vol.", align: "text-center" },
                             { id: null, label: t("prowlarr.columnIndexer"), align: "" },
                             { id: "size" as const, label: t("prowlarr.columnSize"), align: "text-right" },
                             { id: "seeders" as const, label: t("prowlarr.columnSeeders"), align: "text-center" },
@@ -261,7 +260,6 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                           const dir = sortAsc ? 1 : -1;
                           switch (sortCol) {
                             case "title": return dir * a.title.localeCompare(b.title);
-                            case "vol": return dir * ((a.allVolumes?.length ?? 0) - (b.allVolumes?.length ?? 0));
                             case "size": return dir * (a.size - b.size);
                             case "seeders": return dir * ((a.seeders ?? 0) - (b.seeders ?? 0));
                             default: return 0;
@@ -283,9 +281,6 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                                   ))}
                                 </div>
                               )}
-                            </td>
-                            <td className="px-3 py-2 text-center text-muted-foreground whitespace-nowrap">
-                              {release.allVolumes && release.allVolumes.length > 0 ? release.allVolumes.length : "—"}
                             </td>
                             <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
                               {release.indexer || "—"}
