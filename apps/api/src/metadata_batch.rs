@@ -1539,4 +1539,51 @@ mod tests {
         let returned_series_id: Option<Uuid> = rows[0].get("series_id");
         assert!(returned_series_id.is_none(), "series_id should be None when series does not exist");
     }
+
+    /// Verify that best_candidate_json contains enriched fields for quick match.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn best_candidate_json_contains_enriched_fields(pool: sqlx::PgPool) {
+        let lib_id = create_lib(&pool, "test").await;
+        let job_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'metadata_batch', 'success', NOW())")
+            .bind(job_id).bind(lib_id).execute(&pool).await.unwrap();
+
+        let candidate_json = serde_json::json!({
+            "title": "Blacksad",
+            "external_id": "ext_123",
+            "external_url": "https://example.com/blacksad",
+            "authors": ["Juan Díaz Canales", "Juanjo Guarnido"],
+            "description": "A noir detective story.",
+            "cover_url": "https://example.com/cover.jpg",
+            "total_volumes": 7,
+            "start_year": 2000,
+            "confidence": 0.65,
+        });
+
+        sqlx::query(
+            "INSERT INTO metadata_batch_results (job_id, library_id, series_name, status, provider_used, fallback_used, candidates_count, best_confidence, best_candidate_json) \
+             VALUES ($1, $2, 'Blacksad', 'low_confidence', 'bedetheque', false, 1, 0.65, $3)",
+        )
+        .bind(job_id).bind(lib_id).bind(&candidate_json)
+        .execute(&pool).await.unwrap();
+
+        let row = sqlx::query(
+            "SELECT best_candidate_json FROM metadata_batch_results WHERE job_id = $1 AND series_name = 'Blacksad'",
+        )
+        .bind(job_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let json: serde_json::Value = row.get("best_candidate_json");
+        assert_eq!(json["title"], "Blacksad");
+        assert_eq!(json["external_id"], "ext_123");
+        assert_eq!(json["external_url"], "https://example.com/blacksad");
+        assert_eq!(json["authors"].as_array().unwrap().len(), 2);
+        assert_eq!(json["description"], "A noir detective story.");
+        assert_eq!(json["cover_url"], "https://example.com/cover.jpg");
+        assert_eq!(json["total_volumes"], 7);
+        assert_eq!(json["start_year"], 2000);
+        assert_eq!(json["confidence"], 0.65);
+    }
 }
