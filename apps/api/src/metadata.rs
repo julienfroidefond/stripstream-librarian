@@ -1131,6 +1131,7 @@ pub(crate) async fn sync_books_metadata(
 
 /// Check if a field is locked based on the locked_fields JSON object.
 /// Extracted for testability.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn is_field_locked(locked_fields: &serde_json::Value, field: &str) -> bool {
     locked_fields
         .get(field)
@@ -1140,6 +1141,7 @@ pub(crate) fn is_field_locked(locked_fields: &serde_json::Value, field: &str) ->
 
 /// Build a FieldChange and classify it as updated or skipped based on lock status.
 /// Returns (is_skipped, change). Returns None if new_value is None (nothing to sync).
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn classify_field_change(
     field: &str,
     old_value: Option<serde_json::Value>,
@@ -1162,6 +1164,7 @@ pub(crate) fn classify_field_change(
 }
 
 /// Extract authors from metadata JSON as Vec<String>.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn extract_string_array(metadata: &serde_json::Value, key: &str) -> Vec<String> {
     metadata
         .get(key)

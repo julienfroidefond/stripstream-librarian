@@ -264,6 +264,7 @@ pub async fn delete_token(
 
 /// Build a token string in the canonical format: stl_{prefix}_{secret}
 /// Extracted for testability — prefix is the first 8 chars of the base64-encoded secret.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn build_token(secret_bytes: &[u8]) -> (String, String) {
     let secret = URL_SAFE_NO_PAD.encode(secret_bytes);
     let prefix: String = secret.chars().take(8).collect();
@@ -272,6 +273,7 @@ pub(crate) fn build_token(secret_bytes: &[u8]) -> (String, String) {
 }
 
 /// Validate a scope string: must be "admin" or "read".
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn validate_scope(scope: Option<&str>) -> Result<&'static str, &'static str> {
     match scope.unwrap_or("read") {
         "admin" => Ok("admin"),
