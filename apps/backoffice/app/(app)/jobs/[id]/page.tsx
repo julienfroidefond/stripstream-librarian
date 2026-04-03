@@ -9,7 +9,8 @@ import { JobSummaryBanner } from "./components/JobSummaryBanner";
 import { JobOverviewCard } from "./components/JobOverviewCard";
 import { JobTimelineCard } from "./components/JobTimelineCard";
 import { JobProgressCard, IndexStatsCard, ThumbnailStatsCard } from "./components/JobProgressCard";
-import { MetadataBatchReportCard, MetadataBatchResultsCard, MetadataRefreshReportCard, MetadataRefreshChangesCard } from "./components/MetadataReportCards";
+import { MetadataBatchReportCard, MetadataRefreshReportCard, MetadataRefreshChangesCard } from "./components/MetadataReportCards";
+import { MetadataBatchQuickMatch } from "./components/MetadataBatchQuickMatch";
 import { ReadingStatusMatchReportCard, ReadingStatusMatchResultsCard, ReadingStatusPushReportCard, ReadingStatusPushResultsCard } from "./components/ReadingStatusReportCards";
 import { DownloadDetectionReportCard, DownloadDetectionErrorsCard } from "./components/DownloadDetectionCards";
 import { DownloadDetectionAvailableResults } from "./components/DownloadDetectionAvailableResults";
@@ -292,7 +293,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
         )}
 
         {/* Metadata batch results */}
-        {isMetadataBatch && <MetadataBatchResultsCard results={batchResults} libraryId={job.library_id} t={t} />}
+        {isMetadataBatch && <MetadataBatchQuickMatch results={batchResults} libraryId={job.library_id} />}
 
         {/* File errors */}
         <JobErrorsCard errors={errors} t={t} locale={locale} />
