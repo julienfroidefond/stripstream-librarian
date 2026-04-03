@@ -36,12 +36,29 @@ async fn get_or_create_series_id(
     name: &str,
     cache: &mut HashMap<String, Uuid>,
 ) -> Result<Uuid> {
-    // Check local cache first
-    if let Some(&id) = cache.get(name) {
+    // Check local cache first (case-insensitive)
+    let name_lower = name.to_lowercase();
+    for (cached_name, &id) in cache.iter() {
+        if cached_name.to_lowercase() == name_lower {
+            return Ok(id);
+        }
+    }
+
+    // Look for existing series with case-insensitive + accent-insensitive match
+    let existing: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM series WHERE library_id = $1 AND LOWER(unaccent(name)) = LOWER(unaccent($2))",
+    )
+    .bind(library_id)
+    .bind(name)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(id) = existing {
+        cache.insert(name.to_string(), id);
         return Ok(id);
     }
 
-    // Try to insert; ON CONFLICT DO NOTHING handles races / existing rows
+    // No match — insert new series
     sqlx::query(
         "INSERT INTO series (id, library_id, name) VALUES ($1, $2, $3) ON CONFLICT (library_id, name) DO NOTHING",
     )
@@ -51,7 +68,6 @@ async fn get_or_create_series_id(
     .execute(pool)
     .await?;
 
-    // Always SELECT to get the actual id (whether we just inserted or it already existed)
     let id: Uuid = sqlx::query_scalar(
         "SELECT id FROM series WHERE library_id = $1 AND name = $2",
     )

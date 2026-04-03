@@ -17,7 +17,7 @@ pub(crate) async fn get_or_create_series(
 ) -> Result<Uuid, ApiError> {
     // Try to find existing first
     if let Some(id) = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM series WHERE library_id = $1 AND LOWER(name) = LOWER($2)"
+        "SELECT id FROM series WHERE library_id = $1 AND LOWER(unaccent(name)) = LOWER(unaccent($2))"
     )
     .bind(library_id)
     .bind(name)
@@ -42,7 +42,7 @@ pub(crate) async fn get_or_create_series(
 
     // Re-fetch in case of conflict (ON CONFLICT won't return the existing id via execute)
     sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM series WHERE library_id = $1 AND LOWER(name) = LOWER($2)"
+        "SELECT id FROM series WHERE library_id = $1 AND LOWER(unaccent(name)) = LOWER(unaccent($2))"
     )
     .bind(library_id)
     .bind(name)
