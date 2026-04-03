@@ -747,7 +747,9 @@ async fn do_import(
         let extracted = extract_volumes_from_title_pub(fname);
         info!("[IMPORT]   '{}' => extracted volumes: {:?}", fname, extracted);
     }
-    let source_files = deduplicate_by_format(&all_source_files, &expected_set);
+    // In replace mode, don't filter by expected volumes — import all files
+    let dedup_set = if replace_existing { std::collections::HashSet::new() } else { expected_set.clone() };
+    let source_files = deduplicate_by_format(&all_source_files, &dedup_set);
     info!("[IMPORT] After dedup: {} files kept", source_files.len());
 
     let mut imported = Vec::new();
@@ -764,13 +766,13 @@ async fn do_import(
             .unwrap_or("");
 
         let all_extracted = extract_volumes_from_title_pub(filename);
-        let matched: Vec<i32> = if expected_set.is_empty() {
-            all_extracted.clone() // No filter — import everything
+        let matched: Vec<i32> = if expected_set.is_empty() || replace_existing {
+            all_extracted.clone() // No filter — import everything (empty set or replace mode)
         } else {
             all_extracted.iter().copied().filter(|v| expected_set.contains(v)).collect()
         };
 
-        if matched.is_empty() && !expected_set.is_empty() {
+        if matched.is_empty() && !expected_set.is_empty() && !replace_existing {
             info!("[IMPORT] Skipping '{}' (extracted volumes {:?}, none in expected set)", filename, all_extracted);
             continue;
         }
@@ -1119,7 +1121,70 @@ fn build_target_filename(
 
 #[cfg(test)]
 mod tests {
-    use super::build_target_filename;
+    use super::*;
+    use std::collections::HashSet;
+
+    // ─── deduplicate_by_format ──────────────────────────────────────────────
+
+    #[test]
+    fn dedup_filters_by_expected_set() {
+        let files = vec![
+            "/dl/Series - T01.cbz".to_string(),
+            "/dl/Series - T02.cbz".to_string(),
+            "/dl/Series - T03.cbz".to_string(),
+        ];
+        let expected: HashSet<i32> = [2].into_iter().collect();
+        let result = deduplicate_by_format(&files, &expected);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("T02"));
+    }
+
+    #[test]
+    fn dedup_empty_expected_keeps_all() {
+        let files = vec![
+            "/dl/Series - T01.cbz".to_string(),
+            "/dl/Series - T02.cbz".to_string(),
+            "/dl/Series - T03.cbz".to_string(),
+        ];
+        let expected: HashSet<i32> = HashSet::new();
+        let result = deduplicate_by_format(&files, &expected);
+        assert_eq!(result.len(), 3, "empty expected_set should keep all files");
+    }
+
+    #[test]
+    fn dedup_empty_set_for_replace_mode_keeps_all_volumes() {
+        // Simulates replace mode: expected_set is empty, all 8 volumes should be kept
+        let files: Vec<String> = (1..=8)
+            .map(|i| format!("/dl/La Quete - T{:02}.cbz", i))
+            .collect();
+        let expected: HashSet<i32> = HashSet::new(); // replace mode passes empty set
+        let result = deduplicate_by_format(&files, &expected);
+        assert_eq!(result.len(), 8, "replace mode should keep all 8 volumes, got {}", result.len());
+    }
+
+    #[test]
+    fn dedup_prefers_cbz_over_cbr() {
+        let files = vec![
+            "/dl/Series - T01.cbr".to_string(),
+            "/dl/Series - T01.cbz".to_string(),
+        ];
+        let expected: HashSet<i32> = HashSet::new();
+        let result = deduplicate_by_format(&files, &expected);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains(".cbz"), "should prefer cbz over cbr");
+    }
+
+    #[test]
+    fn dedup_partial_expected_only_keeps_matching() {
+        let files: Vec<String> = (1..=8)
+            .map(|i| format!("/dl/Series - T{:02}.cbz", i))
+            .collect();
+        let expected: HashSet<i32> = [3, 5, 8].into_iter().collect();
+        let result = deduplicate_by_format(&files, &expected);
+        assert_eq!(result.len(), 3, "should keep only volumes 3, 5, 8");
+    }
+
+    // ─── build_target_filename ──────────────────────────────────────────────
 
     #[test]
     fn simple_t_prefix() {
@@ -1211,5 +1276,224 @@ mod tests {
             "cbz",
         );
         assert_eq!(result, Some("Goblin.Slayer.Tome.008.cbz".to_string()));
+    }
+
+    // ─── default_filename ────────────────────────────────────────────────
+
+    #[test]
+    fn default_filename_basic() {
+        assert_eq!(default_filename("One Piece", 5, "cbz"), "One Piece - T05.cbz");
+    }
+
+    #[test]
+    fn default_filename_large_volume() {
+        assert_eq!(default_filename("Naruto", 100, "cbr"), "Naruto - T100.cbr");
+    }
+
+    #[test]
+    fn default_filename_single_digit() {
+        assert_eq!(default_filename("Series", 1, "pdf"), "Series - T01.pdf");
+    }
+
+    #[test]
+    fn default_filename_with_special_chars() {
+        assert_eq!(default_filename("Astérix & Obélix", 3, "cbz"), "Astérix & Obélix - T03.cbz");
+    }
+
+    // ─── format_priority ─────────────────────────────────────────────────
+
+    #[test]
+    fn format_priority_cbz_is_best() {
+        assert_eq!(format_priority("cbz"), 0);
+    }
+
+    #[test]
+    fn format_priority_ordering() {
+        assert!(format_priority("cbz") < format_priority("cbr"));
+        assert!(format_priority("cbr") < format_priority("pdf"));
+        assert!(format_priority("pdf") < format_priority("epub"));
+        assert!(format_priority("epub") < format_priority("unknown"));
+    }
+
+    #[test]
+    fn format_priority_case_insensitive() {
+        assert_eq!(format_priority("CBZ"), 0);
+        assert_eq!(format_priority("Cbr"), 1);
+        assert_eq!(format_priority("PDF"), 2);
+        assert_eq!(format_priority("EPUB"), 3);
+    }
+
+    #[test]
+    fn format_priority_unknown_extension() {
+        assert_eq!(format_priority("txt"), 4);
+        assert_eq!(format_priority(""), 4);
+        assert_eq!(format_priority("doc"), 4);
+    }
+
+    // ─── strip_accents ───────────────────────────────────────────────────
+
+    #[test]
+    fn strip_accents_french() {
+        assert_eq!(strip_accents("les géants"), "les geants");
+        assert_eq!(strip_accents("astérix"), "asterix");
+        assert_eq!(strip_accents("à la maison"), "a la maison");
+    }
+
+    #[test]
+    fn strip_accents_special() {
+        assert_eq!(strip_accents("naïve"), "naive");
+        assert_eq!(strip_accents("über"), "uber");
+        assert_eq!(strip_accents("señor"), "senor");
+        assert_eq!(strip_accents("cœur"), "coeur");
+        assert_eq!(strip_accents("æther"), "aether");
+    }
+
+    #[test]
+    fn strip_accents_no_accents() {
+        assert_eq!(strip_accents("hello world"), "hello world");
+        assert_eq!(strip_accents(""), "");
+    }
+
+    // ─── collect_book_files (uses temp dirs) ─────────────────────────────
+
+    #[test]
+    fn collect_book_files_finds_supported_formats() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("vol1.cbz"), b"fake").unwrap();
+        std::fs::write(dir.path().join("vol2.cbr"), b"fake").unwrap();
+        std::fs::write(dir.path().join("vol3.pdf"), b"fake").unwrap();
+        std::fs::write(dir.path().join("vol4.epub"), b"fake").unwrap();
+        std::fs::write(dir.path().join("readme.txt"), b"not a book").unwrap();
+
+        let files = collect_book_files(dir.path().to_str().unwrap()).unwrap();
+        assert_eq!(files.len(), 4, "should find 4 book files, got {:?}", files);
+    }
+
+    #[test]
+    fn collect_book_files_recursive() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("subdir");
+        std::fs::create_dir(&sub).unwrap();
+        std::fs::write(dir.path().join("vol1.cbz"), b"fake").unwrap();
+        std::fs::write(sub.join("vol2.cbz"), b"fake").unwrap();
+
+        let files = collect_book_files(dir.path().to_str().unwrap()).unwrap();
+        assert_eq!(files.len(), 2);
+    }
+
+    #[test]
+    fn collect_book_files_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = collect_book_files(dir.path().to_str().unwrap()).unwrap();
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn collect_book_files_single_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("single.cbz");
+        std::fs::write(&file_path, b"fake").unwrap();
+
+        let files = collect_book_files(file_path.to_str().unwrap()).unwrap();
+        assert_eq!(files.len(), 1);
+    }
+
+    // ─── find_existing_series_dir (uses temp dirs) ───────────────────────
+
+    #[test]
+    fn find_existing_series_dir_exact_match() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("One Piece")).unwrap();
+
+        let result = find_existing_series_dir(dir.path().to_str().unwrap(), "One Piece");
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("One Piece"));
+    }
+
+    #[test]
+    fn find_existing_series_dir_case_insensitive() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("one piece")).unwrap();
+
+        let result = find_existing_series_dir(dir.path().to_str().unwrap(), "One Piece");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn find_existing_series_dir_accent_insensitive() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("les geants")).unwrap();
+
+        let result = find_existing_series_dir(dir.path().to_str().unwrap(), "les géants");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn find_existing_series_dir_no_match() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("Naruto")).unwrap();
+
+        let result = find_existing_series_dir(dir.path().to_str().unwrap(), "One Piece");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn find_existing_series_dir_prefers_exact_case() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("Les Geants")).unwrap();
+        std::fs::create_dir(dir.path().join("les géants")).unwrap();
+
+        // When searching for "les géants", should prefer the exact case match
+        let result = find_existing_series_dir(dir.path().to_str().unwrap(), "les géants");
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("les géants"));
+    }
+
+    // ─── find_reference_from_disk (uses temp dirs) ───────────────────────
+
+    #[test]
+    fn find_reference_from_disk_picks_highest_volume() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Series T01.cbz"), b"fake").unwrap();
+        std::fs::write(dir.path().join("Series T05.cbz"), b"fake").unwrap();
+        std::fs::write(dir.path().join("Series T03.cbz"), b"fake").unwrap();
+
+        let exclude: HashSet<i32> = HashSet::new();
+        let result = find_reference_from_disk(dir.path().to_str().unwrap(), &exclude);
+        assert!(result.is_some());
+        let (_, vol) = result.unwrap();
+        assert_eq!(vol, 5);
+    }
+
+    #[test]
+    fn find_reference_from_disk_excludes_volumes() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Series T05.cbz"), b"fake").unwrap();
+        std::fs::write(dir.path().join("Series T03.cbz"), b"fake").unwrap();
+
+        let exclude: HashSet<i32> = [5].into_iter().collect();
+        let result = find_reference_from_disk(dir.path().to_str().unwrap(), &exclude);
+        assert!(result.is_some());
+        let (_, vol) = result.unwrap();
+        assert_eq!(vol, 3);
+    }
+
+    #[test]
+    fn find_reference_from_disk_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let exclude: HashSet<i32> = HashSet::new();
+        let result = find_reference_from_disk(dir.path().to_str().unwrap(), &exclude);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn find_reference_from_disk_ignores_non_book_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("readme.txt"), b"not a book").unwrap();
+        std::fs::write(dir.path().join("cover.jpg"), b"not a book").unwrap();
+
+        let exclude: HashSet<i32> = HashSet::new();
+        let result = find_reference_from_disk(dir.path().to_str().unwrap(), &exclude);
+        assert!(result.is_none());
     }
 }

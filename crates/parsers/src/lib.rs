@@ -48,8 +48,10 @@ static VOLUME_PATTERNS: OnceLock<Vec<(regex::Regex, usize)>> = OnceLock::new();
 fn get_volume_patterns() -> &'static Vec<(regex::Regex, usize)> {
     VOLUME_PATTERNS.get_or_init(|| {
         [
+            // Tome 3, Tome.007 (must be before T(\d+) to avoid false match on the T)
+            (r"(?i)Tome\.?\s*(\d+)", 1usize),
             // T01, T02 pattern (most common for manga/comics)
-            (r"(?i)T(\d+)", 1usize),
+            (r"(?i)T(\d+)", 1),
             // Vol 1, Vol. 1, Volume 1
             (r"(?i)Vol\.?\s*(\d+)", 1),
             (r"(?i)Volume\s*(\d+)", 1),
@@ -1453,5 +1455,172 @@ mod tests {
         assert!(!is_image_name("readme.txt"));
         assert!(!is_image_name("metadata.xml"));
         assert!(!is_image_name(""));
+    }
+
+    #[test]
+    fn is_image_name_rejects_macos_metadata() {
+        assert!(!is_image_name("__macosx/page01.jpg"));
+        assert!(!is_image_name("folder/._cover.png"));
+        assert!(!is_image_name("._hidden.jpg"));
+    }
+
+    #[test]
+    fn is_image_name_accepts_all_formats() {
+        assert!(is_image_name("page.jpeg"));
+        assert!(is_image_name("page.avif"));
+        assert!(is_image_name("page.gif"));
+        assert!(is_image_name("page.bmp"));
+        assert!(is_image_name("page.tif"));
+        assert!(is_image_name("page.tiff"));
+    }
+
+    // ─── extract_volume ──────────────────────────────────────────────────
+
+    #[test]
+    fn extract_volume_t_prefix() {
+        assert_eq!(extract_volume("One Piece T01"), Some(1));
+        assert_eq!(extract_volume("Naruto T12"), Some(12));
+        assert_eq!(extract_volume("Series T100"), Some(100));
+    }
+
+    #[test]
+    fn extract_volume_tome_prefix() {
+        assert_eq!(extract_volume("Naruto Tome 3"), Some(3));
+        // "Tome" matches via T pattern first (T followed by digits after "ome")
+        // but the T pattern matches "Tome" → the 'T' in "Tome" triggers T(\d+) only
+        // if followed by digits directly. Let's verify actual behavior:
+        assert_eq!(extract_volume("Asterix Tome 12"), Some(12));
+    }
+
+    #[test]
+    fn extract_volume_vol_prefix() {
+        assert_eq!(extract_volume("Vol.12"), Some(12));
+        assert_eq!(extract_volume("Vol 5"), Some(5));
+        assert_eq!(extract_volume("Volume 3"), Some(3));
+        assert_eq!(extract_volume("Volume3"), Some(3));
+    }
+
+    #[test]
+    fn extract_volume_hash_prefix() {
+        assert_eq!(extract_volume("Issue #42"), Some(42));
+        assert_eq!(extract_volume("#007"), Some(7));
+    }
+
+    #[test]
+    fn extract_volume_trailing_dash_number() {
+        assert_eq!(extract_volume("Series - 05"), Some(5));
+    }
+
+    #[test]
+    fn extract_volume_zero_padded() {
+        assert_eq!(extract_volume("T007"), Some(7));
+        assert_eq!(extract_volume("T001"), Some(1));
+    }
+
+    #[test]
+    fn extract_volume_no_match() {
+        assert_eq!(extract_volume("Just a title"), None);
+        assert_eq!(extract_volume("No numbers here"), None);
+        assert_eq!(extract_volume(""), None);
+    }
+
+    // ─── extract_series ──────────────────────────────────────────────────
+
+    #[test]
+    fn extract_series_simple() {
+        let path = Path::new("/libraries/manga/One Piece/T01.cbz");
+        let root = Path::new("/libraries/manga");
+        assert_eq!(extract_series(path, root), Some("One Piece".to_string()));
+    }
+
+    #[test]
+    fn extract_series_nested() {
+        let path = Path::new("/libraries/bd/Asterix/subfolder/file.cbz");
+        let root = Path::new("/libraries/bd");
+        // Should return the first directory component after root
+        assert_eq!(extract_series(path, root), Some("Asterix".to_string()));
+    }
+
+    #[test]
+    fn extract_series_file_at_root() {
+        let path = Path::new("/libraries/manga/standalone.cbz");
+        let root = Path::new("/libraries/manga");
+        // File directly in root → no series directory
+        assert_eq!(extract_series(path, root), None);
+    }
+
+    #[test]
+    fn extract_series_unrelated_path() {
+        let path = Path::new("/other/path/file.cbz");
+        let root = Path::new("/libraries/manga");
+        // Path doesn't start with root
+        assert_eq!(extract_series(path, root), None);
+    }
+
+    // ─── parse_metadata_fast ─────────────────────────────────────────────
+
+    #[test]
+    fn parse_metadata_fast_extracts_all() {
+        let path = Path::new("/libraries/manga/One Piece/One Piece T05.cbz");
+        let root = Path::new("/libraries/manga");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.title, "One Piece T05");
+        assert_eq!(meta.series, Some("One Piece".to_string()));
+        assert_eq!(meta.volume, Some(5));
+        assert_eq!(meta.page_count, None);
+    }
+
+    #[test]
+    fn parse_metadata_fast_no_volume() {
+        let path = Path::new("/libraries/bd/Asterix/Asterix le Gaulois.cbz");
+        let root = Path::new("/libraries/bd");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.title, "Asterix le Gaulois");
+        assert_eq!(meta.series, Some("Asterix".to_string()));
+        assert_eq!(meta.volume, None);
+    }
+
+    #[test]
+    fn parse_metadata_fast_no_extension() {
+        let path = Path::new("/libraries/manga/Series/Untitled");
+        let root = Path::new("/libraries/manga");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.title, "Untitled");
+        assert_eq!(meta.series, Some("Series".to_string()));
+    }
+
+    // ─── detect_format ───────────────────────────────────────────────────
+
+    #[test]
+    fn detect_format_case_insensitive() {
+        assert_eq!(detect_format(Path::new("test.PDF")), Some(BookFormat::Pdf));
+        assert_eq!(detect_format(Path::new("test.Epub")), Some(BookFormat::Epub));
+        assert_eq!(detect_format(Path::new("test.CbR")), Some(BookFormat::Cbr));
+    }
+
+    // ─── BookFormat::as_str ──────────────────────────────────────────────
+
+    #[test]
+    fn book_format_as_str() {
+        assert_eq!(BookFormat::Cbz.as_str(), "cbz");
+        assert_eq!(BookFormat::Cbr.as_str(), "cbr");
+        assert_eq!(BookFormat::Pdf.as_str(), "pdf");
+        assert_eq!(BookFormat::Epub.as_str(), "epub");
+    }
+
+    // ─── clean_title ─────────────────────────────────────────────────────
+
+    #[test]
+    fn clean_title_removes_volume_patterns() {
+        assert_eq!(clean_title("One Piece T05"), "One Piece");
+        assert_eq!(clean_title("Naruto Vol.12"), "Naruto");
+        assert_eq!(clean_title("Series Volume 3"), "Series");
+        assert_eq!(clean_title("Issue #42"), "Issue");
+        assert_eq!(clean_title("Series - 05"), "Series");
+    }
+
+    #[test]
+    fn clean_title_no_volume() {
+        assert_eq!(clean_title("Just a title"), "Just a title");
     }
 }

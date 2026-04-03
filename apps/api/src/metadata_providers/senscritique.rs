@@ -696,3 +696,120 @@ fn extract_volume_number(title: &str) -> Option<i32> {
         .and_then(|caps| caps.get(1))
         .and_then(|m| m.as_str().parse().ok())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ─── extract_volume_number ───────────────────────────────────────────
+
+    #[test]
+    fn extract_volume_number_tome() {
+        assert_eq!(extract_volume_number("One Piece, tome 3"), Some(3));
+        assert_eq!(extract_volume_number("Naruto Tome 12"), Some(12));
+        assert_eq!(extract_volume_number("TOME 1"), Some(1));
+    }
+
+    #[test]
+    fn extract_volume_number_t_dot() {
+        assert_eq!(extract_volume_number("One Piece T.3"), Some(3));
+        assert_eq!(extract_volume_number("Series T.12"), Some(12));
+        assert_eq!(extract_volume_number("T.007"), Some(7));
+    }
+
+    #[test]
+    fn extract_volume_number_vol() {
+        assert_eq!(extract_volume_number("Vol. 12"), Some(12));
+        assert_eq!(extract_volume_number("Vol 5"), Some(5));
+        assert_eq!(extract_volume_number("Vol.3"), Some(3));
+        assert_eq!(extract_volume_number("Volume 8"), Some(8));
+        assert_eq!(extract_volume_number("volume 1"), Some(1));
+    }
+
+    #[test]
+    fn extract_volume_number_integrale_no_match() {
+        // "Intégrale" has no volume number pattern
+        assert_eq!(extract_volume_number("One Piece - Intégrale"), None);
+    }
+
+    #[test]
+    fn extract_volume_number_no_volume() {
+        assert_eq!(extract_volume_number("Just a book title"), None);
+        assert_eq!(extract_volume_number(""), None);
+        assert_eq!(extract_volume_number("No numbers at all"), None);
+    }
+
+    #[test]
+    fn extract_volume_number_zero_padded() {
+        assert_eq!(extract_volume_number("Tome 007"), Some(7));
+        assert_eq!(extract_volume_number("T.001"), Some(1));
+    }
+
+    // ─── infer_status_from_date ──────────────────────────────────────────
+
+    #[test]
+    fn infer_status_recent_date_is_ongoing() {
+        // A date very recently should be "ongoing"
+        let recent = chrono::Utc::now().date_naive() - chrono::Duration::days(30);
+        let date_str = recent.format("%Y-%m-%d").to_string();
+        assert_eq!(infer_status_from_date(&date_str), "ongoing");
+    }
+
+    #[test]
+    fn infer_status_old_date_is_ended() {
+        // A date 3 years ago should be "ended"
+        assert_eq!(infer_status_from_date("2020-01-01"), "ended");
+    }
+
+    #[test]
+    fn infer_status_invalid_date_is_ended() {
+        assert_eq!(infer_status_from_date("not-a-date"), "ended");
+        assert_eq!(infer_status_from_date(""), "ended");
+        assert_eq!(infer_status_from_date("2024/01/01"), "ended"); // wrong format
+    }
+
+    #[test]
+    fn infer_status_boundary_date() {
+        // Exactly at the 18-month cutoff boundary
+        let cutoff = chrono::Utc::now().date_naive() - chrono::Duration::days(18 * 30);
+        let date_str = cutoff.format("%Y-%m-%d").to_string();
+        // At the cutoff date itself, date is NOT > cutoff, so "ended"
+        assert_eq!(infer_status_from_date(&date_str), "ended");
+
+        // One day after cutoff should be "ongoing"
+        let one_after = cutoff + chrono::Duration::days(1);
+        let date_str = one_after.format("%Y-%m-%d").to_string();
+        assert_eq!(infer_status_from_date(&date_str), "ongoing");
+    }
+
+    // ─── extract_names ───────────────────────────────────────────────────
+
+    #[test]
+    fn extract_names_with_array() {
+        let product = serde_json::json!({
+            "authors": [
+                {"name": "Eiichiro Oda"},
+                {"name": "Another Author"}
+            ]
+        });
+        assert_eq!(extract_names(&product, "authors"), vec!["Eiichiro Oda", "Another Author"]);
+    }
+
+    #[test]
+    fn extract_names_empty() {
+        let product = serde_json::json!({});
+        assert_eq!(extract_names(&product, "authors"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn extract_names_missing_name_field() {
+        let product = serde_json::json!({
+            "authors": [
+                {"name": "Author1"},
+                {"other": "no name"},
+                {"name": "Author2"}
+            ]
+        });
+        assert_eq!(extract_names(&product, "authors"), vec!["Author1", "Author2"]);
+    }
+}

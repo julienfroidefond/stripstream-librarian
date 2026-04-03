@@ -166,6 +166,8 @@ use utoipa::OpenApi;
             crate::stats::MonthlyReading,
             crate::stats::UserMonthlyReading,
             crate::stats::JobTimePoint,
+            crate::stats::DownloadStats,
+            crate::stats::RecentDownloadItem,
             crate::metadata::ApproveRequest,
             crate::metadata::ApproveResponse,
             crate::metadata::SyncReport,
