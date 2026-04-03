@@ -730,3 +730,72 @@ async fn is_job_cancelled(pool: &PgPool, job_id: Uuid) -> bool {
         .as_deref()
         == Some("cancelled")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_title;
+
+    #[test]
+    fn normalize_basic() {
+        assert_eq!(normalize_title("Hello World"), "hello world");
+    }
+
+    #[test]
+    fn normalize_removes_punctuation() {
+        assert_eq!(normalize_title("One Piece: Stampede!"), "one piece stampede");
+    }
+
+    #[test]
+    fn normalize_collapses_whitespace() {
+        assert_eq!(normalize_title("  Naruto   Shippuden  "), "naruto shippuden");
+    }
+
+    #[test]
+    fn normalize_replaces_special_chars() {
+        assert_eq!(normalize_title("Dragon-Ball_Z"), "dragon ball z");
+        assert_eq!(normalize_title("JoJo's Bizarre Adventure"), "jojo s bizarre adventure");
+        assert_eq!(normalize_title("What...?!"), "what");
+    }
+
+    #[test]
+    fn normalize_mixed_case() {
+        assert_eq!(normalize_title("FULLMETAL ALCHEMIST"), "fullmetal alchemist");
+        assert_eq!(normalize_title("FuLlMeTaL"), "fullmetal");
+    }
+
+    #[test]
+    fn normalize_empty_string() {
+        assert_eq!(normalize_title(""), "");
+    }
+
+    #[test]
+    fn normalize_only_punctuation() {
+        assert_eq!(normalize_title(":!?.,'-\"_"), "");
+    }
+
+    #[test]
+    fn normalize_preserves_numbers() {
+        assert_eq!(normalize_title("One Piece 100"), "one piece 100");
+    }
+
+    #[test]
+    fn normalize_quotes_replaced() {
+        assert_eq!(normalize_title("\"Quoted Title\""), "quoted title");
+    }
+
+    #[test]
+    fn normalize_comma_in_title() {
+        assert_eq!(normalize_title("Spy, Family"), "spy family");
+    }
+
+    #[test]
+    fn normalize_idempotent() {
+        let input = "already normalized";
+        assert_eq!(normalize_title(input), input);
+    }
+
+    #[test]
+    fn normalize_consecutive_special_chars() {
+        assert_eq!(normalize_title("title---subtitle"), "title subtitle");
+    }
+}

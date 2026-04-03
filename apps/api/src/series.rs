@@ -1539,4 +1539,59 @@ mod tests {
         assert_eq!(json["metadata_provider"], "google_books");
         assert_eq!(json["anilist_id"], 12345);
     }
+
+    // ─── Integration tests (require PostgreSQL) ─────────────────────────
+
+    /// Helper to create a test library in the DB.
+    async fn create_test_library(pool: &sqlx::PgPool, name: &str) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
+            .bind(id)
+            .bind(name)
+            .bind(format!("/libraries/{name}"))
+            .execute(pool)
+            .await
+            .unwrap();
+        id
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_or_create_series_new(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "test").await;
+        let id = get_or_create_series(&pool, lib_id, "Dragon Ball").await.unwrap();
+        assert_ne!(id, Uuid::nil());
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_or_create_series_idempotent(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "test").await;
+        let id1 = get_or_create_series(&pool, lib_id, "Dragon Ball").await.unwrap();
+        let id2 = get_or_create_series(&pool, lib_id, "Dragon Ball").await.unwrap();
+        assert_eq!(id1, id2);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_or_create_series_case_insensitive(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "test").await;
+        let id1 = get_or_create_series(&pool, lib_id, "Dragon Ball").await.unwrap();
+        let id2 = get_or_create_series(&pool, lib_id, "dragon ball").await.unwrap();
+        assert_eq!(id1, id2, "same series with different casing should return same id");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_or_create_series_accent_insensitive(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "test").await;
+        let id1 = get_or_create_series(&pool, lib_id, "Astérix").await.unwrap();
+        let id2 = get_or_create_series(&pool, lib_id, "Asterix").await.unwrap();
+        assert_eq!(id1, id2, "accented and unaccented names should match");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_or_create_series_different_libraries(pool: sqlx::PgPool) {
+        let lib1 = create_test_library(&pool, "lib1").await;
+        let lib2 = create_test_library(&pool, "lib2").await;
+        let id1 = get_or_create_series(&pool, lib1, "Naruto").await.unwrap();
+        let id2 = get_or_create_series(&pool, lib2, "Naruto").await.unwrap();
+        assert_ne!(id1, id2, "same name in different libraries should be different series");
+    }
 }

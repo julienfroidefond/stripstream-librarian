@@ -894,3 +894,102 @@ async fn is_job_cancelled(pool: &PgPool, job_id: Uuid) -> bool {
         .as_deref()
         == Some("cancelled")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::Row;
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn failed_download_count_query(pool: sqlx::PgPool) {
+        // Setup: library + series
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Test Lib', '/libraries/test')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let series_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Naruto')")
+            .bind(series_id)
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Insert an available_download for this series
+        let ad_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO available_downloads (id, library_id, series_id, missing_count, available_releases, updated_at) \
+             VALUES ($1, $2, $3, 5, '[]'::jsonb, NOW())",
+        )
+        .bind(ad_id)
+        .bind(library_id)
+        .bind(series_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Insert torrent_downloads with status='error' matching the series name (case-insensitive)
+        sqlx::query(
+            "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, status, error_message) \
+             VALUES ($1, $2, 'naruto', '{1,2}', 'error', 'stalled')",
+        )
+        .bind(Uuid::new_v4())
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, status, error_message) \
+             VALUES ($1, $2, 'Naruto', '{3}', 'error', 'timeout')",
+        )
+        .bind(Uuid::new_v4())
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Also insert a non-error torrent to verify it's NOT counted
+        sqlx::query(
+            "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, status) \
+             VALUES ($1, $2, 'Naruto', '{4}', 'imported')",
+        )
+        .bind(Uuid::new_v4())
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Execute: run the same query used in get_latest_found
+        let rows = sqlx::query(
+            "SELECT ad.id, ad.library_id, s.name AS series_name, ad.series_id, ad.missing_count, ad.available_releases, ad.updated_at, \
+                    l.name as library_name, \
+                    COALESCE(td_err.failed_count, 0) AS failed_download_count \
+             FROM available_downloads ad \
+             JOIN libraries l ON l.id = ad.library_id \
+             JOIN series s ON s.id = ad.series_id \
+             LEFT JOIN LATERAL ( \
+                 SELECT COUNT(*) AS failed_count \
+                 FROM torrent_downloads td \
+                 WHERE td.library_id = ad.library_id \
+                   AND LOWER(td.series_name) = LOWER(s.name) \
+                   AND td.status = 'error' \
+             ) td_err ON TRUE \
+             ORDER BY l.name, s.name",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        // Assert
+        assert_eq!(rows.len(), 1, "should return one available_download row");
+        let row = &rows[0];
+        let failed_count: i64 = row.get("failed_download_count");
+        assert_eq!(failed_count, 2, "should count only the 2 error torrent_downloads, not the imported one");
+        let series_name: String = row.get("series_name");
+        assert_eq!(series_name, "Naruto");
+    }
+}

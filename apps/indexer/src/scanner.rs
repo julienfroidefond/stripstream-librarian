@@ -753,4 +753,67 @@ mod tests {
         };
         assert_eq!(update.series_id, None);
     }
+
+    // ─── Integration tests (require PostgreSQL) ─────────────────────────
+
+    async fn create_test_library(pool: &sqlx::PgPool, name: &str) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
+            .bind(id)
+            .bind(name)
+            .bind(format!("/libraries/{name}"))
+            .execute(pool)
+            .await
+            .unwrap();
+        id
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_or_create_series_id_new(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "test").await;
+        let mut cache = HashMap::new();
+        let id = get_or_create_series_id(&pool, lib_id, "One Piece", &mut cache).await.unwrap();
+        assert_ne!(id, Uuid::nil());
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_or_create_series_id_cache_hit(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "test").await;
+        let mut cache = HashMap::new();
+        let id1 = get_or_create_series_id(&pool, lib_id, "One Piece", &mut cache).await.unwrap();
+        let id2 = get_or_create_series_id(&pool, lib_id, "One Piece", &mut cache).await.unwrap();
+        assert_eq!(id1, id2);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_or_create_series_id_cache_case_insensitive(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "test").await;
+        let mut cache = HashMap::new();
+        let id1 = get_or_create_series_id(&pool, lib_id, "One Piece", &mut cache).await.unwrap();
+        // Different casing should hit cache
+        let id2 = get_or_create_series_id(&pool, lib_id, "one piece", &mut cache).await.unwrap();
+        assert_eq!(id1, id2);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_or_create_series_id_db_case_insensitive(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "test").await;
+        // Use two separate caches to bypass cache and test DB lookup
+        let mut cache1 = HashMap::new();
+        let mut cache2 = HashMap::new();
+        let id1 = get_or_create_series_id(&pool, lib_id, "Dragon Ball", &mut cache1).await.unwrap();
+        let id2 = get_or_create_series_id(&pool, lib_id, "dragon ball", &mut cache2).await.unwrap();
+        assert_eq!(id1, id2, "DB lookup should be case-insensitive");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_or_create_series_id_db_accent_insensitive(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "test").await;
+        let mut cache1 = HashMap::new();
+        let mut cache2 = HashMap::new();
+        let id1 = get_or_create_series_id(&pool, lib_id, "Astérix", &mut cache1).await.unwrap();
+        let id2 = get_or_create_series_id(&pool, lib_id, "Asterix", &mut cache2).await.unwrap();
+        assert_eq!(id1, id2, "DB lookup should be accent-insensitive");
+    }
 }

@@ -1496,4 +1496,149 @@ mod tests {
         let result = find_reference_from_disk(dir.path().to_str().unwrap(), &exclude);
         assert!(result.is_none());
     }
+
+    // ─── DB integration tests (sqlx::test) ──────────────────────────────
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn series_matching_unaccent_query(pool: sqlx::PgPool) {
+        // Setup: create a library and a series with accented name "Astérix"
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Test Lib', '/libraries/test')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let series_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Astérix')")
+            .bind(series_id)
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Insert a book linked to this series with a volume
+        let book_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO books (id, library_id, kind, title, volume, series_id) \
+             VALUES ($1, $2, 'bd', 'Astérix le Gaulois', 1, $3)",
+        )
+        .bind(book_id)
+        .bind(library_id)
+        .bind(series_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Insert a book_file for this book
+        let bf_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO book_files (id, book_id, format, abs_path, size_bytes, mtime, fingerprint) \
+             VALUES ($1, $2, 'cbz', '/libraries/test/Astérix/Astérix - T01.cbz', 1024, NOW(), 'fp1')",
+        )
+        .bind(bf_id)
+        .bind(book_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Execute: run the same unaccent query used in do_import with "Asterix" (no accent)
+        let row = sqlx::query(
+            "SELECT bf.abs_path, b.volume \
+             FROM book_files bf \
+             JOIN books b ON b.id = bf.book_id \
+             LEFT JOIN series s ON s.id = b.series_id \
+             WHERE b.library_id = $1 \
+               AND LOWER(unaccent(s.name)) = LOWER(unaccent($2)) \
+               AND b.volume IS NOT NULL \
+             ORDER BY b.volume DESC LIMIT 1",
+        )
+        .bind(library_id)
+        .bind("Asterix") // no accent — should match "Astérix" via unaccent
+        .fetch_optional(&pool)
+        .await
+        .unwrap();
+
+        // Assert: it finds the series
+        assert!(row.is_some(), "unaccent query should match 'Astérix' when searching 'Asterix'");
+        let row = row.unwrap();
+        let abs_path: String = row.get("abs_path");
+        let volume: i32 = row.get("volume");
+        assert_eq!(abs_path, "/libraries/test/Astérix/Astérix - T01.cbz");
+        assert_eq!(volume, 1);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn db_reference_query_returns_correct_data(pool: sqlx::PgPool) {
+        // Setup: library + series + book + book_file
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'BD', '/libraries/bd')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let series_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'One Piece')")
+            .bind(series_id)
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Insert two books with different volumes
+        let book1_id = Uuid::new_v4();
+        let book2_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO books (id, library_id, kind, title, volume, series_id) VALUES \
+             ($1, $2, 'bd', 'One Piece T01', 1, $3), \
+             ($4, $2, 'bd', 'One Piece T104', 104, $3)",
+        )
+        .bind(book1_id)
+        .bind(library_id)
+        .bind(series_id)
+        .bind(book2_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Insert book_files
+        sqlx::query(
+            "INSERT INTO book_files (id, book_id, format, abs_path, size_bytes, mtime, fingerprint) VALUES \
+             ($1, $2, 'cbz', '/libraries/bd/One Piece/One Piece - T01.cbz', 5000, NOW(), 'fp_a'), \
+             ($3, $4, 'cbz', '/libraries/bd/One Piece/One Piece - T104.cbz', 8000, NOW(), 'fp_b')",
+        )
+        .bind(Uuid::new_v4())
+        .bind(book1_id)
+        .bind(Uuid::new_v4())
+        .bind(book2_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Execute: same query as do_import — should return highest volume (104)
+        let row = sqlx::query(
+            "SELECT bf.abs_path, b.volume \
+             FROM book_files bf \
+             JOIN books b ON b.id = bf.book_id \
+             LEFT JOIN series s ON s.id = b.series_id \
+             WHERE b.library_id = $1 \
+               AND LOWER(unaccent(s.name)) = LOWER(unaccent($2)) \
+               AND b.volume IS NOT NULL \
+             ORDER BY b.volume DESC LIMIT 1",
+        )
+        .bind(library_id)
+        .bind("One Piece")
+        .fetch_optional(&pool)
+        .await
+        .unwrap();
+
+        // Assert
+        assert!(row.is_some());
+        let row = row.unwrap();
+        let abs_path: String = row.get("abs_path");
+        let volume: i32 = row.get("volume");
+        assert_eq!(volume, 104, "should return highest volume");
+        assert_eq!(abs_path, "/libraries/bd/One Piece/One Piece - T104.cbz");
+    }
 }

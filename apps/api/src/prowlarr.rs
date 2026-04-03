@@ -774,4 +774,306 @@ mod tests {
         assert!(is_integral_release("COMPLET"));
         assert!(is_integral_release("Intégrale"));
     }
+
+    // ── Additional edge-case tests ──────────────────────────────────────────
+
+    use super::{match_title_volumes, match_missing_volumes, MissingVolumeInput, read_bare_number, read_vol_prefix_number};
+
+    #[test]
+    fn extract_empty_string() {
+        assert_eq!(extract_volumes_from_title(""), Vec::<i32>::new());
+    }
+
+    #[test]
+    fn extract_no_volumes_plain_text() {
+        assert_eq!(extract_volumes_from_title("Some random title without volumes"), Vec::<i32>::new());
+    }
+
+    #[test]
+    fn extract_hash_prefix() {
+        assert_eq!(sorted(extract_volumes_from_title("Issue #42")), vec![42]);
+    }
+
+    #[test]
+    fn extract_multiple_individual_volumes() {
+        // Multiple T-prefixed volumes in one title
+        let v = sorted(extract_volumes_from_title("Pack Naruto T01 T05 T10"));
+        assert_eq!(v, vec![1, 5, 10]);
+    }
+
+    #[test]
+    fn extract_vol_space_prefix() {
+        assert_eq!(sorted(extract_volumes_from_title("Vol 7 - Special")), vec![7]);
+    }
+
+    #[test]
+    fn extract_vol_dot_prefix() {
+        assert_eq!(sorted(extract_volumes_from_title("Vol.12 collector")), vec![12]);
+    }
+
+    #[test]
+    fn extract_leading_zeros() {
+        assert_eq!(sorted(extract_volumes_from_title("T0001")), vec![1]);
+        assert_eq!(sorted(extract_volumes_from_title("Tome 007")), vec![7]);
+    }
+
+    #[test]
+    fn range_single_volume_not_range() {
+        // A single T05 should not be mistaken for a range
+        let v = extract_volumes_from_title("One Piece T05 [FR]");
+        assert_eq!(v, vec![5]);
+    }
+
+    #[test]
+    fn range_large_gap_rejected() {
+        // Range > 500 volumes should be rejected (guard in code)
+        let v = extract_volumes_from_title("Archive T001.T999");
+        // n2 - n1 = 998 > 500, so range should not expand
+        // Only individual volumes found
+        assert!(v.len() <= 2, "should not expand huge range, got {:?}", v);
+    }
+
+    #[test]
+    fn range_equal_numbers_not_expanded() {
+        // T05.T05 — n1 == n2, so range condition n1 < n2 fails
+        let v = sorted(extract_volumes_from_title("Pack T05.T05"));
+        assert_eq!(v, vec![5]);
+    }
+
+    #[test]
+    fn range_reversed_not_expanded() {
+        // T10.T05 — reversed range should not expand
+        let v = sorted(extract_volumes_from_title("Pack T10.T05"));
+        assert_eq!(v, vec![5, 10]);
+    }
+
+    #[test]
+    fn integral_l_apostrophe_integrale() {
+        assert!(is_integral_release("One Piece - L'intégrale"));
+        assert!(is_integral_release("L'INTEGRALE de Naruto"));
+    }
+
+    #[test]
+    fn integral_with_surrounding_brackets() {
+        assert!(is_integral_release("[Intégrale] Bleach"));
+        assert!(is_integral_release("Naruto (Complete)"));
+    }
+
+    #[test]
+    fn integral_partial_word_not_matched() {
+        // "completement" contains "complet" but should not match as whole word
+        assert!(!is_integral_release("completement different"));
+        // "integralement" should not match
+        assert!(!is_integral_release("integralement refait"));
+    }
+
+    #[test]
+    fn match_title_volumes_basic() {
+        let (matched, all) = match_title_volumes("One Piece T05", &[3, 5, 7]);
+        assert_eq!(matched, vec![5]);
+        assert_eq!(all, vec![5]);
+    }
+
+    #[test]
+    fn match_title_volumes_no_match() {
+        let (matched, all) = match_title_volumes("One Piece T05", &[3, 7, 9]);
+        assert!(matched.is_empty());
+        assert_eq!(all, vec![5]);
+    }
+
+    #[test]
+    fn match_title_volumes_integral_returns_all_missing() {
+        let (matched, all) = match_title_volumes("One Piece Intégrale", &[1, 2, 3, 10, 20]);
+        assert_eq!(matched, vec![1, 2, 3, 10, 20]);
+        assert!(all.is_empty(), "integral should have empty all_volumes");
+    }
+
+    #[test]
+    fn match_title_volumes_integral_empty_missing() {
+        let (matched, all) = match_title_volumes("One Piece Intégrale", &[]);
+        assert!(matched.is_empty());
+        assert!(all.is_empty());
+    }
+
+    #[test]
+    fn match_title_volumes_range_partial_match() {
+        let (matched, _all) = match_title_volumes("Dragon Ball T01-T10", &[5, 8, 15]);
+        assert_eq!(sorted(matched), vec![5, 8]);
+    }
+
+    #[test]
+    fn match_missing_volumes_maps_correctly() {
+        let releases = vec![
+            super::ProwlarrRawRelease {
+                guid: "a".into(),
+                title: "Naruto T05".into(),
+                size: 100,
+                download_url: None,
+                indexer: None,
+                seeders: None,
+                leechers: None,
+                publish_date: None,
+                protocol: None,
+                info_url: None,
+                categories: None,
+            },
+            super::ProwlarrRawRelease {
+                guid: "b".into(),
+                title: "Naruto T99".into(),
+                size: 200,
+                download_url: None,
+                indexer: None,
+                seeders: None,
+                leechers: None,
+                publish_date: None,
+                protocol: None,
+                info_url: None,
+                categories: None,
+            },
+        ];
+        let missing = vec![
+            MissingVolumeInput { volume_number: Some(5), title: None },
+            MissingVolumeInput { volume_number: Some(10), title: None },
+        ];
+        let result = match_missing_volumes(releases, &missing);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].matched_missing_volumes, Some(vec![5]));
+        assert!(result[1].matched_missing_volumes.is_none());
+        assert_eq!(result[0].all_volumes, vec![5]);
+        assert_eq!(result[1].all_volumes, vec![99]);
+    }
+
+    #[test]
+    fn match_missing_volumes_with_none_volume() {
+        let missing = vec![
+            MissingVolumeInput { volume_number: None, title: Some("test".into()) },
+        ];
+        let releases = vec![
+            super::ProwlarrRawRelease {
+                guid: "a".into(),
+                title: "Naruto T05".into(),
+                size: 100,
+                download_url: None,
+                indexer: None,
+                seeders: None,
+                leechers: None,
+                publish_date: None,
+                protocol: None,
+                info_url: None,
+                categories: None,
+            },
+        ];
+        let result = match_missing_volumes(releases, &missing);
+        // No missing_numbers to match against, so matched should be None
+        assert!(result[0].matched_missing_volumes.is_none());
+    }
+
+    #[test]
+    fn read_bare_number_at_start() {
+        let chars: Vec<char> = "42abc".chars().collect();
+        assert_eq!(read_bare_number(&chars, 0), Some((42, 2)));
+    }
+
+    #[test]
+    fn read_bare_number_no_digits() {
+        let chars: Vec<char> = "abc".chars().collect();
+        assert_eq!(read_bare_number(&chars, 0), None);
+    }
+
+    #[test]
+    fn read_bare_number_at_offset() {
+        let chars: Vec<char> = "abc123def".chars().collect();
+        assert_eq!(read_bare_number(&chars, 3), Some((123, 6)));
+    }
+
+    #[test]
+    fn read_vol_prefix_number_tome() {
+        let chars: Vec<char> = "tome 05 extra".chars().collect();
+        assert_eq!(read_vol_prefix_number(&chars, 0), Some((5, 7)));
+    }
+
+    #[test]
+    fn read_vol_prefix_number_t_prefix() {
+        let chars: Vec<char> = "t12".chars().collect();
+        assert_eq!(read_vol_prefix_number(&chars, 0), Some((12, 3)));
+    }
+
+    #[test]
+    fn read_vol_prefix_number_boundary_check() {
+        // "at12" — 't' is preceded by 'a' (alphanumeric), should not match
+        let chars: Vec<char> = "at12".chars().collect();
+        assert_eq!(read_vol_prefix_number(&chars, 1), None);
+    }
+
+    #[test]
+    fn read_vol_prefix_number_no_digits_after_prefix() {
+        let chars: Vec<char> = "tome abc".chars().collect();
+        assert_eq!(read_vol_prefix_number(&chars, 0), None);
+    }
+
+    #[test]
+    fn read_vol_prefix_number_hash() {
+        let chars: Vec<char> = "#007 extra".chars().collect();
+        assert_eq!(read_vol_prefix_number(&chars, 0), Some((7, 4)));
+    }
+
+    #[test]
+    fn extract_unicode_accented_series_name() {
+        // Test with heavy accented characters to verify char-based (not byte-based) indexing
+        let v = sorted(extract_volumes_from_title("Série Éphémère T03 - Résumé.cbz"));
+        assert_eq!(v, vec![3]);
+    }
+
+    #[test]
+    fn extract_tome_with_dot_separator() {
+        // "Tome.05" — dot after prefix should be skipped
+        let v = sorted(extract_volumes_from_title("Series Tome.05.cbz"));
+        assert_eq!(v, vec![5]);
+    }
+
+    #[test]
+    fn extract_v_prefix_not_in_brackets() {
+        // "v03" outside brackets should be extracted
+        assert_eq!(sorted(extract_volumes_from_title("Series v03 [1080p]")), vec![3]);
+    }
+
+    #[test]
+    fn bare_number_dash_end_of_string() {
+        // "Series - 12" at end — valid_end check for end-of-string
+        let v = extract_volumes_from_title("Series - 12");
+        assert_eq!(v, vec![12]);
+    }
+
+    #[test]
+    fn bare_number_at_start_space() {
+        // "03 title.cbz" — number at start followed by space
+        let v = extract_volumes_from_title("03 title.cbz");
+        assert_eq!(v, vec![3]);
+    }
+
+    #[test]
+    fn range_with_spaces_around_dash() {
+        // "T01 - T10" with spaces around dash
+        let v = sorted(extract_volumes_from_title("Pack T01 - T10 [FR]"));
+        assert_eq!(v, (1..=10).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn range_with_a_grave_and_spaces() {
+        // "Tome 1 à Tome 5" — French-style range
+        let v = sorted(extract_volumes_from_title("Collection Tome 1 à Tome 5"));
+        assert_eq!(v, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn extract_does_not_duplicate_volumes() {
+        // Same volume appearing multiple times should only appear once
+        let v = extract_volumes_from_title("T05 - also Tome 05");
+        assert_eq!(v.iter().filter(|&&x| x == 5).count(), 1);
+    }
+
+    #[test]
+    fn is_integral_with_grave_accent_e() {
+        assert!(is_integral_release("Série Intègrale")); // è instead of é
+    }
 }
