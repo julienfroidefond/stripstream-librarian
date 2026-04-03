@@ -139,8 +139,8 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
     <>
       <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
         <h1 className="text-xl sm:text-3xl font-bold text-foreground flex items-center gap-2 sm:gap-3">
-          <Icon name="download" size="lg" className="sm:hidden" />
-          <Icon name="download" size="xl" className="hidden sm:block" />
+          <Icon name="download" size="lg" className="sm:hidden text-emerald-500" />
+          <Icon name="download" size="xl" className="hidden sm:block text-emerald-500" />
           {t("downloads.title")}
         </h1>
         <Button onClick={() => refresh(true)} disabled={isRefreshing} variant="outline" size="sm">

@@ -12,6 +12,7 @@ type NavItem = {
   href: "/" | "/books" | "/series" | "/authors" | "/libraries" | "/discovery" | "/downloads" | "/jobs" | "/tokens" | "/settings";
   label: string;
   icon: "dashboard" | "books" | "series" | "authors" | "libraries" | "search" | "download" | "jobs" | "tokens" | "settings";
+  color?: string;
 };
 
 const HamburgerIcon = () => (
@@ -89,7 +90,7 @@ export function MobileNav({ navItems, users, activeUserId, setActiveUserAction }
               className="flex items-center gap-3 px-3 py-3 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-200 active:scale-[0.98]"
               onClick={() => setIsOpen(false)}
             >
-              <NavIcon name={item.icon} />
+              <NavIcon name={item.icon} className={item.color} />
               <span className="font-medium">{item.label}</span>
             </Link>
           ))}

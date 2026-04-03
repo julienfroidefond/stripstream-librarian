@@ -20,18 +20,19 @@ type NavItem = {
   href: "/" | "/books" | "/series" | "/authors" | "/libraries" | "/discovery" | "/jobs" | "/tokens" | "/settings" | "/downloads";
   labelKey: TranslationKey;
   icon: "dashboard" | "books" | "series" | "authors" | "libraries" | "search" | "jobs" | "tokens" | "settings" | "download";
+  color?: string;
 };
 
 const navItems: NavItem[] = [
-  { href: "/books", labelKey: "nav.books", icon: "books" },
-  { href: "/series", labelKey: "nav.series", icon: "series" },
-  { href: "/authors", labelKey: "nav.authors", icon: "authors" },
-  { href: "/libraries", labelKey: "nav.libraries", icon: "libraries" },
-  { href: "/discovery", labelKey: "nav.discovery", icon: "search" },
-  { href: "/downloads", labelKey: "nav.downloads", icon: "download" },
-  { href: "/jobs", labelKey: "nav.jobs", icon: "jobs" },
-  { href: "/tokens", labelKey: "nav.tokens", icon: "tokens" },
-  { href: "/settings", labelKey: "nav.settings", icon: "settings" },
+  { href: "/books", labelKey: "nav.books", icon: "books", color: "text-success" },
+  { href: "/series", labelKey: "nav.series", icon: "series", color: "text-warning" },
+  { href: "/authors", labelKey: "nav.authors", icon: "authors", color: "text-violet-500" },
+  { href: "/libraries", labelKey: "nav.libraries", icon: "libraries", color: "text-primary" },
+  { href: "/discovery", labelKey: "nav.discovery", icon: "search", color: "text-cyan-500" },
+  { href: "/downloads", labelKey: "nav.downloads", icon: "download", color: "text-emerald-500" },
+  { href: "/jobs", labelKey: "nav.jobs", icon: "jobs", color: "text-amber-500" },
+  { href: "/tokens", labelKey: "nav.tokens", icon: "tokens", color: "text-rose-500" },
+  { href: "/settings", labelKey: "nav.settings", icon: "settings", color: "text-slate-400" },
 ];
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
@@ -102,7 +103,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         <CollapsibleNav>
           {navItems.map((item) => (
             <NavLink key={item.href} href={item.href} title={t(item.labelKey)}>
-              <NavIcon name={item.icon} />
+              <NavIcon name={item.icon} className={item.color} />
               <span className="ml-2 hidden xl:inline">{t(item.labelKey)}</span>
             </NavLink>
           ))}
