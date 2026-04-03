@@ -444,6 +444,7 @@ function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFound: La
           const isExpanded = expandedId === r.id;
           const topSeeders = bestSeeders(r);
           const releaseCount = r.available_releases?.length ?? 0;
+          const failedReleaseCount = r.available_releases?.filter(rel => rel.has_failed).length ?? 0;
 
           return (
             <div key={r.id} className={`${isExpanded ? "bg-muted/20" : ""}`}>
@@ -482,9 +483,9 @@ function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFound: La
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
-                  {r.failed_download_count > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-destructive/20 text-destructive" title={`${r.failed_download_count} failed`}>
-                      {r.failed_download_count}!
+                  {failedReleaseCount > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-destructive/20 text-destructive" title={`${failedReleaseCount} failed`}>
+                      {failedReleaseCount}!
                     </span>
                   )}
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-warning/20 text-warning" title={`${r.missing_count} missing`}>
