@@ -34,6 +34,8 @@ pub struct ReadingStatusMatchReportDto {
 pub struct ReadingStatusMatchResultDto {
     #[schema(value_type = String)]
     pub id: Uuid,
+    #[schema(value_type = Option<String>)]
+    pub series_id: Option<Uuid>,
     pub series_name: String,
     /// 'linked' | 'already_linked' | 'no_results' | 'ambiguous' | 'error'
     pub status: String,
@@ -297,25 +299,32 @@ pub async fn get_match_results(
     axum::extract::Path(job_id): axum::extract::Path<Uuid>,
     axum::extract::Query(query): axum::extract::Query<ResultsQuery>,
 ) -> Result<Json<Vec<ReadingStatusMatchResultDto>>, ApiError> {
+    let job_library_id: Option<Uuid> = sqlx::query_scalar("SELECT library_id FROM index_jobs WHERE id = $1")
+        .bind(job_id).fetch_optional(&state.pool).await?.flatten();
+
     let rows = if let Some(status_filter) = &query.status {
         sqlx::query(
-            "SELECT id, series_name, status, anilist_id, anilist_title, anilist_url, error_message
-             FROM reading_status_match_results
-             WHERE job_id = $1 AND status = $2
-             ORDER BY series_name",
+            "SELECT r.id, r.series_name, r.status, r.anilist_id, r.anilist_title, r.anilist_url, r.error_message, s.id AS series_id
+             FROM reading_status_match_results r
+             LEFT JOIN series s ON s.library_id = $3 AND LOWER(s.name) = LOWER(r.series_name)
+             WHERE r.job_id = $1 AND r.status = $2
+             ORDER BY r.series_name",
         )
         .bind(job_id)
         .bind(status_filter)
+        .bind(job_library_id)
         .fetch_all(&state.pool)
         .await?
     } else {
         sqlx::query(
-            "SELECT id, series_name, status, anilist_id, anilist_title, anilist_url, error_message
-             FROM reading_status_match_results
-             WHERE job_id = $1
-             ORDER BY status, series_name",
+            "SELECT r.id, r.series_name, r.status, r.anilist_id, r.anilist_title, r.anilist_url, r.error_message, s.id AS series_id
+             FROM reading_status_match_results r
+             LEFT JOIN series s ON s.library_id = $2 AND LOWER(s.name) = LOWER(r.series_name)
+             WHERE r.job_id = $1
+             ORDER BY r.status, r.series_name",
         )
         .bind(job_id)
+        .bind(job_library_id)
         .fetch_all(&state.pool)
         .await?
     };
@@ -324,6 +333,7 @@ pub async fn get_match_results(
         .iter()
         .map(|row| ReadingStatusMatchResultDto {
             id: row.get("id"),
+            series_id: row.get("series_id"),
             series_name: row.get("series_name"),
             status: row.get("status"),
             anilist_id: row.get("anilist_id"),

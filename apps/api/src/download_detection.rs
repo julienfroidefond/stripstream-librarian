@@ -33,6 +33,8 @@ pub struct DownloadDetectionReportDto {
 pub struct DownloadDetectionResultDto {
     #[schema(value_type = String)]
     pub id: Uuid,
+    #[schema(value_type = Option<String>)]
+    pub series_id: Option<Uuid>,
     pub series_name: String,
     /// 'found' | 'not_found' | 'no_missing' | 'no_metadata' | 'error'
     pub status: String,
@@ -306,7 +308,7 @@ pub async fn get_detection_results(
 ) -> Result<Json<Vec<DownloadDetectionResultDto>>, ApiError> {
     let rows = if let Some(status_filter) = &query.status {
         sqlx::query(
-            "SELECT ddr.id, COALESCE(s.name, 'unknown') AS series_name, ddr.status, ddr.missing_count, ddr.available_releases, ddr.error_message
+            "SELECT ddr.id, ddr.series_id, COALESCE(s.name, 'unknown') AS series_name, ddr.status, ddr.missing_count, ddr.available_releases, ddr.error_message
              FROM download_detection_results ddr
              LEFT JOIN series s ON s.id = ddr.series_id
              WHERE ddr.job_id = $1 AND ddr.status = $2
@@ -318,7 +320,7 @@ pub async fn get_detection_results(
         .await?
     } else {
         sqlx::query(
-            "SELECT ddr.id, COALESCE(s.name, 'unknown') AS series_name, ddr.status, ddr.missing_count, ddr.available_releases, ddr.error_message
+            "SELECT ddr.id, ddr.series_id, COALESCE(s.name, 'unknown') AS series_name, ddr.status, ddr.missing_count, ddr.available_releases, ddr.error_message
              FROM download_detection_results ddr
              LEFT JOIN series s ON s.id = ddr.series_id
              WHERE ddr.job_id = $1
@@ -338,6 +340,7 @@ pub async fn get_detection_results(
             });
             DownloadDetectionResultDto {
                 id: row.get("id"),
+                series_id: row.get("series_id"),
                 series_name: row.get("series_name"),
                 status: row.get("status"),
                 missing_count: row.get("missing_count"),

@@ -41,6 +41,8 @@ pub struct MetadataBatchReportDto {
 pub struct MetadataBatchResultDto {
     #[schema(value_type = String)]
     pub id: Uuid,
+    #[schema(value_type = Option<String>)]
+    pub series_id: Option<Uuid>,
     pub series_name: String,
     pub status: String,
     pub provider_used: Option<String>,
@@ -327,14 +329,23 @@ pub async fn get_batch_results(
     let limit = query.limit.unwrap_or(50).min(200);
     let offset = (page - 1) * limit;
 
+    // Get library_id from the job to resolve series_id
+    let job_library_id: Option<Uuid> = sqlx::query_scalar("SELECT library_id FROM index_jobs WHERE id = $1")
+        .bind(job_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .flatten();
+
     let rows = sqlx::query(
         r#"
-        SELECT id, series_name, status, provider_used, fallback_used, candidates_count,
-               best_confidence, best_candidate_json, link_id, error_message
-        FROM metadata_batch_results
-        WHERE job_id = $1 AND ($2::text IS NULL OR status = $2)
+        SELECT mbr.id, mbr.series_name, mbr.status, mbr.provider_used, mbr.fallback_used, mbr.candidates_count,
+               mbr.best_confidence, mbr.best_candidate_json, mbr.link_id, mbr.error_message,
+               s.id AS series_id
+        FROM metadata_batch_results mbr
+        LEFT JOIN series s ON s.library_id = $5 AND LOWER(s.name) = LOWER(mbr.series_name)
+        WHERE mbr.job_id = $1 AND ($2::text IS NULL OR mbr.status = $2)
         ORDER BY
-            CASE status
+            CASE mbr.status
                 WHEN 'auto_matched' THEN 1
                 WHEN 'low_confidence' THEN 2
                 WHEN 'too_many_results' THEN 3
@@ -343,7 +354,7 @@ pub async fn get_batch_results(
                 WHEN 'already_linked' THEN 6
                 ELSE 7
             END,
-            series_name ASC
+            mbr.series_name ASC
         LIMIT $3 OFFSET $4
         "#,
     )
@@ -351,6 +362,7 @@ pub async fn get_batch_results(
     .bind(query.status.as_deref())
     .bind(limit)
     .bind(offset)
+    .bind(job_library_id)
     .fetch_all(&state.pool)
     .await?;
 
@@ -358,6 +370,7 @@ pub async fn get_batch_results(
         .iter()
         .map(|row| MetadataBatchResultDto {
             id: row.get("id"),
+            series_id: row.get("series_id"),
             series_name: row.get("series_name"),
             status: row.get("status"),
             provider_used: row.get("provider_used"),
