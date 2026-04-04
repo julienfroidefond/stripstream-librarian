@@ -306,7 +306,7 @@ pub fn read_vol_prefix_number(chars: &[char], pos: usize) -> Option<(i32, usize)
 
 /// Extract the first volume number from a filename (convenience wrapper).
 /// Returns `None` if no volume is found.
-fn extract_volume(filename: &str) -> Option<i32> {
+pub fn extract_volume(filename: &str) -> Option<i32> {
     extract_volumes(filename).into_iter().next()
 }
 

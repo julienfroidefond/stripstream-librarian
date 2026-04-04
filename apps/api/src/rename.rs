@@ -90,11 +90,20 @@ fn apply_template(
             Some(book.authors.join(", "))
         },
     );
+    // Use DB volume if available, otherwise try to extract from filename
+    let effective_volume = book.volume.or_else(|| {
+        let filename = std::path::Path::new(&book.abs_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        parsers::extract_volume(filename)
+    });
+
     vars.insert(
         "volume",
-        book.volume.map(|v| v.to_string()),
+        effective_volume.map(|v| v.to_string()),
     );
-    vars.insert("volume_padded", book.volume.map(|v| {
+    vars.insert("volume_padded", effective_volume.map(|v| {
         // Auto-pad to match the digit count of the largest volume in the series
         let width = if max_volume >= 1000 {
             4
@@ -750,5 +759,40 @@ mod tests {
         let result = apply_template("{series_name} - T{volume_padded} - {title}", "Série à accents", &book, 10);
         let sanitized = sanitize_filename(&result);
         assert_eq!(sanitized, "Série à accents - T05 - L'épreuve_ le retour! (2ème édition)");
+    }
+
+    // ─── Volume extraction fallback from filename ───────────────────────
+
+    #[test]
+    fn volume_extracted_from_filename_when_db_null_tome() {
+        // "Tome 05.cbz" has no volume in DB but filename contains "Tome 05"
+        let book = make_book("Tome 05", None, vec![], "/libraries/BD/Frieren/Tome 05.cbz");
+        let result = apply_template("{series_name} - T{volume_padded}", "Frieren", &book, 14);
+        assert_eq!(result, "Frieren - T05");
+    }
+
+    #[test]
+    fn volume_extracted_from_filename_when_db_null_t_prefix() {
+        // "Frieren – T10.cbz" — should work with T prefix too
+        let book = make_book("Frieren – T10", None, vec![], "/libraries/BD/Frieren/Frieren – T10.cbz");
+        let result = apply_template("{series_name} - T{volume_padded}", "Frieren", &book, 14);
+        assert_eq!(result, "Frieren - T10");
+    }
+
+    #[test]
+    fn volume_db_takes_precedence_over_filename() {
+        // DB has volume=3 but filename says "Tome 05" → use DB
+        let book = make_book("Tome 05", Some(3), vec![], "/libraries/BD/Frieren/Tome 05.cbz");
+        let result = apply_template("{series_name} - T{volume_padded}", "Frieren", &book, 14);
+        assert_eq!(result, "Frieren - T03");
+    }
+
+    #[test]
+    fn volume_none_and_no_volume_in_filename() {
+        // No volume anywhere → template degrades to series_name only
+        let book = make_book("Special Edition", None, vec![], "/libraries/BD/Frieren/Special Edition.cbz");
+        let result = apply_template("{series_name} - T{volume_padded}", "Frieren", &book, 10);
+        // volume_padded is None → entire segment with missing var is removed
+        assert_eq!(result, "Frieren");
     }
 }
