@@ -8,8 +8,16 @@ import { getServerTranslations } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
-export default async function JobsPage({ searchParams }: { searchParams: Promise<{ highlight?: string }> }) {
-  const { highlight } = await searchParams;
+function jobRedirect(resultId: string | undefined | null, libraryId: string): never {
+  const params = new URLSearchParams();
+  if (resultId) params.set("highlight", resultId);
+  if (libraryId) params.set("library", libraryId);
+  const qs = params.toString();
+  redirect(qs ? `/jobs?${qs}` : "/jobs");
+}
+
+export default async function JobsPage({ searchParams }: { searchParams: Promise<{ highlight?: string; library?: string }> }) {
+  const { highlight, library } = await searchParams;
   const { t } = await getServerTranslations();
   const [jobs, libraries, prowlarrSettings] = await Promise.all([
     listJobs().catch(() => [] as IndexJobDto[]),
@@ -26,7 +34,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     const libraryId = formData.get("library_id") as string;
     const result = await rebuildIndex(libraryId || undefined);
     revalidatePath("/jobs");
-    redirect(`/jobs?highlight=${result.id}`);
+    jobRedirect(result.id, libraryId);
   }
 
   async function triggerFullRebuild(formData: FormData) {
@@ -34,7 +42,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     const libraryId = formData.get("library_id") as string;
     const result = await rebuildIndex(libraryId || undefined, true);
     revalidatePath("/jobs");
-    redirect(`/jobs?highlight=${result.id}`);
+    jobRedirect(result.id, libraryId);
   }
 
   async function triggerRescan(formData: FormData) {
@@ -42,7 +50,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     const libraryId = formData.get("library_id") as string;
     const result = await rebuildIndex(libraryId || undefined, false, true);
     revalidatePath("/jobs");
-    redirect(`/jobs?highlight=${result.id}`);
+    jobRedirect(result.id, libraryId);
   }
 
   async function triggerThumbnailsRebuild(formData: FormData) {
@@ -50,7 +58,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     const libraryId = formData.get("library_id") as string;
     const result = await rebuildThumbnails(libraryId || undefined);
     revalidatePath("/jobs");
-    redirect(`/jobs?highlight=${result.id}`);
+    jobRedirect(result.id, libraryId);
   }
 
   async function triggerThumbnailsRegenerate(formData: FormData) {
@@ -58,7 +66,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     const libraryId = formData.get("library_id") as string;
     const result = await regenerateThumbnails(libraryId || undefined);
     revalidatePath("/jobs");
-    redirect(`/jobs?highlight=${result.id}`);
+    jobRedirect(result.id, libraryId);
   }
 
   async function triggerMetadataBatch(formData: FormData) {
@@ -66,7 +74,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     const libraryId = formData.get("library_id") as string;
     const result = await startMetadataBatch(libraryId || undefined);
     revalidatePath("/jobs");
-    redirect(result.id ? `/jobs?highlight=${result.id}` : "/jobs");
+    jobRedirect(result.id, libraryId);
   }
 
   async function triggerMetadataRematch(formData: FormData) {
@@ -75,7 +83,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     if (!libraryId) return redirect("/jobs");
     const result = await startMetadataBatch(libraryId, true);
     revalidatePath("/jobs");
-    redirect(result.id ? `/jobs?highlight=${result.id}` : "/jobs");
+    jobRedirect(result.id, libraryId);
   }
 
   async function triggerMetadataRefresh(formData: FormData) {
@@ -83,7 +91,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     const libraryId = formData.get("library_id") as string;
     const result = await startMetadataRefresh(libraryId || undefined);
     revalidatePath("/jobs");
-    redirect(result.id ? `/jobs?highlight=${result.id}` : "/jobs");
+    jobRedirect(result.id, libraryId);
   }
 
   async function triggerMetadataRefreshAll(formData: FormData) {
@@ -91,7 +99,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     const libraryId = formData.get("library_id") as string;
     const result = await startMetadataRefreshAll(libraryId || undefined);
     revalidatePath("/jobs");
-    redirect(result.id ? `/jobs?highlight=${result.id}` : "/jobs");
+    jobRedirect(result.id, libraryId);
   }
 
   async function triggerReadingStatusMatch(formData: FormData) {
@@ -99,7 +107,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     const libraryId = formData.get("library_id") as string;
     const result = await startReadingStatusMatch(libraryId || undefined);
     revalidatePath("/jobs");
-    redirect(result.id ? `/jobs?highlight=${result.id}` : "/jobs");
+    jobRedirect(result.id, libraryId);
   }
 
   async function triggerReadingStatusPush(formData: FormData) {
@@ -107,7 +115,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     const libraryId = formData.get("library_id") as string;
     const result = await startReadingStatusPush(libraryId || undefined);
     revalidatePath("/jobs");
-    redirect(result.id ? `/jobs?highlight=${result.id}` : "/jobs");
+    jobRedirect(result.id, libraryId);
   }
 
   async function triggerDownloadDetection(formData: FormData) {
@@ -115,7 +123,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     const libraryId = formData.get("library_id") as string;
     const result = await startDownloadDetection(libraryId || undefined);
     revalidatePath("/jobs");
-    redirect(result.id ? `/jobs?highlight=${result.id}` : "/jobs");
+    jobRedirect(result.id, libraryId);
   }
 
   return (
@@ -135,7 +143,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
           <CardDescription>{t("jobs.startJobDescription")}</CardDescription>
         </CardHeader>
         <CardContent>
-          <LibraryBadgeSelector libraries={libraries.map(l => ({ id: l.id, name: l.name }))}>
+          <LibraryBadgeSelector libraries={libraries.map(l => ({ id: l.id, name: l.name }))} initialSelected={library ?? null}>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
               {/* Indexation group */}

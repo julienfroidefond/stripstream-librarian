@@ -11,12 +11,13 @@ interface Library {
 interface LibraryBadgeSelectorProps {
   libraries: Library[];
   children: ReactNode;
+  initialSelected?: string | null;
 }
 
-export function LibraryBadgeSelector({ libraries, children }: LibraryBadgeSelectorProps) {
+export function LibraryBadgeSelector({ libraries, children, initialSelected = null }: LibraryBadgeSelectorProps) {
   const { t } = useTranslation();
   // null = no selection, "" = all, string = specific library id
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(initialSelected);
   const [warning, setWarning] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
