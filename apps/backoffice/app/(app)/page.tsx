@@ -182,7 +182,7 @@ export default async function DashboardPage({
       <Card hover={false}>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle className="text-base">{t("dashboard.readingActivity")}</CardTitle>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-1.5 justify-end">
             <MetricToggle labels={{ books: t("dashboard.metricBooks"), pages: t("dashboard.metricPages") }} />
             <PeriodToggle labels={{ day: t("dashboard.periodDay"), week: t("dashboard.periodWeek"), month: t("dashboard.periodMonth") }} />
           </div>

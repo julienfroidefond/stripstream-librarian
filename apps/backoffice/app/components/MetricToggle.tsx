@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { useTransition } from "react";
 
 type Metric = "books" | "pages";
 
@@ -10,6 +11,7 @@ export function MetricToggle({
   labels: { books: string; pages: string };
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const searchParams = useSearchParams();
   const raw = searchParams.get("metric");
   const current: Metric = raw === "pages" ? "pages" : "books";
@@ -22,7 +24,9 @@ export function MetricToggle({
       params.set("metric", metric);
     }
     const qs = params.toString();
-    router.push(qs ? `?${qs}` : "/", { scroll: false });
+    const url = qs ? `?${qs}` : "/";
+    window.history.replaceState(null, "", url);
+    startTransition(() => { router.refresh(); });
   }
 
   const options: Metric[] = ["books", "pages"];

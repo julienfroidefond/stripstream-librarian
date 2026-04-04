@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { useTransition } from "react";
 
 type Period = "day" | "week" | "month";
 
@@ -10,19 +11,22 @@ export function PeriodToggle({
   labels: { day: string; week: string; month: string };
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const searchParams = useSearchParams();
   const raw = searchParams.get("period");
-  const current: Period = raw === "day" ? "day" : raw === "week" ? "week" : "month";
+  const current: Period = raw === "day" ? "day" : raw === "month" ? "month" : "week";
 
   function setPeriod(period: Period) {
     const params = new URLSearchParams(searchParams.toString());
-    if (period === "month") {
+    if (period === "week") {
       params.delete("period");
     } else {
       params.set("period", period);
     }
     const qs = params.toString();
-    router.push(qs ? `?${qs}` : "/", { scroll: false });
+    const url = qs ? `?${qs}` : "/";
+    window.history.replaceState(null, "", url);
+    startTransition(() => { router.refresh(); });
   }
 
   const options: Period[] = ["day", "week", "month"];
