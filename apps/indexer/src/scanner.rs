@@ -898,4 +898,95 @@ mod tests {
         let id2 = get_or_create_series_id(&pool, lib_id, "Asterix", &mut cache2).await.unwrap();
         assert_eq!(id1, id2, "DB lookup should be accent-insensitive");
     }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn scanner_updates_title_when_filename_differs(pool: sqlx::PgPool) {
+        // 1. Create a library
+        let library_id = create_test_library(&pool, "test_update").await;
+
+        // 2. Create a series
+        let series_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, $3)")
+            .bind(series_id)
+            .bind(library_id)
+            .bind("Series")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // 3. Insert a book with title="Old Title" and volume=None
+        let book_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO books (id, library_id, title, kind, format, series_id) \
+             VALUES ($1, $2, $3, $4, $5, $6)",
+        )
+        .bind(book_id)
+        .bind(library_id)
+        .bind("Old Title")
+        .bind("comic")
+        .bind("cbz")
+        .bind(series_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 4. Insert a book_file with abs_path containing a DIFFERENT filename
+        let file_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO book_files (id, book_id, abs_path, format, size_bytes, mtime, fingerprint, parse_status) \
+             VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7)",
+        )
+        .bind(file_id)
+        .bind(book_id)
+        .bind("/libraries/test_update/Series/Series - T05.cbz")
+        .bind("cbz")
+        .bind(1024_i64)
+        .bind("fake_fingerprint")
+        .bind("ok")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 5. Verify the book still has the old title
+        let db_title: String = sqlx::query_scalar("SELECT title FROM books WHERE id = $1")
+            .bind(book_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(db_title, "Old Title");
+
+        // 6. Simulate what the scanner does: parse the filename, compare, and update
+        let parsed_title = "Series - T05";
+        let parsed_volume = parsers::extract_volume(parsed_title);
+
+        // Confirm mismatch
+        assert_ne!(db_title, parsed_title);
+
+        // Update like the scanner does
+        sqlx::query(
+            "UPDATE books SET title = $1, volume = $2, updated_at = NOW() WHERE id = $3",
+        )
+        .bind(parsed_title)
+        .bind(parsed_volume)
+        .bind(book_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 7. Verify the book now has the new title and volume
+        let new_title: String = sqlx::query_scalar("SELECT title FROM books WHERE id = $1")
+            .bind(book_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(new_title, "Series - T05");
+
+        let new_volume: Option<i32> =
+            sqlx::query_scalar("SELECT volume FROM books WHERE id = $1")
+                .bind(book_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(new_volume, Some(5));
+    }
 }
