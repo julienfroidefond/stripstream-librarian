@@ -430,7 +430,43 @@ pub async fn scan_library_discovery(
             existing.get(&lookup_path).cloned()
         {
             if !is_full_rebuild && old_fingerprint == fingerprint {
-                trace!("[PROCESS] Skipping unchanged file: {}", file_name);
+                // Even if fingerprint hasn't changed, check if title/volume need updating
+                // (e.g., after a rename, the file was renamed but title in books table is stale)
+                let db_title: Option<String> = sqlx::query_scalar("SELECT title FROM books WHERE id = $1")
+                    .bind(book_id)
+                    .fetch_optional(&state.pool)
+                    .await?;
+                if let Some(ref db_title) = db_title {
+                    if db_title != &parsed.title {
+                        debug!("[SCAN] Title mismatch for {}: DB='{}' vs parsed='{}', updating", file_name, db_title, parsed.title);
+                        let update_series_id = if let Some(ref series_name) = parsed.series {
+                            Some(
+                                get_or_create_series_id(&state.pool, library_id, series_name, &mut series_map)
+                                    .await?,
+                            )
+                        } else {
+                            None
+                        };
+                        sqlx::query("UPDATE books SET title = $1, volume = $2, series_id = COALESCE($3, series_id), updated_at = NOW() WHERE id = $4")
+                            .bind(&parsed.title)
+                            .bind(parsed.volume)
+                            .bind(update_series_id)
+                            .bind(book_id)
+                            .execute(&state.pool)
+                            .await?;
+
+                        events_to_insert.push(EventInsert {
+                            job_id,
+                            event_type: "book_updated".to_string(),
+                            level: "info".to_string(),
+                            entity_type: Some("book".to_string()),
+                            entity_id: Some(book_id),
+                            entity_name: Some(abs_path.clone()),
+                            message: Some(format!("Title updated: '{}' → '{}'", db_title, parsed.title)),
+                            detail: None,
+                        });
+                    }
+                }
                 continue;
             }
 
