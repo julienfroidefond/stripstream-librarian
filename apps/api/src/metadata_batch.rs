@@ -352,7 +352,7 @@ pub async fn get_batch_results(
         SELECT ije.id, ije.event_type, ije.entity_id, ije.entity_name, ije.message, ije.detail,
                s.id AS series_id
         FROM index_job_events ije
-        LEFT JOIN series s ON s.library_id = $5 AND LOWER(s.name) = LOWER(ije.entity_name)
+        LEFT JOIN series s ON s.library_id = $5 AND LOWER(unaccent(s.name)) = LOWER(unaccent(ije.entity_name))
         WHERE ije.job_id = $1
           AND (ije.event_type LIKE 'metadata_%' OR ije.event_type = 'error')
           AND ($2::text IS NULL OR ije.event_type = $2)
@@ -1602,7 +1602,7 @@ mod tests {
             SELECT ije.id, ije.event_type, ije.entity_id, ije.entity_name, ije.message, ije.detail,
                    s.id AS series_id
             FROM index_job_events ije
-            LEFT JOIN series s ON s.library_id = $5 AND LOWER(s.name) = LOWER(ije.entity_name)
+            LEFT JOIN series s ON s.library_id = $5 AND LOWER(unaccent(s.name)) = LOWER(unaccent(ije.entity_name))
             WHERE ije.job_id = $1
               AND (ije.event_type LIKE 'metadata_%' OR ije.event_type = 'error')
               AND ($2::text IS NULL OR ije.event_type = $2)
@@ -1654,7 +1654,7 @@ mod tests {
             SELECT ije.id, ije.event_type, ije.entity_id, ije.entity_name, ije.message, ije.detail,
                    s.id AS series_id
             FROM index_job_events ije
-            LEFT JOIN series s ON s.library_id = $5 AND LOWER(s.name) = LOWER(ije.entity_name)
+            LEFT JOIN series s ON s.library_id = $5 AND LOWER(unaccent(s.name)) = LOWER(unaccent(ije.entity_name))
             WHERE ije.job_id = $1
               AND (ije.event_type LIKE 'metadata_%' OR ije.event_type = 'error')
               AND ($2::text IS NULL OR ije.event_type = $2)
@@ -1803,6 +1803,58 @@ mod tests {
         assert_eq!(json["confidence"], 0.65);
     }
 
+    /// Regression: LEFT JOIN with LOWER(unaccent()) resolves series_id even when
+    /// the event entity_name has different accents/casing than the series name.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn series_id_resolved_with_unaccent_in_results(pool: sqlx::PgPool) {
+        let lib_id = create_lib(&pool, "test_unaccent").await;
+        // Series with accented name
+        let series_id = create_series(&pool, lib_id, "Astérix").await;
+
+        let job_id = create_job(&pool, lib_id, "metadata_batch").await;
+
+        // Insert event with entity_name WITHOUT accent
+        sqlx::query(
+            "INSERT INTO index_job_events (job_id, event_type, level, entity_type, entity_name) \
+             VALUES ($1, 'metadata_matched', 'info', 'series', 'Asterix')",
+        )
+        .bind(job_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Run the actual query from get_batch_results
+        let rows = sqlx::query(
+            r#"
+            SELECT ije.id, ije.event_type, ije.entity_id, ije.entity_name, ije.message, ije.detail,
+                   s.id AS series_id
+            FROM index_job_events ije
+            LEFT JOIN series s ON s.library_id = $5 AND LOWER(unaccent(s.name)) = LOWER(unaccent(ije.entity_name))
+            WHERE ije.job_id = $1
+              AND (ije.event_type LIKE 'metadata_%' OR ije.event_type = 'error')
+              AND ($2::text IS NULL OR ije.event_type = $2)
+            ORDER BY ije.entity_name ASC
+            LIMIT $3 OFFSET $4
+            "#,
+        )
+        .bind(job_id)
+        .bind(None::<&str>)
+        .bind(100i64)
+        .bind(0i64)
+        .bind(Some(lib_id))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(rows.len(), 1);
+        let returned_series_id: Option<Uuid> = rows[0].get("series_id");
+        assert_eq!(
+            returned_series_id,
+            Some(series_id),
+            "series_id should be resolved despite accent difference (Astérix vs Asterix)"
+        );
+    }
+
     // -----------------------------------------------------------------------
     // Report endpoint: GROUP BY event_type counts from index_job_events
     // -----------------------------------------------------------------------
@@ -1907,7 +1959,7 @@ mod tests {
             SELECT ije.id, ije.event_type, ije.entity_id, ije.entity_name, ije.message, ije.detail,
                    s.id AS series_id
             FROM index_job_events ije
-            LEFT JOIN series s ON s.library_id = $5 AND LOWER(s.name) = LOWER(ije.entity_name)
+            LEFT JOIN series s ON s.library_id = $5 AND LOWER(unaccent(s.name)) = LOWER(unaccent(ije.entity_name))
             WHERE ije.job_id = $1
               AND (ije.event_type LIKE 'metadata_%' OR ije.event_type = 'error')
               AND ($2::text IS NULL OR ije.event_type = $2)
