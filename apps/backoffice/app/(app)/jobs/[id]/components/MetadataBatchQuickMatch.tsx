@@ -133,13 +133,17 @@ export function MetadataBatchQuickMatch({
                   className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-muted/30 transition-colors"
                 >
                   <Icon name={isExpanded ? "chevronDown" : "chevronRight"} size="sm" className="text-muted-foreground shrink-0 !w-3.5 !h-3.5" />
+                  {r.series_id ? (
                   <Link
-                    href={`/series/${r.series_id ?? ""}`}
+                    href={`/series/${r.series_id}`}
                     onClick={(e) => e.stopPropagation()}
                     className="text-sm font-medium text-primary hover:underline truncate"
                   >
                     {r.series_name}
                   </Link>
+                  ) : (
+                    <span className="text-sm font-medium text-foreground truncate">{r.series_name}</span>
+                  )}
                   <div className="flex items-center gap-2 ml-auto shrink-0">
                     {r.provider_used && (
                       <ProviderIcon provider={r.provider_used} size={14} />

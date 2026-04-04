@@ -68,9 +68,9 @@ export function DownloadDetectionResultsCard({ results, libraryId, qbConfigured,
           {results.map((r) => (
             <div key={r.id} className="rounded-lg border border-success/20 bg-success/5 p-3">
               <div className="flex items-center justify-between gap-2 mb-2">
-                {libraryId ? (
+                {libraryId && r.series_id ? (
                   <Link
-                    href={`/series/${r.series_id ?? encodeURIComponent(r.series_name)}`}
+                    href={`/series/${r.series_id}`}
                     className="font-semibold text-sm text-primary hover:underline truncate"
                   >
                     {r.series_name}
