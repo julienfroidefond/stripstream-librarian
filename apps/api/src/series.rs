@@ -1791,4 +1791,201 @@ mod tests {
         let id3 = get_or_create_series(&pool, lib_id, "Series C").await.unwrap();
         assert_eq!(id1, id3, "current name should also match");
     }
+
+    // ─── Merge series tests ────────────────────────────────────────────
+
+    /// Helper to create a series directly in DB.
+    async fn create_series(pool: &sqlx::PgPool, lib_id: Uuid, name: &str) -> Uuid {
+        sqlx::query_scalar::<_, Uuid>(
+            "INSERT INTO series (id, library_id, name) VALUES (gen_random_uuid(), $1, $2) RETURNING id",
+        )
+        .bind(lib_id)
+        .bind(name)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    /// Helper to create a book assigned to a series.
+    async fn create_book(pool: &sqlx::PgPool, lib_id: Uuid, series_id: Uuid, title: &str) -> Uuid {
+        sqlx::query_scalar::<_, Uuid>(
+            "INSERT INTO books (id, library_id, title, kind, format, series_id) \
+             VALUES (gen_random_uuid(), $1, $2, 'comic', 'cbz', $3) RETURNING id",
+        )
+        .bind(lib_id)
+        .bind(title)
+        .bind(series_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn merge_moves_books_to_target(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "merge_books").await;
+        let target = create_series(&pool, lib_id, "Target").await;
+        let source = create_series(&pool, lib_id, "Source").await;
+
+        create_book(&pool, lib_id, target, "Book A").await;
+        create_book(&pool, lib_id, source, "Book B").await;
+        create_book(&pool, lib_id, source, "Book C").await;
+
+        // Merge source into target
+        let moved = sqlx::query("UPDATE books SET series_id = $1 WHERE series_id = $2")
+            .bind(target)
+            .bind(source)
+            .execute(&pool)
+            .await
+            .unwrap()
+            .rows_affected();
+        assert_eq!(moved, 2);
+
+        // Target now has 3 books
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM books WHERE series_id = $1")
+            .bind(target)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 3);
+
+        // Source has 0 books
+        let source_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM books WHERE series_id = $1")
+            .bind(source)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(source_count, 0);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn merge_moves_metadata_links(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "merge_meta").await;
+        let target = create_series(&pool, lib_id, "Target").await;
+        let source = create_series(&pool, lib_id, "Source").await;
+
+        // Source has a senscritique link, target has none
+        sqlx::query(
+            "INSERT INTO external_metadata_links (library_id, series_id, provider, external_id) \
+             VALUES ($1, $2, 'senscritique', '123')",
+        )
+        .bind(lib_id)
+        .bind(source)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Move metadata links where target doesn't already have one for that provider
+        let moved = sqlx::query(
+            "UPDATE external_metadata_links SET series_id = $1 \
+             WHERE series_id = $2 \
+             AND provider NOT IN (SELECT provider FROM external_metadata_links WHERE series_id = $1)",
+        )
+        .bind(target)
+        .bind(source)
+        .execute(&pool)
+        .await
+        .unwrap()
+        .rows_affected();
+        assert_eq!(moved, 1);
+
+        // Target now has the link
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1",
+        )
+        .bind(target)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn merge_keeps_target_metadata_on_conflict(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "merge_meta_conflict").await;
+        let target = create_series(&pool, lib_id, "Target").await;
+        let source = create_series(&pool, lib_id, "Source").await;
+
+        // Both have a senscritique link
+        for (sid, ext_id) in [(target, "target_123"), (source, "source_456")] {
+            sqlx::query(
+                "INSERT INTO external_metadata_links (library_id, series_id, provider, external_id) \
+                 VALUES ($1, $2, 'senscritique', $3)",
+            )
+            .bind(lib_id)
+            .bind(sid)
+            .bind(ext_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        // Move only non-conflicting providers
+        let moved = sqlx::query(
+            "UPDATE external_metadata_links SET series_id = $1 \
+             WHERE series_id = $2 \
+             AND provider NOT IN (SELECT provider FROM external_metadata_links WHERE series_id = $1)",
+        )
+        .bind(target)
+        .bind(source)
+        .execute(&pool)
+        .await
+        .unwrap()
+        .rows_affected();
+        assert_eq!(moved, 0, "source link should NOT be moved (target already has senscritique)");
+
+        // Delete remaining source links
+        sqlx::query("DELETE FROM external_metadata_links WHERE series_id = $1")
+            .bind(source)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Target still has its original link
+        let ext_id: String = sqlx::query_scalar(
+            "SELECT external_id FROM external_metadata_links WHERE series_id = $1 AND provider = 'senscritique'",
+        )
+        .bind(target)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(ext_id, "target_123", "target's original link should be preserved");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn merge_deletes_source_series(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "merge_delete").await;
+        let target = create_series(&pool, lib_id, "Target").await;
+        let source = create_series(&pool, lib_id, "Source").await;
+
+        // Move books (none in this case)
+        sqlx::query("UPDATE books SET series_id = $1 WHERE series_id = $2")
+            .bind(target)
+            .bind(source)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Delete source
+        sqlx::query("DELETE FROM series WHERE id = $1")
+            .bind(source)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Source no longer exists
+        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM series WHERE id = $1)")
+            .bind(source)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(!exists, "source series should be deleted");
+
+        // Target still exists
+        let target_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM series WHERE id = $1)")
+            .bind(target)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(target_exists, "target series should still exist");
+    }
 }
