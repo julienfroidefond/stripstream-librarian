@@ -9,7 +9,7 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 
 use crate::{
-    batch::{flush_all_batches, BookInsert, BookUpdate, ErrorInsert, FileInsert, FileUpdate},
+    batch::{flush_all_batches, BookInsert, BookUpdate, ErrorInsert, EventInsert, FileInsert, FileUpdate},
     job::is_job_cancelled,
     utils,
     AppState,
@@ -216,6 +216,7 @@ pub async fn scan_library_discovery(
     let mut books_to_insert: Vec<BookInsert> = Vec::with_capacity(BATCH_SIZE);
     let mut files_to_insert: Vec<FileInsert> = Vec::with_capacity(BATCH_SIZE);
     let mut errors_to_insert: Vec<ErrorInsert> = Vec::with_capacity(BATCH_SIZE);
+    let mut events_to_insert: Vec<EventInsert> = Vec::with_capacity(BATCH_SIZE);
 
     // Track discovered directory mtimes for upsert after scan
     let mut new_dir_mtimes: Vec<(String, DateTime<Utc>)> = Vec::new();
@@ -401,6 +402,7 @@ pub async fn scan_library_discovery(
                     &mut books_to_insert,
                     &mut files_to_insert,
                     &mut errors_to_insert,
+                    &mut events_to_insert,
                 )
                 .await?;
                 return Err(anyhow::anyhow!("Job cancelled by user"));
@@ -468,6 +470,17 @@ pub async fn scan_library_discovery(
                 fingerprint,
             });
 
+            events_to_insert.push(EventInsert {
+                job_id,
+                event_type: "book_updated".to_string(),
+                level: "info".to_string(),
+                entity_type: Some("book".to_string()),
+                entity_id: Some(book_id),
+                entity_name: Some(abs_path.clone()),
+                message: Some(format!("Book updated (fingerprint changed): {}", file_name)),
+                detail: None,
+            });
+
             // Also clear thumbnail so it gets regenerated
             if let Err(e) = sqlx::query(
                 "UPDATE books SET thumbnail_path = NULL WHERE id = $1",
@@ -492,6 +505,7 @@ pub async fn scan_library_discovery(
                     &mut books_to_insert,
                     &mut files_to_insert,
                     &mut errors_to_insert,
+                    &mut events_to_insert,
                 )
                 .await?;
             }
@@ -544,6 +558,17 @@ pub async fn scan_library_discovery(
             parse_error: None,
         });
 
+        events_to_insert.push(EventInsert {
+            job_id,
+            event_type: "book_added".to_string(),
+            level: "info".to_string(),
+            entity_type: Some("book".to_string()),
+            entity_id: Some(book_id),
+            entity_name: Some(abs_path.clone()),
+            message: Some(format!("New book discovered: {}", file_name)),
+            detail: None,
+        });
+
         stats.indexed_files += 1;
 
         if books_to_insert.len() >= BATCH_SIZE || files_to_insert.len() >= BATCH_SIZE {
@@ -554,6 +579,7 @@ pub async fn scan_library_discovery(
                 &mut books_to_insert,
                 &mut files_to_insert,
                 &mut errors_to_insert,
+                &mut events_to_insert,
             )
             .await?;
         }
@@ -567,6 +593,7 @@ pub async fn scan_library_discovery(
         &mut books_to_insert,
         &mut files_to_insert,
         &mut errors_to_insert,
+        &mut events_to_insert,
     )
     .await?;
 
@@ -582,7 +609,7 @@ pub async fn scan_library_discovery(
         library_id, library_processed_count, stats.indexed_files, stats.errors
     );
 
-    handle_stale_deletions(state, library_id, root, &existing, &seen, stats).await?;
+    handle_stale_deletions(state, job_id, library_id, root, &existing, &seen, stats).await?;
     upsert_directory_mtimes(state, library_id, &new_dir_mtimes).await;
 
     Ok(())
@@ -600,6 +627,7 @@ fn should_skip_deletions(root_accessible: bool, seen_count: usize, existing_coun
 /// Includes safety checks to prevent mass deletion if volume is unmounted.
 async fn handle_stale_deletions(
     state: &AppState,
+    job_id: Uuid,
     library_id: Uuid,
     root: &Path,
     existing: &HashMap<String, (Uuid, Uuid, String)>,
@@ -626,6 +654,7 @@ async fn handle_stale_deletions(
     }
 
     let mut removed_count = 0usize;
+    let mut removal_events: Vec<EventInsert> = Vec::new();
     for (abs_path, (file_id, book_id, _)) in existing {
         if seen.contains_key(abs_path) {
             continue;
@@ -642,6 +671,23 @@ async fn handle_stale_deletions(
         .await?;
         stats.removed_files += 1;
         removed_count += 1;
+
+        removal_events.push(EventInsert {
+            job_id,
+            event_type: "book_removed".to_string(),
+            level: "info".to_string(),
+            entity_type: Some("book".to_string()),
+            entity_id: Some(*book_id),
+            entity_name: Some(abs_path.clone()),
+            message: Some(format!("Stale book removed: {}", abs_path)),
+            detail: None,
+        });
+    }
+
+    if !removal_events.is_empty() {
+        if let Err(e) = crate::batch::flush_events(&state.pool, &mut removal_events).await {
+            warn!("[SCAN] Failed to flush removal events: {}", e);
+        }
     }
 
     if removed_count > 0 {

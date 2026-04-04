@@ -15,6 +15,7 @@ import { ReadingStatusMatchReportCard, ReadingStatusMatchResultsCard, ReadingSta
 import { DownloadDetectionReportCard, DownloadDetectionErrorsCard } from "./components/DownloadDetectionCards";
 import { DownloadDetectionAvailableResults } from "./components/DownloadDetectionAvailableResults";
 import { JobErrorsCard } from "./components/JobErrorsCard";
+import { JobEventsCard, type JobEvent } from "./components/JobEventsCard";
 
 interface JobDetailPageProps {
   params: Promise<{ id: string }>;
@@ -86,9 +87,10 @@ function formatSpeed(count: number, durationMs: number): string {
 
 export default async function JobDetailPage({ params }: JobDetailPageProps) {
   const { id } = await params;
-  const [job, errors] = await Promise.all([
+  const [job, errors, events] = await Promise.all([
     getJobDetails(id),
     getJobErrors(id),
+    apiFetch<JobEvent[]>(`/index/jobs/${id}/events`).catch(() => []),
   ]);
 
   if (!job) {
@@ -294,6 +296,9 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
 
         {/* Metadata batch results */}
         {isMetadataBatch && <MetadataBatchQuickMatch results={batchResults} libraryId={job.library_id} />}
+
+        {/* Job events */}
+        <JobEventsCard events={events} t={t} locale={locale} />
 
         {/* File errors */}
         <JobErrorsCard errors={errors} t={t} locale={locale} />

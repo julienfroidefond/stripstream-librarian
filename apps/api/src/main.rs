@@ -118,6 +118,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/index/jobs/:id", get(index_jobs::get_job_details))
         .route("/index/jobs/:id/stream", get(index_jobs::stream_job_progress))
         .route("/index/jobs/:id/errors", get(index_jobs::get_job_errors))
+        .route("/index/jobs/:id/indexed-books", get(index_jobs::get_indexed_books))
+        .route("/index/jobs/:id/events", get(index_jobs::get_job_events))
         .route("/index/cancel/:id", axum::routing::post(index_jobs::cancel_job))
         .route("/folders", get(index_jobs::list_folders))
         .route("/admin/users", get(users::list_users).post(users::create_user))

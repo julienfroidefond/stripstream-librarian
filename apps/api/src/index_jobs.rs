@@ -485,6 +485,173 @@ pub async fn get_job_errors(
     Ok(Json(errors))
 }
 
+/// List books that were indexed (created or updated) during a scan/rebuild job.
+/// Uses the job's time window (started_at → finished_at) and library_id to find
+/// books whose updated_at falls within that range.
+#[utoipa::path(
+    get,
+    path = "/index/jobs/{id}/indexed-books",
+    tag = "indexing",
+    params(
+        ("id" = String, Path, description = "Job UUID"),
+    ),
+    responses(
+        (status = 200, description = "List of indexed books"),
+        (status = 404, description = "Job not found"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn get_indexed_books(
+    State(state): State<AppState>,
+    id: axum::extract::Path<Uuid>,
+) -> Result<Json<Vec<IndexedBookDto>>, ApiError> {
+    let job = sqlx::query(
+        "SELECT library_id, started_at, finished_at FROM index_jobs WHERE id = $1",
+    )
+    .bind(id.0)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::not_found("job not found"))?;
+
+    let library_id: Option<Uuid> = job.get("library_id");
+    let started_at: Option<DateTime<Utc>> = job.get("started_at");
+    let finished_at: Option<DateTime<Utc>> = job.get("finished_at");
+
+    let (started_at, finished_at) = match (started_at, finished_at) {
+        (Some(s), Some(f)) => (s, f),
+        _ => return Ok(Json(vec![])),
+    };
+
+    let rows = sqlx::query(
+        "SELECT b.id, b.title, b.volume, s.name AS series_name, b.kind, \
+                bf.abs_path, bf.format \
+         FROM books b \
+         LEFT JOIN series s ON s.id = b.series_id \
+         LEFT JOIN LATERAL (SELECT abs_path, format FROM book_files WHERE book_id = b.id ORDER BY updated_at DESC LIMIT 1) bf ON TRUE \
+         WHERE ($1::uuid IS NULL OR b.library_id = $1) \
+           AND b.updated_at >= $2 AND b.updated_at <= $3 \
+         ORDER BY s.name, b.volume, b.title \
+         LIMIT 500",
+    )
+    .bind(library_id)
+    .bind(started_at)
+    .bind(finished_at)
+    .fetch_all(&state.pool)
+    .await?;
+
+    let books: Vec<IndexedBookDto> = rows
+        .iter()
+        .map(|row| IndexedBookDto {
+            id: row.get("id"),
+            title: row.get("title"),
+            volume: row.get("volume"),
+            series_name: row.get("series_name"),
+            kind: row.get("kind"),
+            file_path: row.get("abs_path"),
+            format: row.get("format"),
+        })
+        .collect();
+
+    Ok(Json(books))
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct IndexedBookDto {
+    #[schema(value_type = String)]
+    pub id: Uuid,
+    pub title: String,
+    pub volume: Option<i32>,
+    pub series_name: Option<String>,
+    pub kind: String,
+    pub file_path: Option<String>,
+    pub format: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct JobEventDto {
+    #[schema(value_type = String)]
+    pub id: Uuid,
+    #[schema(value_type = String)]
+    pub job_id: Uuid,
+    pub event_type: String,
+    pub level: String,
+    pub entity_type: Option<String>,
+    #[schema(value_type = Option<String>)]
+    pub entity_id: Option<Uuid>,
+    pub entity_name: Option<String>,
+    pub message: Option<String>,
+    pub detail: Option<serde_json::Value>,
+    #[schema(value_type = String)]
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+pub struct JobEventsQuery {
+    pub level: Option<String>,
+    pub event_type: Option<String>,
+    pub limit: Option<i64>,
+}
+
+/// List events for a specific job
+#[utoipa::path(
+    get,
+    path = "/index/jobs/{id}/events",
+    tag = "indexing",
+    params(
+        ("id" = String, Path, description = "Job UUID"),
+        ("level" = Option<String>, Query, description = "Filter by level: info, warning, error"),
+        ("event_type" = Option<String>, Query, description = "Filter by event_type"),
+        ("limit" = Option<i64>, Query, description = "Max results (default 500)"),
+    ),
+    responses(
+        (status = 200, body = Vec<JobEventDto>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin scope required"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn get_job_events(
+    State(state): State<AppState>,
+    id: axum::extract::Path<Uuid>,
+    axum::extract::Query(query): axum::extract::Query<JobEventsQuery>,
+) -> Result<Json<Vec<JobEventDto>>, ApiError> {
+    let limit = query.limit.unwrap_or(500).min(5000);
+
+    let rows = sqlx::query(
+        "SELECT id, job_id, event_type, level, entity_type, entity_id, entity_name, message, detail, created_at \
+         FROM index_job_events \
+         WHERE job_id = $1 \
+           AND ($2::text IS NULL OR level = $2) \
+           AND ($3::text IS NULL OR event_type = $3) \
+         ORDER BY created_at ASC \
+         LIMIT $4",
+    )
+    .bind(id.0)
+    .bind(&query.level)
+    .bind(&query.event_type)
+    .bind(limit)
+    .fetch_all(&state.pool)
+    .await?;
+
+    let events: Vec<JobEventDto> = rows
+        .into_iter()
+        .map(|row| JobEventDto {
+            id: row.get("id"),
+            job_id: row.get("job_id"),
+            event_type: row.get("event_type"),
+            level: row.get("level"),
+            entity_type: row.get("entity_type"),
+            entity_id: row.get("entity_id"),
+            entity_name: row.get("entity_name"),
+            message: row.get("message"),
+            detail: row.get("detail"),
+            created_at: row.get("created_at"),
+        })
+        .collect();
+
+    Ok(Json(events))
+}
+
 /// Stream job progress via SSE
 #[utoipa::path(
     get,
@@ -643,5 +810,179 @@ mod tests {
         assert_eq!(resp.id, job_id);
         assert!(resp.library_id.is_none());
         assert!(resp.library_name.is_none(), "library_name should be null when no library_id");
+    }
+
+    // ── Helper to create a job and insert events ──────────────────────
+
+    async fn create_test_job(pool: &sqlx::PgPool) -> Uuid {
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, NULL, 'scan', 'running')",
+        )
+        .bind(job_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        job_id
+    }
+
+    async fn insert_event(
+        pool: &sqlx::PgPool,
+        job_id: Uuid,
+        event_type: &str,
+        level: &str,
+        entity_type: Option<&str>,
+        entity_name: Option<&str>,
+        message: Option<&str>,
+    ) {
+        sqlx::query(
+            "INSERT INTO index_job_events (job_id, event_type, level, entity_type, entity_name, message) \
+             VALUES ($1, $2, $3, $4, $5, $6)",
+        )
+        .bind(job_id)
+        .bind(event_type)
+        .bind(level)
+        .bind(entity_type)
+        .bind(entity_name)
+        .bind(message)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    const EVENTS_SQL: &str =
+        "SELECT id, job_id, event_type, level, entity_type, entity_id, entity_name, message, detail, created_at \
+         FROM index_job_events \
+         WHERE job_id = $1 \
+           AND ($2::text IS NULL OR level = $2) \
+           AND ($3::text IS NULL OR event_type = $3) \
+         ORDER BY created_at ASC \
+         LIMIT $4";
+
+    fn map_event_rows(rows: Vec<sqlx::postgres::PgRow>) -> Vec<super::JobEventDto> {
+        use sqlx::Row;
+        rows.into_iter()
+            .map(|row| super::JobEventDto {
+                id: row.get("id"),
+                job_id: row.get("job_id"),
+                event_type: row.get("event_type"),
+                level: row.get("level"),
+                entity_type: row.get("entity_type"),
+                entity_id: row.get("entity_id"),
+                entity_name: row.get("entity_name"),
+                message: row.get("message"),
+                detail: row.get("detail"),
+                created_at: row.get("created_at"),
+            })
+            .collect()
+    }
+
+    // ── get_job_events tests ──────────────────────────────────────────
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_job_events_returns_all_events_ordered(pool: sqlx::PgPool) {
+        let job_id = create_test_job(&pool).await;
+
+        insert_event(&pool, job_id, "book_added", "info", Some("book"), Some("Book A"), None).await;
+        insert_event(&pool, job_id, "book_updated", "warning", Some("book"), Some("Book B"), Some("cover missing")).await;
+        insert_event(&pool, job_id, "parse_error", "error", Some("book"), Some("Book C"), Some("corrupt archive")).await;
+
+        let rows = sqlx::query(EVENTS_SQL)
+            .bind(job_id)
+            .bind(None::<String>) // no level filter
+            .bind(None::<String>) // no event_type filter
+            .bind(500_i64)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+
+        let events = map_event_rows(rows);
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].event_type, "book_added");
+        assert_eq!(events[1].event_type, "book_updated");
+        assert_eq!(events[2].event_type, "parse_error");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_job_events_filter_by_level(pool: sqlx::PgPool) {
+        let job_id = create_test_job(&pool).await;
+
+        insert_event(&pool, job_id, "book_added", "info", None, None, None).await;
+        insert_event(&pool, job_id, "book_updated", "warning", None, None, None).await;
+        insert_event(&pool, job_id, "parse_error", "error", None, None, Some("bad file")).await;
+        insert_event(&pool, job_id, "thumbnail_error", "error", None, None, Some("bad image")).await;
+
+        let rows = sqlx::query(EVENTS_SQL)
+            .bind(job_id)
+            .bind(Some("error"))
+            .bind(None::<String>)
+            .bind(500_i64)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+
+        let events = map_event_rows(rows);
+        assert_eq!(events.len(), 2);
+        assert!(events.iter().all(|e| e.level == "error"));
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_job_events_filter_by_event_type(pool: sqlx::PgPool) {
+        let job_id = create_test_job(&pool).await;
+
+        insert_event(&pool, job_id, "book_added", "info", Some("book"), Some("A"), None).await;
+        insert_event(&pool, job_id, "book_added", "info", Some("book"), Some("B"), None).await;
+        insert_event(&pool, job_id, "book_updated", "info", Some("book"), Some("C"), None).await;
+
+        let rows = sqlx::query(EVENTS_SQL)
+            .bind(job_id)
+            .bind(None::<String>)
+            .bind(Some("book_added"))
+            .bind(500_i64)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+
+        let events = map_event_rows(rows);
+        assert_eq!(events.len(), 2);
+        assert!(events.iter().all(|e| e.event_type == "book_added"));
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_job_events_with_limit(pool: sqlx::PgPool) {
+        let job_id = create_test_job(&pool).await;
+
+        for i in 0..10 {
+            insert_event(&pool, job_id, "book_added", "info", None, Some(&format!("Book {i}")), None).await;
+        }
+
+        let rows = sqlx::query(EVENTS_SQL)
+            .bind(job_id)
+            .bind(None::<String>)
+            .bind(None::<String>)
+            .bind(3_i64)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+
+        let events = map_event_rows(rows);
+        assert_eq!(events.len(), 3);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_job_events_empty_for_job_with_no_events(pool: sqlx::PgPool) {
+        let job_id = create_test_job(&pool).await;
+
+        let rows = sqlx::query(EVENTS_SQL)
+            .bind(job_id)
+            .bind(None::<String>)
+            .bind(None::<String>)
+            .bind(500_i64)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+
+        let events = map_event_rows(rows);
+        assert!(events.is_empty());
     }
 }

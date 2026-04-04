@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::{job::is_job_cancelled, utils, AppState};
+use crate::{batch::EventInsert, job::is_job_cancelled, utils, AppState};
 
 #[derive(Clone)]
 struct ThumbnailConfig {
@@ -285,6 +285,29 @@ fn resize_raw_to_thumbnail(
     Ok(thumb_path.to_string_lossy().to_string())
 }
 
+/// Insert a single event into the index_job_events table.
+async fn insert_event(pool: &sqlx::PgPool, event: &EventInsert) {
+    if let Err(e) = sqlx::query(
+        r#"
+        INSERT INTO index_job_events (job_id, event_type, level, entity_type, entity_id, entity_name, message, detail)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "#,
+    )
+    .bind(event.job_id)
+    .bind(&event.event_type)
+    .bind(&event.level)
+    .bind(&event.entity_type)
+    .bind(event.entity_id)
+    .bind(&event.entity_name)
+    .bind(&event.message)
+    .bind(&event.detail)
+    .execute(pool)
+    .await
+    {
+        warn!("[ANALYZER] Failed to insert event: {}", e);
+    }
+}
+
 fn book_format_from_str(s: &str) -> Option<BookFormat> {
     match s {
         "cbz" => Some(BookFormat::Cbz),
@@ -485,10 +508,30 @@ pub async fn analyze_library_books(
                             .bind(e.to_string())
                             .execute(&pool)
                             .await;
+                            insert_event(&pool, &EventInsert {
+                                job_id,
+                                event_type: "error".to_string(),
+                                level: "error".to_string(),
+                                entity_type: Some("book".to_string()),
+                                entity_id: Some(book_id),
+                                entity_name: Some(local_path.clone()),
+                                message: Some(format!("Extraction failed: {}", e)),
+                                detail: None,
+                            }).await;
                             return None;
                         }
                         Ok(Err(e)) => {
                             warn!(target: "extraction", "[EXTRACTION] spawn error: {} — {}", file_name, e);
+                            insert_event(&pool, &EventInsert {
+                                job_id,
+                                event_type: "error".to_string(),
+                                level: "error".to_string(),
+                                entity_type: Some("book".to_string()),
+                                entity_id: Some(book_id),
+                                entity_name: Some(local_path.clone()),
+                                message: Some(format!("Spawn error: {}", e)),
+                                detail: None,
+                            }).await;
                             return None;
                         }
                         Err(_) => {
@@ -500,6 +543,16 @@ pub async fn analyze_library_books(
                             .bind(format!("analyze_book timed out after {}s", timeout_secs))
                             .execute(&pool)
                             .await;
+                            insert_event(&pool, &EventInsert {
+                                job_id,
+                                event_type: "error".to_string(),
+                                level: "error".to_string(),
+                                entity_type: Some("book".to_string()),
+                                entity_id: Some(book_id),
+                                entity_name: Some(local_path.clone()),
+                                message: Some(format!("Extraction timed out after {}s", timeout_secs)),
+                                detail: None,
+                            }).await;
                             return None;
                         }
                     };
@@ -523,6 +576,16 @@ pub async fn analyze_library_books(
                         {
                             warn!(target: "extraction", "[EXTRACTION] DB page_count update failed for {}: {}", file_name, e);
                         }
+                        insert_event(&pool, &EventInsert {
+                            job_id,
+                            event_type: "pages_extracted".to_string(),
+                            level: "info".to_string(),
+                            entity_type: Some("book".to_string()),
+                            entity_id: Some(book_id),
+                            entity_name: Some(local_path.clone()),
+                            message: Some(format!("Extracted {} pages", page_count)),
+                            detail: Some(serde_json::json!({"page_count": page_count})),
+                        }).await;
                         let processed = extracted_count.fetch_add(1, Ordering::Relaxed) + 1;
                         let percent = (processed as f64 / total as f64 * 50.0) as i32;
                         if let Err(e) = sqlx::query(
@@ -574,6 +637,17 @@ pub async fn analyze_library_books(
                         warn!("[ANALYZER] DB page_count update failed for book {}: {}", book_id, e);
                         return None;
                     }
+
+                    insert_event(&pool, &EventInsert {
+                        job_id,
+                        event_type: "pages_extracted".to_string(),
+                        level: "info".to_string(),
+                        entity_type: Some("book".to_string()),
+                        entity_id: Some(book_id),
+                        entity_name: Some(local_path.clone()),
+                        message: Some(format!("Extracted {} pages", page_count)),
+                        detail: Some(serde_json::json!({"page_count": page_count})),
+                    }).await;
 
                     let processed = extracted_count.fetch_add(1, Ordering::Relaxed) + 1;
                     let percent = (processed as f64 / total as f64 * 50.0) as i32; // first 50%
@@ -695,6 +769,17 @@ pub async fn analyze_library_books(
                     warn!("[ANALYZER] DB thumbnail update failed for book {}: {}", book_id, e);
                     return;
                 }
+
+                insert_event(&pool, &EventInsert {
+                    job_id,
+                    event_type: "thumbnail_generated".to_string(),
+                    level: "info".to_string(),
+                    entity_type: Some("book".to_string()),
+                    entity_id: Some(book_id),
+                    entity_name: None,
+                    message: Some(format!("Thumbnail generated: {}", thumb_path)),
+                    detail: None,
+                }).await;
 
                 let processed = resize_count.fetch_add(1, Ordering::Relaxed) + 1;
                 let percent =
