@@ -314,7 +314,35 @@ pub async fn scan_library_discovery(
             let abs_path_local = local_path.clone();
             let abs_path = utils::unmap_libraries_path(&abs_path_local);
             let lookup_path = utils::remap_libraries_path(&abs_path);
-            seen.insert(lookup_path, true);
+            seen.insert(lookup_path.clone(), true);
+
+            // Check if title needs updating (e.g., file was renamed since last scan)
+            if let Some((_file_id, book_id, _)) = existing.get(&lookup_path).cloned() {
+                let Some(format) = detect_format(&path) else { continue; };
+                let parsed = parse_metadata_fast(&path, format, root);
+                let db_title: Option<String> = sqlx::query_scalar("SELECT title FROM books WHERE id = $1")
+                    .bind(book_id)
+                    .fetch_optional(&state.pool)
+                    .await?;
+                if let Some(ref db_title) = db_title {
+                    if db_title != &parsed.title {
+                        info!("[SCAN] Title mismatch (skipped dir) for {:?}: DB='{}' vs parsed='{}', updating",
+                            path.file_name().unwrap_or_default(), db_title, parsed.title);
+                        let update_series_id = if let Some(ref series_name) = parsed.series {
+                            Some(get_or_create_series_id(&state.pool, library_id, series_name, &mut series_map).await?)
+                        } else {
+                            None
+                        };
+                        sqlx::query("UPDATE books SET title = $1, volume = $2, series_id = COALESCE($3, series_id), updated_at = NOW() WHERE id = $4")
+                            .bind(&parsed.title)
+                            .bind(parsed.volume)
+                            .bind(update_series_id)
+                            .bind(book_id)
+                            .execute(&state.pool)
+                            .await?;
+                    }
+                }
+            }
             continue;
         }
 
@@ -438,7 +466,7 @@ pub async fn scan_library_discovery(
                     .await?;
                 if let Some(ref db_title) = db_title {
                     if db_title != &parsed.title {
-                        debug!("[SCAN] Title mismatch for {}: DB='{}' vs parsed='{}', updating", file_name, db_title, parsed.title);
+                        info!("[SCAN] Title mismatch for {}: DB='{}' vs parsed='{}', updating", file_name, db_title, parsed.title);
                         let update_series_id = if let Some(ref series_name) = parsed.series {
                             Some(
                                 get_or_create_series_id(&state.pool, library_id, series_name, &mut series_map)
