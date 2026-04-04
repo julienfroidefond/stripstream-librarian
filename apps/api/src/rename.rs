@@ -407,7 +407,7 @@ pub async fn rename_books(
                     _ => (String::new(), Utc::now()),
                 };
 
-                // Update DB
+                // Update book_files
                 let file_id = file_id_map.get(&entry.book_id);
                 if let Some(fid) = file_id {
                     sqlx::query(
@@ -424,6 +424,22 @@ pub async fn rename_books(
                         e
                     })?;
                 }
+
+                // Update book title and volume from the new filename
+                let new_stem = new_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                let new_volume = parsers::extract_volume(new_stem);
+                sqlx::query(
+                    "UPDATE books SET title = $1, volume = $2, updated_at = NOW() WHERE id = $3",
+                )
+                .bind(new_stem)
+                .bind(new_volume)
+                .bind(entry.book_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| {
+                    tracing::error!("[RENAME] Book update failed for {}: {}", entry.new_filename, e);
+                    e
+                })?;
             }
             Ok(Err(e)) => {
                 tracing::error!(
@@ -794,5 +810,41 @@ mod tests {
         let result = apply_template("{series_name} - T{volume_padded}", "Frieren", &book, 10);
         // volume_padded is None → entire segment with missing var is removed
         assert_eq!(result, "Frieren");
+    }
+
+    // ─── Post-rename DB update: title + volume extraction ───────────────
+
+    #[test]
+    fn post_rename_extracts_title_and_volume() {
+        // After rename, the new filename stem becomes the book title
+        let new_path = std::path::Path::new("/libraries/BD/Frieren/Frieren - T05.cbz");
+        let new_stem = new_path.file_stem().and_then(|s| s.to_str()).unwrap();
+        let new_volume = parsers::extract_volume(new_stem);
+        assert_eq!(new_stem, "Frieren - T05");
+        assert_eq!(new_volume, Some(5));
+    }
+
+    #[test]
+    fn post_rename_extracts_volume_from_tome_pattern() {
+        let new_path = std::path::Path::new("/libraries/BD/Series/Series - Tome 12.cbz");
+        let new_stem = new_path.file_stem().and_then(|s| s.to_str()).unwrap();
+        let new_volume = parsers::extract_volume(new_stem);
+        assert_eq!(new_volume, Some(12));
+    }
+
+    #[test]
+    fn post_rename_no_volume_in_special_edition() {
+        let new_path = std::path::Path::new("/libraries/BD/Series/Series - Special.cbz");
+        let new_stem = new_path.file_stem().and_then(|s| s.to_str()).unwrap();
+        let new_volume = parsers::extract_volume(new_stem);
+        assert_eq!(new_volume, None);
+    }
+
+    #[test]
+    fn post_rename_padded_volume() {
+        let new_path = std::path::Path::new("/libraries/BD/One Piece/One Piece - T001.cbz");
+        let new_stem = new_path.file_stem().and_then(|s| s.to_str()).unwrap();
+        let new_volume = parsers::extract_volume(new_stem);
+        assert_eq!(new_volume, Some(1));
     }
 }
