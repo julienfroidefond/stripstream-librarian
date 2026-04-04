@@ -2,7 +2,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startMetadataRefreshAll, startReadingStatusMatch, startReadingStatusPush, startDownloadDetection, apiFetch, IndexJobDto, LibraryDto } from "@/lib/api";
 import { JobsList } from "@/app/components/JobsList";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, FormField, FormSelect } from "@/app/components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/app/components/ui";
+import { LibraryBadgeSelector } from "./components/LibraryBadgeSelector";
 import { getServerTranslations } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
@@ -134,17 +135,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
           <CardDescription>{t("jobs.startJobDescription")}</CardDescription>
         </CardHeader>
         <CardContent>
-          <form>
-            <div className="mb-6">
-              <FormField className="max-w-xs">
-                <FormSelect name="library_id" defaultValue="">
-                  <option value="">{t("jobs.allLibraries")}</option>
-                  {libraries.map((lib) => (
-                    <option key={lib.id} value={lib.id}>{lib.name}</option>
-                  ))}
-                </FormSelect>
-              </FormField>
-            </div>
+          <LibraryBadgeSelector libraries={libraries.map(l => ({ id: l.id, name: l.name }))}>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
               {/* Indexation group */}
@@ -330,7 +321,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
               </div>}
 
             </div>
-          </form>
+          </LibraryBadgeSelector>
         </CardContent>
       </Card>
 

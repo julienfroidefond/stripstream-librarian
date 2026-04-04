@@ -104,6 +104,7 @@ const jobTypeStyles: Record<string, string> = {
   metadata_refresh_all: "bg-orange-500/80 text-white",
   reading_status_match: "bg-amber-500/80 text-white",
   reading_status_push: "bg-yellow-500/80 text-white",
+  scan: "bg-cyan-500/80 text-white",
   download_detection: "bg-indigo-500/80 text-white",
 };
 
@@ -129,6 +130,7 @@ export function JobTypeBadge({ type, className = "" }: JobTypeBadgeProps) {
     metadata_refresh_all: t("jobType.metadata_refresh_all"),
     reading_status_match: t("jobType.reading_status_match"),
     reading_status_push: t("jobType.reading_status_push"),
+    scan: t("jobType.scan"),
     download_detection: t("jobType.download_detection"),
   };
   const label = jobTypeLabels[key] ?? type;
