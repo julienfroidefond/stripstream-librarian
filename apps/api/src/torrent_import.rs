@@ -1303,6 +1303,31 @@ mod tests {
     }
 
     #[test]
+    fn build_target_from_tome_reference() {
+        // Reference uses "Tome" pattern
+        let result = build_target_filename(
+            "/libraries/bd/Kaiju no8/Kaiju no8 - Tome 05.cbz",
+            5,
+            9,
+            "cbz",
+        );
+        assert_eq!(result, Some("Kaiju no8 - Tome 09.cbz".to_string()));
+    }
+
+    #[test]
+    fn build_target_from_tome_with_subtitle_reference() {
+        // Reference with "Tome XX - Subtitle"
+        let result = build_target_filename(
+            "/libraries/bd/Series/Tome 19 - Pas de Nol.pdf",
+            19,
+            20,
+            "pdf",
+        );
+        // Should produce "Tome 20" (truncates subtitle after volume)
+        assert_eq!(result, Some("Tome 20.pdf".to_string()));
+    }
+
+    #[test]
     fn no_match_returns_none() {
         // Volume 5 not present in "Series - T01.cbz" whose reference_volume is 99
         let result = build_target_filename(

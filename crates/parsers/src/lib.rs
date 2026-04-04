@@ -1486,10 +1486,25 @@ mod tests {
     #[test]
     fn extract_volume_tome_prefix() {
         assert_eq!(extract_volume("Naruto Tome 3"), Some(3));
-        // "Tome" matches via T pattern first (T followed by digits after "ome")
-        // but the T pattern matches "Tome" → the 'T' in "Tome" triggers T(\d+) only
-        // if followed by digits directly. Let's verify actual behavior:
         assert_eq!(extract_volume("Asterix Tome 12"), Some(12));
+    }
+
+    #[test]
+    fn extract_volume_tome_standalone() {
+        // Just "Tome XX" without series name
+        assert_eq!(extract_volume("Tome 05"), Some(5));
+    }
+
+    #[test]
+    fn extract_volume_tome_with_series_and_dash() {
+        // "Kaiju no8 - Tome 9"
+        assert_eq!(extract_volume("Kaiju no8 - Tome 9"), Some(9));
+    }
+
+    #[test]
+    fn extract_volume_tome_with_subtitle() {
+        // "Tome 19 - Pas de Nol pour le père Grommel"
+        assert_eq!(extract_volume("Tome 19 - Pas de Nol pour le père Grommel"), Some(19));
     }
 
     #[test]

@@ -1068,6 +1068,24 @@ mod tests {
     }
 
     #[test]
+    fn extract_tome_space_standalone() {
+        // "Tome 05.cbz" — just "Tome XX" without series name
+        assert_eq!(extract_volumes_from_title("Tome 05.cbz"), vec![5]);
+    }
+
+    #[test]
+    fn extract_tome_in_series_title() {
+        // "Kaiju no8 - Tome 9.cbz"
+        assert_eq!(extract_volumes_from_title("Kaiju no8 - Tome 9.cbz"), vec![9]);
+    }
+
+    #[test]
+    fn extract_tome_with_subtitle() {
+        // "Tome 19 - Pas de Nol pour le père Grommel.pdf"
+        assert_eq!(extract_volumes_from_title("Tome 19 - Pas de Nol pour le père Grommel.pdf"), vec![19]);
+    }
+
+    #[test]
     fn extract_v_prefix_not_in_brackets() {
         // "v03" outside brackets should be extracted
         assert_eq!(sorted(extract_volumes_from_title("Series v03 [1080p]")), vec![3]);
