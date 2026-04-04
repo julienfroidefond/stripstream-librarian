@@ -639,6 +639,7 @@ pub(crate) async fn process_download_detection(
         // Skip unclassified
         if series_name == "unclassified" {
             insert_result(pool, job_id, library_id, series_id_map.get(series_name).copied(), "no_metadata", 0, None, None).await;
+            insert_event(pool, job_id, "no_metadata_link", "info", Some(series_name), None, None).await;
             continue;
         }
 
@@ -647,6 +648,7 @@ pub(crate) async fn process_download_detection(
             Some(id) => *id,
             None => {
                 insert_result(pool, job_id, library_id, series_id_map.get(series_name).copied(), "no_metadata", 0, None, None).await;
+                insert_event(pool, job_id, "no_metadata_link", "info", Some(series_name), None, None).await;
                 continue;
             }
         };
@@ -662,6 +664,7 @@ pub(crate) async fn process_download_detection(
 
         if missing_rows.is_empty() {
             insert_result(pool, job_id, library_id, series_id_map.get(series_name).copied(), "no_missing", 0, None, None).await;
+            insert_event(pool, job_id, "no_missing_volumes", "info", Some(series_name), None, None).await;
             // Series is complete, remove from available_downloads
             if let Some(&sid) = series_id_map.get(series_name) {
                 let _ = sqlx::query("DELETE FROM available_downloads WHERE series_id = $1")
@@ -700,6 +703,7 @@ pub(crate) async fn process_download_detection(
                     None,
                 )
                 .await;
+                insert_event(pool, job_id, "downloads_found", "info", Some(series_name), None, Some(serde_json::json!({"release_count": matched_releases.len(), "missing_count": missing_count}))).await;
                 // UPSERT into available_downloads — merge new releases with existing ones
                 if let (Some(ref rj), Some(&sid)) = (&releases_json, series_id_map.get(series_name)) {
                     let _ = sqlx::query(
@@ -720,6 +724,7 @@ pub(crate) async fn process_download_detection(
             }
             Ok(_) => {
                 insert_result(pool, job_id, library_id, series_id_map.get(series_name).copied(), "not_found", missing_count, None, None).await;
+                insert_event(pool, job_id, "downloads_not_found", "info", Some(series_name), None, None).await;
                 // Don't delete — keep previous results even if this run found nothing
                 // Only update missing_count
                 if let Some(&sid) = series_id_map.get(series_name) {
@@ -735,6 +740,7 @@ pub(crate) async fn process_download_detection(
             Err(e) => {
                 warn!("[DOWNLOAD_DETECTION] series '{series_name}': {e}");
                 insert_result(pool, job_id, library_id, series_id_map.get(series_name).copied(), "error", missing_count, None, Some(&e)).await;
+                insert_event(pool, job_id, "error", "error", Some(series_name), Some(&e), None).await;
             }
         }
     }
@@ -871,6 +877,28 @@ async fn search_prowlarr_for_series(
         .collect();
 
     Ok(matched)
+}
+
+async fn insert_event(
+    pool: &PgPool,
+    job_id: Uuid,
+    event_type: &str,
+    level: &str,
+    entity_name: Option<&str>,
+    message: Option<&str>,
+    detail: Option<serde_json::Value>,
+) {
+    let _ = sqlx::query(
+        "INSERT INTO index_job_events (job_id, event_type, level, entity_name, message, detail) VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(job_id)
+    .bind(event_type)
+    .bind(level)
+    .bind(entity_name)
+    .bind(message)
+    .bind(detail)
+    .execute(pool)
+    .await;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1134,6 +1162,83 @@ mod tests {
         assert_eq!(rows.len(), 1);
         let returned_series_id: Option<Uuid> = rows[0].get("series_id");
         assert_eq!(returned_series_id, Some(series_id), "series_id should match the created series");
+    }
+
+    // -----------------------------------------------------------------------
+    // insert_event tests
+    // -----------------------------------------------------------------------
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn event_downloads_found_written(pool: sqlx::PgPool) {
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'DlEvtLib', '/libraries/dl_evt')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'download_detection', 'running', NOW())",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let detail = serde_json::json!({"release_count": 3, "missing_count": 5});
+        super::insert_event(&pool, job_id, "downloads_found", "info", Some("Naruto"), None, Some(detail.clone())).await;
+
+        let row = sqlx::query(
+            "SELECT event_type, level, entity_name, message, detail FROM index_job_events WHERE job_id = $1",
+        )
+        .bind(job_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(row.get::<String, _>("event_type"), "downloads_found");
+        assert_eq!(row.get::<String, _>("level"), "info");
+        assert_eq!(row.get::<Option<String>, _>("entity_name"), Some("Naruto".to_string()));
+        let stored_detail: serde_json::Value = row.get("detail");
+        assert_eq!(stored_detail["release_count"], 3);
+        assert_eq!(stored_detail["missing_count"], 5);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn event_error_has_error_level(pool: sqlx::PgPool) {
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'DlEvtErrLib', '/libraries/dl_evt_err')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'download_detection', 'running', NOW())",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        super::insert_event(&pool, job_id, "error", "error", Some("FailedSeries"), Some("search timeout"), None).await;
+
+        let row = sqlx::query(
+            "SELECT event_type, level, entity_name, message FROM index_job_events WHERE job_id = $1",
+        )
+        .bind(job_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(row.get::<String, _>("event_type"), "error");
+        assert_eq!(row.get::<String, _>("level"), "error");
+        assert_eq!(row.get::<Option<String>, _>("entity_name"), Some("FailedSeries".to_string()));
+        assert_eq!(row.get::<Option<String>, _>("message"), Some("search timeout".to_string()));
     }
 
     /// Regression: series_id should be None when series_id column is NULL.

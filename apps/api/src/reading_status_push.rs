@@ -496,6 +496,7 @@ pub async fn process_reading_status_push(
                 Some(series.anilist_id), series.anilist_title.as_deref(), series.anilist_url.as_deref(),
                 None, None, None,
             ).await;
+            insert_event(pool, job_id, "status_no_books", "info", Some(&series.series_name), None, None).await;
             tokio::time::sleep(Duration::from_millis(700)).await;
             continue;
         }
@@ -531,6 +532,7 @@ pub async fn process_reading_status_push(
                     Some(series.anilist_id), series.anilist_title.as_deref(), series.anilist_url.as_deref(),
                     Some(anilist_status), Some(progress_volumes), None,
                 ).await;
+                insert_event(pool, job_id, "status_pushed", "info", Some(&series.series_name), None, Some(serde_json::json!({"anilist_status": anilist_status, "progress": progress_volumes}))).await;
             }
             Err(e) if e.contains("429") || e.contains("Too Many Requests") => {
                 warn!("[READING_STATUS_PUSH] rate limit hit for '{}', waiting 10s before retry", series.series_name);
@@ -549,6 +551,7 @@ pub async fn process_reading_status_push(
                             Some(series.anilist_id), series.anilist_title.as_deref(), series.anilist_url.as_deref(),
                             Some(anilist_status), Some(progress_volumes), None,
                         ).await;
+                        insert_event(pool, job_id, "status_pushed", "info", Some(&series.series_name), None, Some(serde_json::json!({"anilist_status": anilist_status, "progress": progress_volumes}))).await;
                     }
                     Err(e2) => {
                         return Err(format!(
@@ -564,6 +567,7 @@ pub async fn process_reading_status_push(
                     Some(series.anilist_id), series.anilist_title.as_deref(), series.anilist_url.as_deref(),
                     None, None, Some(&e),
                 ).await;
+                insert_event(pool, job_id, "error", "error", Some(&series.series_name), Some(&e), None).await;
             }
         }
 
@@ -640,6 +644,28 @@ pub async fn process_reading_status_push(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+async fn insert_event(
+    pool: &PgPool,
+    job_id: Uuid,
+    event_type: &str,
+    level: &str,
+    entity_name: Option<&str>,
+    message: Option<&str>,
+    detail: Option<serde_json::Value>,
+) {
+    let _ = sqlx::query(
+        "INSERT INTO index_job_events (job_id, event_type, level, entity_name, message, detail) VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(job_id)
+    .bind(event_type)
+    .bind(level)
+    .bind(entity_name)
+    .bind(message)
+    .bind(detail)
+    .execute(pool)
+    .await;
+}
 
 async fn push_to_anilist(
     token: &str,
@@ -757,4 +783,83 @@ async fn is_job_cancelled(pool: &PgPool, job_id: Uuid) -> bool {
         .flatten()
         .as_deref()
         == Some("cancelled")
+}
+
+#[cfg(test)]
+mod tests {
+    use sqlx::Row;
+    use uuid::Uuid;
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn event_status_pushed_written(pool: sqlx::PgPool) {
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'PushEvtLib', '/libraries/push_evt')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'reading_status_push', 'running', NOW())",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let detail = serde_json::json!({"anilist_status": "CURRENT", "progress": 5});
+        super::insert_event(&pool, job_id, "status_pushed", "info", Some("One Piece"), None, Some(detail.clone())).await;
+
+        let row = sqlx::query(
+            "SELECT event_type, level, entity_name, message, detail FROM index_job_events WHERE job_id = $1",
+        )
+        .bind(job_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(row.get::<String, _>("event_type"), "status_pushed");
+        assert_eq!(row.get::<String, _>("level"), "info");
+        assert_eq!(row.get::<Option<String>, _>("entity_name"), Some("One Piece".to_string()));
+        let stored_detail: serde_json::Value = row.get("detail");
+        assert_eq!(stored_detail["anilist_status"], "CURRENT");
+        assert_eq!(stored_detail["progress"], 5);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn event_error_has_error_level(pool: sqlx::PgPool) {
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'PushEvtErrLib', '/libraries/push_evt_err')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'reading_status_push', 'running', NOW())",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        super::insert_event(&pool, job_id, "error", "error", Some("FailedSeries"), Some("rate limit hit"), None).await;
+
+        let row = sqlx::query(
+            "SELECT event_type, level, entity_name, message FROM index_job_events WHERE job_id = $1",
+        )
+        .bind(job_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(row.get::<String, _>("event_type"), "error");
+        assert_eq!(row.get::<String, _>("level"), "error");
+        assert_eq!(row.get::<Option<String>, _>("entity_name"), Some("FailedSeries".to_string()));
+        assert_eq!(row.get::<Option<String>, _>("message"), Some("rate limit hit".to_string()));
+    }
 }

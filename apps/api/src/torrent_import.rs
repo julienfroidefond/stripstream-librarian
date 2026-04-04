@@ -506,6 +506,26 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
             .execute(&pool)
             .await?;
 
+            // Insert events for each imported file
+            for imp in &imported {
+                let detail = serde_json::json!({
+                    "source_filename": std::path::Path::new(&imp.source)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(""),
+                    "volumes": [imp.volume],
+                });
+                let _ = sqlx::query(
+                    "INSERT INTO index_job_events (job_id, event_type, level, entity_type, entity_name, detail) \
+                     VALUES ($1, 'file_imported', 'info', 'book', $2, $3)",
+                )
+                .bind(scan_job_id)
+                .bind(&imp.destination)
+                .bind(detail)
+                .execute(&pool)
+                .await;
+            }
+
             // Refresh metadata for this series if it has an approved metadata link
             let link_row = sqlx::query(
                 "SELECT eml.id, eml.provider, eml.external_id FROM external_metadata_links eml \

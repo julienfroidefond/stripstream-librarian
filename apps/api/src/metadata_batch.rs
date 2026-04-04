@@ -506,6 +506,7 @@ pub(crate) async fn process_metadata_batch(
                 },
             )
             .await;
+            insert_event(pool, job_id, "metadata_already_linked", "info", Some("series"), Some(series_name), None, None).await;
             continue;
         }
 
@@ -538,6 +539,7 @@ pub(crate) async fn process_metadata_batch(
                 },
             )
             .await;
+            insert_event(pool, job_id, "metadata_already_linked", "info", Some("series"), Some(series_name), None, None).await;
             continue;
         }
 
@@ -746,6 +748,44 @@ pub(crate) async fn process_metadata_batch(
             },
         )
         .await;
+
+        // Insert event tracking
+        match result_status {
+            "auto_matched" => {
+                let candidate_title = best_candidate.as_ref().and_then(|c| c.get("title")).and_then(|t| t.as_str()).unwrap_or("");
+                insert_event(
+                    pool, job_id, "metadata_matched", "info", Some("series"), Some(series_name), None,
+                    Some(serde_json::json!({
+                        "provider": provider_used,
+                        "confidence": best_confidence,
+                        "candidate_title": candidate_title,
+                    })),
+                ).await;
+            }
+            "no_results" => {
+                insert_event(pool, job_id, "metadata_no_results", "info", Some("series"), Some(series_name), None, None).await;
+            }
+            "low_confidence" => {
+                let candidate_title = best_candidate.as_ref().and_then(|c| c.get("title")).and_then(|t| t.as_str()).unwrap_or("");
+                insert_event(
+                    pool, job_id, "metadata_low_confidence", "warning", Some("series"), Some(series_name), None,
+                    Some(serde_json::json!({
+                        "confidence": best_confidence,
+                        "candidate_title": candidate_title,
+                    })),
+                ).await;
+            }
+            "too_many_results" => {
+                insert_event(
+                    pool, job_id, "metadata_too_many", "warning", Some("series"), Some(series_name), None,
+                    Some(serde_json::json!({ "count": candidates_count })),
+                ).await;
+            }
+            "error" => {
+                insert_event(pool, job_id, "error", "error", Some("series"), Some(series_name), error_msg.as_deref(), None).await;
+            }
+            _ => {}
+        }
 
         // In rematch mode, if we created a new link, delete old links from other providers
         if force_rematch && result_status == "auto_matched" {
@@ -1308,6 +1348,31 @@ async fn insert_result(pool: &PgPool, params: &InsertResultParams<'_>) {
     .await;
 }
 
+async fn insert_event(
+    pool: &PgPool,
+    job_id: Uuid,
+    event_type: &str,
+    level: &str,
+    entity_type: Option<&str>,
+    entity_name: Option<&str>,
+    message: Option<&str>,
+    detail: Option<serde_json::Value>,
+) {
+    let _ = sqlx::query(
+        "INSERT INTO index_job_events (job_id, event_type, level, entity_type, entity_name, message, detail) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(job_id)
+    .bind(event_type)
+    .bind(level)
+    .bind(entity_type)
+    .bind(entity_name)
+    .bind(message)
+    .bind(detail)
+    .execute(pool)
+    .await;
+}
+
 #[cfg(test)]
 mod tests {
     use sqlx::Row;
@@ -1582,6 +1647,77 @@ mod tests {
         assert_eq!(rows.len(), 1);
         let returned_series_id: Option<Uuid> = rows[0].get("series_id");
         assert!(returned_series_id.is_none(), "series_id should be None when series does not exist");
+    }
+
+    // -----------------------------------------------------------------------
+    // insert_event tests
+    // -----------------------------------------------------------------------
+
+    async fn create_job(pool: &sqlx::PgPool, lib_id: Uuid, job_type: &str) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, $3, 'running', NOW())",
+        )
+        .bind(id)
+        .bind(lib_id)
+        .bind(job_type)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn event_metadata_matched_written(pool: sqlx::PgPool) {
+        let lib_id = create_lib(&pool, "evt_matched").await;
+        let job_id = create_job(&pool, lib_id, "metadata_batch").await;
+
+        let detail = serde_json::json!({"provider": "bedetheque", "confidence": 0.92});
+        super::insert_event(
+            &pool, job_id, "metadata_matched", "info",
+            Some("series"), Some("Blacksad"), None, Some(detail.clone()),
+        ).await;
+
+        let row = sqlx::query(
+            "SELECT event_type, level, entity_type, entity_name, message, detail FROM index_job_events WHERE job_id = $1",
+        )
+        .bind(job_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(row.get::<String, _>("event_type"), "metadata_matched");
+        assert_eq!(row.get::<String, _>("level"), "info");
+        assert_eq!(row.get::<Option<String>, _>("entity_type"), Some("series".to_string()));
+        assert_eq!(row.get::<Option<String>, _>("entity_name"), Some("Blacksad".to_string()));
+        assert!(row.get::<Option<String>, _>("message").is_none());
+        let stored_detail: serde_json::Value = row.get("detail");
+        assert_eq!(stored_detail["provider"], "bedetheque");
+        assert_eq!(stored_detail["confidence"], 0.92);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn event_error_has_error_level(pool: sqlx::PgPool) {
+        let lib_id = create_lib(&pool, "evt_error").await;
+        let job_id = create_job(&pool, lib_id, "metadata_batch").await;
+
+        super::insert_event(
+            &pool, job_id, "error", "error",
+            Some("series"), Some("Broken"), Some("provider timeout"), None,
+        ).await;
+
+        let row = sqlx::query(
+            "SELECT event_type, level, entity_name, message FROM index_job_events WHERE job_id = $1",
+        )
+        .bind(job_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(row.get::<String, _>("event_type"), "error");
+        assert_eq!(row.get::<String, _>("level"), "error");
+        assert_eq!(row.get::<Option<String>, _>("entity_name"), Some("Broken".to_string()));
+        assert_eq!(row.get::<Option<String>, _>("message"), Some("provider timeout".to_string()));
     }
 
     /// Verify that best_candidate_json contains enriched fields for quick match.

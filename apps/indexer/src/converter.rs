@@ -1,9 +1,31 @@
 use anyhow::Result;
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::{utils, AppState};
+
+async fn insert_event(
+    pool: &PgPool,
+    job_id: Uuid,
+    event_type: &str,
+    level: &str,
+    entity_name: Option<&str>,
+    message: Option<&str>,
+    detail: Option<serde_json::Value>,
+) {
+    let _ = sqlx::query(
+        "INSERT INTO index_job_events (job_id, event_type, level, entity_name, message, detail) VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(job_id)
+    .bind(event_type)
+    .bind(level)
+    .bind(entity_name)
+    .bind(message)
+    .bind(detail)
+    .execute(pool)
+    .await;
+}
 
 /// Execute a `cbr_to_cbz` job for the given `book_id`.
 ///
@@ -17,6 +39,19 @@ use crate::{utils, AppState};
 pub async fn convert_book(state: &AppState, job_id: Uuid, book_id: Uuid) -> Result<()> {
     info!("[CONVERTER] Starting CBR→CBZ conversion for book {} (job {})", book_id, job_id);
 
+    match convert_book_inner(state, job_id, book_id).await {
+        Ok(book_name) => {
+            insert_event(&state.pool, job_id, "converted", "info", Some(&book_name), None, None).await;
+            Ok(())
+        }
+        Err(e) => {
+            insert_event(&state.pool, job_id, "error", "error", None, Some(&e.to_string()), None).await;
+            Err(e)
+        }
+    }
+}
+
+async fn convert_book_inner(state: &AppState, job_id: Uuid, book_id: Uuid) -> Result<String> {
     // Fetch current file info
     let row = sqlx::query(
         r#"
@@ -47,6 +82,11 @@ pub async fn convert_book(state: &AppState, job_id: Uuid, book_id: Uuid) -> Resu
 
     let physical_path = utils::remap_libraries_path(&abs_path);
     let cbr_path = std::path::Path::new(&physical_path);
+
+    let book_name = cbr_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| abs_path.clone());
 
     info!("[CONVERTER] Converting {} → CBZ", cbr_path.display());
 
@@ -104,5 +144,5 @@ pub async fn convert_book(state: &AppState, job_id: Uuid, book_id: Uuid) -> Resu
     .await?;
 
     info!("[CONVERTER] Job {} completed successfully", job_id);
-    Ok(())
+    Ok(book_name)
 }

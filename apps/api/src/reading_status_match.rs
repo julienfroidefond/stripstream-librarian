@@ -425,23 +425,28 @@ pub(crate) async fn process_reading_status_match(
 
         if series_name == "unclassified" {
             insert_result(pool, job_id, library_id, series_name, "already_linked", None, None, None, None).await;
+            insert_event(pool, job_id, "anilist_already_linked", "info", Some(series_name), None, None).await;
             continue;
         }
 
         if already_linked.contains(series_name) {
             insert_result(pool, job_id, library_id, series_name, "already_linked", None, None, None, None).await;
+            insert_event(pool, job_id, "anilist_already_linked", "info", Some(series_name), None, None).await;
             continue;
         }
 
         match search_and_link(pool, library_id, series_name, &token).await {
             Ok(Outcome::Linked { anilist_id, anilist_title, anilist_url }) => {
                 insert_result(pool, job_id, library_id, series_name, "linked", Some(anilist_id), anilist_title.as_deref(), anilist_url.as_deref(), None).await;
+                insert_event(pool, job_id, "anilist_linked", "info", Some(series_name), None, Some(serde_json::json!({"anilist_id": anilist_id, "anilist_title": anilist_title}))).await;
             }
             Ok(Outcome::NoResults) => {
                 insert_result(pool, job_id, library_id, series_name, "no_results", None, None, None, None).await;
+                insert_event(pool, job_id, "anilist_no_results", "info", Some(series_name), None, None).await;
             }
             Ok(Outcome::Ambiguous) => {
                 insert_result(pool, job_id, library_id, series_name, "ambiguous", None, None, None, None).await;
+                insert_event(pool, job_id, "anilist_ambiguous", "warning", Some(series_name), None, None).await;
             }
             Err(e) if e.contains("429") || e.contains("Too Many Requests") => {
                 warn!("[READING_STATUS_MATCH] rate limit hit for '{series_name}', waiting 10s before retry");
@@ -449,12 +454,15 @@ pub(crate) async fn process_reading_status_match(
                 match search_and_link(pool, library_id, series_name, &token).await {
                     Ok(Outcome::Linked { anilist_id, anilist_title, anilist_url }) => {
                         insert_result(pool, job_id, library_id, series_name, "linked", Some(anilist_id), anilist_title.as_deref(), anilist_url.as_deref(), None).await;
+                        insert_event(pool, job_id, "anilist_linked", "info", Some(series_name), None, Some(serde_json::json!({"anilist_id": anilist_id, "anilist_title": anilist_title}))).await;
                     }
                     Ok(Outcome::NoResults) => {
                         insert_result(pool, job_id, library_id, series_name, "no_results", None, None, None, None).await;
+                        insert_event(pool, job_id, "anilist_no_results", "info", Some(series_name), None, None).await;
                     }
                     Ok(Outcome::Ambiguous) => {
                         insert_result(pool, job_id, library_id, series_name, "ambiguous", None, None, None, None).await;
+                        insert_event(pool, job_id, "anilist_ambiguous", "warning", Some(series_name), None, None).await;
                     }
                     Err(e2) => {
                         return Err(format!(
@@ -466,6 +474,7 @@ pub(crate) async fn process_reading_status_match(
             Err(e) => {
                 warn!("[READING_STATUS_MATCH] series '{series_name}': {e}");
                 insert_result(pool, job_id, library_id, series_name, "error", None, None, None, Some(&e)).await;
+                insert_event(pool, job_id, "error", "error", Some(series_name), Some(&e), None).await;
             }
         }
 
@@ -545,6 +554,28 @@ pub(crate) async fn process_reading_status_match(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+async fn insert_event(
+    pool: &PgPool,
+    job_id: Uuid,
+    event_type: &str,
+    level: &str,
+    entity_name: Option<&str>,
+    message: Option<&str>,
+    detail: Option<serde_json::Value>,
+) {
+    let _ = sqlx::query(
+        "INSERT INTO index_job_events (job_id, event_type, level, entity_name, message, detail) VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(job_id)
+    .bind(event_type)
+    .bind(level)
+    .bind(entity_name)
+    .bind(message)
+    .bind(detail)
+    .execute(pool)
+    .await;
+}
 
 #[allow(clippy::too_many_arguments)]
 async fn insert_result(
@@ -807,6 +838,86 @@ mod tests {
     #[test]
     fn normalize_consecutive_special_chars() {
         assert_eq!(normalize_title("title---subtitle"), "title subtitle");
+    }
+
+    // -----------------------------------------------------------------------
+    // insert_event tests
+    // -----------------------------------------------------------------------
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn event_anilist_linked_written(pool: sqlx::PgPool) {
+        use sqlx::Row;
+        use uuid::Uuid;
+
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'TestEvtLib', '/libraries/test_evt')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'reading_status_match', 'running', NOW())",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        super::insert_event(&pool, job_id, "anilist_linked", "info", Some("Naruto"), None, None).await;
+
+        let row = sqlx::query(
+            "SELECT event_type, level, entity_name, message, detail FROM index_job_events WHERE job_id = $1",
+        )
+        .bind(job_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(row.get::<String, _>("event_type"), "anilist_linked");
+        assert_eq!(row.get::<String, _>("level"), "info");
+        assert_eq!(row.get::<Option<String>, _>("entity_name"), Some("Naruto".to_string()));
+        assert!(row.get::<Option<String>, _>("message").is_none());
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn event_error_has_error_level(pool: sqlx::PgPool) {
+        use sqlx::Row;
+        use uuid::Uuid;
+
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'TestEvtErrLib', '/libraries/test_evt_err')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'reading_status_match', 'running', NOW())",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        super::insert_event(&pool, job_id, "error", "error", Some("BrokenSeries"), Some("AniList API failed"), None).await;
+
+        let row = sqlx::query(
+            "SELECT event_type, level, entity_name, message FROM index_job_events WHERE job_id = $1",
+        )
+        .bind(job_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(row.get::<String, _>("event_type"), "error");
+        assert_eq!(row.get::<String, _>("level"), "error");
+        assert_eq!(row.get::<Option<String>, _>("entity_name"), Some("BrokenSeries".to_string()));
+        assert_eq!(row.get::<Option<String>, _>("message"), Some("AniList API failed".to_string()));
     }
 
     /// Regression: series_id must be populated via LEFT JOIN series when the series exists.
