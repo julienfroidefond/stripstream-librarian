@@ -316,18 +316,21 @@ pub async fn scan_library_discovery(
             let lookup_path = utils::remap_libraries_path(&abs_path);
             seen.insert(lookup_path.clone(), true);
 
-            // Check if title needs updating (e.g., file was renamed since last scan)
+            // Check if title/volume needs updating (e.g., file was renamed since last scan,
+            // or volume was not extracted on a previous scan)
             if let Some((_file_id, book_id, _)) = existing.get(&lookup_path).cloned() {
                 let Some(format) = detect_format(&path) else { continue; };
                 let parsed = parse_metadata_fast(&path, format, root);
-                let db_title: Option<String> = sqlx::query_scalar("SELECT title FROM books WHERE id = $1")
-                    .bind(book_id)
-                    .fetch_optional(&state.pool)
-                    .await?;
-                if let Some(ref db_title) = db_title {
-                    if db_title != &parsed.title {
-                        info!("[SCAN] Title mismatch (skipped dir) for {:?}: DB='{}' vs parsed='{}', updating",
-                            path.file_name().unwrap_or_default(), db_title, parsed.title);
+                let row: Option<(String, Option<i32>)> = sqlx::query_as(
+                    "SELECT title, volume FROM books WHERE id = $1",
+                )
+                .bind(book_id)
+                .fetch_optional(&state.pool)
+                .await?;
+                if let Some((ref db_title, db_volume)) = row {
+                    if db_title != &parsed.title || db_volume != parsed.volume {
+                        info!("[SCAN] Title/volume mismatch (skipped dir) for {:?}: DB=('{}', {:?}) vs parsed=('{}', {:?}), updating",
+                            path.file_name().unwrap_or_default(), db_title, db_volume, parsed.title, parsed.volume);
                         let update_series_id = if let Some(ref series_name) = parsed.series {
                             Some(get_or_create_series_id(&state.pool, library_id, series_name, &mut series_map).await?)
                         } else {
@@ -459,14 +462,18 @@ pub async fn scan_library_discovery(
         {
             if !is_full_rebuild && old_fingerprint == fingerprint {
                 // Even if fingerprint hasn't changed, check if title/volume need updating
-                // (e.g., after a rename, the file was renamed but title in books table is stale)
-                let db_title: Option<String> = sqlx::query_scalar("SELECT title FROM books WHERE id = $1")
-                    .bind(book_id)
-                    .fetch_optional(&state.pool)
-                    .await?;
-                if let Some(ref db_title) = db_title {
-                    if db_title != &parsed.title {
-                        info!("[SCAN] Title mismatch for {}: DB='{}' vs parsed='{}', updating", file_name, db_title, parsed.title);
+                // (e.g., after a rename, the file was renamed but title in books table is stale,
+                // or volume was not extracted on a previous scan)
+                let row: Option<(String, Option<i32>)> = sqlx::query_as(
+                    "SELECT title, volume FROM books WHERE id = $1",
+                )
+                .bind(book_id)
+                .fetch_optional(&state.pool)
+                .await?;
+                if let Some((ref db_title, db_volume)) = row {
+                    if db_title != &parsed.title || db_volume != parsed.volume {
+                        info!("[SCAN] Title/volume mismatch for {}: DB=('{}', {:?}) vs parsed=('{}', {:?}), updating",
+                            file_name, db_title, db_volume, parsed.title, parsed.volume);
                         let update_series_id = if let Some(ref series_name) = parsed.series {
                             Some(
                                 get_or_create_series_id(&state.pool, library_id, series_name, &mut series_map)
@@ -490,7 +497,7 @@ pub async fn scan_library_discovery(
                             entity_type: Some("book".to_string()),
                             entity_id: Some(book_id),
                             entity_name: Some(abs_path.clone()),
-                            message: Some(format!("Title updated: '{}' → '{}'", db_title, parsed.title)),
+                            message: Some(format!("Title/volume updated: ('{}', {:?}) → ('{}', {:?})", db_title, db_volume, parsed.title, parsed.volume)),
                             detail: None,
                         });
                     }
@@ -1016,5 +1023,244 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(new_volume, Some(5));
+    }
+
+    /// Helper: create a book + book_file in DB for title/volume mismatch tests.
+    async fn create_book_with_file(
+        pool: &sqlx::PgPool,
+        library_id: Uuid,
+        series_id: Uuid,
+        title: &str,
+        volume: Option<i32>,
+        abs_path: &str,
+    ) -> (Uuid, Uuid) {
+        let book_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO books (id, library_id, title, volume, kind, format, series_id) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        )
+        .bind(book_id)
+        .bind(library_id)
+        .bind(title)
+        .bind(volume)
+        .bind("comic")
+        .bind("cbz")
+        .bind(series_id)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let file_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO book_files (id, book_id, abs_path, format, size_bytes, mtime, fingerprint, parse_status) \
+             VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7)",
+        )
+        .bind(file_id)
+        .bind(book_id)
+        .bind(abs_path)
+        .bind("cbz")
+        .bind(1024_i64)
+        .bind("fake_fingerprint")
+        .bind("ok")
+        .execute(pool)
+        .await
+        .unwrap();
+
+        (book_id, file_id)
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn scanner_updates_title_in_skipped_dir(pool: sqlx::PgPool) {
+        let library_id = create_test_library(&pool, "skipped_dir_test").await;
+
+        let series_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, $3)")
+            .bind(series_id)
+            .bind(library_id)
+            .bind("Series")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Book has "Old Name" with no volume
+        let (book_id, _file_id) = create_book_with_file(
+            &pool,
+            library_id,
+            series_id,
+            "Old Name",
+            None,
+            "/libraries/skipped_dir_test/Series/Series - T05.cbz",
+        )
+        .await;
+
+        // Simulate scanner logic: parse the filename and compare
+        let parsed_title = "Series - T05";
+        let parsed_volume = parsers::extract_volume(parsed_title);
+
+        let row: (String, Option<i32>) = sqlx::query_as(
+            "SELECT title, volume FROM books WHERE id = $1",
+        )
+        .bind(book_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let (db_title, db_volume) = row;
+
+        // Title mismatch triggers update
+        assert_ne!(db_title, parsed_title);
+        assert!(db_title != parsed_title || db_volume != parsed_volume);
+
+        sqlx::query(
+            "UPDATE books SET title = $1, volume = $2, updated_at = NOW() WHERE id = $3",
+        )
+        .bind(parsed_title)
+        .bind(parsed_volume)
+        .bind(book_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let new_title: String = sqlx::query_scalar("SELECT title FROM books WHERE id = $1")
+            .bind(book_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let new_volume: Option<i32> = sqlx::query_scalar("SELECT volume FROM books WHERE id = $1")
+            .bind(book_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        assert_eq!(new_title, "Series - T05");
+        assert_eq!(new_volume, Some(5));
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn scanner_updates_volume_when_title_matches_but_volume_null(pool: sqlx::PgPool) {
+        // Key case: title matches the filename stem but volume is NULL in DB.
+        // The fix ensures the scanner also checks volume mismatch, not just title.
+        let library_id = create_test_library(&pool, "vol_null_test").await;
+
+        let series_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, $3)")
+            .bind(series_id)
+            .bind(library_id)
+            .bind("Kaiju no8")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Title matches exactly what parse_metadata_fast would produce, but volume is NULL
+        let (book_id, _file_id) = create_book_with_file(
+            &pool,
+            library_id,
+            series_id,
+            "Kaiju no8 - Tome 1",
+            None, // volume is NULL — this is the bug
+            "/libraries/vol_null_test/Kaiju no8/Kaiju no8 - Tome 1.cbz",
+        )
+        .await;
+
+        // Simulate scanner logic
+        let parsed_title = "Kaiju no8 - Tome 1";
+        let parsed_volume = parsers::extract_volume(parsed_title);
+        assert_eq!(parsed_volume, Some(1), "extract_volume should parse Tome 1");
+
+        let row: (String, Option<i32>) = sqlx::query_as(
+            "SELECT title, volume FROM books WHERE id = $1",
+        )
+        .bind(book_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let (db_title, db_volume) = row;
+
+        // Title matches but volume differs (None vs Some(1))
+        assert_eq!(db_title, parsed_title);
+        assert_ne!(db_volume, parsed_volume);
+
+        // With the fix, the condition `db_title != parsed.title || db_volume != parsed.volume`
+        // catches this case and triggers the update
+        if db_title != parsed_title || db_volume != parsed_volume {
+            sqlx::query(
+                "UPDATE books SET title = $1, volume = $2, updated_at = NOW() WHERE id = $3",
+            )
+            .bind(parsed_title)
+            .bind(parsed_volume)
+            .bind(book_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let new_volume: Option<i32> = sqlx::query_scalar("SELECT volume FROM books WHERE id = $1")
+            .bind(book_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(new_volume, Some(1), "volume should now be set to 1");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn scanner_skips_when_title_and_volume_match(pool: sqlx::PgPool) {
+        let library_id = create_test_library(&pool, "no_update_test").await;
+
+        let series_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, $3)")
+            .bind(series_id)
+            .bind(library_id)
+            .bind("Series")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Book already has correct title AND volume
+        let (book_id, _file_id) = create_book_with_file(
+            &pool,
+            library_id,
+            series_id,
+            "Series - T05",
+            Some(5),
+            "/libraries/no_update_test/Series/Series - T05.cbz",
+        )
+        .await;
+
+        // Record the updated_at before the check
+        let before_updated_at: DateTime<Utc> =
+            sqlx::query_scalar("SELECT updated_at FROM books WHERE id = $1")
+                .bind(book_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        // Simulate scanner logic
+        let parsed_title = "Series - T05";
+        let parsed_volume = parsers::extract_volume(parsed_title);
+        assert_eq!(parsed_volume, Some(5));
+
+        let row: (String, Option<i32>) = sqlx::query_as(
+            "SELECT title, volume FROM books WHERE id = $1",
+        )
+        .bind(book_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let (db_title, db_volume) = row;
+
+        // Both match — no update should happen
+        assert_eq!(db_title, parsed_title);
+        assert_eq!(db_volume, parsed_volume);
+
+        let needs_update = db_title != parsed_title || db_volume != parsed_volume;
+        assert!(!needs_update, "no update should be needed when title and volume match");
+
+        // Verify updated_at is unchanged
+        let after_updated_at: DateTime<Utc> =
+            sqlx::query_scalar("SELECT updated_at FROM books WHERE id = $1")
+                .bind(book_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(before_updated_at, after_updated_at, "updated_at should not have changed");
     }
 }
