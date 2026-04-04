@@ -10,14 +10,17 @@ use crate::{auth::AuthUser, books::BookItem, error::ApiError, state::AppState};
 // ─── Helper functions ────────────────────────────────────────────────────────
 
 /// Get or create a series row, returning its UUID.
+/// Also checks `original_name` to prevent duplicates after user renames.
 pub(crate) async fn get_or_create_series(
     pool: &sqlx::PgPool,
     library_id: Uuid,
     name: &str,
 ) -> Result<Uuid, ApiError> {
-    // Try to find existing first
+    // Try to find existing by current name OR original_name (prevents duplicates after rename)
     if let Some(id) = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM series WHERE library_id = $1 AND LOWER(unaccent(name)) = LOWER(unaccent($2))"
+        "SELECT id FROM series WHERE library_id = $1 \
+         AND (LOWER(unaccent(name)) = LOWER(unaccent($2)) \
+              OR LOWER(unaccent(original_name)) = LOWER(unaccent($2)))"
     )
     .bind(library_id)
     .bind(name)
@@ -1175,6 +1178,140 @@ pub async fn update_series(
     Ok(Json(UpdateSeriesResponse { updated: result.rows_affected() }))
 }
 
+// ─── Merge series ──────────────────────────────────────────────────────────
+
+#[derive(Deserialize, ToSchema)]
+pub struct MergeSeriesRequest {
+    /// The series to absorb (will be deleted after merge)
+    pub source_id: Uuid,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct MergeSeriesResponse {
+    pub books_moved: u64,
+    pub metadata_moved: u64,
+    pub downloads_moved: u64,
+}
+
+/// Merge source series into target series.
+/// Moves books, metadata links, and available downloads from source to target,
+/// then deletes the source series.
+#[utoipa::path(
+    post,
+    path = "/series/{target_id}/merge",
+    tag = "series",
+    params(
+        ("target_id" = String, Path, description = "Target series UUID (kept)"),
+    ),
+    request_body = MergeSeriesRequest,
+    responses(
+        (status = 200, body = MergeSeriesResponse),
+        (status = 400, description = "Cannot merge a series into itself"),
+        (status = 404, description = "Series not found"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn merge_series(
+    State(state): State<AppState>,
+    _user: Option<Extension<AuthUser>>,
+    Path(target_id): Path<Uuid>,
+    Json(body): Json<MergeSeriesRequest>,
+) -> Result<Json<MergeSeriesResponse>, ApiError> {
+    let source_id = body.source_id;
+
+    if target_id == source_id {
+        return Err(ApiError::bad_request("Cannot merge a series into itself"));
+    }
+
+    // Verify both series exist and are in the same library
+    let target_lib: Uuid = resolve_library_id(&state.pool, target_id).await?;
+    let source_lib: Uuid = resolve_library_id(&state.pool, source_id).await?;
+    if target_lib != source_lib {
+        return Err(ApiError::bad_request("Cannot merge series from different libraries"));
+    }
+
+    let mut tx = state.pool.begin().await?;
+
+    // 1. Move books from source to target
+    let books_result = sqlx::query("UPDATE books SET series_id = $1 WHERE series_id = $2")
+        .bind(target_id)
+        .bind(source_id)
+        .execute(&mut *tx)
+        .await?;
+    let books_moved = books_result.rows_affected();
+
+    // 2. Move metadata links that target doesn't already have (by provider)
+    let metadata_result = sqlx::query(
+        "UPDATE external_metadata_links SET series_id = $1 \
+         WHERE series_id = $2 \
+         AND provider NOT IN (SELECT provider FROM external_metadata_links WHERE series_id = $1)",
+    )
+    .bind(target_id)
+    .bind(source_id)
+    .execute(&mut *tx)
+    .await?;
+    let metadata_moved = metadata_result.rows_affected();
+
+    // Delete remaining source metadata links (duplicates of target's providers)
+    sqlx::query("DELETE FROM external_metadata_links WHERE series_id = $1")
+        .bind(source_id)
+        .execute(&mut *tx)
+        .await?;
+
+    // 3. Move available downloads that target doesn't already have
+    let downloads_result = sqlx::query(
+        "UPDATE available_downloads SET series_id = $1 \
+         WHERE series_id = $2 \
+         AND id NOT IN ( \
+             SELECT ad2.id FROM available_downloads ad2 \
+             WHERE ad2.series_id = $1 \
+         )",
+    )
+    .bind(target_id)
+    .bind(source_id)
+    .execute(&mut *tx)
+    .await?;
+    let downloads_moved = downloads_result.rows_affected();
+
+    // Delete remaining source downloads
+    sqlx::query("DELETE FROM available_downloads WHERE series_id = $1")
+        .bind(source_id)
+        .execute(&mut *tx)
+        .await?;
+
+    // 4. Move anilist links if target doesn't have one
+    sqlx::query(
+        "UPDATE anilist_series_links SET series_id = $1 \
+         WHERE series_id = $2 \
+         AND NOT EXISTS (SELECT 1 FROM anilist_series_links WHERE series_id = $1)",
+    )
+    .bind(target_id)
+    .bind(source_id)
+    .execute(&mut *tx)
+    .await?;
+
+    // Delete remaining source anilist links
+    sqlx::query("DELETE FROM anilist_series_links WHERE series_id = $1")
+        .bind(source_id)
+        .execute(&mut *tx)
+        .await?;
+
+    // 5. Delete the source series
+    sqlx::query("DELETE FROM series WHERE id = $1")
+        .bind(source_id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+
+    Ok(Json(MergeSeriesResponse {
+        books_moved,
+        metadata_moved,
+        downloads_moved,
+    }))
+}
+
 /// Delete an entire series (deprecated: use DELETE /series/{series_id})
 #[deprecated]
 #[utoipa::path(
@@ -1593,5 +1730,65 @@ mod tests {
         let id1 = get_or_create_series(&pool, lib1, "Naruto").await.unwrap();
         let id2 = get_or_create_series(&pool, lib2, "Naruto").await.unwrap();
         assert_ne!(id1, id2, "same name in different libraries should be different series");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_or_create_series_finds_by_original_name(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "rename_test").await;
+
+        // Create series "Dragon Ball" then rename to "Dragon Ball Z" (simulating user rename)
+        let id1 = get_or_create_series(&pool, lib_id, "Dragon Ball").await.unwrap();
+        sqlx::query("UPDATE series SET name = $1, original_name = $2 WHERE id = $3")
+            .bind("Dragon Ball Z")
+            .bind("Dragon Ball")
+            .bind(id1)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Looking up old name should find the renamed series
+        let id2 = get_or_create_series(&pool, lib_id, "Dragon Ball").await.unwrap();
+        assert_eq!(id1, id2, "lookup by original_name should return the renamed series");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_or_create_series_original_name_case_insensitive(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "rename_case_test").await;
+
+        let id1 = get_or_create_series(&pool, lib_id, "LES MYTHICS").await.unwrap();
+        sqlx::query("UPDATE series SET name = $1, original_name = $2 WHERE id = $3")
+            .bind("Mythics")
+            .bind("LES MYTHICS")
+            .bind(id1)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Case-insensitive lookup by original_name
+        let id2 = get_or_create_series(&pool, lib_id, "les mythics").await.unwrap();
+        assert_eq!(id1, id2, "original_name lookup should be case-insensitive");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_or_create_series_chained_rename(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "chained_rename").await;
+
+        // A → B → C : original_name stays "A"
+        let id1 = get_or_create_series(&pool, lib_id, "Series A").await.unwrap();
+        sqlx::query("UPDATE series SET name = $1, original_name = $2 WHERE id = $3")
+            .bind("Series C")
+            .bind("Series A")
+            .bind(id1)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Lookup by original name "Series A" should still find it
+        let id2 = get_or_create_series(&pool, lib_id, "Series A").await.unwrap();
+        assert_eq!(id1, id2, "chained rename: original_name should still match");
+
+        // Lookup by current name "Series C" should also work
+        let id3 = get_or_create_series(&pool, lib_id, "Series C").await.unwrap();
+        assert_eq!(id1, id3, "current name should also match");
     }
 }

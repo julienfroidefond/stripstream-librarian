@@ -813,6 +813,13 @@ const fr = {
   "bookDetail.confirmDelete": "Le fichier sera définitivement supprimé du disque. Cette action est irréversible.",
   "seriesDetail.delete": "Supprimer la série",
   "seriesDetail.confirmDelete": "Tous les livres et le dossier de la série seront définitivement supprimés du disque. Cette action est irréversible.",
+  "seriesDetail.merge": "Fusionner",
+  "seriesDetail.mergeTitle": "Fusionner avec une autre série",
+  "seriesDetail.mergeDescription": "Recherchez la série à absorber. Ses livres, métadonnées et téléchargements seront déplacés vers la série actuelle, puis elle sera supprimée.",
+  "seriesDetail.mergeSearch": "Rechercher une série...",
+  "seriesDetail.mergeConfirm": "Fusionner",
+  "seriesDetail.mergeSuccess": "Fusion réussie : {{books}} livres, {{metadata}} métadonnées, {{downloads}} téléchargements déplacés.",
+  "seriesDetail.mergeNoResults": "Aucune série trouvée",
 
   // Book preview
   "bookPreview.preview": "Aperçu",

@@ -874,6 +874,16 @@ export async function deleteSeries(seriesId: string) {
   });
 }
 
+export async function mergeSeries(targetId: string, sourceId: string) {
+  return apiFetch<{ books_moved: number; metadata_moved: number; downloads_moved: number }>(
+    `/series/${targetId}/merge`,
+    {
+      method: "POST",
+      body: JSON.stringify({ source_id: sourceId }),
+    },
+  );
+}
+
 export async function markSeriesRead(seriesId: string, status: "read" | "unread" = "read") {
   return apiFetch<{ updated: number }>("/series/mark-read", {
     method: "POST",

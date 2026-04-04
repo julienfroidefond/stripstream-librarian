@@ -45,8 +45,11 @@ async fn get_or_create_series_id(
     }
 
     // Look for existing series with case-insensitive + accent-insensitive match
+    // Also checks original_name to prevent duplicates after user renames
     let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM series WHERE library_id = $1 AND LOWER(unaccent(name)) = LOWER(unaccent($2))",
+        "SELECT id FROM series WHERE library_id = $1 \
+         AND (LOWER(unaccent(name)) = LOWER(unaccent($2)) \
+              OR LOWER(unaccent(original_name)) = LOWER(unaccent($2)))",
     )
     .bind(library_id)
     .bind(name)
@@ -320,7 +323,14 @@ pub async fn scan_library_discovery(
             // or volume was not extracted on a previous scan)
             if let Some((_file_id, book_id, _)) = existing.get(&lookup_path).cloned() {
                 let Some(format) = detect_format(&path) else { continue; };
-                let parsed = parse_metadata_fast(&path, format, root);
+                let mut parsed = parse_metadata_fast(&path, format, root);
+                // Apply series rename mapping (same as normal scan branch)
+                if let Some(ref fs_series) = parsed.series {
+                    if let Some(renamed) = series_rename_map.get(fs_series) {
+                        debug!("[SCAN] Mapping renamed series (skipped dir): '{}' → '{}'", fs_series, renamed);
+                        parsed.series = Some(renamed.clone());
+                    }
+                }
                 let row: Option<(String, Option<i32>)> = sqlx::query_as(
                     "SELECT title, volume FROM books WHERE id = $1",
                 )
@@ -329,7 +339,7 @@ pub async fn scan_library_discovery(
                 .await?;
                 if let Some((ref db_title, db_volume)) = row {
                     if db_title != &parsed.title || db_volume != parsed.volume {
-                        info!("[SCAN] Title/volume mismatch (skipped dir) for {:?}: DB=('{}', {:?}) vs parsed=('{}', {:?}), updating",
+                        debug!("[SCAN] Title/volume mismatch (skipped dir) for {:?}: DB=('{}', {:?}) vs parsed=('{}', {:?}), updating",
                             path.file_name().unwrap_or_default(), db_title, db_volume, parsed.title, parsed.volume);
                         let update_series_id = if let Some(ref series_name) = parsed.series {
                             Some(get_or_create_series_id(&state.pool, library_id, series_name, &mut series_map).await?)
@@ -472,7 +482,7 @@ pub async fn scan_library_discovery(
                 .await?;
                 if let Some((ref db_title, db_volume)) = row {
                     if db_title != &parsed.title || db_volume != parsed.volume {
-                        info!("[SCAN] Title/volume mismatch for {}: DB=('{}', {:?}) vs parsed=('{}', {:?}), updating",
+                        debug!("[SCAN] Title/volume mismatch for {}: DB=('{}', {:?}) vs parsed=('{}', {:?}), updating",
                             file_name, db_title, db_volume, parsed.title, parsed.volume);
                         let update_series_id = if let Some(ref series_name) = parsed.series {
                             Some(
@@ -763,25 +773,24 @@ async fn handle_stale_deletions(
 
     if removed_count > 0 {
         info!("[SCAN] Removed {} stale files from database", removed_count);
+    }
 
-        // Clean up orphan series: no books, no metadata links, no available downloads
-        // (preserves series added from Discovery that have metadata but no files yet)
-        let orphan_result = sqlx::query_scalar::<_, i64>(
-            "DELETE FROM series WHERE library_id = $1 \
-             AND NOT EXISTS (SELECT 1 FROM books WHERE series_id = series.id) \
-             AND NOT EXISTS (SELECT 1 FROM external_metadata_links WHERE series_id = series.id) \
-             AND NOT EXISTS (SELECT 1 FROM available_downloads WHERE series_id = series.id) \
-             RETURNING 1",
-        )
-        .bind(library_id)
-        .fetch_all(&state.pool)
-        .await?;
+    // Clean up orphan series: no books, no metadata links, no available downloads
+    // (preserves series added from Discovery that have metadata but no files yet)
+    let orphan_result = sqlx::query_scalar::<_, i32>(
+        "DELETE FROM series WHERE library_id = $1 \
+         AND NOT EXISTS (SELECT 1 FROM books WHERE series_id = series.id) \
+         AND NOT EXISTS (SELECT 1 FROM external_metadata_links WHERE series_id = series.id) \
+         AND NOT EXISTS (SELECT 1 FROM available_downloads WHERE series_id = series.id) \
+         RETURNING 1",
+    )
+    .bind(library_id)
+    .fetch_all(&state.pool)
+    .await?;
 
-        let orphan_count = orphan_result.len();
-        if orphan_count > 0 {
-            info!("[SCAN] Removed {} orphan series (no remaining books)", orphan_count);
-            stats.warnings += orphan_count; // track in stats
-        }
+    let orphan_count = orphan_result.len();
+    if orphan_count > 0 {
+        info!("[SCAN] Removed {} orphan series (no remaining books)", orphan_count);
     }
 
     Ok(())
@@ -951,6 +960,46 @@ mod tests {
         let id1 = get_or_create_series_id(&pool, lib_id, "Astérix", &mut cache1).await.unwrap();
         let id2 = get_or_create_series_id(&pool, lib_id, "Asterix", &mut cache2).await.unwrap();
         assert_eq!(id1, id2, "DB lookup should be accent-insensitive");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_or_create_series_id_finds_by_original_name(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "rename_test").await;
+        let mut cache = HashMap::new();
+
+        // Create series then simulate user rename
+        let id1 = get_or_create_series_id(&pool, lib_id, "Dragon Ball", &mut cache).await.unwrap();
+        sqlx::query("UPDATE series SET name = $1, original_name = $2 WHERE id = $3")
+            .bind("Dragon Ball Z")
+            .bind("Dragon Ball")
+            .bind(id1)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Clear cache to force DB lookup
+        let mut cache2 = HashMap::new();
+        let id2 = get_or_create_series_id(&pool, lib_id, "Dragon Ball", &mut cache2).await.unwrap();
+        assert_eq!(id1, id2, "lookup by original_name should return the renamed series");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_or_create_series_id_original_name_case_insensitive(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "rename_case").await;
+        let mut cache = HashMap::new();
+
+        let id1 = get_or_create_series_id(&pool, lib_id, "LES MYTHICS", &mut cache).await.unwrap();
+        sqlx::query("UPDATE series SET name = $1, original_name = $2 WHERE id = $3")
+            .bind("Mythics")
+            .bind("LES MYTHICS")
+            .bind(id1)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let mut cache2 = HashMap::new();
+        let id2 = get_or_create_series_id(&pool, lib_id, "les mythics", &mut cache2).await.unwrap();
+        assert_eq!(id1, id2, "original_name lookup should be case-insensitive");
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]
@@ -1322,9 +1371,10 @@ mod tests {
 
         // Third series has a metadata link (added from Discovery)
         sqlx::query(
-            "INSERT INTO external_metadata_links (id, series_id, provider, external_id, external_url) \
-             VALUES (gen_random_uuid(), $1, $2, $3, $4)",
+            "INSERT INTO external_metadata_links (library_id, series_id, provider, external_id, external_url) \
+             VALUES ($1, $2, $3, $4, $5)",
         )
+        .bind(library_id)
         .bind(series_empty_with_metadata)
         .bind("senscritique")
         .bind("12345")
@@ -1334,7 +1384,7 @@ mod tests {
         .unwrap();
 
         // Delete orphan series (no books, no metadata, no downloads)
-        let deleted = sqlx::query_scalar::<_, i64>(
+        let deleted = sqlx::query_scalar::<_, i32>(
             "DELETE FROM series WHERE library_id = $1 \
              AND NOT EXISTS (SELECT 1 FROM books WHERE series_id = series.id) \
              AND NOT EXISTS (SELECT 1 FROM external_metadata_links WHERE series_id = series.id) \

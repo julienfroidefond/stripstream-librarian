@@ -24,6 +24,9 @@ const ProwlarrSearchModal = nextDynamic(
 const DeleteSeriesButton = nextDynamic(
   () => import("@/app/components/DeleteSeriesButton").then(m => m.DeleteSeriesButton)
 );
+const MergeSeriesButton = nextDynamic(
+  () => import("@/app/components/MergeSeriesButton").then(m => m.MergeSeriesButton)
+);
 const RenameSeriesBooksModal = nextDynamic(
   () => import("@/app/components/RenameSeriesBooksModal").then(m => m.RenameSeriesBooksModal)
 );
@@ -286,6 +289,11 @@ export default async function SeriesDetailPage({
               seriesId={seriesId}
               seriesName={seriesName}
               initialFormat={typeof renameFormat === "string" ? renameFormat : null}
+            />
+            <MergeSeriesButton
+              seriesId={seriesId}
+              seriesName={seriesName}
+              libraryId={libraryId}
             />
             <DeleteSeriesButton
               seriesId={seriesId}

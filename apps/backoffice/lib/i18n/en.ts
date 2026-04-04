@@ -815,6 +815,13 @@ const en: Record<TranslationKey, string> = {
   "bookDetail.confirmDelete": "The file will be permanently deleted from disk. This action cannot be undone.",
   "seriesDetail.delete": "Delete series",
   "seriesDetail.confirmDelete": "All books and the series folder will be permanently deleted from disk. This action cannot be undone.",
+  "seriesDetail.merge": "Merge",
+  "seriesDetail.mergeTitle": "Merge with another series",
+  "seriesDetail.mergeDescription": "Search for the series to absorb. Its books, metadata and downloads will be moved to the current series, then it will be deleted.",
+  "seriesDetail.mergeSearch": "Search for a series...",
+  "seriesDetail.mergeConfirm": "Merge",
+  "seriesDetail.mergeSuccess": "Merge complete: {{books}} books, {{metadata}} metadata, {{downloads}} downloads moved.",
+  "seriesDetail.mergeNoResults": "No series found",
 
   // Book preview
   "bookPreview.preview": "Preview",
