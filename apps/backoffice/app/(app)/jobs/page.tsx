@@ -16,8 +16,16 @@ function jobRedirect(resultId: string | undefined | null, libraryId: string): ne
   redirect(qs ? `/jobs?${qs}` : "/jobs");
 }
 
-export default async function JobsPage({ searchParams }: { searchParams: Promise<{ highlight?: string; library?: string }> }) {
-  const { highlight, library } = await searchParams;
+function errorRedirect(error: unknown): never {
+  const msg = error instanceof Error ? error.message : "An error occurred";
+  // Extract the API error message if present (format: "API /path failed (400): message")
+  const match = msg.match(/\(\d+\):\s*(.+)/);
+  const cleanMsg = match ? match[1] : msg;
+  redirect(`/jobs?error=${encodeURIComponent(cleanMsg)}`);
+}
+
+export default async function JobsPage({ searchParams }: { searchParams: Promise<{ highlight?: string; library?: string; error?: string }> }) {
+  const { highlight, library, error: errorMsg } = await searchParams;
   const { t } = await getServerTranslations();
   const [jobs, libraries, prowlarrSettings] = await Promise.all([
     listJobs().catch(() => [] as IndexJobDto[]),
@@ -32,98 +40,86 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   async function triggerRebuild(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    const result = await rebuildIndex(libraryId || undefined);
-    revalidatePath("/jobs");
-    jobRedirect(result.id, libraryId);
+    try { const result = await rebuildIndex(libraryId || undefined); revalidatePath("/jobs"); jobRedirect(result.id, libraryId); }
+    catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
   }
 
   async function triggerFullRebuild(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    const result = await rebuildIndex(libraryId || undefined, true);
-    revalidatePath("/jobs");
-    jobRedirect(result.id, libraryId);
+    try { const result = await rebuildIndex(libraryId || undefined, true); revalidatePath("/jobs"); jobRedirect(result.id, libraryId); }
+    catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
   }
 
   async function triggerRescan(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    const result = await rebuildIndex(libraryId || undefined, false, true);
-    revalidatePath("/jobs");
-    jobRedirect(result.id, libraryId);
+    try { const result = await rebuildIndex(libraryId || undefined, false, true); revalidatePath("/jobs"); jobRedirect(result.id, libraryId); }
+    catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
   }
 
   async function triggerThumbnailsRebuild(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    const result = await rebuildThumbnails(libraryId || undefined);
-    revalidatePath("/jobs");
-    jobRedirect(result.id, libraryId);
+    try { const result = await rebuildThumbnails(libraryId || undefined); revalidatePath("/jobs"); jobRedirect(result.id, libraryId); }
+    catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
   }
 
   async function triggerThumbnailsRegenerate(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    const result = await regenerateThumbnails(libraryId || undefined);
-    revalidatePath("/jobs");
-    jobRedirect(result.id, libraryId);
+    try { const result = await regenerateThumbnails(libraryId || undefined); revalidatePath("/jobs"); jobRedirect(result.id, libraryId); }
+    catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
   }
 
   async function triggerMetadataBatch(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    const result = await startMetadataBatch(libraryId || undefined);
-    revalidatePath("/jobs");
-    jobRedirect(result.id, libraryId);
+    try { const result = await startMetadataBatch(libraryId || undefined); revalidatePath("/jobs"); jobRedirect(result.id, libraryId); }
+    catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
   }
 
   async function triggerMetadataRematch(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
     if (!libraryId) return redirect("/jobs");
-    const result = await startMetadataBatch(libraryId, true);
-    revalidatePath("/jobs");
-    jobRedirect(result.id, libraryId);
+    try { const result = await startMetadataBatch(libraryId, true); revalidatePath("/jobs"); jobRedirect(result.id, libraryId); }
+    catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
   }
 
   async function triggerMetadataRefresh(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    const result = await startMetadataRefresh(libraryId || undefined);
-    revalidatePath("/jobs");
-    jobRedirect(result.id, libraryId);
+    try { const result = await startMetadataRefresh(libraryId || undefined); revalidatePath("/jobs"); jobRedirect(result.id, libraryId); }
+    catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
   }
 
   async function triggerMetadataRefreshAll(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    const result = await startMetadataRefreshAll(libraryId || undefined);
-    revalidatePath("/jobs");
-    jobRedirect(result.id, libraryId);
+    try { const result = await startMetadataRefreshAll(libraryId || undefined); revalidatePath("/jobs"); jobRedirect(result.id, libraryId); }
+    catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
   }
 
   async function triggerReadingStatusMatch(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    const result = await startReadingStatusMatch(libraryId || undefined);
-    revalidatePath("/jobs");
-    jobRedirect(result.id, libraryId);
+    try { const result = await startReadingStatusMatch(libraryId || undefined); revalidatePath("/jobs"); jobRedirect(result.id, libraryId); }
+    catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
   }
 
   async function triggerReadingStatusPush(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    const result = await startReadingStatusPush(libraryId || undefined);
-    revalidatePath("/jobs");
-    jobRedirect(result.id, libraryId);
+    try { const result = await startReadingStatusPush(libraryId || undefined); revalidatePath("/jobs"); jobRedirect(result.id, libraryId); }
+    catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
   }
 
   async function triggerDownloadDetection(formData: FormData) {
     "use server";
     const libraryId = formData.get("library_id") as string;
-    const result = await startDownloadDetection(libraryId || undefined);
-    revalidatePath("/jobs");
-    jobRedirect(result.id, libraryId);
+    try { const result = await startDownloadDetection(libraryId || undefined); revalidatePath("/jobs"); jobRedirect(result.id, libraryId); }
+    catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
   }
 
   return (
@@ -136,6 +132,12 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
           {t("jobs.title")}
         </h1>
       </div>
+
+      {errorMsg && (
+        <div className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
+          {errorMsg}
+        </div>
+      )}
 
       <Card className="mb-6">
         <CardHeader>
