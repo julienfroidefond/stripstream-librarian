@@ -714,7 +714,7 @@ pub(crate) async fn process_download_detection(
         )
         .await
         {
-            Ok(matched_releases) if !matched_releases.is_empty() => {
+            Ok((matched_releases, _raw_count)) if !matched_releases.is_empty() => {
                 let releases_json = serde_json::to_value(&matched_releases).ok();
                 insert_event(pool, job_id, "downloads_found", "info", Some(series_name), None, Some(serde_json::json!({"release_count": matched_releases.len(), "missing_count": missing_count, "available_releases": releases_json}))).await;
                 // UPSERT into available_downloads — merge new releases with existing ones
@@ -735,18 +735,25 @@ pub(crate) async fn process_download_detection(
                     .await;
                 }
             }
-            Ok(_) => {
-                insert_event(pool, job_id, "downloads_not_found", "info", Some(series_name), None, Some(serde_json::json!({"missing_count": missing_count}))).await;
+            Ok((_matched, raw_count)) => {
+                // raw_count == 0: Prowlarr returned nothing at all (indexer issue)
+                // raw_count > 0: Prowlarr returned results but none matched missing volumes (normal)
+                let (event_type, level) = if raw_count == 0 {
+                    ("prowlarr_no_results", "error")
+                } else {
+                    ("downloads_not_found", "info")
+                };
+                insert_event(pool, job_id, event_type, level, Some(series_name), None, Some(serde_json::json!({"missing_count": missing_count, "raw_results": raw_count}))).await;
                 // Don't delete — keep previous results even if this run found nothing
                 // Only update missing_count
                 if let Some(&sid) = series_id_map.get(series_name) {
-                let _ = sqlx::query(
-                    "UPDATE available_downloads SET missing_count = $2, updated_at = NOW() WHERE series_id = $1",
-                )
-                .bind(sid)
-                .bind(missing_count)
-                .execute(pool)
-                .await;
+                    let _ = sqlx::query(
+                        "UPDATE available_downloads SET missing_count = $2, updated_at = NOW() WHERE series_id = $1",
+                    )
+                    .bind(sid)
+                    .bind(missing_count)
+                    .execute(pool)
+                    .await;
                 }
             }
             Err(e) => {
@@ -839,7 +846,7 @@ async fn search_prowlarr_for_series(
     categories: &[i32],
     series_name: &str,
     missing_volumes: &[i32],
-) -> Result<Vec<AvailableReleaseDto>, String> {
+) -> Result<(Vec<AvailableReleaseDto>, usize), String> {
     let query = format!("\"{}\"", series_name);
 
     let mut params: Vec<(&str, String)> = vec![
@@ -869,6 +876,8 @@ async fn search_prowlarr_for_series(
         .await
         .map_err(|e| format!("Failed to parse Prowlarr response: {e}"))?;
 
+    let raw_count = raw_releases.len();
+
     let matched: Vec<AvailableReleaseDto> = raw_releases
         .into_iter()
         .filter_map(|r| {
@@ -891,7 +900,7 @@ async fn search_prowlarr_for_series(
         })
         .collect();
 
-    Ok(matched)
+    Ok((matched, raw_count))
 }
 
 async fn insert_event(

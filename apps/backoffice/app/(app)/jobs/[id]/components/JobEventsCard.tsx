@@ -126,20 +126,22 @@ export function JobEventsCard({ events, t, locale }: JobEventsCardProps) {
           {events.map((event) => (
             <div
               key={event.id}
-              className={`flex items-start gap-2 px-2 py-1.5 rounded text-xs ${levelRowClass(event.level)}`}
+              className={`flex flex-wrap items-start gap-x-2 gap-y-0.5 px-2 py-1.5 rounded text-xs ${levelRowClass(event.level)}`}
             >
-              <LevelIcon level={event.level} />
-              <EventTypeBadge eventType={event.event_type} />
-              <EntityLink event={event} />
-              {event.message && (
-                <span className={`truncate ${
-                  event.level === "error" ? "text-destructive" :
-                  event.level === "warning" ? "text-amber-600 dark:text-amber-400" :
-                  "text-muted-foreground"
-                }`}>
-                  {event.message}
-                </span>
-              )}
+              <div className="flex items-start gap-2 min-w-0 flex-1">
+                <LevelIcon level={event.level} />
+                <EventTypeBadge eventType={event.event_type} />
+                <EntityLink event={event} />
+                {event.message && (
+                  <span className={`truncate ${
+                    event.level === "error" ? "text-destructive" :
+                    event.level === "warning" ? "text-amber-600 dark:text-amber-400" :
+                    "text-muted-foreground"
+                  }`}>
+                    {event.message}
+                  </span>
+                )}
+              </div>
               <span className="text-[10px] text-muted-foreground shrink-0 ml-auto">
                 {new Date(event.created_at).toLocaleString(locale)}
               </span>
