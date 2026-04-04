@@ -763,6 +763,25 @@ async fn handle_stale_deletions(
 
     if removed_count > 0 {
         info!("[SCAN] Removed {} stale files from database", removed_count);
+
+        // Clean up orphan series: no books, no metadata links, no available downloads
+        // (preserves series added from Discovery that have metadata but no files yet)
+        let orphan_result = sqlx::query_scalar::<_, i64>(
+            "DELETE FROM series WHERE library_id = $1 \
+             AND NOT EXISTS (SELECT 1 FROM books WHERE series_id = series.id) \
+             AND NOT EXISTS (SELECT 1 FROM external_metadata_links WHERE series_id = series.id) \
+             AND NOT EXISTS (SELECT 1 FROM available_downloads WHERE series_id = series.id) \
+             RETURNING 1",
+        )
+        .bind(library_id)
+        .fetch_all(&state.pool)
+        .await?;
+
+        let orphan_count = orphan_result.len();
+        if orphan_count > 0 {
+            info!("[SCAN] Removed {} orphan series (no remaining books)", orphan_count);
+            stats.warnings += orphan_count; // track in stats
+        }
     }
 
     Ok(())
@@ -1262,5 +1281,82 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(before_updated_at, after_updated_at, "updated_at should not have changed");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn orphan_series_cleaned_up_after_book_deletion(pool: sqlx::PgPool) {
+        let library_id = create_test_library(&pool, "orphan_test").await;
+
+        // Create three series
+        let series_with_books = Uuid::new_v4();
+        let series_empty_no_links = Uuid::new_v4();
+        let series_empty_with_metadata = Uuid::new_v4();
+        for (id, name) in [
+            (series_with_books, "Has Books"),
+            (series_empty_no_links, "Empty No Links"),
+            (series_empty_with_metadata, "Empty With Metadata"),
+        ] {
+            sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, $3)")
+                .bind(id)
+                .bind(library_id)
+                .bind(name)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+
+        // First series has a book
+        let book_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO books (id, library_id, title, kind, format, series_id) VALUES ($1, $2, $3, $4, $5, $6)",
+        )
+        .bind(book_id)
+        .bind(library_id)
+        .bind("Book 1")
+        .bind("comic")
+        .bind("cbz")
+        .bind(series_with_books)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Third series has a metadata link (added from Discovery)
+        sqlx::query(
+            "INSERT INTO external_metadata_links (id, series_id, provider, external_id, external_url) \
+             VALUES (gen_random_uuid(), $1, $2, $3, $4)",
+        )
+        .bind(series_empty_with_metadata)
+        .bind("senscritique")
+        .bind("12345")
+        .bind("https://www.senscritique.com/serie/12345")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Delete orphan series (no books, no metadata, no downloads)
+        let deleted = sqlx::query_scalar::<_, i64>(
+            "DELETE FROM series WHERE library_id = $1 \
+             AND NOT EXISTS (SELECT 1 FROM books WHERE series_id = series.id) \
+             AND NOT EXISTS (SELECT 1 FROM external_metadata_links WHERE series_id = series.id) \
+             AND NOT EXISTS (SELECT 1 FROM available_downloads WHERE series_id = series.id) \
+             RETURNING 1",
+        )
+        .bind(library_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(deleted.len(), 1, "should delete only the truly orphan series");
+
+        // Verify: series_with_books and series_empty_with_metadata still exist
+        let remaining: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM series WHERE library_id = $1 ORDER BY name")
+            .bind(library_id)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!(remaining.len(), 2);
+        assert!(remaining.contains(&series_with_books));
+        assert!(remaining.contains(&series_empty_with_metadata));
+        assert!(!remaining.contains(&series_empty_no_links));
     }
 }
