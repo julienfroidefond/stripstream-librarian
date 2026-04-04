@@ -853,6 +853,35 @@ pub(crate) async fn process_metadata_batch(
 
     info!("[METADATA_BATCH] job={job_id} completed: {processed}/{total} series processed");
 
+    // Count per-outcome stats from events for the notification
+    let event_counts = sqlx::query(
+        "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
+    )
+    .bind(job_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let mut n_auto_matched = 0i64;
+    let mut n_no_results = 0i64;
+    let mut n_low_confidence = 0i64;
+    let mut n_too_many = 0i64;
+    let mut n_already_linked = 0i64;
+    let mut n_errors = 0i64;
+    for row in &event_counts {
+        let s: String = row.get("event_type");
+        let c: i64 = row.get("cnt");
+        match s.as_str() {
+            "metadata_matched" => n_auto_matched = c,
+            "metadata_no_results" => n_no_results = c,
+            "metadata_low_confidence" => n_low_confidence = c,
+            "metadata_too_many" => n_too_many = c,
+            "metadata_already_linked" => n_already_linked = c,
+            "error" => n_errors = c,
+            _ => {}
+        }
+    }
+
     let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
         .bind(library_id)
         .fetch_optional(pool)
@@ -865,6 +894,12 @@ pub(crate) async fn process_metadata_batch(
             library_name,
             total_series: total,
             processed,
+            auto_matched: n_auto_matched,
+            no_results: n_no_results,
+            low_confidence: n_low_confidence,
+            too_many: n_too_many,
+            already_linked: n_already_linked,
+            errors: n_errors,
         },
     );
 

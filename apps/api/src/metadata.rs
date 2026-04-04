@@ -397,12 +397,28 @@ pub async fn approve_metadata(
     .await
     .ok()
     .flatten();
+    // Collect notification data from the report
+    let notif_fields: Vec<String> = report
+        .series
+        .as_ref()
+        .map(|s| s.fields_updated.iter().map(|f| f.field.clone()).collect())
+        .unwrap_or_default();
+    let notif_books_matched = report.books_matched as usize;
+    let notif_books_updated = report
+        .books
+        .iter()
+        .filter(|b| !b.fields_updated.is_empty())
+        .count();
+
     notifications::notify(
         state.pool.clone(),
         notifications::NotificationEvent::MetadataApproved {
             series_name: series_name.clone(),
             provider: provider_for_notif,
             thumbnail_path,
+            fields_updated: notif_fields,
+            books_matched: notif_books_matched,
+            books_updated: notif_books_updated,
         },
     );
 

@@ -818,6 +818,10 @@ pub(crate) async fn process_download_detection(
             library_name,
             total_series: total,
             found: count_found,
+            not_found: count_not_found,
+            no_missing: count_no_missing,
+            no_metadata: count_no_metadata,
+            errors: count_errors,
         },
     );
 

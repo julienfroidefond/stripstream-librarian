@@ -643,12 +643,14 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
                 }
             }
 
+            let volumes: Vec<i32> = imported.iter().map(|f| f.volume).collect();
             notifications::notify(
                 pool.clone(),
                 notifications::NotificationEvent::TorrentImportCompleted {
                     library_name: library_name.clone(),
                     series_name: series_name.clone(),
                     imported_count: imported.len(),
+                    volumes,
                 },
             );
 

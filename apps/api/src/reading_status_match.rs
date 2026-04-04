@@ -558,6 +558,10 @@ pub(crate) async fn process_reading_status_match(
             library_name,
             total_series: total,
             linked: count_linked as i32,
+            already_linked: count_already_linked,
+            no_results: count_no_results,
+            ambiguous: count_ambiguous,
+            errors: count_errors,
         },
     );
 

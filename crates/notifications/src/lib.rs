@@ -250,12 +250,21 @@ pub enum NotificationEvent {
         series_name: String,
         provider: String,
         thumbnail_path: Option<String>,
+        fields_updated: Vec<String>,
+        books_matched: usize,
+        books_updated: usize,
     },
     // Metadata batch (auto-match)
     MetadataBatchCompleted {
         library_name: Option<String>,
         total_series: i32,
         processed: i32,
+        auto_matched: i64,
+        no_results: i64,
+        low_confidence: i64,
+        too_many: i64,
+        already_linked: i64,
+        errors: i64,
     },
     MetadataBatchFailed {
         library_name: Option<String>,
@@ -267,6 +276,9 @@ pub enum NotificationEvent {
         refreshed: i32,
         unchanged: i32,
         errors: i32,
+        series_fields_updated: usize,
+        books_fields_updated: usize,
+        details: Vec<String>,
     },
     MetadataRefreshFailed {
         library_name: Option<String>,
@@ -277,6 +289,10 @@ pub enum NotificationEvent {
         library_name: Option<String>,
         total_series: i32,
         linked: i32,
+        already_linked: i64,
+        no_results: i64,
+        ambiguous: i64,
+        errors: i64,
     },
     ReadingStatusMatchFailed {
         library_name: Option<String>,
@@ -287,6 +303,9 @@ pub enum NotificationEvent {
         library_name: Option<String>,
         total_series: i32,
         pushed: i32,
+        skipped: i64,
+        no_books: i64,
+        errors: i64,
     },
     ReadingStatusPushFailed {
         library_name: Option<String>,
@@ -297,6 +316,10 @@ pub enum NotificationEvent {
         library_name: Option<String>,
         total_series: i32,
         found: i64,
+        not_found: i64,
+        no_missing: i64,
+        no_metadata: i64,
+        errors: i64,
     },
     DownloadDetectionFailed {
         library_name: Option<String>,
@@ -307,6 +330,7 @@ pub enum NotificationEvent {
         library_name: Option<String>,
         series_name: String,
         imported_count: usize,
+        volumes: Vec<i32>,
     },
     TorrentImportFailed {
         library_name: Option<String>,
@@ -453,29 +477,70 @@ fn format_event(event: &NotificationEvent) -> String {
         NotificationEvent::MetadataApproved {
             series_name,
             provider,
+            fields_updated,
+            books_matched,
+            books_updated,
             ..
         } => {
-            [
+            let mut lines = vec![
                 format!("✅ <b>Metadata linked</b>"),
                 String::new(),
                 format!("📚 <b>Series:</b> {series_name}"),
                 format!("🔗 <b>Provider:</b> {provider}"),
-            ]
-            .join("\n")
+            ];
+            if !fields_updated.is_empty() {
+                lines.push(format!("📝 <b>Fields:</b> {}", fields_updated.join(", ")));
+            }
+            if *books_matched > 0 || *books_updated > 0 {
+                lines.push(format!("📖 <b>Books:</b> {} matched, {} updated", books_matched, books_updated));
+            }
+            lines.join("\n")
         }
         NotificationEvent::MetadataBatchCompleted {
             library_name,
             total_series,
             processed,
+            auto_matched,
+            no_results,
+            low_confidence,
+            too_many,
+            already_linked,
+            errors,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
-            [
-                format!("✅ <b>Metadata batch completed</b>"),
+            let mut lines = vec![
+                format!("📊 <b>Metadata batch completed</b>"),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
-                format!("📊 <b>Processed:</b> {processed}/{total_series} series"),
-            ]
-            .join("\n")
+                format!("📋 <b>Processed:</b> {processed}/{total_series} series"),
+            ];
+            if *auto_matched > 0 {
+                lines.push(format!("✅ Auto-matched: <b>{auto_matched}</b>"));
+            }
+            let mut warnings = Vec::new();
+            if *low_confidence > 0 {
+                warnings.push(format!("{low_confidence} low confidence"));
+            }
+            if *too_many > 0 {
+                warnings.push(format!("{too_many} too many results"));
+            }
+            if !warnings.is_empty() {
+                lines.push(format!("⚠️ {}", warnings.join(", ")));
+            }
+            if *errors > 0 {
+                lines.push(format!("❌ Errors: <b>{errors}</b>"));
+            }
+            let mut skips = Vec::new();
+            if *already_linked > 0 {
+                skips.push(format!("{already_linked} already linked"));
+            }
+            if *no_results > 0 {
+                skips.push(format!("{no_results} no results"));
+            }
+            if !skips.is_empty() {
+                lines.push(format!("⏭️ {}", skips.join(", ")));
+            }
+            lines.join("\n")
         }
         NotificationEvent::MetadataBatchFailed {
             library_name,
@@ -497,19 +562,25 @@ fn format_event(event: &NotificationEvent) -> String {
             refreshed,
             unchanged,
             errors,
+            series_fields_updated,
+            books_fields_updated,
+            details,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let mut lines = vec![
-                format!("✅ <b>Metadata refresh completed</b>"),
+                format!("🔄 <b>Metadata refresh completed</b>"),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
-                String::new(),
-                format!("📊 <b>Results</b>"),
-                format!("  🔄 Updated: <b>{refreshed}</b>"),
-                format!("  ▪️ Unchanged: <b>{unchanged}</b>"),
+                format!("📝 {refreshed} series refreshed, {unchanged} unchanged"),
             ];
+            if *series_fields_updated > 0 || *books_fields_updated > 0 {
+                lines.push(format!("📊 {series_fields_updated} series fields, {books_fields_updated} book fields updated"));
+            }
             if *errors > 0 {
-                lines.push(format!("  ⚠️ Errors: <b>{errors}</b>"));
+                lines.push(format!("❌ Errors: <b>{errors}</b>"));
+            }
+            for detail in details.iter().take(5) {
+                lines.push(format!("📖 {detail}"));
             }
             lines.join("\n")
         }
@@ -532,17 +603,31 @@ fn format_event(event: &NotificationEvent) -> String {
             library_name,
             total_series,
             linked,
+            already_linked,
+            no_results,
+            ambiguous,
+            errors,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
-            [
+            let mut lines = vec![
                 format!("✅ <b>Reading status match completed</b>"),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
-                String::new(),
-                format!("📊 <b>Results</b>"),
-                format!("  🔗 Linked: <b>{linked}</b> / <b>{total_series}</b> series"),
-            ]
-            .join("\n")
+                format!("🔗 Linked: <b>{linked}</b> / <b>{total_series}</b> series"),
+            ];
+            if *already_linked > 0 {
+                lines.push(format!("⏭️ Already linked: <b>{already_linked}</b>"));
+            }
+            if *ambiguous > 0 {
+                lines.push(format!("⚠️ Ambiguous: <b>{ambiguous}</b>"));
+            }
+            if *no_results > 0 {
+                lines.push(format!("🔍 No results: <b>{no_results}</b>"));
+            }
+            if *errors > 0 {
+                lines.push(format!("❌ Errors: <b>{errors}</b>"));
+            }
+            lines.join("\n")
         }
         NotificationEvent::ReadingStatusMatchFailed {
             library_name,
@@ -563,17 +648,27 @@ fn format_event(event: &NotificationEvent) -> String {
             library_name,
             total_series,
             pushed,
+            skipped,
+            no_books,
+            errors,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
-            [
+            let mut lines = vec![
                 format!("✅ <b>Reading status push completed</b>"),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
-                String::new(),
-                format!("📊 <b>Results</b>"),
-                format!("  ⬆️ Pushed: <b>{pushed}</b> / <b>{total_series}</b> series"),
-            ]
-            .join("\n")
+                format!("⬆️ Pushed: <b>{pushed}</b> / <b>{total_series}</b> series"),
+            ];
+            if *skipped > 0 {
+                lines.push(format!("⏭️ Skipped: <b>{skipped}</b>"));
+            }
+            if *no_books > 0 {
+                lines.push(format!("📭 No books: <b>{no_books}</b>"));
+            }
+            if *errors > 0 {
+                lines.push(format!("❌ Errors: <b>{errors}</b>"));
+            }
+            lines.join("\n")
         }
         NotificationEvent::ReadingStatusPushFailed {
             library_name,
@@ -594,17 +689,31 @@ fn format_event(event: &NotificationEvent) -> String {
             library_name,
             total_series,
             found,
+            not_found,
+            no_missing,
+            no_metadata,
+            errors,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
-            [
+            let mut lines = vec![
                 format!("✅ <b>Download detection completed</b>"),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
-                String::new(),
-                format!("📊 <b>Results</b>"),
-                format!("  📥 Available: <b>{found}</b> / <b>{total_series}</b> series"),
-            ]
-            .join("\n")
+                format!("📥 Found: <b>{found}</b> / <b>{total_series}</b> series"),
+            ];
+            if *not_found > 0 {
+                lines.push(format!("🔍 Not found: <b>{not_found}</b>"));
+            }
+            if *no_missing > 0 {
+                lines.push(format!("⏭️ No missing volumes: <b>{no_missing}</b>"));
+            }
+            if *no_metadata > 0 {
+                lines.push(format!("📭 No metadata: <b>{no_metadata}</b>"));
+            }
+            if *errors > 0 {
+                lines.push(format!("❌ Errors: <b>{errors}</b>"));
+            }
+            lines.join("\n")
         }
         NotificationEvent::DownloadDetectionFailed {
             library_name,
@@ -625,16 +734,22 @@ fn format_event(event: &NotificationEvent) -> String {
             library_name,
             series_name,
             imported_count,
+            volumes,
         } => {
             let lib = library_name.as_deref().unwrap_or("Unknown");
-            [
-                format!("✅ <b>Torrent import completed</b>"),
+            let mut lines = vec![
+                format!("📥 <b>Torrent import completed</b>"),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
-                format!("📚 <b>Series:</b> {series_name}"),
-                format!("📥 <b>Files imported:</b> {imported_count}"),
-            ]
-            .join("\n")
+                format!("📚 <b>{series_name}</b> — {imported_count} files imported"),
+            ];
+            if !volumes.is_empty() {
+                let mut sorted = volumes.clone();
+                sorted.sort();
+                let vol_list: Vec<String> = sorted.iter().map(|v| v.to_string()).collect();
+                lines.push(format!("📖 Volumes: {}", vol_list.join(", ")));
+            }
+            lines.join("\n")
         }
         NotificationEvent::TorrentImportFailed {
             library_name,

@@ -669,6 +669,29 @@ async fn process_metadata_refresh_inner(
         .await
         .ok()
         .flatten();
+    // Compute detailed stats for notification
+    let mut series_fields_count = 0usize;
+    let mut books_fields_count = 0usize;
+    let mut detail_lines: Vec<String> = Vec::new();
+    for result in &all_results {
+        if result.status == "updated" {
+            let series_field_names: Vec<&str> = result.series_changes.iter().map(|c| c.field.as_str()).collect();
+            let book_field_count = result.book_changes.iter().map(|b| b.changes.len()).sum::<usize>();
+            series_fields_count += series_field_names.len();
+            books_fields_count += book_field_count;
+            if !series_field_names.is_empty() || book_field_count > 0 {
+                let mut parts: Vec<String> = Vec::new();
+                if !series_field_names.is_empty() {
+                    parts.push(series_field_names.join(", "));
+                }
+                if book_field_count > 0 {
+                    parts.push(format!("{book_field_count} book fields"));
+                }
+                detail_lines.push(format!("{}: {}", result.series_name, parts.join(", ")));
+            }
+        }
+    }
+
     notifications::notify(
         pool.clone(),
         notifications::NotificationEvent::MetadataRefreshCompleted {
@@ -676,6 +699,9 @@ async fn process_metadata_refresh_inner(
             refreshed,
             unchanged,
             errors,
+            series_fields_updated: series_fields_count,
+            books_fields_updated: books_fields_count,
+            details: detail_lines,
         },
     );
 

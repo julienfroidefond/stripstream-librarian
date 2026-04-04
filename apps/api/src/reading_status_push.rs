@@ -635,6 +635,9 @@ pub async fn process_reading_status_push(
             library_name,
             total_series: total,
             pushed: count_pushed as i32,
+            skipped: count_skipped,
+            no_books: count_no_books,
+            errors: count_errors,
         },
     );
 
