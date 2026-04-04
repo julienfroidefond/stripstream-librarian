@@ -385,7 +385,7 @@ pub async fn prowlarr_discovery(
         }
 
         // Extract volume numbers from the title
-        let volumes = crate::prowlarr::extract_volumes_from_title_pub(&title);
+        let volumes = parsers::extract_volumes(&title);
 
         let key = series_name.to_lowercase();
         let entry = series_map.entry(key).or_insert_with(|| ProwlarrDiscoveryItem {

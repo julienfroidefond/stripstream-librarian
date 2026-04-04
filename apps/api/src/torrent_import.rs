@@ -6,7 +6,8 @@ use std::time::Duration;
 use tracing::{info, trace, warn};
 use uuid::Uuid;
 
-use crate::{error::ApiError, metadata_refresh, prowlarr::extract_volumes_from_title_pub, qbittorrent::{load_qbittorrent_config, qbittorrent_login, resolve_hash_by_category}, state::AppState};
+use crate::{error::ApiError, metadata_refresh, qbittorrent::{load_qbittorrent_config, qbittorrent_login, resolve_hash_by_category}, state::AppState};
+use parsers::extract_volumes;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -766,7 +767,7 @@ async fn do_import(
     info!("[IMPORT] Found {} source files: {:?}", all_source_files.len(), all_source_files);
     for f in &all_source_files {
         let fname = std::path::Path::new(f).file_name().and_then(|n| n.to_str()).unwrap_or("");
-        let extracted = extract_volumes_from_title_pub(fname);
+        let extracted = extract_volumes(fname);
         info!("[IMPORT]   '{}' => extracted volumes: {:?}", fname, extracted);
     }
 
@@ -776,7 +777,7 @@ async fn do_import(
         let all_torrent_volumes: std::collections::HashSet<i32> = all_source_files.iter()
             .flat_map(|f| {
                 let fname = std::path::Path::new(f).file_name().and_then(|n| n.to_str()).unwrap_or("");
-                extract_volumes_from_title_pub(fname)
+                extract_volumes(fname)
             })
             .collect();
 
@@ -824,7 +825,7 @@ async fn do_import(
             .and_then(|e| e.to_str())
             .unwrap_or("");
 
-        let all_extracted = extract_volumes_from_title_pub(filename);
+        let all_extracted = extract_volumes(filename);
         let matched: Vec<i32> = if expected_set.is_empty() || replace_existing {
             all_extracted.clone() // No filter — import everything (empty set or replace mode)
         } else {
@@ -990,7 +991,7 @@ fn deduplicate_by_format(
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("");
-        let all_volumes = extract_volumes_from_title_pub(filename);
+        let all_volumes = extract_volumes(filename);
         // If expected_set is empty, keep all files (no filtering)
         let volumes: Vec<i32> = if expected_set.is_empty() {
             all_volumes
@@ -1047,7 +1048,7 @@ fn find_reference_from_disk(dir: &str, exclude_volumes: &std::collections::HashS
             continue;
         }
         let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        let volumes = extract_volumes_from_title_pub(filename);
+        let volumes = extract_volumes(filename);
         if let Some(&vol) = volumes.iter().max() {
             if exclude_volumes.contains(&vol) {
                 continue;
