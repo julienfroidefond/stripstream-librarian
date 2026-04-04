@@ -252,7 +252,7 @@ pub async fn get_push_report(
     let total_files: Option<i32> = row.get("total_files");
 
     let counts = sqlx::query(
-        "SELECT status, COUNT(*) as cnt FROM reading_status_push_results WHERE job_id = $1 GROUP BY status",
+        "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
     )
     .bind(job_id)
     .fetch_all(&state.pool)
@@ -264,12 +264,12 @@ pub async fn get_push_report(
     let mut errors = 0i64;
 
     for r in &counts {
-        let status: String = r.get("status");
+        let event_type: String = r.get("event_type");
         let cnt: i64 = r.get("cnt");
-        match status.as_str() {
-            "pushed" => pushed = cnt,
-            "skipped" => skipped = cnt,
-            "no_books" => no_books = cnt,
+        match event_type.as_str() {
+            "status_pushed" => pushed = cnt,
+            "status_skipped" => skipped = cnt,
+            "status_no_books" => no_books = cnt,
             "error" => errors = cnt,
             _ => {}
         }
@@ -316,26 +316,35 @@ pub async fn get_push_results(
     let job_library_id: Option<Uuid> = sqlx::query_scalar("SELECT library_id FROM index_jobs WHERE id = $1")
         .bind(job_id).fetch_optional(&state.pool).await?.flatten();
 
-    let rows = if let Some(status_filter) = &query.status {
+    // Map frontend status values to event_type values
+    let event_type_filter = query.status.as_deref().map(|s| match s {
+        "pushed" => "status_pushed",
+        "skipped" => "status_skipped",
+        "no_books" => "status_no_books",
+        "error" => "error",
+        other => other,
+    });
+
+    let rows = if let Some(et_filter) = event_type_filter {
         sqlx::query(
-            "SELECT r.id, r.series_name, r.status, r.anilist_id, r.anilist_title, r.anilist_url, r.anilist_status, r.progress_volumes, r.error_message, s.id AS series_id
-             FROM reading_status_push_results r
-             LEFT JOIN series s ON s.library_id = $3 AND LOWER(s.name) = LOWER(r.series_name)
-             WHERE r.job_id = $1 AND r.status = $2
-             ORDER BY r.series_name",
+            "SELECT e.id, e.entity_name, e.event_type, e.message, e.detail, s.id AS series_id
+             FROM index_job_events e
+             LEFT JOIN series s ON s.library_id = $3 AND LOWER(s.name) = LOWER(e.entity_name)
+             WHERE e.job_id = $1 AND e.event_type = $2
+             ORDER BY e.entity_name",
         )
         .bind(job_id)
-        .bind(status_filter)
+        .bind(et_filter)
         .bind(job_library_id)
         .fetch_all(&state.pool)
         .await?
     } else {
         sqlx::query(
-            "SELECT r.id, r.series_name, r.status, r.anilist_id, r.anilist_title, r.anilist_url, r.anilist_status, r.progress_volumes, r.error_message, s.id AS series_id
-             FROM reading_status_push_results r
-             LEFT JOIN series s ON s.library_id = $2 AND LOWER(s.name) = LOWER(r.series_name)
-             WHERE r.job_id = $1
-             ORDER BY r.status, r.series_name",
+            "SELECT e.id, e.entity_name, e.event_type, e.message, e.detail, s.id AS series_id
+             FROM index_job_events e
+             LEFT JOIN series s ON s.library_id = $2 AND LOWER(s.name) = LOWER(e.entity_name)
+             WHERE e.job_id = $1
+             ORDER BY e.event_type, e.entity_name",
         )
         .bind(job_id)
         .bind(job_library_id)
@@ -345,17 +354,28 @@ pub async fn get_push_results(
 
     let results = rows
         .iter()
-        .map(|row| ReadingStatusPushResultDto {
-            id: row.get("id"),
-            series_id: row.get("series_id"),
-            series_name: row.get("series_name"),
-            status: row.get("status"),
-            anilist_id: row.get("anilist_id"),
-            anilist_title: row.get("anilist_title"),
-            anilist_url: row.get("anilist_url"),
-            anilist_status: row.get("anilist_status"),
-            progress_volumes: row.get("progress_volumes"),
-            error_message: row.get("error_message"),
+        .map(|row| {
+            let event_type: String = row.get("event_type");
+            let detail: Option<serde_json::Value> = row.get("detail");
+            let status = match event_type.as_str() {
+                "status_pushed" => "pushed",
+                "status_skipped" => "skipped",
+                "status_no_books" => "no_books",
+                "error" => "error",
+                other => other,
+            };
+            ReadingStatusPushResultDto {
+                id: row.get("id"),
+                series_id: row.get("series_id"),
+                series_name: row.get::<Option<String>, _>("entity_name").unwrap_or_default(),
+                status: status.to_string(),
+                anilist_id: detail.as_ref().and_then(|d| d["anilist_id"].as_i64()).map(|v| v as i32),
+                anilist_title: detail.as_ref().and_then(|d| d["anilist_title"].as_str().map(String::from)),
+                anilist_url: detail.as_ref().and_then(|d| d["anilist_url"].as_str().map(String::from)),
+                anilist_status: detail.as_ref().and_then(|d| d["anilist_status"].as_str().map(String::from)),
+                progress_volumes: detail.as_ref().and_then(|d| d["progress"].as_i64()).map(|v| v as i32),
+                error_message: row.get("message"),
+            }
         })
         .collect();
 
@@ -491,12 +511,7 @@ pub async fn process_reading_status_push(
         let books_read: i64 = stats_row.get("books_read");
 
         if total_books == 0 {
-            insert_push_result(
-                pool, job_id, library_id, &series.series_name, "no_books",
-                Some(series.anilist_id), series.anilist_title.as_deref(), series.anilist_url.as_deref(),
-                None, None, None,
-            ).await;
-            insert_event(pool, job_id, "status_no_books", "info", Some(&series.series_name), None, None).await;
+            insert_event(pool, job_id, "status_no_books", "info", Some(&series.series_name), None, Some(serde_json::json!({"anilist_id": series.anilist_id, "anilist_title": series.anilist_title, "anilist_url": series.anilist_url}))).await;
             tokio::time::sleep(Duration::from_millis(700)).await;
             continue;
         }
@@ -527,12 +542,7 @@ pub async fn process_reading_status_push(
                 .execute(pool)
                 .await;
 
-                insert_push_result(
-                    pool, job_id, library_id, &series.series_name, "pushed",
-                    Some(series.anilist_id), series.anilist_title.as_deref(), series.anilist_url.as_deref(),
-                    Some(anilist_status), Some(progress_volumes), None,
-                ).await;
-                insert_event(pool, job_id, "status_pushed", "info", Some(&series.series_name), None, Some(serde_json::json!({"anilist_status": anilist_status, "progress": progress_volumes}))).await;
+                insert_event(pool, job_id, "status_pushed", "info", Some(&series.series_name), None, Some(serde_json::json!({"anilist_id": series.anilist_id, "anilist_title": series.anilist_title, "anilist_url": series.anilist_url, "anilist_status": anilist_status, "progress": progress_volumes}))).await;
             }
             Err(e) if e.contains("429") || e.contains("Too Many Requests") => {
                 warn!("[READING_STATUS_PUSH] rate limit hit for '{}', waiting 10s before retry", series.series_name);
@@ -546,12 +556,7 @@ pub async fn process_reading_status_push(
                         .execute(pool)
                         .await;
 
-                        insert_push_result(
-                            pool, job_id, library_id, &series.series_name, "pushed",
-                            Some(series.anilist_id), series.anilist_title.as_deref(), series.anilist_url.as_deref(),
-                            Some(anilist_status), Some(progress_volumes), None,
-                        ).await;
-                        insert_event(pool, job_id, "status_pushed", "info", Some(&series.series_name), None, Some(serde_json::json!({"anilist_status": anilist_status, "progress": progress_volumes}))).await;
+                        insert_event(pool, job_id, "status_pushed", "info", Some(&series.series_name), None, Some(serde_json::json!({"anilist_id": series.anilist_id, "anilist_title": series.anilist_title, "anilist_url": series.anilist_url, "anilist_status": anilist_status, "progress": progress_volumes}))).await;
                     }
                     Err(e2) => {
                         return Err(format!(
@@ -562,12 +567,7 @@ pub async fn process_reading_status_push(
             }
             Err(e) => {
                 warn!("[READING_STATUS_PUSH] series '{}': {e}", series.series_name);
-                insert_push_result(
-                    pool, job_id, library_id, &series.series_name, "error",
-                    Some(series.anilist_id), series.anilist_title.as_deref(), series.anilist_url.as_deref(),
-                    None, None, Some(&e),
-                ).await;
-                insert_event(pool, job_id, "error", "error", Some(&series.series_name), Some(&e), None).await;
+                insert_event(pool, job_id, "error", "error", Some(&series.series_name), Some(&e), Some(serde_json::json!({"anilist_id": series.anilist_id, "anilist_title": series.anilist_title, "anilist_url": series.anilist_url}))).await;
             }
         }
 
@@ -575,9 +575,9 @@ pub async fn process_reading_status_push(
         tokio::time::sleep(Duration::from_millis(700)).await;
     }
 
-    // Build final stats
+    // Build final stats from events
     let counts = sqlx::query(
-        "SELECT status, COUNT(*) as cnt FROM reading_status_push_results WHERE job_id = $1 GROUP BY status",
+        "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
     )
     .bind(job_id)
     .fetch_all(pool)
@@ -589,12 +589,12 @@ pub async fn process_reading_status_push(
     let mut count_no_books = 0i64;
     let mut count_errors = 0i64;
     for row in &counts {
-        let s: String = row.get("status");
+        let s: String = row.get("event_type");
         let c: i64 = row.get("cnt");
         match s.as_str() {
-            "pushed" => count_pushed = c,
-            "skipped" => count_skipped = c,
-            "no_books" => count_no_books = c,
+            "status_pushed" => count_pushed = c,
+            "status_skipped" => count_skipped = c,
+            "status_no_books" => count_no_books = c,
             "error" => count_errors = c,
             _ => {}
         }
@@ -698,41 +698,6 @@ async fn push_to_anilist(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn insert_push_result(
-    pool: &PgPool,
-    job_id: Uuid,
-    library_id: Uuid,
-    series_name: &str,
-    status: &str,
-    anilist_id: Option<i32>,
-    anilist_title: Option<&str>,
-    anilist_url: Option<&str>,
-    anilist_status: Option<&str>,
-    progress_volumes: Option<i32>,
-    error_message: Option<&str>,
-) {
-    let _ = sqlx::query(
-        r#"
-        INSERT INTO reading_status_push_results
-            (job_id, library_id, series_name, status, anilist_id, anilist_title, anilist_url, anilist_status, progress_volumes, error_message)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        "#,
-    )
-    .bind(job_id)
-    .bind(library_id)
-    .bind(series_name)
-    .bind(status)
-    .bind(anilist_id)
-    .bind(anilist_title)
-    .bind(anilist_url)
-    .bind(anilist_status)
-    .bind(progress_volumes)
-    .bind(error_message)
-    .execute(pool)
-    .await;
-}
-
 async fn build_push_stats(pool: &PgPool, job_id: Uuid) -> serde_json::Value {
     let total: Option<i32> = sqlx::query_scalar("SELECT total_files FROM index_jobs WHERE id = $1")
         .bind(job_id)
@@ -742,7 +707,7 @@ async fn build_push_stats(pool: &PgPool, job_id: Uuid) -> serde_json::Value {
         .flatten();
 
     let counts = sqlx::query(
-        "SELECT status, COUNT(*) as cnt FROM reading_status_push_results WHERE job_id = $1 GROUP BY status",
+        "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
     )
     .bind(job_id)
     .fetch_all(pool)
@@ -754,12 +719,12 @@ async fn build_push_stats(pool: &PgPool, job_id: Uuid) -> serde_json::Value {
     let mut no_books = 0i64;
     let mut errors = 0i64;
     for row in &counts {
-        let s: String = row.get("status");
+        let s: String = row.get("event_type");
         let c: i64 = row.get("cnt");
         match s.as_str() {
-            "pushed" => pushed = c,
-            "skipped" => skipped = c,
-            "no_books" => no_books = c,
+            "status_pushed" => pushed = c,
+            "status_skipped" => skipped = c,
+            "status_no_books" => no_books = c,
             "error" => errors = c,
             _ => {}
         }
@@ -861,5 +826,152 @@ mod tests {
         assert_eq!(row.get::<String, _>("level"), "error");
         assert_eq!(row.get::<Option<String>, _>("entity_name"), Some("FailedSeries".to_string()));
         assert_eq!(row.get::<Option<String>, _>("message"), Some("rate limit hit".to_string()));
+    }
+
+    // -----------------------------------------------------------------------
+    // Report endpoint: GROUP BY event_type counts from index_job_events
+    // -----------------------------------------------------------------------
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn report_counts_from_events(pool: sqlx::PgPool) {
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'PushReportLib', '/libraries/push_report')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at, total_files) VALUES ($1, $2, 'reading_status_push', 'success', NOW(), 6)",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Insert events with different event_types
+        super::insert_event(&pool, job_id, "status_pushed", "info", Some("Naruto"), None, Some(serde_json::json!({"anilist_status": "CURRENT", "progress": 5}))).await;
+        super::insert_event(&pool, job_id, "status_pushed", "info", Some("Bleach"), None, Some(serde_json::json!({"anilist_status": "COMPLETED", "progress": 74}))).await;
+        super::insert_event(&pool, job_id, "status_skipped", "info", Some("OnePiece"), None, None).await;
+        super::insert_event(&pool, job_id, "status_no_books", "info", Some("EmptySeries"), None, None).await;
+        super::insert_event(&pool, job_id, "status_no_books", "info", Some("EmptySeries2"), None, None).await;
+        super::insert_event(&pool, job_id, "error", "error", Some("BrokenSeries"), Some("rate limit"), None).await;
+
+        // Run the same report query used in get_push_report
+        let counts = sqlx::query(
+            "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
+        )
+        .bind(job_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        let mut pushed = 0i64;
+        let mut skipped = 0i64;
+        let mut no_books = 0i64;
+        let mut errors = 0i64;
+
+        for r in &counts {
+            let event_type: String = r.get("event_type");
+            let cnt: i64 = r.get("cnt");
+            match event_type.as_str() {
+                "status_pushed" => pushed = cnt,
+                "status_skipped" => skipped = cnt,
+                "status_no_books" => no_books = cnt,
+                "error" => errors = cnt,
+                _ => {}
+            }
+        }
+
+        assert_eq!(pushed, 2, "status_pushed -> pushed");
+        assert_eq!(skipped, 1, "status_skipped -> skipped");
+        assert_eq!(no_books, 2, "status_no_books -> no_books");
+        assert_eq!(errors, 1, "error -> errors");
+    }
+
+    // -----------------------------------------------------------------------
+    // Results endpoint: event detail JSON mapped to ReadingStatusPushResultDto
+    // -----------------------------------------------------------------------
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn results_mapped_from_event_detail(pool: sqlx::PgPool) {
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'PushResultLib', '/libraries/push_result')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'reading_status_push', 'success', NOW())",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let detail = serde_json::json!({
+            "anilist_id": 54321,
+            "anilist_title": "Naruto",
+            "anilist_url": "https://anilist.co/manga/54321",
+            "anilist_status": "CURRENT",
+            "progress": 42,
+        });
+
+        super::insert_event(&pool, job_id, "status_pushed", "info", Some("Naruto"), None, Some(detail)).await;
+
+        // Run the actual results query (no filter)
+        let rows = sqlx::query(
+            "SELECT e.id, e.entity_name, e.event_type, e.message, e.detail, s.id AS series_id
+             FROM index_job_events e
+             LEFT JOIN series s ON s.library_id = $2 AND LOWER(s.name) = LOWER(e.entity_name)
+             WHERE e.job_id = $1
+             ORDER BY e.event_type, e.entity_name",
+        )
+        .bind(job_id)
+        .bind(Some(library_id))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(rows.len(), 1);
+
+        let row = &rows[0];
+        let event_type: String = row.get("event_type");
+        let row_detail: Option<serde_json::Value> = row.get("detail");
+
+        // Map event_type to status like the endpoint does
+        let status = match event_type.as_str() {
+            "status_pushed" => "pushed",
+            "status_skipped" => "skipped",
+            "status_no_books" => "no_books",
+            "error" => "error",
+            other => other,
+        };
+
+        assert_eq!(status, "pushed");
+
+        let d = row_detail.as_ref().unwrap();
+        let anilist_id = d["anilist_id"].as_i64().map(|v| v as i32);
+        let anilist_title = d["anilist_title"].as_str().map(String::from);
+        let anilist_url = d["anilist_url"].as_str().map(String::from);
+        let anilist_status = d["anilist_status"].as_str().map(String::from);
+        let progress = d["progress"].as_i64().map(|v| v as i32);
+
+        assert_eq!(anilist_id, Some(54321));
+        assert_eq!(anilist_title.as_deref(), Some("Naruto"));
+        assert_eq!(anilist_url.as_deref(), Some("https://anilist.co/manga/54321"));
+        assert_eq!(anilist_status.as_deref(), Some("CURRENT"));
+        assert_eq!(progress, Some(42));
+
+        let entity_name: Option<String> = row.get("entity_name");
+        assert_eq!(entity_name.as_deref(), Some("Naruto"));
+
+        let error_message: Option<String> = row.get("message");
+        assert!(error_message.is_none(), "pushed event should have no error message");
     }
 }

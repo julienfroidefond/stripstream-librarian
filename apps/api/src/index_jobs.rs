@@ -463,9 +463,9 @@ pub async fn get_job_errors(
     id: axum::extract::Path<Uuid>,
 ) -> Result<Json<Vec<JobErrorResponse>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT id, file_path, error_message, created_at 
-         FROM index_job_errors 
-         WHERE job_id = $1 
+        "SELECT id, entity_name, message, created_at
+         FROM index_job_events
+         WHERE job_id = $1 AND level = 'error'
          ORDER BY created_at ASC"
     )
     .bind(id.0)
@@ -476,8 +476,8 @@ pub async fn get_job_errors(
         .into_iter()
         .map(|row| JobErrorResponse {
             id: row.get("id"),
-            file_path: row.get("file_path"),
-            error_message: row.get("error_message"),
+            file_path: row.get::<Option<String>, _>("entity_name").unwrap_or_default(),
+            error_message: row.get::<Option<String>, _>("message").unwrap_or_default(),
             created_at: row.get("created_at"),
         })
         .collect();
@@ -984,5 +984,74 @@ mod tests {
 
         let events = map_event_rows(rows);
         assert!(events.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // get_job_errors: reads events WHERE level='error'
+    // -----------------------------------------------------------------------
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_job_errors_reads_error_events(pool: sqlx::PgPool) {
+        use sqlx::Row;
+
+        let job_id = create_test_job(&pool).await;
+
+        // Insert mix of error and non-error events
+        insert_event(&pool, job_id, "book_added", "info", Some("book"), Some("good_file.cbz"), None).await;
+        insert_event(&pool, job_id, "parse_error", "error", None, Some("/path/to/bad_file.cbz"), Some("corrupt archive")).await;
+        insert_event(&pool, job_id, "thumbnail_error", "error", None, Some("/path/to/another.cbr"), Some("image decode failed")).await;
+        insert_event(&pool, job_id, "book_updated", "warning", Some("book"), Some("warn_file.pdf"), Some("cover missing")).await;
+
+        // Run the actual query used by get_job_errors
+        let rows = sqlx::query(
+            "SELECT id, entity_name, message, created_at
+             FROM index_job_events
+             WHERE job_id = $1 AND level = 'error'
+             ORDER BY created_at ASC"
+        )
+        .bind(job_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(rows.len(), 2, "should only return level='error' events");
+
+        // Map the same way the endpoint does
+        let errors: Vec<super::JobErrorResponse> = rows
+            .into_iter()
+            .map(|row| super::JobErrorResponse {
+                id: row.get("id"),
+                file_path: row.get::<Option<String>, _>("entity_name").unwrap_or_default(),
+                error_message: row.get::<Option<String>, _>("message").unwrap_or_default(),
+                created_at: row.get("created_at"),
+            })
+            .collect();
+
+        assert_eq!(errors[0].file_path, "/path/to/bad_file.cbz");
+        assert_eq!(errors[0].error_message, "corrupt archive");
+        assert_eq!(errors[1].file_path, "/path/to/another.cbr");
+        assert_eq!(errors[1].error_message, "image decode failed");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_job_errors_empty_when_no_errors(pool: sqlx::PgPool) {
+        let job_id = create_test_job(&pool).await;
+
+        // Insert only non-error events
+        insert_event(&pool, job_id, "book_added", "info", Some("book"), Some("file.cbz"), None).await;
+        insert_event(&pool, job_id, "book_updated", "warning", Some("book"), Some("file2.pdf"), Some("cover missing")).await;
+
+        let rows = sqlx::query(
+            "SELECT id, entity_name, message, created_at
+             FROM index_job_events
+             WHERE job_id = $1 AND level = 'error'
+             ORDER BY created_at ASC"
+        )
+        .bind(job_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert!(rows.is_empty(), "should return no rows when there are no error-level events");
     }
 }

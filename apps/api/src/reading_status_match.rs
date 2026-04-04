@@ -240,7 +240,7 @@ pub async fn get_match_report(
     let total_files: Option<i32> = row.get("total_files");
 
     let counts = sqlx::query(
-        "SELECT status, COUNT(*) as cnt FROM reading_status_match_results WHERE job_id = $1 GROUP BY status",
+        "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
     )
     .bind(job_id)
     .fetch_all(&state.pool)
@@ -253,13 +253,13 @@ pub async fn get_match_report(
     let mut errors = 0i64;
 
     for r in &counts {
-        let status: String = r.get("status");
+        let event_type: String = r.get("event_type");
         let cnt: i64 = r.get("cnt");
-        match status.as_str() {
-            "linked" => linked = cnt,
-            "already_linked" => already_linked = cnt,
-            "no_results" => no_results = cnt,
-            "ambiguous" => ambiguous = cnt,
+        match event_type.as_str() {
+            "anilist_linked" => linked = cnt,
+            "anilist_already_linked" => already_linked = cnt,
+            "anilist_no_results" => no_results = cnt,
+            "anilist_ambiguous" => ambiguous = cnt,
             "error" => errors = cnt,
             _ => {}
         }
@@ -302,26 +302,36 @@ pub async fn get_match_results(
     let job_library_id: Option<Uuid> = sqlx::query_scalar("SELECT library_id FROM index_jobs WHERE id = $1")
         .bind(job_id).fetch_optional(&state.pool).await?.flatten();
 
-    let rows = if let Some(status_filter) = &query.status {
+    // Map frontend status values to event_type values
+    let event_type_filter = query.status.as_deref().map(|s| match s {
+        "linked" => "anilist_linked",
+        "already_linked" => "anilist_already_linked",
+        "no_results" => "anilist_no_results",
+        "ambiguous" => "anilist_ambiguous",
+        "error" => "error",
+        other => other,
+    });
+
+    let rows = if let Some(et_filter) = event_type_filter {
         sqlx::query(
-            "SELECT r.id, r.series_name, r.status, r.anilist_id, r.anilist_title, r.anilist_url, r.error_message, s.id AS series_id
-             FROM reading_status_match_results r
-             LEFT JOIN series s ON s.library_id = $3 AND LOWER(s.name) = LOWER(r.series_name)
-             WHERE r.job_id = $1 AND r.status = $2
-             ORDER BY r.series_name",
+            "SELECT e.id, e.entity_name, e.event_type, e.message, e.detail, s.id AS series_id
+             FROM index_job_events e
+             LEFT JOIN series s ON s.library_id = $3 AND LOWER(s.name) = LOWER(e.entity_name)
+             WHERE e.job_id = $1 AND e.event_type = $2
+             ORDER BY e.entity_name",
         )
         .bind(job_id)
-        .bind(status_filter)
+        .bind(et_filter)
         .bind(job_library_id)
         .fetch_all(&state.pool)
         .await?
     } else {
         sqlx::query(
-            "SELECT r.id, r.series_name, r.status, r.anilist_id, r.anilist_title, r.anilist_url, r.error_message, s.id AS series_id
-             FROM reading_status_match_results r
-             LEFT JOIN series s ON s.library_id = $2 AND LOWER(s.name) = LOWER(r.series_name)
-             WHERE r.job_id = $1
-             ORDER BY r.status, r.series_name",
+            "SELECT e.id, e.entity_name, e.event_type, e.message, e.detail, s.id AS series_id
+             FROM index_job_events e
+             LEFT JOIN series s ON s.library_id = $2 AND LOWER(s.name) = LOWER(e.entity_name)
+             WHERE e.job_id = $1
+             ORDER BY e.event_type, e.entity_name",
         )
         .bind(job_id)
         .bind(job_library_id)
@@ -331,15 +341,27 @@ pub async fn get_match_results(
 
     let results = rows
         .iter()
-        .map(|row| ReadingStatusMatchResultDto {
-            id: row.get("id"),
-            series_id: row.get("series_id"),
-            series_name: row.get("series_name"),
-            status: row.get("status"),
-            anilist_id: row.get("anilist_id"),
-            anilist_title: row.get("anilist_title"),
-            anilist_url: row.get("anilist_url"),
-            error_message: row.get("error_message"),
+        .map(|row| {
+            let event_type: String = row.get("event_type");
+            let detail: Option<serde_json::Value> = row.get("detail");
+            let status = match event_type.as_str() {
+                "anilist_linked" => "linked",
+                "anilist_already_linked" => "already_linked",
+                "anilist_no_results" => "no_results",
+                "anilist_ambiguous" => "ambiguous",
+                "error" => "error",
+                other => other,
+            };
+            ReadingStatusMatchResultDto {
+                id: row.get("id"),
+                series_id: row.get("series_id"),
+                series_name: row.get::<Option<String>, _>("entity_name").unwrap_or_default(),
+                status: status.to_string(),
+                anilist_id: detail.as_ref().and_then(|d| d["anilist_id"].as_i64()).map(|v| v as i32),
+                anilist_title: detail.as_ref().and_then(|d| d["anilist_title"].as_str().map(String::from)),
+                anilist_url: detail.as_ref().and_then(|d| d["anilist_url"].as_str().map(String::from)),
+                error_message: row.get("message"),
+            }
         })
         .collect();
 
@@ -424,28 +446,23 @@ pub(crate) async fn process_reading_status_match(
         .ok();
 
         if series_name == "unclassified" {
-            insert_result(pool, job_id, library_id, series_name, "already_linked", None, None, None, None).await;
             insert_event(pool, job_id, "anilist_already_linked", "info", Some(series_name), None, None).await;
             continue;
         }
 
         if already_linked.contains(series_name) {
-            insert_result(pool, job_id, library_id, series_name, "already_linked", None, None, None, None).await;
             insert_event(pool, job_id, "anilist_already_linked", "info", Some(series_name), None, None).await;
             continue;
         }
 
         match search_and_link(pool, library_id, series_name, &token).await {
             Ok(Outcome::Linked { anilist_id, anilist_title, anilist_url }) => {
-                insert_result(pool, job_id, library_id, series_name, "linked", Some(anilist_id), anilist_title.as_deref(), anilist_url.as_deref(), None).await;
-                insert_event(pool, job_id, "anilist_linked", "info", Some(series_name), None, Some(serde_json::json!({"anilist_id": anilist_id, "anilist_title": anilist_title}))).await;
+                insert_event(pool, job_id, "anilist_linked", "info", Some(series_name), None, Some(serde_json::json!({"anilist_id": anilist_id, "anilist_title": anilist_title, "anilist_url": anilist_url}))).await;
             }
             Ok(Outcome::NoResults) => {
-                insert_result(pool, job_id, library_id, series_name, "no_results", None, None, None, None).await;
                 insert_event(pool, job_id, "anilist_no_results", "info", Some(series_name), None, None).await;
             }
             Ok(Outcome::Ambiguous) => {
-                insert_result(pool, job_id, library_id, series_name, "ambiguous", None, None, None, None).await;
                 insert_event(pool, job_id, "anilist_ambiguous", "warning", Some(series_name), None, None).await;
             }
             Err(e) if e.contains("429") || e.contains("Too Many Requests") => {
@@ -453,15 +470,12 @@ pub(crate) async fn process_reading_status_match(
                 tokio::time::sleep(Duration::from_secs(10)).await;
                 match search_and_link(pool, library_id, series_name, &token).await {
                     Ok(Outcome::Linked { anilist_id, anilist_title, anilist_url }) => {
-                        insert_result(pool, job_id, library_id, series_name, "linked", Some(anilist_id), anilist_title.as_deref(), anilist_url.as_deref(), None).await;
-                        insert_event(pool, job_id, "anilist_linked", "info", Some(series_name), None, Some(serde_json::json!({"anilist_id": anilist_id, "anilist_title": anilist_title}))).await;
+                        insert_event(pool, job_id, "anilist_linked", "info", Some(series_name), None, Some(serde_json::json!({"anilist_id": anilist_id, "anilist_title": anilist_title, "anilist_url": anilist_url}))).await;
                     }
                     Ok(Outcome::NoResults) => {
-                        insert_result(pool, job_id, library_id, series_name, "no_results", None, None, None, None).await;
                         insert_event(pool, job_id, "anilist_no_results", "info", Some(series_name), None, None).await;
                     }
                     Ok(Outcome::Ambiguous) => {
-                        insert_result(pool, job_id, library_id, series_name, "ambiguous", None, None, None, None).await;
                         insert_event(pool, job_id, "anilist_ambiguous", "warning", Some(series_name), None, None).await;
                     }
                     Err(e2) => {
@@ -473,7 +487,6 @@ pub(crate) async fn process_reading_status_match(
             }
             Err(e) => {
                 warn!("[READING_STATUS_MATCH] series '{series_name}': {e}");
-                insert_result(pool, job_id, library_id, series_name, "error", None, None, None, Some(&e)).await;
                 insert_event(pool, job_id, "error", "error", Some(series_name), Some(&e), None).await;
             }
         }
@@ -482,9 +495,9 @@ pub(crate) async fn process_reading_status_match(
         tokio::time::sleep(Duration::from_millis(700)).await;
     }
 
-    // Build stats from results table
+    // Build stats from events table
     let counts = sqlx::query(
-        "SELECT status, COUNT(*) as cnt FROM reading_status_match_results WHERE job_id = $1 GROUP BY status",
+        "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
     )
     .bind(job_id)
     .fetch_all(pool)
@@ -497,13 +510,13 @@ pub(crate) async fn process_reading_status_match(
     let mut count_ambiguous = 0i64;
     let mut count_errors = 0i64;
     for row in &counts {
-        let s: String = row.get("status");
+        let s: String = row.get("event_type");
         let c: i64 = row.get("cnt");
         match s.as_str() {
-            "linked" => count_linked = c,
-            "already_linked" => count_already_linked = c,
-            "no_results" => count_no_results = c,
-            "ambiguous" => count_ambiguous = c,
+            "anilist_linked" => count_linked = c,
+            "anilist_already_linked" => count_already_linked = c,
+            "anilist_no_results" => count_no_results = c,
+            "anilist_ambiguous" => count_ambiguous = c,
             "error" => count_errors = c,
             _ => {}
         }
@@ -573,37 +586,6 @@ async fn insert_event(
     .bind(entity_name)
     .bind(message)
     .bind(detail)
-    .execute(pool)
-    .await;
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn insert_result(
-    pool: &PgPool,
-    job_id: Uuid,
-    library_id: Uuid,
-    series_name: &str,
-    status: &str,
-    anilist_id: Option<i32>,
-    anilist_title: Option<&str>,
-    anilist_url: Option<&str>,
-    error_message: Option<&str>,
-) {
-    let _ = sqlx::query(
-        r#"
-        INSERT INTO reading_status_match_results
-            (job_id, library_id, series_name, status, anilist_id, anilist_title, anilist_url, error_message)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        "#,
-    )
-    .bind(job_id)
-    .bind(library_id)
-    .bind(series_name)
-    .bind(status)
-    .bind(anilist_id)
-    .bind(anilist_title)
-    .bind(anilist_url)
-    .bind(error_message)
     .execute(pool)
     .await;
 }
@@ -726,7 +708,7 @@ async fn build_match_stats(pool: &PgPool, job_id: Uuid) -> serde_json::Value {
         .flatten();
 
     let counts = sqlx::query(
-        "SELECT status, COUNT(*) as cnt FROM reading_status_match_results WHERE job_id = $1 GROUP BY status",
+        "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
     )
     .bind(job_id)
     .fetch_all(pool)
@@ -739,13 +721,13 @@ async fn build_match_stats(pool: &PgPool, job_id: Uuid) -> serde_json::Value {
     let mut ambiguous = 0i64;
     let mut errors = 0i64;
     for row in &counts {
-        let s: String = row.get("status");
+        let s: String = row.get("event_type");
         let c: i64 = row.get("cnt");
         match s.as_str() {
-            "linked" => linked = c,
-            "already_linked" => already_linked = c,
-            "no_results" => no_results = c,
-            "ambiguous" => ambiguous = c,
+            "anilist_linked" => linked = c,
+            "anilist_already_linked" => already_linked = c,
+            "anilist_no_results" => no_results = c,
+            "anilist_ambiguous" => ambiguous = c,
             "error" => errors = c,
             _ => {}
         }
@@ -952,22 +934,21 @@ mod tests {
         .unwrap();
 
         sqlx::query(
-            "INSERT INTO reading_status_match_results (job_id, library_id, series_name, status) \
-             VALUES ($1, $2, 'Naruto', 'linked')",
+            "INSERT INTO index_job_events (job_id, event_type, level, entity_name) \
+             VALUES ($1, 'anilist_linked', 'info', 'Naruto')",
         )
         .bind(job_id)
-        .bind(library_id)
         .execute(&pool)
         .await
         .unwrap();
 
         // Run the actual query from get_match_results (no status filter)
         let rows = sqlx::query(
-            "SELECT r.id, r.series_name, r.status, r.anilist_id, r.anilist_title, r.anilist_url, r.error_message, s.id AS series_id
-             FROM reading_status_match_results r
-             LEFT JOIN series s ON s.library_id = $2 AND LOWER(s.name) = LOWER(r.series_name)
-             WHERE r.job_id = $1
-             ORDER BY r.status, r.series_name",
+            "SELECT e.id, e.entity_name, e.event_type, e.message, e.detail, s.id AS series_id
+             FROM index_job_events e
+             LEFT JOIN series s ON s.library_id = $2 AND LOWER(s.name) = LOWER(e.entity_name)
+             WHERE e.job_id = $1
+             ORDER BY e.event_type, e.entity_name",
         )
         .bind(job_id)
         .bind(Some(library_id))
@@ -1003,23 +984,22 @@ mod tests {
         .await
         .unwrap();
 
-        // Insert result with a series_name that does NOT exist in series table
+        // Insert event with a series_name that does NOT exist in series table
         sqlx::query(
-            "INSERT INTO reading_status_match_results (job_id, library_id, series_name, status) \
-             VALUES ($1, $2, 'NonExistentSeries', 'no_results')",
+            "INSERT INTO index_job_events (job_id, event_type, level, entity_name) \
+             VALUES ($1, 'anilist_no_results', 'info', 'NonExistentSeries')",
         )
         .bind(job_id)
-        .bind(library_id)
         .execute(&pool)
         .await
         .unwrap();
 
         let rows = sqlx::query(
-            "SELECT r.id, r.series_name, r.status, r.anilist_id, r.anilist_title, r.anilist_url, r.error_message, s.id AS series_id
-             FROM reading_status_match_results r
-             LEFT JOIN series s ON s.library_id = $2 AND LOWER(s.name) = LOWER(r.series_name)
-             WHERE r.job_id = $1
-             ORDER BY r.status, r.series_name",
+            "SELECT e.id, e.entity_name, e.event_type, e.message, e.detail, s.id AS series_id
+             FROM index_job_events e
+             LEFT JOIN series s ON s.library_id = $2 AND LOWER(s.name) = LOWER(e.entity_name)
+             WHERE e.job_id = $1
+             ORDER BY e.event_type, e.entity_name",
         )
         .bind(job_id)
         .bind(Some(library_id))
@@ -1030,5 +1010,154 @@ mod tests {
         assert_eq!(rows.len(), 1);
         let returned_series_id: Option<Uuid> = rows[0].get("series_id");
         assert!(returned_series_id.is_none(), "series_id should be None when series does not exist");
+    }
+
+    // -----------------------------------------------------------------------
+    // Report endpoint: GROUP BY event_type counts from index_job_events
+    // -----------------------------------------------------------------------
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn report_counts_from_events(pool: sqlx::PgPool) {
+        use sqlx::Row;
+        use uuid::Uuid;
+
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'MatchReportLib', '/libraries/match_report')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at, total_files) VALUES ($1, $2, 'reading_status_match', 'success', NOW(), 7)",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Insert events with different event_types
+        super::insert_event(&pool, job_id, "anilist_linked", "info", Some("Naruto"), None, Some(serde_json::json!({"anilist_id": 20}))).await;
+        super::insert_event(&pool, job_id, "anilist_linked", "info", Some("Bleach"), None, Some(serde_json::json!({"anilist_id": 21}))).await;
+        super::insert_event(&pool, job_id, "anilist_already_linked", "info", Some("OnePiece"), None, None).await;
+        super::insert_event(&pool, job_id, "anilist_no_results", "info", Some("Obscure"), None, None).await;
+        super::insert_event(&pool, job_id, "anilist_no_results", "info", Some("Obscure2"), None, None).await;
+        super::insert_event(&pool, job_id, "anilist_ambiguous", "warning", Some("Dragon"), None, None).await;
+        super::insert_event(&pool, job_id, "error", "error", Some("Broken"), Some("API timeout"), None).await;
+
+        // Run the report query
+        let counts = sqlx::query(
+            "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
+        )
+        .bind(job_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        let mut linked = 0i64;
+        let mut already_linked = 0i64;
+        let mut no_results = 0i64;
+        let mut ambiguous = 0i64;
+        let mut errors = 0i64;
+
+        for r in &counts {
+            let event_type: String = r.get("event_type");
+            let cnt: i64 = r.get("cnt");
+            match event_type.as_str() {
+                "anilist_linked" => linked = cnt,
+                "anilist_already_linked" => already_linked = cnt,
+                "anilist_no_results" => no_results = cnt,
+                "anilist_ambiguous" => ambiguous = cnt,
+                "error" => errors = cnt,
+                _ => {}
+            }
+        }
+
+        assert_eq!(linked, 2, "anilist_linked -> linked");
+        assert_eq!(already_linked, 1, "anilist_already_linked -> already_linked");
+        assert_eq!(no_results, 2, "anilist_no_results -> no_results");
+        assert_eq!(ambiguous, 1, "anilist_ambiguous -> ambiguous");
+        assert_eq!(errors, 1, "error -> errors");
+    }
+
+    // -----------------------------------------------------------------------
+    // Results endpoint: event detail JSON mapped to ReadingStatusMatchResultDto
+    // -----------------------------------------------------------------------
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn results_mapped_from_event_detail(pool: sqlx::PgPool) {
+        use sqlx::Row;
+        use uuid::Uuid;
+
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'MatchResultLib', '/libraries/match_result')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'reading_status_match', 'success', NOW())",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let detail = serde_json::json!({
+            "anilist_id": 12345,
+            "anilist_title": "Naruto Shippuden",
+            "anilist_url": "https://anilist.co/manga/12345",
+        });
+
+        super::insert_event(&pool, job_id, "anilist_linked", "info", Some("Naruto"), None, Some(detail)).await;
+
+        // Run the actual results query (no filter)
+        let rows = sqlx::query(
+            "SELECT e.id, e.entity_name, e.event_type, e.message, e.detail, s.id AS series_id
+             FROM index_job_events e
+             LEFT JOIN series s ON s.library_id = $2 AND LOWER(s.name) = LOWER(e.entity_name)
+             WHERE e.job_id = $1
+             ORDER BY e.event_type, e.entity_name",
+        )
+        .bind(job_id)
+        .bind(Some(library_id))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(rows.len(), 1);
+
+        let row = &rows[0];
+        let event_type: String = row.get("event_type");
+        let row_detail: Option<serde_json::Value> = row.get("detail");
+
+        // Map event_type to status like the endpoint does
+        let status = match event_type.as_str() {
+            "anilist_linked" => "linked",
+            "anilist_already_linked" => "already_linked",
+            "anilist_no_results" => "no_results",
+            "anilist_ambiguous" => "ambiguous",
+            "error" => "error",
+            other => other,
+        };
+
+        assert_eq!(status, "linked");
+
+        let d = row_detail.as_ref().unwrap();
+        let anilist_id = d["anilist_id"].as_i64().map(|v| v as i32);
+        let anilist_title = d["anilist_title"].as_str().map(String::from);
+        let anilist_url = d["anilist_url"].as_str().map(String::from);
+
+        assert_eq!(anilist_id, Some(12345));
+        assert_eq!(anilist_title.as_deref(), Some("Naruto Shippuden"));
+        assert_eq!(anilist_url.as_deref(), Some("https://anilist.co/manga/12345"));
+
+        let entity_name: Option<String> = row.get("entity_name");
+        assert_eq!(entity_name.as_deref(), Some("Naruto"));
     }
 }

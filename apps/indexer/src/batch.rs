@@ -259,27 +259,8 @@ pub async fn flush_all_batches(
         files_insert.clear();
     }
     
-    // Batch insert errors using UNNEST
-    if !errors_insert.is_empty() {
-        let job_ids: Vec<Uuid> = errors_insert.iter().map(|e| e.job_id).collect();
-        let file_paths: Vec<String> = errors_insert.iter().map(|e| e.file_path.clone()).collect();
-        let messages: Vec<String> = errors_insert.iter().map(|e| e.error_message.clone()).collect();
-        
-        sqlx::query(
-            r#"
-            INSERT INTO index_job_errors (job_id, file_path, error_message)
-            SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::text[])
-            AS t(job_id, file_path, error_message)
-            "#
-        )
-        .bind(&job_ids)
-        .bind(&file_paths)
-        .bind(&messages)
-        .execute(&mut *tx)
-        .await?;
-        
-        errors_insert.clear();
-    }
+    // Errors are now tracked via index_job_events (no longer written to index_job_errors)
+    errors_insert.clear();
     
     // Batch insert events using UNNEST
     if !events_insert.is_empty() {

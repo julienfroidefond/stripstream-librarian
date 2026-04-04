@@ -253,13 +253,13 @@ pub async fn get_batch_report(
     let total_series: Option<i32> = job.get("total_files");
     let processed: Option<i32> = job.get("processed_files");
 
-    // Count by status
+    // Count by event_type
     let counts = sqlx::query(
         r#"
-        SELECT status, COUNT(*) as cnt
-        FROM metadata_batch_results
+        SELECT event_type, COUNT(*) as cnt
+        FROM index_job_events
         WHERE job_id = $1
-        GROUP BY status
+        GROUP BY event_type
         "#,
     )
     .bind(job_id)
@@ -274,14 +274,14 @@ pub async fn get_batch_report(
     let mut errors: i64 = 0;
 
     for row in &counts {
-        let status: String = row.get("status");
+        let event_type: String = row.get("event_type");
         let cnt: i64 = row.get("cnt");
-        match status.as_str() {
-            "auto_matched" => auto_matched = cnt,
-            "no_results" => no_results = cnt,
-            "too_many_results" => too_many_results = cnt,
-            "low_confidence" => low_confidence = cnt,
-            "already_linked" => already_linked = cnt,
+        match event_type.as_str() {
+            "metadata_matched" => auto_matched = cnt,
+            "metadata_no_results" => no_results = cnt,
+            "metadata_too_many" => too_many_results = cnt,
+            "metadata_low_confidence" => low_confidence = cnt,
+            "metadata_already_linked" => already_linked = cnt,
             "error" => errors = cnt,
             _ => {}
         }
@@ -329,6 +329,17 @@ pub async fn get_batch_results(
     let limit = query.limit.unwrap_or(50).min(200);
     let offset = (page - 1) * limit;
 
+    // Map frontend status filter to event_type(s)
+    let event_type_filter: Option<String> = query.status.as_deref().map(|s| match s {
+        "auto_matched" => "metadata_matched".to_string(),
+        "no_results" => "metadata_no_results".to_string(),
+        "too_many_results" => "metadata_too_many".to_string(),
+        "low_confidence" => "metadata_low_confidence".to_string(),
+        "already_linked" => "metadata_already_linked".to_string(),
+        "error" => "error".to_string(),
+        other => other.to_string(),
+    });
+
     // Get library_id from the job to resolve series_id
     let job_library_id: Option<Uuid> = sqlx::query_scalar("SELECT library_id FROM index_jobs WHERE id = $1")
         .bind(job_id)
@@ -338,28 +349,29 @@ pub async fn get_batch_results(
 
     let rows = sqlx::query(
         r#"
-        SELECT mbr.id, mbr.series_name, mbr.status, mbr.provider_used, mbr.fallback_used, mbr.candidates_count,
-               mbr.best_confidence, mbr.best_candidate_json, mbr.link_id, mbr.error_message,
+        SELECT ije.id, ije.event_type, ije.entity_id, ije.entity_name, ije.message, ije.detail,
                s.id AS series_id
-        FROM metadata_batch_results mbr
-        LEFT JOIN series s ON s.library_id = $5 AND LOWER(s.name) = LOWER(mbr.series_name)
-        WHERE mbr.job_id = $1 AND ($2::text IS NULL OR mbr.status = $2)
+        FROM index_job_events ije
+        LEFT JOIN series s ON s.library_id = $5 AND LOWER(s.name) = LOWER(ije.entity_name)
+        WHERE ije.job_id = $1
+          AND (ije.event_type LIKE 'metadata_%' OR ije.event_type = 'error')
+          AND ($2::text IS NULL OR ije.event_type = $2)
         ORDER BY
-            CASE mbr.status
-                WHEN 'auto_matched' THEN 1
-                WHEN 'low_confidence' THEN 2
-                WHEN 'too_many_results' THEN 3
-                WHEN 'no_results' THEN 4
+            CASE ije.event_type
+                WHEN 'metadata_matched' THEN 1
+                WHEN 'metadata_low_confidence' THEN 2
+                WHEN 'metadata_too_many' THEN 3
+                WHEN 'metadata_no_results' THEN 4
                 WHEN 'error' THEN 5
-                WHEN 'already_linked' THEN 6
+                WHEN 'metadata_already_linked' THEN 6
                 ELSE 7
             END,
-            mbr.series_name ASC
+            ije.entity_name ASC
         LIMIT $3 OFFSET $4
         "#,
     )
     .bind(job_id)
-    .bind(query.status.as_deref())
+    .bind(event_type_filter.as_deref())
     .bind(limit)
     .bind(offset)
     .bind(job_library_id)
@@ -368,18 +380,59 @@ pub async fn get_batch_results(
 
     let results: Vec<MetadataBatchResultDto> = rows
         .iter()
-        .map(|row| MetadataBatchResultDto {
-            id: row.get("id"),
-            series_id: row.get("series_id"),
-            series_name: row.get("series_name"),
-            status: row.get("status"),
-            provider_used: row.get("provider_used"),
-            fallback_used: row.get("fallback_used"),
-            candidates_count: row.get("candidates_count"),
-            best_confidence: row.get("best_confidence"),
-            best_candidate_json: row.get("best_candidate_json"),
-            link_id: row.get("link_id"),
-            error_message: row.get("error_message"),
+        .map(|row| {
+            let event_type: String = row.get("event_type");
+            let detail: Option<serde_json::Value> = row.get("detail");
+
+            // Map event_type back to the status the frontend expects
+            let status = match event_type.as_str() {
+                "metadata_matched" => "auto_matched",
+                "metadata_no_results" => "no_results",
+                "metadata_too_many" => "too_many_results",
+                "metadata_low_confidence" => "low_confidence",
+                "metadata_already_linked" => "already_linked",
+                "error" => "error",
+                other => other,
+            };
+
+            let provider_used = detail.as_ref()
+                .and_then(|d| d.get("provider"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let fallback_used = detail.as_ref()
+                .and_then(|d| d.get("fallback_used"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let candidates_count = detail.as_ref()
+                .and_then(|d| d.get("candidates_count"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0) as i32;
+            let best_confidence = detail.as_ref()
+                .and_then(|d| d.get("confidence"))
+                .and_then(|v| v.as_f64())
+                .map(|f| f as f32);
+            let best_candidate_json = detail.as_ref()
+                .and_then(|d| d.get("best_candidate"))
+                .cloned();
+            let link_id = detail.as_ref()
+                .and_then(|d| d.get("link_id"))
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<Uuid>().ok());
+            let error_message: Option<String> = row.get("message");
+
+            MetadataBatchResultDto {
+                id: row.get("id"),
+                series_id: row.get("series_id"),
+                series_name: row.get::<Option<String>, _>("entity_name").unwrap_or_default(),
+                status: status.to_string(),
+                provider_used,
+                fallback_used,
+                candidates_count,
+                best_confidence,
+                best_candidate_json,
+                link_id,
+                error_message,
+            }
         })
         .collect();
 
@@ -489,24 +542,7 @@ pub(crate) async fn process_metadata_batch(
         if series_name == "unclassified" {
             processed += 1;
             update_progress(pool, job_id, processed, total, series_name).await;
-            insert_result(
-                pool,
-                &InsertResultParams {
-                    job_id,
-                    library_id,
-                    series_name,
-                    status: "already_linked",
-                    provider_used: None,
-                    fallback_used: false,
-                    candidates_count: 0,
-                    best_confidence: None,
-                    best_candidate_json: None,
-                    link_id: None,
-                    error_message: Some("Unclassified series skipped"),
-                },
-            )
-            .await;
-            insert_event(pool, job_id, "metadata_already_linked", "info", Some("series"), Some(series_name), None, None).await;
+            insert_event(pool, job_id, "metadata_already_linked", "info", Some("series"), Some(series_name), Some("Unclassified series skipped"), None).await;
             continue;
         }
 
@@ -522,23 +558,6 @@ pub(crate) async fn process_metadata_batch(
         if should_skip {
             processed += 1;
             update_progress(pool, job_id, processed, total, series_name).await;
-            insert_result(
-                pool,
-                &InsertResultParams {
-                    job_id,
-                    library_id,
-                    series_name,
-                    status: "already_linked",
-                    provider_used: None,
-                    fallback_used: false,
-                    candidates_count: 0,
-                    best_confidence: None,
-                    best_candidate_json: None,
-                    link_id: None,
-                    error_message: None,
-                },
-            )
-            .await;
             insert_event(pool, job_id, "metadata_already_linked", "info", Some("series"), Some(series_name), None, None).await;
             continue;
         }
@@ -731,58 +750,67 @@ pub(crate) async fn process_metadata_batch(
                 ),
             };
 
-        insert_result(
-            pool,
-            &InsertResultParams {
-                job_id,
-                library_id,
-                series_name,
-                status: result_status,
-                provider_used: provider_used.as_deref(),
-                fallback_used,
-                candidates_count,
-                best_confidence,
-                best_candidate_json: best_candidate.as_ref(),
-                link_id,
-                error_message: error_msg.as_deref(),
-            },
-        )
-        .await;
-
-        // Insert event tracking
+        // Insert event tracking (replaces insert_result — events are the single source of truth)
         match result_status {
             "auto_matched" => {
-                let candidate_title = best_candidate.as_ref().and_then(|c| c.get("title")).and_then(|t| t.as_str()).unwrap_or("");
                 insert_event(
                     pool, job_id, "metadata_matched", "info", Some("series"), Some(series_name), None,
                     Some(serde_json::json!({
                         "provider": provider_used,
+                        "fallback_used": fallback_used,
+                        "candidates_count": candidates_count,
                         "confidence": best_confidence,
-                        "candidate_title": candidate_title,
+                        "best_candidate": best_candidate,
+                        "link_id": link_id.map(|id| id.to_string()),
                     })),
                 ).await;
             }
             "no_results" => {
-                insert_event(pool, job_id, "metadata_no_results", "info", Some("series"), Some(series_name), None, None).await;
+                insert_event(
+                    pool, job_id, "metadata_no_results", "info", Some("series"), Some(series_name),
+                    error_msg.as_deref(),
+                    Some(serde_json::json!({
+                        "provider": provider_used,
+                        "fallback_used": fallback_used,
+                        "candidates_count": candidates_count,
+                    })),
+                ).await;
             }
             "low_confidence" => {
-                let candidate_title = best_candidate.as_ref().and_then(|c| c.get("title")).and_then(|t| t.as_str()).unwrap_or("");
                 insert_event(
-                    pool, job_id, "metadata_low_confidence", "warning", Some("series"), Some(series_name), None,
+                    pool, job_id, "metadata_low_confidence", "warning", Some("series"), Some(series_name),
+                    error_msg.as_deref(),
                     Some(serde_json::json!({
+                        "provider": provider_used,
+                        "fallback_used": fallback_used,
+                        "candidates_count": candidates_count,
                         "confidence": best_confidence,
-                        "candidate_title": candidate_title,
+                        "best_candidate": best_candidate,
                     })),
                 ).await;
             }
             "too_many_results" => {
                 insert_event(
-                    pool, job_id, "metadata_too_many", "warning", Some("series"), Some(series_name), None,
-                    Some(serde_json::json!({ "count": candidates_count })),
+                    pool, job_id, "metadata_too_many", "warning", Some("series"), Some(series_name),
+                    error_msg.as_deref(),
+                    Some(serde_json::json!({
+                        "provider": provider_used,
+                        "fallback_used": fallback_used,
+                        "candidates_count": candidates_count,
+                        "confidence": best_confidence,
+                        "best_candidate": best_candidate,
+                    })),
                 ).await;
             }
             "error" => {
-                insert_event(pool, job_id, "error", "error", Some("series"), Some(series_name), error_msg.as_deref(), None).await;
+                insert_event(
+                    pool, job_id, "error", "error", Some("series"), Some(series_name), error_msg.as_deref(),
+                    Some(serde_json::json!({
+                        "provider": provider_used,
+                        "fallback_used": fallback_used,
+                        "candidates_count": candidates_count,
+                    })),
+                ).await;
             }
             _ => {}
         }
@@ -1311,42 +1339,6 @@ pub(crate) async fn update_progress(pool: &PgPool, job_id: Uuid, processed: i32,
     .await;
 }
 
-struct InsertResultParams<'a> {
-    job_id: Uuid,
-    library_id: Uuid,
-    series_name: &'a str,
-    status: &'a str,
-    provider_used: Option<&'a str>,
-    fallback_used: bool,
-    candidates_count: i32,
-    best_confidence: Option<f32>,
-    best_candidate_json: Option<&'a serde_json::Value>,
-    link_id: Option<Uuid>,
-    error_message: Option<&'a str>,
-}
-
-async fn insert_result(pool: &PgPool, params: &InsertResultParams<'_>) {
-    let _ = sqlx::query(
-        r#"
-        INSERT INTO metadata_batch_results
-            (job_id, library_id, series_name, status, provider_used, fallback_used, candidates_count, best_confidence, best_candidate_json, link_id, error_message)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-        "#,
-    )
-    .bind(params.job_id)
-    .bind(params.library_id)
-    .bind(params.series_name)
-    .bind(params.status)
-    .bind(params.provider_used)
-    .bind(params.fallback_used)
-    .bind(params.candidates_count)
-    .bind(params.best_confidence)
-    .bind(params.best_candidate_json)
-    .bind(params.link_id)
-    .bind(params.error_message)
-    .execute(pool)
-    .await;
-}
 
 async fn insert_event(
     pool: &PgPool,
@@ -1559,13 +1551,12 @@ mod tests {
         .await
         .unwrap();
 
-        // Insert a batch result with series_name matching the series
+        // Insert an event with entity_name matching the series
         sqlx::query(
-            "INSERT INTO metadata_batch_results (job_id, library_id, series_name, status, fallback_used, candidates_count) \
-             VALUES ($1, $2, 'Blacksad', 'auto_matched', false, 1)",
+            "INSERT INTO index_job_events (job_id, event_type, level, entity_type, entity_name, detail) \
+             VALUES ($1, 'metadata_matched', 'info', 'series', 'Blacksad', '{\"provider\": \"bedetheque\", \"candidates_count\": 1}'::jsonb)",
         )
         .bind(job_id)
-        .bind(lib_id)
         .execute(&pool)
         .await
         .unwrap();
@@ -1573,13 +1564,14 @@ mod tests {
         // Run the actual query from get_batch_results
         let rows = sqlx::query(
             r#"
-            SELECT mbr.id, mbr.series_name, mbr.status, mbr.provider_used, mbr.fallback_used, mbr.candidates_count,
-                   mbr.best_confidence, mbr.best_candidate_json, mbr.link_id, mbr.error_message,
+            SELECT ije.id, ije.event_type, ije.entity_id, ije.entity_name, ije.message, ije.detail,
                    s.id AS series_id
-            FROM metadata_batch_results mbr
-            LEFT JOIN series s ON s.library_id = $5 AND LOWER(s.name) = LOWER(mbr.series_name)
-            WHERE mbr.job_id = $1 AND ($2::text IS NULL OR mbr.status = $2)
-            ORDER BY mbr.series_name ASC
+            FROM index_job_events ije
+            LEFT JOIN series s ON s.library_id = $5 AND LOWER(s.name) = LOWER(ije.entity_name)
+            WHERE ije.job_id = $1
+              AND (ije.event_type LIKE 'metadata_%' OR ije.event_type = 'error')
+              AND ($2::text IS NULL OR ije.event_type = $2)
+            ORDER BY ije.entity_name ASC
             LIMIT $3 OFFSET $4
             "#,
         )
@@ -1612,26 +1604,26 @@ mod tests {
         .await
         .unwrap();
 
-        // Insert a batch result with a series_name that does NOT exist in series table
+        // Insert an event with entity_name that does NOT exist in series table
         sqlx::query(
-            "INSERT INTO metadata_batch_results (job_id, library_id, series_name, status, fallback_used, candidates_count) \
-             VALUES ($1, $2, 'NonExistentSeries', 'no_results', false, 0)",
+            "INSERT INTO index_job_events (job_id, event_type, level, entity_type, entity_name) \
+             VALUES ($1, 'metadata_no_results', 'info', 'series', 'NonExistentSeries')",
         )
         .bind(job_id)
-        .bind(lib_id)
         .execute(&pool)
         .await
         .unwrap();
 
         let rows = sqlx::query(
             r#"
-            SELECT mbr.id, mbr.series_name, mbr.status, mbr.provider_used, mbr.fallback_used, mbr.candidates_count,
-                   mbr.best_confidence, mbr.best_candidate_json, mbr.link_id, mbr.error_message,
+            SELECT ije.id, ije.event_type, ije.entity_id, ije.entity_name, ije.message, ije.detail,
                    s.id AS series_id
-            FROM metadata_batch_results mbr
-            LEFT JOIN series s ON s.library_id = $5 AND LOWER(s.name) = LOWER(mbr.series_name)
-            WHERE mbr.job_id = $1 AND ($2::text IS NULL OR mbr.status = $2)
-            ORDER BY mbr.series_name ASC
+            FROM index_job_events ije
+            LEFT JOIN series s ON s.library_id = $5 AND LOWER(s.name) = LOWER(ije.entity_name)
+            WHERE ije.job_id = $1
+              AND (ije.event_type LIKE 'metadata_%' OR ije.event_type = 'error')
+              AND ($2::text IS NULL OR ije.event_type = $2)
+            ORDER BY ije.entity_name ASC
             LIMIT $3 OFFSET $4
             "#,
         )
@@ -1720,7 +1712,7 @@ mod tests {
         assert_eq!(row.get::<Option<String>, _>("message"), Some("provider timeout".to_string()));
     }
 
-    /// Verify that best_candidate_json contains enriched fields for quick match.
+    /// Verify that best_candidate in event detail contains enriched fields for quick match.
     #[sqlx::test(migrations = "../../infra/migrations")]
     async fn best_candidate_json_contains_enriched_fields(pool: sqlx::PgPool) {
         let lib_id = create_lib(&pool, "test").await;
@@ -1740,22 +1732,31 @@ mod tests {
             "confidence": 0.65,
         });
 
+        let detail = serde_json::json!({
+            "provider": "bedetheque",
+            "fallback_used": false,
+            "candidates_count": 1,
+            "confidence": 0.65,
+            "best_candidate": candidate_json,
+        });
+
         sqlx::query(
-            "INSERT INTO metadata_batch_results (job_id, library_id, series_name, status, provider_used, fallback_used, candidates_count, best_confidence, best_candidate_json) \
-             VALUES ($1, $2, 'Blacksad', 'low_confidence', 'bedetheque', false, 1, 0.65, $3)",
+            "INSERT INTO index_job_events (job_id, event_type, level, entity_type, entity_name, detail) \
+             VALUES ($1, 'metadata_low_confidence', 'warning', 'series', 'Blacksad', $2)",
         )
-        .bind(job_id).bind(lib_id).bind(&candidate_json)
+        .bind(job_id).bind(&detail)
         .execute(&pool).await.unwrap();
 
         let row = sqlx::query(
-            "SELECT best_candidate_json FROM metadata_batch_results WHERE job_id = $1 AND series_name = 'Blacksad'",
+            "SELECT detail FROM index_job_events WHERE job_id = $1 AND entity_name = 'Blacksad'",
         )
         .bind(job_id)
         .fetch_one(&pool)
         .await
         .unwrap();
 
-        let json: serde_json::Value = row.get("best_candidate_json");
+        let stored_detail: serde_json::Value = row.get("detail");
+        let json = &stored_detail["best_candidate"];
         assert_eq!(json["title"], "Blacksad");
         assert_eq!(json["external_id"], "ext_123");
         assert_eq!(json["external_url"], "https://example.com/blacksad");
@@ -1765,5 +1766,167 @@ mod tests {
         assert_eq!(json["total_volumes"], 7);
         assert_eq!(json["start_year"], 2000);
         assert_eq!(json["confidence"], 0.65);
+    }
+
+    // -----------------------------------------------------------------------
+    // Report endpoint: GROUP BY event_type counts from index_job_events
+    // -----------------------------------------------------------------------
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn report_counts_from_events(pool: sqlx::PgPool) {
+        let lib_id = create_lib(&pool, "report_test").await;
+        let job_id = create_job(&pool, lib_id, "metadata_batch").await;
+
+        // Set total_files so the report has a total_series value
+        sqlx::query("UPDATE index_jobs SET total_files = 10, processed_files = 8 WHERE id = $1")
+            .bind(job_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Insert events with different event_types
+        super::insert_event(&pool, job_id, "metadata_matched", "info", Some("series"), Some("S1"), None, Some(serde_json::json!({"provider": "google_books"}))).await;
+        super::insert_event(&pool, job_id, "metadata_matched", "info", Some("series"), Some("S2"), None, Some(serde_json::json!({"provider": "google_books"}))).await;
+        super::insert_event(&pool, job_id, "metadata_no_results", "info", Some("series"), Some("S3"), Some("No results"), None).await;
+        super::insert_event(&pool, job_id, "metadata_too_many", "warning", Some("series"), Some("S4"), Some("5 results"), None).await;
+        super::insert_event(&pool, job_id, "metadata_low_confidence", "warning", Some("series"), Some("S5"), Some("Best: 40%"), None).await;
+        super::insert_event(&pool, job_id, "metadata_already_linked", "info", Some("series"), Some("S6"), None, None).await;
+        super::insert_event(&pool, job_id, "metadata_already_linked", "info", Some("series"), Some("S7"), None, None).await;
+        super::insert_event(&pool, job_id, "error", "error", Some("series"), Some("S8"), Some("timeout"), None).await;
+
+        // Run the same report query used in get_batch_report
+        let counts = sqlx::query(
+            "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
+        )
+        .bind(job_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        let mut auto_matched: i64 = 0;
+        let mut no_results: i64 = 0;
+        let mut too_many_results: i64 = 0;
+        let mut low_confidence: i64 = 0;
+        let mut already_linked: i64 = 0;
+        let mut errors: i64 = 0;
+
+        for row in &counts {
+            let event_type: String = row.get("event_type");
+            let cnt: i64 = row.get("cnt");
+            match event_type.as_str() {
+                "metadata_matched" => auto_matched = cnt,
+                "metadata_no_results" => no_results = cnt,
+                "metadata_too_many" => too_many_results = cnt,
+                "metadata_low_confidence" => low_confidence = cnt,
+                "metadata_already_linked" => already_linked = cnt,
+                "error" => errors = cnt,
+                _ => {}
+            }
+        }
+
+        assert_eq!(auto_matched, 2, "metadata_matched -> auto_matched");
+        assert_eq!(no_results, 1, "metadata_no_results -> no_results");
+        assert_eq!(too_many_results, 1, "metadata_too_many -> too_many_results");
+        assert_eq!(low_confidence, 1, "metadata_low_confidence -> low_confidence");
+        assert_eq!(already_linked, 2, "metadata_already_linked -> already_linked");
+        assert_eq!(errors, 1, "error -> errors");
+    }
+
+    // -----------------------------------------------------------------------
+    // Results endpoint: event detail JSON fields mapped to MetadataBatchResultDto
+    // -----------------------------------------------------------------------
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn results_mapped_from_event_detail(pool: sqlx::PgPool) {
+        let lib_id = create_lib(&pool, "results_test").await;
+        let _series_id = create_series(&pool, lib_id, "TestSeries").await;
+        let job_id = create_job(&pool, lib_id, "metadata_batch").await;
+
+        let detail = serde_json::json!({
+            "provider": "bedetheque",
+            "fallback_used": true,
+            "candidates_count": 3,
+            "confidence": 0.87,
+            "best_candidate": {
+                "title": "Test Series",
+                "external_id": "ext_999",
+                "external_url": "https://example.com/test",
+                "authors": ["Author A"],
+                "description": "A test series.",
+                "cover_url": "https://example.com/cover.jpg",
+                "total_volumes": 12,
+                "start_year": 2015,
+                "confidence": 0.87,
+            },
+            "link_id": Uuid::new_v4().to_string(),
+        });
+
+        super::insert_event(
+            &pool, job_id, "metadata_matched", "info",
+            Some("series"), Some("TestSeries"), None, Some(detail.clone()),
+        ).await;
+
+        // Run the actual results query used by get_batch_results
+        let rows = sqlx::query(
+            r#"
+            SELECT ije.id, ije.event_type, ije.entity_id, ije.entity_name, ije.message, ije.detail,
+                   s.id AS series_id
+            FROM index_job_events ije
+            LEFT JOIN series s ON s.library_id = $5 AND LOWER(s.name) = LOWER(ije.entity_name)
+            WHERE ije.job_id = $1
+              AND (ije.event_type LIKE 'metadata_%' OR ije.event_type = 'error')
+              AND ($2::text IS NULL OR ije.event_type = $2)
+            ORDER BY ije.entity_name ASC
+            LIMIT $3 OFFSET $4
+            "#,
+        )
+        .bind(job_id)
+        .bind(None::<&str>)
+        .bind(100i64)
+        .bind(0i64)
+        .bind(Some(lib_id))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(rows.len(), 1);
+
+        // Map the same way the endpoint does
+        let row = &rows[0];
+        let event_type: String = row.get("event_type");
+        let row_detail: Option<serde_json::Value> = row.get("detail");
+
+        let status = match event_type.as_str() {
+            "metadata_matched" => "auto_matched",
+            "metadata_no_results" => "no_results",
+            "metadata_too_many" => "too_many_results",
+            "metadata_low_confidence" => "low_confidence",
+            "metadata_already_linked" => "already_linked",
+            "error" => "error",
+            other => other,
+        };
+
+        assert_eq!(status, "auto_matched");
+
+        let d = row_detail.as_ref().unwrap();
+        let provider_used = d["provider"].as_str();
+        let fallback_used = d["fallback_used"].as_bool().unwrap_or(false);
+        let candidates_count = d["candidates_count"].as_i64().unwrap_or(0) as i32;
+        let best_confidence = d["confidence"].as_f64().map(|f| f as f32);
+        let best_candidate = d.get("best_candidate");
+        let link_id = d["link_id"].as_str().and_then(|s| s.parse::<Uuid>().ok());
+
+        assert_eq!(provider_used, Some("bedetheque"));
+        assert!(fallback_used);
+        assert_eq!(candidates_count, 3);
+        assert!((best_confidence.unwrap() - 0.87).abs() < 0.01);
+        assert!(best_candidate.is_some());
+        assert_eq!(best_candidate.unwrap()["title"], "Test Series");
+        assert_eq!(best_candidate.unwrap()["external_id"], "ext_999");
+        assert!(link_id.is_some());
+
+        // series_id should be resolved via LEFT JOIN
+        let returned_series_id: Option<Uuid> = row.get("series_id");
+        assert!(returned_series_id.is_some(), "series_id should be resolved via LEFT JOIN");
     }
 }

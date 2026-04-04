@@ -242,7 +242,7 @@ pub async fn get_detection_report(
     let total_files: Option<i32> = row.get("total_files");
 
     let counts = sqlx::query(
-        "SELECT status, COUNT(*) as cnt FROM download_detection_results WHERE job_id = $1 GROUP BY status",
+        "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
     )
     .bind(job_id)
     .fetch_all(&state.pool)
@@ -255,13 +255,13 @@ pub async fn get_detection_report(
     let mut errors = 0i64;
 
     for r in &counts {
-        let status: String = r.get("status");
+        let event_type: String = r.get("event_type");
         let cnt: i64 = r.get("cnt");
-        match status.as_str() {
-            "found" => found = cnt,
-            "not_found" => not_found = cnt,
-            "no_missing" => no_missing = cnt,
-            "no_metadata" => no_metadata = cnt,
+        match event_type.as_str() {
+            "downloads_found" => found = cnt,
+            "downloads_not_found" => not_found = cnt,
+            "no_missing_volumes" => no_missing = cnt,
+            "no_metadata_link" => no_metadata = cnt,
             "error" => errors = cnt,
             _ => {}
         }
@@ -306,27 +306,42 @@ pub async fn get_detection_results(
     axum::extract::Path(job_id): axum::extract::Path<Uuid>,
     axum::extract::Query(query): axum::extract::Query<ResultsQuery>,
 ) -> Result<Json<Vec<DownloadDetectionResultDto>>, ApiError> {
-    let rows = if let Some(status_filter) = &query.status {
+    // Map frontend status values to event_type values
+    let event_type_filter = query.status.as_deref().map(|s| match s {
+        "found" => "downloads_found",
+        "not_found" => "downloads_not_found",
+        "no_missing" => "no_missing_volumes",
+        "no_metadata" => "no_metadata_link",
+        "error" => "error",
+        other => other,
+    });
+
+    let job_library_id: Option<Uuid> = sqlx::query_scalar("SELECT library_id FROM index_jobs WHERE id = $1")
+        .bind(job_id).fetch_optional(&state.pool).await?.flatten();
+
+    let rows = if let Some(et_filter) = event_type_filter {
         sqlx::query(
-            "SELECT ddr.id, ddr.series_id, COALESCE(s.name, 'unknown') AS series_name, ddr.status, ddr.missing_count, ddr.available_releases, ddr.error_message
-             FROM download_detection_results ddr
-             LEFT JOIN series s ON s.id = ddr.series_id
-             WHERE ddr.job_id = $1 AND ddr.status = $2
-             ORDER BY s.name",
+            "SELECT e.id, e.entity_name, e.event_type, e.message, e.detail, s.id AS series_id
+             FROM index_job_events e
+             LEFT JOIN series s ON s.library_id = $3 AND LOWER(s.name) = LOWER(e.entity_name)
+             WHERE e.job_id = $1 AND e.event_type = $2
+             ORDER BY e.entity_name",
         )
         .bind(job_id)
-        .bind(status_filter)
+        .bind(et_filter)
+        .bind(job_library_id)
         .fetch_all(&state.pool)
         .await?
     } else {
         sqlx::query(
-            "SELECT ddr.id, ddr.series_id, COALESCE(s.name, 'unknown') AS series_name, ddr.status, ddr.missing_count, ddr.available_releases, ddr.error_message
-             FROM download_detection_results ddr
-             LEFT JOIN series s ON s.id = ddr.series_id
-             WHERE ddr.job_id = $1
-             ORDER BY ddr.status, s.name",
+            "SELECT e.id, e.entity_name, e.event_type, e.message, e.detail, s.id AS series_id
+             FROM index_job_events e
+             LEFT JOIN series s ON s.library_id = $2 AND LOWER(s.name) = LOWER(e.entity_name)
+             WHERE e.job_id = $1
+             ORDER BY e.event_type, e.entity_name",
         )
         .bind(job_id)
+        .bind(job_library_id)
         .fetch_all(&state.pool)
         .await?
     };
@@ -334,18 +349,30 @@ pub async fn get_detection_results(
     let results = rows
         .iter()
         .map(|row| {
-            let releases_json: Option<serde_json::Value> = row.get("available_releases");
-            let available_releases = releases_json.and_then(|v| {
-                serde_json::from_value::<Vec<AvailableReleaseDto>>(v).ok()
-            });
+            let event_type: String = row.get("event_type");
+            let detail: Option<serde_json::Value> = row.get("detail");
+            let status = match event_type.as_str() {
+                "downloads_found" => "found",
+                "downloads_not_found" => "not_found",
+                "no_missing_volumes" => "no_missing",
+                "no_metadata_link" => "no_metadata",
+                "error" => "error",
+                other => other,
+            };
+            let missing_count = detail.as_ref()
+                .and_then(|d| d["missing_count"].as_i64())
+                .unwrap_or(0) as i32;
+            let available_releases = detail.as_ref()
+                .and_then(|d| d.get("available_releases"))
+                .and_then(|v| serde_json::from_value::<Vec<AvailableReleaseDto>>(v.clone()).ok());
             DownloadDetectionResultDto {
                 id: row.get("id"),
                 series_id: row.get("series_id"),
-                series_name: row.get("series_name"),
-                status: row.get("status"),
-                missing_count: row.get("missing_count"),
+                series_name: row.get::<Option<String>, _>("entity_name").unwrap_or_else(|| "unknown".to_string()),
+                status: status.to_string(),
+                missing_count,
                 available_releases,
-                error_message: row.get("error_message"),
+                error_message: row.get("message"),
             }
         })
         .collect();
@@ -638,7 +665,6 @@ pub(crate) async fn process_download_detection(
 
         // Skip unclassified
         if series_name == "unclassified" {
-            insert_result(pool, job_id, library_id, series_id_map.get(series_name).copied(), "no_metadata", 0, None, None).await;
             insert_event(pool, job_id, "no_metadata_link", "info", Some(series_name), None, None).await;
             continue;
         }
@@ -647,7 +673,6 @@ pub(crate) async fn process_download_detection(
         let link_id = match link_map.get(series_name) {
             Some(id) => *id,
             None => {
-                insert_result(pool, job_id, library_id, series_id_map.get(series_name).copied(), "no_metadata", 0, None, None).await;
                 insert_event(pool, job_id, "no_metadata_link", "info", Some(series_name), None, None).await;
                 continue;
             }
@@ -663,7 +688,6 @@ pub(crate) async fn process_download_detection(
         .map_err(|e| e.to_string())?;
 
         if missing_rows.is_empty() {
-            insert_result(pool, job_id, library_id, series_id_map.get(series_name).copied(), "no_missing", 0, None, None).await;
             insert_event(pool, job_id, "no_missing_volumes", "info", Some(series_name), None, None).await;
             // Series is complete, remove from available_downloads
             if let Some(&sid) = series_id_map.get(series_name) {
@@ -692,18 +716,7 @@ pub(crate) async fn process_download_detection(
         {
             Ok(matched_releases) if !matched_releases.is_empty() => {
                 let releases_json = serde_json::to_value(&matched_releases).ok();
-                insert_result(
-                    pool,
-                    job_id,
-                    library_id,
-                    series_id_map.get(series_name).copied(),
-                    "found",
-                    missing_count,
-                    releases_json.clone(),
-                    None,
-                )
-                .await;
-                insert_event(pool, job_id, "downloads_found", "info", Some(series_name), None, Some(serde_json::json!({"release_count": matched_releases.len(), "missing_count": missing_count}))).await;
+                insert_event(pool, job_id, "downloads_found", "info", Some(series_name), None, Some(serde_json::json!({"release_count": matched_releases.len(), "missing_count": missing_count, "available_releases": releases_json}))).await;
                 // UPSERT into available_downloads — merge new releases with existing ones
                 if let (Some(ref rj), Some(&sid)) = (&releases_json, series_id_map.get(series_name)) {
                     let _ = sqlx::query(
@@ -723,8 +736,7 @@ pub(crate) async fn process_download_detection(
                 }
             }
             Ok(_) => {
-                insert_result(pool, job_id, library_id, series_id_map.get(series_name).copied(), "not_found", missing_count, None, None).await;
-                insert_event(pool, job_id, "downloads_not_found", "info", Some(series_name), None, None).await;
+                insert_event(pool, job_id, "downloads_not_found", "info", Some(series_name), None, Some(serde_json::json!({"missing_count": missing_count}))).await;
                 // Don't delete — keep previous results even if this run found nothing
                 // Only update missing_count
                 if let Some(&sid) = series_id_map.get(series_name) {
@@ -739,15 +751,14 @@ pub(crate) async fn process_download_detection(
             }
             Err(e) => {
                 warn!("[DOWNLOAD_DETECTION] series '{series_name}': {e}");
-                insert_result(pool, job_id, library_id, series_id_map.get(series_name).copied(), "error", missing_count, None, Some(&e)).await;
-                insert_event(pool, job_id, "error", "error", Some(series_name), Some(&e), None).await;
+                insert_event(pool, job_id, "error", "error", Some(series_name), Some(&e), Some(serde_json::json!({"missing_count": missing_count}))).await;
             }
         }
     }
 
-    // Build final stats
+    // Build final stats from events
     let counts = sqlx::query(
-        "SELECT status, COUNT(*) as cnt FROM download_detection_results WHERE job_id = $1 GROUP BY status",
+        "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
     )
     .bind(job_id)
     .fetch_all(pool)
@@ -760,13 +771,13 @@ pub(crate) async fn process_download_detection(
     let mut count_no_metadata = 0i64;
     let mut count_errors = 0i64;
     for row in &counts {
-        let s: String = row.get("status");
+        let s: String = row.get("event_type");
         let c: i64 = row.get("cnt");
         match s.as_str() {
-            "found" => count_found = c,
-            "not_found" => count_not_found = c,
-            "no_missing" => count_no_missing = c,
-            "no_metadata" => count_no_metadata = c,
+            "downloads_found" => count_found = c,
+            "downloads_not_found" => count_not_found = c,
+            "no_missing_volumes" => count_no_missing = c,
+            "no_metadata_link" => count_no_metadata = c,
             "error" => count_errors = c,
             _ => {}
         }
@@ -897,35 +908,6 @@ async fn insert_event(
     .bind(entity_name)
     .bind(message)
     .bind(detail)
-    .execute(pool)
-    .await;
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn insert_result(
-    pool: &PgPool,
-    job_id: Uuid,
-    library_id: Uuid,
-    series_id: Option<Uuid>,
-    status: &str,
-    missing_count: i32,
-    available_releases: Option<serde_json::Value>,
-    error_message: Option<&str>,
-) {
-    let _ = sqlx::query(
-        r#"
-        INSERT INTO download_detection_results
-            (job_id, library_id, series_id, status, missing_count, available_releases, error_message)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        "#,
-    )
-    .bind(job_id)
-    .bind(library_id)
-    .bind(series_id)
-    .bind(status)
-    .bind(missing_count)
-    .bind(&available_releases)
-    .bind(error_message)
     .execute(pool)
     .await;
 }
@@ -1136,25 +1118,25 @@ mod tests {
         .unwrap();
 
         sqlx::query(
-            "INSERT INTO download_detection_results (job_id, library_id, series_id, status, missing_count) \
-             VALUES ($1, $2, $3, 'found', 3)",
+            "INSERT INTO index_job_events (job_id, event_type, level, entity_name, detail) \
+             VALUES ($1, 'downloads_found', 'info', 'OnePiece', $2)",
         )
         .bind(job_id)
-        .bind(library_id)
-        .bind(series_id)
+        .bind(serde_json::json!({"missing_count": 3}))
         .execute(&pool)
         .await
         .unwrap();
 
         // Run the actual query from get_detection_results (no status filter)
         let rows = sqlx::query(
-            "SELECT ddr.id, ddr.series_id, COALESCE(s.name, 'unknown') AS series_name, ddr.status, ddr.missing_count, ddr.available_releases, ddr.error_message
-             FROM download_detection_results ddr
-             LEFT JOIN series s ON s.id = ddr.series_id
-             WHERE ddr.job_id = $1
-             ORDER BY ddr.status, s.name",
+            "SELECT e.id, e.entity_name, e.event_type, e.message, e.detail, s.id AS series_id
+             FROM index_job_events e
+             LEFT JOIN series s ON s.library_id = $2 AND LOWER(s.name) = LOWER(e.entity_name)
+             WHERE e.job_id = $1
+             ORDER BY e.event_type, e.entity_name",
         )
         .bind(job_id)
+        .bind(Some(library_id))
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -1241,7 +1223,7 @@ mod tests {
         assert_eq!(row.get::<Option<String>, _>("message"), Some("search timeout".to_string()));
     }
 
-    /// Regression: series_id should be None when series_id column is NULL.
+    /// Regression: series_id should be None when no matching series exists.
     #[sqlx::test(migrations = "../../infra/migrations")]
     async fn series_id_none_when_series_missing(pool: sqlx::PgPool) {
         let library_id = Uuid::new_v4();
@@ -1261,25 +1243,25 @@ mod tests {
         .await
         .unwrap();
 
-        // Insert with series_id = NULL
+        // Insert event with entity_name that does NOT exist in series table
         sqlx::query(
-            "INSERT INTO download_detection_results (job_id, library_id, series_id, status, missing_count) \
-             VALUES ($1, $2, NULL, 'not_found', 0)",
+            "INSERT INTO index_job_events (job_id, event_type, level, entity_name) \
+             VALUES ($1, 'downloads_not_found', 'info', 'NonExistentSeries')",
         )
         .bind(job_id)
-        .bind(library_id)
         .execute(&pool)
         .await
         .unwrap();
 
         let rows = sqlx::query(
-            "SELECT ddr.id, ddr.series_id, COALESCE(s.name, 'unknown') AS series_name, ddr.status, ddr.missing_count, ddr.available_releases, ddr.error_message
-             FROM download_detection_results ddr
-             LEFT JOIN series s ON s.id = ddr.series_id
-             WHERE ddr.job_id = $1
-             ORDER BY ddr.status, s.name",
+            "SELECT e.id, e.entity_name, e.event_type, e.message, e.detail, s.id AS series_id
+             FROM index_job_events e
+             LEFT JOIN series s ON s.library_id = $2 AND LOWER(s.name) = LOWER(e.entity_name)
+             WHERE e.job_id = $1
+             ORDER BY e.event_type, e.entity_name",
         )
         .bind(job_id)
+        .bind(Some(library_id))
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -1287,5 +1269,73 @@ mod tests {
         assert_eq!(rows.len(), 1);
         let returned_series_id: Option<Uuid> = rows[0].get("series_id");
         assert!(returned_series_id.is_none(), "series_id should be None when no series is linked");
+    }
+
+    // -----------------------------------------------------------------------
+    // Report endpoint: GROUP BY event_type counts from index_job_events
+    // -----------------------------------------------------------------------
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn report_counts_from_events(pool: sqlx::PgPool) {
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'DlReportLib', '/libraries/dl_report')")
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status, started_at, total_files) VALUES ($1, $2, 'download_detection', 'success', NOW(), 8)",
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Insert events with different event_types
+        super::insert_event(&pool, job_id, "downloads_found", "info", Some("Naruto"), None, Some(serde_json::json!({"missing_count": 3}))).await;
+        super::insert_event(&pool, job_id, "downloads_found", "info", Some("Bleach"), None, Some(serde_json::json!({"missing_count": 1}))).await;
+        super::insert_event(&pool, job_id, "downloads_not_found", "info", Some("Obscure"), None, None).await;
+        super::insert_event(&pool, job_id, "no_missing_volumes", "info", Some("Complete"), None, None).await;
+        super::insert_event(&pool, job_id, "no_missing_volumes", "info", Some("Complete2"), None, None).await;
+        super::insert_event(&pool, job_id, "no_missing_volumes", "info", Some("Complete3"), None, None).await;
+        super::insert_event(&pool, job_id, "no_metadata_link", "info", Some("Unlinked"), None, None).await;
+        super::insert_event(&pool, job_id, "error", "error", Some("BrokenSeries"), Some("search timeout"), None).await;
+
+        // Run the same report query used in get_detection_report
+        let counts = sqlx::query(
+            "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
+        )
+        .bind(job_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        let mut found = 0i64;
+        let mut not_found = 0i64;
+        let mut no_missing = 0i64;
+        let mut no_metadata = 0i64;
+        let mut errors = 0i64;
+
+        for r in &counts {
+            let event_type: String = r.get("event_type");
+            let cnt: i64 = r.get("cnt");
+            match event_type.as_str() {
+                "downloads_found" => found = cnt,
+                "downloads_not_found" => not_found = cnt,
+                "no_missing_volumes" => no_missing = cnt,
+                "no_metadata_link" => no_metadata = cnt,
+                "error" => errors = cnt,
+                _ => {}
+            }
+        }
+
+        assert_eq!(found, 2, "downloads_found -> found");
+        assert_eq!(not_found, 1, "downloads_not_found -> not_found");
+        assert_eq!(no_missing, 3, "no_missing_volumes -> no_missing");
+        assert_eq!(no_metadata, 1, "no_metadata_link -> no_metadata");
+        assert_eq!(errors, 1, "error -> errors");
     }
 }
