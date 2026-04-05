@@ -311,17 +311,24 @@ async fn fetch_franchise_editions(
                 })
                 .or_else(|| base_candidate.cover_url.clone());
 
-            // Description from tome 1
-            let description = franchise_descriptions
-                .get(&franchise_id)
-                .map(|(_, desc)| desc.clone())
+            // Description from lowest volume number in this edition
+            let description = products
+                .iter()
+                .filter_map(|p| {
+                    let title = p.get("title").and_then(|v| v.as_str()).unwrap_or_default();
+                    let vol = extract_volume_number(title).unwrap_or(i32::MAX);
+                    let syn = p.get("synopsis")
+                        .and_then(|s| s.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(String::from)?;
+                    Some((vol, syn))
+                })
+                .min_by_key(|(v, _)| *v)
+                .map(|(_, syn)| syn)
                 .or_else(|| {
-                    products.iter().find_map(|p| {
-                        p.get("synopsis")
-                            .and_then(|s| s.as_str())
-                            .filter(|s| !s.is_empty())
-                            .map(String::from)
-                    })
+                    franchise_descriptions
+                        .get(&franchise_id)
+                        .map(|(_, desc)| desc.clone())
                 });
 
             // Year from earliest product
