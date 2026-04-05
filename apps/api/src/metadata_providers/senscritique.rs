@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use base64::Engine as _;
+
 use super::{BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate};
 
 const GRAPHQL_URL: &str = "https://apollo.senscritique.com/";
@@ -215,41 +217,152 @@ async fn search_series_impl(query: &str) -> Result<Vec<SeriesCandidate>, String>
     let franchise_ids: Vec<i64> = franchise_map.keys().copied().collect();
     let latest_dates = fetch_franchise_latest_dates(&client, &franchise_ids).await;
 
-    // Merge: franchises first (sorted by confidence), then standalone
-    // Apply tome 1 descriptions and inferred status
-    let mut results: Vec<SeriesCandidate> = franchise_map
-        .into_iter()
-        .map(|(fid, (mut c, _))| {
-            if c.description.is_none() {
-                if let Some((_, desc)) = franchise_descriptions.remove(&fid) {
-                    c.description = Some(desc);
-                }
-            }
-            // Infer status from latest release date
-            if let Some(date_str) = latest_dates.get(&fid) {
-                let status = infer_status_from_date(date_str);
-                c.metadata_json["status"] = serde_json::json!(status);
-            }
-            c
-        })
-        .collect();
+    // For each franchise, fetch all products and group by edition
+    let mut results: Vec<SeriesCandidate> = Vec::new();
+    for (fid, (base_candidate, _rating)) in &franchise_map {
+        let edition_candidates = fetch_franchise_editions(&client, *fid, base_candidate, &franchise_descriptions, &latest_dates, query).await;
+        results.extend(edition_candidates);
+    }
+
     results.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
     results.extend(standalone);
 
     Ok(results)
 }
 
+/// Fetch all products in a franchise, group by edition, and return one SeriesCandidate per edition.
+async fn fetch_franchise_editions(
+    client: &reqwest::Client,
+    franchise_id: i64,
+    base_candidate: &SeriesCandidate,
+    franchise_descriptions: &HashMap<i64, (Option<i32>, String)>,
+    latest_dates: &HashMap<i64, String>,
+    search_query: &str,
+) -> Vec<SeriesCandidate> {
+    let gql = serde_json::json!({
+        "query": format!(
+            r#"{{ groupProducts(franchiseId: {franchise_id}, universe: "comicBook", limit: 200, offset: 0) {{
+                items {{ id title url dateRelease medias {{ picture }} authors {{ name }} synopsis }}
+            }} }}"#
+        ),
+    });
+
+    let items = match graphql_request(client, &gql).await {
+        Ok(data) => data
+            .pointer("/data/groupProducts/items")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default(),
+        Err(_) => {
+            // Fallback: return base candidate without edition info
+            return vec![base_candidate.clone()];
+        }
+    };
+
+    let editions = group_products_by_edition(&items);
+
+    if editions.is_empty() {
+        // No editions found — return base candidate as-is
+        return vec![base_candidate.clone()];
+    }
+
+    let status = latest_dates.get(&franchise_id).map(|d| infer_status_from_date(d));
+
+    editions
+        .into_iter()
+        .map(|(edition_name, products)| {
+            let volume_count = products.len() as i32;
+
+            // Pick cover from tome 1 (earliest volume)
+            let cover_url = products
+                .iter()
+                .filter_map(|p| {
+                    let vol = extract_volume_number(p.get("title").and_then(|v| v.as_str()).unwrap_or_default());
+                    vol.map(|v| (v, p))
+                })
+                .min_by_key(|(v, _)| *v)
+                .and_then(|(_, p)| {
+                    p.get("medias")
+                        .and_then(|m| m.get("picture"))
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.contains("missing"))
+                        .map(String::from)
+                })
+                .or_else(|| base_candidate.cover_url.clone());
+
+            // Description from tome 1
+            let description = franchise_descriptions
+                .get(&franchise_id)
+                .map(|(_, desc)| desc.clone())
+                .or_else(|| {
+                    products.iter().find_map(|p| {
+                        p.get("synopsis")
+                            .and_then(|s| s.as_str())
+                            .filter(|s| !s.is_empty())
+                            .map(String::from)
+                    })
+                });
+
+            // Year from earliest product
+            let start_year = products
+                .iter()
+                .filter_map(|p| {
+                    p.get("dateRelease")
+                        .and_then(|d| d.as_str())
+                        .and_then(|d| d.get(..4))
+                        .and_then(|y| y.parse::<i32>().ok())
+                })
+                .min()
+                .or(base_candidate.start_year);
+
+            let authors = base_candidate.authors.clone();
+
+            let mut metadata = base_candidate.metadata_json.clone();
+            if let Some(ref s) = status {
+                metadata["status"] = serde_json::json!(s);
+            }
+            metadata["edition"] = serde_json::json!(edition_name);
+
+            // Confidence based on name similarity with search query
+            let similarity = name_similarity(search_query, &edition_name);
+            // Bonus for editions with more volumes (main edition likely more relevant)
+            let volume_bonus = (volume_count as f32 / 100.0).min(0.1);
+            let confidence = (similarity + volume_bonus).min(1.0);
+
+            SeriesCandidate {
+                external_id: format!("franchise:{}:edition:{}", franchise_id, encode_edition(&edition_name)),
+                title: edition_name,
+                authors,
+                description,
+                publishers: vec![],
+                start_year,
+                total_volumes: Some(volume_count),
+                cover_url,
+                external_url: base_candidate.external_url.clone(),
+                confidence,
+                metadata_json: metadata,
+            }
+        })
+        .collect()
+}
+
 /// Get all volumes/books for a series identified by its external_id.
 ///
-/// external_id format: "franchise:{id}" or "product:{id}"
+/// external_id format: "franchise:{id}:edition:{encoded}" or "franchise:{id}" or "product:{id}"
 async fn get_series_books_impl(external_id: &str) -> Result<Vec<BookCandidate>, String> {
     let client = build_client()?;
 
-    if let Some(fid_str) = external_id.strip_prefix("franchise:") {
+    if let Some(rest) = external_id.strip_prefix("franchise:") {
+        let (fid_str, edition_filter) = if let Some((fid_part, edition_part)) = rest.split_once(":edition:") {
+            let decoded = decode_edition(edition_part)?;
+            (fid_part, Some(decoded))
+        } else {
+            (rest, None)
+        };
         let fid: i64 = fid_str
             .parse()
             .map_err(|_| format!("invalid franchise id: {fid_str}"))?;
-        fetch_franchise_books(&client, fid).await
+        fetch_franchise_books(&client, fid, edition_filter.as_deref()).await
     } else if let Some(pid_str) = external_id.strip_prefix("product:") {
         let pid: i64 = pid_str
             .parse()
@@ -261,8 +374,8 @@ async fn get_series_books_impl(external_id: &str) -> Result<Vec<BookCandidate>, 
     }
 }
 
-/// Fetch all books in a franchise via groupProducts.
-async fn fetch_franchise_books(client: &reqwest::Client, franchise_id: i64) -> Result<Vec<BookCandidate>, String> {
+/// Fetch all books in a franchise via groupProducts, optionally filtered by edition.
+async fn fetch_franchise_books(client: &reqwest::Client, franchise_id: i64, edition_filter: Option<&str>) -> Result<Vec<BookCandidate>, String> {
     let gql = serde_json::json!({
         "query": format!(
             r#"{{ groupProducts(franchiseId: {franchise_id}, universe: "comicBook", limit: 200, offset: 0) {{
@@ -283,8 +396,21 @@ async fn fetch_franchise_books(client: &reqwest::Client, franchise_id: i64) -> R
         .and_then(|v| v.as_array())
         .ok_or("SensCritique: missing groupProducts items")?;
 
+    // If edition filter is set, only keep products matching that edition
+    let filtered_items: Vec<&serde_json::Value> = if let Some(edition) = edition_filter {
+        items
+            .iter()
+            .filter(|p| {
+                let title = p.get("title").and_then(|v| v.as_str()).unwrap_or_default();
+                extract_edition_name(title).as_deref() == Some(edition)
+            })
+            .collect()
+    } else {
+        items.iter().collect()
+    };
+
     // Parse all items, then deduplicate by volume number (keep earliest edition)
-    let mut all_books: Vec<BookCandidate> = items
+    let mut all_books: Vec<BookCandidate> = filtered_items
         .iter()
         .filter_map(|product| {
             let id = product.get("id").and_then(|v| v.as_i64()).unwrap_or_default();
@@ -693,6 +819,106 @@ fn extract_names(product: &serde_json::Value, field: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Encode an edition name for use in external_id.
+fn encode_edition(name: &str) -> String {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(name)
+}
+
+/// Decode an edition name from external_id.
+fn decode_edition(encoded: &str) -> Result<String, String> {
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(encoded)
+        .map_err(|e| format!("invalid base64 edition: {e}"))?;
+    String::from_utf8(bytes).map_err(|e| format!("invalid utf8 edition: {e}"))
+}
+
+/// Compute name similarity between 0.0 and 1.0.
+/// Compares normalized (lowercased, unaccented-ish) names.
+fn name_similarity(a: &str, b: &str) -> f32 {
+    let normalize = |s: &str| -> String {
+        s.to_lowercase()
+            .replace(['é', 'è', 'ê', 'ë'], "e")
+            .replace(['à', 'â', 'ä'], "a")
+            .replace(['ù', 'û', 'ü'], "u")
+            .replace(['î', 'ï'], "i")
+            .replace(['ô', 'ö'], "o")
+            .replace('ç', "c")
+            .replace(|c: char| !c.is_alphanumeric(), " ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let na = normalize(a);
+    let nb = normalize(b);
+    if na == nb {
+        return 1.0;
+    }
+    if na.is_empty() || nb.is_empty() {
+        return 0.0;
+    }
+    // Check containment
+    if na.contains(&nb) || nb.contains(&na) {
+        let shorter = na.len().min(nb.len()) as f32;
+        let longer = na.len().max(nb.len()) as f32;
+        return (shorter / longer).max(0.5);
+    }
+    // Word overlap
+    let words_a: std::collections::HashSet<&str> = na.split_whitespace().collect();
+    let words_b: std::collections::HashSet<&str> = nb.split_whitespace().collect();
+    let intersection = words_a.intersection(&words_b).count() as f32;
+    let union = words_a.union(&words_b).count() as f32;
+    if union == 0.0 { 0.0 } else { intersection / union }
+}
+
+/// Extract edition name from a SensCritique product title.
+/// "Titre du tome - Naruto, tome 42" → Some("Naruto")
+/// "Naruto (Édition Hokage), tome 33" → Some("Naruto (Édition Hokage)")
+/// "Boruto: Two Blue Vortex, tome 5" → Some("Boruto: Two Blue Vortex")
+/// "One Piece - Intégrale" → None (no tome pattern)
+fn extract_edition_name(title: &str) -> Option<String> {
+    use std::sync::LazyLock;
+    static RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"(?i),?\s*(?:tome|t\.|vol(?:ume)?\.?)\s*\d+\s*$").unwrap()
+    });
+
+    let m = RE.find(title)?;
+    let prefix = title[..m.start()].trim();
+    if prefix.is_empty() {
+        return None;
+    }
+
+    // If prefix contains " - ", the edition name is after the last " - "
+    // e.g., "Titre du tome - Naruto" → "Naruto"
+    let edition = if let Some(idx) = prefix.rfind(" - ") {
+        prefix[idx + 3..].trim()
+    } else {
+        prefix
+    };
+
+    if edition.is_empty() {
+        None
+    } else {
+        Some(edition.to_string())
+    }
+}
+
+/// Group products by edition name. Returns (edition_name, products) pairs.
+fn group_products_by_edition(items: &[serde_json::Value]) -> Vec<(String, Vec<&serde_json::Value>)> {
+    let mut groups: HashMap<String, Vec<&serde_json::Value>> = HashMap::new();
+
+    for item in items {
+        let title = item.get("title").and_then(|v| v.as_str()).unwrap_or_default();
+        if let Some(edition) = extract_edition_name(title) {
+            groups.entry(edition).or_default().push(item);
+        }
+    }
+
+    let mut result: Vec<_> = groups.into_iter().collect();
+    // Sort by volume count descending (main edition first)
+    result.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    result
+}
+
 /// Extract volume number from title patterns like "..., tome 3" or "... T.3"
 fn extract_volume_number(title: &str) -> Option<i32> {
     use std::sync::LazyLock;
@@ -1003,5 +1229,150 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert!(results[0].cover_url.is_some(), "real cover should be kept");
         assert!(results[1].cover_url.is_none(), "missing.png cover should be filtered out");
+    }
+
+    // ─── extract_edition_name ─────────────────────────────────────────
+
+    #[test]
+    fn edition_name_standard() {
+        assert_eq!(
+            extract_edition_name("Naruto Uzumaki !! - Naruto, tome 1"),
+            Some("Naruto".to_string())
+        );
+    }
+
+    #[test]
+    fn edition_name_with_parentheses() {
+        assert_eq!(
+            extract_edition_name("Naruto (Édition Hokage), tome 33"),
+            Some("Naruto (Édition Hokage)".to_string())
+        );
+    }
+
+    #[test]
+    fn edition_name_colon() {
+        assert_eq!(
+            extract_edition_name("Boruto: Two Blue Vortex, tome 5"),
+            Some("Boruto: Two Blue Vortex".to_string())
+        );
+    }
+
+    #[test]
+    fn edition_name_no_tome() {
+        assert_eq!(extract_edition_name("One Piece - Intégrale"), None);
+        assert_eq!(extract_edition_name("Naruto"), None);
+    }
+
+    #[test]
+    fn edition_name_t_dot() {
+        assert_eq!(
+            extract_edition_name("One Piece T.42"),
+            Some("One Piece".to_string())
+        );
+    }
+
+    #[test]
+    fn edition_name_simple() {
+        assert_eq!(
+            extract_edition_name("Dragon Ball, tome 10"),
+            Some("Dragon Ball".to_string())
+        );
+    }
+
+    // ─── encode/decode edition ────────────────────────────────────────
+
+    #[test]
+    fn edition_encode_decode_roundtrip() {
+        for name in ["Naruto", "Naruto (Édition Hokage)", "Boruto: Two Blue Vortex", "Astérix"] {
+            let encoded = encode_edition(name);
+            let decoded = decode_edition(&encoded).unwrap();
+            assert_eq!(decoded, name, "round-trip failed for {name}");
+        }
+    }
+
+    // ─── group_products_by_edition ────────────────────────────────────
+
+    #[test]
+    fn group_by_edition_mixed() {
+        let items = vec![
+            serde_json::json!({"title": "Naruto Uzumaki !! - Naruto, tome 1", "id": 1}),
+            serde_json::json!({"title": "Se battre - Naruto, tome 2", "id": 2}),
+            serde_json::json!({"title": "Naruto (Édition Hokage), tome 1", "id": 3}),
+            serde_json::json!({"title": "Naruto (Édition Hokage), tome 2", "id": 4}),
+            serde_json::json!({"title": "Naruto (Édition Hokage), tome 3", "id": 5}),
+            serde_json::json!({"title": "Naruto - Intégrale", "id": 6}),
+        ];
+        let groups = group_products_by_edition(&items);
+        assert_eq!(groups.len(), 2, "should have 2 editions");
+        assert_eq!(groups[0].0, "Naruto (Édition Hokage)");
+        assert_eq!(groups[0].1.len(), 3);
+        assert_eq!(groups[1].0, "Naruto");
+        assert_eq!(groups[1].1.len(), 2);
+    }
+
+    #[test]
+    fn group_by_edition_excludes_no_tome() {
+        let items = vec![
+            serde_json::json!({"title": "Artbook", "id": 1}),
+            serde_json::json!({"title": "Intégrale collector", "id": 2}),
+        ];
+        let groups = group_products_by_edition(&items);
+        assert!(groups.is_empty());
+    }
+
+    // ─── external_id parsing ──────────────────────────────────────────
+
+    #[test]
+    fn external_id_franchise_with_edition() {
+        let name = "Naruto (Édition Hokage)";
+        let ext_id = format!("franchise:817:edition:{}", encode_edition(name));
+        let rest = ext_id.strip_prefix("franchise:").unwrap();
+        let (fid_str, edition_part) = rest.split_once(":edition:").unwrap();
+        assert_eq!(fid_str, "817");
+        assert_eq!(decode_edition(edition_part).unwrap(), name);
+    }
+
+    #[test]
+    fn external_id_franchise_backward_compat() {
+        let ext_id = "franchise:817";
+        let rest = ext_id.strip_prefix("franchise:").unwrap();
+        assert!(rest.split_once(":edition:").is_none(), "old format has no edition");
+    }
+
+    // ─── name_similarity ──────────────────────────────────────────────
+
+    #[test]
+    fn similarity_exact_match() {
+        assert!((name_similarity("Naruto", "Naruto") - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn similarity_case_insensitive() {
+        assert!((name_similarity("naruto", "NARUTO") - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn similarity_accent_insensitive() {
+        assert!((name_similarity("Astérix", "Asterix") - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn similarity_edition_suffix_lower() {
+        // "Naruto" vs "Naruto (Édition Hokage)" — contained, so > 0.5
+        let s = name_similarity("Naruto", "Naruto (Édition Hokage)");
+        assert!(s > 0.3 && s < 1.0, "partial containment: got {s}");
+    }
+
+    #[test]
+    fn similarity_different_series() {
+        let s = name_similarity("Naruto", "One Piece");
+        assert!(s < 0.2, "unrelated: got {s}");
+    }
+
+    #[test]
+    fn similarity_subseries() {
+        // "Boruto" vs "Naruto" — share "ruto" but are different
+        let s = name_similarity("Boruto", "Naruto");
+        assert!(s < 0.5, "different series: got {s}");
     }
 }

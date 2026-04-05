@@ -183,10 +183,26 @@ pub async fn search_metadata(
 
     let provider_config = load_provider_config(&state, &provider_name).await;
 
-    let candidates = provider
+    let mut candidates = provider
         .search_series(&body.series_name, &provider_config)
         .await
         .map_err(|e| ApiError::internal(format!("provider error: {e}")))?;
+
+    // Boost confidence based on local book count vs candidate total_volumes
+    let local_count: Option<i64> = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM books b \
+         JOIN series s ON s.id = b.series_id \
+         WHERE b.library_id = $1 AND LOWER(unaccent(s.name)) = LOWER(unaccent($2))",
+    )
+    .bind(library_id)
+    .bind(&body.series_name)
+    .fetch_one(&state.pool)
+    .await
+    .ok();
+
+    if let Some(count) = local_count {
+        crate::metadata_batch::boost_confidence_by_book_count(&mut candidates, count);
+    }
 
     let actual_provider = provider.name().to_string();
     let dtos: Vec<SeriesCandidateDto> = candidates
