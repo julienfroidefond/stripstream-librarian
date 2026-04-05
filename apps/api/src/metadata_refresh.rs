@@ -593,7 +593,14 @@ async fn process_metadata_refresh_inner(
     let mut errors = 0i32;
     let mut all_results: Vec<SeriesRefreshResult> = Vec::new();
 
+    let mut last_provider: Option<String> = None;
     for (link_id, series_name, provider_name, external_id) in &links {
+        // Throttle SensCritique requests to avoid 429
+        if provider_name == "senscritique" && last_provider.as_deref() == Some("senscritique") {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        }
+        last_provider = Some(provider_name.clone());
+
         // Check cancellation
         if is_job_cancelled(pool, job_id).await {
             sqlx::query(

@@ -565,7 +565,7 @@ pub(crate) async fn process_metadata_batch(
 
         // Search with primary provider
         let (result_status, provider_used, fallback_used, candidates_count, best_confidence, best_candidate, link_id, error_msg) =
-            match search_and_evaluate(pool, library_id, series_name, &primary_name, force_rematch).await {
+            match search_and_evaluate(pool, library_id, series_name, &primary_name, true).await {
                 SearchOutcome::AutoMatch(candidate) => {
                     // Create link + approve + sync
                     match auto_apply(pool, library_id, series_name, &primary_name, &candidate).await {
@@ -597,7 +597,7 @@ pub(crate) async fn process_metadata_batch(
                 SearchOutcome::NoResults => {
                     // Try fallback
                     if let Some(ref fb_name) = fallback_name {
-                        match search_and_evaluate(pool, library_id, series_name, fb_name, force_rematch).await {
+                        match search_and_evaluate(pool, library_id, series_name, fb_name, true).await {
                             SearchOutcome::AutoMatch(candidate) => {
                                 match auto_apply(pool, library_id, series_name, fb_name, &candidate).await {
                                     Ok(lid) => (
