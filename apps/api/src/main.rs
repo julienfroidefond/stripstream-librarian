@@ -3,7 +3,7 @@ mod auth;
 mod authors;
 mod books;
 mod discovery;
-mod download_detection;
+mod downloads;
 mod error;
 mod handlers;
 mod index_jobs;
@@ -16,11 +16,8 @@ mod metadata_providers;
 mod api_middleware;
 mod openapi;
 mod pages;
-mod prowlarr;
-mod qbittorrent;
 mod reading_progress;
 mod responses;
-mod torrent_import;
 mod reading_status_match;
 mod reading_status_push;
 mod rename;
@@ -127,12 +124,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/tokens", get(tokens::list_tokens).post(tokens::create_token))
         .route("/admin/tokens/:id", delete(tokens::revoke_token).patch(tokens::update_token))
         .route("/admin/tokens/:id/delete", axum::routing::post(tokens::delete_token))
-        .route("/prowlarr/search", axum::routing::post(prowlarr::search_prowlarr))
-        .route("/prowlarr/test", get(prowlarr::test_prowlarr))
-        .route("/qbittorrent/add", axum::routing::post(qbittorrent::add_torrent))
-        .route("/qbittorrent/test", get(qbittorrent::test_qbittorrent))
-        .route("/torrent-downloads", get(torrent_import::list_torrent_downloads))
-        .route("/torrent-downloads/:id", axum::routing::delete(torrent_import::delete_torrent_download))
+        .route("/prowlarr/search", axum::routing::post(downloads::search_prowlarr))
+        .route("/prowlarr/test", get(downloads::test_prowlarr))
+        .route("/qbittorrent/add", axum::routing::post(downloads::add_torrent))
+        .route("/qbittorrent/test", get(downloads::test_qbittorrent))
+        .route("/torrent-downloads", get(downloads::list_torrent_downloads))
+        .route("/torrent-downloads/:id", axum::routing::delete(downloads::delete_torrent_download))
         .route("/telegram/test", get(telegram::test_telegram))
         .route("/komga/sync", axum::routing::post(komga::sync_komga_read_books))
         .route("/komga/reports", get(komga::list_sync_reports))
@@ -171,11 +168,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/reading-status/push", axum::routing::post(reading_status_push::start_push))
         .route("/reading-status/push/:id/report", get(reading_status_push::get_push_report))
         .route("/reading-status/push/:id/results", get(reading_status_push::get_push_results))
-        .route("/download-detection/start", axum::routing::post(download_detection::start_detection))
-        .route("/download-detection/latest-found", get(download_detection::get_latest_found))
-        .route("/download-detection/:id/report", get(download_detection::get_detection_report))
-        .route("/download-detection/:id/results", get(download_detection::get_detection_results))
-        .route("/available-downloads/:id", axum::routing::delete(download_detection::delete_available_download))
+        .route("/download-detection/start", axum::routing::post(downloads::start_detection))
+        .route("/download-detection/latest-found", get(downloads::get_latest_found))
+        .route("/download-detection/:id/report", get(downloads::get_detection_report))
+        .route("/download-detection/:id/results", get(downloads::get_detection_results))
+        .route("/available-downloads/:id", axum::routing::delete(downloads::delete_available_download))
         .route("/discovery/trending", get(discovery::trending))
         .route("/discovery/prowlarr", get(discovery::prowlarr_discovery))
         .route("/discovery/add-to-library", axum::routing::post(discovery::add_to_library))
@@ -223,7 +220,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/ready", get(handlers::ready))
         .route("/metrics", get(handlers::metrics))
         .route("/docs", get(handlers::docs_redirect))
-        .route("/torrent-downloads/notify", axum::routing::post(torrent_import::notify_torrent_done))
+        .route("/torrent-downloads/notify", axum::routing::post(downloads::notify_torrent_done))
         .merge(SwaggerUi::new("/swagger-ui").url("/openapi.json", openapi::ApiDoc::openapi()))
         .merge(admin_routes)
         .merge(read_routes)
@@ -237,7 +234,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Start background poller for qBittorrent torrent completions (every 30s)
     tokio::spawn(async move {
-        torrent_import::run_torrent_poller(torrent_poller_pool, 30).await;
+        downloads::run_torrent_poller(torrent_poller_pool, 30).await;
     });
 
     let listener = tokio::net::TcpListener::bind(&config.listen_addr).await?;

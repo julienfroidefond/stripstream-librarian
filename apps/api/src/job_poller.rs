@@ -4,7 +4,7 @@ use sqlx::{PgPool, Row};
 use tracing::{error, info, trace};
 use uuid::Uuid;
 
-use crate::{download_detection, metadata, reading_status_push};
+use crate::{downloads::detection as download_detection, metadata, reading_status_push};
 
 /// Poll for pending API-only jobs (`metadata_batch`, `metadata_refresh`) and process them.
 /// This mirrors the indexer's worker loop but for job types handled by the API.
