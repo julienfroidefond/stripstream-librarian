@@ -8,7 +8,7 @@ use uuid::Uuid;
 use utoipa::ToSchema;
 use tracing::{info, warn};
 
-use crate::{error::ApiError, job_helpers::{is_job_cancelled, update_progress, insert_event}, metadata_common, metadata_providers, state::AppState};
+use crate::{error::ApiError, job_helpers::{is_job_cancelled, update_progress, insert_event}, metadata_providers, state::AppState};
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -152,7 +152,7 @@ pub async fn start_batch(
         .await?
         .ok_or_else(|| ApiError::not_found("library not found"))?;
 
-    // Check library provider — if "none", refuse batch
+    // Check library provider -- if "none", refuse batch
     let lib_row = sqlx::query("SELECT metadata_provider FROM libraries WHERE id = $1")
         .bind(library_id)
         .fetch_one(&state.pool)
@@ -475,8 +475,8 @@ pub(crate) async fn process_metadata_batch(
     let primary_provider_name: Option<String> = lib_row.get("metadata_provider");
     let fallback_provider_name: Option<String> = lib_row.get("fallback_metadata_provider");
 
-    // Resolve primary provider: library → global setting → google_books
-    let primary_name = metadata_common::resolve_provider_name(pool, primary_provider_name.as_deref()).await;
+    // Resolve primary provider: library -> global setting -> google_books
+    let primary_name = super::config::resolve_provider_name(pool, primary_provider_name.as_deref()).await;
     let fallback_name = fallback_provider_name
         .as_deref()
         .filter(|s| !s.is_empty() && *s != primary_name)
@@ -510,7 +510,7 @@ pub(crate) async fn process_metadata_batch(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Get series that already have an approved link — map name → provider
+    // Get series that already have an approved link -- map name -> provider
     let linked_rows = sqlx::query(
         "SELECT s.name, eml.provider FROM external_metadata_links eml JOIN series s ON s.id = eml.series_id WHERE eml.library_id = $1 AND eml.status = 'approved'",
     )
@@ -751,7 +751,7 @@ pub(crate) async fn process_metadata_batch(
                 ),
             };
 
-        // Insert event tracking (replaces insert_result — events are the single source of truth)
+        // Insert event tracking (replaces insert_result -- events are the single source of truth)
         match result_status {
             "auto_matched" => {
                 insert_event(
@@ -931,7 +931,7 @@ async fn search_and_evaluate(
         None => return SearchOutcome::Error(format!("Unknown provider: {provider_name}")),
     };
 
-    let mut config = metadata_common::load_provider_config(pool, provider_name).await;
+    let mut config = super::config::load_provider_config(pool, provider_name).await;
     config.detailed = detailed;
 
     let mut candidates = match provider.search_series(series_name, &config).await {
@@ -956,7 +956,7 @@ async fn search_and_evaluate(
     .ok();
 
     if let Some(count) = local_count {
-        metadata_common::boost_confidence_by_book_count(&mut candidates, count);
+        super::config::boost_confidence_by_book_count(&mut candidates, count);
     }
 
     // Only auto-match if exactly 1 result with confidence == 1.0
@@ -1030,10 +1030,6 @@ async fn auto_apply(
 
     let link_id: Uuid = row.get("id");
 
-    // Build a temporary AppState-like wrapper for reusing sync functions
-    // We need to call sync_series_metadata and sync_books_metadata which expect &AppState
-    // Instead, we'll replicate the essential logic inline using pool directly
-
     // Sync series metadata
     sync_series_from_candidate(pool, library_id, series_name, candidate).await?;
 
@@ -1059,7 +1055,7 @@ async fn sync_series_from_candidate(
     let start_year = candidate.start_year;
     let total_volumes = candidate.total_volumes;
     let status = if let Some(raw) = candidate.metadata_json.get("status").and_then(|s| s.as_str()) {
-        Some(crate::metadata::normalize_series_status(pool, raw).await)
+        Some(super::handlers::normalize_series_status(pool, raw).await)
     } else {
         None
     };
@@ -1127,7 +1123,7 @@ async fn sync_books_from_provider(
     let provider = metadata_providers::get_provider(provider_name)
         .ok_or_else(|| format!("Unknown provider: {provider_name}"))?;
 
-    let config = metadata_common::load_provider_config(pool, provider_name).await;
+    let config = super::config::load_provider_config(pool, provider_name).await;
 
     let books = provider
         .get_series_books(external_id, &config)
@@ -1277,11 +1273,10 @@ async fn sync_books_from_provider(
     Ok(())
 }
 
-// Helpers moved to crate::job_helpers and crate::metadata_common
+// Helpers moved to crate::job_helpers and super::config
 
 #[cfg(test)]
 mod tests {
-    use crate::metadata_common;
     use crate::metadata_providers;
     use sqlx::Row;
     use uuid::Uuid;
@@ -1314,7 +1309,7 @@ mod tests {
         let series_id = create_series(&pool, lib_id, "Blacksad").await;
         let old_link = create_link(&pool, lib_id, series_id, "bedetheque").await;
 
-        // Simulate auto_apply: insert with same provider → ON CONFLICT updates
+        // Simulate auto_apply: insert with same provider -> ON CONFLICT updates
         let new_link_id: Uuid = sqlx::query_scalar(
             r#"INSERT INTO external_metadata_links
                 (library_id, series_id, provider, external_id, status, confidence)
@@ -1366,7 +1361,7 @@ mod tests {
     #[sqlx::test(migrations = "../../infra/migrations")]
     async fn normal_mode_skips_any_linked_series(pool: sqlx::PgPool) {
         let lib_id = create_lib(&pool, "test").await;
-        let series_id = create_series(&pool, lib_id, "Astérix").await;
+        let series_id = create_series(&pool, lib_id, "Asterix").await;
         let _link = create_link(&pool, lib_id, series_id, "bedetheque").await;
 
         let linked_rows = sqlx::query(
@@ -1376,7 +1371,7 @@ mod tests {
             .map(|row| (row.get::<String, _>("name"), row.get::<String, _>("provider"))).collect();
 
         let force_rematch = false;
-        let linked_provider = already_linked.get("Astérix");
+        let linked_provider = already_linked.get("Asterix");
         let should_skip = if force_rematch {
             linked_provider.map(|p| p == "senscritique").unwrap_or(false) // target provider
         } else {
@@ -1581,7 +1576,7 @@ mod tests {
         let job_id = create_job(&pool, lib_id, "metadata_batch").await;
 
         let detail = serde_json::json!({"provider": "bedetheque", "confidence": 0.92});
-        super::insert_event(
+        crate::job_helpers::insert_event(
             &pool, job_id, "metadata_matched", "info",
             Some("series"), Some("Blacksad"), None, Some(detail.clone()),
         ).await;
@@ -1609,7 +1604,7 @@ mod tests {
         let lib_id = create_lib(&pool, "evt_error").await;
         let job_id = create_job(&pool, lib_id, "metadata_batch").await;
 
-        super::insert_event(
+        crate::job_helpers::insert_event(
             &pool, job_id, "error", "error",
             Some("series"), Some("Broken"), Some("provider timeout"), None,
         ).await;
@@ -1640,7 +1635,7 @@ mod tests {
             "title": "Blacksad",
             "external_id": "ext_123",
             "external_url": "https://example.com/blacksad",
-            "authors": ["Juan Díaz Canales", "Juanjo Guarnido"],
+            "authors": ["Juan Diaz Canales", "Juanjo Guarnido"],
             "description": "A noir detective story.",
             "cover_url": "https://example.com/cover.jpg",
             "total_volumes": 7,
@@ -1690,7 +1685,7 @@ mod tests {
     async fn series_id_resolved_with_unaccent_in_results(pool: sqlx::PgPool) {
         let lib_id = create_lib(&pool, "test_unaccent").await;
         // Series with accented name
-        let series_id = create_series(&pool, lib_id, "Astérix").await;
+        let series_id = create_series(&pool, lib_id, "Asterix").await;
 
         let job_id = create_job(&pool, lib_id, "metadata_batch").await;
 
@@ -1732,7 +1727,7 @@ mod tests {
         assert_eq!(
             returned_series_id,
             Some(series_id),
-            "series_id should be resolved despite accent difference (Astérix vs Asterix)"
+            "series_id should be resolved despite accent difference (Asterix vs Asterix)"
         );
     }
 
@@ -1753,14 +1748,14 @@ mod tests {
             .unwrap();
 
         // Insert events with different event_types
-        super::insert_event(&pool, job_id, "metadata_matched", "info", Some("series"), Some("S1"), None, Some(serde_json::json!({"provider": "google_books"}))).await;
-        super::insert_event(&pool, job_id, "metadata_matched", "info", Some("series"), Some("S2"), None, Some(serde_json::json!({"provider": "google_books"}))).await;
-        super::insert_event(&pool, job_id, "metadata_no_results", "info", Some("series"), Some("S3"), Some("No results"), None).await;
-        super::insert_event(&pool, job_id, "metadata_too_many", "warning", Some("series"), Some("S4"), Some("5 results"), None).await;
-        super::insert_event(&pool, job_id, "metadata_low_confidence", "warning", Some("series"), Some("S5"), Some("Best: 40%"), None).await;
-        super::insert_event(&pool, job_id, "metadata_already_linked", "info", Some("series"), Some("S6"), None, None).await;
-        super::insert_event(&pool, job_id, "metadata_already_linked", "info", Some("series"), Some("S7"), None, None).await;
-        super::insert_event(&pool, job_id, "error", "error", Some("series"), Some("S8"), Some("timeout"), None).await;
+        crate::job_helpers::insert_event(&pool, job_id, "metadata_matched", "info", Some("series"), Some("S1"), None, Some(serde_json::json!({"provider": "google_books"}))).await;
+        crate::job_helpers::insert_event(&pool, job_id, "metadata_matched", "info", Some("series"), Some("S2"), None, Some(serde_json::json!({"provider": "google_books"}))).await;
+        crate::job_helpers::insert_event(&pool, job_id, "metadata_no_results", "info", Some("series"), Some("S3"), Some("No results"), None).await;
+        crate::job_helpers::insert_event(&pool, job_id, "metadata_too_many", "warning", Some("series"), Some("S4"), Some("5 results"), None).await;
+        crate::job_helpers::insert_event(&pool, job_id, "metadata_low_confidence", "warning", Some("series"), Some("S5"), Some("Best: 40%"), None).await;
+        crate::job_helpers::insert_event(&pool, job_id, "metadata_already_linked", "info", Some("series"), Some("S6"), None, None).await;
+        crate::job_helpers::insert_event(&pool, job_id, "metadata_already_linked", "info", Some("series"), Some("S7"), None, None).await;
+        crate::job_helpers::insert_event(&pool, job_id, "error", "error", Some("series"), Some("S8"), Some("timeout"), None).await;
 
         // Run the same report query used in get_batch_report
         let counts = sqlx::query(
@@ -1829,7 +1824,7 @@ mod tests {
             "link_id": Uuid::new_v4().to_string(),
         });
 
-        super::insert_event(
+        crate::job_helpers::insert_event(
             &pool, job_id, "metadata_matched", "info",
             Some("series"), Some("TestSeries"), None, Some(detail.clone()),
         ).await;
@@ -1898,5 +1893,5 @@ mod tests {
         assert!(returned_series_id.is_some(), "series_id should be resolved via LEFT JOIN");
     }
 
-    // boost_confidence_by_book_count tests moved to crate::metadata_common::tests
+    // boost_confidence_by_book_count tests moved to super::config::tests
 }

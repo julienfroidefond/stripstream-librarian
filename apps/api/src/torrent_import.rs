@@ -6,7 +6,7 @@ use std::time::Duration;
 use tracing::{info, trace, warn};
 use uuid::Uuid;
 
-use crate::{error::ApiError, metadata_refresh, qbittorrent::{load_qbittorrent_config, qbittorrent_login, resolve_hash_by_category}, state::AppState};
+use crate::{error::ApiError, metadata, qbittorrent::{load_qbittorrent_config, qbittorrent_login, resolve_hash_by_category}, state::AppState};
 use parsers::extract_volumes;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -545,7 +545,7 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
                 let pool2 = pool.clone();
                 let sn = series_name.clone();
                 tokio::spawn(async move {
-                    let result = metadata_refresh::refresh_link(&pool2, link_id, library_id, &sn, &provider, &external_id).await;
+                    let result = metadata::refresh_link(&pool2, link_id, library_id, &sn, &provider, &external_id).await;
                     if let Err(e) = result {
                         warn!("[IMPORT] Metadata refresh for '{}' failed: {}", sn, e);
                     } else {

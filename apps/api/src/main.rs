@@ -12,9 +12,6 @@ mod job_poller;
 mod komga;
 mod libraries;
 mod metadata;
-mod metadata_batch;
-mod metadata_common;
-mod metadata_refresh;
 mod metadata_providers;
 mod api_middleware;
 mod openapi;
@@ -161,13 +158,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/metadata/links", get(metadata::get_metadata_links))
         .route("/metadata/missing/:id", get(metadata::get_missing_books))
         .route("/metadata/links/:id", delete(metadata::delete_metadata_link))
-        .route("/metadata/batch", axum::routing::post(metadata_batch::start_batch))
-        .route("/metadata/batch/:id/report", get(metadata_batch::get_batch_report))
-        .route("/metadata/batch/:id/results", get(metadata_batch::get_batch_results))
-        .route("/metadata/refresh", axum::routing::post(metadata_refresh::start_refresh))
-        .route("/metadata/refresh-all", axum::routing::post(metadata_refresh::start_refresh_all))
-        .route("/metadata/refresh-link/:id", axum::routing::post(metadata_refresh::refresh_single_link))
-        .route("/metadata/refresh/:id/report", get(metadata_refresh::get_refresh_report))
+        .route("/metadata/batch", axum::routing::post(metadata::start_batch))
+        .route("/metadata/batch/:id/report", get(metadata::get_batch_report))
+        .route("/metadata/batch/:id/results", get(metadata::get_batch_results))
+        .route("/metadata/refresh", axum::routing::post(metadata::start_refresh))
+        .route("/metadata/refresh-all", axum::routing::post(metadata::start_refresh_all))
+        .route("/metadata/refresh-link/:id", axum::routing::post(metadata::refresh_single_link))
+        .route("/metadata/refresh/:id/report", get(metadata::get_refresh_report))
         .route("/reading-status/match", axum::routing::post(reading_status_match::start_match))
         .route("/reading-status/match/:id/report", get(reading_status_match::get_match_report))
         .route("/reading-status/match/:id/results", get(reading_status_match::get_match_results))

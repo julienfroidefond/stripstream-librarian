@@ -4,7 +4,7 @@ use sqlx::{PgPool, Row};
 use tracing::{error, info, trace};
 use uuid::Uuid;
 
-use crate::{download_detection, metadata_batch, metadata_refresh, reading_status_push};
+use crate::{download_detection, metadata, reading_status_push};
 
 /// Poll for pending API-only jobs (`metadata_batch`, `metadata_refresh`) and process them.
 /// This mirrors the indexer's worker loop but for job types handled by the API.
@@ -28,7 +28,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                 tokio::spawn(async move {
                     let result = match job_type.as_str() {
                         "metadata_refresh" => {
-                            metadata_refresh::process_metadata_refresh(
+                            metadata::process_metadata_refresh(
                                 &pool_clone,
                                 job_id,
                                 library_id,
@@ -36,7 +36,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                             .await
                         }
                         "metadata_refresh_all" => {
-                            metadata_refresh::process_metadata_refresh_all(
+                            metadata::process_metadata_refresh_all(
                                 &pool_clone,
                                 job_id,
                                 library_id,
@@ -44,7 +44,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                             .await
                         }
                         "metadata_batch" | "metadata_batch_rematch" => {
-                            metadata_batch::process_metadata_batch(
+                            metadata::process_metadata_batch(
                                 &pool_clone,
                                 job_id,
                                 library_id,

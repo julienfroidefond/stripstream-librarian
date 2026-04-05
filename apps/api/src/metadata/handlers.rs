@@ -169,7 +169,7 @@ pub async fn search_metadata(
         return Err(ApiError::bad_request("series_name is required"));
     }
 
-    // Determine provider: explicit override → library-level → global setting → default
+    // Determine provider: explicit override -> library-level -> global setting -> default
     let provider_name = if let Some(ref p) = body.provider {
         if !p.is_empty() { p.clone() } else { get_provider_for_library(&state, library_id).await? }
     } else {
@@ -181,7 +181,7 @@ pub async fn search_metadata(
         .or_else(|| metadata_providers::get_provider("google_books"))
         .ok_or_else(|| ApiError::bad_request(format!("unknown provider: {provider_name}")))?;
 
-    let mut provider_config = crate::metadata_common::load_provider_config(&state.pool, &provider_name).await;
+    let mut provider_config = super::config::load_provider_config(&state.pool, &provider_name).await;
     provider_config.detailed = true; // Manual search: show per-edition results
 
     let mut candidates = provider
@@ -202,7 +202,7 @@ pub async fn search_metadata(
     .ok();
 
     if let Some(count) = local_count {
-        crate::metadata_common::boost_confidence_by_book_count(&mut candidates, count);
+        super::config::boost_confidence_by_book_count(&mut candidates, count);
     }
 
     let actual_provider = provider.name().to_string();
@@ -709,7 +709,7 @@ pub(crate) async fn get_provider_for_library(state: &AppState, library_id: Uuid)
     Ok("google_books".to_string())
 }
 
-// Provider config loading is in crate::metadata_common::load_provider_config
+// Provider config loading is in super::config::load_provider_config
 
 pub(crate) async fn sync_series_metadata(
     state: &AppState,
@@ -891,7 +891,7 @@ pub(crate) async fn sync_series_metadata(
 }
 
 /// Normalize provider-specific status strings using the status_mappings table.
-/// Returns None if no mapping is found — unknown statuses are not stored.
+/// Returns None if no mapping is found -- unknown statuses are not stored.
 pub(crate) async fn normalize_series_status(pool: &sqlx::PgPool, raw: &str) -> String {
     let lower = raw.to_lowercase();
 
@@ -906,7 +906,7 @@ pub(crate) async fn normalize_series_status(pool: &sqlx::PgPool, raw: &str) -> S
         return row;
     }
 
-    // Try substring match (for Bédéthèque-style statuses like "Série finie")
+    // Try substring match (for Bedetheque-style statuses like "Serie finie")
     if let Ok(Some(row)) = sqlx::query_scalar::<_, String>(
         "SELECT mapped_status FROM status_mappings WHERE $1 LIKE '%' || provider_status || '%' AND mapped_status IS NOT NULL LIMIT 1",
     )
@@ -917,7 +917,7 @@ pub(crate) async fn normalize_series_status(pool: &sqlx::PgPool, raw: &str) -> S
         return row;
     }
 
-    // No mapping found — return the provider status as-is (lowercased)
+    // No mapping found -- return the provider status as-is (lowercased)
     lower
 }
 
@@ -933,7 +933,7 @@ pub(crate) async fn sync_books_metadata(
         .or_else(|| metadata_providers::get_provider("google_books"))
         .ok_or_else(|| ApiError::internal(format!("unknown provider: {provider_name}")))?;
 
-    let provider_config = crate::metadata_common::load_provider_config(&state.pool, provider_name).await;
+    let provider_config = super::config::load_provider_config(&state.pool, provider_name).await;
 
     let books = provider
         .get_series_books(external_id, &provider_config)
@@ -1476,7 +1476,7 @@ mod tests {
         assert!(json["external_url"].is_null());
     }
 
-    // ─── Missing books: total_volumes override ────────────────────────
+    // --- Missing books: total_volumes override ---
 
     async fn setup_series_with_link(
         pool: &sqlx::PgPool,
@@ -1532,12 +1532,12 @@ mod tests {
         let missing = (total_external - local_count).max(0);
 
         assert_eq!(total_external, 3, "should use series.total_volumes override, not provider count");
-        assert_eq!(missing, 0, "3 local / 3 total → 0 missing");
+        assert_eq!(missing, 0, "3 local / 3 total -> 0 missing");
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]
     async fn missing_books_falls_back_to_provider_count(pool: sqlx::PgPool) {
-        // total_volumes is NULL → use provider count (5)
+        // total_volumes is NULL -> use provider count (5)
         let (_lib_id, _series_id, link_id) = setup_series_with_link(&pool, None, 3, 5).await;
 
         let series_total: Option<i32> = sqlx::query_scalar("SELECT total_volumes FROM series WHERE id = (SELECT series_id FROM external_metadata_links WHERE id = $1)")
@@ -1550,8 +1550,8 @@ mod tests {
         let total_external = series_total.filter(|&v| v > 0).map(|v| v as i64).unwrap_or(provider_count);
         let missing = (total_external - local_count).max(0);
 
-        assert_eq!(total_external, 5, "NULL total_volumes → use provider count");
-        assert_eq!(missing, 2, "3 local / 5 provider → 2 missing");
+        assert_eq!(total_external, 5, "NULL total_volumes -> use provider count");
+        assert_eq!(missing, 2, "3 local / 5 provider -> 2 missing");
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]

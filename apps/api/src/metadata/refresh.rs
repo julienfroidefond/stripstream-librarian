@@ -10,7 +10,6 @@ use tracing::{info, warn};
 
 use crate::{error::ApiError, metadata_providers, state::AppState};
 use crate::job_helpers::{is_job_cancelled, update_progress};
-use crate::metadata_common;
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -21,7 +20,7 @@ pub struct MetadataRefreshRequest {
     pub library_id: Option<String>,
 }
 
-/// A single field change: old → new
+/// A single field change: old -> new
 #[derive(Serialize, Clone)]
 struct FieldDiff {
     field: String,
@@ -728,12 +727,12 @@ pub(crate) async fn refresh_link(
     let provider = metadata_providers::get_provider(provider_name)
         .ok_or_else(|| format!("Unknown provider: {provider_name}"))?;
 
-    let config = metadata_common::load_provider_config(pool, provider_name).await;
+    let config = super::config::load_provider_config(pool, provider_name).await;
 
     let mut series_changes: Vec<FieldDiff> = Vec::new();
     let mut book_changes: Vec<BookDiff> = Vec::new();
 
-    // ── Series-level refresh ──────────────────────────────────────────────
+    // -- Series-level refresh --
     let candidates = provider
         .search_series(series_name, &config)
         .await
@@ -766,7 +765,7 @@ pub(crate) async fn refresh_link(
         series_changes = sync_series_with_diff(pool, library_id, series_name, candidate).await?;
     }
 
-    // ── Book-level refresh ────────────────────────────────────────────────
+    // -- Book-level refresh --
     let books = provider
         .get_series_books(external_id, &config)
         .await
@@ -974,7 +973,7 @@ async fn sync_series_with_diff(
     let new_start_year = candidate.start_year;
     let new_total_volumes = candidate.total_volumes;
     let new_status = if let Some(raw) = candidate.metadata_json.get("status").and_then(|s| s.as_str()) {
-        Some(crate::metadata::normalize_series_status(pool, raw).await)
+        Some(super::handlers::normalize_series_status(pool, raw).await)
     } else {
         None
     };
