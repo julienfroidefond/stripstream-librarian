@@ -65,13 +65,39 @@
 
 ### Series Metadata
 - Description, publisher, start year, status (`ongoing`, `ended`, `completed`, `on_hold`, `hiatus`)
-- Total volume count (from external providers)
+- Total volume count (from external providers or manual override)
 - Authors (aggregated from books or metadata)
+- **Field locking**: individual fields can be locked to prevent metadata sync from overwriting manual edits
+
+### Missing Books Count
+- Calculated as `max(total_volumes - book_count, 0)`
+- Based on `series.total_volumes` (user-editable), not external provider book count
+- When `total_volumes` is NULL → 0 missing
+- Manual edit of total_volumes immediately updates the missing count
+- Series detail page uses same logic for "X/Y – Z manquants" display
+
+### Merge Series
+- Merge a source series into a target series (absorb duplicates)
+- Moves books, metadata links, available downloads, anilist links from source to target
+- Keeps target's metadata links when both have the same provider
+- Deletes the source series after merge
+- Search modal on series detail page (cross-library search, API validates same library)
+
+### Orphan Series Cleanup
+- After stale book deletions during scan, empty series are automatically removed
+- Protected: series with metadata links or available downloads are preserved
+- Series added from Discovery (no books, but metadata) are never cleaned up
+
+### Series Rename Deduplication
+- `get_or_create_series` checks both `name` and `original_name` to prevent duplicates
+- Works in both API and indexer: after a user rename, lookups by old folder name find the renamed series
+- Case-insensitive and accent-insensitive matching on both fields
+- Scanner applies rename mapping in all code paths (including skipped directories)
 
 ### Filtering & Discovery
 - Filter by: series name (partial match), reading status, series status, metadata provider linkage
 - Sort by: name, reading status, book count
-- **Missing books detection**: identifies gaps in volume numbering within a series
+- **Missing books detection**: based on total_volumes - book_count
 
 ---
 
@@ -130,10 +156,15 @@
 | SensCritique | BD, manga, comics | GraphQL (`apollo.senscritique.com`) |
 
 #### SensCritique Provider
-- **Search**: `searchAutocomplete` with franchise deduplication (groups volumes into series)
-- **Volumes**: `groupProducts` by franchise, deduplicates editions (keeps original), extracts volume numbers from titles
+- **Search**: `searchAutocomplete` with franchise deduplication, then per-edition breakdown via `groupProducts`
+- **Edition selection**: each edition within a franchise is returned as a separate candidate with accurate `total_volumes` (e.g., "Naruto" 72 vol vs "Naruto (Édition Hokage)" 35 vol)
+- **Edition detection**: parses product titles to extract edition name (pattern: "Title - Edition, tome X")
+- **external_id format**: `franchise:{id}:edition:{base64(name)}`, backward compatible with `franchise:{id}`
+- **Volumes**: `groupProducts` filtered by edition, deduplicates by volume number (keeps earliest), extracts volume numbers from titles
 - **Series status**: inferred from latest release date — if within 18 months → `ongoing`, otherwise → `ended`
-- **Description**: uses synopsis of the lowest-numbered volume (typically tome 1) since SensCritique has no series-level description
+- **Description**: uses synopsis of the lowest-numbered volume within the edition (typically tome 1)
+- **Rate limiting**: retry with exponential backoff on HTTP 429 (1s, 2s, 4s, 3 retries), 300ms throttle between requests in refresh jobs
+- **Batch vs detailed mode**: batch metadata uses `detailed=true` for edition-level matching; refresh uses stored `external_id` directly (no search)
 
 ### Provider Configuration
 - Global default provider with library-level override
@@ -145,10 +176,25 @@
 3. **Approve**: validate and sync metadata to series and books
 4. **Reject**: discard a match
 
+### Confidence Scoring
+- **Provider-level**: name similarity (normalized Jaccard/containment), volume count bonus
+- **Caller-level boost**: local book count vs candidate total_volumes
+  - Exact match (book_count == total_volumes): +0.30
+  - Close match (±2 volumes): +0.15
+- Candidates re-sorted by confidence after boost
+- Auto-match threshold: confidence == 1.0
+
 ### Batch Processing
 - Auto-match all series in a library via `metadata_batch` job
-- Configurable confidence threshold
+- Series processed by `updated_at ASC` (least recently updated first)
+- Edition-level matching for SensCritique (detailed mode)
 - Result statuses: `auto_matched`, `no_results`, `too_many_results`, `low_confidence`, `already_linked`
+
+### Re-match Metadata
+- Re-link all series to a different provider without losing existing links
+- Skips series already linked to the target provider
+- Deletes old provider link only after successful new match
+- Uses detailed edition-level search for SensCritique
 
 ### Metadata Refresh
 - Update approved links with latest data from providers
@@ -226,6 +272,9 @@ Browse and add series to your library from external sources.
 - Volume pattern matching against release titles (supports `T##`, `Tome ##`, `Vol ##`, ranges `1-10`, intégrales)
 - Results: title, size, seeders/leechers, download URL, matched missing volumes
 - **Download detection job**: auto-scan all series with missing volumes, report available releases in `available_downloads`
+- Volume 0 (T0) excluded from missing volumes search
+- **`prowlarr_no_results`** event (error level): Prowlarr returned 0 raw results (indexer problem)
+- **`downloads_not_found`** event (info level): Prowlarr returned results but none matched missing volumes
 - **Failed download indicator**: badge on available releases that had previous download errors (via `torrent_downloads` lateral join)
 
 ### qBittorrent
@@ -307,7 +356,9 @@ Browse and add series to your library from external sources.
 | `thumbnail_regenerate` | Clear and regenerate all thumbnails |
 | `cbr_to_cbz` | Convert RAR to ZIP |
 | `metadata_batch` | Auto-match series to metadata |
+| `metadata_batch_rematch` | Re-match series to a different provider |
 | `metadata_refresh` | Update approved metadata links |
+| `download_detection` | Scan Prowlarr for missing volumes |
 | `reading_status_match` | Pull reading progress from AniList to local |
 | `reading_status_push` | Differential push of reading statuses to AniList |
 
@@ -407,7 +458,8 @@ Browse and add series to your library from external sources.
 - PostgreSQL with `pg_trgm` for full-text search (no external search engine)
 - All deletions cascade from libraries
 - Unique constraints: file paths, token prefixes, metadata links (library + series + provider)
-- **Series name matching**: always `LOWER(unaccent(name))` — case and accent insensitive to prevent duplicates from different sources (discovery, torrent import, scanner)
+- **Series name matching**: always `LOWER(unaccent(name))` — case and accent insensitive to prevent duplicates from different sources (discovery, torrent import, scanner). Also checks `original_name` for renamed series.
+- **Unified job events**: `index_job_events` table replaces per-job-type result tables
 - Directory mtime caching for incremental scan optimization
 - Connection pool: 10 (API), 20 (indexer)
 
