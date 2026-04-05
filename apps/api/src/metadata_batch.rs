@@ -565,7 +565,7 @@ pub(crate) async fn process_metadata_batch(
 
         // Search with primary provider
         let (result_status, provider_used, fallback_used, candidates_count, best_confidence, best_candidate, link_id, error_msg) =
-            match search_and_evaluate(pool, library_id, series_name, &primary_name).await {
+            match search_and_evaluate(pool, library_id, series_name, &primary_name, force_rematch).await {
                 SearchOutcome::AutoMatch(candidate) => {
                     // Create link + approve + sync
                     match auto_apply(pool, library_id, series_name, &primary_name, &candidate).await {
@@ -597,7 +597,7 @@ pub(crate) async fn process_metadata_batch(
                 SearchOutcome::NoResults => {
                     // Try fallback
                     if let Some(ref fb_name) = fallback_name {
-                        match search_and_evaluate(pool, library_id, series_name, fb_name).await {
+                        match search_and_evaluate(pool, library_id, series_name, fb_name, force_rematch).await {
                             SearchOutcome::AutoMatch(candidate) => {
                                 match auto_apply(pool, library_id, series_name, fb_name, &candidate).await {
                                     Ok(lid) => (
@@ -953,13 +953,15 @@ async fn search_and_evaluate(
     library_id: Uuid,
     series_name: &str,
     provider_name: &str,
+    detailed: bool,
 ) -> SearchOutcome {
     let provider = match metadata_providers::get_provider(provider_name) {
         Some(p) => p,
         None => return SearchOutcome::Error(format!("Unknown provider: {provider_name}")),
     };
 
-    let config = load_provider_config_from_pool(pool, provider_name).await;
+    let mut config = load_provider_config_from_pool(pool, provider_name).await;
+    config.detailed = detailed;
 
     let mut candidates = match provider.search_series(series_name, &config).await {
         Ok(c) => c,
