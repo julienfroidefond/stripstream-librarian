@@ -181,7 +181,7 @@ pub async fn search_metadata(
         .or_else(|| metadata_providers::get_provider("google_books"))
         .ok_or_else(|| ApiError::bad_request(format!("unknown provider: {provider_name}")))?;
 
-    let mut provider_config = load_provider_config(&state, &provider_name).await;
+    let mut provider_config = crate::metadata_common::load_provider_config(&state.pool, &provider_name).await;
     provider_config.detailed = true; // Manual search: show per-edition results
 
     let mut candidates = provider
@@ -202,7 +202,7 @@ pub async fn search_metadata(
     .ok();
 
     if let Some(count) = local_count {
-        crate::metadata_batch::boost_confidence_by_book_count(&mut candidates, count);
+        crate::metadata_common::boost_confidence_by_book_count(&mut candidates, count);
     }
 
     let actual_provider = provider.name().to_string();
@@ -709,43 +709,7 @@ pub(crate) async fn get_provider_for_library(state: &AppState, library_id: Uuid)
     Ok("google_books".to_string())
 }
 
-pub(crate) async fn load_provider_config(
-    state: &AppState,
-    provider_name: &str,
-) -> metadata_providers::ProviderConfig {
-    let mut config = metadata_providers::ProviderConfig {
-        language: "en".to_string(),
-        ..Default::default()
-    };
-
-    if let Ok(Some(row)) =
-        sqlx::query("SELECT value FROM app_settings WHERE key = 'metadata_providers'")
-            .fetch_optional(&state.pool)
-            .await
-    {
-        let value: serde_json::Value = row.get("value");
-        if let Some(api_key) = value
-            .get(provider_name)
-            .and_then(|p| p.get("api_key"))
-            .and_then(|k| k.as_str())
-        {
-            if !api_key.is_empty() {
-                config.api_key = Some(api_key.to_string());
-            }
-        }
-        // Load preferred language (fallback: "en")
-        if let Some(lang) = value
-            .get("metadata_language")
-            .and_then(|l| l.as_str())
-        {
-            if !lang.is_empty() {
-                config.language = lang.to_string();
-            }
-        }
-    }
-
-    config
-}
+// Provider config loading is in crate::metadata_common::load_provider_config
 
 pub(crate) async fn sync_series_metadata(
     state: &AppState,
@@ -969,7 +933,7 @@ pub(crate) async fn sync_books_metadata(
         .or_else(|| metadata_providers::get_provider("google_books"))
         .ok_or_else(|| ApiError::internal(format!("unknown provider: {provider_name}")))?;
 
-    let provider_config = load_provider_config(state, provider_name).await;
+    let provider_config = crate::metadata_common::load_provider_config(&state.pool, provider_name).await;
 
     let books = provider
         .get_series_books(external_id, &provider_config)

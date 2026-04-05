@@ -9,7 +9,8 @@ use utoipa::ToSchema;
 use tracing::{info, warn};
 
 use crate::{error::ApiError, metadata_providers, state::AppState};
-use crate::metadata_batch::{load_provider_config_from_pool, is_job_cancelled, update_progress};
+use crate::job_helpers::{is_job_cancelled, update_progress};
+use crate::metadata_common;
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -727,7 +728,7 @@ pub(crate) async fn refresh_link(
     let provider = metadata_providers::get_provider(provider_name)
         .ok_or_else(|| format!("Unknown provider: {provider_name}"))?;
 
-    let config = load_provider_config_from_pool(pool, provider_name).await;
+    let config = metadata_common::load_provider_config(pool, provider_name).await;
 
     let mut series_changes: Vec<FieldDiff> = Vec::new();
     let mut book_changes: Vec<BookDiff> = Vec::new();
