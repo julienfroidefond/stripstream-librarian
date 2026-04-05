@@ -700,6 +700,7 @@ pub(crate) async fn process_download_detection(
         let missing_volumes: Vec<i32> = missing_rows
             .iter()
             .filter_map(|row| row.get::<Option<i32>, _>("volume_number"))
+            .filter(|&v| v > 0)
             .collect();
         let missing_count = missing_rows.len() as i32;
 
@@ -1413,5 +1414,16 @@ mod tests {
         assert_eq!(no_missing, 3, "no_missing_volumes -> no_missing");
         assert_eq!(no_metadata, 1, "no_metadata_link -> no_metadata");
         assert_eq!(errors, 1, "error -> errors");
+    }
+
+    #[test]
+    fn filter_volume_zero_from_missing() {
+        let raw_volumes: Vec<Option<i32>> = vec![Some(0), Some(1), Some(2), None, Some(3)];
+        let missing: Vec<i32> = raw_volumes
+            .iter()
+            .filter_map(|v| *v)
+            .filter(|&v| v > 0)
+            .collect();
+        assert_eq!(missing, vec![1, 2, 3], "volume 0 and NULL should be excluded");
     }
 }
