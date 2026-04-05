@@ -282,6 +282,7 @@ mod tests {
         ProviderConfig {
             api_key: Some("test_key".to_string()),
             language: "en".to_string(),
+            ..Default::default()
         }
     }
 
@@ -404,6 +405,7 @@ mod tests {
         let config = ProviderConfig {
             api_key: None,
             language: "en".to_string(),
+            ..Default::default()
         };
 
         let result = search_series_impl("Blacksad", &config, "http://unused").await;
@@ -416,6 +418,7 @@ mod tests {
         let config = ProviderConfig {
             api_key: Some("".to_string()),
             language: "en".to_string(),
+            ..Default::default()
         };
 
         let result = search_series_impl("Blacksad", &config, "http://unused").await;
@@ -529,6 +532,7 @@ mod tests {
         let config = ProviderConfig {
             api_key: None,
             language: "en".to_string(),
+            ..Default::default()
         };
 
         let result = get_series_books_impl("12345", &config, "http://unused").await;

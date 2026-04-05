@@ -486,14 +486,15 @@ pub(crate) async fn process_metadata_batch(
         "[METADATA_BATCH] job={job_id} library={library_id} primary={primary_name} fallback={fallback_name:?}"
     );
 
-    // Get all distinct series names for this library
+    // Get all distinct series names for this library, least recently updated first
     let series_names: Vec<String> = sqlx::query_scalar(
         r#"
-        SELECT DISTINCT COALESCE(s.name, 'unclassified')
-        FROM books b
-        LEFT JOIN series s ON s.id = b.series_id
+        SELECT COALESCE(s.name, 'unclassified')
+        FROM series s
+        JOIN books b ON b.series_id = s.id
         WHERE b.library_id = $1
-        ORDER BY 1
+        GROUP BY s.id, s.name
+        ORDER BY s.updated_at ASC NULLS FIRST
         "#,
     )
     .bind(library_id)

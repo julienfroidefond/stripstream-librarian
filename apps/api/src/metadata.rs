@@ -181,7 +181,8 @@ pub async fn search_metadata(
         .or_else(|| metadata_providers::get_provider("google_books"))
         .ok_or_else(|| ApiError::bad_request(format!("unknown provider: {provider_name}")))?;
 
-    let provider_config = load_provider_config(&state, &provider_name).await;
+    let mut provider_config = load_provider_config(&state, &provider_name).await;
+    provider_config.detailed = true; // Manual search: show per-edition results
 
     let mut candidates = provider
         .search_series(&body.series_name, &provider_config)

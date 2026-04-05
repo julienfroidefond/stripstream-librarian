@@ -897,6 +897,7 @@ mod tests {
         ProviderConfig {
             api_key: None,
             language: "fr".to_string(),
+            ..Default::default()
         }
     }
 

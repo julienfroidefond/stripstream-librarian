@@ -13,6 +13,9 @@ pub struct ProviderConfig {
     pub api_key: Option<String>,
     /// Preferred language for metadata results (ISO 639-1: "en", "fr", "es"). Defaults to "en".
     pub language: String,
+    /// When true, return detailed results (e.g., per-edition for SensCritique).
+    /// Set to false in batch mode to reduce API calls.
+    pub detailed: bool,
 }
 
 /// A candidate series returned by a provider search
@@ -94,11 +97,11 @@ mod providers_e2e {
     use super::*;
 
     fn config_fr() -> ProviderConfig {
-        ProviderConfig { api_key: None, language: "fr".to_string() }
+        ProviderConfig { api_key: None, language: "fr".to_string(), ..Default::default() }
     }
 
     fn config_en() -> ProviderConfig {
-        ProviderConfig { api_key: None, language: "en".to_string() }
+        ProviderConfig { api_key: None, language: "en".to_string(), ..Default::default() }
     }
 
     fn print_candidate(name: &str, c: &SeriesCandidate) {

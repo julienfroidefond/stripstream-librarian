@@ -17,12 +17,13 @@ impl MetadataProvider for SensCritiqueProvider {
     fn search_series(
         &self,
         query: &str,
-        _config: &ProviderConfig,
+        config: &ProviderConfig,
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = Result<Vec<SeriesCandidate>, String>> + Send + '_>,
     > {
         let query = query.to_string();
-        Box::pin(async move { search_series_impl(&query).await })
+        let detailed = config.detailed;
+        Box::pin(async move { search_series_impl(&query, detailed).await })
     }
 
     fn get_series_books(
@@ -53,7 +54,7 @@ fn build_client() -> Result<reqwest::Client, String> {
 ///
 /// Uses `searchAutocomplete` to find products, then deduplicates by franchise
 /// so each series appears only once (using the best-rated tome as representative).
-async fn search_series_impl(query: &str) -> Result<Vec<SeriesCandidate>, String> {
+async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCandidate>, String> {
     let client = build_client()?;
 
     let gql = serde_json::json!({
@@ -217,17 +218,37 @@ async fn search_series_impl(query: &str) -> Result<Vec<SeriesCandidate>, String>
     let franchise_ids: Vec<i64> = franchise_map.keys().copied().collect();
     let latest_dates = fetch_franchise_latest_dates(&client, &franchise_ids).await;
 
-    // For each franchise, fetch all products and group by edition
-    let mut results: Vec<SeriesCandidate> = Vec::new();
-    for (fid, (base_candidate, _rating)) in &franchise_map {
-        let edition_candidates = fetch_franchise_editions(&client, *fid, base_candidate, &franchise_descriptions, &latest_dates, query).await;
-        results.extend(edition_candidates);
+    if detailed {
+        // Manual search: fetch all products per franchise, group by edition
+        let mut results: Vec<SeriesCandidate> = Vec::new();
+        for (fid, (base_candidate, _rating)) in &franchise_map {
+            let edition_candidates = fetch_franchise_editions(&client, *fid, base_candidate, &franchise_descriptions, &latest_dates, query).await;
+            results.extend(edition_candidates);
+        }
+        results.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+        results.extend(standalone);
+        Ok(results)
+    } else {
+        // Batch mode: return one candidate per franchise (no extra API calls)
+        let mut results: Vec<SeriesCandidate> = franchise_map
+            .into_iter()
+            .map(|(fid, (mut c, _))| {
+                if c.description.is_none() {
+                    if let Some((_, desc)) = franchise_descriptions.remove(&fid) {
+                        c.description = Some(desc);
+                    }
+                }
+                if let Some(date_str) = latest_dates.get(&fid) {
+                    let status = infer_status_from_date(date_str);
+                    c.metadata_json["status"] = serde_json::json!(status);
+                }
+                c
+            })
+            .collect();
+        results.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+        results.extend(standalone);
+        Ok(results)
     }
-
-    results.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
-    results.extend(standalone);
-
-    Ok(results)
 }
 
 /// Fetch all products in a franchise, group by edition, and return one SeriesCandidate per edition.
@@ -702,34 +723,50 @@ async fn graphql_request_url(
     url: &str,
     body: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let resp = client
-        .post(url)
-        .header("Content-Type", "application/json")
-        .json(body)
-        .send()
-        .await
-        .map_err(|e| format!("SensCritique GraphQL request failed: {e}"))?;
+    let max_retries = 3;
+    let mut delay_ms = 1000u64;
 
-    if !resp.status().is_success() {
-        return Err(format!("SensCritique GraphQL returned HTTP {}", resp.status()));
-    }
+    for attempt in 0..=max_retries {
+        let resp = client
+            .post(url)
+            .header("Content-Type", "application/json")
+            .json(body)
+            .send()
+            .await
+            .map_err(|e| format!("SensCritique GraphQL request failed: {e}"))?;
 
-    let data: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("SensCritique GraphQL parse failed: {e}"))?;
-
-    if let Some(errors) = data.get("errors").and_then(|e| e.as_array()) {
-        if let Some(first) = errors.first() {
-            let msg = first
-                .get("message")
-                .and_then(|m| m.as_str())
-                .unwrap_or("unknown error");
-            return Err(format!("SensCritique GraphQL error: {msg}"));
+        if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            if attempt < max_retries {
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                delay_ms *= 2; // exponential backoff
+                continue;
+            }
+            return Err("SensCritique GraphQL returned HTTP 429 Too Many Requests (after retries)".to_string());
         }
+
+        if !resp.status().is_success() {
+            return Err(format!("SensCritique GraphQL returned HTTP {}", resp.status()));
+        }
+
+        let data: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("SensCritique GraphQL parse failed: {e}"))?;
+
+        if let Some(errors) = data.get("errors").and_then(|e| e.as_array()) {
+            if let Some(first) = errors.first() {
+                let msg = first
+                    .get("message")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("unknown error");
+                return Err(format!("SensCritique GraphQL error: {msg}"));
+            }
+        }
+
+        return Ok(data);
     }
 
-    Ok(data)
+    Err("SensCritique GraphQL: max retries exceeded".to_string())
 }
 
 fn parse_products(items: &[serde_json::Value], limit: usize) -> Vec<SeriesCandidate> {
