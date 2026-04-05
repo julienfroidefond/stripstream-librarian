@@ -4,7 +4,7 @@ use sqlx::{PgPool, Row};
 use tracing::{error, info, trace};
 use uuid::Uuid;
 
-use crate::{downloads::detection as download_detection, metadata, reading_status_push};
+use crate::{downloads::detection as download_detection, metadata, reading};
 
 /// Poll for pending API-only jobs (`metadata_batch`, `metadata_refresh`) and process them.
 /// This mirrors the indexer's worker loop but for job types handled by the API.
@@ -52,7 +52,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                             .await
                         }
                         "reading_status_push" => {
-                            reading_status_push::process_reading_status_push(
+                            reading::status_push::process_reading_status_push(
                                 &pool_clone,
                                 job_id,
                                 library_id,

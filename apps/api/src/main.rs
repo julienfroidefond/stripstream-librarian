@@ -15,19 +15,14 @@ mod metadata;
 mod metadata_providers;
 mod api_middleware;
 mod openapi;
-mod pages;
-mod reading_progress;
+mod reading;
 mod responses;
-mod reading_status_match;
-mod reading_status_push;
-mod rename;
 mod search;
 mod series;
 mod settings;
 mod state;
 mod stats;
 mod telegram;
-mod thumbnails;
 mod tokens;
 mod users;
 
@@ -105,11 +100,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/books/:id/convert", axum::routing::post(books::convert_book))
         .route("/libraries/:library_id/series/:series_id", axum::routing::patch(series::update_series).delete(series::delete_series))
         .route("/series/:series_id", axum::routing::patch(series::update_series_by_id).delete(series::delete_series_by_id))
-        .route("/series/:series_id/rename-books", axum::routing::post(rename::rename_books))
+        .route("/series/:series_id/rename-books", axum::routing::post(books::rename_books))
         .route("/series/:series_id/merge", axum::routing::post(series::merge_series))
         .route("/index/rebuild", axum::routing::post(index_jobs::enqueue_rebuild))
-        .route("/index/thumbnails/rebuild", axum::routing::post(thumbnails::start_thumbnails_rebuild))
-        .route("/index/thumbnails/regenerate", axum::routing::post(thumbnails::start_thumbnails_regenerate))
+        .route("/index/thumbnails/rebuild", axum::routing::post(books::start_thumbnails_rebuild))
+        .route("/index/thumbnails/regenerate", axum::routing::post(books::start_thumbnails_regenerate))
         .route("/index/status", get(index_jobs::list_index_jobs))
         .route("/index/jobs/active", get(index_jobs::get_active_jobs))
         .route("/index/jobs/:id", get(index_jobs::get_job_details))
@@ -162,12 +157,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/metadata/refresh-all", axum::routing::post(metadata::start_refresh_all))
         .route("/metadata/refresh-link/:id", axum::routing::post(metadata::refresh_single_link))
         .route("/metadata/refresh/:id/report", get(metadata::get_refresh_report))
-        .route("/reading-status/match", axum::routing::post(reading_status_match::start_match))
-        .route("/reading-status/match/:id/report", get(reading_status_match::get_match_report))
-        .route("/reading-status/match/:id/results", get(reading_status_match::get_match_results))
-        .route("/reading-status/push", axum::routing::post(reading_status_push::start_push))
-        .route("/reading-status/push/:id/report", get(reading_status_push::get_push_report))
-        .route("/reading-status/push/:id/results", get(reading_status_push::get_push_results))
+        .route("/reading-status/match", axum::routing::post(reading::start_match))
+        .route("/reading-status/match/:id/report", get(reading::get_match_report))
+        .route("/reading-status/match/:id/results", get(reading::get_match_results))
+        .route("/reading-status/push", axum::routing::post(reading::start_push))
+        .route("/reading-status/push/:id/report", get(reading::get_push_report))
+        .route("/reading-status/push/:id/results", get(reading::get_push_results))
         .route("/download-detection/start", axum::routing::post(downloads::start_detection))
         .route("/download-detection/latest-found", get(downloads::get_latest_found))
         .route("/download-detection/:id/report", get(downloads::get_detection_report))
@@ -189,8 +184,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/books/ongoing", get(series::ongoing_books))
         .route("/books/:id", get(books::get_book))
         .route("/books/:id/thumbnail", get(books::get_thumbnail))
-        .route("/books/:id/pages/:n", get(pages::get_page))
-        .route("/books/:id/progress", get(reading_progress::get_reading_progress).patch(reading_progress::update_reading_progress))
+        .route("/books/:id/pages/:n", get(books::get_page))
+        .route("/books/:id/progress", get(reading::get_reading_progress).patch(reading::update_reading_progress))
         .route("/libraries/:library_id/series", get(series::list_series))
         .route("/libraries/:library_id/series/by-name/:name", get(series::get_series_by_name))
         .route("/libraries/:library_id/series/:series_id/metadata", get(series::get_series_metadata))
@@ -200,7 +195,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/series/ongoing", get(series::ongoing_series))
         .route("/series/statuses", get(series::series_statuses))
         .route("/series/provider-statuses", get(series::provider_statuses))
-        .route("/series/mark-read", axum::routing::post(reading_progress::mark_series_read))
+        .route("/series/mark-read", axum::routing::post(reading::mark_series_read))
         .route("/authors", get(authors::list_authors))
         .route("/stats", get(stats::get_stats))
         .route("/search", get(search::search_books))
