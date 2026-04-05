@@ -237,12 +237,12 @@ pub async fn list_series(
 
     let missing_cte = r#"
         missing_counts AS (
-            SELECT eml.series_id,
-                COUNT(ebm.id) FILTER (WHERE ebm.book_id IS NULL) as missing_count
-            FROM external_metadata_links eml
-            JOIN external_book_metadata ebm ON ebm.link_id = eml.id
-            WHERE eml.library_id = $1 AND eml.status = 'approved'
-            GROUP BY eml.series_id
+            SELECT s.id as series_id,
+                GREATEST(COALESCE(s.total_volumes, 0) - COUNT(b.id), 0) as missing_count
+            FROM series s
+            LEFT JOIN books b ON b.series_id = s.id
+            WHERE s.library_id = $1
+            GROUP BY s.id
         )
         "#.to_string();
 
@@ -510,27 +510,26 @@ pub async fn list_all_series(
         p += 1; format!("AND (${p} = ANY(s.authors) OR EXISTS (SELECT 1 FROM books bk WHERE bk.series_id = s.id AND ${p} = ANY(COALESCE(NULLIF(bk.authors, '{{}}'), CASE WHEN bk.author IS NOT NULL AND bk.author != '' THEN ARRAY[bk.author] ELSE ARRAY[]::text[] END))))")
     } else { String::new() };
 
-    // Missing counts CTE — needs library_id filter when filtering by library
+    // Missing counts CTE — based on series.total_volumes - book_count
     let missing_cte = if query.library_id.is_some() {
         r#"
             missing_counts AS (
-                SELECT eml.series_id,
-                    COUNT(ebm.id) FILTER (WHERE ebm.book_id IS NULL) as missing_count
-                FROM external_metadata_links eml
-                JOIN external_book_metadata ebm ON ebm.link_id = eml.id
-                WHERE eml.library_id = $1 AND eml.status = 'approved'
-                GROUP BY eml.series_id
+                SELECT s.id as series_id,
+                    GREATEST(COALESCE(s.total_volumes, 0) - COUNT(b.id), 0) as missing_count
+                FROM series s
+                LEFT JOIN books b ON b.series_id = s.id
+                WHERE s.library_id = $1
+                GROUP BY s.id
             )
             "#.to_string()
     } else {
         r#"
         missing_counts AS (
-            SELECT eml.series_id,
-                COUNT(ebm.id) FILTER (WHERE ebm.book_id IS NULL) as missing_count
-            FROM external_metadata_links eml
-            JOIN external_book_metadata ebm ON ebm.link_id = eml.id
-            WHERE eml.status = 'approved'
-            GROUP BY eml.series_id
+            SELECT s.id as series_id,
+                GREATEST(COALESCE(s.total_volumes, 0) - COUNT(b.id), 0) as missing_count
+            FROM series s
+            LEFT JOIN books b ON b.series_id = s.id
+            GROUP BY s.id
         )
         "#.to_string()
     };
@@ -1987,5 +1986,113 @@ mod tests {
             .await
             .unwrap();
         assert!(target_exists, "target series should still exist");
+    }
+
+    // ─── Missing count tests ───────────────────────────────────────────
+
+    /// Helper: run the missing_counts CTE for a single series and return missing_count.
+    async fn query_missing_count(pool: &sqlx::PgPool, lib_id: Uuid, series_id: Uuid) -> i64 {
+        sqlx::query_scalar::<_, i64>(
+            r#"
+            WITH missing_counts AS (
+                SELECT s.id as series_id,
+                    GREATEST(COALESCE(s.total_volumes, 0) - COUNT(b.id), 0) as missing_count
+                FROM series s
+                LEFT JOIN books b ON b.series_id = s.id
+                WHERE s.library_id = $1
+                GROUP BY s.id
+            )
+            SELECT COALESCE(mc.missing_count, 0) FROM missing_counts mc WHERE mc.series_id = $2
+            "#,
+        )
+        .bind(lib_id)
+        .bind(series_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn missing_count_with_total_volumes_and_books(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "missing_test").await;
+        let sid = create_series(&pool, lib_id, "Naruto").await;
+
+        // Set total_volumes = 10
+        sqlx::query("UPDATE series SET total_volumes = 10 WHERE id = $1")
+            .bind(sid).execute(&pool).await.unwrap();
+
+        // Add 7 books
+        for i in 1..=7 {
+            create_book(&pool, lib_id, sid, &format!("Vol {i}")).await;
+        }
+
+        let missing = query_missing_count(&pool, lib_id, sid).await;
+        assert_eq!(missing, 3, "10 total - 7 books = 3 missing");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn missing_count_zero_when_no_total_volumes(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "missing_null").await;
+        let sid = create_series(&pool, lib_id, "Unknown").await;
+
+        // total_volumes is NULL, 5 books
+        for i in 1..=5 {
+            create_book(&pool, lib_id, sid, &format!("Vol {i}")).await;
+        }
+
+        let missing = query_missing_count(&pool, lib_id, sid).await;
+        assert_eq!(missing, 0, "NULL total_volumes => 0 missing");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn missing_count_zero_when_complete(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "missing_complete").await;
+        let sid = create_series(&pool, lib_id, "Complete").await;
+
+        sqlx::query("UPDATE series SET total_volumes = 3 WHERE id = $1")
+            .bind(sid).execute(&pool).await.unwrap();
+
+        for i in 1..=3 {
+            create_book(&pool, lib_id, sid, &format!("Vol {i}")).await;
+        }
+
+        let missing = query_missing_count(&pool, lib_id, sid).await;
+        assert_eq!(missing, 0, "3 total - 3 books = 0 missing");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn missing_count_zero_when_more_books_than_total(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "missing_over").await;
+        let sid = create_series(&pool, lib_id, "Overflow").await;
+
+        sqlx::query("UPDATE series SET total_volumes = 2 WHERE id = $1")
+            .bind(sid).execute(&pool).await.unwrap();
+
+        for i in 1..=5 {
+            create_book(&pool, lib_id, sid, &format!("Vol {i}")).await;
+        }
+
+        let missing = query_missing_count(&pool, lib_id, sid).await;
+        assert_eq!(missing, 0, "GREATEST(2 - 5, 0) = 0, not negative");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn missing_count_updates_after_manual_edit(pool: sqlx::PgPool) {
+        let lib_id = create_test_library(&pool, "missing_edit").await;
+        let sid = create_series(&pool, lib_id, "Edited").await;
+
+        sqlx::query("UPDATE series SET total_volumes = 5 WHERE id = $1")
+            .bind(sid).execute(&pool).await.unwrap();
+
+        create_book(&pool, lib_id, sid, "Vol 1").await;
+        create_book(&pool, lib_id, sid, "Vol 2").await;
+
+        assert_eq!(query_missing_count(&pool, lib_id, sid).await, 3, "5 - 2 = 3");
+
+        // User manually changes total_volumes to 10
+        sqlx::query("UPDATE series SET total_volumes = 10 WHERE id = $1")
+            .bind(sid).execute(&pool).await.unwrap();
+
+        assert_eq!(query_missing_count(&pool, lib_id, sid).await, 8, "10 - 2 = 8");
     }
 }
