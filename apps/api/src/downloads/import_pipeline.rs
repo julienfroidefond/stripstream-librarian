@@ -164,16 +164,15 @@ pub(super) async fn do_import(
             continue;
         }
         if matched.is_empty() && expected_set.is_empty() && all_extracted.is_empty() {
-            info!("[IMPORT] Skipping '{}' (no volume detected, no expected set)", filename);
-            skipped.push(SkippedFile {
-                filename: filename.to_string(),
-                reason: "no volume detected".to_string(),
-                extracted_volumes: vec![],
-            });
-            continue;
+            // One-shot / standalone book (no volume number, no expected volumes)
+            // Import it as-is without renaming — keep original filename
+            info!("[IMPORT] No volume detected for '{}', importing as one-shot", filename);
         }
 
-        let target_filename = if matched.len() == 1 {
+        let target_filename = if matched.is_empty() {
+            // One-shot / standalone: keep original filename
+            filename.to_string()
+        } else if matched.len() == 1 {
             // Single volume: apply naming pattern from reference
             let vol = matched[0];
             let generated = if let Some((ref ref_path, ref_vol)) = reference {
@@ -210,7 +209,7 @@ pub(super) async fn do_import(
         info!("[IMPORT] Imported '{}' [{:?}] → {}", filename, matched, dest);
 
         imported.push(ImportedFile {
-            volume: *matched.iter().min().unwrap(),
+            volume: matched.iter().min().copied().unwrap_or(0),
             source: source_path.clone(),
             destination: unmap_libraries_path(&dest),
         });
