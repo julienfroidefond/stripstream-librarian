@@ -822,6 +822,15 @@ const en: Record<TranslationKey, string> = {
   "seriesDetail.mergeConfirm": "Merge",
   "seriesDetail.mergeSuccess": "Merge complete: {{books}} books, {{metadata}} metadata, {{downloads}} downloads moved.",
   "seriesDetail.mergeNoResults": "No series found",
+  "seriesDetail.create": "Add series",
+  "seriesDetail.createTitle": "New series",
+  "seriesDetail.createLibrary": "Library",
+  "seriesDetail.createName": "Series name",
+  "seriesDetail.createSearch": "Search metadata...",
+  "seriesDetail.createSearching": "Searching...",
+  "seriesDetail.createNoResults": "No results",
+  "seriesDetail.createConfirm": "Create",
+  "seriesDetail.createWithoutMetadata": "Create without metadata",
 
   // Book preview
   "bookPreview.preview": "Preview",

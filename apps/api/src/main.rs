@@ -102,6 +102,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/libraries/:library_id/series/:series_id", axum::routing::patch(series::update_series).delete(series::delete_series))
         .route("/series/:series_id", axum::routing::patch(series::update_series_by_id).delete(series::delete_series_by_id))
         .route("/series/:series_id/rename-books", axum::routing::post(books::rename_books))
+        .route("/series/create", axum::routing::post(series::create_series))
         .route("/series/:series_id/merge", axum::routing::post(series::merge_series))
         .route("/index/rebuild", axum::routing::post(index_jobs::enqueue_rebuild))
         .route("/index/thumbnails/rebuild", axum::routing::post(books::start_thumbnails_rebuild))

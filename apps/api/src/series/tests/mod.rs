@@ -1,3 +1,5 @@
+mod create;
+
 use super::*;
 use super::helpers::get_or_create_series;
 use super::update::UpdateSeriesResponse;

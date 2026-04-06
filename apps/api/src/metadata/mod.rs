@@ -34,3 +34,7 @@ pub use refresh::{
 pub(crate) use refresh::{
     process_metadata_refresh, process_metadata_refresh_all, refresh_link,
 };
+
+// Re-export sync functions (used by series::create)
+pub(crate) use sync::{sync_series_metadata, sync_books_metadata};
+

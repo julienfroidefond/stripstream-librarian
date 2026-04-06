@@ -820,6 +820,15 @@ const fr = {
   "seriesDetail.mergeConfirm": "Fusionner",
   "seriesDetail.mergeSuccess": "Fusion réussie : {{books}} livres, {{metadata}} métadonnées, {{downloads}} téléchargements déplacés.",
   "seriesDetail.mergeNoResults": "Aucune série trouvée",
+  "seriesDetail.create": "Ajouter une série",
+  "seriesDetail.createTitle": "Nouvelle série",
+  "seriesDetail.createLibrary": "Bibliothèque",
+  "seriesDetail.createName": "Nom de la série",
+  "seriesDetail.createSearch": "Rechercher les métadonnées...",
+  "seriesDetail.createSearching": "Recherche en cours...",
+  "seriesDetail.createNoResults": "Aucun résultat",
+  "seriesDetail.createConfirm": "Créer",
+  "seriesDetail.createWithoutMetadata": "Créer sans métadonnées",
 
   // Book preview
   "bookPreview.preview": "Aperçu",
