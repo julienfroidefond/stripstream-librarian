@@ -300,6 +300,59 @@ pub async fn add_torrent(
                     }
                 }
             }
+
+            // If still no hash, the torrent might already exist in qBittorrent (duplicate).
+            // Try to find it by searching all torrents for a matching category save_path.
+            if qb_hash.is_none() {
+                tracing::warn!("[QBITTORRENT] No hash resolved by category, searching all torrents for duplicate");
+                if let Ok(all_resp) = client
+                    .get(format!("{base_url}/api/v2/torrents/info"))
+                    .header("Cookie", format!("SID={sid}"))
+                    .send()
+                    .await
+                {
+                    if let Ok(all_torrents) = all_resp.json::<Vec<serde_json::Value>>().await {
+                        // Find a torrent whose save_path contains our category directory
+                        if let Some(ref cat) = category {
+                            for t in &all_torrents {
+                                let t_cat = t.get("category").and_then(|c| c.as_str()).unwrap_or("");
+                                let t_save = t.get("save_path").and_then(|s| s.as_str()).unwrap_or("");
+                                let t_content = t.get("content_path").and_then(|s| s.as_str()).unwrap_or("");
+                                if t_cat == cat.as_str() || t_save.contains(cat.as_str()) || t_content.contains(cat.as_str()) {
+                                    qb_hash = t.get("hash").and_then(|h| h.as_str()).map(String::from);
+                                    if qb_hash.is_some() {
+                                        tracing::info!("[QBITTORRENT] Found duplicate torrent by save_path: hash={}", qb_hash.as_deref().unwrap_or("?"));
+                                        break;
+                                    }
+                                }
+                            }
+                            // If still not found, the torrent exists under a different category.
+                            // Try matching by magnet hash if available from the URL.
+                            if qb_hash.is_none() {
+                                if let Some(magnet_hash) = extract_magnet_hash(&body.url).or_else(|| resolved_magnet_url.as_deref().and_then(extract_magnet_hash)) {
+                                    let magnet_lower = magnet_hash.to_lowercase();
+                                    for t in &all_torrents {
+                                        if let Some(h) = t.get("hash").and_then(|h| h.as_str()) {
+                                            if h.to_lowercase() == magnet_lower {
+                                                qb_hash = Some(h.to_string());
+                                                // Assign our category to the existing torrent
+                                                let _ = client
+                                                    .post(format!("{base_url}/api/v2/torrents/setCategory"))
+                                                    .header("Cookie", format!("SID={sid}"))
+                                                    .form(&[("hashes", h), ("category", cat.as_str())])
+                                                    .send()
+                                                    .await;
+                                                tracing::info!("[QBITTORRENT] Found existing torrent by magnet hash {h}, assigned category {cat}");
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         let id = download_id.unwrap();
