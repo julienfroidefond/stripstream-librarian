@@ -173,6 +173,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/discovery/trending", get(integrations::discovery::trending))
         .route("/discovery/prowlarr", get(integrations::discovery::prowlarr_discovery))
         .route("/discovery/add-to-library", axum::routing::post(integrations::discovery::add_to_library))
+        .route("/discovery/hide", axum::routing::post(integrations::discovery::hide_suggestion))
+        .route("/discovery/unhide", axum::routing::post(integrations::discovery::unhide_suggestion))
+        .route("/discovery/hidden", get(integrations::discovery::list_hidden))
         .merge(settings::settings_routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),

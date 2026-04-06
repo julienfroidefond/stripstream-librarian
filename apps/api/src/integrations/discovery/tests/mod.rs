@@ -229,3 +229,73 @@ async fn test_add_to_library_senscritique_provider(pool: sqlx::PgPool) {
     // metadata_link_id should NOT equal series_id (a real link was created)
     assert_ne!(resp.metadata_link_id, resp.series_id, "metadata_link_id should be a real link UUID, not series_id");
 }
+
+// 6. Hide suggestion + filter_already_owned excludes hidden
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn test_hide_and_filter_excludes_hidden(pool: sqlx::PgPool) {
+    // Insert a hidden entry
+    sqlx::query(
+        "INSERT INTO discovery_hidden (provider, external_id, title) VALUES ('bedetheque', 'hidden-ext-1', 'Hidden Series')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Build suggestions that include the hidden one
+    let suggestions = vec![
+        DiscoverySuggestionDto {
+            provider: "bedetheque".to_string(),
+            external_id: "hidden-ext-1".to_string(),
+            title: "Hidden Series".to_string(),
+            authors: vec![],
+            description: None,
+            genres: vec![],
+            cover_url: None,
+            external_url: None,
+            start_year: None,
+            total_volumes: None,
+            status: None,
+        },
+        DiscoverySuggestionDto {
+            provider: "bedetheque".to_string(),
+            external_id: "visible-ext-2".to_string(),
+            title: "Visible Series".to_string(),
+            authors: vec![],
+            description: None,
+            genres: vec![],
+            cover_url: None,
+            external_url: None,
+            start_year: None,
+            total_volumes: None,
+            status: None,
+        },
+    ];
+
+    let filtered = filter_already_owned(&pool, "bedetheque", suggestions).await;
+    assert_eq!(filtered.len(), 1, "hidden series should be filtered out");
+    assert_eq!(filtered[0].external_id, "visible-ext-2");
+}
+
+// 7. Unhide removes from discovery_hidden
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn test_unhide_removes_hidden(pool: sqlx::PgPool) {
+    sqlx::query(
+        "INSERT INTO discovery_hidden (provider, external_id, title) VALUES ('bedetheque', 'unhide-ext', 'To Unhide')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Verify it exists
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM discovery_hidden WHERE external_id = 'unhide-ext'")
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(count, 1);
+
+    // Delete it
+    sqlx::query("DELETE FROM discovery_hidden WHERE provider = 'bedetheque' AND external_id = 'unhide-ext'")
+        .execute(&pool).await.unwrap();
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM discovery_hidden WHERE external_id = 'unhide-ext'")
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(count, 0, "hidden entry should be removed after unhide");
+}

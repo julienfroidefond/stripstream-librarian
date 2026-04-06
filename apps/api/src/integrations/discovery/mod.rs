@@ -39,6 +39,24 @@ pub struct TrendingQuery {
 }
 
 #[derive(Deserialize)]
+pub struct HideRequest {
+    pub provider: String,
+    pub external_id: String,
+    pub title: String,
+    pub cover_url: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct HiddenItemDto {
+    pub id: String,
+    pub provider: String,
+    pub external_id: String,
+    pub title: String,
+    pub cover_url: Option<String>,
+    pub hidden_at: String,
+}
+
+#[derive(Deserialize)]
 pub struct AddToLibraryRequest {
     pub library_id: Uuid,
     pub provider: String,
@@ -659,11 +677,85 @@ async fn filter_already_owned(
     .await
     .unwrap_or_default();
 
+    // 3. Filter by hidden items
+    let hidden_ids: Vec<String> = sqlx::query_scalar(
+        "SELECT external_id FROM discovery_hidden WHERE external_id = ANY($1)",
+    )
+    .bind(&external_ids)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
     suggestions
         .into_iter()
         .filter(|s| {
             !owned_by_link.contains(&s.external_id)
                 && !owned_by_name.contains(&s.title.to_lowercase())
+                && !hidden_ids.contains(&s.external_id)
         })
         .collect()
+}
+
+// ─── Hide / unhide ──────────────────────────────────────────────────────
+
+/// Hide a discovery suggestion so it no longer appears in results.
+pub async fn hide_suggestion(
+    State(state): State<AppState>,
+    Json(body): Json<HideRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    sqlx::query(
+        "INSERT INTO discovery_hidden (provider, external_id, title, cover_url) \
+         VALUES ($1, $2, $3, $4) \
+         ON CONFLICT (provider, external_id) DO NOTHING",
+    )
+    .bind(&body.provider)
+    .bind(&body.external_id)
+    .bind(&body.title)
+    .bind(&body.cover_url)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(Json(serde_json::json!({"hidden": true})))
+}
+
+/// Unhide a previously hidden discovery suggestion.
+pub async fn unhide_suggestion(
+    State(state): State<AppState>,
+    Json(body): Json<HideRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    sqlx::query(
+        "DELETE FROM discovery_hidden WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(&body.provider)
+    .bind(&body.external_id)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(Json(serde_json::json!({"hidden": false})))
+}
+
+/// List all hidden discovery suggestions.
+pub async fn list_hidden(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<HiddenItemDto>>, ApiError> {
+    let rows = sqlx::query(
+        "SELECT id, provider, external_id, title, cover_url, hidden_at \
+         FROM discovery_hidden ORDER BY hidden_at DESC",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let items: Vec<HiddenItemDto> = rows
+        .iter()
+        .map(|r| HiddenItemDto {
+            id: r.get::<Uuid, _>("id").to_string(),
+            provider: r.get("provider"),
+            external_id: r.get("external_id"),
+            title: r.get("title"),
+            cover_url: r.get("cover_url"),
+            hidden_at: r.get::<chrono::DateTime<chrono::Utc>, _>("hidden_at").to_rfc3339(),
+        })
+        .collect();
+
+    Ok(Json(items))
 }

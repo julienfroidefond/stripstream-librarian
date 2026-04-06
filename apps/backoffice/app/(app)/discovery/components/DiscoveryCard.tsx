@@ -15,16 +15,38 @@ export function DiscoveryCard({
   suggestion,
   libraries,
   onAdded,
+  onHidden,
 }: {
   suggestion: DiscoverySuggestion;
   libraries: Library[];
   onAdded: (externalId: string) => void;
+  onHidden?: (externalId: string) => void;
 }) {
   const { t } = useTranslation();
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
+  const [hidden, setHidden] = useState(false);
   const [showLibraryPicker, setShowLibraryPicker] = useState(false);
   const [imgError, setImgError] = useState(false);
+
+  async function handleHide() {
+    try {
+      const resp = await fetch("/api/discovery/hide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: suggestion.provider,
+          external_id: suggestion.external_id,
+          title: suggestion.title,
+          cover_url: suggestion.cover_url,
+        }),
+      });
+      if (resp.ok) {
+        setHidden(true);
+        onHidden?.(suggestion.external_id);
+      }
+    } catch { /* ignore */ }
+  }
 
   async function handleAdd(libraryId: string) {
     setAdding(true);
@@ -136,7 +158,11 @@ export function DiscoveryCard({
         )}
 
         {/* Action */}
-        {added ? (
+        {hidden ? (
+          <div className="text-center text-[11px] text-muted-foreground font-medium py-1">
+            {t("discovery.hidden")}
+          </div>
+        ) : added ? (
           <div className="text-center text-[11px] text-green-600 font-medium py-1">
             {t("discovery.added")}
           </div>
@@ -154,28 +180,37 @@ export function DiscoveryCard({
             ))}
           </div>
         ) : (
-          <Button
-            variant="outline"
-            size="xs"
-            className="w-full text-[11px]"
-            onClick={() => {
-              if (libraries.length === 1) {
-                handleAdd(libraries[0].id);
-              } else {
-                setShowLibraryPicker(true);
-              }
-            }}
-            disabled={adding}
-          >
-            {adding ? (
-              <>
-                <Icon name="spinner" size="sm" className="animate-spin mr-1" />
-                {t("discovery.adding")}
-              </>
-            ) : (
-              t("discovery.addToLibrary")
-            )}
-          </Button>
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium border border-primary/20 hover:bg-primary/20 transition-colors disabled:opacity-50"
+              onClick={() => {
+                if (libraries.length === 1) {
+                  handleAdd(libraries[0].id);
+                } else {
+                  setShowLibraryPicker(true);
+                }
+              }}
+              disabled={adding}
+            >
+              {adding ? (
+                <Icon name="spinner" size="sm" className="animate-spin" />
+              ) : (
+                <>
+                  <Icon name="plus" size="sm" />
+                  {t("discovery.add")}
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={handleHide}
+              title={t("discovery.hide")}
+              className="px-2 py-1.5 rounded-lg border border-border text-muted-foreground/60 hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <Icon name="x" size="sm" />
+            </button>
+          </div>
         )}
       </div>
     </div>

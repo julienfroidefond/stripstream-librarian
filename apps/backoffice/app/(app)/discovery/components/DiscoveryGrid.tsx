@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
@@ -115,6 +115,30 @@ export function DiscoveryGrid({
     setAddedIds((prev) => new Set(prev).add(externalId));
   }
 
+  // Hidden items management
+  type HiddenItem = { id: string; provider: string; external_id: string; title: string; cover_url: string | null };
+  const [showHidden, setShowHidden] = useState(false);
+  const [hiddenItems, setHiddenItems] = useState<HiddenItem[]>([]);
+  const [loadingHidden, setLoadingHidden] = useState(false);
+
+  async function fetchHidden() {
+    setLoadingHidden(true);
+    try {
+      const resp = await fetch("/api/discovery/hidden");
+      if (resp.ok) setHiddenItems(await resp.json());
+    } catch { /* ignore */ }
+    finally { setLoadingHidden(false); }
+  }
+
+  async function handleUnhide(item: HiddenItem) {
+    await fetch("/api/discovery/unhide", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: item.provider, external_id: item.external_id, title: item.title }),
+    });
+    setHiddenItems((prev) => prev.filter((h) => h.id !== item.id));
+  }
+
   const visibleSuggestions = suggestions.filter((s) => !addedIds.has(s.external_id));
 
   const tabs: { id: TabId; label: string }[] = [
@@ -139,19 +163,60 @@ export function DiscoveryGrid({
             {tab.label}
           </button>
         ))}
-        <button
-          onClick={handleHardRefresh}
-          disabled={refreshing || loading}
-          className="ml-auto mb-px px-2 py-1.5 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-          title={t("discovery.hardRefresh")}
-        >
-          {refreshing ? (
-            <Icon name="spinner" size="sm" className="animate-spin" />
-          ) : (
-            <Icon name="refresh" size="sm" />
-          )}
-        </button>
+        <div className="ml-auto flex items-center gap-1 mb-px">
+          <button
+            onClick={() => { setShowHidden(!showHidden); if (!showHidden) fetchHidden(); }}
+            className={`px-2 py-1.5 text-sm transition-colors ${showHidden ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+            title={t("discovery.showHidden")}
+          >
+            <Icon name="eye" size="sm" />
+          </button>
+          <button
+            onClick={handleHardRefresh}
+            disabled={refreshing || loading}
+            className="px-2 py-1.5 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+            title={t("discovery.hardRefresh")}
+          >
+            {refreshing ? (
+              <Icon name="spinner" size="sm" className="animate-spin" />
+            ) : (
+              <Icon name="refresh" size="sm" />
+            )}
+          </button>
+        </div>
       </div>
+
+      {/* Hidden items panel */}
+      {showHidden && (
+        <div className="border border-border rounded-lg p-4 bg-card">
+          <h3 className="text-sm font-semibold text-foreground mb-3">{t("discovery.showHidden")}</h3>
+          {loadingHidden ? (
+            <div className="flex justify-center py-4"><Icon name="spinner" size="sm" className="animate-spin" /></div>
+          ) : hiddenItems.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t("discovery.noHidden")}</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+              {hiddenItems.map((item) => (
+                <div key={item.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50">
+                  {item.cover_url && (
+                    <img src={item.cover_url} alt="" className="w-8 h-11 object-cover rounded shrink-0" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{item.title}</p>
+                    <p className="text-[10px] text-muted-foreground">{item.provider}</p>
+                  </div>
+                  <button
+                    onClick={() => handleUnhide(item)}
+                    className="text-xs px-2 py-1 rounded border border-border hover:bg-background transition-colors shrink-0"
+                  >
+                    {t("discovery.unhide")}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {activeTab === "trending" && (
         <>
@@ -212,6 +277,7 @@ export function DiscoveryGrid({
                   suggestion={suggestion}
                   libraries={libraries}
                   onAdded={handleAdded}
+                  onHidden={(id) => setSuggestions((prev) => prev.filter((s) => s.external_id !== id))}
                 />
               ))}
             </div>
