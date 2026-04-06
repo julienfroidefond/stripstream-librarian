@@ -7,7 +7,6 @@ use crate::error::ApiError;
 use crate::metadata_providers::anilist;
 use crate::metadata_providers::bedetheque;
 use crate::metadata_providers::senscritique;
-use crate::series::get_or_create_series;
 use crate::state::AppState;
 
 #[cfg(test)]
@@ -577,94 +576,52 @@ pub async fn add_to_library(
     State(state): State<AppState>,
     Json(req): Json<AddToLibraryRequest>,
 ) -> Result<Json<AddToLibraryResponse>, ApiError> {
-    // 1. Create or get the series
-    let series_id = get_or_create_series(&state.pool, req.library_id, &req.title).await?;
+    use crate::series::helpers::{CreateSeriesParams, create_series_with_metadata};
 
-    // 2. Update series metadata
-    let authors = req.authors.unwrap_or_default();
-    let publishers = req.publishers.unwrap_or_default();
-    let genres = req.genres.unwrap_or_default();
-
-    sqlx::query(
-        r#"
-        UPDATE series SET
-            description = COALESCE($2, description),
-            authors = CASE WHEN array_length($3::text[], 1) > 0 THEN $3 ELSE authors END,
-            publishers = CASE WHEN array_length($4::text[], 1) > 0 THEN $4 ELSE publishers END,
-            genres = CASE WHEN array_length($5::text[], 1) > 0 THEN $5 ELSE genres END,
-            start_year = COALESCE($6, start_year),
-            total_volumes = COALESCE($7, total_volumes),
-            status = COALESCE($8, status),
-            cover_url = COALESCE($9, cover_url),
-            updated_at = NOW()
-        WHERE id = $1
-        "#,
-    )
-    .bind(series_id)
-    .bind(&req.description)
-    .bind(&authors)
-    .bind(&publishers)
-    .bind(&genres)
-    .bind(req.start_year)
-    .bind(req.total_volumes)
-    .bind(&req.status)
-    .bind(&req.cover_url)
-    .execute(&state.pool)
-    .await?;
-
-    // 3. Create external_metadata_link (approved) — only for providers that
-    //    offer useful metadata links (skip prowlarr, anilist, etc.)
-    // Normalize provider name: sc_trending_bd, sc_best_manga, etc. → senscritique
+    // Normalize provider: sc_trending_bd, sc_best_manga, etc. → senscritique
     let metadata_provider = if req.provider.starts_with("sc_") {
         "senscritique".to_string()
     } else {
         req.provider.clone()
     };
-    let is_linkable_provider = metadata_provider == "bedetheque" || metadata_provider == "senscritique";
-    let link_id: Option<Uuid> = if is_linkable_provider {
-        let id: Uuid = sqlx::query_scalar(
-            r#"
-            INSERT INTO external_metadata_links
-                (library_id, series_id, provider, external_id, external_url, status, confidence, metadata_json, total_volumes_external, matched_at, approved_at, synced_at)
-            VALUES ($1, $2, $3, $4, $5, 'approved', 1.0, $6, $7, NOW(), NOW(), NOW())
-            ON CONFLICT (series_id, provider) DO UPDATE SET
-                external_id = EXCLUDED.external_id,
-                external_url = EXCLUDED.external_url,
-                status = 'approved',
-                total_volumes_external = EXCLUDED.total_volumes_external,
-                approved_at = NOW(),
-                synced_at = NOW()
-            RETURNING id
-            "#,
-        )
-        .bind(req.library_id)
-        .bind(series_id)
-        .bind(&metadata_provider)
-        .bind(&req.external_id)
-        .bind(&req.external_url)
-        .bind(serde_json::json!({
-            "genres": genres,
-            "status": req.status,
-        }))
-        .bind(req.total_volumes)
-        .fetch_one(&state.pool)
-        .await?;
-        Some(id)
-    } else {
-        None
-    };
+
+    // Only create metadata links for providers that offer useful data
+    let is_linkable = metadata_provider == "bedetheque" || metadata_provider == "senscritique";
+
+    // Build metadata_json with all the discovery-specific fields
+    let metadata_json = serde_json::json!({
+        "description": req.description,
+        "authors": req.authors.as_deref().unwrap_or(&[]),
+        "publishers": req.publishers.as_deref().unwrap_or(&[]),
+        "genres": req.genres.as_deref().unwrap_or(&[]),
+        "start_year": req.start_year,
+        "status": req.status,
+        "cover_url": req.cover_url,
+    });
+
+    let result = create_series_with_metadata(&state, CreateSeriesParams {
+        library_id: req.library_id,
+        name: req.title.clone(),
+        provider: if is_linkable { Some(metadata_provider.clone()) } else { None },
+        external_id: if is_linkable { Some(req.external_id.clone()) } else { None },
+        external_url: req.external_url.clone(),
+        confidence: Some(1.0),
+        total_volumes: req.total_volumes,
+        metadata_json: Some(metadata_json),
+    })
+    .await?;
 
     tracing::info!(
         "[DISCOVERY] Added series '{}' to library {} from provider {}{}",
         req.title,
         req.library_id,
         req.provider,
-        if link_id.is_some() { " (metadata link created)" } else { "" }
+        if result.metadata_link_id.is_some() { " (metadata link created)" } else { "" }
     );
 
     Ok(Json(AddToLibraryResponse {
-        series_id,
-        metadata_link_id: link_id.unwrap_or(series_id),
+        series_id: result.series_id,
+        metadata_link_id: result.metadata_link_id.unwrap_or(result.series_id),
     }))
 }
 
