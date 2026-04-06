@@ -5,7 +5,7 @@ use uuid::Uuid;
 use parsers::extract_volumes;
 use stripstream_core::paths::{remap_libraries_path, unmap_libraries_path};
 
-use super::torrent_import::ImportedFile;
+use super::torrent_import::{ImportedFile, ImportResult, SkippedFile};
 
 pub(super) async fn do_import(
     pool: &PgPool,
@@ -14,7 +14,7 @@ pub(super) async fn do_import(
     expected_volumes: &[i32],
     content_path: &str,
     replace_existing: bool,
-) -> anyhow::Result<Vec<ImportedFile>> {
+) -> anyhow::Result<ImportResult> {
     let physical_content = remap_downloads_path(content_path);
 
     // Find the target directory and a naming reference from existing book_files.
@@ -132,7 +132,9 @@ pub(super) async fn do_import(
     let source_files = deduplicate_by_format(&all_source_files, &dedup_set);
     info!("[IMPORT] After dedup: {} files kept", source_files.len());
 
+    let total_source_files = all_source_files.len();
     let mut imported = Vec::new();
+    let mut skipped = Vec::new();
     let mut used_destinations: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for source_path in &source_files {
@@ -147,19 +149,27 @@ pub(super) async fn do_import(
 
         let all_extracted = extract_volumes(filename);
         let matched: Vec<i32> = if expected_set.is_empty() || replace_existing {
-            all_extracted.clone() // No filter — import everything (empty set or replace mode)
+            all_extracted.clone()
         } else {
             all_extracted.iter().copied().filter(|v| expected_set.contains(v)).collect()
         };
 
         if matched.is_empty() && !expected_set.is_empty() && !replace_existing {
             info!("[IMPORT] Skipping '{}' (extracted volumes {:?}, none in expected set)", filename, all_extracted);
+            skipped.push(SkippedFile {
+                filename: filename.to_string(),
+                reason: "no matching expected volume".to_string(),
+                extracted_volumes: all_extracted,
+            });
             continue;
         }
         if matched.is_empty() && expected_set.is_empty() && all_extracted.is_empty() {
-            // No volume detected and no expected set — keep the file as-is (e.g. HS)
-            // Skip for now, will be handled by a future HS import feature
             info!("[IMPORT] Skipping '{}' (no volume detected, no expected set)", filename);
+            skipped.push(SkippedFile {
+                filename: filename.to_string(),
+                reason: "no volume detected".to_string(),
+                extracted_volumes: vec![],
+            });
             continue;
         }
 
@@ -224,7 +234,25 @@ pub(super) async fn do_import(
         );
     }
 
-    Ok(imported)
+    // Also track dedup-filtered files (in all_source_files but not in source_files)
+    let source_set: std::collections::HashSet<&String> = source_files.iter().collect();
+    for f in &all_source_files {
+        if !source_set.contains(f) {
+            let fname = std::path::Path::new(f).file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let vols = extract_volumes(fname);
+            skipped.push(SkippedFile {
+                filename: fname.to_string(),
+                reason: "duplicate format (lower priority)".to_string(),
+                extracted_volumes: vols,
+            });
+        }
+    }
+
+    Ok(ImportResult {
+        imported,
+        skipped,
+        total_source_files,
+    })
 }
 
 // ─── Directory matching ───────────────────────────────────────────────────────

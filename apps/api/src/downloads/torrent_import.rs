@@ -51,6 +51,20 @@ pub(super) struct ImportedFile {
     pub(super) destination: String,
 }
 
+#[derive(Serialize, Deserialize)]
+pub(super) struct SkippedFile {
+    pub(super) filename: String,
+    pub(super) reason: String,
+    pub(super) extracted_volumes: Vec<i32>,
+}
+
+/// Full result of a torrent import.
+pub(super) struct ImportResult {
+    pub(super) imported: Vec<ImportedFile>,
+    pub(super) skipped: Vec<SkippedFile>,
+    pub(super) total_source_files: usize,
+}
+
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 /// Webhook called by qBittorrent when a torrent completes (no auth required).
@@ -487,12 +501,29 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
     .await?;
 
     match do_import(&pool, library_id, &series_name, &expected_volumes, &content_path, replace_existing).await {
-        Ok(imported) => {
-            let json = serde_json::to_value(&imported).unwrap_or(serde_json::json!([]));
+        Ok(result) => {
+            let imported = &result.imported;
+            let skipped = &result.skipped;
+
+            // Determine status: 'imported' if any imported, 'partial' if some skipped, 'imported' if none skipped
+            let status = if imported.is_empty() && !skipped.is_empty() {
+                "no_files_imported"
+            } else if !skipped.is_empty() {
+                "partial"
+            } else {
+                "imported"
+            };
+
+            let json = serde_json::json!({
+                "imported": imported,
+                "skipped": skipped,
+                "total_source_files": result.total_source_files,
+            });
             sqlx::query(
-                "UPDATE torrent_downloads SET status = 'imported', imported_files = $1, updated_at = NOW() WHERE id = $2",
+                "UPDATE torrent_downloads SET status = $1, imported_files = $2, updated_at = NOW() WHERE id = $3",
             )
-            .bind(json)
+            .bind(status)
+            .bind(&json)
             .bind(torrent_id)
             .execute(&pool)
             .await?;
@@ -508,7 +539,7 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
             .await?;
 
             // Insert events for each imported file
-            for imp in &imported {
+            for imp in imported {
                 let detail = serde_json::json!({
                     "source_filename": std::path::Path::new(&imp.source)
                         .file_name()
@@ -522,6 +553,24 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
                 )
                 .bind(scan_job_id)
                 .bind(&imp.destination)
+                .bind(detail)
+                .execute(&pool)
+                .await;
+            }
+
+            // Insert events for each skipped file
+            for skip in skipped {
+                let detail = serde_json::json!({
+                    "filename": skip.filename,
+                    "reason": skip.reason,
+                    "extracted_volumes": skip.extracted_volumes,
+                });
+                let _ = sqlx::query(
+                    "INSERT INTO index_job_events (job_id, event_type, level, entity_type, entity_name, detail) \
+                     VALUES ($1, 'file_skipped', 'warning', 'book', $2, $3)",
+                )
+                .bind(scan_job_id)
+                .bind(&skip.filename)
                 .bind(detail)
                 .execute(&pool)
                 .await;
@@ -655,12 +704,19 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
                 },
             );
 
-            info!(
-                "Torrent import {} done: {} files imported, scan job {} queued",
-                torrent_id,
-                imported.len(),
-                scan_job_id
-            );
+            if skipped.is_empty() {
+                info!(
+                    "Torrent import {} done: {} files imported, scan job {} queued",
+                    torrent_id, imported.len(), scan_job_id
+                );
+            } else {
+                info!(
+                    "Torrent import {} done: {} imported, {} skipped ({}), scan job {} queued",
+                    torrent_id, imported.len(), skipped.len(),
+                    skipped.iter().map(|s| format!("{}: {}", s.filename, s.reason)).collect::<Vec<_>>().join(", "),
+                    scan_job_id
+                );
+            }
         }
         Err(e) => {
             let msg = format!("{e:#}");

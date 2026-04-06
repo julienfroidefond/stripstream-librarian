@@ -138,9 +138,9 @@ pub fn extract_volumes(title: &str) -> Vec<i32> {
                 continue;
             }
 
-            // Skip optional spaces, dots, or '#' after prefix
+            // Skip optional spaces, dots, underscores, or '#' after prefix
             let mut i = ci + plen;
-            while i < len && (chars[i] == ' ' || chars[i] == '.' || chars[i] == '#') {
+            while i < len && (chars[i] == ' ' || chars[i] == '.' || chars[i] == '_' || chars[i] == '#') {
                 i += 1;
             }
 
@@ -283,7 +283,7 @@ pub fn read_vol_prefix_number(chars: &[char], pos: usize) -> Option<(i32, usize)
     }
 
     let mut i = pos + prefix_char_count;
-    while i < chars.len() && (chars[i] == ' ' || chars[i] == '.') {
+    while i < chars.len() && (chars[i] == ' ' || chars[i] == '.' || chars[i] == '_') {
         i += 1;
     }
 
@@ -1962,6 +1962,18 @@ mod tests {
     fn extract_volumes_tome_with_dot_separator() {
         let v = sorted(extract_volumes("Series Tome.05.cbz"));
         assert_eq!(v, vec![5]);
+    }
+
+    #[test]
+    fn extract_volumes_tome_with_underscore_separator() {
+        assert_eq!(extract_volumes("Cyborgs_Tome_01_Ronin_fr.cbz"), vec![1]);
+        assert_eq!(extract_volumes("Series_Tome_12.pdf"), vec![12]);
+    }
+
+    #[test]
+    fn extract_volumes_t_with_underscore_separator() {
+        assert_eq!(extract_volumes("Series_T_05.cbz"), vec![5]);
+        assert_eq!(extract_volumes("Series_T05.cbz"), vec![5]);
     }
 
     #[test]
