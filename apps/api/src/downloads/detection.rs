@@ -765,6 +765,39 @@ pub(crate) async fn process_download_detection(
         }
     }
 
+    // Clean up volume 0 from stored available_downloads releases
+    // (legacy data from before the volume 0 filter was added)
+    let _ = sqlx::query(
+        r#"
+        UPDATE available_downloads SET available_releases = (
+            SELECT COALESCE(jsonb_agg(
+                jsonb_set(release, '{matched_missing_volumes}',
+                    (SELECT COALESCE(jsonb_agg(v), '[]'::jsonb)
+                     FROM jsonb_array_elements(release->'matched_missing_volumes') AS v
+                     WHERE v::int > 0)
+                )
+            ) FILTER (WHERE jsonb_array_length(
+                (SELECT COALESCE(jsonb_agg(v), '[]'::jsonb)
+                 FROM jsonb_array_elements(release->'matched_missing_volumes') AS v
+                 WHERE v::int > 0)
+            ) > 0), '[]'::jsonb)
+            FROM jsonb_array_elements(available_releases) AS release
+        )
+        WHERE library_id = $1
+        "#,
+    )
+    .bind(library_id)
+    .execute(pool)
+    .await;
+
+    // Remove entries that now have empty releases
+    let _ = sqlx::query(
+        "DELETE FROM available_downloads WHERE library_id = $1 AND (available_releases = '[]'::jsonb OR available_releases IS NULL)",
+    )
+    .bind(library_id)
+    .execute(pool)
+    .await;
+
     // Build final stats from events
     let counts = sqlx::query(
         "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
