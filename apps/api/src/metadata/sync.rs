@@ -55,55 +55,54 @@ pub(crate) async fn sync_series_metadata(
         .and_then(|c| c.as_str())
         .filter(|c| !c.is_empty());
 
-    // Fetch existing state before upsert
+    // Fetch existing state (case/accent insensitive to match get_or_create_series behavior)
     let existing = sqlx::query(
         r#"SELECT description, publishers, start_year, total_volumes, status, authors, locked_fields
-           FROM series WHERE library_id = $1 AND name = $2"#,
+           FROM series WHERE library_id = $1 AND LOWER(unaccent(name)) = LOWER(unaccent($2))"#,
     )
     .bind(library_id)
     .bind(series_name)
     .fetch_optional(&state.pool)
     .await?;
 
-    // Respect locked_fields: only update fields that are NOT locked
+    // Update existing series (case/accent insensitive match).
+    // Respects locked_fields: only update fields that are NOT locked.
     sqlx::query(
         r#"
-        INSERT INTO series (id, library_id, name, description, publishers, start_year, total_volumes, status, authors, genres, cover_url, created_at, updated_at)
-        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
-        ON CONFLICT (library_id, name)
-        DO UPDATE SET
+        UPDATE series SET
             description = CASE
-                WHEN (series.locked_fields->>'description')::boolean IS TRUE THEN series.description
-                ELSE COALESCE(NULLIF(EXCLUDED.description, ''), series.description)
+                WHEN (locked_fields->>'description')::boolean IS TRUE THEN description
+                ELSE COALESCE(NULLIF($3, ''), description)
             END,
             publishers = CASE
-                WHEN (series.locked_fields->>'publishers')::boolean IS TRUE THEN series.publishers
-                WHEN array_length(EXCLUDED.publishers, 1) > 0 THEN EXCLUDED.publishers
-                ELSE series.publishers
+                WHEN (locked_fields->>'publishers')::boolean IS TRUE THEN publishers
+                WHEN array_length($4::text[], 1) > 0 THEN $4
+                ELSE publishers
             END,
             start_year = CASE
-                WHEN (series.locked_fields->>'start_year')::boolean IS TRUE THEN series.start_year
-                ELSE COALESCE(EXCLUDED.start_year, series.start_year)
+                WHEN (locked_fields->>'start_year')::boolean IS TRUE THEN start_year
+                ELSE COALESCE($5, start_year)
             END,
             total_volumes = CASE
-                WHEN (series.locked_fields->>'total_volumes')::boolean IS TRUE THEN series.total_volumes
-                ELSE COALESCE(EXCLUDED.total_volumes, series.total_volumes)
+                WHEN (locked_fields->>'total_volumes')::boolean IS TRUE THEN total_volumes
+                ELSE COALESCE($6, total_volumes)
             END,
             status = CASE
-                WHEN (series.locked_fields->>'status')::boolean IS TRUE THEN series.status
-                ELSE COALESCE(EXCLUDED.status, series.status)
+                WHEN (locked_fields->>'status')::boolean IS TRUE THEN status
+                ELSE COALESCE($7, status)
             END,
             authors = CASE
-                WHEN (series.locked_fields->>'authors')::boolean IS TRUE THEN series.authors
-                WHEN array_length(EXCLUDED.authors, 1) > 0 THEN EXCLUDED.authors
-                ELSE series.authors
+                WHEN (locked_fields->>'authors')::boolean IS TRUE THEN authors
+                WHEN array_length($8::text[], 1) > 0 THEN $8
+                ELSE authors
             END,
             genres = CASE
-                WHEN array_length(EXCLUDED.genres, 1) > 0 THEN EXCLUDED.genres
-                ELSE series.genres
+                WHEN array_length($9::text[], 1) > 0 THEN $9
+                ELSE genres
             END,
-            cover_url = COALESCE(NULLIF(EXCLUDED.cover_url, ''), series.cover_url),
+            cover_url = COALESCE(NULLIF($10, ''), cover_url),
             updated_at = NOW()
+        WHERE library_id = $1 AND LOWER(unaccent(name)) = LOWER(unaccent($2))
         "#,
     )
     .bind(library_id)
