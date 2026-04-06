@@ -563,11 +563,9 @@ async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Resul
             let imported = &result.imported;
             let skipped = &result.skipped;
 
-            // Determine status: 'imported' if any imported, 'partial' if some skipped, 'imported' if none skipped
-            let status = if imported.is_empty() && !skipped.is_empty() {
+            // Status: 'imported' if any file imported, 'no_files_imported' if none
+            let status = if imported.is_empty() {
                 "no_files_imported"
-            } else if !skipped.is_empty() {
-                "partial"
             } else {
                 "imported"
             };
