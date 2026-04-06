@@ -211,24 +211,46 @@ pub async fn delete_torrent_download(
     Ok(Json(crate::responses::OkResponse::new()))
 }
 
-/// Retry a stuck import (resets status to 'completed' so the poller picks it up again).
+/// Retry a stuck import — re-launches the import directly.
 pub async fn retry_torrent_import(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<crate::responses::OkResponse>, ApiError> {
-    let result = sqlx::query(
-        "UPDATE torrent_downloads SET status = 'completed', updated_at = NOW() \
-         WHERE id = $1 AND status IN ('importing', 'error', 'no_files_imported', 'partial')",
-    )
-    .bind(id)
-    .execute(&state.pool)
-    .await?;
+    // Check the download exists and is in a retryable state
+    let row = sqlx::query("SELECT content_path, status FROM torrent_downloads WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| ApiError::not_found("torrent download not found"))?;
 
-    if result.rows_affected() == 0 {
-        return Err(ApiError::not_found("torrent download not found or not in retryable state"));
+    let status: String = row.get("status");
+    if !["importing", "error", "no_files_imported", "partial"].contains(&status.as_str()) {
+        return Err(ApiError::bad_request("not in retryable state"));
     }
 
-    info!("Reset torrent download {id} to 'completed' for retry");
+    let content_path: Option<String> = row.get("content_path");
+    if let Some(ref cp) = content_path {
+        if !std::path::Path::new(cp).exists() {
+            // Files already cleaned up — mark as error
+            sqlx::query(
+                "UPDATE torrent_downloads SET status = 'error', error_message = 'Source files no longer available (already cleaned up)', updated_at = NOW() WHERE id = $1",
+            )
+            .bind(id)
+            .execute(&state.pool)
+            .await?;
+            return Err(ApiError::bad_request("source files no longer available"));
+        }
+    }
+
+    // Re-launch the import in a background task
+    let pool = state.pool.clone();
+    tokio::spawn(async move {
+        if let Err(e) = process_torrent_import(pool, id).await {
+            warn!("Retry import {id} failed: {e:#}");
+        }
+    });
+
+    info!("Retry import {id} launched");
     Ok(Json(crate::responses::OkResponse::new()))
 }
 
