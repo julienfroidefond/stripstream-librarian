@@ -464,15 +464,29 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
             continue;
         }
 
-        // content_path is available since qBittorrent 4.3.2; fall back to save_path + name
-        let content_path = info.content_path.as_deref()
-            .filter(|p| !p.is_empty())
-            .map(str::to_owned)
-            .or_else(|| {
+        // content_path is available since qBittorrent 4.3.2; fall back to save_path + name.
+        // When a torrent's category is reassigned (duplicate detection), content_path may
+        // point to the new category's save_path while files are still in the original location.
+        // Try content_path first, then save_path + name, and verify the path exists.
+        let mut content_path: Option<String> = None;
+        let candidates = [
+            info.content_path.clone(),
+            {
                 let save = info.save_path.as_deref().unwrap_or("").trim_end_matches('/');
                 let name = info.name.as_deref().unwrap_or("");
                 if name.is_empty() { None } else { Some(format!("{save}/{name}")) }
-            });
+            },
+        ];
+        for candidate in candidates.into_iter().flatten() {
+            if !candidate.is_empty() && std::path::Path::new(&candidate).exists() {
+                content_path = Some(candidate);
+                break;
+            }
+        }
+        // If none exist on disk, fall back to whatever qBittorrent reports (will error later)
+        if content_path.is_none() {
+            content_path = info.content_path.clone().filter(|p| !p.is_empty());
+        }
 
         let Some(content_path) = content_path else {
             warn!("[TORRENT_POLLER] Torrent {} completed but content_path unknown", info.hash);
