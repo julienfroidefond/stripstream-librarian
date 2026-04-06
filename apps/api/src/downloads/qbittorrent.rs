@@ -335,14 +335,54 @@ pub async fn add_torrent(
                                         if let Some(h) = t.get("hash").and_then(|h| h.as_str()) {
                                             if h.to_lowercase() == magnet_lower {
                                                 qb_hash = Some(h.to_string());
-                                                // Assign our category to the existing torrent
-                                                let _ = client
-                                                    .post(format!("{base_url}/api/v2/torrents/setCategory"))
-                                                    .header("Cookie", format!("SID={sid}"))
-                                                    .form(&[("hashes", h), ("category", cat.as_str())])
-                                                    .send()
-                                                    .await;
-                                                tracing::info!("[QBITTORRENT] Found existing torrent by magnet hash {h}, assigned category {cat}");
+                                                // Get the real content_path from the existing torrent
+                                                let existing_content = t.get("content_path").and_then(|c| c.as_str()).unwrap_or("").to_string();
+                                                tracing::info!("[QBITTORRENT] Found existing torrent by magnet hash {h}, content_path={existing_content}");
+
+                                                // If the torrent is already completed, create the download record
+                                                // with content_path and status='completed' so the import triggers immediately
+                                                let t_state = t.get("state").and_then(|s| s.as_str()).unwrap_or("");
+                                                let t_progress = t.get("progress").and_then(|p| p.as_f64()).unwrap_or(0.0);
+                                                if t_progress >= 1.0 || super::torrent_import::QB_COMPLETED_STATES.contains(&t_state) {
+                                                    // Store content_path now — will be used when creating the torrent_download record
+                                                    // We'll set status to 'completed' directly and spawn the import
+                                                    let pool2 = state.pool.clone();
+                                                    let tid = download_id.unwrap();
+                                                    let lib_id = library_id;
+                                                    let sn = series_name;
+                                                    let ev = expected_volumes.to_vec();
+                                                    let replace = body.replace_existing;
+                                                    let cp = existing_content.clone();
+
+                                                    sqlx::query(
+                                                        "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, qb_hash, content_path, status, replace_existing, progress) \
+                                                         VALUES ($1, $2, $3, $4, $5, $6, 'completed', $7, 1)",
+                                                    )
+                                                    .bind(tid)
+                                                    .bind(lib_id)
+                                                    .bind(sn)
+                                                    .bind(&ev)
+                                                    .bind(h)
+                                                    .bind(&cp)
+                                                    .bind(replace)
+                                                    .execute(&state.pool)
+                                                    .await
+                                                    .ok();
+
+                                                    tracing::info!("[QBITTORRENT] Duplicate torrent already completed, launching import immediately for {tid}");
+
+                                                    tokio::spawn(async move {
+                                                        if let Err(e) = super::torrent_import::process_torrent_import(pool2, tid).await {
+                                                            tracing::warn!("Import {tid} failed: {e:#}");
+                                                        }
+                                                    });
+
+                                                    return Ok(Json(QBittorrentAddResponse {
+                                                        success: true,
+                                                        message: "Duplicate torrent detected, import launched".to_string(),
+                                                        torrent_download_id: Some(tid),
+                                                    }));
+                                                }
                                                 break;
                                             }
                                         }

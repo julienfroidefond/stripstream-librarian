@@ -275,7 +275,7 @@ struct QbTorrentInfo {
 }
 
 /// Completed states in qBittorrent: torrent is fully downloaded and seeding.
-const QB_COMPLETED_STATES: &[&str] = &[
+pub(super) const QB_COMPLETED_STATES: &[&str] = &[
     "uploading", "stalledUP", "pausedUP", "queuedUP", "checkingUP", "forcedUP",
 ];
 
@@ -546,7 +546,7 @@ async fn is_torrent_import_enabled(pool: &PgPool) -> bool {
     .unwrap_or(false)
 }
 
-async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Result<()> {
+pub(super) async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Result<()> {
     let row = sqlx::query(
         "SELECT td.library_id, td.series_name, td.expected_volumes, td.content_path, td.qb_hash, td.replace_existing, l.name AS library_name \
          FROM torrent_downloads td LEFT JOIN libraries l ON l.id = td.library_id WHERE td.id = $1",
