@@ -315,7 +315,7 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
     }
 
     let rows = sqlx::query(
-        "SELECT id, qb_hash FROM torrent_downloads WHERE status = 'downloading'",
+        "SELECT id, qb_hash, created_at FROM torrent_downloads WHERE status = 'downloading'",
     )
     .fetch_all(pool)
     .await?;
@@ -337,13 +337,28 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
         .await
         .map_err(|e| anyhow::anyhow!("qBittorrent login: {}", e.message))?;
 
-    // Try to resolve hash for rows that are missing it (category-based retry)
+    // Try to resolve hash for rows that are missing it (category-based retry).
+    // Give up after 5 minutes — mark as error if hash can't be resolved.
     for row in &rows {
         let qb_hash: Option<String> = row.get("qb_hash");
         if qb_hash.is_some() {
             continue;
         }
         let tid: Uuid = row.get("id");
+        let created_at: chrono::DateTime<chrono::Utc> = row.get("created_at");
+        let age = chrono::Utc::now() - created_at;
+
+        if age.num_minutes() > 5 {
+            warn!("[TORRENT_POLLER] Torrent {tid} has no qb_hash after 5 minutes, marking as error");
+            let _ = sqlx::query(
+                "UPDATE torrent_downloads SET status = 'error', error_message = 'Torrent not found in qBittorrent after 5 minutes', updated_at = NOW() WHERE id = $1",
+            )
+            .bind(tid)
+            .execute(pool)
+            .await;
+            continue;
+        }
+
         let category = format!("sl-{tid}");
         if let Some(hash) = resolve_hash_by_category(&client, &base_url, &sid, &category).await {
             info!("[TORRENT_POLLER] Late-resolved hash {hash} for torrent {tid} via category {category}");
@@ -359,7 +374,7 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
 
     // Re-fetch rows to include newly resolved hashes
     let rows = sqlx::query(
-        "SELECT id, qb_hash FROM torrent_downloads WHERE status = 'downloading'",
+        "SELECT id, qb_hash, created_at FROM torrent_downloads WHERE status = 'downloading'",
     )
     .fetch_all(pool)
     .await?;
