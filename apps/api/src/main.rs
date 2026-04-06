@@ -1,13 +1,10 @@
-mod auth;
 mod authors;
 mod books;
 mod downloads;
 mod error;
 mod handlers;
-mod index_jobs;
 mod integrations;
-mod job_helpers;
-mod job_poller;
+mod jobs;
 mod libraries;
 mod metadata;
 mod metadata_providers;
@@ -20,8 +17,15 @@ mod series;
 mod settings;
 mod state;
 mod stats;
-mod tokens;
 mod users;
+
+// Backward-compatible re-exports so existing `crate::auth::`, `crate::index_jobs::`,
+// `crate::job_helpers::`, `crate::tokens::` paths keep working.
+pub(crate) use users::auth;
+pub(crate) use users::tokens;
+pub(crate) use jobs::index_jobs;
+pub(crate) use jobs::helpers as job_helpers;
+pub(crate) use jobs::poller as job_poller;
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -111,8 +115,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/index/jobs/:id/events", get(index_jobs::get_job_events))
         .route("/index/cancel/:id", axum::routing::post(index_jobs::cancel_job))
         .route("/folders", get(index_jobs::list_folders))
-        .route("/admin/users", get(users::list_users).post(users::create_user))
-        .route("/admin/users/:id", delete(users::delete_user).patch(users::update_user))
+        .route("/admin/users", get(users::accounts::list_users).post(users::accounts::create_user))
+        .route("/admin/users/:id", delete(users::accounts::delete_user).patch(users::accounts::update_user))
         .route("/admin/tokens", get(tokens::list_tokens).post(tokens::create_token))
         .route("/admin/tokens/:id", delete(tokens::revoke_token).patch(tokens::update_token))
         .route("/admin/tokens/:id/delete", axum::routing::post(tokens::delete_token))
