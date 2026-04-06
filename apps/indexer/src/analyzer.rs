@@ -417,7 +417,7 @@ pub async fn analyze_library_books(
     let extracted_count = Arc::new(AtomicI32::new(0));
     let mut all_extracted: Vec<(Uuid, String, i32)> = Vec::new();
 
-    let num_batches = (tasks.len() + BATCH_SIZE - 1) / BATCH_SIZE;
+    let num_batches = tasks.len().div_ceil(BATCH_SIZE);
     let task_chunks: Vec<Vec<BookTask>> = tasks
         .into_iter()
         .collect::<Vec<_>>()

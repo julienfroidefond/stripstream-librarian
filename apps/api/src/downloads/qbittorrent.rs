@@ -174,9 +174,8 @@ pub async fn add_torrent(
 
     tracing::info!("[QBITTORRENT] Add torrent request: url={}, managed={is_managed}", body.url);
 
-    let (base_url, username, password) = load_qbittorrent_config(&state.pool).await.map_err(|e| {
+    let (base_url, username, password) = load_qbittorrent_config(&state.pool).await.inspect_err(|e| {
         tracing::error!("[QBITTORRENT] Failed to load config: {}", e.message);
-        e
     })?;
 
     let client = reqwest::Client::builder()
@@ -209,9 +208,8 @@ pub async fn add_torrent(
         }
     }
 
-    let sid = qbittorrent_login(&client, &base_url, &username, &password).await.map_err(|e| {
+    let sid = qbittorrent_login(&client, &base_url, &username, &password).await.inspect_err(|e| {
         tracing::error!("[QBITTORRENT] Login failed: {}", e.message);
-        e
     })?;
 
     // Pre-generate the download ID; use a unique category per download so we can

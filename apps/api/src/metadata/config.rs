@@ -66,11 +66,13 @@ pub(crate) async fn resolve_provider_name(pool: &PgPool, lib_provider: Option<&s
 }
 
 /// Boost candidate confidence when local book count matches total_volumes.
+///
 /// - Exact match: +0.30
 /// - Close match (±2): +0.15
+///
 /// Re-sorts candidates by confidence after boosting.
 pub(crate) fn boost_confidence_by_book_count(
-    candidates: &mut Vec<metadata_providers::SeriesCandidate>,
+    candidates: &mut [metadata_providers::SeriesCandidate],
     local_count: i64,
 ) {
     if local_count <= 0 {

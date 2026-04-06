@@ -41,6 +41,7 @@ pub(crate) async fn update_progress(
 }
 
 /// Insert an event into the unified job events table.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn insert_event(
     pool: &PgPool,
     job_id: Uuid,

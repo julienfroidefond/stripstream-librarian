@@ -385,7 +385,7 @@ fn format_event(event: &NotificationEvent) -> String {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let err = truncate(error, 200);
             [
-                format!("🚨 <b>Scan failed</b>"),
+                "🚨 <b>Scan failed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("🏷 <b>Type:</b> {job_type}"),
@@ -400,7 +400,7 @@ fn format_event(event: &NotificationEvent) -> String {
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             [
-                format!("⏹ <b>Scan cancelled</b>"),
+                "⏹ <b>Scan cancelled</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("🏷 <b>Type:</b> {job_type}"),
@@ -415,7 +415,7 @@ fn format_event(event: &NotificationEvent) -> String {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let duration = format_duration(*duration_seconds);
             [
-                format!("✅ <b>Thumbnails completed</b>"),
+                "✅ <b>Thumbnails completed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("🏷 <b>Type:</b> {job_type}"),
@@ -431,7 +431,7 @@ fn format_event(event: &NotificationEvent) -> String {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let err = truncate(error, 200);
             [
-                format!("🚨 <b>Thumbnails failed</b>"),
+                "🚨 <b>Thumbnails failed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("🏷 <b>Type:</b> {job_type}"),
@@ -448,7 +448,7 @@ fn format_event(event: &NotificationEvent) -> String {
             let lib = library_name.as_deref().unwrap_or("Unknown");
             let title = book_title.as_deref().unwrap_or("Unknown");
             [
-                format!("✅ <b>CBR → CBZ conversion completed</b>"),
+                "✅ <b>CBR → CBZ conversion completed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("📖 <b>Book:</b> {title}"),
@@ -465,7 +465,7 @@ fn format_event(event: &NotificationEvent) -> String {
             let title = book_title.as_deref().unwrap_or("Unknown");
             let err = truncate(error, 200);
             [
-                format!("🚨 <b>CBR → CBZ conversion failed</b>"),
+                "🚨 <b>CBR → CBZ conversion failed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("📖 <b>Book:</b> {title}"),
@@ -549,7 +549,7 @@ fn format_event(event: &NotificationEvent) -> String {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let err = truncate(error, 200);
             [
-                format!("🚨 <b>Metadata batch failed</b>"),
+                "🚨 <b>Metadata batch failed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 String::new(),
@@ -591,7 +591,7 @@ fn format_event(event: &NotificationEvent) -> String {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let err = truncate(error, 200);
             [
-                format!("🚨 <b>Metadata refresh failed</b>"),
+                "🚨 <b>Metadata refresh failed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 String::new(),
@@ -636,7 +636,7 @@ fn format_event(event: &NotificationEvent) -> String {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let err = truncate(error, 200);
             [
-                format!("🚨 <b>Reading status match failed</b>"),
+                "🚨 <b>Reading status match failed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 String::new(),
@@ -677,7 +677,7 @@ fn format_event(event: &NotificationEvent) -> String {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let err = truncate(error, 200);
             [
-                format!("🚨 <b>Reading status push failed</b>"),
+                "🚨 <b>Reading status push failed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 String::new(),
@@ -722,7 +722,7 @@ fn format_event(event: &NotificationEvent) -> String {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let err = truncate(error, 200);
             [
-                format!("🚨 <b>Download detection failed</b>"),
+                "🚨 <b>Download detection failed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 String::new(),
@@ -759,7 +759,7 @@ fn format_event(event: &NotificationEvent) -> String {
             let lib = library_name.as_deref().unwrap_or("Unknown");
             let err = truncate(error, 200);
             [
-                format!("🚨 <b>Torrent import failed</b>"),
+                "🚨 <b>Torrent import failed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("📚 <b>Series:</b> {series_name}"),

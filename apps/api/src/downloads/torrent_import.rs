@@ -876,7 +876,7 @@ async fn do_import(
             continue;
         }
 
-        move_file(&source_path, &dest)?;
+        move_file(source_path, &dest)?;
         used_destinations.insert(target_filename);
         info!("[IMPORT] Imported '{}' [{:?}] → {}", filename, matched, dest);
 
@@ -891,7 +891,7 @@ async fn do_import(
     // (symptom of a volume extraction bug)
     let source_count = collect_book_files(&physical_content).map(|f| f.len()).unwrap_or(0);
     let unique_volumes: std::collections::HashSet<i32> = imported.iter().map(|f| f.volume).collect();
-    if source_count > 5 && unique_volumes.len() > 0 && source_count > unique_volumes.len() * 3 {
+    if source_count > 5 && !unique_volumes.is_empty() && source_count > unique_volumes.len() * 3 {
         warn!(
             "[IMPORT] Suspicious: {} source files mapped to only {} unique volumes ({:?}). \
              Possible volume extraction issue for series '{}'",
@@ -917,7 +917,7 @@ fn find_existing_series_dir(root: &str, series_name: &str) -> Option<String> {
     let entries = std::fs::read_dir(root).ok()?;
     let mut best: Option<(String, bool)> = None; // (path, is_exact_case_match)
     for entry in entries.flatten() {
-        if !entry.file_type().ok().map_or(false, |t| t.is_dir()) {
+        if !entry.file_type().ok().is_some_and(|t| t.is_dir()) {
             continue;
         }
         let name = entry.file_name();
@@ -1017,7 +1017,7 @@ fn deduplicate_by_format(
 
         let vol = volumes[0];
         let prio = format_priority(ext);
-        if best_per_vol.get(&vol).map_or(true, |(p, _)| prio < *p) {
+        if best_per_vol.get(&vol).is_none_or(|(p, _)| prio < *p) {
             best_per_vol.insert(vol, (prio, path));
         }
     }
@@ -1054,7 +1054,7 @@ fn find_reference_from_disk(dir: &str, exclude_volumes: &std::collections::HashS
             if exclude_volumes.contains(&vol) {
                 continue;
             }
-            if best.as_ref().map_or(true, |(_, v)| vol > *v) {
+            if best.as_ref().is_none_or(|(_, v)| vol > *v) {
                 best = Some((path.to_string_lossy().into_owned(), vol));
             }
         }

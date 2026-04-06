@@ -127,8 +127,7 @@ pub(crate) fn is_integral_release(title: &str) -> bool {
     let lower = title.to_lowercase();
     // Strip accents for matching: "intégrale" → "integrale"
     let normalized = lower
-        .replace('é', "e")
-        .replace('è', "e");
+        .replace(['é', 'è'], "e");
     let keywords = ["integrale", "integral", "complet", "complete", "l'integrale"];
     keywords.iter().any(|kw| {
         // Match as whole word: check boundaries

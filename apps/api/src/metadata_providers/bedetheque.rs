@@ -853,7 +853,7 @@ async fn fetch_indispensables_with_base_url(
 
     // Enrich covers for candidates that only have the PlancheS_ fallback (top 20)
     for c in candidates.iter_mut() {
-        if c.cover_url.as_ref().map_or(false, |u| u.contains("/Couvertures/") || u.contains("/thb_couv/")) {
+        if c.cover_url.as_ref().is_some_and(|u| u.contains("/Couvertures/") || u.contains("/thb_couv/")) {
             continue;
         }
         let Some(ref url) = c.external_url else { continue };
