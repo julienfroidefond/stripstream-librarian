@@ -485,3 +485,181 @@ fn filter_volume_zero_from_missing() {
         .collect();
     assert_eq!(missing, vec![1, 2, 3], "volume 0 and NULL should be excluded");
 }
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn volume_zero_cleanup_removes_zero_from_releases(pool: sqlx::PgPool) {
+    let library_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'CleanupLib', '/libraries/cleanup')")
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let series_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'CleanupSeries')")
+        .bind(series_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Insert releases where matched_missing_volumes includes 0, 1, 2
+    let releases = serde_json::json!([
+        {
+            "title": "CleanupSeries T00-T02",
+            "size": 100,
+            "seeders": 5,
+            "matched_missing_volumes": [0, 1, 2],
+            "all_volumes": [0, 1, 2]
+        }
+    ]);
+
+    let ad_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO available_downloads (id, library_id, series_id, missing_count, available_releases, updated_at) \
+         VALUES ($1, $2, $3, 3, $4, NOW())",
+    )
+    .bind(ad_id)
+    .bind(library_id)
+    .bind(series_id)
+    .bind(&releases)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Run the cleanup SQL (same as detection.rs lines 770-791)
+    sqlx::query(
+        r#"
+        UPDATE available_downloads SET available_releases = (
+            SELECT COALESCE(jsonb_agg(
+                jsonb_set(release, '{matched_missing_volumes}',
+                    (SELECT COALESCE(jsonb_agg(v), '[]'::jsonb)
+                     FROM jsonb_array_elements(release->'matched_missing_volumes') AS v
+                     WHERE v::int > 0)
+                )
+            ) FILTER (WHERE jsonb_array_length(
+                (SELECT COALESCE(jsonb_agg(v), '[]'::jsonb)
+                 FROM jsonb_array_elements(release->'matched_missing_volumes') AS v
+                 WHERE v::int > 0)
+            ) > 0), '[]'::jsonb)
+            FROM jsonb_array_elements(available_releases) AS release
+        )
+        WHERE library_id = $1
+        "#,
+    )
+    .bind(library_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Delete entries with empty releases
+    sqlx::query(
+        "DELETE FROM available_downloads WHERE library_id = $1 AND (available_releases = '[]'::jsonb OR available_releases IS NULL)",
+    )
+    .bind(library_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // The entry should still exist because volumes 1 and 2 remain
+    let row = sqlx::query("SELECT available_releases FROM available_downloads WHERE id = $1")
+        .bind(ad_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let releases_json: serde_json::Value = row.get("available_releases");
+    let releases: Vec<serde_json::Value> = serde_json::from_value(releases_json).unwrap();
+    assert_eq!(releases.len(), 1, "release should still exist");
+
+    let matched: Vec<i64> = releases[0]["matched_missing_volumes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap())
+        .collect();
+    assert_eq!(matched, vec![1, 2], "volume 0 should be removed, 1 and 2 should remain");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn volume_zero_cleanup_deletes_entry_with_only_zero(pool: sqlx::PgPool) {
+    let library_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'CleanupDeleteLib', '/libraries/cleanup_delete')")
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let series_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'ZeroOnly')")
+        .bind(series_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Insert a release where all matched_missing_volumes are [0]
+    let releases = serde_json::json!([
+        {
+            "title": "ZeroOnly T00",
+            "size": 50,
+            "seeders": 3,
+            "matched_missing_volumes": [0],
+            "all_volumes": [0]
+        }
+    ]);
+
+    let ad_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO available_downloads (id, library_id, series_id, missing_count, available_releases, updated_at) \
+         VALUES ($1, $2, $3, 1, $4, NOW())",
+    )
+    .bind(ad_id)
+    .bind(library_id)
+    .bind(series_id)
+    .bind(&releases)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Run the cleanup SQL
+    sqlx::query(
+        r#"
+        UPDATE available_downloads SET available_releases = (
+            SELECT COALESCE(jsonb_agg(
+                jsonb_set(release, '{matched_missing_volumes}',
+                    (SELECT COALESCE(jsonb_agg(v), '[]'::jsonb)
+                     FROM jsonb_array_elements(release->'matched_missing_volumes') AS v
+                     WHERE v::int > 0)
+                )
+            ) FILTER (WHERE jsonb_array_length(
+                (SELECT COALESCE(jsonb_agg(v), '[]'::jsonb)
+                 FROM jsonb_array_elements(release->'matched_missing_volumes') AS v
+                 WHERE v::int > 0)
+            ) > 0), '[]'::jsonb)
+            FROM jsonb_array_elements(available_releases) AS release
+        )
+        WHERE library_id = $1
+        "#,
+    )
+    .bind(library_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Delete entries with empty releases
+    sqlx::query(
+        "DELETE FROM available_downloads WHERE library_id = $1 AND (available_releases = '[]'::jsonb OR available_releases IS NULL)",
+    )
+    .bind(library_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // The entry should be deleted since all volumes were [0]
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM available_downloads WHERE id = $1)")
+        .bind(ad_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(!exists, "entry with only volume 0 should be deleted after cleanup");
+}

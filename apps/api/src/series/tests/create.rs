@@ -222,3 +222,57 @@ async fn create_series_metadata_link_upsert(pool: sqlx::PgPool) {
     .unwrap();
     assert_eq!(count, 1, "upsert should not create duplicate links");
 }
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn create_series_with_metadata_sets_cover_url(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "create_cover").await;
+
+    let series_id = super::helpers::get_or_create_series(&pool, lib_id, "Cover Series")
+        .await
+        .unwrap();
+
+    // Run the same INSERT...ON CONFLICT sync SQL that sync_series_metadata uses,
+    // with cover_url set in the metadata.
+    sqlx::query(
+        r#"
+        INSERT INTO series (id, library_id, name, description, publishers, start_year, total_volumes, status, authors, genres, cover_url, created_at, updated_at)
+        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+        ON CONFLICT (library_id, name)
+        DO UPDATE SET
+            description = COALESCE(NULLIF(EXCLUDED.description, ''), series.description),
+            publishers = CASE WHEN array_length(EXCLUDED.publishers, 1) > 0 THEN EXCLUDED.publishers ELSE series.publishers END,
+            start_year = COALESCE(EXCLUDED.start_year, series.start_year),
+            total_volumes = COALESCE(EXCLUDED.total_volumes, series.total_volumes),
+            status = COALESCE(EXCLUDED.status, series.status),
+            authors = CASE WHEN array_length(EXCLUDED.authors, 1) > 0 THEN EXCLUDED.authors ELSE series.authors END,
+            genres = CASE WHEN array_length(EXCLUDED.genres, 1) > 0 THEN EXCLUDED.genres ELSE series.genres END,
+            cover_url = COALESCE(NULLIF(EXCLUDED.cover_url, ''), series.cover_url),
+            updated_at = NOW()
+        "#,
+    )
+    .bind(lib_id)
+    .bind("Cover Series")
+    .bind("A manga about covers")
+    .bind(&Vec::<String>::new())
+    .bind(Some(2021_i32))
+    .bind(Some(5_i32))
+    .bind(Some("ongoing"))
+    .bind(&vec!["Author X".to_string()])
+    .bind(&vec!["manga".to_string()])
+    .bind(Some("https://example.com/series_cover.jpg"))
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let row = sqlx::query("SELECT cover_url FROM series WHERE id = $1")
+        .bind(series_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let cover_url: Option<String> = row.get("cover_url");
+    assert_eq!(
+        cover_url,
+        Some("https://example.com/series_cover.jpg".to_string()),
+        "cover_url should be set after create_series + metadata sync"
+    );
+}

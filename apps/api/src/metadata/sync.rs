@@ -408,3 +408,7 @@ pub(crate) async fn sync_books_metadata(
     let unmatched = books.len() as i64 - matched_count;
     Ok((matched_count, book_reports, unmatched))
 }
+
+#[cfg(test)]
+#[path = "tests/sync.rs"]
+mod sync_tests;

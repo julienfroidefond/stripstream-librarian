@@ -74,7 +74,7 @@ async fn test_add_to_library_basic_bedetheque(pool: sqlx::PgPool) {
     let resp = result.unwrap().0;
 
     // Verify series was created
-    let series_row = sqlx::query("SELECT name, description, start_year, total_volumes, status FROM series WHERE id = $1")
+    let series_row = sqlx::query("SELECT name, description, start_year, total_volumes, status, cover_url FROM series WHERE id = $1")
         .bind(resp.series_id)
         .fetch_one(&pool)
         .await
@@ -85,6 +85,8 @@ async fn test_add_to_library_basic_bedetheque(pool: sqlx::PgPool) {
     assert_eq!(desc, Some("A test description".to_string()));
     let start_year: Option<i32> = series_row.get("start_year");
     assert_eq!(start_year, Some(2020));
+    let cover_url: Option<String> = series_row.get("cover_url");
+    assert_eq!(cover_url, Some("https://example.com/cover.jpg".to_string()), "cover_url should be synced");
 
     // Verify metadata link was created
     let link_row = sqlx::query(

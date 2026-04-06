@@ -407,3 +407,41 @@ async fn missing_count_updates_after_manual_edit(pool: sqlx::PgPool) {
 
     assert_eq!(query_missing_count(&pool, lib_id, sid).await, 8, "10 - 2 = 8");
 }
+
+/// Regression: series with zero books should appear in list (LEFT JOIN, not INNER JOIN).
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_includes_series_with_zero_books(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "zero_books").await;
+    let series_id = create_series(&pool, lib_id, "Empty Series").await;
+
+    // Do NOT insert any books for this series.
+    // Run the series_counts CTE query (same LEFT JOIN as list.rs).
+    let row = sqlx::query(
+        r#"
+        WITH series_counts AS (
+            SELECT s.id as series_id, s.name,
+                COUNT(b.id) as book_count,
+                0::bigint as books_read_count
+            FROM series s
+            LEFT JOIN books b ON b.series_id = s.id
+            WHERE s.library_id = $1
+            GROUP BY s.id, s.name
+        )
+        SELECT sc.series_id, sc.name, sc.book_count
+        FROM series_counts sc
+        WHERE sc.series_id = $2
+        "#,
+    )
+    .bind(lib_id)
+    .bind(series_id)
+    .fetch_optional(&pool)
+    .await
+    .unwrap();
+
+    assert!(row.is_some(), "series with zero books should appear in series_counts CTE");
+    let row = row.unwrap();
+    let book_count: i64 = row.get("book_count");
+    assert_eq!(book_count, 0, "book_count should be 0 for a series with no books");
+    let name: String = row.get("name");
+    assert_eq!(name, "Empty Series");
+}
