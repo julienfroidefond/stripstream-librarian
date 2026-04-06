@@ -25,7 +25,31 @@ esac
 
 echo ""
 echo "Version: $CURRENT_VERSION → $NEW_VERSION"
-echo "Services: ${SERVICES[*]}"
+echo ""
+echo "Services to build:"
+echo "  a) all (${SERVICES[*]})"
+for i in "${!SERVICES[@]}"; do
+    echo "  $((i + 1))) ${SERVICES[$i]}"
+done
+echo ""
+read -rp "Choice [a/1/2/3, comma-separated]: " SVC_CHOICE
+
+if [[ "$SVC_CHOICE" == "a" || -z "$SVC_CHOICE" ]]; then
+    SELECTED_SERVICES=("${SERVICES[@]}")
+else
+    SELECTED_SERVICES=()
+    IFS=',' read -ra CHOICES <<< "$SVC_CHOICE"
+    for c in "${CHOICES[@]}"; do
+        c=$(echo "$c" | tr -d ' ')
+        idx=$((c - 1))
+        if [[ $idx -ge 0 && $idx -lt ${#SERVICES[@]} ]]; then
+            SELECTED_SERVICES+=("${SERVICES[$idx]}")
+        fi
+    done
+fi
+
+echo ""
+echo "Building: ${SELECTED_SERVICES[*]}"
 echo ""
 
 # Bump version
@@ -41,7 +65,7 @@ git commit -m "chore: bump version to $NEW_VERSION"
 VERSION="$NEW_VERSION"
 
 # ─── Build, tag & push all services ─────────────────────────────────────────
-for service in "${SERVICES[@]}"; do
+for service in "${SELECTED_SERVICES[@]}"; do
     echo ""
     echo "=== $service ==="
     docker build -f "apps/$service/Dockerfile" -t "$service:latest" .
