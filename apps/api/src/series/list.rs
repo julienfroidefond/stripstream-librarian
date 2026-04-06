@@ -148,7 +148,7 @@ pub async fn list_series(
             asl.anilist_url,
             s.cover_url
         FROM series_counts sc
-        JOIN sorted_books sb ON sb.series_id = sc.series_id AND sb.rn = 1
+        LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id AND sb.rn = 1
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
         LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = $1
