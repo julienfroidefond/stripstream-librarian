@@ -31,13 +31,15 @@ function groupReleasesByTitle<T extends { title: string }>(releases: T[]): { tit
 
 function statusLabel(status: string, t: TFunction): string {
   const map: Record<string, TranslationKey> = {
-    downloading: "downloads.status.downloading",
-    completed:   "downloads.status.completed",
-    importing:   "downloads.status.importing",
-    imported:    "downloads.status.imported",
-    error:       "downloads.status.error",
+    downloading:       "downloads.status.downloading",
+    completed:         "downloads.status.completed",
+    importing:         "downloads.status.importing",
+    imported:          "downloads.status.imported",
+    partial:           "downloads.status.partial",
+    no_files_imported: "downloads.status.noFilesImported",
+    error:             "downloads.status.error",
   };
-  return t(map[status] ?? "downloads.status.error");
+  return t(map[status] ?? status);
 }
 
 function statusClass(status: string): string {
@@ -46,6 +48,8 @@ function statusClass(status: string): string {
     case "completed":   return "bg-warning/10 text-warning";
     case "importing":   return "bg-primary/10 text-primary";
     case "imported":    return "bg-success/10 text-success";
+    case "partial":     return "bg-warning/10 text-warning";
+    case "no_files_imported": return "bg-destructive/10 text-destructive";
     case "error":       return "bg-destructive/10 text-destructive";
     default:            return "bg-muted/30 text-muted-foreground";
   }
@@ -182,7 +186,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
         <>
           <div className="space-y-1.5">
             {paged.map(dl => (
-              <DownloadRow key={dl.id} dl={dl} onDeleted={() => refresh(false)} />
+              <DownloadRow key={dl.id} dl={dl} onDeleted={() => refresh(false)} onRetried={() => refresh(false)} />
             ))}
           </div>
           {totalPages > 1 && (
@@ -211,9 +215,12 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
   );
 }
 
-function DownloadRow({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: () => void }) {
+const RETRYABLE_STATUSES = new Set(["importing", "error", "no_files_imported", "partial"]);
+
+function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onDeleted: () => void; onRetried: () => void }) {
   const { t } = useTranslation();
   const [deleting, setDeleting] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const importedCount = Array.isArray(dl.imported_files) ? dl.imported_files.length : 0;
 
@@ -228,12 +235,26 @@ function DownloadRow({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: () 
     }
   }
 
+  async function handleRetry() {
+    setRetrying(true);
+    try {
+      const resp = await fetch(`/api/torrent-downloads/${dl.id}/retry`, { method: "POST" });
+      if (resp.ok) onRetried();
+    } finally {
+      setRetrying(false);
+    }
+  }
+
+  const canRetry = RETRYABLE_STATUSES.has(dl.status);
+
   const statusIcon = dl.status === "importing" ? (
     <Icon name="spinner" size="sm" className="animate-spin text-primary" />
   ) : dl.status === "imported" ? (
     <Icon name="check" size="sm" className="text-success" />
-  ) : dl.status === "error" ? (
+  ) : dl.status === "error" || dl.status === "no_files_imported" ? (
     <Icon name="warning" size="sm" className="text-destructive" />
+  ) : dl.status === "partial" ? (
+    <Icon name="warning" size="sm" className="text-warning" />
   ) : dl.status === "downloading" ? (
     <Icon name="download" size="sm" className="text-primary" />
   ) : (
@@ -304,6 +325,17 @@ function DownloadRow({ dl, onDeleted }: { dl: TorrentDownloadDto; onDeleted: () 
 
         <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums hidden sm:block">{formatDate(dl.created_at)}</span>
 
+        {canRetry && (
+          <button
+            type="button"
+            onClick={handleRetry}
+            disabled={retrying}
+            className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-30 shrink-0"
+            title={t("downloads.retry")}
+          >
+            {retrying ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="refresh" size="sm" />}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setShowConfirm(true)}

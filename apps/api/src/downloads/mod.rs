@@ -12,5 +12,6 @@ pub use detection::{
 pub use prowlarr::{search_prowlarr, test_prowlarr};
 pub use qbittorrent::{add_torrent, test_qbittorrent};
 pub use torrent_import::{
-    delete_torrent_download, list_torrent_downloads, notify_torrent_done, run_torrent_poller,
+    delete_torrent_download, list_torrent_downloads, notify_torrent_done, retry_torrent_import,
+    run_torrent_poller,
 };

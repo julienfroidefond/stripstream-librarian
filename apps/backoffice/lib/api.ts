@@ -1374,7 +1374,7 @@ export type TorrentDownloadDto = {
   expected_volumes: number[];
   qb_hash: string | null;
   content_path: string | null;
-  status: "downloading" | "completed" | "importing" | "imported" | "error";
+  status: "downloading" | "completed" | "importing" | "imported" | "partial" | "no_files_imported" | "error";
   imported_files: Array<{ volume: number; source: string; destination: string }> | null;
   error_message: string | null;
   progress: number;

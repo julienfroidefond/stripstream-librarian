@@ -127,6 +127,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/qbittorrent/test", get(downloads::test_qbittorrent))
         .route("/torrent-downloads", get(downloads::list_torrent_downloads))
         .route("/torrent-downloads/:id", axum::routing::delete(downloads::delete_torrent_download))
+        .route("/torrent-downloads/:id/retry", axum::routing::post(downloads::retry_torrent_import))
         .route("/telegram/test", get(integrations::telegram::test_telegram))
         .route("/komga/sync", axum::routing::post(integrations::komga::sync_komga_read_books))
         .route("/komga/reports", get(integrations::komga::list_sync_reports))

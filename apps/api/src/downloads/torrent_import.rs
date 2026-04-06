@@ -211,6 +211,27 @@ pub async fn delete_torrent_download(
     Ok(Json(crate::responses::OkResponse::new()))
 }
 
+/// Retry a stuck import (resets status to 'completed' so the poller picks it up again).
+pub async fn retry_torrent_import(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<crate::responses::OkResponse>, ApiError> {
+    let result = sqlx::query(
+        "UPDATE torrent_downloads SET status = 'completed', updated_at = NOW() \
+         WHERE id = $1 AND status IN ('importing', 'error', 'no_files_imported', 'partial')",
+    )
+    .bind(id)
+    .execute(&state.pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(ApiError::not_found("torrent download not found or not in retryable state"));
+    }
+
+    info!("Reset torrent download {id} to 'completed' for retry");
+    Ok(Json(crate::responses::OkResponse::new()))
+}
+
 // ─── Background poller ────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
