@@ -50,6 +50,10 @@ pub(crate) async fn sync_series_metadata(
     } else {
         None
     };
+    let cover_url = metadata_json
+        .get("cover_url")
+        .and_then(|c| c.as_str())
+        .filter(|c| !c.is_empty());
 
     // Fetch existing state before upsert
     let existing = sqlx::query(
@@ -64,8 +68,8 @@ pub(crate) async fn sync_series_metadata(
     // Respect locked_fields: only update fields that are NOT locked
     sqlx::query(
         r#"
-        INSERT INTO series (id, library_id, name, description, publishers, start_year, total_volumes, status, authors, genres, created_at, updated_at)
-        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+        INSERT INTO series (id, library_id, name, description, publishers, start_year, total_volumes, status, authors, genres, cover_url, created_at, updated_at)
+        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
         ON CONFLICT (library_id, name)
         DO UPDATE SET
             description = CASE
@@ -98,6 +102,7 @@ pub(crate) async fn sync_series_metadata(
                 WHEN array_length(EXCLUDED.genres, 1) > 0 THEN EXCLUDED.genres
                 ELSE series.genres
             END,
+            cover_url = COALESCE(NULLIF(EXCLUDED.cover_url, ''), series.cover_url),
             updated_at = NOW()
         "#,
     )
@@ -110,6 +115,7 @@ pub(crate) async fn sync_series_metadata(
     .bind(&status)
     .bind(&authors)
     .bind(&genres)
+    .bind(cover_url)
     .execute(&state.pool)
     .await?;
 
