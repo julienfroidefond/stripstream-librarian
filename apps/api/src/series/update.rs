@@ -257,11 +257,31 @@ pub async fn delete_series(
         }
     }
 
-    // Delete the series directory if it's now empty
+    // Delete the series directory
+    // Use dir from book paths if available, otherwise build from library root + series name
+    if series_dir.is_none() {
+        if let Ok(root) = sqlx::query_scalar::<_, String>("SELECT root_path FROM libraries WHERE id = $1")
+            .bind(library_id)
+            .fetch_one(&state.pool)
+            .await
+        {
+            let physical = remap_libraries_path(&root);
+            series_dir = Some(
+                std::path::Path::new(&physical)
+                    .join(&series_name)
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+        }
+    }
+
     if let Some(ref dir) = series_dir {
-        match std::fs::remove_dir_all(dir) {
-            Ok(()) => tracing::info!("[SERIES] Deleted series directory: {}", dir),
-            Err(e) => tracing::warn!("[SERIES] Failed to delete series directory {}: {}", dir, e),
+        let dir_path = std::path::Path::new(dir);
+        if dir_path.exists() {
+            match std::fs::remove_dir_all(dir) {
+                Ok(()) => tracing::info!("[SERIES] Deleted series directory: {}", dir),
+                Err(e) => tracing::warn!("[SERIES] Failed to delete series directory {}: {}", dir, e),
+            }
         }
     }
 

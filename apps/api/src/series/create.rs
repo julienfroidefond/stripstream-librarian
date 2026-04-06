@@ -70,6 +70,21 @@ pub async fn create_series(
     // 1. Create or find the series
     let series_id = get_or_create_series(&state.pool, library_id, &name).await?;
 
+    // 2. Create the physical directory on disk
+    let root_path: String = sqlx::query_scalar("SELECT root_path FROM libraries WHERE id = $1")
+        .bind(library_id)
+        .fetch_one(&state.pool)
+        .await?;
+    let physical_root = stripstream_core::paths::remap_libraries_path(&root_path);
+    let series_dir = std::path::Path::new(&physical_root).join(&name);
+    if !series_dir.exists() {
+        if let Err(e) = std::fs::create_dir_all(&series_dir) {
+            tracing::warn!("[SERIES] Failed to create directory {}: {}", series_dir.display(), e);
+        } else {
+            tracing::info!("[SERIES] Created directory: {}", series_dir.display());
+        }
+    }
+
     let mut metadata_linked = false;
     let mut metadata_synced = false;
 
