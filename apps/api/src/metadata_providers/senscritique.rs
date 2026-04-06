@@ -580,7 +580,7 @@ async fn fetch_single_book(client: &reqwest::Client, product_id: i64) -> Result<
 /// Fetch the SensCritique "meilleurs mangas" top list via GraphQL.
 pub async fn fetch_top_mangas(limit: usize) -> Result<Vec<SeriesCandidate>, String> {
     let query = serde_json::json!({
-        "query": "{ poll(id: POLL_ID, limit: LIMIT, offset: 0) { products { id title url medias { picture } authors { name } dateRelease rating synopsis } } }"
+        "query": "{ poll(id: POLL_ID, limit: LIMIT, offset: 0) { products { id title url medias { picture } authors { name } dateRelease rating synopsis franchises { id label } } } }"
             .replace("POLL_ID", &POLL_ID_MANGA.to_string())
             .replace("LIMIT", &limit.to_string()),
     });
@@ -593,14 +593,16 @@ pub async fn fetch_top_mangas(limit: usize) -> Result<Vec<SeriesCandidate>, Stri
         .and_then(|v| v.as_array())
         .ok_or("SensCritique: missing poll products in GraphQL response")?;
 
-    Ok(parse_products(items, limit))
+    // Tops already return series-level products, but use franchise grouping
+    // to get franchise:{id} as external_id for proper metadata linking
+    Ok(group_products_by_franchise(items, limit))
 }
 
 /// Fetch the SensCritique "top 100 BD" list via GraphQL.
 pub async fn fetch_top_bd(limit: usize) -> Result<Vec<SeriesCandidate>, String> {
     let query = serde_json::json!({
         "query": format!(
-            "{{ top(universe: \"comicBook\", subtype: TOP_100_OUT_OF_TOP_10, limit: {limit}, offset: 0) {{ id title url medias {{ picture }} authors {{ name }} dateRelease rating synopsis }} }}"
+            "{{ top(universe: \"comicBook\", subtype: TOP_100_OUT_OF_TOP_10, limit: {limit}, offset: 0) {{ id title url medias {{ picture }} authors {{ name }} dateRelease rating synopsis franchises {{ id label }} }} }}"
         ),
     });
 
@@ -612,7 +614,7 @@ pub async fn fetch_top_bd(limit: usize) -> Result<Vec<SeriesCandidate>, String> 
         .and_then(|v| v.as_array())
         .ok_or("SensCritique: missing top in GraphQL response")?;
 
-    Ok(parse_products(items, limit))
+    Ok(group_products_by_franchise(items, limit))
 }
 
 /// Fetch trending/new releases from SensCritique.
@@ -627,7 +629,7 @@ pub async fn fetch_trending(
 
     let query = serde_json::json!({
         "query": format!(
-            "{{ productsByRelease(universe: \"{universe}\", limit: {fetch_limit}, offset: 0, sortBy: {sort_by}, byPeriod: true, period: {period}) {{ items {{ id title url category medias {{ picture }} authors {{ name }} dateRelease rating synopsis }} }} }}"
+            "{{ productsByRelease(universe: \"{universe}\", limit: {fetch_limit}, offset: 0, sortBy: {sort_by}, byPeriod: true, period: {period}) {{ items {{ id title url category medias {{ picture }} authors {{ name }} dateRelease rating synopsis franchises {{ id label }} }} }} }}"
         ),
     });
 
@@ -639,7 +641,8 @@ pub async fn fetch_trending(
         .and_then(|v| v.as_array())
         .ok_or("SensCritique: missing productsByRelease items in GraphQL response")?;
 
-    let mut candidates = parse_products(items, fetch_limit);
+    // Group products by franchise to show series instead of individual tomes
+    let mut candidates = group_products_by_franchise(items, fetch_limit);
 
     if let Some(cat) = category {
         let cat_lower = cat.to_lowercase();
@@ -656,6 +659,99 @@ pub async fn fetch_trending(
     }
 
     Ok(candidates)
+}
+
+/// Group products by franchise, keeping the first product's metadata per franchise.
+/// Products without a franchise are kept as standalone entries.
+fn group_products_by_franchise(items: &[serde_json::Value], limit: usize) -> Vec<SeriesCandidate> {
+    let mut seen_franchises: HashMap<i64, usize> = HashMap::new();
+    let mut candidates: Vec<SeriesCandidate> = Vec::new();
+
+    for (i, product) in items.iter().take(limit * 2).enumerate() {
+        let id = product.get("id").and_then(|v| v.as_i64()).unwrap_or_default();
+        let title = product
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        if title.is_empty() {
+            continue;
+        }
+
+        let franchise = product
+            .get("franchises")
+            .and_then(|f| f.as_array())
+            .and_then(|arr| arr.first());
+
+        let (display_title, external_id) = if let Some(f) = franchise {
+            let fid = f.get("id").and_then(|v| v.as_i64()).unwrap_or_default();
+            let label = f.get("label").and_then(|v| v.as_str()).unwrap_or(&title).to_string();
+
+            // Skip if we already have this franchise
+            if seen_franchises.contains_key(&fid) {
+                continue;
+            }
+            seen_franchises.insert(fid, candidates.len());
+
+            (label, format!("franchise:{fid}"))
+        } else {
+            (title.clone(), id.to_string())
+        };
+
+        let url_path = product.get("url").and_then(|v| v.as_str()).unwrap_or_default();
+        let external_url = if url_path.is_empty() {
+            None
+        } else {
+            Some(format!("https://www.senscritique.com{url_path}"))
+        };
+
+        let cover_url = product
+            .get("medias")
+            .and_then(|m| m.get("picture"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.contains("missing"))
+            .map(String::from);
+
+        let authors = extract_names(product, "authors");
+        let year = product
+            .get("dateRelease")
+            .and_then(|d| d.as_str())
+            .and_then(|d| d.split('-').next())
+            .and_then(|y| y.parse::<i32>().ok());
+
+        let rating = product.get("rating").and_then(|r| r.as_f64());
+        let category = product
+            .get("category")
+            .and_then(|c| c.as_str())
+            .map(String::from);
+        let description = product
+            .get("synopsis")
+            .and_then(|s| s.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+
+        let confidence = 1.0 - (i as f32 / 100.0).clamp(0.0, 0.9);
+
+        candidates.push(SeriesCandidate {
+            external_id,
+            title: display_title,
+            authors,
+            description,
+            publishers: vec![],
+            start_year: year,
+            total_volumes: None,
+            cover_url,
+            external_url,
+            confidence,
+            metadata_json: serde_json::json!({
+                "source": "senscritique",
+                "rating": rating,
+                "category": category,
+            }),
+        });
+    }
+
+    candidates
 }
 
 /// Fetch the latest release date for each franchise in a single batched GraphQL query.
@@ -774,81 +870,6 @@ async fn graphql_request_url(
     }
 
     Err("SensCritique GraphQL: max retries exceeded".to_string())
-}
-
-fn parse_products(items: &[serde_json::Value], limit: usize) -> Vec<SeriesCandidate> {
-    items
-        .iter()
-        .take(limit)
-        .enumerate()
-        .filter_map(|(i, product)| {
-            let id = product.get("id").and_then(|v| v.as_i64()).unwrap_or_default();
-            let title = product
-                .get("title")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string();
-            if title.is_empty() {
-                return None;
-            }
-
-            let url_path = product
-                .get("url")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default();
-            let external_url = if url_path.is_empty() {
-                None
-            } else {
-                Some(format!("https://www.senscritique.com{url_path}"))
-            };
-
-            let cover_url = product
-                .get("medias")
-                .and_then(|m| m.get("picture"))
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.contains("missing"))
-                .map(String::from);
-
-            let authors = extract_names(product, "authors");
-
-            let year = product
-                .get("dateRelease")
-                .and_then(|d| d.as_str())
-                .and_then(|d| d.split('-').next())
-                .and_then(|y| y.parse::<i32>().ok());
-
-            let rating = product.get("rating").and_then(|r| r.as_f64());
-            let category = product
-                .get("category")
-                .and_then(|c| c.as_str())
-                .map(String::from);
-            let description = product
-                .get("synopsis")
-                .and_then(|s| s.as_str())
-                .filter(|s| !s.is_empty())
-                .map(String::from);
-
-            let confidence = 1.0 - (i as f32 / 100.0).clamp(0.0, 0.9);
-
-            Some(SeriesCandidate {
-                external_id: id.to_string(),
-                title,
-                authors,
-                description,
-                publishers: vec![],
-                start_year: year,
-                total_volumes: None,
-                cover_url,
-                external_url,
-                confidence,
-                metadata_json: serde_json::json!({
-                    "source": "senscritique",
-                    "rating": rating,
-                    "category": category,
-                }),
-            })
-        })
-        .collect()
 }
 
 fn extract_names(product: &serde_json::Value, field: &str) -> Vec<String> {

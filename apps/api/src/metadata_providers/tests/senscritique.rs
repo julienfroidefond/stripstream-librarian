@@ -277,23 +277,55 @@ async fn wiremock_search_deduplicates_by_franchise() {
 }
 
 #[tokio::test]
-async fn wiremock_parse_products_filters_missing_covers() {
+async fn group_products_filters_missing_covers() {
     let items = vec![
         serde_json::json!({
             "id": 1, "title": "Has Cover", "url": "/test/1",
             "medias": { "picture": "https://example.com/real.jpg" },
-            "authors": [], "dateRelease": "2024-01-01", "rating": 8.0
+            "authors": [], "dateRelease": "2024-01-01", "rating": 8.0,
+            "franchises": [{ "id": 100, "label": "Series A" }]
         }),
         serde_json::json!({
             "id": 2, "title": "Missing Cover", "url": "/test/2",
             "medias": { "picture": "https://media.senscritique.com/missing/701/300x0/missing.png" },
-            "authors": [], "dateRelease": "2024-01-01", "rating": 7.0
+            "authors": [], "dateRelease": "2024-01-01", "rating": 7.0,
+            "franchises": [{ "id": 200, "label": "Series B" }]
         }),
     ];
-    let results = parse_products(&items, 10);
+    let results = group_products_by_franchise(&items, 10);
     assert_eq!(results.len(), 2);
     assert!(results[0].cover_url.is_some(), "real cover should be kept");
     assert!(results[1].cover_url.is_none(), "missing.png cover should be filtered out");
+}
+
+#[test]
+fn group_products_by_franchise_deduplicates() {
+    let items = vec![
+        serde_json::json!({
+            "id": 1, "title": "One Piece, tome 114", "url": "/test/1",
+            "medias": { "picture": "https://example.com/op114.jpg" },
+            "authors": [{"name": "Oda"}], "dateRelease": "2024-01-01", "rating": 9.0,
+            "franchises": [{ "id": 482, "label": "One Piece" }]
+        }),
+        serde_json::json!({
+            "id": 2, "title": "One Piece, tome 113", "url": "/test/2",
+            "medias": { "picture": "https://example.com/op113.jpg" },
+            "authors": [{"name": "Oda"}], "dateRelease": "2024-02-01", "rating": 8.5,
+            "franchises": [{ "id": 482, "label": "One Piece" }]
+        }),
+        serde_json::json!({
+            "id": 3, "title": "Naruto, tome 72", "url": "/test/3",
+            "medias": { "picture": "https://example.com/naruto72.jpg" },
+            "authors": [{"name": "Kishimoto"}], "dateRelease": "2024-03-01", "rating": 8.0,
+            "franchises": [{ "id": 817, "label": "Naruto" }]
+        }),
+    ];
+    let results = group_products_by_franchise(&items, 10);
+    assert_eq!(results.len(), 2, "two One Piece tomes should be grouped into one");
+    assert_eq!(results[0].title, "One Piece");
+    assert_eq!(results[0].external_id, "franchise:482");
+    assert_eq!(results[1].title, "Naruto");
+    assert_eq!(results[1].external_id, "franchise:817");
 }
 
 // ─── extract_edition_name ─────────────────────────────────────────
