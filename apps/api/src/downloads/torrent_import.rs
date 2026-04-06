@@ -1181,5 +1181,5 @@ fn build_target_filename(
 }
 
 #[cfg(test)]
-#[path = "torrent_import_tests.rs"]
+#[path = "tests/torrent_import.rs"]
 mod tests;

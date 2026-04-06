@@ -773,5 +773,5 @@ pub async fn delete_book(
 }
 
 #[cfg(test)]
-#[path = "mod_tests.rs"]
+#[path = "tests/mod_tests.rs"]
 mod tests;

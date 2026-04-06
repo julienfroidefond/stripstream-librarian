@@ -1190,5 +1190,5 @@ pub(crate) fn extract_string_array(metadata: &serde_json::Value, key: &str) -> V
 }
 
 #[cfg(test)]
-#[path = "handlers_tests.rs"]
-mod handlers_tests;
+#[path = "tests/handlers.rs"]
+mod tests;

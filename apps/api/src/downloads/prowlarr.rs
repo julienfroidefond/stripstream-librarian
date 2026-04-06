@@ -391,5 +391,5 @@ pub async fn test_prowlarr(
 }
 
 #[cfg(test)]
-#[path = "prowlarr_tests.rs"]
+#[path = "tests/prowlarr.rs"]
 mod tests;

@@ -97,5 +97,5 @@ pub(crate) fn boost_confidence_by_book_count(
 }
 
 #[cfg(test)]
-#[path = "config_tests.rs"]
-mod config_tests;
+#[path = "tests/config.rs"]
+mod tests;

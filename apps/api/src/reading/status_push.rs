@@ -754,5 +754,5 @@ async fn is_job_cancelled(pool: &PgPool, job_id: Uuid) -> bool {
 }
 
 #[cfg(test)]
-#[path = "status_push_tests.rs"]
+#[path = "tests/status_push.rs"]
 mod tests;

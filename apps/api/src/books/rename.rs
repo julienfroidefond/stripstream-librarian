@@ -488,5 +488,5 @@ pub async fn rename_books(
 }
 
 #[cfg(test)]
-#[path = "rename_tests.rs"]
+#[path = "tests/rename.rs"]
 mod tests;

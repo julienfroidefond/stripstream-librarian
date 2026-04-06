@@ -1276,5 +1276,5 @@ async fn sync_books_from_provider(
 // Helpers moved to crate::job_helpers and super::config
 
 #[cfg(test)]
-#[path = "batch_tests.rs"]
-mod batch_tests;
+#[path = "tests/batch.rs"]
+mod tests;

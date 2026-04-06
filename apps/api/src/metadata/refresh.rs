@@ -1231,5 +1231,5 @@ pub async fn rematch_unlinked_books(pool: &PgPool, library_id: Uuid) -> Result<i
 }
 
 #[cfg(test)]
-#[path = "refresh_tests.rs"]
-mod refresh_tests;
+#[path = "tests/refresh.rs"]
+mod tests;
