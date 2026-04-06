@@ -6,7 +6,7 @@ use tracing::{info, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{anilist, error::ApiError, state::AppState};
+use crate::{integrations::anilist, error::ApiError, state::AppState};
 
 // ---------------------------------------------------------------------------
 // DTOs

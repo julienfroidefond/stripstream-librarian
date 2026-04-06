@@ -1,15 +1,13 @@
-mod anilist;
 mod auth;
 mod authors;
 mod books;
-mod discovery;
 mod downloads;
 mod error;
 mod handlers;
 mod index_jobs;
+mod integrations;
 mod job_helpers;
 mod job_poller;
-mod komga;
 mod libraries;
 mod metadata;
 mod metadata_providers;
@@ -22,7 +20,6 @@ mod series;
 mod settings;
 mod state;
 mod stats;
-mod telegram;
 mod tokens;
 mod users;
 
@@ -125,24 +122,24 @@ async fn main() -> anyhow::Result<()> {
         .route("/qbittorrent/test", get(downloads::test_qbittorrent))
         .route("/torrent-downloads", get(downloads::list_torrent_downloads))
         .route("/torrent-downloads/:id", axum::routing::delete(downloads::delete_torrent_download))
-        .route("/telegram/test", get(telegram::test_telegram))
-        .route("/komga/sync", axum::routing::post(komga::sync_komga_read_books))
-        .route("/komga/reports", get(komga::list_sync_reports))
-        .route("/komga/reports/:id", get(komga::get_sync_report))
-        .route("/anilist/status", get(anilist::get_status))
-        .route("/anilist/search", axum::routing::post(anilist::search_manga))
-        .route("/anilist/unlinked", get(anilist::list_unlinked))
-        .route("/anilist/sync/preview", get(anilist::preview_sync))
-        .route("/anilist/sync", axum::routing::post(anilist::sync_to_anilist))
-        .route("/anilist/pull", axum::routing::post(anilist::pull_from_anilist))
-        .route("/anilist/links", get(anilist::list_links))
-        .route("/anilist/libraries/:id", axum::routing::patch(anilist::toggle_library))
-        .route("/anilist/series/:library_id/:series_name", get(anilist::get_series_link))
-        .route("/anilist/series/:library_id/:series_name/link", axum::routing::post(anilist::link_series))
-        .route("/anilist/series/:library_id/:series_name/unlink", delete(anilist::unlink_series))
-        .route("/series/:series_id/anilist", get(anilist::get_series_link_by_id))
-        .route("/series/:series_id/anilist/link", axum::routing::post(anilist::link_series_by_id))
-        .route("/series/:series_id/anilist/unlink", delete(anilist::unlink_series_by_id))
+        .route("/telegram/test", get(integrations::telegram::test_telegram))
+        .route("/komga/sync", axum::routing::post(integrations::komga::sync_komga_read_books))
+        .route("/komga/reports", get(integrations::komga::list_sync_reports))
+        .route("/komga/reports/:id", get(integrations::komga::get_sync_report))
+        .route("/anilist/status", get(integrations::anilist::get_status))
+        .route("/anilist/search", axum::routing::post(integrations::anilist::search_manga))
+        .route("/anilist/unlinked", get(integrations::anilist::list_unlinked))
+        .route("/anilist/sync/preview", get(integrations::anilist::preview_sync))
+        .route("/anilist/sync", axum::routing::post(integrations::anilist::sync_to_anilist))
+        .route("/anilist/pull", axum::routing::post(integrations::anilist::pull_from_anilist))
+        .route("/anilist/links", get(integrations::anilist::list_links))
+        .route("/anilist/libraries/:id", axum::routing::patch(integrations::anilist::toggle_library))
+        .route("/anilist/series/:library_id/:series_name", get(integrations::anilist::get_series_link))
+        .route("/anilist/series/:library_id/:series_name/link", axum::routing::post(integrations::anilist::link_series))
+        .route("/anilist/series/:library_id/:series_name/unlink", delete(integrations::anilist::unlink_series))
+        .route("/series/:series_id/anilist", get(integrations::anilist::get_series_link_by_id))
+        .route("/series/:series_id/anilist/link", axum::routing::post(integrations::anilist::link_series_by_id))
+        .route("/series/:series_id/anilist/unlink", delete(integrations::anilist::unlink_series_by_id))
         .route("/metadata/search", axum::routing::post(metadata::search_metadata))
         .route("/metadata/match", axum::routing::post(metadata::create_metadata_match))
         .route("/metadata/approve/:id", axum::routing::post(metadata::approve_metadata))
@@ -168,9 +165,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/download-detection/:id/report", get(downloads::get_detection_report))
         .route("/download-detection/:id/results", get(downloads::get_detection_results))
         .route("/available-downloads/:id", axum::routing::delete(downloads::delete_available_download))
-        .route("/discovery/trending", get(discovery::trending))
-        .route("/discovery/prowlarr", get(discovery::prowlarr_discovery))
-        .route("/discovery/add-to-library", axum::routing::post(discovery::add_to_library))
+        .route("/discovery/trending", get(integrations::discovery::trending))
+        .route("/discovery/prowlarr", get(integrations::discovery::prowlarr_discovery))
+        .route("/discovery/add-to-library", axum::routing::post(integrations::discovery::add_to_library))
         .merge(settings::settings_routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),

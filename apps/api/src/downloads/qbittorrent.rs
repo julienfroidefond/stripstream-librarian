@@ -156,7 +156,7 @@ pub async fn add_torrent(
                 }
                 result
             })
-            .map(|f| crate::discovery::extract_series_name_from_torrent(&f))
+            .map(|f| crate::integrations::discovery::extract_series_name_from_torrent(&f))
             .filter(|s| !s.is_empty())
     });
     let inferred_library_id = match body.library_id {
