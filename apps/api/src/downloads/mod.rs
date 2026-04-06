@@ -1,4 +1,5 @@
 pub mod detection;
+mod import_pipeline;
 pub mod prowlarr;
 pub mod qbittorrent;
 pub mod torrent_import;
