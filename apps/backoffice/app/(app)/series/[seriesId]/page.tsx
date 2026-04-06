@@ -103,8 +103,9 @@ export default async function SeriesDetailPage({
   const booksReadCount = booksPage.items.filter((b) => b.reading_status === "read").length;
   const displayName = seriesName === "unclassified" ? t("books.unclassified") : seriesName;
 
-  // Use first book cover as series cover
+  // Use first book cover as series cover, fallback to provider cover_url
   const coverBookId = booksPage.items[0]?.id;
+  const seriesCoverUrl = seriesDto.cover_url;
 
   return (
     <div className="space-y-6">
@@ -129,16 +130,25 @@ export default async function SeriesDetailPage({
 
       {/* Series Header */}
       <div className="flex flex-col sm:flex-row gap-6">
-        {coverBookId && (
+        {(coverBookId || seriesCoverUrl) && (
           <div className="flex-shrink-0">
             <div className="w-40 aspect-[2/3] relative rounded-xl overflow-hidden shadow-card border border-border">
-              <Image
-                src={getBookCoverUrl(coverBookId)}
-                alt={t("books.coverOf", { name: displayName })}
-                fill
-                className="object-cover"
-                sizes="160px"
-              />
+              {coverBookId ? (
+                <Image
+                  src={getBookCoverUrl(coverBookId)}
+                  alt={t("books.coverOf", { name: displayName })}
+                  fill
+                  className="object-cover"
+                  sizes="160px"
+                />
+              ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={seriesCoverUrl!}
+                  alt={t("books.coverOf", { name: displayName })}
+                  className="w-full h-full object-cover"
+                />
+              )}
             </div>
           </div>
         )}
