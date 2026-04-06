@@ -200,7 +200,12 @@ pub(super) async fn do_import(
         let dest = format!("{}/{}", target_dir, target_filename);
 
         if std::path::Path::new(&dest).exists() && !replace_existing {
-            info!("[IMPORT] Skipping '{}' → '{}' (already exists at destination)", filename, dest);
+            info!("[IMPORT] Already exists '{}' → '{}', counting as imported", filename, dest);
+            imported.push(ImportedFile {
+                volume: matched.iter().min().copied().unwrap_or(0),
+                source: source_path.clone(),
+                destination: unmap_libraries_path(&dest),
+            });
             continue;
         }
 
