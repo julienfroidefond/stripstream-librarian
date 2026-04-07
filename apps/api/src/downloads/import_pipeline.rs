@@ -179,10 +179,10 @@ pub(super) async fn do_import(
                 let built = build_target_filename(ref_path, ref_vol, vol, ext);
                 info!("[IMPORT] build_target_filename(ref={}, ref_vol={}, new_vol={}, ext={}) => {:?} (source='{}')",
                     ref_path, ref_vol, vol, ext, built, filename);
-                built.unwrap_or_else(|| default_filename(series_name, vol, ext))
+                built.unwrap_or_else(|| filename.to_string())
             } else {
-                info!("[IMPORT] No reference, using default_filename for vol {} (source='{}')", vol, filename);
-                default_filename(series_name, vol, ext)
+                info!("[IMPORT] No reference, keeping original filename '{}' for vol {}", filename, vol);
+                filename.to_string()
             };
 
             // If this destination was already used in this batch, keep original filename
@@ -471,10 +471,6 @@ pub(super) fn remap_downloads_path(path: &str) -> String {
 }
 
 // ─── Naming helpers ───────────────────────────────────────────────────────────
-
-pub(super) fn default_filename(series_name: &str, volume: i32, ext: &str) -> String {
-    format!("{} - T{:02}.{}", series_name, volume, ext)
-}
 
 /// Infer the target filename for `new_volume` by reusing the naming pattern from
 /// `reference_abs_path` (which stores `reference_volume`).
