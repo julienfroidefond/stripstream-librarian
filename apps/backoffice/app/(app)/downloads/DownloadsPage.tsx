@@ -625,20 +625,20 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
                             onClick={() => handleDeleteRelease(r.id, idx, true)}
                             disabled={deletingKey === `${r.id}-${idx}`}
                             title={t("downloads.blacklist")}
-                            className="inline-flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 shrink-0"
                           >
-                            <Icon name="x" size="sm" className="!w-3 !h-3" />
+                            <Icon name="x" size="sm" />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteRelease(r.id, idx)}
                             disabled={deletingKey === `${r.id}-${idx}`}
                             title={t("downloads.delete")}
-                            className="inline-flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30 shrink-0"
                           >
                             {deletingKey === `${r.id}-${idx}`
-                              ? <Icon name="spinner" size="sm" className="animate-spin !w-3 !h-3" />
-                              : <Icon name="trash" size="sm" className="!w-3 !h-3" />}
+                              ? <Icon name="spinner" size="sm" className="animate-spin" />
+                              : <Icon name="trash" size="sm" />}
                           </button>
                         </div>
                       </div>
