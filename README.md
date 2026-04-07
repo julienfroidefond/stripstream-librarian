@@ -91,7 +91,9 @@ The backoffice will be available at http://localhost:7082
 ### Books & Series
 - **Formats**: CBZ, CBR, PDF, EPUB
 - Automatic metadata extraction (title, series, volume, authors, page count) from filenames and directory structure
-- Series aggregation with missing volume detection
+- Series aggregation with missing volume detection (based on editable `total_volumes`)
+- Series creation from UI with metadata search and provider linking
+- Series merge (absorb duplicates: books, metadata, downloads)
 - Thumbnail generation (WebP/JPEG/PNG) with lazy generation and bulk rebuild
 - CBR → CBZ conversion
 
@@ -104,11 +106,13 @@ The backoffice will be available at http://localhost:7082
 - Full-text search across titles, authors, and series (PostgreSQL `pg_trgm`)
 - Author listing with book/series counts
 - Filtering by reading status, series status, format, metadata provider
-- **Discovery**: browse trending/best-rated BD and manga from SensCritique (new releases, top 100) and AniList, with one-click add to library
+- **Discovery**: browse trending/best-rated BD and manga from SensCritique (new releases, top 100) and AniList, with one-click add to library. Hide unwanted suggestions.
 
 ### External Metadata
 - Search, match, approve/reject workflow with confidence scoring
-- Batch auto-matching and scheduled metadata refresh
+- SensCritique edition selection (per-edition volume count for accurate matching)
+- Batch auto-matching, re-match to different provider, and scheduled metadata refresh
+- Confidence boosted by local book count vs provider total_volumes
 - Field locking to protect manual edits from sync
 
 ### Notifications
@@ -120,9 +124,9 @@ The backoffice will be available at http://localhost:7082
 ### External Integrations
 - **AniList**: bidirectional reading status sync — pull progress from AniList or push local statuses (PLANNING/CURRENT/COMPLETED) with differential detection and configurable auto-push schedule
 - **Komga**: import reading progress
-- **Prowlarr**: search for missing volumes manually from series pages, or run a **download detection job** to automatically scan all series with missing volumes and report available releases. Failed download indicator on available releases.
-- **qBittorrent**: add torrents directly from search results, with replace-all mode to import every volume in a torrent
-- **SensCritique**: metadata provider via GraphQL API — search series, get volumes, infer ongoing/ended status from latest release date
+- **Prowlarr**: search for missing volumes manually from series pages, or run a **download detection job** to automatically scan all series with missing volumes and report available releases. Failed download indicator on available releases. Release blacklist to permanently hide unwanted results.
+- **qBittorrent**: add torrents directly from search results, with replace-all mode to import every volume in a torrent. Duplicate torrent detection, one-shot import, retry stuck imports.
+- **SensCritique**: metadata provider via GraphQL API — search series with per-edition selection, get volumes, infer ongoing/ended status from latest release date. Rate limiting with retry on 429.
 
 ### Background Jobs
 - Rebuild, rescan, thumbnail generation, metadata batch, CBR conversion, AniList reading status sync/push, download detection (Prowlarr)

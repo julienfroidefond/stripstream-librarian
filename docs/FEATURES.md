@@ -251,12 +251,26 @@ Browse and add series to your library from external sources.
 - **Trending/best**: cache 24h
 - **Prowlarr**: cache 7 jours
 - Already-owned series filtered out server-side
+- Hidden suggestions filtered out (per-user hide/unhide)
+
+### Hide Suggestions
+- Hide unwanted series from discovery results via `discovery_hidden` table
+- Hidden panel to view and unhide previously hidden series
+- Hidden by provider + external_id, persisted across sessions
 
 ### Add to Library
 - Crée la série + metadata (description, auteurs, genres, statut, cover)
 - Crée un metadata link pour `bedetheque` et `senscritique` (providers `sc_*` normalisés vers `senscritique`)
 - Pas de metadata link pour `anilist` et `prowlarr`
+- Discovery results grouped by franchise (series-level, not individual tomes)
 - Revalidation des pages `/series` et `/libraries` après ajout
+
+### Create Series (from UI)
+- `POST /series/create` — create series with optional metadata linking in one request
+- Library selector + name input + auto-search metadata provider
+- Creates physical directory on disk
+- Syncs series + book metadata if provider match selected
+- Uses shared `create_series_with_metadata` helper (same as Discovery)
 
 ---
 
@@ -276,20 +290,27 @@ Browse and add series to your library from external sources.
 - **`prowlarr_no_results`** event (error level): Prowlarr returned 0 raw results (indexer problem)
 - **`downloads_not_found`** event (info level): Prowlarr returned results but none matched missing volumes
 - **Failed download indicator**: badge on available releases that had previous download errors (via `torrent_downloads` lateral join)
+- **Release blacklist**: permanently hide unwanted releases so they don't reappear after next detection. Blacklist panel with unhide. Blacklisted titles filtered during detection.
 
 ### qBittorrent
 - Add torrents directly from Prowlarr search results or available downloads
 - **Replace mode**: import all volumes from a torrent (bypass expected_volumes filter)
+- **Duplicate torrent detection**: when the same torrent already exists in qBittorrent, detects it by magnet hash, reads real content_path, and launches import immediately if completed
 - Connection test endpoint
 
 ### Torrent Import Pipeline
-1. qBittorrent poller detects completed torrents
-2. Volume extraction from filenames
+1. qBittorrent poller detects completed torrents (5-minute timeout for unresolved hashes)
+2. Volume extraction from filenames (supports `Tome_01` underscore separator)
 3. Series matching via `LOWER(unaccent())` (case + accent insensitive)
 4. File naming from existing book reference (preserves naming convention)
 5. Deduplication by format (cbz > cbr > pdf > epub)
-6. Cleanup: remove torrent from qBittorrent, delete download directory
-7. Post-import: scan job queued, metadata refresh if linked, `available_downloads` updated
+6. **One-shot books**: files without volume number imported as-is (not skipped)
+7. **Already-existing files**: counted as imported (not error)
+8. Detailed import result: imported files, skipped files with reasons, total source count
+9. Import status: `imported` (any file imported), `no_files_imported` (none imported)
+10. **Retry**: re-launch stuck imports via API (checks source files still exist)
+11. Cleanup: remove torrent from qBittorrent, delete download directory
+12. Post-import: scan job queued, metadata refresh if linked, `available_downloads` updated
 
 ---
 
