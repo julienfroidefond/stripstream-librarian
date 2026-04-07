@@ -413,7 +413,10 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
     try {
       const qs = blacklist ? `?release=${releaseIdx}&blacklist=true` : `?release=${releaseIdx}`;
       const resp = await fetch(`/api/available-downloads/${seriesId}${qs}`, { method: "DELETE" });
-      if (resp.ok) onDeleted();
+      if (resp.ok) {
+        onDeleted();
+        if (blacklist && showBlacklist) fetchBlacklist();
+      }
     } finally {
       setDeletingKey(null);
     }
