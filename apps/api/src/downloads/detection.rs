@@ -505,17 +505,53 @@ pub async fn delete_available_download(
 ) -> Result<Json<crate::responses::OkResponse>, ApiError> {
     if let Some(release_idx) = query.release {
         // Remove a single release from the JSON array
-        let row = sqlx::query("SELECT available_releases FROM available_downloads WHERE id = $1")
+        let row = sqlx::query("SELECT available_releases, series_id FROM available_downloads WHERE id = $1")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?
             .ok_or_else(|| ApiError::not_found("available download not found"))?;
+
+        let series_id: Option<Uuid> = row.get("series_id");
+        let series_name: Option<String> = if let Some(sid) = series_id {
+            sqlx::query_scalar("SELECT name FROM series WHERE id = $1")
+                .bind(sid)
+                .fetch_optional(&state.pool)
+                .await
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
 
         let releases_json: Option<serde_json::Value> = row.get("available_releases");
         if let Some(serde_json::Value::Array(mut releases)) = releases_json {
             if release_idx >= releases.len() {
                 return Err(ApiError::bad_request("release index out of bounds"));
             }
+
+            // Blacklist the release if requested
+            if query.blacklist == Some(true) {
+                let release_title = releases[release_idx]
+                    .get("title")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or_default();
+                let release_indexer = releases[release_idx]
+                    .get("indexer")
+                    .and_then(|t| t.as_str())
+                    .map(String::from);
+                if !release_title.is_empty() {
+                    let _ = sqlx::query(
+                        "INSERT INTO release_blacklist (title, indexer, series_name) \
+                         VALUES ($1, $2, $3) ON CONFLICT (title) DO NOTHING",
+                    )
+                    .bind(release_title)
+                    .bind(&release_indexer)
+                    .bind(&series_name)
+                    .execute(&state.pool)
+                    .await;
+                }
+            }
+
             releases.remove(release_idx);
 
             if releases.is_empty() {
@@ -553,6 +589,85 @@ pub async fn delete_available_download(
 #[derive(Deserialize)]
 pub struct DeleteAvailableQuery {
     pub release: Option<usize>,
+    /// If true, also blacklist the release so it doesn't come back
+    #[serde(default)]
+    pub blacklist: Option<bool>,
+}
+
+// ---------------------------------------------------------------------------
+// Release blacklist
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct BlacklistRequest {
+    pub title: String,
+    pub indexer: Option<String>,
+    pub series_name: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct BlacklistItemDto {
+    pub id: String,
+    pub title: String,
+    pub indexer: Option<String>,
+    pub series_name: Option<String>,
+    pub blacklisted_at: String,
+}
+
+/// Blacklist a release so it's excluded from future download detection results.
+pub async fn blacklist_release(
+    State(state): State<AppState>,
+    Json(body): Json<BlacklistRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    sqlx::query(
+        "INSERT INTO release_blacklist (title, indexer, series_name) \
+         VALUES ($1, $2, $3) ON CONFLICT (title) DO NOTHING",
+    )
+    .bind(&body.title)
+    .bind(&body.indexer)
+    .bind(&body.series_name)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(Json(serde_json::json!({"blacklisted": true})))
+}
+
+/// Remove a release from the blacklist.
+pub async fn unblacklist_release(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    sqlx::query("DELETE FROM release_blacklist WHERE id = $1")
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+
+    Ok(Json(serde_json::json!({"blacklisted": false})))
+}
+
+/// List all blacklisted releases.
+pub async fn list_blacklisted_releases(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<BlacklistItemDto>>, ApiError> {
+    let rows = sqlx::query(
+        "SELECT id, title, indexer, series_name, blacklisted_at \
+         FROM release_blacklist ORDER BY blacklisted_at DESC",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let items: Vec<BlacklistItemDto> = rows
+        .iter()
+        .map(|r| BlacklistItemDto {
+            id: r.get::<Uuid, _>("id").to_string(),
+            title: r.get("title"),
+            indexer: r.get("indexer"),
+            series_name: r.get("series_name"),
+            blacklisted_at: r.get::<chrono::DateTime<chrono::Utc>, _>("blacklisted_at").to_rfc3339(),
+        })
+        .collect();
+
+    Ok(Json(items))
 }
 
 // ---------------------------------------------------------------------------
@@ -637,6 +752,16 @@ pub(crate) async fn process_download_detection(
         .build()
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
+    // Load blacklisted release titles to filter them out
+    let blacklisted_titles: std::collections::HashSet<String> = sqlx::query_scalar(
+        "SELECT title FROM release_blacklist",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .collect();
+
     let mut processed = 0i32;
 
     for series_name in &all_series {
@@ -716,7 +841,17 @@ pub(crate) async fn process_download_detection(
         )
         .await
         {
-            Ok((matched_releases, _raw_count)) if !matched_releases.is_empty() => {
+            Ok((mut matched_releases, _raw_count)) if !matched_releases.is_empty() => {
+                // Filter out blacklisted releases
+                matched_releases.retain(|r| !blacklisted_titles.contains(&r.title));
+                if matched_releases.is_empty() {
+                    insert_event(pool, job_id, "downloads_not_found", "info", Some(series_name), None, Some(serde_json::json!({"missing_count": missing_count, "raw_results": _raw_count, "all_blacklisted": true}))).await;
+                    if let Some(&sid) = series_id_map.get(series_name) {
+                        let _ = sqlx::query("UPDATE available_downloads SET missing_count = $2, updated_at = NOW() WHERE series_id = $1")
+                            .bind(sid).bind(missing_count).execute(pool).await;
+                    }
+                    continue;
+                }
                 let releases_json = serde_json::to_value(&matched_releases).ok();
                 insert_event(pool, job_id, "downloads_found", "info", Some(series_name), None, Some(serde_json::json!({"release_count": matched_releases.len(), "missing_count": missing_count, "available_releases": releases_json}))).await;
                 // UPSERT into available_downloads — merge new releases with existing ones

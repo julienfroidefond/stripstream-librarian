@@ -6,8 +6,8 @@ pub mod torrent_import;
 
 // Re-export handler functions used in route registration
 pub use detection::{
-    delete_available_download, get_detection_report, get_detection_results, get_latest_found,
-    start_detection,
+    blacklist_release, delete_available_download, get_detection_report, get_detection_results,
+    get_latest_found, list_blacklisted_releases, start_detection, unblacklist_release,
 };
 pub use prowlarr::{search_prowlarr, test_prowlarr};
 pub use qbittorrent::{add_torrent, test_qbittorrent};

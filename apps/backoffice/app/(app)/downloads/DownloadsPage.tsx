@@ -407,11 +407,12 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
 
   const libraries = latestFound.map(l => ({ id: l.library_id, name: l.library_name }));
 
-  async function handleDeleteRelease(seriesId: string, releaseIdx: number) {
+  async function handleDeleteRelease(seriesId: string, releaseIdx: number, blacklist = false) {
     const key = `${seriesId}-${releaseIdx}`;
     setDeletingKey(key);
     try {
-      const resp = await fetch(`/api/available-downloads/${seriesId}?release=${releaseIdx}`, { method: "DELETE" });
+      const qs = blacklist ? `?release=${releaseIdx}&blacklist=true` : `?release=${releaseIdx}`;
+      const resp = await fetch(`/api/available-downloads/${seriesId}${qs}`, { method: "DELETE" });
       if (resp.ok) onDeleted();
     } finally {
       setDeletingKey(null);
@@ -434,6 +435,25 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
     { id: "name", label: t("downloads.sortName") },
   ];
 
+  type BlacklistItem = { id: string; title: string; indexer: string | null; series_name: string | null };
+  const [showBlacklist, setShowBlacklist] = useState(false);
+  const [blacklistItems, setBlacklistItems] = useState<BlacklistItem[]>([]);
+  const [loadingBlacklist, setLoadingBlacklist] = useState(false);
+
+  async function fetchBlacklist() {
+    setLoadingBlacklist(true);
+    try {
+      const resp = await fetch("/api/release-blacklist");
+      if (resp.ok) setBlacklistItems(await resp.json());
+    } catch { /* ignore */ }
+    finally { setLoadingBlacklist(false); }
+  }
+
+  async function handleUnblacklist(itemId: string) {
+    await fetch(`/api/release-blacklist/${itemId}`, { method: "DELETE" });
+    setBlacklistItems((prev) => prev.filter((h) => h.id !== itemId));
+  }
+
   return (
     <div className="mt-10">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
@@ -441,6 +461,13 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
           <Icon name="search" size="lg" />
           {t("downloads.availableTitle")}
           <span className="text-sm font-normal text-muted-foreground">({sorted.length})</span>
+          <button
+            onClick={() => { setShowBlacklist(!showBlacklist); if (!showBlacklist) fetchBlacklist(); }}
+            className={`ml-2 px-2 py-1 text-xs rounded transition-colors ${showBlacklist ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"}`}
+            title={t("downloads.blacklisted")}
+          >
+            <Icon name="eye" size="sm" />
+          </button>
         </h2>
         <div className="flex items-center gap-2">
           {libraries.length > 1 && (
@@ -470,6 +497,34 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
           </div>
         </div>
       </div>
+
+      {showBlacklist && (
+        <div className="border border-border rounded-lg p-4 bg-card mb-4">
+          <h3 className="text-sm font-semibold text-foreground mb-3">{t("downloads.blacklisted")}</h3>
+          {loadingBlacklist ? (
+            <div className="flex justify-center py-4"><Icon name="spinner" size="sm" className="animate-spin" /></div>
+          ) : blacklistItems.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t("downloads.noBlacklisted")}</p>
+          ) : (
+            <div className="space-y-1">
+              {blacklistItems.map((item) => (
+                <div key={item.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 text-xs">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium truncate">{item.title}</p>
+                    <p className="text-muted-foreground">{item.series_name} {item.indexer && `· ${item.indexer}`}</p>
+                  </div>
+                  <button
+                    onClick={() => handleUnblacklist(item.id)}
+                    className="text-xs px-2 py-1 rounded border border-border hover:bg-background transition-colors shrink-0"
+                  >
+                    {t("downloads.unblacklist")}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="border border-border rounded-xl overflow-hidden">
         {sorted.map((r) => {
@@ -567,8 +622,18 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
                           )}
                           <button
                             type="button"
+                            onClick={() => handleDeleteRelease(r.id, idx, true)}
+                            disabled={deletingKey === `${r.id}-${idx}`}
+                            title={t("downloads.blacklist")}
+                            className="inline-flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30"
+                          >
+                            <Icon name="x" size="sm" className="!w-3 !h-3" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handleDeleteRelease(r.id, idx)}
                             disabled={deletingKey === `${r.id}-${idx}`}
+                            title={t("downloads.delete")}
                             className="inline-flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
                           >
                             {deletingKey === `${r.id}-${idx}`
