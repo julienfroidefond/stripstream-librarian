@@ -210,7 +210,7 @@ async fn do_prowlarr_search(
     missing_volumes: Option<&[MissingVolumeInput]>,
 ) -> Result<ProwlarrSearchResponse, ApiError> {
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(60))
         .user_agent("Stripstream-Librarian")
         .build()
         .map_err(|e| ApiError::internal(format!("failed to build HTTP client: {e}")))?;
@@ -223,35 +223,45 @@ async fn do_prowlarr_search(
         params.push(("categories", cat.to_string()));
     }
 
-    let resp = client
-        .get(format!("{base_url}/api/v1/search"))
-        .query(&params)
-        .header("X-Api-Key", api_key)
-        .send()
-        .await
-        .map_err(|e| ApiError::internal(format!("Prowlarr request failed: {e}")))?;
+    // Retry up to 2 times on empty results (Prowlarr sometimes returns [] transiently)
+    let mut raw_releases: Vec<ProwlarrRawRelease> = Vec::new();
+    for attempt in 0..=1 {
+        let resp = client
+            .get(format!("{base_url}/api/v1/search"))
+            .query(&params)
+            .header("X-Api-Key", api_key)
+            .send()
+            .await
+            .map_err(|e| ApiError::internal(format!("Prowlarr request failed: {e}")))?;
 
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(ApiError::internal(format!(
-            "Prowlarr returned {status}: {text}"
-        )));
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(ApiError::internal(format!(
+                "Prowlarr returned {status}: {text}"
+            )));
+        }
+
+        let raw_text = resp
+            .text()
+            .await
+            .map_err(|e| ApiError::internal(format!("Failed to read Prowlarr response: {e}")))?;
+
+        raw_releases = serde_json::from_str(&raw_text)
+            .map_err(|e| {
+                tracing::error!("Failed to parse Prowlarr response: {e}");
+                tracing::error!("Raw response (first 500 chars): {}", &raw_text[..raw_text.len().min(500)]);
+                ApiError::internal(format!("Failed to parse Prowlarr response: {e}"))
+            })?;
+
+        if !raw_releases.is_empty() || attempt > 0 {
+            break;
+        }
+        tracing::warn!("[PROWLARR] Empty results for query '{}', retrying in 2s...", query);
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
 
-    let raw_text = resp
-        .text()
-        .await
-        .map_err(|e| ApiError::internal(format!("Failed to read Prowlarr response: {e}")))?;
-
-    tracing::debug!("Prowlarr raw response length: {} chars", raw_text.len());
-
-    let raw_releases: Vec<ProwlarrRawRelease> = serde_json::from_str(&raw_text)
-        .map_err(|e| {
-            tracing::error!("Failed to parse Prowlarr response: {e}");
-            tracing::error!("Raw response (first 500 chars): {}", &raw_text[..raw_text.len().min(500)]);
-            ApiError::internal(format!("Failed to parse Prowlarr response: {e}"))
-        })?;
+    tracing::info!("[PROWLARR] Search '{}' returned {} results", query, raw_releases.len());
 
     let results = if let Some(missing) = missing_volumes {
         match_missing_volumes(raw_releases, missing)
