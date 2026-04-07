@@ -774,7 +774,7 @@ export type StatsResponse = {
 };
 
 export async function fetchStats(period?: "day" | "week" | "month") {
-  const params = period && period !== "month" ? `?period=${period}` : "";
+  const params = period && period !== "week" ? `?period=${period}` : "";
   return apiFetch<StatsResponse>(`/stats${params}`, { next: { revalidate: 30 } });
 }
 

@@ -1,9 +1,8 @@
 import React from "react";
 import { fetchStats, fetchUsers, StatsResponse, UserDto } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui";
-import { RcDonutChart, RcBarChart, RcAreaChart, RcStackedBar, RcHorizontalBar, RcMultiLineChart } from "@/app/components/DashboardCharts";
-import { PeriodToggle } from "@/app/components/PeriodToggle";
-import { MetricToggle } from "@/app/components/MetricToggle";
+import { RcDonutChart, RcStackedBar, RcHorizontalBar } from "@/app/components/DashboardCharts";
+import { TimeSeriesCharts } from "@/app/components/TimeSeriesCharts";
 import { CurrentlyReadingList, RecentlyReadList } from "@/app/components/ReadingUserFilter";
 import Link from "next/link";
 import { getServerTranslations } from "@/lib/i18n/server";
@@ -21,24 +20,6 @@ function formatBytes(bytes: number): string {
 
 function formatNumber(n: number, locale: string): string {
   return n.toLocaleString(locale === "fr" ? "fr-FR" : "en-US");
-}
-
-function formatChartLabel(raw: string, period: "day" | "week" | "month", locale: string): string {
-  const loc = locale === "fr" ? "fr-FR" : "en-US";
-  if (period === "month") {
-    // raw = "YYYY-MM"
-    const [y, m] = raw.split("-");
-    const d = new Date(Number(y), Number(m) - 1, 1);
-    return d.toLocaleDateString(loc, { month: "short" });
-  }
-  if (period === "week") {
-    // raw = "YYYY-MM-DD" (Monday of the week)
-    const d = new Date(raw + "T00:00:00");
-    return d.toLocaleDateString(loc, { day: "numeric", month: "short" });
-  }
-  // day: raw = "YYYY-MM-DD"
-  const d = new Date(raw + "T00:00:00");
-  return d.toLocaleDateString(loc, { weekday: "short", day: "numeric" });
 }
 
 // Horizontal progress bar for metadata quality (stays server-rendered, no recharts needed)
@@ -60,22 +41,14 @@ function HorizontalBar({ label, value, max, subLabel, color = "var(--color-prima
   );
 }
 
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
-}) {
-  const searchParamsAwaited = await searchParams;
-  const rawPeriod = searchParamsAwaited.period;
-  const period = rawPeriod === "day" ? "day" as const : rawPeriod === "week" ? "week" as const : "month" as const;
-  const metric = searchParamsAwaited.metric === "pages" ? "pages" as const : "books" as const;
+export default async function DashboardPage() {
   const { t, locale } = await getServerTranslations();
 
   let stats: StatsResponse | null = null;
   let users: UserDto[] = [];
   try {
     [stats, users] = await Promise.all([
-      fetchStats(period),
+      fetchStats(),
       fetchUsers().catch(() => []),
     ]);
   } catch (e) {
@@ -178,49 +151,31 @@ export default async function DashboardPage({
         </div>
       )}
 
-      {/* Reading activity line chart */}
-      <Card hover={false}>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-base">{t("dashboard.readingActivity")}</CardTitle>
-          <div className="flex flex-wrap gap-1.5 justify-end">
-            <MetricToggle labels={{ books: t("dashboard.metricBooks"), pages: t("dashboard.metricPages") }} />
-            <PeriodToggle labels={{ day: t("dashboard.periodDay"), week: t("dashboard.periodWeek"), month: t("dashboard.periodMonth") }} />
-          </div>
-        </CardHeader>
-        <CardContent>
-          {(() => {
-            const userColors = [
-              "hsl(142 60% 45%)", "hsl(198 78% 37%)", "hsl(45 93% 47%)",
-              "hsl(2 72% 48%)", "hsl(280 60% 50%)", "hsl(32 80% 50%)",
-            ];
-            const dataKey = metric === "pages" ? "pages_read" : "books_read";
-            const usernames = [...new Set(users_reading_over_time.map(r => r.username))];
-            if (usernames.length === 0) {
-              return (
-                <RcAreaChart
-                  noDataLabel={noDataLabel}
-                  data={reading_over_time.map((m) => ({ label: formatChartLabel(m.month, period, locale), value: m[dataKey] }))}
-                  color="hsl(142 60% 45%)"
-                />
-              );
-            }
-            // Pivot: { label, username1: n, username2: n, ... }
-            const byMonth = new Map<string, Record<string, unknown>>();
-            for (const row of users_reading_over_time) {
-              const label = formatChartLabel(row.month, period, locale);
-              if (!byMonth.has(row.month)) byMonth.set(row.month, { label });
-              byMonth.get(row.month)![row.username] = row[dataKey];
-            }
-            const chartData = [...byMonth.values()];
-            const lines = usernames.map((u, i) => ({
-              key: u,
-              label: u,
-              color: userColors[i % userColors.length],
-            }));
-            return <RcMultiLineChart data={chartData} lines={lines} noDataLabel={noDataLabel} />;
-          })()}
-        </CardContent>
-      </Card>
+      {/* Time-series charts (client-side period/metric management) */}
+      <TimeSeriesCharts
+        initialData={{
+          reading_over_time,
+          users_reading_over_time,
+          additions_over_time,
+          jobs_over_time,
+        }}
+        locale={locale}
+        labels={{
+          readingActivity: t("dashboard.readingActivity"),
+          booksAdded: t("dashboard.booksAdded"),
+          jobsOverTime: t("dashboard.jobsOverTime"),
+          periodDay: t("dashboard.periodDay"),
+          periodWeek: t("dashboard.periodWeek"),
+          periodMonth: t("dashboard.periodMonth"),
+          metricBooks: t("dashboard.metricBooks"),
+          metricPages: t("dashboard.metricPages"),
+          noData: noDataLabel,
+          jobScan: t("dashboard.jobScan"),
+          jobRebuild: t("dashboard.jobRebuild"),
+          jobThumbnail: t("dashboard.jobThumbnail"),
+          jobOther: t("dashboard.jobOther"),
+        }}
+      />
 
       {/* Charts row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -245,7 +200,6 @@ export default async function DashboardPage({
                   const total = overview.total_books;
                   const read = user.books_read;
                   const reading = user.books_reading;
-                  const unread = Math.max(0, total - read - reading);
                   const readPct = total > 0 ? (read / total) * 100 : 0;
                   const readingPct = total > 0 ? (reading / total) * 100 : 0;
                   return (
@@ -478,47 +432,6 @@ export default async function DashboardPage({
           )}
         </>
       )}
-
-      {/* Additions line chart – full width */}
-      <Card hover={false}>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-base">{t("dashboard.booksAdded")}</CardTitle>
-          <PeriodToggle labels={{ day: t("dashboard.periodDay"), week: t("dashboard.periodWeek"), month: t("dashboard.periodMonth") }} />
-        </CardHeader>
-        <CardContent>
-          <RcAreaChart
-            noDataLabel={noDataLabel}
-            data={additions_over_time.map((m) => ({ label: formatChartLabel(m.month, period, locale), value: m.books_added }))}
-            color="hsl(198 78% 37%)"
-          />
-        </CardContent>
-      </Card>
-
-      {/* Jobs over time – multi-line chart */}
-      <Card hover={false}>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <CardTitle className="text-base">{t("dashboard.jobsOverTime")}</CardTitle>
-          <PeriodToggle labels={{ day: t("dashboard.periodDay"), week: t("dashboard.periodWeek"), month: t("dashboard.periodMonth") }} />
-        </CardHeader>
-        <CardContent>
-          <RcMultiLineChart
-            noDataLabel={noDataLabel}
-            data={jobs_over_time.map((j) => ({
-              label: formatChartLabel(j.label, period, locale),
-              scan: j.scan,
-              rebuild: j.rebuild,
-              thumbnail: j.thumbnail,
-              other: j.other,
-            }))}
-            lines={[
-              { key: "scan", label: t("dashboard.jobScan"), color: "hsl(198 78% 37%)" },
-              { key: "rebuild", label: t("dashboard.jobRebuild"), color: "hsl(142 60% 45%)" },
-              { key: "thumbnail", label: t("dashboard.jobThumbnail"), color: "hsl(45 93% 47%)" },
-              { key: "other", label: t("dashboard.jobOther"), color: "hsl(280 60% 50%)" },
-            ]}
-          />
-        </CardContent>
-      </Card>
 
       {/* Quick links */}
       <QuickLinks t={t} />

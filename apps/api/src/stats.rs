@@ -10,7 +10,7 @@ use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
 #[derive(Deserialize, IntoParams)]
 pub struct StatsQuery {
-    /// Granularity: "day", "week" or "month" (default: "month")
+    /// Granularity: "day", "week" or "month" (default: "week")
     pub period: Option<String>,
 }
 
@@ -182,7 +182,7 @@ pub async fn get_stats(
     user: Option<Extension<AuthUser>>,
 ) -> Result<Json<StatsResponse>, ApiError> {
     let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
-    let period = query.period.as_deref().unwrap_or("month");
+    let period = query.period.as_deref().unwrap_or("week");
     // Overview + reading status in one query
     let overview_row = sqlx::query(
         r#"
