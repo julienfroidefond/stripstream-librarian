@@ -104,6 +104,8 @@ use utoipa::OpenApi;
         crate::integrations::anilist_sync::sync_to_anilist,
         crate::integrations::anilist_sync::pull_from_anilist,
         crate::integrations::anilist::list_links,
+        crate::series::merge::merge_series,
+        crate::series::create::create_series,
     ),
     components(
         schemas(
@@ -218,6 +220,10 @@ use utoipa::OpenApi;
             crate::integrations::anilist::AnilistSearchRequest,
             crate::integrations::anilist::AnilistLinkRequest,
             crate::integrations::anilist::AnilistLibraryToggleRequest,
+            crate::series::MergeSeriesRequest,
+            crate::series::MergeSeriesResponse,
+            crate::series::CreateSeriesRequest,
+            crate::series::CreateSeriesResponse,
             ErrorResponse,
         )
     ),
