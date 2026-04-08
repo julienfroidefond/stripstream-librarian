@@ -104,6 +104,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/series/:series_id/rename-books", axum::routing::post(books::rename_books))
         .route("/series/create", axum::routing::post(series::create_series))
         .route("/series/:series_id/merge", axum::routing::post(series::merge_series))
+        .route("/series/:series_id/cover", get(series::get_series_cover))
         .route("/index/rebuild", axum::routing::post(index_jobs::enqueue_rebuild))
         .route("/index/thumbnails/rebuild", axum::routing::post(books::start_thumbnails_rebuild))
         .route("/index/thumbnails/regenerate", axum::routing::post(books::start_thumbnails_regenerate))

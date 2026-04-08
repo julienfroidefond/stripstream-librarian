@@ -1,4 +1,5 @@
 pub(crate) mod helpers;
+pub mod cover;
 pub mod create;
 pub mod list;
 pub mod merge;
@@ -8,6 +9,7 @@ pub mod update;
 mod tests;
 
 pub(crate) use helpers::{get_or_create_series, resolve_library_id};
+pub use cover::*;
 pub use create::*;
 pub use list::*;
 pub use merge::*;
