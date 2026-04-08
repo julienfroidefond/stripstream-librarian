@@ -75,6 +75,9 @@ pub struct ListSeriesQuery {
     /// Filter by metadata provider: a provider name (e.g. "google_books"), "linked" (any provider), or "unlinked" (no provider)
     #[schema(value_type = Option<String>, example = "google_books")]
     pub metadata_provider: Option<String>,
+    /// Only return series with at least one book: "true" to exclude empty series
+    #[schema(value_type = Option<String>, example = "true")]
+    pub has_books: Option<String>,
     #[schema(value_type = Option<i64>, example = 1)]
     pub page: Option<i64>,
     #[schema(value_type = Option<i64>, example = 50)]
@@ -105,6 +108,9 @@ pub struct ListAllSeriesQuery {
     pub page: Option<i64>,
     #[schema(value_type = Option<i64>, example = 50)]
     pub limit: Option<i64>,
+    /// Only return series with at least one book: "true" to exclude empty series
+    #[schema(value_type = Option<String>, example = "true")]
+    pub has_books: Option<String>,
     /// Sort order: "title" (default) or "latest" (most recently added first)
     #[schema(value_type = Option<String>, example = "latest")]
     pub sort: Option<String>,

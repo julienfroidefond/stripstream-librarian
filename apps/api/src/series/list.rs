@@ -75,6 +75,11 @@ pub async fn list_series(
         None => String::new(),
     };
 
+    let has_books = query.has_books.as_deref() == Some("true");
+    let has_books_cond = if has_books {
+        "AND sc.book_count > 0".to_string()
+    } else { String::new() };
+
     let user_id_p = p + 1;
     let limit_p = p + 2;
     let offset_p = p + 3;
@@ -100,7 +105,7 @@ pub async fn list_series(
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
         LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = $1
-        WHERE TRUE {q_cond} {count_rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond}
+        WHERE TRUE {q_cond} {count_rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {has_books_cond}
         "#
     );
 
@@ -159,6 +164,7 @@ pub async fn list_series(
           {ss_cond}
           {missing_cond}
           {metadata_provider_cond}
+          {has_books_cond}
         ORDER BY
             REGEXP_REPLACE(LOWER(sc.name), '[0-9].*$', ''),
             COALESCE(
@@ -309,6 +315,11 @@ pub async fn list_all_series(
         p += 1; format!("AND (${p} = ANY(s.authors) OR EXISTS (SELECT 1 FROM books bk WHERE bk.series_id = s.id AND ${p} = ANY(COALESCE(NULLIF(bk.authors, '{{}}'), CASE WHEN bk.author IS NOT NULL AND bk.author != '' THEN ARRAY[bk.author] ELSE ARRAY[]::text[] END))))")
     } else { String::new() };
 
+    let has_books = query.has_books.as_deref() == Some("true");
+    let has_books_cond = if has_books {
+        "AND sc.book_count > 0".to_string()
+    } else { String::new() };
+
     // Missing counts CTE
     let missing_cte = if query.library_id.is_some() {
         helpers::build_missing_counts_cte(Some("$1"))
@@ -340,7 +351,7 @@ pub async fn list_all_series(
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
         LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = sc.library_id
-        WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {author_cond}
+        WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {author_cond} {has_books_cond}
         "#
     );
 
@@ -412,6 +423,7 @@ pub async fn list_all_series(
           {missing_cond}
           {metadata_provider_cond}
           {author_cond}
+          {has_books_cond}
         ORDER BY {series_order_clause}
         LIMIT ${limit_p} OFFSET ${offset_p}
         "#
