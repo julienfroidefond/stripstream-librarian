@@ -133,22 +133,14 @@ export default async function SeriesDetailPage({
         {(coverBookId || seriesCoverUrl) && (
           <div className="flex-shrink-0">
             <div className="w-40 aspect-[2/3] relative rounded-xl overflow-hidden shadow-card border border-border">
-              {coverBookId ? (
-                <Image
-                  src={getBookCoverUrl(coverBookId)}
-                  alt={t("books.coverOf", { name: displayName })}
-                  fill
-                  className="object-cover"
-                  sizes="160px"
-                />
-              ) : (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={seriesCoverUrl!}
-                  alt={t("books.coverOf", { name: displayName })}
-                  className="w-full h-full object-cover"
-                />
-              )}
+              {/* Use book thumbnail for series with books, or series cover via same endpoint */}
+              <Image
+                src={getBookCoverUrl(coverBookId || seriesId)}
+                alt={t("books.coverOf", { name: displayName })}
+                fill
+                className="object-cover"
+                sizes="160px"
+              />
             </div>
           </div>
         )}
