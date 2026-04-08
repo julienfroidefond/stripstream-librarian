@@ -118,24 +118,6 @@ pub(crate) async fn sync_series_metadata(
     .execute(&state.pool)
     .await?;
 
-    // Download cover image from external URL and store locally
-    if let Some(url) = cover_url {
-        if url.starts_with("http://") || url.starts_with("https://") {
-            let series_id: Option<uuid::Uuid> = sqlx::query_scalar(
-                "SELECT id FROM series WHERE library_id = $1 AND LOWER(unaccent(name)) = LOWER(unaccent($2))",
-            )
-            .bind(library_id)
-            .bind(series_name)
-            .fetch_optional(&state.pool)
-            .await
-            .ok()
-            .flatten();
-            if let Some(sid) = series_id {
-                crate::series::cover::download_and_store_cover(&state.pool, sid, url).await;
-            }
-        }
-    }
-
     // Build report
     let mut report = SeriesSyncReport::default();
     let locked = existing

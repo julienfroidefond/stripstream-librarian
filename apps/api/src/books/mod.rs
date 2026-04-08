@@ -660,50 +660,23 @@ pub async fn get_thumbnail(
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
 
-    let (data, content_type) = if let Some(row) = row {
-        let thumbnail_path: Option<String> = row.get("thumbnail_path");
-        if let Some(ref path) = thumbnail_path {
-            match std::fs::read(path) {
-                Ok(bytes) => {
-                    let ct = detect_thumbnail_content_type(path);
-                    (bytes, ct)
-                }
-                Err(_) => {
-                    // File missing on disk — fall back to live render
-                    pages::render_book_page_1(&state, book_id, 300, 80).await?
-                }
+    let row = row.ok_or_else(|| ApiError::not_found("book not found"))?;
+    let thumbnail_path: Option<String> = row.get("thumbnail_path");
+
+    let (data, content_type) = if let Some(ref path) = thumbnail_path {
+        match std::fs::read(path) {
+            Ok(bytes) => {
+                let ct = detect_thumbnail_content_type(path);
+                (bytes, ct)
             }
-        } else {
-            // No stored thumbnail yet — render page 1 on the fly
-            pages::render_book_page_1(&state, book_id, 300, 80).await?
+            Err(_) => {
+                // File missing on disk (e.g. different mount in dev) — fall back to live render
+                pages::render_book_page_1(&state, book_id, 300, 80).await?
+            }
         }
     } else {
-        // Book not found — check if this ID is a series with a cover
-        let series_cover: Option<String> = sqlx::query_scalar(
-            "SELECT cover_url FROM series WHERE id = $1",
-        )
-        .bind(book_id)
-        .fetch_optional(&state.pool)
-        .await
-        .ok()
-        .flatten();
-
-        if let Some(ref path) = series_cover {
-            if !path.is_empty() && !path.starts_with("http") {
-                // Local file
-                match std::fs::read(path) {
-                    Ok(bytes) => {
-                        let ct = detect_thumbnail_content_type(path);
-                        (bytes, ct)
-                    }
-                    Err(_) => return Err(ApiError::not_found("cover file not found")),
-                }
-            } else {
-                return Err(ApiError::not_found("no thumbnail available"));
-            }
-        } else {
-            return Err(ApiError::not_found("book not found"));
-        }
+        // No stored thumbnail yet — render page 1 on the fly
+        pages::render_book_page_1(&state, book_id, 300, 80).await?
     };
 
     let etag_value = format!("\"{}_{:x}\"", book_id, data.len());

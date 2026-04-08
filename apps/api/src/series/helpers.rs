@@ -152,15 +152,6 @@ pub(crate) async fn create_series_with_metadata(
             state, link_id, params.library_id, &params.name, provider, external_id,
         )
         .await;
-
-        // Download cover image from provider and store locally
-        let cover_url = metadata_json
-            .get("cover_url")
-            .and_then(|c| c.as_str())
-            .filter(|c| !c.is_empty() && (c.starts_with("http://") || c.starts_with("https://")));
-        if let Some(url) = cover_url {
-            super::cover::download_and_store_cover(pool, series_id, url).await;
-        }
     }
 
     Ok(CreateSeriesResult {

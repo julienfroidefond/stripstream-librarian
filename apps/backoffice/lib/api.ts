@@ -530,7 +530,6 @@ export function getBookCoverUrl(bookId: string): string {
   return `/api/books/${bookId}/thumbnail`;
 }
 
-
 export type Settings = {
   image_processing: {
     format: string;

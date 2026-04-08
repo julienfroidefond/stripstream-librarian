@@ -1,5 +1,4 @@
 pub(crate) mod helpers;
-pub(crate) mod cover;
 pub mod create;
 pub mod list;
 pub mod merge;

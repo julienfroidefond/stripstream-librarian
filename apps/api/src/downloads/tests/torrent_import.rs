@@ -180,7 +180,27 @@ fn truncates_suffix_after_volume() {
     assert_eq!(result, Some("Goblin.Slayer.Tome.008.cbz".to_string()));
 }
 
-// default_filename tests removed — function was replaced by keeping original filename
+// ─── default_filename ────────────────────────────────────────────────
+
+#[test]
+fn default_filename_basic() {
+    assert_eq!(default_filename("One Piece", 5, "cbz"), "One Piece - T05.cbz");
+}
+
+#[test]
+fn default_filename_large_volume() {
+    assert_eq!(default_filename("Naruto", 100, "cbr"), "Naruto - T100.cbr");
+}
+
+#[test]
+fn default_filename_single_digit() {
+    assert_eq!(default_filename("Series", 1, "pdf"), "Series - T01.pdf");
+}
+
+#[test]
+fn default_filename_with_special_chars() {
+    assert_eq!(default_filename("Astérix & Obélix", 3, "cbz"), "Astérix & Obélix - T03.cbz");
+}
 
 // ─── format_priority ─────────────────────────────────────────────────
 
