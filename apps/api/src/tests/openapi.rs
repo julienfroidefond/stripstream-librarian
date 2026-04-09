@@ -1,33 +1,40 @@
 use super::*;
 use utoipa::OpenApi;
 
-#[test]
-fn test_openapi_generation() {
-    let api_doc = ApiDoc::openapi();
-    let json = api_doc
+fn check_openapi_spec(doc: utoipa::openapi::OpenApi, name: &str) {
+    let json = doc
         .to_pretty_json()
-        .expect("Failed to serialize OpenAPI");
+        .unwrap_or_else(|_| panic!("Failed to serialize {} OpenAPI", name));
 
-    // Check that all $ref targets exist in components/schemas
-    let doc: serde_json::Value =
+    let parsed: serde_json::Value =
         serde_json::from_str(&json).expect("OpenAPI JSON should be valid");
     let empty = serde_json::Map::new();
-    let schemas = doc["components"]["schemas"]
+    let schemas = parsed["components"]["schemas"]
         .as_object()
         .unwrap_or(&empty);
     let prefix = "#/components/schemas/";
     let mut broken: Vec<String> = Vec::new();
     for part in json.split(prefix).skip(1) {
-        if let Some(name) = part.split('"').next() {
-            if !schemas.contains_key(name) {
-                broken.push(name.to_string());
+        if let Some(ref_name) = part.split('"').next() {
+            if !schemas.contains_key(ref_name) {
+                broken.push(ref_name.to_string());
             }
         }
     }
     broken.dedup();
-    assert!(broken.is_empty(), "Unresolved schema refs: {:?}", broken);
+    assert!(broken.is_empty(), "{} — Unresolved schema refs: {:?}", name, broken);
 
-    // Save to file for inspection
-    std::fs::write("/tmp/openapi.json", &json).expect("Failed to write file");
-    println!("OpenAPI JSON saved to /tmp/openapi.json");
+    let path = format!("/tmp/openapi_{}.json", name);
+    std::fs::write(&path, &json).expect("Failed to write file");
+    println!("{} OpenAPI saved to {}", name, path);
+}
+
+#[test]
+fn test_client_openapi_generation() {
+    check_openapi_spec(ClientApiDoc::openapi(), "client");
+}
+
+#[test]
+fn test_admin_openapi_generation() {
+    check_openapi_spec(AdminApiDoc::openapi(), "admin");
 }

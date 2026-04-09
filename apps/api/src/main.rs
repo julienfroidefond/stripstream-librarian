@@ -219,13 +219,17 @@ async fn main() -> anyhow::Result<()> {
     let torrent_poller_pool = state.pool.clone();
 
     let app = Router::new()
+        .route("/", get(handlers::api_home))
         .route("/health", get(handlers::health))
         .route("/version", get(handlers::version))
         .route("/ready", get(handlers::ready))
         .route("/metrics", get(handlers::metrics))
         .route("/docs", get(handlers::docs_redirect))
         .route("/torrent-downloads/notify", axum::routing::post(downloads::notify_torrent_done))
-        .merge(SwaggerUi::new("/swagger-ui").url("/openapi.json", openapi::ApiDoc::openapi()))
+        .merge(SwaggerUi::new("/swagger-ui")
+            .url("/openapi.json", openapi::ClientApiDoc::openapi())
+            .url("/admin/openapi.json", openapi::AdminApiDoc::openapi())
+        )
         .merge(admin_routes)
         .merge(read_routes)
         .layer(middleware::from_fn_with_state(state.clone(), api_middleware::request_counter))
