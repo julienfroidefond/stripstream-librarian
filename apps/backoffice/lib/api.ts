@@ -462,24 +462,6 @@ export type SeriesPageDto = {
   limit: number;
 };
 
-export async function fetchSeries(
-  libraryId: string,
-  page: number = 1,
-  limit: number = 50,
-  seriesStatus?: string,
-  hasMissing?: boolean,
-): Promise<SeriesPageDto> {
-  const params = new URLSearchParams();
-  params.set("page", page.toString());
-  params.set("limit", limit.toString());
-  if (seriesStatus) params.set("series_status", seriesStatus);
-  if (hasMissing) params.set("has_missing", "true");
-
-  return apiFetch<SeriesPageDto>(
-    `/libraries/${libraryId}/series?${params.toString()}`,
-  );
-}
-
 export async function fetchAllSeries(
   libraryId?: string,
   q?: string,
