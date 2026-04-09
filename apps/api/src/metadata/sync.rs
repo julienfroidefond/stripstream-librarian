@@ -224,6 +224,7 @@ pub(crate) async fn sync_books_metadata(
         LEFT JOIN series s ON s.id = b.series_id
         WHERE b.library_id = $1
           AND COALESCE(s.name, 'unclassified') = $2
+          AND b.volume_type = 'regular'
         ORDER BY b.volume NULLS LAST,
                  REGEXP_REPLACE(LOWER(b.title), '[0-9].*$', ''),
                  COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),

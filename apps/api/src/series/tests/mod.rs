@@ -213,6 +213,28 @@ async fn create_book(pool: &sqlx::PgPool, lib_id: Uuid, series_id: Uuid, title: 
     .unwrap()
 }
 
+async fn create_book_with_type(
+    pool: &sqlx::PgPool,
+    lib_id: Uuid,
+    series_id: Uuid,
+    title: &str,
+    volume: Option<i32>,
+    volume_type: &str,
+) -> Uuid {
+    sqlx::query_scalar::<_, Uuid>(
+        "INSERT INTO books (id, library_id, title, kind, format, series_id, volume, volume_type) \
+         VALUES (gen_random_uuid(), $1, $2, 'comic', 'cbz', $3, $4, $5) RETURNING id",
+    )
+    .bind(lib_id)
+    .bind(title)
+    .bind(series_id)
+    .bind(volume)
+    .bind(volume_type)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn merge_moves_books_to_target(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "merge_books").await;
@@ -444,4 +466,59 @@ async fn list_includes_series_with_zero_books(pool: sqlx::PgPool) {
     assert_eq!(book_count, 0, "book_count should be 0 for a series with no books");
     let name: String = row.get("name");
     assert_eq!(name, "Empty Series");
+}
+
+// ─── Volume type tests ────────────────────────────────────────────
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn missing_count_excludes_hs_books(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "missing_hs").await;
+    let sid = create_series(&pool, lib_id, "Boruto").await;
+
+    sqlx::query("UPDATE series SET total_volumes = 5 WHERE id = $1")
+        .bind(sid).execute(&pool).await.unwrap();
+
+    // 3 regular + 1 HS = 4 books total, but only 3 count toward missing
+    create_book_with_type(&pool, lib_id, sid, "Vol 1", Some(1), "regular").await;
+    create_book_with_type(&pool, lib_id, sid, "Vol 2", Some(2), "regular").await;
+    create_book_with_type(&pool, lib_id, sid, "Vol 3", Some(3), "regular").await;
+    create_book_with_type(&pool, lib_id, sid, "HS 1", Some(1), "hs").await;
+
+    let missing = query_missing_count(&pool, lib_id, sid).await;
+    assert_eq!(missing, 2, "5 total - 3 regular = 2 missing (HS excluded)");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn missing_count_excludes_oneshot_books(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "missing_oneshot").await;
+    let sid = create_series(&pool, lib_id, "Mixed").await;
+
+    sqlx::query("UPDATE series SET total_volumes = 3 WHERE id = $1")
+        .bind(sid).execute(&pool).await.unwrap();
+
+    create_book_with_type(&pool, lib_id, sid, "Vol 1", Some(1), "regular").await;
+    create_book_with_type(&pool, lib_id, sid, "Vol 2", Some(2), "regular").await;
+    create_book_with_type(&pool, lib_id, sid, "One-shot", None, "oneshot").await;
+
+    let missing = query_missing_count(&pool, lib_id, sid).await;
+    assert_eq!(missing, 1, "3 total - 2 regular = 1 missing (oneshot excluded)");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn missing_count_zero_with_hs_when_complete(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "missing_hs_complete").await;
+    let sid = create_series(&pool, lib_id, "Complete+HS").await;
+
+    sqlx::query("UPDATE series SET total_volumes = 3 WHERE id = $1")
+        .bind(sid).execute(&pool).await.unwrap();
+
+    // 3 regular (complete) + 2 HS (bonus)
+    for i in 1..=3 {
+        create_book_with_type(&pool, lib_id, sid, &format!("Vol {i}"), Some(i), "regular").await;
+    }
+    create_book_with_type(&pool, lib_id, sid, "HS 1", Some(1), "hs").await;
+    create_book_with_type(&pool, lib_id, sid, "HS 2", Some(2), "hs").await;
+
+    let missing = query_missing_count(&pool, lib_id, sid).await;
+    assert_eq!(missing, 0, "3 total - 3 regular = 0 missing (HS don't inflate)");
 }

@@ -241,12 +241,12 @@ export default async function SeriesDetailPage({
               <>
                 <span className="w-px h-4 bg-border" />
                 <span className="text-muted-foreground">
-                  {booksPage.total}/{missingData.total_external} — {t("series.missingCount", { count: missingData.missing_count, plural: missingData.missing_count !== 1 ? "s" : "" })}
+                  {missingData.total_local}/{missingData.total_external} — {t("series.missingCount", { count: missingData.missing_count, plural: missingData.missing_count !== 1 ? "s" : "" })}
                 </span>
                 <div className="w-[150px] h-2 bg-muted rounded-full overflow-hidden">
                   <div
                     className="h-full bg-amber-500 rounded-full transition-all"
-                    style={{ width: `${Math.round((booksPage.total / missingData.total_external) * 100)}%` }}
+                    style={{ width: `${Math.round((missingData.total_local / missingData.total_external) * 100)}%` }}
                   />
                 </div>
               </>

@@ -499,6 +499,7 @@ pub async fn process_reading_status_push(
             LEFT JOIN book_reading_progress brp
                 ON brp.book_id = b.id AND brp.user_id = $2
             WHERE b.series_id = $1
+              AND b.volume_type = 'regular'
             "#,
         )
         .bind(series.series_id)

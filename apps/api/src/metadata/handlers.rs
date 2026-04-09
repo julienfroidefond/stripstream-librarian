@@ -193,7 +193,8 @@ pub async fn search_metadata(
     let local_count: Option<i64> = sqlx::query_scalar(
         "SELECT COUNT(*) FROM books b \
          JOIN series s ON s.id = b.series_id \
-         WHERE b.library_id = $1 AND LOWER(unaccent(s.name)) = LOWER(unaccent($2))",
+         WHERE b.library_id = $1 AND LOWER(unaccent(s.name)) = LOWER(unaccent($2)) \
+         AND b.volume_type = 'regular'",
     )
     .bind(library_id)
     .bind(&body.series_name)
@@ -577,9 +578,9 @@ pub async fn get_missing_books(
         .map(|v| v as i64)
         .unwrap_or(provider_count);
 
-    // Count local books
+    // Count local books (only regular volumes — HS/oneshot are not part of the numbering)
     let total_local: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM books WHERE series_id = $1",
+        "SELECT COUNT(*) FROM books WHERE series_id = $1 AND volume_type = 'regular'",
     )
     .bind(series_id)
     .fetch_one(&state.pool)

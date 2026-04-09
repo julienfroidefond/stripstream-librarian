@@ -379,3 +379,134 @@ async fn missing_books_not_negative(pool: sqlx::PgPool) {
     assert_eq!(total_external, 2);
     assert_eq!(missing, 0, "2 total - 3 local capped at 0");
 }
+
+// --- Missing books: volume_type filtering ---
+
+async fn setup_series_with_link_and_hs(
+    pool: &sqlx::PgPool,
+    total_volumes: Option<i32>,
+    regular_count: i32,
+    hs_count: i32,
+    external_book_count: i32,
+) -> (Uuid, Uuid, Uuid) {
+    let lib_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'test_hs', '/libraries/test_hs')")
+        .bind(lib_id).execute(pool).await.unwrap();
+
+    let series_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO series (id, library_id, name, total_volumes) VALUES ($1, $2, 'TestHS', $3)")
+        .bind(series_id).bind(lib_id).bind(total_volumes).execute(pool).await.unwrap();
+
+    for i in 0..regular_count {
+        sqlx::query("INSERT INTO books (id, library_id, title, kind, format, series_id, volume, volume_type) VALUES (gen_random_uuid(), $1, $2, 'comic', 'cbz', $3, $4, 'regular')")
+            .bind(lib_id).bind(format!("Vol {}", i + 1)).bind(series_id).bind(i + 1).execute(pool).await.unwrap();
+    }
+    for i in 0..hs_count {
+        sqlx::query("INSERT INTO books (id, library_id, title, kind, format, series_id, volume, volume_type) VALUES (gen_random_uuid(), $1, $2, 'comic', 'cbz', $3, $4, 'hs')")
+            .bind(lib_id).bind(format!("HS {}", i + 1)).bind(series_id).bind(i + 1).execute(pool).await.unwrap();
+    }
+
+    let link_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO external_metadata_links (id, library_id, series_id, provider, external_id, status) VALUES ($1, $2, $3, 'test', 'ext:1', 'approved')")
+        .bind(link_id).bind(lib_id).bind(series_id).execute(pool).await.unwrap();
+
+    for i in 0..external_book_count {
+        let book_id: Option<Uuid> = if i < regular_count {
+            sqlx::query_scalar::<_, Uuid>(
+                "SELECT id FROM books WHERE series_id = $1 AND volume_type = 'regular' ORDER BY title LIMIT 1 OFFSET $2",
+            )
+            .bind(series_id).bind(i as i64).fetch_optional(pool).await.unwrap()
+        } else {
+            None
+        };
+        sqlx::query("INSERT INTO external_book_metadata (id, link_id, external_book_id, title, volume_number, book_id) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5)")
+            .bind(link_id).bind(format!("ext_{i}")).bind(format!("Vol {i}")).bind(i + 1).bind(book_id).execute(pool).await.unwrap();
+    }
+
+    (lib_id, series_id, link_id)
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn missing_books_total_local_excludes_hs(pool: sqlx::PgPool) {
+    // 3 regular + 2 HS = 5 books, but total_local should be 3
+    let (_lib_id, series_id, link_id) = setup_series_with_link_and_hs(&pool, Some(5), 3, 2, 5).await;
+
+    let total_local: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM books WHERE series_id = $1 AND volume_type = 'regular'",
+    )
+    .bind(series_id).fetch_one(&pool).await.unwrap();
+
+    let total_all: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM books WHERE series_id = $1",
+    )
+    .bind(series_id).fetch_one(&pool).await.unwrap();
+
+    assert_eq!(total_all, 5, "total books including HS");
+    assert_eq!(total_local, 3, "total_local should only count regular books");
+
+    let series_total: Option<i32> = sqlx::query_scalar("SELECT total_volumes FROM series WHERE id = $1")
+        .bind(series_id).fetch_one(&pool).await.unwrap();
+    let total_external = series_total.filter(|&v| v > 0).map(|v| v as i64).unwrap_or(5);
+    let missing = (total_external - total_local).max(0);
+    assert_eq!(missing, 2, "5 total - 3 regular = 2 missing (HS excluded)");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn missing_books_hs_volume_not_matched_to_regular(pool: sqlx::PgPool) {
+    // Scenario: HS vol=1 should NOT match external book vol=1
+    let lib_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'hs_nomatch', '/libraries/hs_nomatch')")
+        .bind(lib_id).execute(&pool).await.unwrap();
+
+    let series_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'NoMatch')")
+        .bind(series_id).bind(lib_id).execute(&pool).await.unwrap();
+
+    // Only an HS book with volume=1, no regular book
+    sqlx::query("INSERT INTO books (id, library_id, title, kind, format, series_id, volume, volume_type) VALUES (gen_random_uuid(), $1, 'HS 1', 'comic', 'cbz', $2, 1, 'hs')")
+        .bind(lib_id).bind(series_id).execute(&pool).await.unwrap();
+
+    let link_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO external_metadata_links (id, library_id, series_id, provider, external_id, status) VALUES ($1, $2, $3, 'test', 'ext:1', 'approved')")
+        .bind(link_id).bind(lib_id).bind(series_id).execute(&pool).await.unwrap();
+
+    // External book with volume_number=1 (should NOT match the HS book)
+    let ebm_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO external_book_metadata (id, link_id, external_book_id, title, volume_number, book_id) VALUES ($1, $2, 'ext_1', 'Vol 1', 1, NULL)")
+        .bind(ebm_id).bind(link_id).execute(&pool).await.unwrap();
+
+    // Run rematch logic (same as rematch_unlinked_books)
+    let result = sqlx::query(
+        r#"
+        UPDATE external_book_metadata ebm
+        SET book_id = matched.book_id
+        FROM (
+            SELECT DISTINCT ON (ebm2.id)
+                ebm2.id AS ebm_id,
+                b.id AS book_id
+            FROM external_book_metadata ebm2
+            JOIN external_metadata_links eml ON eml.id = ebm2.link_id
+            JOIN books b ON b.library_id = eml.library_id
+                AND b.series_id = eml.series_id
+                AND b.volume = ebm2.volume_number
+                AND b.volume_type = 'regular'
+            WHERE eml.library_id = $1
+              AND ebm2.book_id IS NULL
+              AND ebm2.volume_number IS NOT NULL
+              AND eml.status = 'approved'
+        ) matched
+        WHERE ebm.id = matched.ebm_id
+        "#,
+    )
+    .bind(lib_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(result.rows_affected(), 0, "HS book volume=1 should NOT match external volume=1");
+
+    // Verify external book is still unmatched
+    let book_id: Option<Uuid> = sqlx::query_scalar("SELECT book_id FROM external_book_metadata WHERE id = $1")
+        .bind(ebm_id).fetch_one(&pool).await.unwrap();
+    assert!(book_id.is_none(), "external book should remain unmatched");
+}
