@@ -738,10 +738,22 @@ async fn handle_stale_deletions(
 
     let mut removed_count = 0usize;
     let mut removal_events: Vec<EventInsert> = Vec::new();
+    // Track series that lost books so we can clean up newly-empty ones
+    let mut affected_series_ids: HashSet<Uuid> = HashSet::new();
+
     for (abs_path, (file_id, book_id, _)) in existing {
         if seen.contains_key(abs_path) {
             continue;
         }
+        // Fetch series_id before deleting the book
+        let series_id: Option<Uuid> = sqlx::query_scalar(
+            "SELECT series_id FROM books WHERE id = $1",
+        )
+        .bind(book_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .flatten();
+
         sqlx::query("DELETE FROM book_files WHERE id = $1")
             .bind(file_id)
             .execute(&state.pool)
@@ -754,6 +766,10 @@ async fn handle_stale_deletions(
         .await?;
         stats.removed_files += 1;
         removed_count += 1;
+
+        if let Some(sid) = series_id {
+            affected_series_ids.insert(sid);
+        }
 
         removal_events.push(EventInsert {
             job_id,
@@ -777,7 +793,31 @@ async fn handle_stale_deletions(
         info!("[SCAN] Removed {} stale files from database", removed_count);
     }
 
-    // Clean up orphan series: no books, no metadata links, no available downloads
+    // Clean up series that just lost ALL their books due to stale file deletion.
+    // These are scanner-created series whose directory was removed/renamed.
+    // We delete them even if they have metadata links or available_downloads,
+    // because they lost their on-disk presence. Discovery-created series
+    // (never had books deleted here) are NOT affected.
+    if !affected_series_ids.is_empty() {
+        let stale_series_ids: Vec<Uuid> = affected_series_ids.into_iter().collect();
+        let stale_series_result = sqlx::query_scalar::<_, Uuid>(
+            "DELETE FROM series WHERE id = ANY($1) \
+             AND NOT EXISTS (SELECT 1 FROM books WHERE series_id = series.id) \
+             RETURNING id",
+        )
+        .bind(&stale_series_ids)
+        .fetch_all(&state.pool)
+        .await?;
+
+        if !stale_series_result.is_empty() {
+            info!(
+                "[SCAN] Removed {} series that lost all books (directory removed/renamed)",
+                stale_series_result.len()
+            );
+        }
+    }
+
+    // Clean up other orphan series: no books, no metadata links, no available downloads
     // (preserves series added from Discovery that have metadata but no files yet)
     let orphan_result = sqlx::query_scalar::<_, i32>(
         "DELETE FROM series WHERE library_id = $1 \
@@ -1412,5 +1452,78 @@ mod tests {
         assert!(remaining.contains(&series_with_books));
         assert!(remaining.contains(&series_empty_with_metadata));
         assert!(!remaining.contains(&series_empty_no_links));
+    }
+
+    /// Series that lost ALL books due to stale file deletion should be removed
+    /// even if they have metadata links. This simulates a directory rename/delete.
+    /// Discovery-created series (never had books deleted) are preserved.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn stale_deletion_removes_series_that_lost_all_books(pool: sqlx::PgPool) {
+        let library_id = create_test_library(&pool, "stale_series_test").await;
+
+        // Series A: had books, will lose them (directory deleted) — has metadata link
+        let series_deleted_dir = Uuid::new_v4();
+        // Series B: discovery series, never had books — has metadata link
+        let series_discovery = Uuid::new_v4();
+        // Series C: has books, keeps them
+        let series_kept = Uuid::new_v4();
+
+        for (id, name) in [
+            (series_deleted_dir, "Deleted Dir Series"),
+            (series_discovery, "Discovery Series"),
+            (series_kept, "Kept Series"),
+        ] {
+            sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, $3)")
+                .bind(id).bind(library_id).bind(name).execute(&pool).await.unwrap();
+        }
+
+        // Both series_deleted_dir and series_discovery have metadata links
+        for sid in [series_deleted_dir, series_discovery] {
+            sqlx::query(
+                "INSERT INTO external_metadata_links (library_id, series_id, provider, external_id) \
+                 VALUES ($1, $2, 'senscritique', $3)",
+            )
+            .bind(library_id).bind(sid).bind(Uuid::new_v4().to_string())
+            .execute(&pool).await.unwrap();
+        }
+
+        // series_deleted_dir has a book (will be deleted as stale)
+        let stale_book_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO books (id, library_id, title, kind, format, series_id) VALUES ($1, $2, 'Book 1', 'comic', 'cbz', $3)")
+            .bind(stale_book_id).bind(library_id).bind(series_deleted_dir).execute(&pool).await.unwrap();
+
+        // series_kept also has a book (stays)
+        let kept_book_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO books (id, library_id, title, kind, format, series_id) VALUES ($1, $2, 'Book 2', 'comic', 'cbz', $3)")
+            .bind(kept_book_id).bind(library_id).bind(series_kept).execute(&pool).await.unwrap();
+
+        // Simulate stale deletion: delete the book from series_deleted_dir
+        sqlx::query("DELETE FROM books WHERE id = $1")
+            .bind(stale_book_id).execute(&pool).await.unwrap();
+
+        // Now the stale series cleanup: series that just lost all books
+        let affected_series_ids = vec![series_deleted_dir];
+        let deleted_series = sqlx::query_scalar::<_, Uuid>(
+            "DELETE FROM series WHERE id = ANY($1) \
+             AND NOT EXISTS (SELECT 1 FROM books WHERE series_id = series.id) \
+             RETURNING id",
+        )
+        .bind(&affected_series_ids)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(deleted_series.len(), 1, "series that lost all books should be deleted");
+        assert_eq!(deleted_series[0], series_deleted_dir);
+
+        // Verify discovery series is NOT affected (not in affected_series_ids)
+        let discovery_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM series WHERE id = $1)")
+            .bind(series_discovery).fetch_one(&pool).await.unwrap();
+        assert!(discovery_exists, "discovery series should be preserved");
+
+        // Verify kept series still exists
+        let kept_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM series WHERE id = $1)")
+            .bind(series_kept).fetch_one(&pool).await.unwrap();
+        assert!(kept_exists, "series with remaining books should be preserved");
     }
 }
