@@ -58,6 +58,7 @@ pub struct BookItem {
     pub authors: Vec<String>,
     pub series: Option<String>,
     pub volume: Option<i32>,
+    pub volume_type: String,
     pub language: Option<String>,
     pub page_count: Option<i32>,
     pub thumbnail_url: Option<String>,
@@ -92,6 +93,7 @@ pub struct BookDetails {
     #[schema(value_type = Option<String>)]
     pub series_id: Option<Uuid>,
     pub volume: Option<i32>,
+    pub volume_type: String,
     pub language: Option<String>,
     pub page_count: Option<i32>,
     pub thumbnail_url: Option<String>,
@@ -210,7 +212,7 @@ pub async fn list_books(
     let data_sql = format!(
         r#"
         WITH {metadata_links_cte}
-        SELECT b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, s.name AS series, b.volume, b.language, b.page_count, b.thumbnail_path, b.updated_at,
+        SELECT b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, s.name AS series, b.volume, b.volume_type, b.language, b.page_count, b.thumbnail_path, b.updated_at,
                COALESCE(brp.status, 'unread') AS reading_status,
                brp.current_page AS reading_current_page,
                brp.last_read_at AS reading_last_read_at
@@ -289,6 +291,7 @@ pub async fn list_books(
                 authors: row.get::<Vec<String>, _>("authors"),
                 series: row.get("series"),
                 volume: row.get("volume"),
+                volume_type: row.get("volume_type"),
                 language: row.get("language"),
                 page_count: row.get("page_count"),
                 thumbnail_url: thumbnail_path.map(|_p| format!("/books/{}/thumbnail", row.get::<Uuid, _>("id"))),
@@ -331,7 +334,7 @@ pub async fn get_book(
     let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
     let row = sqlx::query(
         r#"
-        SELECT b.id, b.library_id, b.kind, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.language, b.page_count, b.thumbnail_path, b.locked_fields, b.summary, b.isbn, b.publish_date,
+        SELECT b.id, b.library_id, b.kind, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.volume_type, b.language, b.page_count, b.thumbnail_path, b.locked_fields, b.summary, b.isbn, b.publish_date,
                bf.abs_path, bf.format, bf.parse_status,
                COALESCE(brp.status, 'unread') AS reading_status,
                brp.current_page AS reading_current_page,
@@ -366,6 +369,7 @@ pub async fn get_book(
         series: row.get("series"),
         series_id: row.get("series_id"),
         volume: row.get("volume"),
+        volume_type: row.get("volume_type"),
         language: row.get("language"),
         page_count: row.get("page_count"),
         thumbnail_url: thumbnail_path.map(|_| format!("/books/{}/thumbnail", id)),
@@ -566,7 +570,7 @@ pub async fn update_book(
         SET title = $2, author = $3, authors = $4, series_id = $5, volume = $6, language = $7,
             summary = $8, isbn = $9, publish_date = $10, locked_fields = $11, updated_at = NOW()
         WHERE id = $1
-        RETURNING id, library_id, kind, title, author, authors, volume, language, page_count, thumbnail_path,
+        RETURNING id, library_id, kind, title, author, authors, volume, volume_type, language, page_count, thumbnail_path,
                   summary, isbn, publish_date,
                   'unread' AS reading_status,
                   NULL::integer AS reading_current_page,
@@ -600,6 +604,7 @@ pub async fn update_book(
         series: series.clone(),
         series_id,
         volume: row.get("volume"),
+        volume_type: row.get("volume_type"),
         language: row.get("language"),
         page_count: row.get("page_count"),
         thumbnail_url: thumbnail_path.map(|_| format!("/books/{}/thumbnail", id)),

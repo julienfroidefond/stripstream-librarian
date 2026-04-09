@@ -136,7 +136,7 @@ pub async fn ongoing_books(
         ),
         next_books AS (
             SELECT
-                b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, s.name AS series, b.volume,
+                b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, s.name AS series, b.volume, b.volume_type,
                 b.language, b.page_count, b.thumbnail_path, b.updated_at,
                 COALESCE(brp.status, 'unread') AS reading_status,
                 brp.current_page AS reading_current_page,
@@ -152,7 +152,7 @@ pub async fn ongoing_books(
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
             WHERE COALESCE(brp.status, 'unread') != 'read'
         )
-        SELECT id, library_id, kind, format, title, author, authors, series, volume, language, page_count,
+        SELECT id, library_id, kind, format, title, author, authors, series, volume, volume_type, language, page_count,
                thumbnail_path, updated_at, reading_status, reading_current_page, reading_last_read_at
         FROM next_books
         WHERE rn = 1
@@ -179,6 +179,7 @@ pub async fn ongoing_books(
                 authors: row.get::<Vec<String>, _>("authors"),
                 series: row.get("series"),
                 volume: row.get("volume"),
+                volume_type: row.get("volume_type"),
                 language: row.get("language"),
                 page_count: row.get("page_count"),
                 thumbnail_url: thumbnail_path.map(|_| format!("/books/{}/thumbnail", row.get::<Uuid, _>("id"))),

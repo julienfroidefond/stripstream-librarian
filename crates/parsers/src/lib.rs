@@ -23,11 +23,29 @@ impl BookFormat {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VolumeType {
+    Regular,
+    Hs,
+    Oneshot,
+}
+
+impl VolumeType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Regular => "regular",
+            Self::Hs => "hs",
+            Self::Oneshot => "oneshot",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ParsedMetadata {
     pub title: String,
     pub series: Option<String>,
     pub volume: Option<i32>,
+    pub volume_type: VolumeType,
     pub page_count: Option<i32>,
 }
 
@@ -350,6 +368,86 @@ fn extract_series(path: &Path, library_root: &Path) -> Option<String> {
     })
 }
 
+/// Detect hors-série patterns in a filename.
+/// Returns `Some((hs_number, cleaned_title))` if an HS pattern is found.
+/// `hs_number` is the optional number after the HS keyword (HS1 → Some(1), HS → None).
+pub fn extract_hs_info(filename: &str) -> Option<(Option<i32>, String)> {
+    let lower = filename.to_lowercase();
+
+    // Patterns to check (longest first to avoid partial matches)
+    const PATTERNS: &[&str] = &[
+        "hors-série",
+        "hors-serie",
+        "hors série",
+        "hors serie",
+        "spécial",
+        "special",
+        "bonus",
+        "hs",
+    ];
+
+    for pattern in PATTERNS {
+        if let Some(pos) = lower.find(pattern) {
+            // Check word boundary before pattern
+            if pos > 0 {
+                let prev = lower.as_bytes()[pos - 1];
+                if prev.is_ascii_alphanumeric() {
+                    continue; // Not at word boundary (e.g., "cahsier" contains "hs")
+                }
+            }
+
+            let after_pattern = pos + pattern.len();
+
+            // Check word boundary after pattern (for short patterns like "hs")
+            if *pattern == "hs" && after_pattern < lower.len() {
+                let next = lower.as_bytes()[after_pattern];
+                if next.is_ascii_alphabetic() {
+                    continue; // Not at word boundary (e.g., "hsk" is not "hs")
+                }
+            }
+
+            // Extract optional number after pattern
+            let rest = &lower[after_pattern..];
+            let mut i = 0;
+            let rest_bytes = rest.as_bytes();
+            // Skip separators (space, dot, dash, underscore)
+            while i < rest_bytes.len() && matches!(rest_bytes[i], b' ' | b'.' | b'-' | b'_') {
+                i += 1;
+            }
+            // Read digits
+            let digit_start = i;
+            while i < rest_bytes.len() && rest_bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            let hs_number = if i > digit_start {
+                rest[digit_start..i].parse::<i32>().ok()
+            } else {
+                None
+            };
+
+            // Build cleaned title (remove the pattern and surrounding separators)
+            let before = filename[..pos].trim_end_matches([' ', '-', '.', '_']);
+            let after_end = after_pattern + i;
+            let after = if after_end < filename.len() {
+                filename[after_end..].trim_start_matches([' ', '-', '.', '_'])
+            } else {
+                ""
+            };
+            let cleaned = if before.is_empty() {
+                after.to_string()
+            } else if after.is_empty() {
+                before.to_string()
+            } else {
+                format!("{} - {}", before, after)
+            };
+
+            return Some((hs_number, cleaned));
+        }
+    }
+
+    None
+}
+
 /// Fast metadata extraction from filename only — no archive I/O. Always succeeds.
 pub fn parse_metadata_fast(path: &Path, _format: BookFormat, library_root: &Path) -> ParsedMetadata {
     let filename = path
@@ -357,7 +455,13 @@ pub fn parse_metadata_fast(path: &Path, _format: BookFormat, library_root: &Path
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "Untitled".to_string());
 
-    let volume = extract_volume(&filename);
+    // Check for HS patterns first
+    let (volume, volume_type) = if let Some((hs_number, _)) = extract_hs_info(&filename) {
+        (hs_number, VolumeType::Hs)
+    } else {
+        (extract_volume(&filename), VolumeType::Regular)
+    };
+
     let title = filename;
     let series = extract_series(path, library_root);
 
@@ -365,6 +469,7 @@ pub fn parse_metadata_fast(path: &Path, _format: BookFormat, library_root: &Path
         title,
         series,
         volume,
+        volume_type,
         page_count: None,
     }
 }
@@ -2194,5 +2299,102 @@ mod tests {
     #[test]
     fn clean_title_no_volume() {
         assert_eq!(clean_title("Just a title"), "Just a title");
+    }
+
+    // ─── extract_hs_info ────────────────────────────────────────────────
+
+    #[test]
+    fn hs_basic() {
+        let (num, _) = extract_hs_info("Asterix HS1").unwrap();
+        assert_eq!(num, Some(1));
+    }
+
+    #[test]
+    fn hs_dot_separator() {
+        let (num, _) = extract_hs_info("Asterix HS.02").unwrap();
+        assert_eq!(num, Some(2));
+    }
+
+    #[test]
+    fn hs_space_separator() {
+        let (num, _) = extract_hs_info("Asterix HS 03").unwrap();
+        assert_eq!(num, Some(3));
+    }
+
+    #[test]
+    fn hs_no_number() {
+        let (num, cleaned) = extract_hs_info("Asterix HS").unwrap();
+        assert_eq!(num, None);
+        assert_eq!(cleaned, "Asterix");
+    }
+
+    #[test]
+    fn hs_at_end_with_prefix() {
+        let result = extract_hs_info("Boruto - Two Blue Vortex HS");
+        assert!(result.is_some(), "should detect HS at end of 'Boruto - Two Blue Vortex HS'");
+        let (num, cleaned) = result.unwrap();
+        assert_eq!(num, None);
+        assert_eq!(cleaned, "Boruto - Two Blue Vortex");
+    }
+
+    #[test]
+    fn hors_serie_with_accent() {
+        let (num, _) = extract_hs_info("Naruto Hors-Série 3").unwrap();
+        assert_eq!(num, Some(3));
+    }
+
+    #[test]
+    fn hors_serie_without_accent() {
+        let (num, _) = extract_hs_info("Naruto Hors Serie").unwrap();
+        assert_eq!(num, None);
+    }
+
+    #[test]
+    fn special_with_accent() {
+        let (num, _) = extract_hs_info("One Piece Spécial 2").unwrap();
+        assert_eq!(num, Some(2));
+    }
+
+    #[test]
+    fn special_without_accent() {
+        let (num, _) = extract_hs_info("One Piece Special").unwrap();
+        assert_eq!(num, None);
+    }
+
+    #[test]
+    fn bonus_pattern() {
+        let (num, cleaned) = extract_hs_info("Donjon Bonus - Clefs en Mains").unwrap();
+        assert_eq!(num, None);
+        assert!(!cleaned.is_empty());
+    }
+
+    #[test]
+    fn hs_not_in_word() {
+        // "hsk" should not match "hs"
+        assert!(extract_hs_info("The HSK Guide").is_none());
+    }
+
+    #[test]
+    fn regular_volume_not_hs() {
+        assert!(extract_hs_info("Asterix T05").is_none());
+        assert!(extract_hs_info("Naruto Tome 12").is_none());
+    }
+
+    #[test]
+    fn hs_volume_type_in_parse() {
+        let path = Path::new("/libraries/test/Asterix/Asterix HS2.cbz");
+        let root = Path::new("/libraries/test");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.volume_type, VolumeType::Hs);
+        assert_eq!(meta.volume, Some(2));
+    }
+
+    #[test]
+    fn regular_volume_type_in_parse() {
+        let path = Path::new("/libraries/test/Asterix/Asterix T05.cbz");
+        let root = Path::new("/libraries/test");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.volume_type, VolumeType::Regular);
+        assert_eq!(meta.volume, Some(5));
     }
 }

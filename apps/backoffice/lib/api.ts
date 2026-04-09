@@ -90,6 +90,7 @@ export type BookDto = {
   authors: string[];
   series: string | null;
   volume: number | null;
+  volume_type: "regular" | "hs" | "oneshot";
   language: string | null;
   page_count: number | null;
   file_path: string | null;
@@ -120,6 +121,7 @@ export type SearchHitDto = {
   authors: string[];
   series: string | null;
   volume: number | null;
+  volume_type: "regular" | "hs" | "oneshot";
   kind: string;
   language: string | null;
 };

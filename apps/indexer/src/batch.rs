@@ -11,6 +11,7 @@ pub struct BookUpdate {
     pub format: String,
     pub series_id: Option<Uuid>,
     pub volume: Option<i32>,
+    pub volume_type: String,
     pub page_count: Option<i32>,
 }
 
@@ -30,6 +31,7 @@ pub struct BookInsert {
     pub title: String,
     pub series_id: Option<Uuid>,
     pub volume: Option<i32>,
+    pub volume_type: String,
     pub page_count: Option<i32>,
     pub thumbnail_path: Option<String>,
 }
@@ -123,6 +125,7 @@ pub async fn flush_all_batches(
         let formats: Vec<String> = books_update.iter().map(|b| b.format.clone()).collect();
         let series_ids: Vec<Option<Uuid>> = books_update.iter().map(|b| b.series_id).collect();
         let volumes: Vec<Option<i32>> = books_update.iter().map(|b| b.volume).collect();
+        let volume_types: Vec<String> = books_update.iter().map(|b| b.volume_type.clone()).collect();
         let page_counts: Vec<Option<i32>> = books_update.iter().map(|b| b.page_count).collect();
 
         sqlx::query(
@@ -133,11 +136,12 @@ pub async fn flush_all_batches(
                 format = data.format,
                 series_id = data.series_id,
                 volume = data.volume,
+                volume_type = data.volume_type,
                 page_count = data.page_count,
                 updated_at = NOW()
             FROM (
-                SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::text[], $5::uuid[], $6::int[], $7::int[])
-                AS t(book_id, title, kind, format, series_id, volume, page_count)
+                SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::text[], $5::uuid[], $6::int[], $7::text[], $8::int[])
+                AS t(book_id, title, kind, format, series_id, volume, volume_type, page_count)
             ) AS data
             WHERE books.id = data.book_id
             "#
@@ -148,6 +152,7 @@ pub async fn flush_all_batches(
         .bind(&formats)
         .bind(&series_ids)
         .bind(&volumes)
+        .bind(&volume_types)
         .bind(&page_counts)
         .execute(&mut *tx)
         .await?;
@@ -201,13 +206,14 @@ pub async fn flush_all_batches(
         let series_ids: Vec<Option<Uuid>> = books_insert.iter().map(|b| b.series_id).collect();
         let volumes: Vec<Option<i32>> = books_insert.iter().map(|b| b.volume).collect();
         let page_counts: Vec<Option<i32>> = books_insert.iter().map(|b| b.page_count).collect();
+        let volume_types: Vec<String> = books_insert.iter().map(|b| b.volume_type.clone()).collect();
         let thumbnail_paths: Vec<Option<String>> = books_insert.iter().map(|b| b.thumbnail_path.clone()).collect();
 
         sqlx::query(
             r#"
-            INSERT INTO books (id, library_id, kind, format, title, series_id, volume, page_count, thumbnail_path)
-            SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::text[], $6::uuid[], $7::int[], $8::int[], $9::text[])
-            AS t(id, library_id, kind, format, title, series_id, volume, page_count, thumbnail_path)
+            INSERT INTO books (id, library_id, kind, format, title, series_id, volume, page_count, volume_type, thumbnail_path)
+            SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::text[], $6::uuid[], $7::int[], $8::int[], $9::text[], $10::text[])
+            AS t(id, library_id, kind, format, title, series_id, volume, page_count, volume_type, thumbnail_path)
             "#
         )
         .bind(&book_ids)
@@ -218,6 +224,7 @@ pub async fn flush_all_batches(
         .bind(&series_ids)
         .bind(&volumes)
         .bind(&page_counts)
+        .bind(&volume_types)
         .bind(&thumbnail_paths)
         .execute(&mut *tx)
         .await?;

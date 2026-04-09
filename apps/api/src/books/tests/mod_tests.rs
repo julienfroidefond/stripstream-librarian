@@ -62,7 +62,7 @@ async fn create_test_book_file(pool: &sqlx::PgPool, book_id: Uuid, abs_path: &st
 
 /// The get_book SQL from the handler.
 const GET_BOOK_SQL: &str = r#"
-    SELECT b.id, b.library_id, b.kind, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.language, b.page_count, b.thumbnail_path, b.locked_fields, b.summary, b.isbn, b.publish_date,
+    SELECT b.id, b.library_id, b.kind, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.volume_type, b.language, b.page_count, b.thumbnail_path, b.locked_fields, b.summary, b.isbn, b.publish_date,
            bf.abs_path, bf.format, bf.parse_status,
            COALESCE(brp.status, 'unread') AS reading_status,
            brp.current_page AS reading_current_page,

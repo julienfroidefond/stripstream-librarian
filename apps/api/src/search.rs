@@ -79,7 +79,7 @@ pub async fn search_books(
     let books_sql = r#"
         SELECT b.id, b.library_id, b.kind, b.title,
             COALESCE(b.authors, CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END) as authors,
-            s.name AS series, b.volume, b.language
+            s.name AS series, b.volume, b.volume_type, b.language
         FROM books b
         LEFT JOIN series s ON s.id = b.series_id
         WHERE (
@@ -166,6 +166,7 @@ pub async fn search_books(
                 "authors": row.get::<Vec<String>, _>("authors"),
                 "series": row.get::<Option<String>, _>("series"),
                 "volume": row.get::<Option<i32>, _>("volume"),
+                "volume_type": row.get::<String, _>("volume_type"),
                 "language": row.get::<Option<String>, _>("language"),
             })
         })

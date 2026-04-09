@@ -312,20 +312,49 @@ export default async function SeriesDetailPage({
         </div>
       </div>
 
-      {/* Books Grid */}
-      {books.length > 0 ? (
-        <>
-          <BooksGrid books={books} compact />
-          <OffsetPagination
-            currentPage={page}
-            totalPages={totalPages}
-            pageSize={limit}
-            totalItems={booksPage.total}
-          />
-        </>
-      ) : (
-        <EmptyState message={t("librarySeries.noBooksInSeries")} />
-      )}
+      {/* Books Grid — regular volumes */}
+      {(() => {
+        const regularBooks = books.filter((b) => b.volume_type !== "hs" && b.volume_type !== "oneshot");
+        const hsBooks = books.filter((b) => b.volume_type === "hs");
+        const oneshotBooks = books.filter((b) => b.volume_type === "oneshot");
+
+        return books.length > 0 ? (
+          <>
+            {regularBooks.length > 0 && <BooksGrid books={regularBooks} compact />}
+
+            {hsBooks.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
+                  <span className="h-px flex-1 bg-border" />
+                  <span className="text-orange-500">{t("volumeType.hs")}</span>
+                  <span className="h-px flex-1 bg-border" />
+                </h3>
+                <BooksGrid books={hsBooks} compact />
+              </div>
+            )}
+
+            {oneshotBooks.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
+                  <span className="h-px flex-1 bg-border" />
+                  <span className="text-purple-500">{t("volumeType.oneshot")}</span>
+                  <span className="h-px flex-1 bg-border" />
+                </h3>
+                <BooksGrid books={oneshotBooks} compact />
+              </div>
+            )}
+
+            <OffsetPagination
+              currentPage={page}
+              totalPages={totalPages}
+              pageSize={limit}
+              totalItems={booksPage.total}
+            />
+          </>
+        ) : (
+          <EmptyState message={t("librarySeries.noBooksInSeries")} />
+        );
+      })()}
     </div>
   );
 }

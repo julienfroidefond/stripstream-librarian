@@ -106,9 +106,13 @@ export const BookCard = memo(function BookCard({ book, readingStatus, compact }:
                   {book.format ?? book.kind}
                 </span>
               )}
-              {book.volume && (
+              {book.volume_type === "hs" ? (
+                <span className="text-[10px] font-medium text-orange-500">HS{book.volume ? ` #${book.volume}` : ""}</span>
+              ) : book.volume_type === "oneshot" ? (
+                <span className="text-[10px] font-medium text-purple-500">One-shot</span>
+              ) : book.volume ? (
                 <span className="text-[10px] text-muted-foreground">#{book.volume}</span>
-              )}
+              ) : null}
             </div>
             <MarkBookReadButton
               bookId={book.id}
@@ -154,7 +158,13 @@ export const BookCard = memo(function BookCard({ book, readingStatus, compact }:
         {book.series && (
           <p className="text-xs text-muted-foreground/80 truncate mb-2">
             {book.series}
-            {book.volume && <span className="text-primary font-medium"> #{book.volume}</span>}
+            {book.volume_type === "hs" ? (
+              <span className="text-orange-500 font-medium"> HS{book.volume ? ` #${book.volume}` : ""}</span>
+            ) : book.volume_type === "oneshot" ? (
+              <span className="text-purple-500 font-medium"> One-shot</span>
+            ) : book.volume ? (
+              <span className="text-primary font-medium"> #{book.volume}</span>
+            ) : null}
           </p>
         )}
 

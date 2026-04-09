@@ -539,6 +539,7 @@ pub async fn scan_library_discovery(
                 format: format.as_str().to_string(),
                 series_id: update_series_id,
                 volume: parsed.volume,
+                volume_type: parsed.volume_type.as_str().to_string(),
                 // Reset page_count so analyzer re-processes this book
                 page_count: None,
             });
@@ -623,6 +624,7 @@ pub async fn scan_library_discovery(
             title: parsed.title,
             series_id: insert_series_id,
             volume: parsed.volume,
+            volume_type: parsed.volume_type.as_str().to_string(),
             page_count: None,
             thumbnail_path: None,
         });
@@ -882,6 +884,7 @@ mod tests {
             title: "Test".to_string(),
             series_id: Some(series_id),
             volume: Some(1),
+            volume_type: "regular".to_string(),
             page_count: None,
             thumbnail_path: None,
         };
@@ -894,6 +897,7 @@ mod tests {
             format: "cbz".to_string(),
             series_id: None,
             volume: None,
+            volume_type: "regular".to_string(),
             page_count: None,
         };
         assert_eq!(update.series_id, None);

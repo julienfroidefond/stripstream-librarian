@@ -831,6 +831,10 @@ const fr = {
   "seriesDetail.createWithoutMetadata": "Créer sans métadonnées",
 
   // Book preview
+  "volumeType.regular": "Régulier",
+  "volumeType.hs": "Hors-Série",
+  "volumeType.oneshot": "One-shot",
+
   "bookPreview.preview": "Aperçu",
   "bookPreview.pages": "pages {{start}}–{{end}} / {{total}}",
   "bookPreview.prev": "← Préc.",

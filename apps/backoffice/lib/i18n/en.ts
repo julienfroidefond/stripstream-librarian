@@ -833,6 +833,10 @@ const en: Record<TranslationKey, string> = {
   "seriesDetail.createWithoutMetadata": "Create without metadata",
 
   // Book preview
+  "volumeType.regular": "Regular",
+  "volumeType.hs": "Special Edition",
+  "volumeType.oneshot": "One-shot",
+
   "bookPreview.preview": "Preview",
   "bookPreview.pages": "pages {{start}}–{{end}} / {{total}}",
   "bookPreview.prev": "← Prev",

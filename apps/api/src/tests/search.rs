@@ -94,7 +94,7 @@ const SERIES_SQL: &str = r#"
 const BOOKS_SQL: &str = r#"
     SELECT b.id, b.library_id, b.kind, b.title,
         COALESCE(b.authors, CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END) as authors,
-        s.name AS series, b.volume, b.language
+        s.name AS series, b.volume, b.volume_type, b.language
     FROM books b
     LEFT JOIN series s ON s.id = b.series_id
     WHERE (
