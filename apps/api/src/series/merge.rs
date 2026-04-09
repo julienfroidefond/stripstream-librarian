@@ -10,6 +10,7 @@ use super::helpers::resolve_library_id;
 #[derive(Deserialize, ToSchema)]
 pub struct MergeSeriesRequest {
     /// The series to absorb (will be deleted after merge)
+    #[schema(value_type = String)]
     pub source_id: Uuid,
 }
 
