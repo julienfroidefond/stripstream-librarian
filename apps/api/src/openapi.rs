@@ -106,6 +106,12 @@ use utoipa::OpenApi;
         crate::integrations::anilist::list_links,
         crate::series::merge::merge_series,
         crate::series::create::create_series,
+        crate::downloads::detection::start_detection,
+        crate::downloads::detection::get_detection_report,
+        crate::downloads::detection::get_detection_results,
+        crate::downloads::detection::get_latest_found,
+        crate::downloads::detection::delete_available_download,
+        crate::metadata::refresh::start_refresh_all,
     ),
     components(
         schemas(
@@ -224,6 +230,12 @@ use utoipa::OpenApi;
             crate::series::MergeSeriesResponse,
             crate::series::CreateSeriesRequest,
             crate::series::CreateSeriesResponse,
+            crate::downloads::detection::StartDownloadDetectionRequest,
+            crate::downloads::detection::DownloadDetectionReportDto,
+            crate::downloads::detection::DownloadDetectionResultDto,
+            crate::downloads::detection::LatestFoundPerLibraryDto,
+            crate::downloads::detection::AvailableDownloadDto,
+            crate::downloads::detection::AvailableReleaseDto,
             ErrorResponse,
         )
     ),
