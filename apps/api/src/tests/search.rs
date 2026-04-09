@@ -51,6 +51,45 @@ async fn create_test_book(
     id
 }
 
+/// The series search SQL from the handler, extracted for testing.
+const SERIES_SQL: &str = r#"
+    WITH sorted_books AS (
+        SELECT
+            b.library_id,
+            s.id as series_id,
+            COALESCE(s.name, 'unclassified') as name,
+            b.id,
+            ROW_NUMBER() OVER (
+                PARTITION BY b.library_id, COALESCE(s.name, 'unclassified')
+                ORDER BY
+                    REGEXP_REPLACE(LOWER(b.title), '[0-9]+', '', 'g'),
+                    COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),
+                    b.title ASC
+            ) as rn
+        FROM books b
+        LEFT JOIN series s ON s.id = b.series_id
+        WHERE ($2::uuid IS NULL OR b.library_id = $2)
+          AND b.series_id IS NOT NULL
+    ),
+    series_counts AS (
+        SELECT
+            sb.library_id,
+            sb.series_id,
+            sb.name,
+            COUNT(*) as book_count,
+            COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
+        FROM sorted_books sb
+        LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
+        GROUP BY sb.library_id, sb.series_id, sb.name
+    )
+    SELECT sc.series_id, sc.library_id, sc.name, sc.book_count, sc.books_read_count, sb.id as first_book_id
+    FROM series_counts sc
+    JOIN sorted_books sb ON sb.library_id = sc.library_id AND sb.name = sc.name AND sb.rn = 1
+    WHERE sc.name ILIKE $1
+    ORDER BY sc.name ASC
+    LIMIT $4
+"#;
+
 /// The books search SQL from the handler, extracted for testing.
 const BOOKS_SQL: &str = r#"
     SELECT b.id, b.library_id, b.kind, b.title,
@@ -193,6 +232,46 @@ async fn search_empty_query_returns_nothing(pool: sqlx::PgPool) {
     // This test verifies the SQL behavior with a pattern that matches nothing.
     let rows = sqlx::query(BOOKS_SQL)
         .bind("%zzz_no_match_zzz%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 0);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_series_returns_series_id(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "comics").await;
+    let series_id = create_test_series(&pool, lib_id, "Dragon Ball").await;
+    create_test_book(&pool, lib_id, Some(series_id), "Dragon Ball Vol 1", "comic", None, &[]).await;
+    create_test_book(&pool, lib_id, Some(series_id), "Dragon Ball Vol 2", "comic", None, &[]).await;
+
+    let rows = sqlx::query(SERIES_SQL)
+        .bind("%Dragon%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<Uuid, _>("series_id"), series_id);
+    assert_eq!(rows[0].get::<String, _>("name"), "Dragon Ball");
+    assert_eq!(rows[0].get::<i64, _>("book_count"), 2);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_series_excludes_unclassified(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "comics").await;
+    // Book without series — should NOT appear in series results
+    create_test_book(&pool, lib_id, None, "Standalone Book", "comic", None, &[]).await;
+
+    let rows = sqlx::query(SERIES_SQL)
+        .bind("%Standalone%")
         .bind(None::<Uuid>)
         .bind(None::<&str>)
         .bind(20i64)

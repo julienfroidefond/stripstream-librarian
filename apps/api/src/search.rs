@@ -23,6 +23,8 @@ pub struct SearchQuery {
 #[derive(Serialize, ToSchema)]
 pub struct SeriesHit {
     #[schema(value_type = String)]
+    pub series_id: Uuid,
+    #[schema(value_type = String)]
     pub library_id: Uuid,
     pub name: String,
     pub book_count: i64,
@@ -100,6 +102,7 @@ pub async fn search_books(
         WITH sorted_books AS (
             SELECT
                 b.library_id,
+                s.id as series_id,
                 COALESCE(s.name, 'unclassified') as name,
                 b.id,
                 ROW_NUMBER() OVER (
@@ -112,18 +115,20 @@ pub async fn search_books(
             FROM books b
             LEFT JOIN series s ON s.id = b.series_id
             WHERE ($2::uuid IS NULL OR b.library_id = $2)
+              AND b.series_id IS NOT NULL
         ),
         series_counts AS (
             SELECT
                 sb.library_id,
+                sb.series_id,
                 sb.name,
                 COUNT(*) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
             FROM sorted_books sb
             LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
-            GROUP BY sb.library_id, sb.name
+            GROUP BY sb.library_id, sb.series_id, sb.name
         )
-        SELECT sc.library_id, sc.name, sc.book_count, sc.books_read_count, sb.id as first_book_id
+        SELECT sc.series_id, sc.library_id, sc.name, sc.book_count, sc.books_read_count, sb.id as first_book_id
         FROM series_counts sc
         JOIN sorted_books sb ON sb.library_id = sc.library_id AND sb.name = sc.name AND sb.rn = 1
         WHERE sc.name ILIKE $1
@@ -173,6 +178,7 @@ pub async fn search_books(
         .unwrap_or_default()
         .iter()
         .map(|row| SeriesHit {
+            series_id: row.get("series_id"),
             library_id: row.get("library_id"),
             name: row.get("name"),
             book_count: row.get("book_count"),
