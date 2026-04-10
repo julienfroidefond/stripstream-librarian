@@ -304,7 +304,10 @@ pub async fn get_series_by_id(
         LEFT JOIN first_book fb ON fb.series_id = sc.series_id
         LEFT JOIN (
             SELECT s2.id as series_id,
-                GREATEST(COALESCE(s2.total_volumes, 0) - COUNT(b2.id) FILTER (WHERE b2.volume_type = 'regular'), 0) as missing_count
+                CASE
+                    WHEN COUNT(b2.id) FILTER (WHERE b2.volume_type = 'integral') > 0 THEN 0
+                    ELSE GREATEST(COALESCE(s2.total_volumes, 0) - COUNT(b2.id) FILTER (WHERE b2.volume_type IN ('regular', 'integral')), 0)
+                END as missing_count
             FROM series s2
             LEFT JOIN books b2 ON b2.series_id = s2.id
             WHERE s2.id = $1

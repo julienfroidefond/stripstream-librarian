@@ -44,7 +44,7 @@ pub(super) async fn search_and_evaluate(
         "SELECT COUNT(*) FROM books b \
          JOIN series s ON s.id = b.series_id \
          WHERE b.library_id = $1 AND LOWER(unaccent(s.name)) = LOWER(unaccent($2)) \
-         AND b.volume_type = 'regular'",
+         AND b.volume_type IN ('regular', 'integral')",
     )
     .bind(library_id)
     .bind(series_name)
@@ -241,7 +241,7 @@ async fn sync_books_from_provider(
         LEFT JOIN series s ON s.id = b.series_id
         WHERE b.library_id = $1
           AND COALESCE(s.name, 'unclassified') = $2
-          AND b.volume_type = 'regular'
+          AND b.volume_type IN ('regular', 'integral')
         ORDER BY b.volume NULLS LAST,
                  REGEXP_REPLACE(LOWER(b.title), '[0-9].*$', ''),
                  COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),

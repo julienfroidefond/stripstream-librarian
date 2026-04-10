@@ -195,7 +195,7 @@ pub async fn search_metadata(
         "SELECT COUNT(*) FROM books b \
          JOIN series s ON s.id = b.series_id \
          WHERE b.library_id = $1 AND LOWER(unaccent(s.name)) = LOWER(unaccent($2)) \
-         AND b.volume_type = 'regular'",
+         AND b.volume_type IN ('regular', 'integral')",
     )
     .bind(library_id)
     .bind(&body.series_name)
@@ -579,27 +579,39 @@ pub async fn get_missing_books(
         .map(|v| v as i64)
         .unwrap_or(provider_count);
 
-    // Count local books (only regular volumes — HS/oneshot are not part of the numbering)
+    // Count local books (only regular/integral — HS/oneshot are not part of the numbering)
     let total_local: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM books WHERE series_id = $1 AND volume_type = 'regular'",
+        "SELECT COUNT(*) FROM books WHERE series_id = $1 AND volume_type IN ('regular', 'integral')",
+    )
+    .bind(series_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    // Check if series has any integral book (= series considered complete)
+    let has_integral: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM books WHERE series_id = $1 AND volume_type = 'integral')",
     )
     .bind(series_id)
     .fetch_one(&state.pool)
     .await?;
 
     // Get unmatched external books (no book_id link)
-    let missing_rows = sqlx::query(
-        r#"
-        SELECT title, volume_number, external_book_id, cover_url
-        FROM external_book_metadata
-        WHERE link_id = $1 AND book_id IS NULL
-          AND (volume_number IS NULL OR volume_number != 0)
-        ORDER BY volume_number NULLS LAST
-        "#,
-    )
-    .bind(id)
-    .fetch_all(&state.pool)
-    .await?;
+    let missing_rows = if has_integral {
+        vec![] // Integral = series complete, no missing books
+    } else {
+        sqlx::query(
+            r#"
+            SELECT title, volume_number, external_book_id, cover_url
+            FROM external_book_metadata
+            WHERE link_id = $1 AND book_id IS NULL
+              AND (volume_number IS NULL OR volume_number != 0)
+            ORDER BY volume_number NULLS LAST
+            "#,
+        )
+        .bind(id)
+        .fetch_all(&state.pool)
+        .await?
+    };
 
     let missing_books: Vec<MissingBookItem> = missing_rows
         .iter()
@@ -611,13 +623,16 @@ pub async fn get_missing_books(
         })
         .collect();
 
-    // missing_count: use total_external - local count (respects user override),
-    // but cap at 0 (no negatives)
-    let missing_count = (total_external - total_local).max(0);
+    // If series has an integral, consider it complete
+    let (effective_local, missing_count) = if has_integral {
+        (total_external, 0)
+    } else {
+        (total_local, (total_external - total_local).max(0))
+    };
 
     Ok(Json(MissingBooksDto {
         total_external,
-        total_local,
+        total_local: effective_local,
         missing_count,
         missing_books,
     }))

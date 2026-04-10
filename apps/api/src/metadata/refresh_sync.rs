@@ -102,7 +102,7 @@ pub(crate) async fn refresh_link(
         LEFT JOIN series s ON s.id = b.series_id
         WHERE b.library_id = $1
           AND COALESCE(s.name, 'unclassified') = $2
-          AND b.volume_type = 'regular'
+          AND b.volume_type IN ('regular', 'integral')
         ORDER BY b.volume NULLS LAST,
                  REGEXP_REPLACE(LOWER(b.title), '[0-9].*$', ''),
                  COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),
@@ -533,7 +533,7 @@ pub async fn rematch_unlinked_books(pool: &PgPool, library_id: Uuid) -> Result<i
             JOIN books b ON b.library_id = eml.library_id
                 AND b.series_id = eml.series_id
                 AND b.volume = ebm2.volume_number
-                AND b.volume_type = 'regular'
+                AND b.volume_type IN ('regular', 'integral')
             WHERE eml.library_id = $1
               AND ebm2.book_id IS NULL
               AND ebm2.volume_number IS NOT NULL

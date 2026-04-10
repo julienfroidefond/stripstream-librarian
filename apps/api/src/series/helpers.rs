@@ -170,7 +170,10 @@ pub(super) fn build_missing_counts_cte(library_id_param: Option<&str>) -> String
     format!(
         r#"missing_counts AS (
             SELECT s.id as series_id,
-                GREATEST(COALESCE(s.total_volumes, 0) - COUNT(b.id) FILTER (WHERE b.volume_type = 'regular'), 0) as missing_count
+                CASE
+                    WHEN COUNT(b.id) FILTER (WHERE b.volume_type = 'integral') > 0 THEN 0
+                    ELSE GREATEST(COALESCE(s.total_volumes, 0) - COUNT(b.id) FILTER (WHERE b.volume_type IN ('regular', 'integral')), 0)
+                END as missing_count
             FROM series s
             LEFT JOIN books b ON b.series_id = s.id
             {where_clause}

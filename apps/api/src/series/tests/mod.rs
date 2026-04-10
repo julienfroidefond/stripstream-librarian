@@ -522,3 +522,52 @@ async fn missing_count_zero_with_hs_when_complete(pool: sqlx::PgPool) {
     let missing = query_missing_count(&pool, lib_id, sid).await;
     assert_eq!(missing, 0, "3 total - 3 regular = 0 missing (HS don't inflate)");
 }
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn missing_count_zero_when_integral_present(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "missing_int").await;
+    let sid = create_series(&pool, lib_id, "La Rivière").await;
+
+    sqlx::query("UPDATE series SET total_volumes = 2 WHERE id = $1")
+        .bind(sid).execute(&pool).await.unwrap();
+
+    // Only an intégrale — covers the whole series
+    create_book_with_type(&pool, lib_id, sid, "La Rivière INT", None, "integral").await;
+
+    let missing = query_missing_count(&pool, lib_id, sid).await;
+    assert_eq!(missing, 0, "integral present → series complete → 0 missing");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn missing_count_zero_when_integral_plus_regular(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "missing_int_reg").await;
+    let sid = create_series(&pool, lib_id, "Mixed INT").await;
+
+    sqlx::query("UPDATE series SET total_volumes = 10 WHERE id = $1")
+        .bind(sid).execute(&pool).await.unwrap();
+
+    // 2 regular + 1 integral → integral makes it complete
+    create_book_with_type(&pool, lib_id, sid, "Vol 1", Some(1), "regular").await;
+    create_book_with_type(&pool, lib_id, sid, "Vol 2", Some(2), "regular").await;
+    create_book_with_type(&pool, lib_id, sid, "INT 1", Some(1), "integral").await;
+
+    let missing = query_missing_count(&pool, lib_id, sid).await;
+    assert_eq!(missing, 0, "integral present → 0 missing regardless of total_volumes");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn missing_count_normal_without_integral(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "missing_no_int").await;
+    let sid = create_series(&pool, lib_id, "No INT").await;
+
+    sqlx::query("UPDATE series SET total_volumes = 5 WHERE id = $1")
+        .bind(sid).execute(&pool).await.unwrap();
+
+    // 3 regular, no integral → normal missing count
+    for i in 1..=3 {
+        create_book_with_type(&pool, lib_id, sid, &format!("Vol {i}"), Some(i), "regular").await;
+    }
+
+    let missing = query_missing_count(&pool, lib_id, sid).await;
+    assert_eq!(missing, 2, "5 total - 3 regular = 2 missing (no integral)");
+}
