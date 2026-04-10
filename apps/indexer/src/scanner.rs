@@ -415,12 +415,12 @@ pub async fn scan_library_discovery(
             || library_processed_count % 10 == 0;
         if should_update_progress {
             let progress_percent = if total_files > 0 {
-                ((*total_processed_count as f64 / total_files as f64) * 100.0) as i32
+                ((*total_processed_count as f64 / total_files as f64) * 100.0).min(100.0) as i32
             } else {
                 0
             };
 
-            sqlx::query(
+            if let Err(e) = sqlx::query(
                 "UPDATE index_jobs SET current_file = $2, processed_files = $3, progress_percent = $4 WHERE id = $1",
             )
             .bind(job_id)
@@ -429,10 +429,9 @@ pub async fn scan_library_discovery(
             .bind(progress_percent)
             .execute(&state.pool)
             .await
-            .map_err(|e| {
-                error!("[BDD] Failed to update progress for job {}: {}", job_id, e);
-                e
-            })?;
+            {
+                warn!("[SCAN] Failed to update progress for job {}: {}", job_id, e);
+            }
 
             last_progress_update = std::time::Instant::now();
 

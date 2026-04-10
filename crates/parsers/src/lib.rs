@@ -328,6 +328,17 @@ pub fn extract_volume(filename: &str) -> Option<i32> {
     extract_volumes(filename).into_iter().next()
 }
 
+/// Check if a directory name is an HS/special subfolder (not a series).
+fn is_hs_subfolder(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    const PATTERNS: &[&str] = &[
+        "hors-série", "hors-serie", "hors série", "hors serie",
+        "spécial", "special", "specials", "spéciaux",
+        "bonus", "hs", "extras", "extra",
+    ];
+    PATTERNS.iter().any(|p| lower == *p)
+}
+
 fn extract_series(path: &Path, library_root: &Path) -> Option<String> {
     path.parent().and_then(|parent| {
         let parent_str = parent.to_string_lossy().to_string();
@@ -347,17 +358,24 @@ fn extract_series(path: &Path, library_root: &Path) -> Option<String> {
             return None;
         };
 
-        let relative_str = relative.to_string_lossy().to_string();
-        let relative_clean = relative_str.trim_start_matches(['/', '\\']);
+        let relative_str = relative.to_string_lossy();
+        let components: Vec<&str> = relative_str
+            .split(['/', '\\'])
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
 
-        if relative_clean.is_empty() {
+        if components.is_empty() {
             return None;
         }
 
-        let first_sep = relative_clean.find(['/', '\\']);
-        let series_name = match first_sep {
-            Some(idx) => &relative_clean[..idx],
-            None => relative_clean,
+        // Use the immediate parent directory as the series name.
+        // If it matches an HS/special subfolder pattern, go up one level.
+        let last = *components.last().unwrap();
+        let series_name = if components.len() > 1 && is_hs_subfolder(last) {
+            components[components.len() - 2]
+        } else {
+            last
         };
 
         if series_name.is_empty() {
@@ -2211,11 +2229,11 @@ mod tests {
     }
 
     #[test]
-    fn extract_series_nested() {
+    fn extract_series_nested_non_hs_subfolder() {
         let path = Path::new("/libraries/bd/Asterix/subfolder/file.cbz");
         let root = Path::new("/libraries/bd");
-        // Should return the first directory component after root
-        assert_eq!(extract_series(path, root), Some("Asterix".to_string()));
+        // Non-HS subfolder: use immediate parent as series
+        assert_eq!(extract_series(path, root), Some("subfolder".to_string()));
     }
 
     #[test]
@@ -2396,5 +2414,88 @@ mod tests {
         let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
         assert_eq!(meta.volume_type, VolumeType::Regular);
         assert_eq!(meta.volume, Some(5));
+    }
+
+    #[test]
+    fn hs_subfolder_keeps_parent_series() {
+        let path = Path::new("/libraries/manga/Boruto/Hors-Série/Boruto HS.cbz");
+        let root = Path::new("/libraries/manga");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.series, Some("Boruto".to_string()));
+        assert_eq!(meta.volume_type, VolumeType::Hs);
+    }
+
+    #[test]
+    fn specials_subfolder_keeps_parent_series() {
+        let path = Path::new("/libraries/bd/Asterix/Specials/Asterix Special 2.cbz");
+        let root = Path::new("/libraries/bd");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.series, Some("Asterix".to_string()));
+        assert_eq!(meta.volume_type, VolumeType::Hs);
+        assert_eq!(meta.volume, Some(2));
+    }
+
+    #[test]
+    fn nested_series_uses_immediate_parent() {
+        let path = Path::new("/libraries/manga/Shonen/Dragon Ball/Dragon Ball T01.cbz");
+        let root = Path::new("/libraries/manga");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.series, Some("Dragon Ball".to_string()));
+    }
+
+    #[test]
+    fn nested_series_with_hs_subfolder() {
+        let path = Path::new("/libraries/manga/Shonen/Dragon Ball/Hors-Série/Dragon Ball HS1.cbz");
+        let root = Path::new("/libraries/manga");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.series, Some("Dragon Ball".to_string()));
+        assert_eq!(meta.volume_type, VolumeType::Hs);
+    }
+
+    #[test]
+    fn flat_series_still_works() {
+        let path = Path::new("/libraries/manga/One Piece/One Piece T05.cbz");
+        let root = Path::new("/libraries/manga");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.series, Some("One Piece".to_string()));
+    }
+
+    #[test]
+    fn file_at_library_root_is_unclassified() {
+        let path = Path::new("/libraries/manga/standalone.cbz");
+        let root = Path::new("/libraries/manga");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.series, None);
+    }
+
+    #[test]
+    fn bonus_subfolder_keeps_parent_series() {
+        let path = Path::new("/libraries/bd/Tintin/Bonus/Tintin Bonus.cbz");
+        let root = Path::new("/libraries/bd");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.series, Some("Tintin".to_string()));
+        assert_eq!(meta.volume_type, VolumeType::Hs);
+    }
+
+    #[test]
+    fn extras_subfolder_keeps_parent_series() {
+        let path = Path::new("/libraries/manga/Naruto/Extras/Naruto Special.cbz");
+        let root = Path::new("/libraries/manga");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.series, Some("Naruto".to_string()));
+    }
+
+    #[test]
+    fn is_hs_subfolder_patterns() {
+        assert!(is_hs_subfolder("Hors-Série"));
+        assert!(is_hs_subfolder("hors-serie"));
+        assert!(is_hs_subfolder("HS"));
+        assert!(is_hs_subfolder("Specials"));
+        assert!(is_hs_subfolder("Bonus"));
+        assert!(is_hs_subfolder("Extras"));
+        assert!(is_hs_subfolder("extra"));
+        assert!(!is_hs_subfolder("Dragon Ball"));
+        assert!(!is_hs_subfolder("Tome 1"));
+        assert!(!is_hs_subfolder("Shonen"));
     }
 }
