@@ -993,6 +993,7 @@ export type MissingBooksDto = {
     title: string | null;
     volume_number: number | null;
     external_book_id: string | null;
+    cover_url: string | null;
   }[];
 };
 

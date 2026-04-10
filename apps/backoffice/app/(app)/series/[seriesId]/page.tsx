@@ -1,5 +1,6 @@
 import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto } from "@/lib/api";
 import { BooksGrid, EmptyState } from "@/app/components/BookCard";
+import { BooksGridWithMissingToggle } from "@/app/components/ShowMissingToggle";
 import { MarkSeriesReadButton } from "@/app/components/MarkSeriesReadButton";
 import { MarkBookReadButton } from "@/app/components/MarkBookReadButton";
 import { ProviderIcon, providerLabel } from "@/app/components/ProviderIcon";
@@ -320,10 +321,21 @@ export default async function SeriesDetailPage({
         const hsBooks = books.filter((b) => b.volume_type === "hs");
         const integralBooks = books.filter((b) => b.volume_type === "integral");
         const oneshotBooks = books.filter((b) => b.volume_type === "oneshot");
+        const missingForGrid = (missingData?.missing_books ?? []).map((mb) => ({
+          title: mb.title,
+          volume_number: mb.volume_number,
+          cover_url: mb.cover_url,
+        }));
 
-        return books.length > 0 ? (
+        return (books.length > 0 || missingForGrid.length > 0) ? (
           <>
-            {regularBooks.length > 0 && <BooksGrid books={regularBooks} compact />}
+            {(regularBooks.length > 0 || missingForGrid.length > 0) && (
+              <BooksGridWithMissingToggle
+                books={regularBooks}
+                missingBooks={missingForGrid}
+                compact
+              />
+            )}
 
             {integralBooks.length > 0 && (
               <div className="mt-6">

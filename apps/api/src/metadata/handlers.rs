@@ -132,6 +132,7 @@ pub struct MissingBookItem {
     pub title: Option<String>,
     pub volume_number: Option<i32>,
     pub external_book_id: Option<String>,
+    pub cover_url: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -589,7 +590,7 @@ pub async fn get_missing_books(
     // Get unmatched external books (no book_id link)
     let missing_rows = sqlx::query(
         r#"
-        SELECT title, volume_number, external_book_id
+        SELECT title, volume_number, external_book_id, cover_url
         FROM external_book_metadata
         WHERE link_id = $1 AND book_id IS NULL
         ORDER BY volume_number NULLS LAST
@@ -605,6 +606,7 @@ pub async fn get_missing_books(
             title: row.get("title"),
             volume_number: row.get("volume_number"),
             external_book_id: row.get("external_book_id"),
+            cover_url: row.get("cover_url"),
         })
         .collect();
 

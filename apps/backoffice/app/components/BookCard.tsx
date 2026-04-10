@@ -210,6 +210,93 @@ export function BooksGrid({ books, compact }: BooksGridProps) {
   );
 }
 
+export interface MissingBook {
+  title: string | null;
+  volume_number: number | null;
+  cover_url: string | null;
+}
+
+function MissingBookCard({ book }: { book: MissingBook }) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="group bg-card rounded-xl border border-dashed border-border/60 shadow-sm overflow-hidden opacity-50">
+      <div className="relative aspect-[2/3] overflow-hidden bg-muted">
+        {book.cover_url ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={book.cover_url}
+            alt={book.title || t("books.missing")}
+            className="w-full h-full object-cover grayscale"
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <svg className="w-10 h-10 text-muted-foreground/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+            </svg>
+          </div>
+        )}
+        <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide bg-muted-foreground/80 text-white">
+          {t("status.missing")}
+        </span>
+      </div>
+      <div className="px-2 py-1.5">
+        <h3 className="font-medium text-muted-foreground truncate text-xs" title={book.title || undefined}>
+          {book.title || t("books.unknown")}
+        </h3>
+        {book.volume_number != null && (
+          <span className="text-[10px] text-muted-foreground">#{book.volume_number}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function BooksGridWithMissing({
+  books,
+  missingBooks,
+  showMissing,
+  compact,
+}: {
+  books: (BookDto & { coverUrl?: string })[];
+  missingBooks: MissingBook[];
+  showMissing: boolean;
+  compact?: boolean;
+}) {
+  if (!showMissing) {
+    return <BooksGrid books={books} compact={compact} />;
+  }
+
+  // Merge owned and missing books, sorted by volume_number
+  type MergedItem =
+    | { kind: "owned"; book: BookDto & { coverUrl?: string } }
+    | { kind: "missing"; book: MissingBook };
+
+  const merged: MergedItem[] = [
+    ...books.map((b) => ({ kind: "owned" as const, book: b })),
+    ...missingBooks.map((b) => ({ kind: "missing" as const, book: b })),
+  ].sort((a, b) => {
+    const va = a.kind === "owned" ? a.book.volume : a.book.volume_number;
+    const vb = b.kind === "owned" ? b.book.volume : b.book.volume_number;
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    return va - vb;
+  });
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+      {merged.map((item, idx) =>
+        item.kind === "owned" ? (
+          <BookCard key={item.book.id} book={item.book} compact={compact} />
+        ) : (
+          <MissingBookCard key={`missing-${item.book.volume_number ?? idx}`} book={item.book} />
+        )
+      )}
+    </div>
+  );
+}
+
 interface EmptyStateProps {
   message: string;
 }

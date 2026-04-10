@@ -52,6 +52,7 @@ const en: Record<TranslationKey, string> = {
   "status.unread": "Unread",
   "status.reading": "Reading",
   "status.read": "Read",
+  "status.missing": "Missing",
 
   // Series status
   "seriesStatus.ongoing": "Ongoing",
@@ -137,6 +138,8 @@ const en: Record<TranslationKey, string> = {
   "books.noResults": "No books found for \"{{query}}\"",
   "books.noBooks": "No books available",
   "books.coverOf": "Cover of {{name}}",
+  "books.missing": "Missing volume",
+  "books.unknown": "Unknown",
   "books.format": "Format",
   "books.allFormats": "All formats",
 
@@ -150,6 +153,8 @@ const en: Record<TranslationKey, string> = {
   "series.noResults": "No series found matching your filters",
   "series.noSeries": "No series available",
   "series.missingCount": "{{count}} missing",
+  "series.showMissing": "Show {{count}} missing volume(s)",
+  "series.hideMissing": "Hide missing volumes",
   "series.readCount": "{{read}}/{{total}} read",
 
   // Authors page

@@ -50,6 +50,7 @@ const fr = {
   "status.unread": "Non lu",
   "status.reading": "En cours",
   "status.read": "Lu",
+  "status.missing": "Manquant",
 
   // Series status
   "seriesStatus.ongoing": "En cours",
@@ -135,6 +136,8 @@ const fr = {
   "books.noResults": "Aucun livre trouvé pour \"{{query}}\"",
   "books.noBooks": "Aucun livre disponible",
   "books.coverOf": "Couverture de {{name}}",
+  "books.missing": "Tome manquant",
+  "books.unknown": "Inconnu",
   "books.format": "Format",
   "books.allFormats": "Tous les formats",
 
@@ -148,6 +151,8 @@ const fr = {
   "series.noResults": "Aucune série trouvée correspondant à vos filtres",
   "series.noSeries": "Aucune série disponible",
   "series.missingCount": "{{count}} manquant{{plural}}",
+  "series.showMissing": "Afficher {{count}} tome(s) manquant(s)",
+  "series.hideMissing": "Masquer les tomes manquants",
   "series.readCount": "{{read}}/{{total}} lu{{plural}}",
 
   // Authors page
