@@ -1009,6 +1009,7 @@ const en: Record<TranslationKey, string> = {
   "rename.button": "Rename books",
   "rename.modalTitle": "Rename books in series",
   "rename.template": "Filename template",
+  "rename.templateHs": "Hors-série template",
   "rename.preview": "Preview",
   "rename.currentFilename": "Current name",
   "rename.newFilename": "New name",
@@ -1024,6 +1025,7 @@ const en: Record<TranslationKey, string> = {
   "rename.changed": "Changed",
   "rename.unchanged": "Unchanged",
   "rename.examplePreview": "Example preview",
+  "rename.examplePreviewHs": "Hors-série preview",
 
   // Discovery
   "nav.discovery": "Discover",

@@ -34,7 +34,7 @@ COPY crates/parsers/src crates/parsers/src
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
-    touch apps/indexer/src/main.rs crates/core/src/lib.rs crates/notifications/src/lib.rs crates/parsers/src/lib.rs && \
+    find apps/ crates/ -name '*.rs' -exec touch {} + && \
     cargo build --release -p indexer && \
     cp /app/target/release/indexer /usr/local/bin/indexer
 

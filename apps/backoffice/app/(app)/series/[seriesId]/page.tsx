@@ -55,7 +55,7 @@ export default async function SeriesDetailPage({
   }
   const libraryId = seriesDto.library_id;
 
-  const [library, seriesMeta, metadataLinks, readingStatusLink, prowlarrConfigured, qbConfigured, metadataProviders, renameFormat] = await Promise.all([
+  const [library, seriesMeta, metadataLinks, readingStatusLink, prowlarrConfigured, qbConfigured, metadataProviders, renameFormat, renameFormatHs] = await Promise.all([
     fetchLibraries().then((libs) => libs.find((l) => l.id === libraryId)),
     fetchSeriesMetadata(seriesId).catch(() => null as SeriesMetadataDto | null),
     getMetadataLink(seriesId).catch(() => [] as ExternalMetadataLinkDto[]),
@@ -68,6 +68,7 @@ export default async function SeriesDetailPage({
       .catch(() => false),
     apiFetch<{ comicvine?: { api_key?: string } }>("/settings/metadata_providers").catch(() => null),
     apiFetch<string>("/settings/rename_format").catch(() => null),
+    apiFetch<string>("/settings/rename_format_hs").catch(() => null),
   ]);
 
   // Get series name from metadata for display
@@ -299,6 +300,7 @@ export default async function SeriesDetailPage({
               seriesId={seriesId}
               seriesName={seriesName}
               initialFormat={typeof renameFormat === "string" ? renameFormat : null}
+              initialFormatHs={typeof renameFormatHs === "string" ? renameFormatHs : null}
             />
             <MergeSeriesButton
               seriesId={seriesId}

@@ -19,6 +19,8 @@ use crate::state::AppState;
 pub struct RenameRequest {
     /// Template pattern. If null, uses the saved `rename_format` setting.
     pub format: Option<String>,
+    /// Template pattern for hors-série books. If null, HS books use the main format.
+    pub format_hs: Option<String>,
     /// "preview" for dry-run, "execute" to perform renames.
     pub mode: RenameMode,
 }
@@ -62,6 +64,7 @@ struct BookFileData {
     title: String,
     authors: Vec<String>,
     volume: Option<i32>,
+    volume_type: String,
     publish_date: Option<String>,
     isbn: Option<String>,
     abs_path: String,
@@ -195,7 +198,10 @@ pub async fn rename_books(
     Path(series_id): Path<Uuid>,
     Json(req): Json<RenameRequest>,
 ) -> Result<Json<RenameResponse>, ApiError> {
-    // 1. Get the template
+    // 1. Get the templates
+    let default_template = "{series_name} - T{volume_padded} - {title}";
+    let default_template_hs = "{series_name} - HS {volume_padded}";
+
     let template = match req.format {
         Some(ref f) if !f.is_empty() => f.clone(),
         _ => {
@@ -206,11 +212,26 @@ pub async fn rename_books(
             match row {
                 Some(r) => {
                     let val: serde_json::Value = r.get("value");
-                    val.as_str()
-                        .unwrap_or("{series_name} - T{volume_padded} - {title}")
-                        .to_string()
+                    val.as_str().unwrap_or(default_template).to_string()
                 }
-                None => "{series_name} - T{volume_padded} - {title}".to_string(),
+                None => default_template.to_string(),
+            }
+        }
+    };
+
+    let template_hs = match req.format_hs {
+        Some(ref f) if !f.is_empty() => f.clone(),
+        _ => {
+            // Load from settings
+            let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'rename_format_hs'")
+                .fetch_optional(&state.pool)
+                .await?;
+            match row {
+                Some(r) => {
+                    let val: serde_json::Value = r.get("value");
+                    val.as_str().unwrap_or(default_template_hs).to_string()
+                }
+                None => default_template_hs.to_string(),
             }
         }
     };
@@ -227,7 +248,7 @@ pub async fn rename_books(
     // 3. Get all books with their files
     let rows = sqlx::query(
         r#"
-        SELECT b.id AS book_id, b.title, b.authors, b.volume, b.publish_date, b.isbn,
+        SELECT b.id AS book_id, b.title, b.authors, b.volume, b.volume_type, b.publish_date, b.isbn,
                bf.id AS file_id, bf.abs_path, bf.format AS file_format
         FROM books b
         INNER JOIN book_files bf ON bf.book_id = b.id
@@ -258,6 +279,7 @@ pub async fn rename_books(
                 title: row.get("title"),
                 authors: authors_raw,
                 volume: row.get("volume"),
+                volume_type: row.get("volume_type"),
                 publish_date: row.get("publish_date"),
                 isbn: row.get("isbn"),
                 abs_path: row.get("abs_path"),
@@ -288,7 +310,11 @@ pub async fn rename_books(
                 .map(|e| format!(".{}", e.to_string_lossy()))
                 .unwrap_or_default();
 
-            let new_stem = apply_template(&template, &series_name, book, max_volume);
+            let effective_template = match book.volume_type.as_str() {
+                "hs" => &template_hs,
+                _ => &template,
+            };
+            let new_stem = apply_template(effective_template, &series_name, book, max_volume);
             let new_stem = sanitize_filename(&new_stem);
             // Avoid double extension (e.g. "Title.cbr" + ".cbr" → "Title.cbr")
             let new_filename = if !extension.is_empty()

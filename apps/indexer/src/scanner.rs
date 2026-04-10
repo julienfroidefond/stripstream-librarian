@@ -331,24 +331,26 @@ pub async fn scan_library_discovery(
                         parsed.series = Some(renamed.clone());
                     }
                 }
-                let row: Option<(String, Option<i32>)> = sqlx::query_as(
-                    "SELECT title, volume FROM books WHERE id = $1",
+                let row: Option<(String, Option<i32>, String)> = sqlx::query_as(
+                    "SELECT title, volume, volume_type FROM books WHERE id = $1",
                 )
                 .bind(book_id)
                 .fetch_optional(&state.pool)
                 .await?;
-                if let Some((ref db_title, db_volume)) = row {
-                    if db_title != &parsed.title || db_volume != parsed.volume {
-                        debug!("[SCAN] Title/volume mismatch (skipped dir) for {:?}: DB=('{}', {:?}) vs parsed=('{}', {:?}), updating",
-                            path.file_name().unwrap_or_default(), db_title, db_volume, parsed.title, parsed.volume);
+                if let Some((ref db_title, db_volume, ref db_volume_type)) = row {
+                    let parsed_vt = parsed.volume_type.as_str();
+                    if db_title != &parsed.title || db_volume != parsed.volume || db_volume_type != parsed_vt {
+                        debug!("[SCAN] Title/volume/type mismatch (skipped dir) for {:?}: DB=('{}', {:?}, '{}') vs parsed=('{}', {:?}, '{}'), updating",
+                            path.file_name().unwrap_or_default(), db_title, db_volume, db_volume_type, parsed.title, parsed.volume, parsed_vt);
                         let update_series_id = if let Some(ref series_name) = parsed.series {
                             Some(get_or_create_series_id(&state.pool, library_id, series_name, &mut series_map).await?)
                         } else {
                             None
                         };
-                        sqlx::query("UPDATE books SET title = $1, volume = $2, series_id = COALESCE($3, series_id), updated_at = NOW() WHERE id = $4")
+                        sqlx::query("UPDATE books SET title = $1, volume = $2, volume_type = $3, series_id = COALESCE($4, series_id), updated_at = NOW() WHERE id = $5")
                             .bind(&parsed.title)
                             .bind(parsed.volume)
+                            .bind(parsed_vt)
                             .bind(update_series_id)
                             .bind(book_id)
                             .execute(&state.pool)
@@ -474,16 +476,17 @@ pub async fn scan_library_discovery(
                 // Even if fingerprint hasn't changed, check if title/volume need updating
                 // (e.g., after a rename, the file was renamed but title in books table is stale,
                 // or volume was not extracted on a previous scan)
-                let row: Option<(String, Option<i32>)> = sqlx::query_as(
-                    "SELECT title, volume FROM books WHERE id = $1",
+                let row: Option<(String, Option<i32>, String)> = sqlx::query_as(
+                    "SELECT title, volume, volume_type FROM books WHERE id = $1",
                 )
                 .bind(book_id)
                 .fetch_optional(&state.pool)
                 .await?;
-                if let Some((ref db_title, db_volume)) = row {
-                    if db_title != &parsed.title || db_volume != parsed.volume {
-                        debug!("[SCAN] Title/volume mismatch for {}: DB=('{}', {:?}) vs parsed=('{}', {:?}), updating",
-                            file_name, db_title, db_volume, parsed.title, parsed.volume);
+                if let Some((ref db_title, db_volume, ref db_volume_type)) = row {
+                    let parsed_vt = parsed.volume_type.as_str();
+                    if db_title != &parsed.title || db_volume != parsed.volume || db_volume_type != parsed_vt {
+                        debug!("[SCAN] Title/volume/type mismatch for {}: DB=('{}', {:?}, '{}') vs parsed=('{}', {:?}, '{}'), updating",
+                            file_name, db_title, db_volume, db_volume_type, parsed.title, parsed.volume, parsed_vt);
                         let update_series_id = if let Some(ref series_name) = parsed.series {
                             Some(
                                 get_or_create_series_id(&state.pool, library_id, series_name, &mut series_map)
@@ -492,9 +495,10 @@ pub async fn scan_library_discovery(
                         } else {
                             None
                         };
-                        sqlx::query("UPDATE books SET title = $1, volume = $2, series_id = COALESCE($3, series_id), updated_at = NOW() WHERE id = $4")
+                        sqlx::query("UPDATE books SET title = $1, volume = $2, volume_type = $3, series_id = COALESCE($4, series_id), updated_at = NOW() WHERE id = $5")
                             .bind(&parsed.title)
                             .bind(parsed.volume)
+                            .bind(parsed_vt)
                             .bind(update_series_id)
                             .bind(book_id)
                             .execute(&state.pool)

@@ -6,11 +6,22 @@ fn make_book(
     authors: Vec<&str>,
     abs_path: &str,
 ) -> BookFileData {
+    make_book_with_type(title, volume, authors, abs_path, "regular")
+}
+
+fn make_book_with_type(
+    title: &str,
+    volume: Option<i32>,
+    authors: Vec<&str>,
+    abs_path: &str,
+    volume_type: &str,
+) -> BookFileData {
     BookFileData {
         book_id: Uuid::new_v4(),
         title: title.to_string(),
         authors: authors.into_iter().map(String::from).collect(),
         volume,
+        volume_type: volume_type.to_string(),
         publish_date: None,
         isbn: None,
         abs_path: abs_path.to_string(),
@@ -247,6 +258,40 @@ fn full_flow_42_books_with_mixed_volumes() {
         apply_template(template, series_name, &book_hs, max_volume),
         "dragon ball - Hors s\u{00e9}rie"
     );
+}
+
+// -- volume_type with separate templates --
+
+#[test]
+fn hs_book_uses_hs_template() {
+    let book = make_book_with_type("Spécial été", Some(2), vec![], "/libraries/BD/old.cbz", "hs");
+    let hs_template = "{series_name} - HS {volume_padded}";
+    let result = apply_template(hs_template, "Dragon Ball", &book, 10);
+    assert_eq!(result, "Dragon Ball - HS 02");
+}
+
+#[test]
+fn hs_book_without_volume() {
+    let book = make_book_with_type("Bonus", None, vec![], "/libraries/BD/old.cbz", "hs");
+    let hs_template = "{series_name} - HS {volume_padded}";
+    let result = apply_template(hs_template, "Naruto", &book, 10);
+    assert_eq!(result, "Naruto - HS");
+}
+
+#[test]
+fn regular_book_not_affected_by_hs_template() {
+    let book = make_book_with_type("Chapter 1", Some(1), vec![], "/libraries/BD/old.cbz", "regular");
+    let regular_template = "{series_name} - T{volume_padded}";
+    let result = apply_template(regular_template, "One Piece", &book, 100);
+    assert_eq!(result, "One Piece - T001");
+}
+
+#[test]
+fn oneshot_book_uses_regular_template() {
+    let book = make_book_with_type("Le Monde sans fin", None, vec![], "/libraries/BD/old.cbz", "oneshot");
+    let template = "{series_name} - T{volume_padded} - {title}";
+    let result = apply_template(template, "Le Monde sans fin", &book, 1);
+    assert_eq!(result, "Le Monde sans fin - Le Monde sans fin");
 }
 
 #[test]

@@ -29,14 +29,18 @@ function applyExampleTemplate(template: string): string {
 export function RenameFormatCard({
   handleUpdateSetting,
   initialRenameFormat,
+  initialRenameFormatHs,
 }: {
   handleUpdateSetting: (key: string, value: unknown) => Promise<void>;
   initialRenameFormat: string | null;
+  initialRenameFormatHs: string | null;
 }) {
   const { t } = useTranslation();
   const [format, setFormat] = useState(initialRenameFormat || "{series_name} - T{volume_padded} - {title}");
+  const [formatHs, setFormatHs] = useState(initialRenameFormatHs || "{series_name} - HS {volume_padded}");
 
   const preview = applyExampleTemplate(format);
+  const previewHs = applyExampleTemplate(formatHs);
 
   return (
     <Card className="mb-6">
@@ -63,6 +67,23 @@ export function RenameFormatCard({
           <div className="p-3 bg-muted/30 rounded-lg">
             <p className="text-xs font-medium text-muted-foreground mb-2">{t("rename.examplePreview")}</p>
             <p className="text-sm font-mono text-foreground">{preview}</p>
+          </div>
+
+          <FormField>
+            <label className="text-sm font-medium text-muted-foreground mb-1 block">
+              {t("rename.templateHs")}
+            </label>
+            <FormInput
+              value={formatHs}
+              onChange={(e) => setFormatHs(e.target.value)}
+              onBlur={() => handleUpdateSetting("rename_format_hs", formatHs)}
+              placeholder="{series_name} - HS {volume_padded}"
+            />
+          </FormField>
+
+          <div className="p-3 bg-muted/30 rounded-lg">
+            <p className="text-xs font-medium text-muted-foreground mb-2">{t("rename.examplePreviewHs")}</p>
+            <p className="text-sm font-mono text-foreground">{previewHs}</p>
           </div>
 
           <div>

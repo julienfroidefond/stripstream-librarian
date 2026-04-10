@@ -27,27 +27,30 @@ export function RenameSeriesBooksModal({
   seriesId,
   seriesName,
   initialFormat,
+  initialFormatHs,
 }: {
   seriesId: string;
   seriesName: string;
   initialFormat?: string | null;
+  initialFormatHs?: string | null;
 }) {
   const { t } = useTranslation();
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [step, setStep] = useState<ModalStep>("idle");
   const [format, setFormat] = useState(initialFormat || "{series_name} - T{volume_padded} - {title}");
+  const [formatHs, setFormatHs] = useState(initialFormatHs || "{series_name} - HS {volume_padded}");
   const [result, setResult] = useState<RenameResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchPreview = useCallback(async (template: string) => {
+  const fetchPreview = useCallback(async (template: string, templateHs: string) => {
     setStep("loading");
     setError(null);
     try {
       const resp = await fetch(`/api/series/${seriesId}/rename-books`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ format: template, mode: "preview" }),
+        body: JSON.stringify({ format: template, format_hs: templateHs, mode: "preview" }),
       });
       if (!resp.ok) {
         let msg = `Error ${resp.status}`;
@@ -70,8 +73,8 @@ export function RenameSeriesBooksModal({
 
   const handleOpen = useCallback(() => {
     setIsOpen(true);
-    fetchPreview(format);
-  }, [format, fetchPreview]);
+    fetchPreview(format, formatHs);
+  }, [format, formatHs, fetchPreview]);
 
   const handleClose = useCallback(() => {
     setIsOpen(false);
@@ -81,8 +84,8 @@ export function RenameSeriesBooksModal({
   }, []);
 
   const handleRefresh = useCallback(() => {
-    fetchPreview(format);
-  }, [format, fetchPreview]);
+    fetchPreview(format, formatHs);
+  }, [format, formatHs, fetchPreview]);
 
   const handleExecute = useCallback(async () => {
     setStep("executing");
@@ -91,7 +94,7 @@ export function RenameSeriesBooksModal({
       const resp = await fetch(`/api/series/${seriesId}/rename-books`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ format, mode: "execute" }),
+        body: JSON.stringify({ format, format_hs: formatHs, mode: "execute" }),
       });
       const data: RenameResponse = await resp.json();
       if (!resp.ok) {
@@ -105,7 +108,7 @@ export function RenameSeriesBooksModal({
       setError("Network error");
       setStep("error");
     }
-  }, [seriesId, format]);
+  }, [seriesId, format, formatHs]);
 
   const changedCount = result?.renames.filter((r) => r.changed).length ?? 0;
 
@@ -147,6 +150,20 @@ export function RenameSeriesBooksModal({
                 t("rename.refreshPreview")
               )}
             </Button>
+          </div>
+
+          {/* HS format input */}
+          <div className="flex gap-2 items-end">
+            <div className="flex-1">
+              <label className="text-sm font-medium text-muted-foreground mb-1 block">
+                {t("rename.templateHs")}
+              </label>
+              <FormInput
+                value={formatHs}
+                onChange={(e) => setFormatHs(e.target.value)}
+                placeholder="{series_name} - HS {volume_padded}"
+              />
+            </div>
           </div>
 
           {/* Available variables */}

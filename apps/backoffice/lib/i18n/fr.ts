@@ -1007,6 +1007,7 @@ const fr = {
   "rename.button": "Renommer les livres",
   "rename.modalTitle": "Renommer les livres de la série",
   "rename.template": "Modèle de nom de fichier",
+  "rename.templateHs": "Modèle hors-série",
   "rename.preview": "Aperçu",
   "rename.currentFilename": "Nom actuel",
   "rename.newFilename": "Nouveau nom",
@@ -1022,6 +1023,7 @@ const fr = {
   "rename.changed": "Modifié",
   "rename.unchanged": "Inchangé",
   "rename.examplePreview": "Aperçu d'exemple",
+  "rename.examplePreviewHs": "Aperçu hors-série",
 
   // Discovery
   "nav.discovery": "Découvrir",
