@@ -17,11 +17,14 @@ pub fn extract_first_page(path: &Path, format: BookFormat) -> Result<Vec<u8>>
 pub enum BookFormat { Cbz, Cbr, Pdf }
 
 pub struct ParsedMetadata {
-    pub title: String,          // = nom de fichier (sans extension)
-    pub series: Option<String>, // = premier dossier relatif à library_root
-    pub volume: Option<i32>,    // extrait du nom de fichier
+    pub title: String,              // = nom de fichier (sans extension)
+    pub series: Option<String>,     // = parent immédiat (ou grandparent si sous-dossier HS)
+    pub volume: Option<i32>,        // extrait du nom de fichier
+    pub volume_type: VolumeType,    // Regular, Hs, Oneshot, Integral
     pub page_count: Option<i32>,
 }
+
+pub enum VolumeType { Regular, Hs, Oneshot, Integral }
 ```
 
 ## Logique de parsing
@@ -30,9 +33,17 @@ pub struct ParsedMetadata {
 Nom de fichier sans extension, conservé tel quel (pas de nettoyage).
 
 ### Série
-Premier composant du chemin relatif entre `library_root` et le fichier :
+Parent immédiat du fichier. Si le parent matche un pattern HS/special subfolder (`Hors-Série`, `Specials`, `Bonus`, `Extras`, `HS`, `Intégrales`, `INT`), utilise le grandparent :
 - `/libraries/One Piece/T01.cbz` → série = `"One Piece"`
+- `/libraries/Shonen/Dragon Ball/T01.cbz` → série = `"Dragon Ball"`
+- `/libraries/Asterix/Hors-Série/HS1.cbz` → série = `"Asterix"` (HS subfolder skipped)
 - `/libraries/one-shot.cbz` → série = `None`
+
+### Volume type (`extract_int_info`, `extract_hs_info`)
+Détection dans l'ordre (INT avant HS pour éviter que INTHS matche HS) :
+- **Integral** : `INT`, `INTHS`, `Intégrale`, `Integrale` → `VolumeType::Integral`
+- **HS** : `HS`, `Hors-Série`, `Spécial`, `Bonus` → `VolumeType::Hs`
+- Sinon → `VolumeType::Regular`
 
 ### Volume (`extract_volume`)
 Patterns reconnus dans le nom de fichier (dans l'ordre de priorité) :

@@ -33,13 +33,19 @@
 
 ### Metadata Extraction
 - **Title**: derived from filename or external metadata
-- **Series**: derived from directory structure (first directory level under library root)
+- **Series**: derived from directory structure (immediate parent directory of the file). If the parent is an HS/special subfolder (Hors-Série, Specials, Bonus, Extras, HS, Intégrales, INT), uses the grandparent instead. Supports nested structures (e.g., `Shonen/Dragon Ball/T01.cbz` → series = "Dragon Ball").
 - **Volume**: extracted from filename with pattern detection:
   - `Tome ##`, `Tome.##` — French comics (priorité haute)
   - `T##` (Tome abrégé) — most common for French comics
   - `Vol.##`, `Vol ##`, `Volume ##`
   - `###` (hash prefix)
   - `-## ` (dash-separated at end)
+  - `Tome_##` — underscore separator
+- **Volume type** (`volume_type`): classification of each book
+  - `regular` — standard numbered volume (default)
+  - `hs` — hors-série / special edition (detected: HS, Hors-Série, Spécial, Bonus)
+  - `integral` — omnibus / intégrale (detected: INT, INTHS, Intégrale)
+  - `oneshot` — standalone book (set manually)
 - **Author(s)**: single scalar and array support
 - **Page count**: extracted from archive analysis
 - **Language**, **kind** (ebook, comic, bd)
@@ -50,6 +56,20 @@
 - Configurable dimensions (default 300×400)
 - Lazy generation: created on first access if missing
 - Bulk operations: rebuild missing or regenerate all
+
+### Book Renaming
+- Rename all books in a series using a template pattern
+- Three separate templates: regular, hors-série, intégrale
+- Default templates:
+  - Regular: `{series_name} - T{volume_padded} - {title}`
+  - HS: `{series_name} - HS {volume_padded}` (space before volume so HS without number gives "Series - HS")
+  - Integral: `{series_name} - INT {volume_padded}`
+- Available variables: `{series_name}`, `{volume}`, `{volume_padded}`, `{title}`, `{authors}`, `{publish_date}`, `{isbn}`
+- Volume padding auto-adjusts to match the widest volume in the series
+- Preview mode (dry-run) before execution
+- Deduplication: suffixed filenames when template produces duplicates
+- Null-variable cleanup: segments containing undefined variables are removed cleanly
+- Templates saved globally in `app_settings` (keys: `rename_format`, `rename_format_hs`, `rename_format_int`)
 
 ### CBR to CBZ Conversion
 - Convert RAR archives to ZIP format
@@ -70,11 +90,19 @@
 - **Field locking**: individual fields can be locked to prevent metadata sync from overwriting manual edits
 
 ### Missing Books Count
-- Calculated as `max(total_volumes - book_count, 0)`
+- Calculated as `max(total_volumes - regular_book_count, 0)` — only `volume_type = 'regular'` books counted
+- HS, integral, and oneshot books are excluded from missing count calculations
 - Based on `series.total_volumes` (user-editable), not external provider book count
 - When `total_volumes` is NULL → 0 missing
 - Manual edit of total_volumes immediately updates the missing count
-- Series detail page uses same logic for "X/Y – Z manquants" display
+- Series detail page uses `total_local` (regular only) for "X/Y – Z manquants" display
+
+### Missing Volumes Display
+- Toggle button in series detail to show/hide missing volumes (shown by default)
+- Missing volumes displayed as grayed-out cards with provider cover images (grayscale)
+- Data from `external_book_metadata` (cover_url, title, volume_number)
+- Works for discovery series with no local books
+- Merged with owned books and sorted by volume number
 
 ### Merge Series
 - Merge a source series into a target series (absorb duplicates)
@@ -84,9 +112,10 @@
 - Search modal on series detail page (cross-library search, API validates same library)
 
 ### Orphan Series Cleanup
-- After stale book deletions during scan, empty series are automatically removed
-- Protected: series with metadata links or available downloads are preserved
-- Series added from Discovery (no books, but metadata) are never cleaned up
+- After stale book deletions during scan, series that lost ALL their books are removed (even with metadata links)
+- This handles directory rename/deletion: the scanner tracks affected series_ids during stale file removal
+- Discovery-created series (never had stale books deleted) are preserved by a separate cleanup pass
+- Fallback cleanup: series with no books AND no metadata links AND no available downloads are also removed
 
 ### Series Rename Deduplication
 - `get_or_create_series` checks both `name` and `original_name` to prevent duplicates
@@ -176,9 +205,18 @@
 3. **Approve**: validate and sync metadata to series and books
 4. **Reject**: discard a match
 
+### Volume Type Awareness
+- Metadata matching only considers `volume_type = 'regular'` books
+- HS, integral, and oneshot books are excluded from:
+  - Missing count calculations (CTE and `get_missing_books`)
+  - Book-to-metadata matching (sync, batch, refresh, rematch)
+  - Confidence boost local_count
+  - AniList reading progress push
+- HS volume=1 will NOT match external book volume=1 (rematch_unlinked_books)
+
 ### Confidence Scoring
 - **Provider-level**: name similarity (normalized Jaccard/containment), volume count bonus
-- **Caller-level boost**: local book count vs candidate total_volumes
+- **Caller-level boost**: local book count (regular only) vs candidate total_volumes
   - Exact match (book_count == total_volumes): +0.30
   - Close match (±2 volumes): +0.15
 - Candidates re-sorted by confidence after boost
@@ -460,6 +498,8 @@ Browse and add series to your library from external sources.
 - Book pages and thumbnails
 - Reading progress get/update
 - Full-text search, collection statistics
+- Metadata links listing (`GET /metadata/links?series_id=...`)
+- Missing books with cover URLs (`GET /metadata/missing/{link_id}`)
 
 ### Admin Endpoints (admin scope)
 - Library CRUD and configuration
@@ -470,6 +510,11 @@ Browse and add series to your library from external sources.
 - Metadata operations (search, match, approve, reject, batch, refresh)
 - External integrations (Prowlarr, qBittorrent, Komga)
 - Application settings and cache management
+
+### OpenAPI
+- Two separate specs: **Client API** (read scope) and **Admin API** (all endpoints)
+- Swagger UI at `/swagger-ui` (client) and `/admin/swagger-ui` (admin)
+- Dropdown to switch between specs
 
 ---
 

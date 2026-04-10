@@ -150,8 +150,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/metadata/match", axum::routing::post(metadata::create_metadata_match))
         .route("/metadata/approve/:id", axum::routing::post(metadata::approve_metadata))
         .route("/metadata/reject/:id", axum::routing::post(metadata::reject_metadata))
-        .route("/metadata/links", get(metadata::get_metadata_links))
-        .route("/metadata/missing/:id", get(metadata::get_missing_books))
         .route("/metadata/links/:id", delete(metadata::delete_metadata_link))
         .route("/metadata/batch", axum::routing::post(metadata::start_batch))
         .route("/metadata/batch/:id/report", get(metadata::get_batch_report))
@@ -208,6 +206,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/authors", get(authors::list_authors))
         .route("/stats", get(stats::get_stats))
         .route("/search", get(search::search_books))
+        .route("/metadata/links", get(metadata::get_metadata_links))
+        .route("/metadata/missing/:id", get(metadata::get_missing_books))
         .route_layer(middleware::from_fn_with_state(state.clone(), api_middleware::read_rate_limit))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),

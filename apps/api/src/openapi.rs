@@ -26,6 +26,8 @@ use utoipa::OpenApi;
         crate::authors::list_authors,
         crate::stats::get_stats,
         crate::libraries::list_libraries,
+        crate::metadata::handlers::get_metadata_links,
+        crate::metadata::handlers::get_missing_books,
     ),
     components(
         schemas(
@@ -68,6 +70,9 @@ use utoipa::OpenApi;
             crate::stats::DownloadStats,
             crate::stats::RecentDownloadItem,
             crate::libraries::LibraryResponse,
+            crate::metadata::handlers::ExternalMetadataLinkDto,
+            crate::metadata::handlers::MissingBooksDto,
+            crate::metadata::handlers::MissingBookItem,
             ErrorResponse,
         )
     ),
@@ -75,6 +80,7 @@ use utoipa::OpenApi;
     tags(
         (name = "books", description = "Book browsing, details, pages and thumbnails"),
         (name = "series", description = "Series browsing, filtering and details"),
+        (name = "metadata", description = "Metadata links and missing volumes"),
         (name = "reading-progress", description = "Reading progress tracking per book"),
         (name = "search", description = "Full-text search across books and series"),
         (name = "authors", description = "Author browsing and listing"),

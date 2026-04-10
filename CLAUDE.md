@@ -91,7 +91,7 @@ Défaut : `indexer=info,scan=info,extraction=info,thumbnail=warn,watcher=info`.
 
 ### API Types
 - `#[derive(Serialize, Deserialize, ToSchema)]` pour les types exposés
-- `utoipa` pour la doc OpenAPI — spec sur `/openapi.json`, UI sur `/swagger-ui`
+- `utoipa` pour la doc OpenAPI — dual spec : Client (`/openapi.json`) et Admin (`/admin/openapi.json`), UI sur `/swagger-ui` et `/admin/swagger-ui`
 
 ### Factorisation
 - **Toujours factoriser** : extraire la logique dupliquée dans des fonctions/modules réutilisables.
@@ -174,6 +174,10 @@ Le user PostgreSQL doit avoir le droit `CREATEDB` : `ALTER USER stripstream CREA
 - **Next.js 16 production** : `router.replace()` ne fonctionne pas en mode standalone. Utiliser `window.history.replaceState()` + `router.refresh()` pour la navigation côté client (voir `LiveSearchForm.tsx`).
 - **Discovery providers** : les providers `sc_*` (sc_trending_bd, sc_best_manga, etc.) sont normalisés vers `"senscritique"` pour les metadata links. SensCritique utilise une API GraphQL publique (`apollo.senscritique.com`).
 - **Torrent import replace mode** : quand `replace_existing=true`, ne PAS filtrer par `expected_volumes` — importer tous les fichiers du torrent.
+- **Volume type** : `volume_type` (`regular`, `hs`, `oneshot`, `integral`). Toute logique de matching metadata, comptage de manquants, ou progression AniList doit filtrer sur `volume_type = 'regular'` uniquement. Les HS/oneshot/integral ne participent pas à la numérotation des tomes.
+- **Series extraction** : le parser utilise le **parent immédiat** du fichier comme nom de série (pas le premier répertoire). Si le parent est un sous-dossier HS/Specials/Bonus/Intégrales, il remonte d'un cran.
+- **Scanner volume_type** : le scanner propage `volume_type` lors des updates (skipped-dir et fingerprint-unchanged). Un scan simple suffit à corriger les HS mal classés.
+- **OpenAPI dual spec** : Client API (`/openapi.json`, read scope) et Admin API (`/admin/openapi.json`, all). Les endpoints `GET /metadata/links` et `GET /metadata/missing/:id` sont en read scope.
 
 > Voir `AGENTS.md` pour les conventions de code détaillées et les patterns par module.
 > Des `AGENTS.md` spécifiques existent dans `apps/api/`, `apps/indexer/`, `apps/backoffice/`, `crates/parsers/`.
