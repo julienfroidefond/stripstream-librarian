@@ -247,17 +247,24 @@ pub(crate) async fn sync_books_metadata(
     let mut matched_local_ids = std::collections::HashSet::new();
 
     for (ext_idx, book) in books.iter().enumerate() {
+        // Skip volume 0 from matching (T0 = hors-série in providers)
+        let is_vol_zero = book.volume_number == Some(0);
+
         // Effective volume for the external book: provider volume_number, or 1-based position
         let ext_vol = book.volume_number.unwrap_or((ext_idx + 1) as i32);
 
-        // Strategy 1: Match by effective volume number
-        let mut local_book_id: Option<Uuid> = local_books_with_pos
-            .iter()
-            .find(|(id, v, _)| *v == ext_vol && !matched_local_ids.contains(id))
-            .map(|(id, _, _)| *id);
+        // Strategy 1: Match by effective volume number (skip vol 0 — T0 = HS in providers)
+        let mut local_book_id: Option<Uuid> = if is_vol_zero {
+            None
+        } else {
+            local_books_with_pos
+                .iter()
+                .find(|(id, v, _)| *v == ext_vol && !matched_local_ids.contains(id))
+                .map(|(id, _, _)| *id)
+        };
 
         // Strategy 2: External title contained in local title or vice-versa (case-insensitive)
-        if local_book_id.is_none() {
+        if !is_vol_zero && local_book_id.is_none() {
             let ext_title_lower = book.title.to_lowercase();
             local_book_id = local_books_with_pos.iter().find(|(id, _, local_title)| {
                 if matched_local_ids.contains(id) {

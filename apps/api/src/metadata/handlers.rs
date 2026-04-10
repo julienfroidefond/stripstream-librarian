@@ -559,9 +559,9 @@ pub async fn get_missing_books(
 
     let series_id: Uuid = link.get("series_id");
 
-    // Count external books from provider
+    // Count external books from provider (exclude volume 0 — T0 = HS in providers)
     let provider_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM external_book_metadata WHERE link_id = $1")
+        sqlx::query_scalar("SELECT COUNT(*) FROM external_book_metadata WHERE link_id = $1 AND (volume_number IS NULL OR volume_number != 0)")
             .bind(id)
             .fetch_one(&state.pool)
             .await?;
@@ -593,6 +593,7 @@ pub async fn get_missing_books(
         SELECT title, volume_number, external_book_id, cover_url
         FROM external_book_metadata
         WHERE link_id = $1 AND book_id IS NULL
+          AND (volume_number IS NULL OR volume_number != 0)
         ORDER BY volume_number NULLS LAST
         "#,
     )

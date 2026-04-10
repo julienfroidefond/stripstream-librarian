@@ -263,16 +263,21 @@ async fn sync_books_from_provider(
     let mut matched_local_ids = std::collections::HashSet::new();
 
     for (ext_idx, book) in books.iter().enumerate() {
+        let is_vol_zero = book.volume_number == Some(0);
         let ext_vol = book.volume_number.unwrap_or((ext_idx + 1) as i32);
 
-        // Match by volume number
-        let mut local_book_id: Option<Uuid> = local_books_with_pos
-            .iter()
-            .find(|(id, v, _)| *v == ext_vol && !matched_local_ids.contains(id))
-            .map(|(id, _, _)| *id);
+        // Match by volume number (skip vol 0 — T0 = HS in providers)
+        let mut local_book_id: Option<Uuid> = if is_vol_zero {
+            None
+        } else {
+            local_books_with_pos
+                .iter()
+                .find(|(id, v, _)| *v == ext_vol && !matched_local_ids.contains(id))
+                .map(|(id, _, _)| *id)
+        };
 
         // Match by title containment
-        if local_book_id.is_none() {
+        if !is_vol_zero && local_book_id.is_none() {
             let ext_title_lower = book.title.to_lowercase();
             local_book_id = local_books_with_pos
                 .iter()
