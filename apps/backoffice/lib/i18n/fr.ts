@@ -833,6 +833,7 @@ const fr = {
   // Book preview
   "volumeType.regular": "Régulier",
   "volumeType.hs": "Hors-Série",
+  "volumeType.integral": "Intégrales",
   "volumeType.oneshot": "One-shot",
 
   "bookPreview.preview": "Aperçu",

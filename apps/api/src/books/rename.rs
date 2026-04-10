@@ -201,6 +201,7 @@ pub async fn rename_books(
     // 1. Get the templates
     let default_template = "{series_name} - T{volume_padded} - {title}";
     let default_template_hs = "{series_name} - HS {volume_padded}";
+    let default_template_int = "{series_name} - INT {volume_padded}";
 
     let template = match req.format {
         Some(ref f) if !f.is_empty() => f.clone(),
@@ -233,6 +234,19 @@ pub async fn rename_books(
                 }
                 None => default_template_hs.to_string(),
             }
+        }
+    };
+
+    let template_int = {
+        let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'rename_format_int'")
+            .fetch_optional(&state.pool)
+            .await?;
+        match row {
+            Some(r) => {
+                let val: serde_json::Value = r.get("value");
+                val.as_str().unwrap_or(default_template_int).to_string()
+            }
+            None => default_template_int.to_string(),
         }
     };
 
@@ -312,6 +326,7 @@ pub async fn rename_books(
 
             let effective_template = match book.volume_type.as_str() {
                 "hs" => &template_hs,
+                "integral" => &template_int,
                 _ => &template,
             };
             let new_stem = apply_template(effective_template, &series_name, book, max_volume);

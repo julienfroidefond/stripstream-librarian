@@ -316,13 +316,25 @@ export default async function SeriesDetailPage({
 
       {/* Books Grid — regular volumes */}
       {(() => {
-        const regularBooks = books.filter((b) => b.volume_type !== "hs" && b.volume_type !== "oneshot");
+        const regularBooks = books.filter((b) => b.volume_type === "regular");
         const hsBooks = books.filter((b) => b.volume_type === "hs");
+        const integralBooks = books.filter((b) => b.volume_type === "integral");
         const oneshotBooks = books.filter((b) => b.volume_type === "oneshot");
 
         return books.length > 0 ? (
           <>
             {regularBooks.length > 0 && <BooksGrid books={regularBooks} compact />}
+
+            {integralBooks.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
+                  <span className="h-px flex-1 bg-border" />
+                  <span className="text-blue-500">{t("volumeType.integral")}</span>
+                  <span className="h-px flex-1 bg-border" />
+                </h3>
+                <BooksGrid books={integralBooks} compact />
+              </div>
+            )}
 
             {hsBooks.length > 0 && (
               <div className="mt-6">

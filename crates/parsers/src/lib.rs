@@ -28,6 +28,7 @@ pub enum VolumeType {
     Regular,
     Hs,
     Oneshot,
+    Integral,
 }
 
 impl VolumeType {
@@ -36,6 +37,7 @@ impl VolumeType {
             Self::Regular => "regular",
             Self::Hs => "hs",
             Self::Oneshot => "oneshot",
+            Self::Integral => "integral",
         }
     }
 }
@@ -335,6 +337,7 @@ fn is_hs_subfolder(name: &str) -> bool {
         "hors-série", "hors-serie", "hors série", "hors serie",
         "spécial", "special", "specials", "spéciaux",
         "bonus", "hs", "extras", "extra",
+        "intégrales", "integrales", "intégrale", "integrale", "int",
     ];
     PATTERNS.iter().any(|p| lower == *p)
 }
@@ -384,6 +387,81 @@ fn extract_series(path: &Path, library_root: &Path) -> Option<String> {
             Some(series_name.to_string())
         }
     })
+}
+
+/// Detect intégrale patterns in a filename.
+/// Returns `Some((int_number, cleaned_title))` if an INT pattern is found.
+/// Must be called BEFORE extract_hs_info to avoid "INTHS" matching "HS".
+pub fn extract_int_info(filename: &str) -> Option<(Option<i32>, String)> {
+    let lower = filename.to_lowercase();
+
+    // Patterns to check (longest first, INTHS before INT to avoid partial)
+    const PATTERNS: &[&str] = &[
+        "intégrale",
+        "integrale",
+        "intégral",
+        "integral",
+        "inths",
+        "int",
+    ];
+
+    for pattern in PATTERNS {
+        if let Some(pos) = lower.find(pattern) {
+            // Check word boundary before pattern
+            if pos > 0 {
+                let prev = lower.as_bytes()[pos - 1];
+                if prev.is_ascii_alphanumeric() {
+                    continue;
+                }
+            }
+
+            let after_pattern = pos + pattern.len();
+
+            // Check word boundary after pattern (for short patterns like "int")
+            if (*pattern == "int" || *pattern == "inths") && after_pattern < lower.len() {
+                let next = lower.as_bytes()[after_pattern];
+                if next.is_ascii_alphabetic() && next != b'h' {
+                    continue; // "inter", "into", etc. — but allow "inths"
+                }
+                // For "int" specifically, also skip if followed by "h" (will be caught by "inths")
+                if *pattern == "int" && after_pattern < lower.len() && lower.as_bytes()[after_pattern] == b'h' {
+                    continue;
+                }
+            }
+
+            // Extract optional number after pattern
+            let rest = &lower[after_pattern..];
+            let mut i = 0;
+            let rest_bytes = rest.as_bytes();
+            while i < rest_bytes.len() && matches!(rest_bytes[i], b' ' | b'.' | b'-' | b'_') {
+                i += 1;
+            }
+            let digit_start = i;
+            while i < rest_bytes.len() && rest_bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            let int_number = if i > digit_start {
+                rest[digit_start..i].parse::<i32>().ok()
+            } else {
+                None
+            };
+
+            // Build cleaned title
+            let before = filename[..pos].trim_end_matches([' ', '-', '_', '.']);
+            let after_all = &filename[pos + pattern.len()..];
+            // Skip number part in original string too
+            let cleaned_after = if i > 0 { &after_all[i..] } else { after_all };
+            let cleaned_after = cleaned_after.trim_start_matches([' ', '-', '_', '.']);
+            let cleaned = if cleaned_after.is_empty() {
+                before.to_string()
+            } else {
+                format!("{} {}", before, cleaned_after).trim().to_string()
+            };
+
+            return Some((int_number, cleaned));
+        }
+    }
+    None
 }
 
 /// Detect hors-série patterns in a filename.
@@ -473,8 +551,10 @@ pub fn parse_metadata_fast(path: &Path, _format: BookFormat, library_root: &Path
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "Untitled".to_string());
 
-    // Check for HS patterns first
-    let (volume, volume_type) = if let Some((hs_number, _)) = extract_hs_info(&filename) {
+    // Check for INT patterns first (before HS, since "INTHS" contains "HS")
+    let (volume, volume_type) = if let Some((int_number, _)) = extract_int_info(&filename) {
+        (int_number, VolumeType::Integral)
+    } else if let Some((hs_number, _)) = extract_hs_info(&filename) {
         (hs_number, VolumeType::Hs)
     } else {
         (extract_volume(&filename), VolumeType::Regular)
@@ -2483,6 +2563,100 @@ mod tests {
         let root = Path::new("/libraries/manga");
         let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
         assert_eq!(meta.series, Some("Naruto".to_string()));
+    }
+
+    // ─── extract_int_info ─────────────────────────────────────────────
+
+    #[test]
+    fn int_basic() {
+        let (num, cleaned) = extract_int_info("Dragon Ball INT1").unwrap();
+        assert_eq!(num, Some(1));
+        assert_eq!(cleaned, "Dragon Ball");
+    }
+
+    #[test]
+    fn int_no_number() {
+        let (num, cleaned) = extract_int_info("Dragon Ball INT").unwrap();
+        assert_eq!(num, None);
+        assert_eq!(cleaned, "Dragon Ball");
+    }
+
+    #[test]
+    fn int_dot_separator() {
+        let (num, _) = extract_int_info("Asterix INT.02").unwrap();
+        assert_eq!(num, Some(2));
+    }
+
+    #[test]
+    fn int_space_separator() {
+        let (num, _) = extract_int_info("Asterix INT 3").unwrap();
+        assert_eq!(num, Some(3));
+    }
+
+    #[test]
+    fn inths_pattern() {
+        let (num, cleaned) = extract_int_info("Dragon Ball INTHS").unwrap();
+        assert_eq!(num, None);
+        assert_eq!(cleaned, "Dragon Ball");
+    }
+
+    #[test]
+    fn inths_with_number() {
+        let (num, cleaned) = extract_int_info("Dragon Ball INTHS1").unwrap();
+        assert_eq!(num, Some(1));
+        assert_eq!(cleaned, "Dragon Ball");
+    }
+
+    #[test]
+    fn integrale_full_word() {
+        let (num, cleaned) = extract_int_info("Naruto Intégrale 5").unwrap();
+        assert_eq!(num, Some(5));
+        assert_eq!(cleaned, "Naruto");
+    }
+
+    #[test]
+    fn integrale_without_accent() {
+        let (num, _) = extract_int_info("Naruto Integrale 3").unwrap();
+        assert_eq!(num, Some(3));
+    }
+
+    #[test]
+    fn int_not_in_word() {
+        // "international" should NOT match
+        assert!(extract_int_info("International Guide").is_none());
+    }
+
+    #[test]
+    fn int_not_interest() {
+        assert!(extract_int_info("Interesting Story").is_none());
+    }
+
+    #[test]
+    fn int_volume_type_in_parse() {
+        let path = Path::new("/libraries/test/Asterix/Asterix INT2.cbz");
+        let root = Path::new("/libraries/test");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.volume_type, VolumeType::Integral);
+        assert_eq!(meta.volume, Some(2));
+    }
+
+    #[test]
+    fn inths_volume_type_in_parse() {
+        let path = Path::new("/libraries/test/Asterix/Asterix INTHS1.cbz");
+        let root = Path::new("/libraries/test");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.volume_type, VolumeType::Integral);
+        assert_eq!(meta.volume, Some(1));
+    }
+
+    #[test]
+    fn integrales_subfolder_keeps_parent_series() {
+        let path = Path::new("/libraries/manga/Naruto/Intégrales/Naruto INT3.cbz");
+        let root = Path::new("/libraries/manga");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.series, Some("Naruto".to_string()));
+        assert_eq!(meta.volume_type, VolumeType::Integral);
+        assert_eq!(meta.volume, Some(3));
     }
 
     #[test]

@@ -835,6 +835,7 @@ const en: Record<TranslationKey, string> = {
   // Book preview
   "volumeType.regular": "Regular",
   "volumeType.hs": "Special Edition",
+  "volumeType.integral": "Omnibus",
   "volumeType.oneshot": "One-shot",
 
   "bookPreview.preview": "Preview",
