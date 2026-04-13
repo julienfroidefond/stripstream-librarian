@@ -56,7 +56,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <CollapsibleNavProvider>
-      <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/70 backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-background/60">
+      <header
+        className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/70 backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-background/60"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
         {/* Row 1: Logo + actions */}
         <div className="container mx-auto flex h-12 items-center justify-between px-4">
           <Link
@@ -111,7 +114,14 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       </header>
       </CollapsibleNavProvider>
 
-      <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-16">
+      <main
+        className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-16"
+        style={{
+          paddingLeft: "max(1rem, env(safe-area-inset-left))",
+          paddingRight: "max(1rem, env(safe-area-inset-right))",
+          paddingBottom: "max(4rem, env(safe-area-inset-bottom))",
+        }}
+      >
         {children}
       </main>
     </>
