@@ -69,6 +69,12 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   return (
     <html lang={locale} suppressHydrationWarning>
       <head>
+        {/* Explicit apple-touch-icons (iOS ignores manifest.json icons) */}
+        <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+        <link rel="apple-touch-icon" sizes="167x167" href="/icons/apple-touch-icon-167.png" />
+        <link rel="apple-touch-icon" sizes="152x152" href="/icons/apple-touch-icon-152.png" />
+        <link rel="apple-touch-icon" sizes="120x120" href="/icons/apple-touch-icon-120.png" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         {IOS_SPLASHES.map((s) => (
           <link key={s.src} rel="apple-touch-startup-image" href={s.src} media={s.media} />
         ))}
