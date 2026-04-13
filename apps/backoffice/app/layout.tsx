@@ -6,13 +6,13 @@ import { LocaleProvider } from "@/lib/i18n/context";
 import { getServerLocale } from "@/lib/i18n/server";
 
 export const metadata: Metadata = {
-  title: "Stripstream",
+  title: "Stripstream Librarian",
   description: "Gestionnaire de bibliothèque de bandes dessinées et ebooks",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Stripstream",
+    title: "Stripstream Librarian",
   },
   icons: {
     icon: [

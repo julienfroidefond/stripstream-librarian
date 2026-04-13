@@ -1,6 +1,6 @@
 {
   "name": "Stripstream Librarian",
-  "short_name": "Stripstream",
+  "short_name": "Stripstream Librarian",
   "description": "Gestionnaire de bibliothèque de bandes dessinées et ebooks",
   "start_url": "/",
   "display": "standalone",
