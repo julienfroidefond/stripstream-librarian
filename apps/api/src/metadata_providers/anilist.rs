@@ -205,7 +205,7 @@ async fn search_series_impl_url(
                 external_id: id.to_string(),
                 title,
                 authors,
-                description,
+                description: description.clone(),
                 publishers: vec![],
                 start_year,
                 total_volumes,
@@ -218,6 +218,7 @@ async fn search_series_impl_url(
                     "volumes": volumes,
                     "volume_source": volume_source,
                     "genres": genres,
+                    "description": description,
                 }),
             })
         })
@@ -460,7 +461,7 @@ fn parse_media_to_candidate(m: &serde_json::Value, default_confidence: f32) -> O
         external_id: id.to_string(),
         title,
         authors,
-        description,
+        description: description.clone(),
         publishers: vec![],
         start_year,
         total_volumes,
@@ -473,6 +474,7 @@ fn parse_media_to_candidate(m: &serde_json::Value, default_confidence: f32) -> O
             "volumes": volumes,
             "volume_source": volume_source,
             "genres": genres,
+            "description": description,
         }),
     })
 }

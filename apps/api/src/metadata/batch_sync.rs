@@ -2,6 +2,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::metadata_providers;
+use super::shared_sync;
 
 // ---------------------------------------------------------------------------
 // Search evaluation
@@ -143,67 +144,13 @@ async fn sync_series_from_candidate(
     series_name: &str,
     candidate: &metadata_providers::SeriesCandidate,
 ) -> Result<(), String> {
-    let description = candidate.metadata_json
-        .get("description")
-        .and_then(|d| d.as_str())
-        .or(candidate.description.as_deref());
-    let authors = &candidate.authors;
-    let publishers = &candidate.publishers;
-    let start_year = candidate.start_year;
-    let total_volumes = candidate.total_volumes;
-    let status = if let Some(raw) = candidate.metadata_json.get("status").and_then(|s| s.as_str()) {
-        Some(super::handlers::normalize_series_status(pool, raw).await)
-    } else {
-        None
-    };
-    let status = status.as_deref();
+    let fields = shared_sync::extract_series_fields(
+        pool, &candidate.metadata_json, Some(candidate), None,
+    ).await;
 
-    sqlx::query(
-        r#"
-        INSERT INTO series (id, library_id, name, description, publishers, start_year, total_volumes, status, authors, created_at, updated_at)
-        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
-        ON CONFLICT (library_id, name)
-        DO UPDATE SET
-            description = CASE
-                WHEN (series.locked_fields->>'description')::boolean IS TRUE THEN series.description
-                ELSE COALESCE(NULLIF(EXCLUDED.description, ''), series.description)
-            END,
-            publishers = CASE
-                WHEN (series.locked_fields->>'publishers')::boolean IS TRUE THEN series.publishers
-                WHEN array_length(EXCLUDED.publishers, 1) > 0 THEN EXCLUDED.publishers
-                ELSE series.publishers
-            END,
-            start_year = CASE
-                WHEN (series.locked_fields->>'start_year')::boolean IS TRUE THEN series.start_year
-                ELSE COALESCE(EXCLUDED.start_year, series.start_year)
-            END,
-            total_volumes = CASE
-                WHEN (series.locked_fields->>'total_volumes')::boolean IS TRUE THEN series.total_volumes
-                ELSE COALESCE(EXCLUDED.total_volumes, series.total_volumes)
-            END,
-            status = CASE
-                WHEN (series.locked_fields->>'status')::boolean IS TRUE THEN series.status
-                ELSE COALESCE(EXCLUDED.status, series.status)
-            END,
-            authors = CASE
-                WHEN (series.locked_fields->>'authors')::boolean IS TRUE THEN series.authors
-                WHEN array_length(EXCLUDED.authors, 1) > 0 THEN EXCLUDED.authors
-                ELSE series.authors
-            END,
-            updated_at = NOW()
-        "#,
-    )
-    .bind(library_id)
-    .bind(series_name)
-    .bind(description)
-    .bind(publishers)
-    .bind(start_year)
-    .bind(total_volumes)
-    .bind(status)
-    .bind(authors)
-    .execute(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    shared_sync::upsert_series_metadata(pool, library_id, series_name, &fields)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -227,149 +174,29 @@ async fn sync_books_from_provider(
         .await
         .map_err(|e| format!("provider books error: {e}"))?;
 
-    // Delete existing book metadata for this link
-    sqlx::query("DELETE FROM external_book_metadata WHERE link_id = $1")
-        .bind(link_id)
-        .execute(pool)
+    shared_sync::delete_link_book_metadata(pool, link_id)
         .await
         .map_err(|e| e.to_string())?;
 
-    // Pre-fetch local books
-    let local_books: Vec<(Uuid, Option<i32>, String)> = sqlx::query_as(
-        r#"
-        SELECT b.id, b.volume, b.title FROM books b
-        LEFT JOIN series s ON s.id = b.series_id
-        WHERE b.library_id = $1
-          AND COALESCE(s.name, 'unclassified') = $2
-          AND b.volume_type IN ('regular', 'integral')
-        ORDER BY b.volume NULLS LAST,
-                 REGEXP_REPLACE(LOWER(b.title), '[0-9].*$', ''),
-                 COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),
-                 b.title ASC
-        "#,
-    )
-    .bind(library_id)
-    .bind(series_name)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let local_books_with_pos: Vec<(Uuid, i32, String)> = local_books
-        .iter()
-        .enumerate()
-        .map(|(idx, (id, vol, title))| (*id, vol.unwrap_or((idx + 1) as i32), title.clone()))
-        .collect();
-
-    let mut matched_local_ids = std::collections::HashSet::new();
-
-    for (ext_idx, book) in books.iter().enumerate() {
-        let is_vol_zero = book.volume_number == Some(0);
-        let ext_vol = book.volume_number.unwrap_or((ext_idx + 1) as i32);
-
-        // Match by volume number (skip vol 0 — T0 = HS in providers)
-        let mut local_book_id: Option<Uuid> = if is_vol_zero {
-            None
-        } else {
-            local_books_with_pos
-                .iter()
-                .find(|(id, v, _)| *v == ext_vol && !matched_local_ids.contains(id))
-                .map(|(id, _, _)| *id)
-        };
-
-        // Match by title containment
-        if !is_vol_zero && local_book_id.is_none() {
-            let ext_title_lower = book.title.to_lowercase();
-            local_book_id = local_books_with_pos
-                .iter()
-                .find(|(id, _, local_title)| {
-                    if matched_local_ids.contains(id) {
-                        return false;
-                    }
-                    let local_lower = local_title.to_lowercase();
-                    local_lower.contains(&ext_title_lower) || ext_title_lower.contains(&local_lower)
-                })
-                .map(|(id, _, _)| *id);
-        }
-
-        if let Some(id) = local_book_id {
-            matched_local_ids.insert(id);
-        }
-
-        sqlx::query(
-            r#"
-            INSERT INTO external_book_metadata
-                (link_id, book_id, external_book_id, volume_number, title, authors, isbn, summary, cover_url, page_count, language, publish_date, metadata_json)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-            "#,
-        )
-        .bind(link_id)
-        .bind(local_book_id)
-        .bind(&book.external_book_id)
-        .bind(book.volume_number)
-        .bind(&book.title)
-        .bind(&book.authors)
-        .bind(&book.isbn)
-        .bind(&book.summary)
-        .bind(&book.cover_url)
-        .bind(book.page_count)
-        .bind(&book.language)
-        .bind(&book.publish_date)
-        .bind(&book.metadata_json)
-        .execute(pool)
+    let local_books = shared_sync::fetch_local_books(pool, library_id, series_name)
         .await
         .map_err(|e| e.to_string())?;
 
-        // Push metadata to matched local book
-        if let Some(book_id) = local_book_id {
-            sqlx::query(
-                r#"
-                UPDATE books SET
-                    summary = CASE
-                        WHEN (locked_fields->>'summary')::boolean IS TRUE THEN summary
-                        ELSE COALESCE(NULLIF($2, ''), summary)
-                    END,
-                    isbn = CASE
-                        WHEN (locked_fields->>'isbn')::boolean IS TRUE THEN isbn
-                        ELSE COALESCE(NULLIF($3, ''), isbn)
-                    END,
-                    publish_date = CASE
-                        WHEN (locked_fields->>'publish_date')::boolean IS TRUE THEN publish_date
-                        ELSE COALESCE(NULLIF($4, ''), publish_date)
-                    END,
-                    language = CASE
-                        WHEN (locked_fields->>'language')::boolean IS TRUE THEN language
-                        ELSE COALESCE(NULLIF($5, ''), language)
-                    END,
-                    authors = CASE
-                        WHEN (locked_fields->>'authors')::boolean IS TRUE THEN authors
-                        WHEN CARDINALITY($6::text[]) > 0 THEN $6
-                        ELSE authors
-                    END,
-                    author = CASE
-                        WHEN (locked_fields->>'authors')::boolean IS TRUE THEN author
-                        WHEN CARDINALITY($6::text[]) > 0 THEN $6[1]
-                        ELSE author
-                    END,
-                    updated_at = NOW()
-                WHERE id = $1
-                "#,
-            )
-            .bind(book_id)
-            .bind(&book.summary)
-            .bind(&book.isbn)
-            .bind(&book.publish_date)
-            .bind(&book.language)
-            .bind(&book.authors)
-            .execute(pool)
+    let matched = shared_sync::match_books(&books, &local_books);
+
+    for m in &matched {
+        shared_sync::insert_external_book_metadata(pool, link_id, m.local_book_id, m.ext_book)
             .await
             .map_err(|e| e.to_string())?;
+
+        if let Some(book_id) = m.local_book_id {
+            shared_sync::push_book_metadata(pool, book_id, m.ext_book)
+                .await
+                .map_err(|e| e.to_string())?;
         }
     }
 
-    // Update synced_at on the link
-    sqlx::query("UPDATE external_metadata_links SET synced_at = NOW(), updated_at = NOW() WHERE id = $1")
-        .bind(link_id)
-        .execute(pool)
+    shared_sync::update_link_synced_at(pool, link_id)
         .await
         .map_err(|e| e.to_string())?;
 

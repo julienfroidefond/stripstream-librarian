@@ -4,6 +4,7 @@ pub mod config;
 pub mod handlers;
 pub mod refresh;
 pub(crate) mod refresh_sync;
+pub(crate) mod shared_sync;
 mod sync;
 
 // Re-export handlers (used by main.rs routes and openapi.rs paths)

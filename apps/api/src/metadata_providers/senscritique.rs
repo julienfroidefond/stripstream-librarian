@@ -172,6 +172,7 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
                 metadata_json: serde_json::json!({
                     "franchise_id": fid,
                     "rating": rating,
+                    "description": synopsis,
                 }),
             };
 
@@ -199,7 +200,7 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
                 external_id: format!("product:{id}"),
                 title: title.to_string(),
                 authors,
-                description: synopsis,
+                description: synopsis.clone(),
                 publishers: vec![],
                 start_year: year,
                 total_volumes: None,
@@ -209,6 +210,7 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
                 metadata_json: serde_json::json!({
                     "product_id": id,
                     "rating": rating,
+                    "description": synopsis,
                 }),
             });
         }
@@ -235,7 +237,8 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
             .map(|(fid, (mut c, _))| {
                 if c.description.is_none() {
                     if let Some((_, desc)) = franchise_descriptions.remove(&fid) {
-                        c.description = Some(desc);
+                        c.description = Some(desc.clone());
+                        c.metadata_json["description"] = serde_json::json!(desc);
                     }
                 }
                 if let Some(date_str) = latest_dates.get(&fid) {
@@ -350,6 +353,7 @@ async fn fetch_franchise_editions(
                 metadata["status"] = serde_json::json!(s);
             }
             metadata["edition"] = serde_json::json!(edition_name);
+            metadata["description"] = serde_json::json!(description);
 
             // Confidence based on name similarity with search query
             let similarity = name_similarity(search_query, &edition_name);
@@ -736,7 +740,7 @@ fn group_products_by_franchise(items: &[serde_json::Value], limit: usize) -> Vec
             external_id,
             title: display_title,
             authors,
-            description,
+            description: description.clone(),
             publishers: vec![],
             start_year: year,
             total_volumes: None,
@@ -747,6 +751,7 @@ fn group_products_by_franchise(items: &[serde_json::Value], limit: usize) -> Vec
                 "source": "senscritique",
                 "rating": rating,
                 "category": category,
+                "description": description,
             }),
         });
     }

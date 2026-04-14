@@ -197,6 +197,10 @@ async fn search_series_impl(
         .into_values()
         .map(|b| {
             let confidence = compute_confidence(&b.title, &query_lower);
+            let mut metadata_json = b.metadata_json;
+            if let Some(ref desc) = b.description {
+                metadata_json["description"] = serde_json::json!(desc);
+            }
             SeriesCandidate {
                 external_id: b.external_id,
                 title: b.title,
@@ -212,7 +216,7 @@ async fn search_series_impl(
                 cover_url: b.cover_url,
                 external_url: b.external_url,
                 confidence,
-                metadata_json: b.metadata_json,
+                metadata_json,
             }
         })
         .collect();
