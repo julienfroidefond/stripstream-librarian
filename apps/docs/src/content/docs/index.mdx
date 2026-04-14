@@ -1,0 +1,110 @@
+---
+title: Stripstream Librarian
+description: Gestionnaire de bibliothèque de bandes dessinées et ebooks
+template: splash
+hero:
+  tagline: "Votre bibliothèque de BD, mangas et ebooks — organisée, enrichie et automatisée."
+  image:
+    file: ../../assets/logo.png
+  actions:
+    - text: Démarrer
+      link: /getting-started/introduction/
+      icon: right-arrow
+      variant: primary
+    - text: GitHub
+      link: https://git.julienfroidefond.com/julienfroidefond/stripstream-librarian
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## Tout-en-un pour vos collections
+
+<CardGrid>
+	<Card title="4 formats natifs" icon="document">
+		**CBZ**, **CBR**, **PDF**, **EPUB** — détection automatique, parsing résilient, fallback sur archives endommagées.
+	</Card>
+	<Card title="6 providers de métadonnées" icon="magnifier">
+		SensCritique, AniList, Bedetheque, Google Books, ComicVine, Open Library — enrichissement automatique de vos séries.
+	</Card>
+	<Card title="Indexation intelligente" icon="rocket">
+		Scan en 2 phases : découverte instantanée par nom de fichier, puis analyse approfondie des archives en arrière-plan.
+	</Card>
+	<Card title="Interface moderne" icon="laptop">
+		Backoffice Next.js avec dashboard, recherche temps réel, gestion des séries et progression de lecture.
+	</Card>
+</CardGrid>
+
+---
+
+## Découvrez de nouvelles séries
+
+Parcourez les tendances, tops et nouveautés directement depuis l'application.
+
+<Tabs>
+	<TabItem label="BD">
+		- Nouveautés BD (SensCritique)
+		- Meilleures BD du moment
+		- Top 100 BD SensCritique
+		- Indispensables Bedetheque
+	</TabItem>
+	<TabItem label="Manga">
+		- Nouveautés Manga (SensCritique)
+		- Meilleurs Manga du moment
+		- Top Manga SensCritique
+		- AniList trending
+	</TabItem>
+	<TabItem label="Téléchargement">
+		- Recherche Prowlarr intégrée
+		- Détection automatique des volumes manquants
+		- Import qBittorrent automatisé
+		- Déduplication intelligente par format
+	</TabItem>
+</Tabs>
+
+---
+
+## Automatisez tout
+
+<CardGrid stagger>
+	<Card title="Matching automatique" icon="approve-check">
+		Le batch auto-match lie vos séries aux providers avec un scoring de confiance. Seuil à 100% pour éviter les faux positifs.
+	</Card>
+	<Card title="Refresh des métadonnées" icon="sync">
+		Mettez à jour les données de vos séries en un clic. Diff détaillé par champ, respect des verrouillages manuels.
+	</Card>
+	<Card title="Sync AniList" icon="list-format">
+		Push/pull bidirectionnel de la progression de lecture. Planning auto-push configurable par bibliothèque.
+	</Card>
+	<Card title="Notifications Telegram" icon="comment-alt">
+		16 événements configurables : scans, conversions, métadonnées, progression de lecture.
+	</Card>
+</CardGrid>
+
+---
+
+## Pour commencer
+
+<CardGrid>
+	<LinkCard
+		title="Installation"
+		description="Docker ou installation manuelle — soyez opérationnel en quelques minutes."
+		href="/getting-started/installation/"
+	/>
+	<LinkCard
+		title="Configuration"
+		description="Variables d'environnement, logging et chemins des bibliothèques."
+		href="/getting-started/configuration/"
+	/>
+	<LinkCard
+		title="Providers de métadonnées"
+		description="Configurez les 6 providers pour enrichir automatiquement vos séries."
+		href="/metadata/providers/"
+	/>
+	<LinkCard
+		title="Intégrations"
+		description="Prowlarr, qBittorrent, AniList, Komga, Telegram."
+		href="/integrations/prowlarr/"
+	/>
+</CardGrid>

@@ -1,0 +1,97 @@
+/* Stripstream Librarian — Custom theme
+   Colors from the logo: cyan (#00e5cc) and magenta (#e0447a) on dark blue (#0f172a) */
+
+:root {
+	--sl-color-accent-low: #0d3d3a;
+	--sl-color-accent: #00e5cc;
+	--sl-color-accent-high: #b3fff5;
+	--sl-color-white: #e8edf4;
+	--sl-color-gray-1: #c2c9d6;
+	--sl-color-gray-2: #8e99a4;
+	--sl-color-gray-3: #586270;
+	--sl-color-gray-4: #333d4b;
+	--sl-color-gray-5: #1e2633;
+	--sl-color-gray-6: #151c28;
+	--sl-color-black: #0f172a;
+}
+
+:root[data-theme='light'] {
+	--sl-color-accent-low: #d9faf6;
+	--sl-color-accent: #0aa897;
+	--sl-color-accent-high: #064d45;
+	--sl-color-white: #151c28;
+	--sl-color-gray-1: #333d4b;
+	--sl-color-gray-2: #586270;
+	--sl-color-gray-3: #8e99a4;
+	--sl-color-gray-4: #c2c9d6;
+	--sl-color-gray-5: #e8edf4;
+	--sl-color-gray-6: #f4f7fb;
+	--sl-color-black: #ffffff;
+}
+
+/* Logo sizing in header */
+.site-title img {
+	height: 2rem;
+}
+
+/* Subtle magenta accent on hover for sidebar links */
+nav.sidebar a:hover {
+	color: #e0447a;
+}
+
+/* ─── Splash / Hero page enhancements ─────────────────────────────── */
+
+/* Hero image glow effect */
+[data-has-hero] .hero > img {
+	filter: drop-shadow(0 0 3rem rgba(0, 229, 204, 0.25))
+		drop-shadow(0 0 6rem rgba(224, 68, 122, 0.15));
+	border-radius: 50%;
+	animation: hero-float 6s ease-in-out infinite;
+}
+
+@keyframes hero-float {
+	0%, 100% { transform: translateY(0); }
+	50% { transform: translateY(-0.5rem); }
+}
+
+/* Hero tagline emphasis */
+[data-has-hero] .hero .tagline {
+	font-size: var(--sl-text-xl);
+	max-width: 38ch;
+}
+
+/* Section separators on splash page */
+[data-has-hero] main hr {
+	border: none;
+	height: 1px;
+	background: linear-gradient(
+		90deg,
+		transparent 0%,
+		rgba(0, 229, 204, 0.3) 30%,
+		rgba(224, 68, 122, 0.3) 70%,
+		transparent 100%
+	);
+	margin: 3rem 0;
+}
+
+/* Section headings on splash */
+[data-has-hero] main h2 {
+	text-align: center;
+	font-size: var(--sl-text-2xl);
+	margin-bottom: 1.5rem;
+}
+
+/* Card icon color */
+.card .icon {
+	color: var(--sl-color-accent);
+}
+
+/* Link cards subtle border glow on hover */
+.sl-link-card:hover {
+	border-color: rgba(0, 229, 204, 0.4);
+}
+
+/* Tabs accent color */
+[role="tab"][aria-selected="true"] {
+	color: var(--sl-color-accent);
+}
