@@ -234,13 +234,68 @@
 - Deletes old provider link only after successful new match
 - Uses detailed edition-level search for SensCritique
 
+### Metadata Sync — Shared Logic
+
+All three sync paths (approve, batch auto-match, refresh) use the same factored code (`shared_sync.rs`):
+
+#### Series-Level Sync
+Fields synced from provider to `series` table:
+| Field | Source | Update rule |
+|-------|--------|-------------|
+| `description` | `metadata_json.description` (all providers store it there) | `COALESCE(NULLIF(new, ''), existing)` — only overwrites if new is non-empty |
+| `authors` | `metadata_json.authors` or `candidate.authors` | Only if new array is non-empty |
+| `publishers` | `metadata_json.publishers` or `candidate.publishers` | Only if new array is non-empty |
+| `start_year` | `metadata_json.start_year` or `candidate.start_year` | `COALESCE(new, existing)` |
+| `total_volumes` | `total_volumes_external` or `candidate.total_volumes` | `COALESCE(new, existing)` |
+| `status` | `metadata_json.status` (normalized via `status_mappings` table) | `COALESCE(new, existing)` |
+| `genres` | `metadata_json.genres` | Only if new array is non-empty |
+| `cover_url` | `metadata_json.cover_url` or `candidate.cover_url` | `COALESCE(NULLIF(new, ''), existing)` |
+
+All fields respect **locked_fields** — if a field is locked, the sync skips it entirely.
+
+Uses `INSERT ... ON CONFLICT (library_id, name) DO UPDATE` so series is created if missing (e.g., from discovery).
+
+#### Book-Level Sync
+Books matched by: (1) volume number, then (2) title containment (case-insensitive). Only `volume_type IN ('regular', 'integral')` books participate. Volume 0 (T0 = HS in providers) is excluded from matching.
+
+Fields synced from provider to `books` table:
+| Field | Update rule |
+|-------|-------------|
+| `summary` | `COALESCE(NULLIF(new, ''), existing)` |
+| `isbn` | `COALESCE(NULLIF(new, ''), existing)` |
+| `publish_date` | `COALESCE(NULLIF(new, ''), existing)` |
+| `language` | `COALESCE(NULLIF(new, ''), existing)` |
+| `authors` / `author` | Only if new array is non-empty |
+
+All fields respect **locked_fields**.
+
+External book metadata is also stored in `external_book_metadata` (cover_url, title, volume_number, etc.) for missing volume display.
+
+#### Provider Description Sources
+| Provider | Description source |
+|----------|-------------------|
+| SensCritique (batch) | Synopsis of lowest-numbered volume from search autocomplete (20 items) |
+| SensCritique (detailed) | Synopsis of lowest-numbered volume from full `groupProducts` per edition |
+| Google Books | First volume's description encountered during grouping |
+| AniList | Series-level description from GraphQL |
+| ComicVine | Volume description (HTML stripped) |
+| Bedetheque | Series page meta description (scraped, top 3 enriched) |
+| Open Library | First volume's description encountered during grouping |
+
+All providers persist `description` in `metadata_json` so it survives the DB round-trip (match → approve → sync).
+
 ### Metadata Refresh
 - Update approved links with latest data from providers
-- Change tracking reports per series/book
+- Re-searches provider, finds matching candidate, diffs and syncs
+- Change tracking reports per series and per book (field-level diffs)
 - Non-destructive: only updates when provider has new data
+- Uses the same shared sync functions as approve and batch
 
 ### Field Locking
-- Individual book fields can be locked to prevent external sync from overwriting manual edits
+- Individual series and book fields can be locked to prevent external sync from overwriting manual edits
+- Locked fields: `description`, `authors`, `publishers`, `start_year`, `total_volumes`, `status` (series); `summary`, `isbn`, `publish_date`, `language`, `authors` (books)
+- Locking persisted in `locked_fields` JSONB column (e.g., `{"description": true}`)
+- Sync reports include skipped fields (locked) vs updated fields
 
 ### AniList Reading Status Sync
 
