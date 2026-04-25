@@ -8,7 +8,7 @@ export default defineConfig({
 		starlight({
 			title: 'Stripstream Librarian',
 			logo: {
-				src: './src/assets/logo.png',
+				src: './src/assets/logo.webp',
 			},
 			social: [{ icon: 'github', label: 'Sources', href: 'https://git.julienfroidefond.com/julienfroidefond/stripstream-librarian' }],
 			customCss: ['./src/styles/custom.css'],
