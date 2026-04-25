@@ -43,7 +43,7 @@ function LoginForm() {
 
       {/* Background logo */}
       <Image
-        src="/logo.png"
+        src="/logo.webp"
         alt=""
         fill
         className="object-cover opacity-20"
