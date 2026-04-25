@@ -392,7 +392,7 @@ export async function createToken(name: string, scope: string, userId?: string) 
 }
 
 export async function fetchUsers(): Promise<UserDto[]> {
-  return apiFetch<UserDto[]>("/admin/users");
+  return apiFetch<UserDto[]>("/admin/users", { next: { revalidate: 60 } });
 }
 
 export async function createUser(username: string): Promise<UserDto> {
@@ -452,7 +452,7 @@ export async function fetchBooks(
   params.set("page", page.toString());
   params.set("limit", limit.toString());
 
-  return apiFetch<BooksPageDto>(`/books?${params.toString()}`);
+  return apiFetch<BooksPageDto>(`/books?${params.toString()}`, { next: { revalidate: 15 } });
 }
 
 export type SeriesPageDto = {
@@ -486,11 +486,11 @@ export async function fetchAllSeries(
   params.set("page", page.toString());
   params.set("limit", limit.toString());
 
-  return apiFetch<SeriesPageDto>(`/series?${params.toString()}`);
+  return apiFetch<SeriesPageDto>(`/series?${params.toString()}`, { next: { revalidate: 15 } });
 }
 
 export async function fetchSeriesById(seriesId: string): Promise<SeriesDto> {
-  return apiFetch<SeriesDto>(`/series/${seriesId}/details`);
+  return apiFetch<SeriesDto>(`/series/${seriesId}/details`, { next: { revalidate: 15 } });
 }
 
 export async function fetchSeriesStatuses(): Promise<string[]> {
@@ -791,7 +791,7 @@ export async function fetchAuthors(
   params.set("page", page.toString());
   params.set("limit", limit.toString());
 
-  return apiFetch<AuthorsPageDto>(`/authors?${params.toString()}`);
+  return apiFetch<AuthorsPageDto>(`/authors?${params.toString()}`, { next: { revalidate: 30 } });
 }
 
 export type UpdateBookRequest = {
@@ -1037,7 +1037,7 @@ export async function rejectMetadataMatch(id: string) {
 export async function getMetadataLink(seriesId: string) {
   const params = new URLSearchParams();
   params.set("series_id", seriesId);
-  return apiFetch<ExternalMetadataLinkDto[]>(`/metadata/links?${params.toString()}`);
+  return apiFetch<ExternalMetadataLinkDto[]>(`/metadata/links?${params.toString()}`, { next: { revalidate: 30 } });
 }
 
 export async function getReadingStatusLink(seriesId: string) {
@@ -1047,7 +1047,7 @@ export async function getReadingStatusLink(seriesId: string) {
 }
 
 export async function getMissingBooks(linkId: string) {
-  return apiFetch<MissingBooksDto>(`/metadata/missing/${linkId}`);
+  return apiFetch<MissingBooksDto>(`/metadata/missing/${linkId}`, { next: { revalidate: 30 } });
 }
 
 export async function deleteMetadataLink(id: string) {
