@@ -9,6 +9,7 @@ The project consists of the following components:
 - **API** (`apps/api/`) - Rust-based REST API service
 - **Indexer** (`apps/indexer/`) - Rust-based background indexing service
 - **Backoffice** (`apps/backoffice/`) - Next.js web administration interface
+- **Docs** (`apps/docs/`) - Documentation site (Astro/Starlight)
 - **Infrastructure** (`infra/`) - Docker Compose setup with PostgreSQL
 
 ## Quick Start
@@ -40,11 +41,13 @@ This will start:
 - API service (port 7080)
 - Indexer service (port 7081)
 - Backoffice web UI (port 7082)
+- Documentation (port 7084)
 
 ### Accessing the Application
 
 - **Backoffice**: http://localhost:7082
 - **API**: http://localhost:7080
+- **Documentation**: http://localhost:7084
 
 ### Default Credentials
 
@@ -201,7 +204,8 @@ stripstream-librarian/
 ├── apps/
 │   ├── api/              # Rust REST API
 │   ├── indexer/          # Rust background indexer
-│   └── backoffice/       # Next.js web UI
+│   ├── backoffice/       # Next.js web UI
+│   └── docs/             # Documentation site (Astro/Starlight)
 ├── infra/
 │   └── migrations/       # SQL database migrations
 ├── libraries/            # Book storage (mounted volume)
@@ -225,7 +229,7 @@ docker login -u julienfroidefond32
 ```
 
 This script will:
-- Build images for `api`, `indexer`, and `backoffice`
+- Build images for `api`, `indexer`, `backoffice`, and `docs`
 - Tag them with the current version (from `Cargo.toml`) and `latest`
 - Push to the registry
 
@@ -287,6 +291,11 @@ services:
       API_BOOTSTRAP_TOKEN: your_bootstrap_token  # must match api above
       # --- Optional (defaults shown) ---
       # API_BASE_URL: http://api:7080
+
+  docs:
+    image: julienfroidefond32/stripstream-docs:latest
+    ports:
+      - "7084:7084"
 
 volumes:
   postgres_data:
