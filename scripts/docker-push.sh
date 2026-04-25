@@ -3,7 +3,7 @@ set -e
 
 REGISTRY="docker.io"
 OWNER="julienfroidefond32"
-SERVICES=("api" "indexer" "backoffice")
+SERVICES=("api" "indexer" "backoffice" "docs")
 
 # ─── Version bump ───────────────────────────────────────────────────────────
 CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')

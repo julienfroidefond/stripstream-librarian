@@ -14,4 +14,4 @@ jobs:
           DOCKER_BUILDKIT: 1
           COMPOSE_DOCKER_CLI_BUILD: 1
         run: |
-          BUILDKIT_PROGRESS=plain cd /Users/julienfroidefond/Sites/docker-stack && docker pull julienfroidefond32/stripstream-backoffice && docker pull julienfroidefond32/stripstream-api && docker pull julienfroidefond32/stripstream-indexer && ./scripts/stack.sh up stripstream
+          BUILDKIT_PROGRESS=plain cd /Users/julienfroidefond/Sites/docker-stack && docker pull julienfroidefond32/stripstream-backoffice && docker pull julienfroidefond32/stripstream-api && docker pull julienfroidefond32/stripstream-indexer && docker pull julienfroidefond32/stripstream-docs && ./scripts/stack.sh up stripstream
