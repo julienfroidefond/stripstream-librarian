@@ -339,13 +339,28 @@ pub async fn add_torrent(
                                                 let existing_content = t.get("content_path").and_then(|c| c.as_str()).unwrap_or("").to_string();
                                                 tracing::info!("[QBITTORRENT] Found existing torrent by magnet hash {h}, content_path={existing_content}");
 
-                                                // If the torrent is already completed, create the download record
-                                                // with content_path and status='completed' so the import triggers immediately
+                                                // If the torrent is already completed, check if content still exists
                                                 let t_state = t.get("state").and_then(|s| s.as_str()).unwrap_or("");
                                                 let t_progress = t.get("progress").and_then(|p| p.as_f64()).unwrap_or(0.0);
                                                 if t_progress >= 1.0 || super::torrent_import::QB_COMPLETED_STATES.contains(&t_state) {
-                                                    // Store content_path now — will be used when creating the torrent_download record
-                                                    // We'll set status to 'completed' directly and spawn the import
+                                                    let content_exists = !existing_content.is_empty()
+                                                        && tokio::fs::metadata(&existing_content).await.is_ok();
+
+                                                    if !content_exists {
+                                                        // Old torrent is a stale residue — content was already cleaned up.
+                                                        // Remove it from qBittorrent and let the new torrent be added normally.
+                                                        tracing::warn!("[QBITTORRENT] Duplicate torrent {h} content no longer exists at {existing_content}, removing stale torrent");
+                                                        let _ = client
+                                                            .post(format!("{base_url}/api/v2/torrents/delete"))
+                                                            .header("Cookie", format!("SID={sid}"))
+                                                            .form(&[("hashes", h.to_string()), ("deleteFiles", "false".to_string())])
+                                                            .send()
+                                                            .await;
+                                                        qb_hash = None;
+                                                        break;
+                                                    }
+
+                                                    // Content exists — launch import immediately
                                                     let pool2 = state.pool.clone();
                                                     let tid = download_id.unwrap();
                                                     let lib_id = library_id;
