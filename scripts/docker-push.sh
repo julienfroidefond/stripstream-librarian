@@ -4,6 +4,8 @@ set -e
 REGISTRY="docker.io"
 OWNER="julienfroidefond32"
 SERVICES=("api" "indexer" "backoffice" "docs")
+PLATFORMS="linux/amd64,linux/arm64"
+BUILDER_NAME="stripstream-multiarch"
 
 # ─── Version bump ───────────────────────────────────────────────────────────
 CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
@@ -11,6 +13,7 @@ IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
 
 echo "=== Stripstream Librarian Docker Push ==="
 echo "Current: $CURRENT_VERSION"
+echo "Platforms: $PLATFORMS"
 echo ""
 echo "  1) patch → $MAJOR.$MINOR.$((PATCH + 1))"
 echo "  2) minor → $MAJOR.$((MINOR + 1)).0"
@@ -32,7 +35,7 @@ for i in "${!SERVICES[@]}"; do
     echo "  $((i + 1))) ${SERVICES[$i]}"
 done
 echo ""
-read -rp "Choice [a/1/2/3, comma-separated]: " SVC_CHOICE
+read -rp "Choice [a/1/2/3/4, comma-separated]: " SVC_CHOICE
 
 if [[ "$SVC_CHOICE" == "a" || -z "$SVC_CHOICE" ]]; then
     SELECTED_SERVICES=("${SERVICES[@]}")
@@ -64,16 +67,26 @@ git add Cargo.toml Cargo.lock apps/backoffice/package.json
 git commit -m "chore: bump version to $NEW_VERSION"
 VERSION="$NEW_VERSION"
 
-# ─── Build, tag & push all services ─────────────────────────────────────────
+# ─── Ensure buildx builder exists ──────────────────────────────────────────
+if ! docker buildx inspect "$BUILDER_NAME" &>/dev/null; then
+    echo "Creating buildx builder: $BUILDER_NAME"
+    docker buildx create --name "$BUILDER_NAME" --use --bootstrap
+else
+    docker buildx use "$BUILDER_NAME"
+fi
+
+# ─── Build, tag & push all services (multi-platform) ──────────────────────
 for service in "${SELECTED_SERVICES[@]}"; do
     echo ""
-    echo "=== $service ==="
-    docker build -f "apps/$service/Dockerfile" -t "$service:latest" .
-    docker tag "$service:latest" "$REGISTRY/$OWNER/stripstream-$service:$VERSION"
-    docker tag "$service:latest" "$REGISTRY/$OWNER/stripstream-$service:latest"
-    docker push "$REGISTRY/$OWNER/stripstream-$service:$VERSION"
-    docker push "$REGISTRY/$OWNER/stripstream-$service:latest"
-    echo "✓ $service pushed"
+    echo "=== $service (${PLATFORMS}) ==="
+    docker buildx build \
+        --platform "$PLATFORMS" \
+        -f "apps/$service/Dockerfile" \
+        -t "$REGISTRY/$OWNER/stripstream-$service:$VERSION" \
+        -t "$REGISTRY/$OWNER/stripstream-$service:latest" \
+        --push \
+        .
+    echo "✓ $service pushed ($PLATFORMS)"
 done
 
 # ─── Git tag ────────────────────────────────────────────────────────────────
@@ -84,4 +97,5 @@ fi
 echo ""
 echo "=== Done ==="
 echo "Version: $VERSION"
+echo "Platforms: $PLATFORMS"
 echo "Tag: v$VERSION (push with: git push origin v$VERSION)"
