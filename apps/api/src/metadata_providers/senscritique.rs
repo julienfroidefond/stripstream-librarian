@@ -631,9 +631,14 @@ pub async fn fetch_trending(
 ) -> Result<Vec<SeriesCandidate>, String> {
     let fetch_limit = if category.is_some() { limit * 4 } else { limit };
 
+    let period_args = if period == "ALL_TIME" {
+        "byPeriod: false".to_string()
+    } else {
+        format!("byPeriod: true, period: {period}")
+    };
     let query = serde_json::json!({
         "query": format!(
-            "{{ productsByRelease(universe: \"{universe}\", limit: {fetch_limit}, offset: 0, sortBy: {sort_by}, byPeriod: true, period: {period}) {{ items {{ id title url category medias {{ picture }} authors {{ name }} dateRelease rating synopsis franchises {{ id label }} }} }} }}"
+            "{{ productsByRelease(universe: \"{universe}\", limit: {fetch_limit}, offset: 0, sortBy: {sort_by}, {period_args}) {{ items {{ id title url category medias {{ picture }} authors {{ name }} dateRelease rating synopsis franchises {{ id label }} }} }} }}"
         ),
     });
 

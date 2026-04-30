@@ -30,6 +30,7 @@ const PROVIDERS = [
 const PERIODS = [
   { id: "month", label: "Mois" },
   { id: "year", label: "Année" },
+  { id: "all", label: "Tous les temps" },
 ];
 
 export function DiscoveryGrid({

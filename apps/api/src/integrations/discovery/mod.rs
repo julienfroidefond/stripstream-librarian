@@ -156,6 +156,7 @@ pub async fn trending(
     let gql_period = match period {
         "week" => "OUTBYWEEK",
         "year" => "OUTBYYEAR",
+        "all" => "ALL_TIME",
         _ => "OUTOFMONTH",
     };
     let gql_sort = if provider.starts_with("sc_best") { "RATING" } else { "POPULARITY" };
