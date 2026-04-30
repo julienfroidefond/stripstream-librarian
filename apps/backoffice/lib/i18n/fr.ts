@@ -1003,6 +1003,7 @@ const fr = {
   "downloads.failedBefore": "{{count}} téléchargement(s) échoué(s) précédemment",
   "downloads.showMore": "Voir {{count}} de plus…",
   "downloads.showLess": "Réduire",
+  "downloads.sortRecent": "Récent",
   "downloads.sortSeeders": "Seeders",
   "downloads.sortMissing": "Manquants",
   "downloads.sortName": "Nom",

@@ -12,6 +12,20 @@ import type { TranslationKey } from "@/lib/i18n/fr";
 
 type TFunction = (key: TranslationKey, vars?: Record<string, string | number>) => string;
 
+function formatRelativeDate(iso: string): string {
+  const date = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return "à l'instant";
+  if (diffMin < 60) return `il y a ${diffMin}min`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `il y a ${diffH}h`;
+  const diffD = Math.floor(diffH / 24);
+  if (diffD < 30) return `il y a ${diffD}j`;
+  return date.toLocaleDateString();
+}
+
 const STATUS_ACTIVE = new Set(["downloading", "completed", "importing"]);
 
 /** Group releases by identical title, preserving order of first occurrence. */
@@ -377,11 +391,11 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
   );
 }
 
-type AvailableSortKey = "seeders" | "missing" | "name";
+type AvailableSortKey = "seeders" | "missing" | "name" | "recent";
 
 export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFound: LatestFoundPerLibraryDto[]; onDeleted: () => void }) {
   const { t } = useTranslation();
-  const [sort, setSort] = useState<AvailableSortKey>("seeders");
+  const [sort, setSort] = useState<AvailableSortKey>("recent");
   const [filterLib, setFilterLib] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
@@ -401,6 +415,7 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
       case "seeders": return bestSeeders(b) - bestSeeders(a);
       case "missing": return b.missing_count - a.missing_count;
       case "name": return a.series_name.localeCompare(b.series_name);
+      case "recent": return (b.updated_at ?? "").localeCompare(a.updated_at ?? "");
       default: return 0;
     }
   });
@@ -433,6 +448,7 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
   }
 
   const sortOptions: { id: AvailableSortKey; label: string }[] = [
+    { id: "recent", label: t("downloads.sortRecent") },
     { id: "seeders", label: t("downloads.sortSeeders") },
     { id: "missing", label: t("downloads.sortMissing") },
     { id: "name", label: t("downloads.sortName") },
@@ -564,6 +580,11 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
                     <span>{releaseCount} release{releaseCount > 1 ? "s" : ""}</span>
+                    {r.updated_at && (
+                      <span title={new Date(r.updated_at).toLocaleString()}>
+                        {formatRelativeDate(r.updated_at)}
+                      </span>
+                    )}
                     {r.available_releases && r.available_releases.length > 0 && (
                       <span className="hidden sm:inline truncate max-w-xs" title={r.available_releases[0].title}>
                         {r.available_releases[0].title}

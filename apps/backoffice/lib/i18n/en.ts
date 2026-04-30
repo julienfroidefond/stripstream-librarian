@@ -1005,6 +1005,7 @@ const en: Record<TranslationKey, string> = {
   "downloads.failedBefore": "{{count}} previous failed download(s)",
   "downloads.showMore": "Show {{count}} more…",
   "downloads.showLess": "Show less",
+  "downloads.sortRecent": "Recent",
   "downloads.sortSeeders": "Seeders",
   "downloads.sortMissing": "Missing",
   "downloads.sortName": "Name",
