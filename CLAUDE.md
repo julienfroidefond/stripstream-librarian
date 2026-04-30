@@ -13,6 +13,7 @@ Stripstream Librarian — gestionnaire de bibliothèque de bandes dessinées/ebo
 | API REST | `apps/api/` | 7080 | axum |
 | Indexer (background) | `apps/indexer/` | 7081 | axum (minimal) |
 | Backoffice | `apps/backoffice/` | 7082 | Next.js 16 / React 19 |
+| Documentation | `apps/docs/` | 7084 | Astro / Starlight |
 | PostgreSQL | infra | 6432 | — |
 
 Crates partagés : `crates/core` (config env, paths), `crates/parsers` (CBZ/CBR/PDF/EPUB), `crates/notifications` (Telegram).
@@ -27,6 +28,17 @@ Crates partagés : `crates/core` (config env, paths), `crates/parsers` (CBZ/CBR/
 2. **Analysis** (`analyzer.rs`) — Opens archives, extracts page count + first page, generates WebP thumbnails. Processes books where `page_count IS NULL`.
 
 Fingerprint = SHA256(size + mtime + filename) — detects changes without re-reading files.
+
+### Metadata Sync (shared_sync.rs)
+
+All three sync paths (approve, batch auto-match, refresh) use the same factored code in `apps/api/src/metadata/shared_sync.rs`:
+- `extract_series_fields()` — extracts fields from `metadata_json` with candidate fallback
+- `upsert_series_metadata()` — INSERT ON CONFLICT with locked_fields
+- `fetch_local_books()` + `match_books()` — volume matching then title containment
+- `push_book_metadata()` — update local books respecting locked_fields
+- Diff helpers for reporting
+
+All providers store `description` in `metadata_json` (not just the struct field) so it survives the DB round-trip through `external_metadata_links`.
 
 ## Commands
 
@@ -52,6 +64,12 @@ docker compose up -d postgres
 
 # Backoffice dev
 cd apps/backoffice && npm install && npm run dev  # http://localhost:7082
+
+# Docs dev
+cd apps/docs && npm install && npm run dev -- --port 7083
+
+# Docker (multi-arch amd64+arm64)
+./scripts/docker-push.sh              # interactive: bump version, select services, build & push
 
 # Migrations
 sqlx migrate run                # DATABASE_URL doit être défini
@@ -105,6 +123,13 @@ std → external crates → workspace crates → local (`crate::`)
 - App Router, Tailwind CSS v4, dark/light via `next-themes`
 - Tous les appels API dans `lib/api.ts` (types DTO + fetch)
 - Composants UI génériques dans `app/components/ui/` — les réutiliser plutôt que du HTML brut
+- **Caching** : `staleTimes.dynamic = 30` (client router cache), API fetches avec `{ next: { revalidate: N } }` pour les listes (15s) et données stables (30-60s). Sans `revalidate`, le défaut est `cache: "no-store"`.
+- **Images** : `unoptimized: true` dans next.config — utiliser WebP pré-optimisé dans `public/` plutôt que le pipeline d'optimisation Next.js
+
+### Documentation (Astro/Starlight)
+- Site statique dans `apps/docs/`, build avec `npm run build`, servi par nginx en Docker
+- Thème custom cyan/magenta dans `src/styles/custom.css`
+- Contenu Markdown dans `src/content/docs/`, sidebar configurée dans `astro.config.mjs`
 
 ## Tests
 
@@ -178,6 +203,9 @@ Le user PostgreSQL doit avoir le droit `CREATEDB` : `ALTER USER stripstream CREA
 - **Series extraction** : le parser utilise le **parent immédiat** du fichier comme nom de série (pas le premier répertoire). Si le parent est un sous-dossier HS/Specials/Bonus/Intégrales, il remonte d'un cran.
 - **Scanner volume_type** : le scanner propage `volume_type` lors des updates (skipped-dir et fingerprint-unchanged). Un scan simple suffit à corriger les HS mal classés.
 - **OpenAPI dual spec** : Client API (`/openapi.json`, read scope) et Admin API (`/admin/openapi.json`, all). Les endpoints `GET /metadata/links` et `GET /metadata/missing/:id` sont en read scope.
+- **Metadata description** : tous les providers doivent stocker `description` dans `metadata_json` (pas seulement dans `candidate.description`). Sans ça, la description est perdue lors du cycle match → approve → sync car `sync_series_metadata` n'a accès qu'à `metadata_json`.
+- **Duplicate torrent detection** : quand un torrent existant est trouvé par magnet hash, vérifier que `content_path` existe sur disque avant de lancer l'import. Les anciens répertoires `sl-*` sont nettoyés après import.
+- **Missing books dedup** : `external_book_metadata` peut contenir des doublons par `volume_number` (éditions multiples). Les queries d'affichage utilisent `DISTINCT ON (volume_number)`.
 
 > Voir `AGENTS.md` pour les conventions de code détaillées et les patterns par module.
 > Des `AGENTS.md` spécifiques existent dans `apps/api/`, `apps/indexer/`, `apps/backoffice/`, `crates/parsers/`.
