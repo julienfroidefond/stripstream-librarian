@@ -57,6 +57,9 @@ pub struct AvailableReleaseDto {
     /// True if a previous download of overlapping volumes failed for this series.
     #[serde(default)]
     pub has_failed: bool,
+    /// When this release was first detected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detected_at: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -852,6 +855,11 @@ pub(crate) async fn process_download_detection(
                     }
                     continue;
                 }
+                // Stamp new releases with detected_at
+                let now_str = chrono::Utc::now().to_rfc3339();
+                for r in &mut matched_releases {
+                    r.detected_at = Some(now_str.clone());
+                }
                 let releases_json = serde_json::to_value(&matched_releases).ok();
                 insert_event(pool, job_id, "downloads_found", "info", Some(series_name), None, Some(serde_json::json!({"release_count": matched_releases.len(), "missing_count": missing_count, "available_releases": releases_json}))).await;
                 // UPSERT into available_downloads — merge new releases with existing ones
@@ -1065,6 +1073,7 @@ async fn search_prowlarr_for_series(
                     matched_missing_volumes: matched_vols,
                     all_volumes,
                     has_failed: false,
+                    detected_at: None,
                 })
             }
         })

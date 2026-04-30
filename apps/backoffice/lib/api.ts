@@ -1209,6 +1209,7 @@ export type AvailableReleaseDto = {
   matched_missing_volumes: number[];
   all_volumes: number[];
   has_failed?: boolean;
+  detected_at?: string;
 };
 
 export type DownloadDetectionReportDto = {

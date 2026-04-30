@@ -408,6 +408,12 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
   const bestSeeders = (r: typeof allResults[0]) =>
     r.available_releases?.reduce((max, rel) => Math.max(max, rel.seeders ?? 0), 0) ?? 0;
 
+  const newestDetectedAt = (r: typeof allResults[0]) =>
+    r.available_releases?.reduce((newest, rel) => {
+      const d = rel.detected_at ?? "";
+      return d > newest ? d : newest;
+    }, "") ?? r.updated_at ?? "";
+
   const filtered = allResults.filter(r => filterLib === "all" || r.library_id === filterLib);
 
   const sorted = [...filtered].sort((a, b) => {
@@ -415,7 +421,7 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
       case "seeders": return bestSeeders(b) - bestSeeders(a);
       case "missing": return b.missing_count - a.missing_count;
       case "name": return a.series_name.localeCompare(b.series_name);
-      case "recent": return (b.updated_at ?? "").localeCompare(a.updated_at ?? "");
+      case "recent": return newestDetectedAt(b).localeCompare(newestDetectedAt(a));
       default: return 0;
     }
   });
@@ -580,11 +586,14 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
                     <span>{releaseCount} release{releaseCount > 1 ? "s" : ""}</span>
-                    {r.updated_at && (
-                      <span title={new Date(r.updated_at).toLocaleString()}>
-                        {formatRelativeDate(r.updated_at)}
-                      </span>
-                    )}
+                    {(() => {
+                      const newest = newestDetectedAt(r);
+                      return newest ? (
+                        <span title={new Date(newest).toLocaleString()}>
+                          {formatRelativeDate(newest)}
+                        </span>
+                      ) : null;
+                    })()}
                     {r.available_releases && r.available_releases.length > 0 && (
                       <span className="hidden sm:inline truncate max-w-xs" title={r.available_releases[0].title}>
                         {r.available_releases[0].title}
