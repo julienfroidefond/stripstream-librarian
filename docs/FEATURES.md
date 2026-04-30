@@ -329,10 +329,10 @@ Browse and add series to your library from external sources.
 ### Sources
 | Tab | Source | Sort | Period filter |
 |-----|--------|------|---------------|
-| Nouveautés BD | SensCritique `productsByRelease` | Popularity | Month / Year |
-| Nouveautés Manga | SensCritique `productsByRelease` | Popularity | Month / Year |
-| Meilleures BD | SensCritique `productsByRelease` | Rating | Month / Year |
-| Meilleurs Manga | SensCritique `productsByRelease` | Rating | Month / Year |
+| Nouveautés BD | SensCritique `productsByRelease` | Popularity | Month / Year / All time |
+| Nouveautés Manga | SensCritique `productsByRelease` | Popularity | Month / Year / All time |
+| Meilleures BD | SensCritique `productsByRelease` | Rating | Month / Year / All time |
+| Meilleurs Manga | SensCritique `productsByRelease` | Rating | Month / Year / All time |
 | Bédéthèque | Bédéthèque indispensables | Rank | — |
 | SensCritique Top BD | SensCritique `top` (TOP_100_OUT_OF_TOP_10) | Rank | — |
 | SensCritique Top Manga | SensCritique `poll` (id: 192836) | Rank | — |
@@ -384,6 +384,8 @@ Browse and add series to your library from external sources.
 - **`downloads_not_found`** event (info level): Prowlarr returned results but none matched missing volumes
 - **Failed download indicator**: badge on available releases that had previous download errors (via `torrent_downloads` lateral join)
 - **Release blacklist**: permanently hide unwanted releases so they don't reappear after next detection. Blacklist panel with unhide. Blacklisted titles filtered during detection.
+- **Per-release `detected_at`**: each release stores when it was first discovered. Preserved across refreshes via `merge_releases` SQL function (same title = same release, keeps original date).
+- **Downloads page sorting**: default sort by newest `detected_at` (Recent), also Seeders, Missing, Name. Relative date shown per series.
 
 ### qBittorrent
 - Add torrents directly from Prowlarr search results or available downloads

@@ -7,10 +7,10 @@ description: Parcourir et découvrir de nouvelles séries
 
 | Onglet | Source | Tri | Filtre période |
 |--------|--------|-----|----------------|
-| Nouveautés BD | SensCritique `productsByRelease` | Popularité | Mois / Année |
-| Nouveautés Manga | SensCritique `productsByRelease` | Popularité | Mois / Année |
-| Meilleures BD | SensCritique `productsByRelease` | Note | Mois / Année |
-| Meilleurs Manga | SensCritique `productsByRelease` | Note | Mois / Année |
+| Nouveautés BD | SensCritique `productsByRelease` | Popularité | Mois / Année / Tous les temps |
+| Nouveautés Manga | SensCritique `productsByRelease` | Popularité | Mois / Année / Tous les temps |
+| Meilleures BD | SensCritique `productsByRelease` | Note | Mois / Année / Tous les temps |
+| Meilleurs Manga | SensCritique `productsByRelease` | Note | Mois / Année / Tous les temps |
 | Bédéthèque | Bédéthèque indispensables | Rang | — |
 | SensCritique Top BD | SensCritique `top` | Rang | — |
 | SensCritique Top Manga | SensCritique `poll` | Rang | — |
