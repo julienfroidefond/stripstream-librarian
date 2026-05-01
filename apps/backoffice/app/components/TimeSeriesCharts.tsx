@@ -114,7 +114,10 @@ export function TimeSeriesCharts({
     jobScan: string;
     jobRebuild: string;
     jobThumbnail: string;
-    jobOther: string;
+    jobMetadata: string;
+    jobDownloads: string;
+    jobReading: string;
+    jobConversion: string;
   };
 }) {
   const [period, setPeriod] = useState<Period>("week");
@@ -238,13 +241,19 @@ export function TimeSeriesCharts({
               scan: j.scan,
               rebuild: j.rebuild,
               thumbnail: j.thumbnail,
-              other: j.other,
+              metadata: j.metadata,
+              downloads: j.downloads,
+              reading: j.reading,
+              conversion: j.conversion,
             }))}
             lines={[
               { key: "scan", label: labels.jobScan, color: "hsl(198 78% 37%)" },
               { key: "rebuild", label: labels.jobRebuild, color: "hsl(142 60% 45%)" },
               { key: "thumbnail", label: labels.jobThumbnail, color: "hsl(45 93% 47%)" },
-              { key: "other", label: labels.jobOther, color: "hsl(280 60% 50%)" },
+              { key: "metadata", label: labels.jobMetadata, color: "hsl(280 60% 50%)" },
+              { key: "downloads", label: labels.jobDownloads, color: "hsl(340 65% 50%)" },
+              { key: "reading", label: labels.jobReading, color: "hsl(170 60% 45%)" },
+              { key: "conversion", label: labels.jobConversion, color: "hsl(25 80% 50%)" },
             ]}
           />
         </CardContent>

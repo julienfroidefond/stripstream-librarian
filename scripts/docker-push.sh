@@ -76,6 +76,7 @@ else
 fi
 
 # ─── Build, tag & push all services (multi-platform) ──────────────────────
+# Registry cache speeds up rebuilds: layers shared between builds, persisted across runs.
 for service in "${SELECTED_SERVICES[@]}"; do
     echo ""
     echo "=== $service (${PLATFORMS}) ==="
@@ -84,6 +85,8 @@ for service in "${SELECTED_SERVICES[@]}"; do
         -f "apps/$service/Dockerfile" \
         -t "$REGISTRY/$OWNER/stripstream-$service:$VERSION" \
         -t "$REGISTRY/$OWNER/stripstream-$service:latest" \
+        --cache-from "type=registry,ref=$REGISTRY/$OWNER/stripstream-$service:buildcache" \
+        --cache-to "type=registry,ref=$REGISTRY/$OWNER/stripstream-$service:buildcache,mode=max" \
         --push \
         .
     echo "✓ $service pushed ($PLATFORMS)"

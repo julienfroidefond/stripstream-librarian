@@ -123,7 +123,10 @@ pub struct JobTimePoint {
     pub scan: i64,
     pub rebuild: i64,
     pub thumbnail: i64,
-    pub other: i64,
+    pub metadata: i64,
+    pub downloads: i64,
+    pub reading: i64,
+    pub conversion: i64,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -738,7 +741,10 @@ pub async fn get_stats(
                     COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'scan'), 0)::BIGINT AS scan,
                     COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'rebuild'), 0)::BIGINT AS rebuild,
                     COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'thumbnail'), 0)::BIGINT AS thumbnail,
-                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'other'), 0)::BIGINT AS other
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'metadata'), 0)::BIGINT AS metadata,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'downloads'), 0)::BIGINT AS downloads,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'reading'), 0)::BIGINT AS reading,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'conversion'), 0)::BIGINT AS conversion
                 FROM generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day') AS d(dt)
                 LEFT JOIN (
                     SELECT
@@ -747,7 +753,11 @@ pub async fn get_stats(
                             WHEN type = 'scan' THEN 'scan'
                             WHEN type IN ('rebuild', 'full_rebuild', 'rescan') THEN 'rebuild'
                             WHEN type IN ('thumbnail_rebuild', 'thumbnail_regenerate') THEN 'thumbnail'
-                            ELSE 'other'
+                            WHEN type IN ('metadata_batch', 'metadata_batch_rematch', 'metadata_refresh') THEN 'metadata'
+                            WHEN type = 'download_detection' THEN 'downloads'
+                            WHEN type IN ('reading_status_match', 'reading_status_push') THEN 'reading'
+                            WHEN type = 'cbr_to_cbz' THEN 'conversion'
+                            ELSE 'metadata'
                         END AS cat,
                         COUNT(*) AS c
                     FROM index_jobs
@@ -770,7 +780,10 @@ pub async fn get_stats(
                     COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'scan'), 0)::BIGINT AS scan,
                     COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'rebuild'), 0)::BIGINT AS rebuild,
                     COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'thumbnail'), 0)::BIGINT AS thumbnail,
-                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'other'), 0)::BIGINT AS other
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'metadata'), 0)::BIGINT AS metadata,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'downloads'), 0)::BIGINT AS downloads,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'reading'), 0)::BIGINT AS reading,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'conversion'), 0)::BIGINT AS conversion
                 FROM generate_series(
                     DATE_TRUNC('week', NOW() - INTERVAL '2 months'),
                     DATE_TRUNC('week', NOW()),
@@ -783,7 +796,11 @@ pub async fn get_stats(
                             WHEN type = 'scan' THEN 'scan'
                             WHEN type IN ('rebuild', 'full_rebuild', 'rescan') THEN 'rebuild'
                             WHEN type IN ('thumbnail_rebuild', 'thumbnail_regenerate') THEN 'thumbnail'
-                            ELSE 'other'
+                            WHEN type IN ('metadata_batch', 'metadata_batch_rematch', 'metadata_refresh') THEN 'metadata'
+                            WHEN type = 'download_detection' THEN 'downloads'
+                            WHEN type IN ('reading_status_match', 'reading_status_push') THEN 'reading'
+                            WHEN type = 'cbr_to_cbz' THEN 'conversion'
+                            ELSE 'metadata'
                         END AS cat,
                         COUNT(*) AS c
                     FROM index_jobs
@@ -806,7 +823,10 @@ pub async fn get_stats(
                     COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'scan'), 0)::BIGINT AS scan,
                     COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'rebuild'), 0)::BIGINT AS rebuild,
                     COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'thumbnail'), 0)::BIGINT AS thumbnail,
-                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'other'), 0)::BIGINT AS other
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'metadata'), 0)::BIGINT AS metadata,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'downloads'), 0)::BIGINT AS downloads,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'reading'), 0)::BIGINT AS reading,
+                    COALESCE(SUM(cnt.c) FILTER (WHERE cnt.cat = 'conversion'), 0)::BIGINT AS conversion
                 FROM generate_series(
                     DATE_TRUNC('month', NOW()) - INTERVAL '11 months',
                     DATE_TRUNC('month', NOW()),
@@ -819,7 +839,11 @@ pub async fn get_stats(
                             WHEN type = 'scan' THEN 'scan'
                             WHEN type IN ('rebuild', 'full_rebuild', 'rescan') THEN 'rebuild'
                             WHEN type IN ('thumbnail_rebuild', 'thumbnail_regenerate') THEN 'thumbnail'
-                            ELSE 'other'
+                            WHEN type IN ('metadata_batch', 'metadata_batch_rematch', 'metadata_refresh') THEN 'metadata'
+                            WHEN type = 'download_detection' THEN 'downloads'
+                            WHEN type IN ('reading_status_match', 'reading_status_push') THEN 'reading'
+                            WHEN type = 'cbr_to_cbz' THEN 'conversion'
+                            ELSE 'metadata'
                         END AS cat,
                         COUNT(*) AS c
                     FROM index_jobs
@@ -843,7 +867,10 @@ pub async fn get_stats(
             scan: r.get("scan"),
             rebuild: r.get("rebuild"),
             thumbnail: r.get("thumbnail"),
-            other: r.get("other"),
+            metadata: r.get("metadata"),
+            downloads: r.get("downloads"),
+            reading: r.get("reading"),
+            conversion: r.get("conversion"),
         })
         .collect();
 

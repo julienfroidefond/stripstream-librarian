@@ -173,7 +173,10 @@ export default async function DashboardPage() {
           jobScan: t("dashboard.jobScan"),
           jobRebuild: t("dashboard.jobRebuild"),
           jobThumbnail: t("dashboard.jobThumbnail"),
-          jobOther: t("dashboard.jobOther"),
+          jobMetadata: t("dashboard.jobMetadata"),
+          jobDownloads: t("dashboard.jobDownloads"),
+          jobReading: t("dashboard.jobReading"),
+          jobConversion: t("dashboard.jobConversion"),
         }}
       />
 

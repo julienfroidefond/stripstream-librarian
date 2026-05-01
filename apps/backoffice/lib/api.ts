@@ -719,7 +719,10 @@ export type JobTimePoint = {
   scan: number;
   rebuild: number;
   thumbnail: number;
-  other: number;
+  metadata: number;
+  downloads: number;
+  reading: number;
+  conversion: number;
 };
 
 export type RecentDownloadItem = {

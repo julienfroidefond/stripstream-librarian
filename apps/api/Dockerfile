@@ -1,7 +1,6 @@
 FROM rust:1-bookworm AS builder
 WORKDIR /app
 
-
 # Copy workspace manifests and create dummy source files to cache dependency builds
 COPY Cargo.toml ./
 COPY apps/api/Cargo.toml apps/api/Cargo.toml
