@@ -43,6 +43,7 @@ async fn rematch_unlinked_books(pool: &PgPool, library_id: Uuid) {
 }
 
 pub async fn cleanup_stale_jobs(pool: &PgPool) -> Result<()> {
+    // Cleanup running jobs that got stuck (e.g., indexer crashed)
     let result = sqlx::query(
         r#"
         UPDATE index_jobs
@@ -64,7 +65,35 @@ pub async fn cleanup_stale_jobs(pool: &PgPool) -> Result<()> {
             .map(|row| row.get::<Uuid, _>("id").to_string())
             .collect();
         info!(
-            "[CLEANUP] Marked {} stale job(s) as failed: {}",
+            "[CLEANUP] Marked {} stale running job(s) as failed: {}",
+            count,
+            ids.join(", ")
+        );
+    }
+
+    // Cleanup pending jobs that were never picked up (e.g., blocked by exclusive lock)
+    let pending_result = sqlx::query(
+        r#"
+        UPDATE index_jobs
+        SET status = 'failed',
+            finished_at = NOW(),
+            error_opt = 'Job was never picked up (stale pending)'
+        WHERE status = 'pending'
+          AND created_at < NOW() - INTERVAL '30 minutes'
+        RETURNING id
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    if !pending_result.is_empty() {
+        let count = pending_result.len();
+        let ids: Vec<String> = pending_result
+            .iter()
+            .map(|row| row.get::<Uuid, _>("id").to_string())
+            .collect();
+        info!(
+            "[CLEANUP] Marked {} stale pending job(s) as failed: {}",
             count,
             ids.join(", ")
         );
