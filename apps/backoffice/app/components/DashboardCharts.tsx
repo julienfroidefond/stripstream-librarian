@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -200,32 +201,67 @@ export function RcMultiLineChart({
   lines: { key: string; label: string; color: string }[];
   noDataLabel?: string;
 }) {
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
+
+  const toggleLine = (key: string) => {
+    setHiddenKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   const hasData = data.some((d) => lines.some((l) => (d[l.key] as number) > 0));
   if (data.length === 0 || !hasData)
     return <p className="text-muted-foreground text-sm text-center py-8">{noDataLabel}</p>;
 
+  const visibleLines = lines.filter((l) => !hiddenKeys.has(l.key));
+
   return (
-    <ResponsiveContainer width="100%" height={180}>
-      <LineChart data={data} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" opacity={0.3} />
-        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
-        <YAxis tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} allowDecimals={false} />
-        <Tooltip
-          contentStyle={{ backgroundColor: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12 }}
-        />
-        <Legend wrapperStyle={{ fontSize: 11 }} />
-        {lines.map((l) => (
-          <Line
-            key={l.key}
-            type="monotone"
-            dataKey={l.key}
-            name={l.label}
-            stroke={l.color}
-            strokeWidth={2}
-            dot={{ r: 3, fill: l.color }}
+    <div>
+      <ResponsiveContainer width="100%" height={180}>
+        <LineChart data={data} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" opacity={0.3} />
+          <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }} axisLine={false} tickLine={false} allowDecimals={false} />
+          <Tooltip
+            contentStyle={{ backgroundColor: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8, fontSize: 12, zIndex: 50 }}
+            wrapperStyle={{ zIndex: 50 }}
           />
-        ))}
-      </LineChart>
-    </ResponsiveContainer>
+          {visibleLines.map((l) => (
+            <Line
+              key={l.key}
+              type="monotone"
+              dataKey={l.key}
+              name={l.label}
+              stroke={l.color}
+              strokeWidth={2}
+              dot={{ r: 3, fill: l.color }}
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+      {/* Clickable legend below the chart */}
+      <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 mt-2">
+        {lines.map((l) => {
+          const hidden = hiddenKeys.has(l.key);
+          return (
+            <button
+              key={l.key}
+              type="button"
+              onClick={() => toggleLine(l.key)}
+              className={`flex items-center gap-1.5 text-[11px] transition-opacity ${hidden ? "opacity-35" : "opacity-100"} hover:opacity-80`}
+            >
+              <span
+                className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                style={{ backgroundColor: l.color }}
+              />
+              <span className={hidden ? "line-through" : ""}>{l.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
