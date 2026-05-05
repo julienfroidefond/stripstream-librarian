@@ -236,7 +236,9 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
   const [deleting, setDeleting] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const importedCount = Array.isArray(dl.imported_files) ? dl.imported_files.length : 0;
+  const allImported = Array.isArray(dl.imported_files) ? dl.imported_files : [];
+  const importedCount = allImported.filter((f: { already_existed?: boolean }) => !f.already_existed).length;
+  const alreadyExistedCount = allImported.filter((f: { already_existed?: boolean }) => f.already_existed).length;
 
   async function handleDelete() {
     setDeleting(true);
@@ -293,6 +295,12 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
             {dl.status === "imported" && importedCount > 0 && (
               <span className="text-[11px] text-success">{importedCount} {t("downloads.filesImported")}</span>
             )}
+            {dl.status === "imported" && importedCount === 0 && alreadyExistedCount > 0 && (
+              <span className="text-[11px] text-muted-foreground">{alreadyExistedCount} {t("downloads.alreadyExisted")}</span>
+            )}
+            {dl.status === "imported" && importedCount > 0 && alreadyExistedCount > 0 && (
+              <span className="text-[11px] text-muted-foreground">({alreadyExistedCount} {t("downloads.alreadyExisted")})</span>
+            )}
           </div>
 
           {/* Mobile: stacked */}
@@ -307,6 +315,9 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
               {dl.expected_volumes.length > 0 && <span>{formatVolumes(dl.expected_volumes)}</span>}
               {dl.status === "imported" && importedCount > 0 && (
                 <span className="text-success">{importedCount} {t("downloads.filesImported")}</span>
+              )}
+              {dl.status === "imported" && importedCount === 0 && alreadyExistedCount > 0 && (
+                <span>{alreadyExistedCount} {t("downloads.alreadyExisted")}</span>
               )}
               <span className="tabular-nums">{formatDate(dl.created_at)}</span>
             </div>

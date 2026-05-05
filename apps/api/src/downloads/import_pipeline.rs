@@ -205,6 +205,7 @@ pub(super) async fn do_import(
                 volume: matched.iter().min().copied().unwrap_or(0),
                 source: source_path.clone(),
                 destination: unmap_libraries_path(&dest),
+                already_existed: true,
             });
             continue;
         }
@@ -217,6 +218,7 @@ pub(super) async fn do_import(
             volume: matched.iter().min().copied().unwrap_or(0),
             source: source_path.clone(),
             destination: unmap_libraries_path(&dest),
+            already_existed: false,
         });
     }
 

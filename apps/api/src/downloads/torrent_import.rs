@@ -49,6 +49,8 @@ pub(super) struct ImportedFile {
     pub(super) volume: i32,
     pub(super) source: String,
     pub(super) destination: String,
+    #[serde(default)]
+    pub(super) already_existed: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -763,26 +765,28 @@ pub(super) async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> an
                 }
             }
 
-            let volumes: Vec<i32> = imported.iter().map(|f| f.volume).collect();
+            let new_count = imported.iter().filter(|f| !f.already_existed).count();
+            let existing_count = imported.iter().filter(|f| f.already_existed).count();
+            let volumes: Vec<i32> = imported.iter().filter(|f| !f.already_existed).map(|f| f.volume).collect();
             notifications::notify(
                 pool.clone(),
                 notifications::NotificationEvent::TorrentImportCompleted {
                     library_name: library_name.clone(),
                     series_name: series_name.clone(),
-                    imported_count: imported.len(),
+                    imported_count: new_count,
                     volumes,
                 },
             );
 
             if skipped.is_empty() {
                 info!(
-                    "Torrent import {} done: {} files imported, scan job {} queued",
-                    torrent_id, imported.len(), scan_job_id
+                    "Torrent import {} done: {} files imported ({} already existed), scan job {} queued",
+                    torrent_id, new_count, existing_count, scan_job_id
                 );
             } else {
                 info!(
-                    "Torrent import {} done: {} imported, {} skipped ({}), scan job {} queued",
-                    torrent_id, imported.len(), skipped.len(),
+                    "Torrent import {} done: {} imported ({} already existed), {} skipped ({}), scan job {} queued",
+                    torrent_id, new_count, existing_count, skipped.len(),
                     skipped.iter().map(|s| format!("{}: {}", s.filename, s.reason)).collect::<Vec<_>>().join(", "),
                     scan_job_id
                 );

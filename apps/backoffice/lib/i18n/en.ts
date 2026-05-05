@@ -985,6 +985,7 @@ const en: Record<TranslationKey, string> = {
   "downloads.empty": "No downloads",
   "downloads.volumes": "Volumes",
   "downloads.filesImported": "files imported",
+  "downloads.alreadyExisted": "already existed",
   "downloads.status.downloading": "Downloading",
   "downloads.status.completed": "Completed",
   "downloads.status.importing": "Importing",

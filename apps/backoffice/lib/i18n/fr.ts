@@ -983,6 +983,7 @@ const fr = {
   "downloads.empty": "Aucun téléchargement",
   "downloads.volumes": "Volumes",
   "downloads.filesImported": "fichiers importés",
+  "downloads.alreadyExisted": "déjà présents",
   "downloads.status.downloading": "Téléchargement",
   "downloads.status.completed": "Terminé",
   "downloads.status.importing": "Import en cours",

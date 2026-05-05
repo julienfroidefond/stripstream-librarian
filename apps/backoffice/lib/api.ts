@@ -1364,7 +1364,7 @@ export type TorrentDownloadDto = {
   qb_hash: string | null;
   content_path: string | null;
   status: "downloading" | "completed" | "importing" | "imported" | "partial" | "no_files_imported" | "error";
-  imported_files: Array<{ volume: number; source: string; destination: string }> | null;
+  imported_files: Array<{ volume: number; source: string; destination: string; already_existed?: boolean }> | null;
   error_message: string | null;
   progress: number;
   download_speed: number;
