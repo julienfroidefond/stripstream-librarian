@@ -31,14 +31,33 @@ fn parse_filter(s: &str) -> image::imageops::FilterType {
     }
 }
 
-fn get_cache_key(abs_path: &str, page: u32, format: &str, quality: u8, width: u32) -> String {
+fn get_cache_key(
+    abs_path: &str,
+    mtime_ns: i128,
+    page: u32,
+    format: &str,
+    quality: u8,
+    width: u32,
+) -> String {
     let mut hasher = Sha256::new();
     hasher.update(abs_path.as_bytes());
+    hasher.update(mtime_ns.to_le_bytes());
     hasher.update(page.to_le_bytes());
     hasher.update(format.as_bytes());
     hasher.update(quality.to_le_bytes());
     hasher.update(width.to_le_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+/// Read the file mtime as nanoseconds since UNIX epoch. Returns 0 if unavailable
+/// — that is OK because callers feed it as part of the cache key, not for correctness.
+fn file_mtime_ns(path: &str) -> i128 {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos() as i128)
+        .unwrap_or(0)
 }
 
 fn get_cache_path(cache_key: &str, format: &OutputFormat, cache_dir: &Path) -> PathBuf {
@@ -167,14 +186,7 @@ pub async fn get_page(
     let filter = parse_filter(&filter_str);
     let cache_dir_path = std::path::PathBuf::from(&cache_dir);
 
-    let memory_cache_key = format!("{book_id}:{n}:{}:{quality}:{width}", format.extension());
-
-    if let Some(cached) = state.page_cache.lock().await.get(&memory_cache_key).cloned() {
-        state.metrics.page_cache_hits.fetch_add(1, Ordering::Relaxed);
-        return Ok(image_response(cached, format, None, &headers));
-    }
-    state.metrics.page_cache_misses.fetch_add(1, Ordering::Relaxed);
-
+    // Fetch abs_path first — it's needed for the cache key so file changes invalidate the cache.
     let row = sqlx::query(
         r#"
         SELECT abs_path, format
@@ -203,8 +215,17 @@ pub async fn get_page(
     let abs_path = remap_libraries_path(&abs_path);
     let input_format: String = row.get("format");
 
-    let disk_cache_key = get_cache_key(&abs_path, n, format.extension(), quality, width);
+    let mtime_ns = file_mtime_ns(&abs_path);
+    let disk_cache_key = get_cache_key(&abs_path, mtime_ns, n, format.extension(), quality, width);
     let cache_path = get_cache_path(&disk_cache_key, &format, &cache_dir_path);
+    // Align memory cache key with disk cache key so it includes abs_path — file change → fresh render.
+    let memory_cache_key = disk_cache_key.clone();
+
+    if let Some(cached) = state.page_cache.lock().await.get(&memory_cache_key).cloned() {
+        state.metrics.page_cache_hits.fetch_add(1, Ordering::Relaxed);
+        return Ok(image_response(cached, format, Some(&disk_cache_key), &headers));
+    }
+    state.metrics.page_cache_misses.fetch_add(1, Ordering::Relaxed);
 
     // If-None-Match: return 304 if the client already has this version
     if let Some(if_none_match) = headers.get(header::IF_NONE_MATCH) {
@@ -271,7 +292,6 @@ pub async fn get_page(
                 let format2 = format;
                 tokio::spawn(async move {
                     prefetch_page(state2, &PrefetchParams {
-                        book_id,
                         abs_path: &abs_path2,
                         page: next_page,
                         format: format2,
@@ -294,7 +314,6 @@ pub async fn get_page(
 }
 
 struct PrefetchParams<'a> {
-    book_id: Uuid,
     abs_path: &'a str,
     page: u32,
     format: OutputFormat,
@@ -307,7 +326,6 @@ struct PrefetchParams<'a> {
 
 /// Prefetch a single page into disk+memory cache (best-effort, ignores errors).
 async fn prefetch_page(state: AppState, params: &PrefetchParams<'_>) {
-    let book_id = params.book_id;
     let page = params.page;
     let format = params.format;
     let quality = params.quality;
@@ -317,13 +335,13 @@ async fn prefetch_page(state: AppState, params: &PrefetchParams<'_>) {
     let abs_path = params.abs_path;
     let cache_dir = params.cache_dir;
 
-    let mem_key = format!("{book_id}:{page}:{}:{quality}:{width}", format.extension());
-    // Already in memory cache?
+    // Use disk cache key for memory too — keys must match get_page so file changes invalidate.
+    let mtime_ns = file_mtime_ns(abs_path);
+    let disk_key = get_cache_key(abs_path, mtime_ns, page, format.extension(), quality, width);
+    let mem_key = disk_key.clone();
     if state.page_cache.lock().await.contains(&mem_key) {
         return;
     }
-    // Already on disk?
-    let disk_key = get_cache_key(abs_path, page, format.extension(), quality, width);
     let cache_path = get_cache_path(&disk_key, &format, cache_dir);
     if cache_path.exists() {
         return;

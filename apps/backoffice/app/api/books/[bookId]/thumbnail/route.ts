@@ -20,7 +20,7 @@ export async function GET(
 
     const response = await fetch(`${baseUrl}/books/${bookId}/thumbnail`, {
       headers: fetchHeaders,
-      next: { revalidate: 86400 },
+      cache: "no-store",
     });
 
     // Forward 304 Not Modified as-is
@@ -39,7 +39,7 @@ export async function GET(
 
     const headers: Record<string, string> = {
       "Content-Type": contentType,
-      "Cache-Control": "public, max-age=31536000, immutable",
+      "Cache-Control": "public, max-age=31536000, must-revalidate",
     };
     if (etag) {
       headers["ETag"] = etag;

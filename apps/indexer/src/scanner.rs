@@ -319,9 +319,7 @@ pub async fn scan_library_discovery(
             let lookup_path = utils::remap_libraries_path(&abs_path);
             seen.insert(lookup_path.clone(), true);
 
-            // Check if title/volume needs updating (e.g., file was renamed since last scan,
-            // or volume was not extracted on a previous scan)
-            if let Some((_file_id, book_id, _)) = existing.get(&lookup_path).cloned() {
+            if let Some((file_id, book_id, old_fingerprint)) = existing.get(&lookup_path).cloned() {
                 let Some(format) = detect_format(&path) else { continue; };
                 let mut parsed = parse_metadata_fast(&path, format, root);
                 // Apply series rename mapping (same as normal scan branch)
@@ -331,6 +329,90 @@ pub async fn scan_library_discovery(
                         parsed.series = Some(renamed.clone());
                     }
                 }
+
+                // Detect in-place file changes that the directory mtime did not reflect
+                // (e.g. `cp` over an existing file does not bump the parent dir mtime on
+                // macOS/Linux). Compute the fingerprint and trigger a re-index if it changed.
+                if let Ok(metadata) = std::fs::metadata(&path) {
+                    let mtime: DateTime<Utc> = metadata
+                        .modified()
+                        .map(DateTime::<Utc>::from)
+                        .unwrap_or_else(|_| Utc::now());
+                    if let Ok(fingerprint) = utils::compute_fingerprint(&path, metadata.len(), &mtime) {
+                        if fingerprint != old_fingerprint {
+                            debug!(
+                                target: "scan",
+                                "[SCAN] Fingerprint changed in skipped dir for {}: re-indexing",
+                                path.display()
+                            );
+                            let update_series_id = if let Some(ref series_name) = parsed.series {
+                                Some(get_or_create_series_id(&state.pool, library_id, series_name, &mut series_map).await?)
+                            } else {
+                                None
+                            };
+
+                            books_to_update.push(BookUpdate {
+                                book_id,
+                                title: parsed.title.clone(),
+                                kind: utils::kind_from_format(format).to_string(),
+                                format: format.as_str().to_string(),
+                                series_id: update_series_id,
+                                volume: parsed.volume,
+                                volume_type: parsed.volume_type.as_str().to_string(),
+                                page_count: None,
+                            });
+
+                            files_to_update.push(FileUpdate {
+                                file_id,
+                                format: format.as_str().to_string(),
+                                size_bytes: metadata.len() as i64,
+                                mtime,
+                                fingerprint,
+                            });
+
+                            events_to_insert.push(EventInsert {
+                                job_id,
+                                event_type: "book_updated".to_string(),
+                                level: "info".to_string(),
+                                entity_type: Some("book".to_string()),
+                                entity_id: Some(book_id),
+                                entity_name: Some(abs_path.clone()),
+                                message: Some(format!("Book updated (fingerprint changed in skipped dir): {}", path.display())),
+                                detail: None,
+                            });
+
+                            if let Err(e) = sqlx::query(
+                                "UPDATE books SET thumbnail_path = NULL WHERE id = $1",
+                            )
+                            .bind(book_id)
+                            .execute(&state.pool)
+                            .await
+                            {
+                                warn!("[BDD] Failed to clear thumbnail for book {}: {}", book_id, e);
+                            }
+
+                            stats.indexed_files += 1;
+
+                            if books_to_update.len() >= BATCH_SIZE || files_to_update.len() >= BATCH_SIZE {
+                                flush_all_batches(
+                                    &state.pool,
+                                    &mut books_to_update,
+                                    &mut files_to_update,
+                                    &mut books_to_insert,
+                                    &mut files_to_insert,
+                                    &mut errors_to_insert,
+                                    &mut events_to_insert,
+                                )
+                                .await?;
+                            }
+
+                            continue;
+                        }
+                    }
+                }
+
+                // Fingerprint unchanged — still check if title/volume need updating
+                // (e.g., file renamed, or volume not extracted on a previous scan)
                 let row: Option<(String, Option<i32>, String)> = sqlx::query_as(
                     "SELECT title, volume, volume_type FROM books WHERE id = $1",
                 )

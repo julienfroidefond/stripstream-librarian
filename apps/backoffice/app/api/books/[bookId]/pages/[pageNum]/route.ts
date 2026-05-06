@@ -18,24 +18,41 @@ export async function GET(
     if (width) apiUrl.searchParams.set("width", width);
     if (quality) apiUrl.searchParams.set("quality", quality);
 
+    const ifNoneMatch = request.headers.get("if-none-match");
+    const fetchHeaders: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+    };
+    if (ifNoneMatch) {
+      fetchHeaders["If-None-Match"] = ifNoneMatch;
+    }
+
     const response = await fetch(apiUrl.toString(), {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: fetchHeaders,
+      cache: "no-store",
     });
+
+    if (response.status === 304) {
+      return new NextResponse(null, { status: 304 });
+    }
 
     if (!response.ok) {
       return new NextResponse(`Failed to fetch image: ${response.status}`, {
-        status: response.status
+        status: response.status,
       });
     }
 
     const contentType = response.headers.get("content-type") || "image/webp";
+    const etag = response.headers.get("etag");
 
-    return new NextResponse(response.body, {
-      headers: {
-        "Content-Type": contentType,
-        "Cache-Control": "public, max-age=300",
-      },
-    });
+    const headers: Record<string, string> = {
+      "Content-Type": contentType,
+      "Cache-Control": "public, max-age=300, must-revalidate",
+    };
+    if (etag) {
+      headers["ETag"] = etag;
+    }
+
+    return new NextResponse(response.body, { headers });
   } catch (error) {
     console.error("Error fetching image:", error);
     return new NextResponse("Failed to fetch image", { status: 500 });

@@ -47,6 +47,8 @@ const en: Record<TranslationKey, string> = {
   "common.backoffice": "backoffice",
   "common.and": "and",
   "common.via": "via",
+  "common.refresh": "Refresh",
+  "common.refreshing": "Refreshing...",
 
   // Reading status
   "status.unread": "Unread",

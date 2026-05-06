@@ -85,7 +85,7 @@ export default async function AuthorDetailPage({
                   <div className="aspect-[2/3] relative bg-muted/50">
                     {(s.first_book_id || s.cover_url) ? (
                       <Image
-                        src={s.first_book_id ? getBookCoverUrl(s.first_book_id) : s.cover_url!}
+                        src={s.first_book_id ? getBookCoverUrl(s.first_book_id, s.first_book_updated_at) : s.cover_url!}
                         alt={s.name}
                         fill
                         className="object-cover"

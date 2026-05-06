@@ -133,6 +133,7 @@ export type SeriesHitDto = {
   book_count: number;
   books_read_count: number;
   first_book_id: string;
+  first_book_updated_at: string | null;
 };
 
 export type SearchResponseDto = {
@@ -148,6 +149,7 @@ export type SeriesDto = {
   book_count: number;
   books_read_count: number;
   first_book_id: string | null;
+  first_book_updated_at: string | null;
   library_id: string;
   series_status: string | null;
   missing_count: number | null;
@@ -452,7 +454,9 @@ export async function fetchBooks(
   params.set("page", page.toString());
   params.set("limit", limit.toString());
 
-  return apiFetch<BooksPageDto>(`/books?${params.toString()}`, { next: { revalidate: 15 } });
+  return apiFetch<BooksPageDto>(`/books?${params.toString()}`, {
+    next: { revalidate: 15, tags: ["books"] },
+  });
 }
 
 export type SeriesPageDto = {
@@ -486,11 +490,15 @@ export async function fetchAllSeries(
   params.set("page", page.toString());
   params.set("limit", limit.toString());
 
-  return apiFetch<SeriesPageDto>(`/series?${params.toString()}`, { next: { revalidate: 15 } });
+  return apiFetch<SeriesPageDto>(`/series?${params.toString()}`, {
+    next: { revalidate: 15, tags: ["series"] },
+  });
 }
 
 export async function fetchSeriesById(seriesId: string): Promise<SeriesDto> {
-  return apiFetch<SeriesDto>(`/series/${seriesId}/details`, { next: { revalidate: 15 } });
+  return apiFetch<SeriesDto>(`/series/${seriesId}/details`, {
+    next: { revalidate: 15, tags: ["series", `series:${seriesId}`] },
+  });
 }
 
 export async function fetchSeriesStatuses(): Promise<string[]> {
@@ -510,8 +518,9 @@ export async function searchBooks(
   return apiFetch<SearchResponseDto>(`/search?${params.toString()}`);
 }
 
-export function getBookCoverUrl(bookId: string): string {
-  return `/api/books/${bookId}/thumbnail`;
+export function getBookCoverUrl(bookId: string, version?: string | null): string {
+  const base = `/api/books/${bookId}/thumbnail`;
+  return version ? `${base}?v=${encodeURIComponent(version)}` : base;
 }
 
 export type Settings = {
@@ -762,7 +771,9 @@ export type StatsResponse = {
 
 export async function fetchStats(period?: "day" | "week" | "month") {
   const params = period && period !== "week" ? `?period=${period}` : "";
-  return apiFetch<StatsResponse>(`/stats${params}`, { next: { revalidate: 30 } });
+  return apiFetch<StatsResponse>(`/stats${params}`, {
+    next: { revalidate: 30, tags: ["stats"] },
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@ pub use ongoing::*;
 pub use update::*;
 
 use axum::{extract::{Path, State}, Json};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use uuid::Uuid;
@@ -42,6 +43,8 @@ pub struct SeriesItem {
     pub books_read_count: i64,
     #[schema(value_type = Option<String>)]
     pub first_book_id: Option<Uuid>,
+    #[schema(value_type = Option<String>)]
+    pub first_book_updated_at: Option<DateTime<Utc>>,
     #[schema(value_type = String)]
     pub library_id: Uuid,
     pub series_status: Option<String>,

@@ -115,6 +115,7 @@ pub async fn list_series(
             SELECT
                 b.series_id,
                 b.id,
+                b.updated_at,
                 ROW_NUMBER() OVER (
                     PARTITION BY b.series_id
                     ORDER BY
@@ -146,6 +147,7 @@ pub async fn list_series(
             sc.book_count,
             sc.books_read_count,
             sb.id as first_book_id,
+            sb.updated_at as first_book_updated_at,
             s.status as series_status,
             mc.missing_count,
             ml.provider as metadata_provider,
@@ -217,6 +219,7 @@ pub async fn list_series(
             book_count: row.get("book_count"),
             books_read_count: row.get("books_read_count"),
             first_book_id: row.get("first_book_id"),
+            first_book_updated_at: row.get("first_book_updated_at"),
             library_id,
             series_status: row.get("series_status"),
             missing_count: row.get("missing_count"),
@@ -369,6 +372,7 @@ pub async fn list_all_series(
                 b.id,
                 b.library_id,
                 b.created_at,
+                b.updated_at,
                 ROW_NUMBER() OVER (
                     PARTITION BY b.series_id
                     ORDER BY
@@ -403,6 +407,7 @@ pub async fn list_all_series(
             sc.book_count,
             sc.books_read_count,
             sb.id as first_book_id,
+            sb.updated_at as first_book_updated_at,
             sc.library_id,
             s.status as series_status,
             mc.missing_count,
@@ -478,6 +483,7 @@ pub async fn list_all_series(
             book_count: row.get("book_count"),
             books_read_count: row.get("books_read_count"),
             first_book_id: row.get("first_book_id"),
+            first_book_updated_at: row.get("first_book_updated_at"),
             library_id: row.get("library_id"),
             series_status: row.get("series_status"),
             missing_count: row.get("missing_count"),

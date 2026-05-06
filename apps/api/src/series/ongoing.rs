@@ -54,6 +54,7 @@ pub async fn ongoing_series(
                 b.series_id,
                 b.id,
                 b.library_id,
+                b.updated_at,
                 ROW_NUMBER() OVER (
                     PARTITION BY b.series_id
                     ORDER BY
@@ -64,7 +65,7 @@ pub async fn ongoing_series(
                 ) AS rn
             FROM books b
         )
-        SELECT ss.name, ss.series_id, ss.book_count, ss.books_read_count, fb.id AS first_book_id, fb.library_id
+        SELECT ss.name, ss.series_id, ss.book_count, ss.books_read_count, fb.id AS first_book_id, fb.updated_at AS first_book_updated_at, fb.library_id
         FROM series_stats ss
         JOIN first_books fb ON fb.series_id = ss.series_id AND fb.rn = 1
         ORDER BY ss.last_read_at DESC NULLS LAST
@@ -84,6 +85,7 @@ pub async fn ongoing_series(
             book_count: row.get("book_count"),
             books_read_count: row.get("books_read_count"),
             first_book_id: row.get("first_book_id"),
+            first_book_updated_at: row.get("first_book_updated_at"),
             library_id: row.get("library_id"),
             series_status: None,
             missing_count: None,
@@ -287,13 +289,14 @@ pub async fn get_series_by_id(
             GROUP BY s.id, s.name, s.library_id, s.status
         ),
         first_book AS (
-            SELECT b.id, b.series_id
+            SELECT b.id, b.series_id, b.updated_at
             FROM books b WHERE b.series_id = $1
             ORDER BY b.volume NULLS LAST, b.title ASC
             LIMIT 1
         )
         SELECT sc.name, sc.series_id, sc.book_count, sc.books_read_count,
                COALESCE(fb.id, '00000000-0000-0000-0000-000000000000'::uuid) as first_book_id,
+               fb.updated_at as first_book_updated_at,
                sc.library_id, sc.series_status,
                mc.missing_count,
                ml.provider as metadata_provider,
@@ -334,6 +337,7 @@ pub async fn get_series_by_id(
         book_count: row.get("book_count"),
         books_read_count: row.get("books_read_count"),
         first_book_id: row.get("first_book_id"),
+        first_book_updated_at: row.get("first_book_updated_at"),
         library_id: row.get("library_id"),
         series_status: row.get("series_status"),
         missing_count: row.get("missing_count"),

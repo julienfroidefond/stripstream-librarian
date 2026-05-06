@@ -45,6 +45,8 @@ const fr = {
   "common.backoffice": "backoffice",
   "common.and": "et",
   "common.via": "via",
+  "common.refresh": "Rafraîchir",
+  "common.refreshing": "Rafraîchissement...",
 
   // Reading status
   "status.unread": "Non lu",

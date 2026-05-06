@@ -3,6 +3,7 @@ import { BookPreview } from "@/app/components/BookPreview";
 import { ConvertButton } from "@/app/components/ConvertButton";
 import { DeleteBookButton } from "@/app/components/DeleteBookButton";
 import { MarkBookReadButton } from "@/app/components/MarkBookReadButton";
+import { RefreshButton } from "@/app/components/RefreshButton";
 import nextDynamic from "next/dynamic";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { getServerTranslations } from "@/lib/i18n/server";
@@ -96,7 +97,7 @@ export default async function BookDetailPage({
         <div className="flex-shrink-0">
           <div className="w-40 aspect-[2/3] relative rounded-xl overflow-hidden shadow-card border border-border">
             <Image
-              src={getBookCoverUrl(book.id)}
+              src={getBookCoverUrl(book.id, book.updated_at)}
               alt={t("bookDetail.coverOf", { title: book.title })}
               fill
               className="object-cover"
@@ -162,6 +163,7 @@ export default async function BookDetailPage({
 
           {/* Action buttons toolbar */}
           <div className="flex flex-wrap items-center gap-3">
+            <RefreshButton target="book-detail" />
             <MarkBookReadButton bookId={book.id} currentStatus={book.reading_status} />
             <EditBookForm book={book} />
             {book.file_format === "cbr" && <ConvertButton bookId={book.id} />}
@@ -222,7 +224,7 @@ export default async function BookDetailPage({
 
       {/* Book Preview */}
       {book.page_count && book.page_count > 0 && (
-        <BookPreview bookId={book.id} pageCount={book.page_count} />
+        <BookPreview key={book.id} bookId={book.id} pageCount={book.page_count} version={book.updated_at} />
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 use axum::{extract::{Query, State}, Json};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use utoipa::ToSchema;
@@ -31,6 +32,8 @@ pub struct SeriesHit {
     pub books_read_count: i64,
     #[schema(value_type = String)]
     pub first_book_id: Uuid,
+    #[schema(value_type = Option<String>)]
+    pub first_book_updated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -105,6 +108,7 @@ pub async fn search_books(
                 s.id as series_id,
                 COALESCE(s.name, 'unclassified') as name,
                 b.id,
+                b.updated_at,
                 ROW_NUMBER() OVER (
                     PARTITION BY b.library_id, COALESCE(s.name, 'unclassified')
                     ORDER BY
@@ -128,7 +132,7 @@ pub async fn search_books(
             LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
             GROUP BY sb.library_id, sb.series_id, sb.name
         )
-        SELECT sc.series_id, sc.library_id, sc.name, sc.book_count, sc.books_read_count, sb.id as first_book_id
+        SELECT sc.series_id, sc.library_id, sc.name, sc.book_count, sc.books_read_count, sb.id as first_book_id, sb.updated_at as first_book_updated_at
         FROM series_counts sc
         JOIN sorted_books sb ON sb.library_id = sc.library_id AND sb.name = sc.name AND sb.rn = 1
         WHERE sc.name ILIKE $1
@@ -185,6 +189,7 @@ pub async fn search_books(
             book_count: row.get("book_count"),
             books_read_count: row.get("books_read_count"),
             first_book_id: row.get("first_book_id"),
+            first_book_updated_at: row.get("first_book_updated_at"),
         })
         .collect();
 

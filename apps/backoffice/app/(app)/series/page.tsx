@@ -3,6 +3,7 @@ import { getServerTranslations } from "@/lib/i18n/server";
 import { paramString, paramStringOr, paramInt, paramBool } from "@/lib/searchParams";
 import { MarkSeriesReadButton } from "@/app/components/MarkSeriesReadButton";
 import { LiveSearchForm } from "@/app/components/LiveSearchForm";
+import { RefreshButton } from "@/app/components/RefreshButton";
 import { Card, CardContent, OffsetPagination } from "@/app/components/ui";
 import Image from "next/image";
 import Link from "next/link";
@@ -99,7 +100,10 @@ export default async function SeriesPage({
           </svg>
           {t("series.title")}
         </h1>
-        <CreateSeriesButton libraries={libraries.map(lib => ({ id: lib.id, name: lib.name }))} />
+        <div className="flex items-center gap-2">
+          <RefreshButton target="series" />
+          <CreateSeriesButton libraries={libraries.map(lib => ({ id: lib.id, name: lib.name }))} />
+        </div>
       </div>
 
       <Card className="mb-6">
@@ -145,7 +149,7 @@ export default async function SeriesPage({
                     <div className="aspect-[2/3] relative bg-muted/50">
                       {(s.first_book_id || s.cover_url) ? (
                         <Image
-                          src={s.first_book_id ? getBookCoverUrl(s.first_book_id) : s.cover_url!}
+                          src={s.first_book_id ? getBookCoverUrl(s.first_book_id, s.first_book_updated_at) : s.cover_url!}
                           alt={t("books.coverOf", { name: s.name })}
                           fill
                           className={`object-cover ${s.book_count > 0 && s.books_read_count >= s.book_count ? "opacity-40" : ""}`}

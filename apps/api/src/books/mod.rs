@@ -111,6 +111,8 @@ pub struct BookDetails {
     /// Fields locked from external metadata sync
     #[serde(skip_serializing_if = "Option::is_none")]
     pub locked_fields: Option<serde_json::Value>,
+    #[schema(value_type = String)]
+    pub updated_at: DateTime<Utc>,
 }
 
 /// List books with optional filtering and pagination
@@ -334,7 +336,7 @@ pub async fn get_book(
     let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
     let row = sqlx::query(
         r#"
-        SELECT b.id, b.library_id, b.kind, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.volume_type, b.language, b.page_count, b.thumbnail_path, b.locked_fields, b.summary, b.isbn, b.publish_date,
+        SELECT b.id, b.library_id, b.kind, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.volume_type, b.language, b.page_count, b.thumbnail_path, b.locked_fields, b.summary, b.isbn, b.publish_date, b.updated_at,
                bf.abs_path, bf.format, bf.parse_status,
                COALESCE(brp.status, 'unread') AS reading_status,
                brp.current_page AS reading_current_page,
@@ -383,6 +385,7 @@ pub async fn get_book(
         isbn: row.get("isbn"),
         publish_date: row.get("publish_date"),
         locked_fields: Some(row.get::<serde_json::Value, _>("locked_fields")),
+        updated_at: row.get("updated_at"),
     }))
 }
 
@@ -571,7 +574,7 @@ pub async fn update_book(
             summary = $8, isbn = $9, publish_date = $10, locked_fields = $11, updated_at = NOW()
         WHERE id = $1
         RETURNING id, library_id, kind, title, author, authors, volume, volume_type, language, page_count, thumbnail_path,
-                  summary, isbn, publish_date,
+                  summary, isbn, publish_date, updated_at,
                   'unread' AS reading_status,
                   NULL::integer AS reading_current_page,
                   NULL::timestamptz AS reading_last_read_at
@@ -618,6 +621,7 @@ pub async fn update_book(
         isbn: row.get("isbn"),
         publish_date: row.get("publish_date"),
         locked_fields: Some(locked_fields),
+        updated_at: row.get("updated_at"),
     }))
 }
 
@@ -650,6 +654,7 @@ fn detect_thumbnail_content_type(path: &str) -> &'static str {
     ),
     responses(
         (status = 200, description = "WebP thumbnail image", content_type = "image/webp"),
+        (status = 304, description = "Not modified (matches If-None-Match)"),
         (status = 404, description = "Book not found or thumbnail not available"),
         (status = 401, description = "Unauthorized"),
     ),
@@ -658,7 +663,8 @@ fn detect_thumbnail_content_type(path: &str) -> &'static str {
 pub async fn get_thumbnail(
     State(state): State<AppState>,
     Path(book_id): Path<Uuid>,
-) -> Result<impl IntoResponse, ApiError> {
+    headers_in: HeaderMap,
+) -> Result<axum::response::Response, ApiError> {
     let row = sqlx::query("SELECT thumbnail_path FROM books WHERE id = $1")
         .bind(book_id)
         .fetch_optional(&state.pool)
@@ -667,6 +673,29 @@ pub async fn get_thumbnail(
 
     let row = row.ok_or_else(|| ApiError::not_found("book not found"))?;
     let thumbnail_path: Option<String> = row.get("thumbnail_path");
+
+    let if_none_match = headers_in
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok());
+
+    // Fast path: if a stored thumbnail exists and its size matches the client's ETag, return 304
+    // without reading the file body.
+    if let Some(ref path) = thumbnail_path {
+        if let Ok(meta) = std::fs::metadata(path) {
+            let etag_value = format!("\"{}_{:x}\"", book_id, meta.len());
+            if if_none_match == Some(etag_value.as_str()) {
+                let mut headers = HeaderMap::new();
+                if let Ok(v) = HeaderValue::from_str(&etag_value) {
+                    headers.insert(header::ETAG, v);
+                }
+                headers.insert(
+                    header::CACHE_CONTROL,
+                    HeaderValue::from_static("public, max-age=31536000, must-revalidate"),
+                );
+                return Ok((StatusCode::NOT_MODIFIED, headers).into_response());
+            }
+        }
+    }
 
     let (data, content_type) = if let Some(ref path) = thumbnail_path {
         match std::fs::read(path) {
@@ -690,13 +719,13 @@ pub async fn get_thumbnail(
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
     headers.insert(
         header::CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=31536000, immutable"),
+        HeaderValue::from_static("public, max-age=31536000, must-revalidate"),
     );
     if let Ok(v) = HeaderValue::from_str(&etag_value) {
         headers.insert(header::ETAG, v);
     }
 
-    Ok((StatusCode::OK, headers, Body::from(data)))
+    Ok((StatusCode::OK, headers, Body::from(data)).into_response())
 }
 
 // ─── Delete book ───────────────────────────────────────────────────────────────

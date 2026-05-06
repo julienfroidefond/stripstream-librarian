@@ -3,7 +3,9 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useTranslation } from "../../lib/i18n/context";
+import { refreshAfterJobAction } from "../actions/cache";
 import { Badge } from "./ui/Badge";
 import { ProgressBar } from "./ui/ProgressBar";
 
@@ -48,11 +50,13 @@ const ChevronIcon = ({ className }: { className?: string }) => (
 
 export function JobsIndicator() {
   const { t } = useTranslation();
+  const router = useRouter();
   const [activeJobs, setActiveJobs] = useState<Job[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popinRef = useRef<HTMLDivElement>(null);
   const [popinStyle, setPopinStyle] = useState<React.CSSProperties>({});
+  const prevActiveIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let eventSource: EventSource | null = null;
@@ -84,6 +88,14 @@ export function JobsIndicator() {
             j.status === "running" || j.status === "pending" ||
             j.status === "extracting_pages" || j.status === "generating_thumbnails"
           );
+          const newIds = new Set(active.map(j => j.id));
+          const finishedSome = [...prevActiveIdsRef.current].some(id => !newIds.has(id));
+          prevActiveIdsRef.current = newIds;
+          if (finishedSome) {
+            refreshAfterJobAction()
+              .catch(() => {})
+              .finally(() => router.refresh());
+          }
           setActiveJobs(active);
         } catch {
           // ignore malformed data

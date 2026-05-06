@@ -2,6 +2,7 @@ import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, getBo
 import { BooksGrid, EmptyState } from "@/app/components/BookCard";
 import { BooksGridWithMissingToggle } from "@/app/components/ShowMissingToggle";
 import { MarkSeriesReadButton } from "@/app/components/MarkSeriesReadButton";
+import { RefreshButton } from "@/app/components/RefreshButton";
 import { MarkBookReadButton } from "@/app/components/MarkBookReadButton";
 import { ProviderIcon, providerLabel } from "@/app/components/ProviderIcon";
 import nextDynamic from "next/dynamic";
@@ -98,7 +99,7 @@ export default async function SeriesDetailPage({
 
   const books = booksPage.items.map((book) => ({
     ...book,
-    coverUrl: getBookCoverUrl(book.id),
+    coverUrl: getBookCoverUrl(book.id, book.updated_at),
   }));
 
   const totalPages = Math.ceil(booksPage.total / limit);
@@ -107,6 +108,7 @@ export default async function SeriesDetailPage({
 
   // Use first book cover as series cover, fallback to provider cover_url
   const coverBookId = booksPage.items[0]?.id;
+  const coverBookUpdatedAt = booksPage.items[0]?.updated_at;
   const seriesCoverUrl = seriesDto.cover_url;
 
   return (
@@ -137,7 +139,7 @@ export default async function SeriesDetailPage({
             <div className="w-40 aspect-[2/3] relative rounded-xl overflow-hidden shadow-card border border-border">
               {coverBookId ? (
                 <Image
-                  src={getBookCoverUrl(coverBookId)}
+                  src={getBookCoverUrl(coverBookId, coverBookUpdatedAt)}
                   alt={t("books.coverOf", { name: displayName })}
                   fill
                   className="object-cover"
@@ -256,6 +258,7 @@ export default async function SeriesDetailPage({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <RefreshButton target="series-detail" seriesId={seriesId} />
             <MarkSeriesReadButton
               seriesId={seriesId}
               seriesName={seriesName}

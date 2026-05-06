@@ -135,7 +135,7 @@ export default async function LibrarySeriesPage({
                     <div className="aspect-[2/3] relative bg-muted/50">
                       {(s.first_book_id || s.cover_url) ? (
                         <Image
-                          src={s.first_book_id ? getBookCoverUrl(s.first_book_id) : s.cover_url!}
+                          src={s.first_book_id ? getBookCoverUrl(s.first_book_id, s.first_book_updated_at) : s.cover_url!}
                           alt={t("books.coverOf", { name: s.name })}
                           fill
                           className={`object-cover ${s.book_count > 0 && s.books_read_count >= s.book_count ? "opacity-40" : ""}`}

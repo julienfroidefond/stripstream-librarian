@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
+use std::time::SystemTime;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BookFormat {
@@ -1169,18 +1170,22 @@ pub fn extract_page(path: &Path, format: BookFormat, page_number: u32, pdf_rende
 }
 
 /// Cache of sorted image names per archive path. Avoids re-listing and sorting on every page request.
-static CBZ_INDEX_CACHE: OnceLock<Mutex<HashMap<PathBuf, Vec<String>>>> = OnceLock::new();
+/// Keyed by (path, mtime) so the cache invalidates automatically when the file is replaced.
+static CBZ_INDEX_CACHE: OnceLock<Mutex<HashMap<PathBuf, (SystemTime, Vec<String>)>>> = OnceLock::new();
 
-fn cbz_index_cache() -> &'static Mutex<HashMap<PathBuf, Vec<String>>> {
+fn cbz_index_cache() -> &'static Mutex<HashMap<PathBuf, (SystemTime, Vec<String>)>> {
     CBZ_INDEX_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// Get sorted image names from cache, or list + sort + cache them.
 fn get_cbz_image_index(path: &Path, archive: &mut zip::ZipArchive<std::fs::File>) -> Vec<String> {
+    let mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
     {
         let cache = cbz_index_cache().lock().unwrap();
-        if let Some(names) = cache.get(path) {
-            return names.clone();
+        if let Some((cached_mtime, names)) = cache.get(path) {
+            if mtime == Some(*cached_mtime) {
+                return names.clone();
+            }
         }
     }
     let mut image_names: Vec<String> = Vec::new();
@@ -1195,9 +1200,9 @@ fn get_cbz_image_index(path: &Path, archive: &mut zip::ZipArchive<std::fs::File>
         }
     }
     image_names.sort_by(|a, b| natord::compare(a, b));
-    {
+    if let Some(mtime) = mtime {
         let mut cache = cbz_index_cache().lock().unwrap();
-        cache.insert(path.to_path_buf(), image_names.clone());
+        cache.insert(path.to_path_buf(), (mtime, image_names.clone()));
     }
     image_names
 }
@@ -1343,9 +1348,10 @@ fn render_pdf_page_n(path: &Path, page_number: u32, width: u32) -> Result<Vec<u8
 // ============================================================
 
 /// Cache of ordered image paths per EPUB file. Avoids re-parsing OPF/XHTML on every page request.
-static EPUB_INDEX_CACHE: OnceLock<Mutex<HashMap<PathBuf, Vec<String>>>> = OnceLock::new();
+/// Keyed by (path, mtime) so the cache invalidates automatically when the file is replaced.
+static EPUB_INDEX_CACHE: OnceLock<Mutex<HashMap<PathBuf, (SystemTime, Vec<String>)>>> = OnceLock::new();
 
-fn epub_index_cache() -> &'static Mutex<HashMap<PathBuf, Vec<String>>> {
+fn epub_index_cache() -> &'static Mutex<HashMap<PathBuf, (SystemTime, Vec<String>)>> {
     EPUB_INDEX_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -1539,16 +1545,19 @@ fn parse_epub_opf(
 
 /// Get the cached image index for an EPUB, building it on first access.
 fn get_epub_image_index(path: &Path) -> Result<Vec<String>> {
+    let mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
     {
         let cache = epub_index_cache().lock().unwrap();
-        if let Some(names) = cache.get(path) {
-            return Ok(names.clone());
+        if let Some((cached_mtime, names)) = cache.get(path) {
+            if mtime == Some(*cached_mtime) {
+                return Ok(names.clone());
+            }
         }
     }
     let images = build_epub_image_index(path)?;
-    {
+    if let Some(mtime) = mtime {
         let mut cache = epub_index_cache().lock().unwrap();
-        cache.insert(path.to_path_buf(), images.clone());
+        cache.insert(path.to_path_buf(), (mtime, images.clone()));
     }
     Ok(images)
 }

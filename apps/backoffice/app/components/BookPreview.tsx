@@ -6,13 +6,22 @@ import { useTranslation } from "../../lib/i18n/context";
 
 const PAGE_SIZE = 5;
 
-export function BookPreview({ bookId, pageCount }: { bookId: string; pageCount: number }) {
+export function BookPreview({
+  bookId,
+  pageCount,
+  version,
+}: {
+  bookId: string;
+  pageCount: number;
+  version?: string;
+}) {
   const { t } = useTranslation();
   const [offset, setOffset] = useState(0);
 
   const pages = Array.from({ length: PAGE_SIZE }, (_, i) => offset + i + 1).filter(
     (p) => p <= pageCount
   );
+  const versionParam = version ? `&v=${encodeURIComponent(version)}` : "";
 
   return (
     <div className="bg-card rounded-xl border border-border p-6">
@@ -46,7 +55,7 @@ export function BookPreview({ bookId, pageCount }: { bookId: string; pageCount: 
           <div key={pageNum} className="flex flex-col items-center gap-1.5">
             <div className="relative w-full aspect-[2/3] bg-muted rounded-lg overflow-hidden border border-border">
               <Image
-                src={`/api/books/${bookId}/pages/${pageNum}?format=webp&width=600&quality=80`}
+                src={`/api/books/${bookId}/pages/${pageNum}?format=webp&width=600&quality=80${versionParam}`}
                 alt={`Page ${pageNum}`}
                 fill
                 className="object-contain"

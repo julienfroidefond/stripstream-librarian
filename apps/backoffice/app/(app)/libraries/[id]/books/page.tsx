@@ -37,7 +37,7 @@ export default async function LibraryBooksPage({
 
   const books = booksPage.items.map(book => ({
     ...book,
-    coverUrl: getBookCoverUrl(book.id)
+    coverUrl: getBookCoverUrl(book.id, book.updated_at)
   }));
 
   const seriesDisplayName = series === "unclassified" ? t("books.unclassified") : (series ?? "");
