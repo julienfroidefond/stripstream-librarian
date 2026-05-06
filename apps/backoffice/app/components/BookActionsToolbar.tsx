@@ -53,7 +53,7 @@ export function BookActionsToolbar({ book }: { book: BookDto }) {
     <div className="flex flex-wrap items-center gap-3">
       <MarkBookReadButton bookId={book.id} currentStatus={book.reading_status} />
       <EditBookForm book={book} />
-      <ActionsMenu label={t("common.moreActions")}>
+      <ActionsMenu label={t("common.more")}>
         <ActionsMenuSection label={t("actionsMenu.download")}>
           <ProwlarrSearchModal
             seriesName={searchSeries}

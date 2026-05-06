@@ -48,6 +48,8 @@ const fr = {
   "common.refresh": "Rafraîchir",
   "common.refreshing": "Rafraîchissement...",
   "common.moreActions": "Plus d'actions",
+  "common.actions": "Actions",
+  "common.more": "Plus",
   "actionsMenu.metadata": "Métadonnées",
   "actionsMenu.download": "Téléchargement",
   "actionsMenu.files": "Fichiers",

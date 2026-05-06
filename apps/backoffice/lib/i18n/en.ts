@@ -50,6 +50,8 @@ const en: Record<TranslationKey, string> = {
   "common.refresh": "Refresh",
   "common.refreshing": "Refreshing...",
   "common.moreActions": "More actions",
+  "common.actions": "Actions",
+  "common.more": "More",
   "actionsMenu.metadata": "Metadata",
   "actionsMenu.download": "Download",
   "actionsMenu.files": "Files",

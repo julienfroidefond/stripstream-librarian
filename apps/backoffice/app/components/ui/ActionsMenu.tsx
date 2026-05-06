@@ -124,22 +124,34 @@ export function ActionsMenu({ children, label, align = "right" }: ActionsMenuPro
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={`
-          inline-flex items-center justify-center
-          h-9 w-9 rounded-md
-          ring-1 ring-input bg-background
-          text-muted-foreground hover:text-foreground hover:bg-accent
+          inline-flex items-center gap-1.5
+          px-3 py-1.5 rounded-lg
+          border border-border bg-card
+          text-sm font-medium
+          text-muted-foreground hover:text-foreground hover:border-primary
           transition-colors duration-200
           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
           ${isOpen ? "ring-2 ring-ring ring-offset-2 ring-offset-background" : ""}
         `}
         aria-haspopup="menu"
         aria-expanded={isOpen}
-        aria-label={label ?? "Menu"}
       >
         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-          <circle cx="12" cy="5" r="2" />
+          <circle cx="5" cy="12" r="2" />
           <circle cx="12" cy="12" r="2" />
-          <circle cx="12" cy="19" r="2" />
+          <circle cx="19" cy="12" r="2" />
+        </svg>
+        <span>{label ?? "Plus"}</span>
+        <svg
+          className={`w-3 h-3 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
       {mounted && createPortal(popin, document.body)}
