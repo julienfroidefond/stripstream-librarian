@@ -7,10 +7,15 @@ import { MarkBookReadButton } from "./MarkBookReadButton";
 import { ConvertButton } from "./ConvertButton";
 import { DeleteBookButton } from "./DeleteBookButton";
 import { RefreshButton } from "./RefreshButton";
+import type { QuickSearch } from "./ProwlarrSearchModal";
 import { useTranslation } from "../../lib/i18n/context";
 
 const EditBookForm = nextDynamic(
   () => import("./EditBookForm").then(m => m.EditBookForm)
+);
+
+const ProwlarrSearchModal = nextDynamic(
+  () => import("./ProwlarrSearchModal").then(m => m.ProwlarrSearchModal)
 );
 
 const RefreshIcon = ({ spinning }: { spinning: boolean }) => (
@@ -33,12 +38,39 @@ const RefreshIcon = ({ spinning }: { spinning: boolean }) => (
 export function BookActionsToolbar({ book }: { book: BookDto }) {
   const { t } = useTranslation();
 
+  // Prowlarr search context for this book
+  const searchSeries = book.series ?? book.title;
+  const initialQuery = book.volume != null
+    ? `"${searchSeries}" T${book.volume}`
+    : `"${searchSeries}"`;
+  const quickSearches: QuickSearch[] = [
+    { label: book.volume != null ? `${searchSeries} T${book.volume}` : searchSeries, query: initialQuery },
+    { label: searchSeries, query: `"${searchSeries}"` },
+  ];
+  const defaultExpectedVolumes = book.volume != null ? [book.volume] : undefined;
+
   return (
     <div className="flex flex-wrap items-center gap-3">
       <MarkBookReadButton bookId={book.id} currentStatus={book.reading_status} />
       <EditBookForm book={book} />
       <ActionsMenu label={t("common.moreActions")}>
-        <ActionsMenuSection>
+        <ActionsMenuSection label={t("actionsMenu.download")}>
+          <ProwlarrSearchModal
+            seriesName={searchSeries}
+            libraryId={book.library_id}
+            missingBooks={null}
+            initialQuery={initialQuery}
+            quickSearches={quickSearches}
+            defaultExpectedVolumes={defaultExpectedVolumes}
+          >
+            {(open) => (
+              <ActionsMenuItem icon="⬇️" onClick={open}>
+                {t("prowlarr.searchButton")}
+              </ActionsMenuItem>
+            )}
+          </ProwlarrSearchModal>
+        </ActionsMenuSection>
+        <ActionsMenuSection label={t("actionsMenu.actions")}>
           <RefreshButton target="book-detail">
             {(onClick, pending) => (
               <ActionsMenuItem
@@ -65,8 +97,6 @@ export function BookActionsToolbar({ book }: { book: BookDto }) {
               )}
             </ConvertButton>
           )}
-        </ActionsMenuSection>
-        <ActionsMenuSection>
           <DeleteBookButton bookId={book.id} libraryId={book.library_id}>
             {(open) => (
               <ActionsMenuItem icon="🗑" variant="danger" onClick={open}>

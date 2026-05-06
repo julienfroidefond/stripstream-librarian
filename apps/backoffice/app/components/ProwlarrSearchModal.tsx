@@ -14,12 +14,23 @@ interface MissingBookItem {
   external_book_id: string | null;
 }
 
+export interface QuickSearch {
+  label: string;
+  query: string;
+}
+
 interface ProwlarrSearchModalProps {
   seriesName: string;
   libraryId?: string;
   missingBooks: MissingBookItem[] | null;
   initialProwlarrConfigured?: boolean;
   initialQbConfigured?: boolean;
+  /** Pre-fill the search input. Defaults to `"${seriesName}"`. */
+  initialQuery?: string;
+  /** Override the default quick-search badges (series + missing volumes). */
+  quickSearches?: QuickSearch[];
+  /** Default volumes to associate with downloaded releases (book-detail context). */
+  defaultExpectedVolumes?: number[];
   children?: (open: () => void) => React.ReactNode;
 }
 
@@ -45,7 +56,7 @@ function groupReleasesByTitle<T extends { title: string }>(releases: T[]): { tit
   return Array.from(groups.entries()).map(([title, items]) => ({ title, items }));
 }
 
-export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initialProwlarrConfigured, initialQbConfigured, children }: ProwlarrSearchModalProps) {
+export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initialProwlarrConfigured, initialQbConfigured, initialQuery, quickSearches, defaultExpectedVolumes, children }: ProwlarrSearchModalProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [isConfigured, setIsConfigured] = useState<boolean | null>(initialProwlarrConfigured ?? null);
@@ -80,7 +91,8 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
     }
   }, [initialProwlarrConfigured, initialQbConfigured]);
 
-  const [searchInput, setSearchInput] = useState(`"${seriesName}"`);
+  const defaultQuery = initialQuery ?? `"${seriesName}"`;
+  const [searchInput, setSearchInput] = useState(defaultQuery);
 
   const doSearch = useCallback(async (queryOverride?: string) => {
     const searchQuery = queryOverride ?? searchInput;
@@ -113,8 +125,6 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
       setIsSearching(false);
     }
   }, [t, seriesName, searchInput]);
-
-  const defaultQuery = `"${seriesName}"`;
 
   function handleOpen() {
     setIsOpen(true);
@@ -180,31 +190,38 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
               </form>
 
               {/* Quick search badges */}
-              <div className="flex flex-wrap items-center gap-2 max-h-24 overflow-y-auto">
-                <button
-                  type="button"
-                  onClick={() => { setSearchInput(defaultQuery); doSearch(defaultQuery); }}
-                  disabled={isSearching}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-primary/50 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors"
-                >
-                  {seriesName}
-                </button>
-              {missingBooks && missingBooks.length > 0 && missingBooks.map((book, i) => {
-                const label = book.title || `Vol. ${book.volume_number}`;
-                const q = book.volume_number != null ? `"${seriesName}" ${book.volume_number}` : `"${seriesName}" ${label}`;
+              {(() => {
+                const badges: QuickSearch[] = quickSearches ?? [
+                  { label: seriesName, query: defaultQuery },
+                  ...((missingBooks ?? []).map((book) => {
+                    const label = book.title || `Vol. ${book.volume_number}`;
+                    const q = book.volume_number != null
+                      ? `"${seriesName}" T${book.volume_number}`
+                      : `"${seriesName}" ${label}`;
+                    return { label, query: q };
+                  })),
+                ];
+                if (badges.length === 0) return null;
                 return (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => { setSearchInput(q); doSearch(q); }}
-                    disabled={isSearching}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-muted/30 hover:bg-muted/50 disabled:opacity-50 transition-colors"
-                  >
-                    {label}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 max-h-24 overflow-y-auto">
+                    {badges.map((b, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => { setSearchInput(b.query); doSearch(b.query); }}
+                        disabled={isSearching}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border disabled:opacity-50 transition-colors ${
+                          i === 0
+                            ? "border-primary/50 bg-primary/10 text-primary hover:bg-primary/20"
+                            : "border-border bg-muted/30 hover:bg-muted/50"
+                        }`}
+                      >
+                        {b.label}
+                      </button>
+                    ))}
+                  </div>
                 );
-              })}
-              </div>
+              })()}
 
               {/* Error */}
               {error && (
@@ -304,7 +321,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                                     releaseId={release.guid}
                                     libraryId={libraryId}
                                     seriesName={seriesName}
-                                    expectedVolumes={release.matchedMissingVolumes ?? release.allVolumes}
+                                    expectedVolumes={release.matchedMissingVolumes ?? release.allVolumes ?? defaultExpectedVolumes}
                                     allVolumes={release.allVolumes}
                                     alwaysShowReplace
                                   />
