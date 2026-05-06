@@ -24,21 +24,28 @@ interface ActionsMenuProps {
   align?: "left" | "right";
 }
 
+const MOBILE_BREAKPOINT_PX = 640;
+
 export function ActionsMenu({ children, label, align = "right" }: ActionsMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popinRef = useRef<HTMLDivElement>(null);
   const [popinStyle, setPopinStyle] = useState<React.CSSProperties>({});
 
   useEffect(() => {
     setMounted(true);
+    const updateBreakpoint = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT_PX);
+    updateBreakpoint();
+    window.addEventListener("resize", updateBreakpoint);
+    return () => window.removeEventListener("resize", updateBreakpoint);
   }, []);
 
   const close = useCallback(() => setIsOpen(false), []);
 
   const updatePosition = useCallback(() => {
-    if (!buttonRef.current) return;
+    if (!buttonRef.current || isMobile) return;
     const rect = buttonRef.current.getBoundingClientRect();
     if (align === "right") {
       const rightEdge = window.innerWidth - rect.right;
@@ -56,10 +63,10 @@ export function ActionsMenu({ children, label, align = "right" }: ActionsMenuPro
         minWidth: "240px",
       });
     }
-  }, [align]);
+  }, [align, isMobile]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || isMobile) return;
     updatePosition();
     window.addEventListener("resize", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
@@ -67,7 +74,17 @@ export function ActionsMenu({ children, label, align = "right" }: ActionsMenuPro
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [isOpen, updatePosition]);
+  }, [isOpen, isMobile, updatePosition]);
+
+  // Lock body scroll while the bottom sheet is open on mobile
+  useEffect(() => {
+    if (!isOpen || !isMobile) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [isOpen, isMobile]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -96,25 +113,72 @@ export function ActionsMenu({ children, label, align = "right" }: ActionsMenuPro
   // Always-mounted popin: hiding via `display: none` keeps child modal-trigger
   // components mounted so their internal state survives menu open/close cycles.
   // Modals render via portal anyway — they remain visible when the menu hides.
+  // On mobile, we render as a bottom sheet (full width, slides from bottom)
+  // with a backdrop. On desktop, the classic anchored dropdown.
   const popin = (
-    <div
-      ref={popinRef}
-      style={isOpen ? popinStyle : { display: "none" }}
-      className="
-        z-[90]
-        bg-popover/95 backdrop-blur-md
-        rounded-xl
-        shadow-elevation-2
-        border border-border/60
-        overflow-hidden
-        animate-fade-in
-        py-1
-      "
-      role="menu"
-      aria-hidden={!isOpen}
-    >
-      <ActionsMenuContext.Provider value={{ close }}>{children}</ActionsMenuContext.Provider>
-    </div>
+    <>
+      {/* Mobile-only backdrop */}
+      {isMobile && (
+        <div
+          onClick={close}
+          aria-hidden="true"
+          style={{ display: isOpen ? undefined : "none" }}
+          className="fixed inset-0 z-[80] bg-background/60 backdrop-blur-sm animate-fade-in"
+        />
+      )}
+      <div
+        ref={popinRef}
+        style={
+          isOpen
+            ? isMobile
+              ? undefined
+              : popinStyle
+            : { display: "none" }
+        }
+        className={
+          isMobile
+            ? `
+              fixed inset-x-0 bottom-0 z-[90]
+              bg-popover/95 backdrop-blur-md
+              rounded-t-2xl
+              shadow-elevation-2
+              border-t border-border/60
+              max-h-[85vh] overflow-y-auto
+              pb-[env(safe-area-inset-bottom)]
+              animate-fade-in
+            `
+            : `
+              z-[90]
+              bg-popover/95 backdrop-blur-md
+              rounded-xl
+              shadow-elevation-2
+              border border-border/60
+              overflow-hidden
+              animate-fade-in
+              py-1
+            `
+        }
+        role="menu"
+        aria-hidden={!isOpen}
+      >
+        {isMobile && (
+          <>
+            {/* Drag handle (visual only) */}
+            <div className="flex justify-center pt-2 pb-1">
+              <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
+            </div>
+            {label && (
+              <div className="px-4 py-2 text-sm font-semibold text-foreground border-b border-border/60">
+                {label}
+              </div>
+            )}
+          </>
+        )}
+        <div className={isMobile ? "py-1" : ""}>
+          <ActionsMenuContext.Provider value={{ close }}>{children}</ActionsMenuContext.Provider>
+        </div>
+      </div>
+    </>
   );
 
   return (
@@ -192,7 +256,7 @@ export function ActionsMenuItem({
       }}
       className={`
         flex items-center gap-2.5
-        w-full px-3 py-2 text-sm text-left
+        w-full px-4 py-3 sm:px-3 sm:py-2 text-sm text-left
         transition-colors
         disabled:opacity-50 disabled:pointer-events-none
         ${baseClass}
