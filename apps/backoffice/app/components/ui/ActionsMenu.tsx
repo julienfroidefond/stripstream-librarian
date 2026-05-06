@@ -26,9 +26,14 @@ interface ActionsMenuProps {
 
 export function ActionsMenu({ children, label, align = "right" }: ActionsMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popinRef = useRef<HTMLDivElement>(null);
   const [popinStyle, setPopinStyle] = useState<React.CSSProperties>({});
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const close = useCallback(() => setIsOpen(false), []);
 
@@ -137,7 +142,7 @@ export function ActionsMenu({ children, label, align = "right" }: ActionsMenuPro
           <circle cx="12" cy="19" r="2" />
         </svg>
       </button>
-      {typeof document !== "undefined" && createPortal(popin, document.body)}
+      {mounted && createPortal(popin, document.body)}
     </>
   );
 }
