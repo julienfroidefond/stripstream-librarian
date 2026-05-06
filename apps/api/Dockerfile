@@ -1,21 +1,18 @@
-# Build natively on the host arch ($BUILDPLATFORM) and cross-compile to amd64.
-# On an arm64 runner this avoids QEMU emulation and is ~5-10x faster.
-FROM --platform=$BUILDPLATFORM rust:1-bookworm AS builder
+# Shared Rust build stage: produces both api and indexer binaries from a single
+# `cargo build` so the second image (indexer) is essentially a copy step.
+#
+# This Dockerfile defines two final targets:
+#   - api      → /usr/local/bin/api + sqlx-cli
+#   - indexer  → /usr/local/bin/indexer
+#
+# The CI builds it twice (one per --target). The shared `builder` stage hits
+# the layer cache on the second build, so only the small final stage runs.
+
+FROM rust:1-bookworm AS builder
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc-x86-64-linux-gnu g++-x86-64-linux-gnu libc6-dev-amd64-cross \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN rustup target add x86_64-unknown-linux-gnu
-
-ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc \
-    CC_x86_64_unknown_linux_gnu=x86_64-linux-gnu-gcc \
-    CXX_x86_64_unknown_linux_gnu=x86_64-linux-gnu-g++ \
-    PKG_CONFIG_ALLOW_CROSS=1
-
 # Copy workspace manifests and create dummy source files to cache dependency builds
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
 COPY apps/api/Cargo.toml apps/api/Cargo.toml
 COPY apps/indexer/Cargo.toml apps/indexer/Cargo.toml
 COPY crates/core/Cargo.toml crates/core/Cargo.toml
@@ -30,14 +27,15 @@ RUN mkdir -p apps/api/src apps/indexer/src crates/core/src crates/notifications/
     echo "" > crates/notifications/src/lib.rs && \
     echo "" > crates/parsers/src/lib.rs
 
-# Build dependencies only (cached as long as Cargo.toml files don't change)
+# Build dependencies only — both binaries at once so workspace deps are compiled
+# only one time (cached as long as Cargo.toml files don't change).
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
-    cargo build --release --target x86_64-unknown-linux-gnu -p api && \
-    cargo install sqlx-cli --target x86_64-unknown-linux-gnu --no-default-features --features postgres --locked
+    cargo build --release -p api -p indexer && \
+    cargo install sqlx-cli --no-default-features --features postgres --locked
 
-# Copy real source code and build
+# Copy real source code and build both binaries in one pass
 COPY apps/api/src apps/api/src
 COPY apps/indexer/src apps/indexer/src
 COPY crates/core/src crates/core/src
@@ -48,17 +46,16 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
     find apps/ crates/ -name '*.rs' -exec touch {} + && \
-    cargo build --release --target x86_64-unknown-linux-gnu -p api && \
-    cp /app/target/x86_64-unknown-linux-gnu/release/api /usr/local/bin/api
+    cargo build --release -p api -p indexer && \
+    cp /app/target/release/api /usr/local/bin/api && \
+    cp /app/target/release/indexer /usr/local/bin/indexer
 
-FROM debian:bookworm-slim
+# Common runtime base used by both api and indexer (pdfium + ca-certs)
+FROM debian:bookworm-slim AS runtime-base
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates wget locales postgresql-client \
+    ca-certificates wget \
     && rm -rf /var/lib/apt/lists/*
-RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
-ENV LANG=en_US.UTF-8
-ENV LC_ALL=en_US.UTF-8
 
 # Download pdfium shared library (replaces pdftoppm subprocess)
 RUN ARCH=$(dpkg --print-architecture) && \
@@ -72,6 +69,17 @@ RUN ARCH=$(dpkg --print-architecture) && \
     cp /tmp/lib/libpdfium.so /usr/local/lib/ && \
     rm -rf /tmp/pdfium.tgz /tmp/lib /tmp/include && \
     ldconfig
+
+# ─── api target ────────────────────────────────────────────────────────────
+FROM runtime-base AS api
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    locales postgresql-client \
+    && rm -rf /var/lib/apt/lists/* \
+    && sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+
 COPY --from=builder /usr/local/bin/api /usr/local/bin/api
 COPY --from=builder /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
 COPY infra/migrations /app/migrations
@@ -79,3 +87,10 @@ COPY apps/api/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 EXPOSE 7080
 CMD ["/usr/local/bin/entrypoint.sh"]
+
+# ─── indexer target ────────────────────────────────────────────────────────
+FROM runtime-base AS indexer
+
+COPY --from=builder /usr/local/bin/indexer /usr/local/bin/indexer
+EXPOSE 7081
+CMD ["/usr/local/bin/indexer"]

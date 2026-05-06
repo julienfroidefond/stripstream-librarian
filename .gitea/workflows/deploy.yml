@@ -26,11 +26,15 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # api and indexer share apps/api/Dockerfile via stage targets — the
+      # heavy `builder` stage is compiled once for api, then reused from cache
+      # when indexer builds (only its small final stage runs).
       - name: Build & push api
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/api/Dockerfile
+          target: api
           platforms: ${{ env.PLATFORMS }}
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-api:latest
@@ -41,11 +45,14 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/indexer/Dockerfile
+          file: apps/api/Dockerfile
+          target: indexer
           platforms: ${{ env.PLATFORMS }}
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-indexer:latest
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-indexer:buildcache
+          cache-from: |
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-indexer:buildcache
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-api:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-indexer:buildcache,mode=max
 
       - name: Build & push backoffice

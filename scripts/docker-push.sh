@@ -77,12 +77,31 @@ fi
 
 # ─── Build, tag & push all services (multi-platform) ──────────────────────
 # Registry cache speeds up rebuilds: layers shared between builds, persisted across runs.
+# api and indexer share apps/api/Dockerfile via different stage targets.
+service_dockerfile() {
+    case "$1" in
+        api|indexer) echo "apps/api/Dockerfile" ;;
+        *) echo "apps/$1/Dockerfile" ;;
+    esac
+}
+service_target() {
+    case "$1" in
+        api) echo "api" ;;
+        indexer) echo "indexer" ;;
+        *) echo "" ;;
+    esac
+}
 for service in "${SELECTED_SERVICES[@]}"; do
     echo ""
     echo "=== $service (${PLATFORMS}) ==="
+    DOCKERFILE=$(service_dockerfile "$service")
+    TARGET=$(service_target "$service")
+    TARGET_ARG=()
+    [ -n "$TARGET" ] && TARGET_ARG=(--target "$TARGET")
     docker buildx build \
         --platform "$PLATFORMS" \
-        -f "apps/$service/Dockerfile" \
+        -f "$DOCKERFILE" \
+        "${TARGET_ARG[@]}" \
         -t "$REGISTRY/$OWNER/stripstream-$service:$VERSION" \
         -t "$REGISTRY/$OWNER/stripstream-$service:latest" \
         --cache-from "type=registry,ref=$REGISTRY/$OWNER/stripstream-$service:buildcache" \
