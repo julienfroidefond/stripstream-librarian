@@ -13,9 +13,6 @@ env:
 jobs:
   build:
     runs-on: mac-orbstack-runner
-    strategy:
-      matrix:
-        service: [api, indexer, backoffice, docs]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,17 +26,49 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build & push ${{ matrix.service }}
+      - name: Build & push api
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/${{ matrix.service }}/Dockerfile
+          file: apps/api/Dockerfile
           platforms: ${{ env.PLATFORMS }}
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-${{ matrix.service }}:latest
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-${{ matrix.service }}:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-${{ matrix.service }}:buildcache,mode=max
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-api:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-api:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-api:buildcache,mode=max
+
+      - name: Build & push indexer
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/indexer/Dockerfile
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-indexer:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-indexer:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-indexer:buildcache,mode=max
+
+      - name: Build & push backoffice
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/backoffice/Dockerfile
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-backoffice:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-backoffice:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-backoffice:buildcache,mode=max
+
+      - name: Build & push docs
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/docs/Dockerfile
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:buildcache,mode=max
 
   deploy:
     needs: build
