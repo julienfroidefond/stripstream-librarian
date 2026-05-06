@@ -6,7 +6,7 @@ A comprehensive comic book and e-book management system with automatic indexing,
 
 The project consists of the following components:
 
-- **API** (`apps/api/`) - Rust-based REST API service
+- **API** (`apps/api/`) - Rust-based REST API service (shares `apps/api/Dockerfile` with indexer via stage targets)
 - **Indexer** (`apps/indexer/`) - Rust-based background indexing service
 - **Backoffice** (`apps/backoffice/`) - Next.js web administration interface
 - **Docs** (`apps/docs/`) - Documentation site (Astro/Starlight)
