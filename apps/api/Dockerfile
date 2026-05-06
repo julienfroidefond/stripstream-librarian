@@ -1,8 +1,21 @@
-FROM rust:1-bookworm AS builder
+# Build natively on the host arch ($BUILDPLATFORM) and cross-compile to amd64.
+# On an arm64 runner this avoids QEMU emulation and is ~5-10x faster.
+FROM --platform=$BUILDPLATFORM rust:1-bookworm AS builder
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc-x86-64-linux-gnu g++-x86-64-linux-gnu libc6-dev-amd64-cross \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN rustup target add x86_64-unknown-linux-gnu
+
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc \
+    CC_x86_64_unknown_linux_gnu=x86_64-linux-gnu-gcc \
+    CXX_x86_64_unknown_linux_gnu=x86_64-linux-gnu-g++ \
+    PKG_CONFIG_ALLOW_CROSS=1
+
 # Copy workspace manifests and create dummy source files to cache dependency builds
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 COPY apps/api/Cargo.toml apps/api/Cargo.toml
 COPY apps/indexer/Cargo.toml apps/indexer/Cargo.toml
 COPY crates/core/Cargo.toml crates/core/Cargo.toml
@@ -21,8 +34,8 @@ RUN mkdir -p apps/api/src apps/indexer/src crates/core/src crates/notifications/
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
-    cargo build --release -p api && \
-    cargo install sqlx-cli --no-default-features --features postgres --locked
+    cargo build --release --target x86_64-unknown-linux-gnu -p api && \
+    cargo install sqlx-cli --target x86_64-unknown-linux-gnu --no-default-features --features postgres --locked
 
 # Copy real source code and build
 COPY apps/api/src apps/api/src
@@ -35,8 +48,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
     find apps/ crates/ -name '*.rs' -exec touch {} + && \
-    cargo build --release -p api && \
-    cp /app/target/release/api /usr/local/bin/api
+    cargo build --release --target x86_64-unknown-linux-gnu -p api && \
+    cp /app/target/x86_64-unknown-linux-gnu/release/api /usr/local/bin/api
 
 FROM debian:bookworm-slim
 
