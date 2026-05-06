@@ -11,7 +11,45 @@ env:
   PLATFORMS: linux/amd64
 
 jobs:
+  detect:
+    runs-on: mac-orbstack-runner
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      backoffice: ${{ steps.filter.outputs.backoffice }}
+      docs: ${{ steps.filter.outputs.docs }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # need parent commit for path-filter to diff against
+
+      - name: Read version from Cargo.toml
+        id: version
+        run: |
+          v=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Detected version: $v"
+
+      - name: Detect changed services
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            api:
+              - 'apps/api/**'
+              - 'apps/indexer/**'
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'infra/migrations/**'
+            backoffice:
+              - 'apps/backoffice/**'
+            docs:
+              - 'apps/docs/**'
+
   build:
+    needs: detect
     runs-on: mac-orbstack-runner
     steps:
       - name: Checkout
@@ -30,6 +68,7 @@ jobs:
       # heavy `builder` stage is compiled once for api, then reused from cache
       # when indexer builds (only its small final stage runs).
       - name: Build & push api
+        if: needs.detect.outputs.api == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -37,11 +76,14 @@ jobs:
           target: api
           platforms: ${{ env.PLATFORMS }}
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-api:latest
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-api:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-api:${{ needs.detect.outputs.version }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-api:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-api:buildcache,mode=max
 
       - name: Build & push indexer
+        if: needs.detect.outputs.api == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -49,37 +91,50 @@ jobs:
           target: indexer
           platforms: ${{ env.PLATFORMS }}
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-indexer:latest
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-indexer:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-indexer:${{ needs.detect.outputs.version }}
           cache-from: |
             type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-indexer:buildcache
             type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-api:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-indexer:buildcache,mode=max
 
       - name: Build & push backoffice
+        if: needs.detect.outputs.backoffice == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/backoffice/Dockerfile
           platforms: ${{ env.PLATFORMS }}
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-backoffice:latest
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-backoffice:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-backoffice:${{ needs.detect.outputs.version }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-backoffice:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-backoffice:buildcache,mode=max
 
       - name: Build & push docs
+        if: needs.detect.outputs.docs == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/docs/Dockerfile
           platforms: ${{ env.PLATFORMS }}
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:latest
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:${{ needs.detect.outputs.version }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:buildcache,mode=max
 
   deploy:
-    needs: build
+    needs: [detect, build]
     runs-on: mac-orbstack-runner
+    # Skip deploy when no service was rebuilt (e.g. doc-only or workflow-only commit)
+    if: |
+      needs.detect.outputs.api == 'true' ||
+      needs.detect.outputs.backoffice == 'true' ||
+      needs.detect.outputs.docs == 'true'
     steps:
       - name: Pull images and restart stack
         env:
