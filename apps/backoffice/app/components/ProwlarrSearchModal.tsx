@@ -20,6 +20,7 @@ interface ProwlarrSearchModalProps {
   missingBooks: MissingBookItem[] | null;
   initialProwlarrConfigured?: boolean;
   initialQbConfigured?: boolean;
+  children?: (open: () => void) => React.ReactNode;
 }
 
 function formatSize(bytes: number): string {
@@ -44,7 +45,7 @@ function groupReleasesByTitle<T extends { title: string }>(releases: T[]): { tit
   return Array.from(groups.entries()).map(([title, items]) => ({ title, items }));
 }
 
-export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initialProwlarrConfigured, initialQbConfigured }: ProwlarrSearchModalProps) {
+export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initialProwlarrConfigured, initialQbConfigured, children }: ProwlarrSearchModalProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [isConfigured, setIsConfigured] = useState<boolean | null>(initialProwlarrConfigured ?? null);
@@ -345,14 +346,18 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
 
   return (
     <>
-      <button
-        type="button"
-        onClick={handleOpen}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
-      >
-        <Icon name="search" size="sm" />
-        {t("prowlarr.searchButton")}
-      </button>
+      {children ? (
+        children(handleOpen)
+      ) : (
+        <button
+          type="button"
+          onClick={handleOpen}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
+        >
+          <Icon name="search" size="sm" />
+          {t("prowlarr.searchButton")}
+        </button>
+      )}
       {modal}
     </>
   );

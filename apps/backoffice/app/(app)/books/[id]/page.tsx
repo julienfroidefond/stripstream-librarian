@@ -1,18 +1,10 @@
 import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch, ReadingStatus } from "@/lib/api";
 import { BookPreview } from "@/app/components/BookPreview";
-import { ConvertButton } from "@/app/components/ConvertButton";
-import { DeleteBookButton } from "@/app/components/DeleteBookButton";
-import { MarkBookReadButton } from "@/app/components/MarkBookReadButton";
-import { RefreshButton } from "@/app/components/RefreshButton";
-import nextDynamic from "next/dynamic";
+import { BookActionsToolbar } from "@/app/components/BookActionsToolbar";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { getServerTranslations } from "@/lib/i18n/server";
 import Image from "next/image";
 import Link from "next/link";
-
-const EditBookForm = nextDynamic(
-  () => import("@/app/components/EditBookForm").then(m => m.EditBookForm)
-);
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -162,13 +154,7 @@ export default async function BookDetailPage({
           )}
 
           {/* Action buttons toolbar */}
-          <div className="flex flex-wrap items-center gap-3">
-            <RefreshButton target="book-detail" />
-            <MarkBookReadButton bookId={book.id} currentStatus={book.reading_status} />
-            <EditBookForm book={book} />
-            {book.file_format === "cbr" && <ConvertButton bookId={book.id} />}
-            <DeleteBookButton bookId={book.id} libraryId={book.library_id} />
-          </div>
+          <BookActionsToolbar book={book} />
         </div>
       </div>
 

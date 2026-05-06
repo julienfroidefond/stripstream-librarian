@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 import { Button, Icon, Modal } from "./ui";
 import { useTranslation } from "@/lib/i18n/context";
 
-export function DeleteBookButton({ bookId, libraryId }: { bookId: string; libraryId?: string }) {
+interface DeleteBookButtonProps {
+  bookId: string;
+  libraryId?: string;
+  children?: (open: () => void) => React.ReactNode;
+}
+
+export function DeleteBookButton({ bookId, libraryId, children }: DeleteBookButtonProps) {
   const { t } = useTranslation();
   const router = useRouter();
   const [showConfirm, setShowConfirm] = useState(false);
@@ -24,17 +30,23 @@ export function DeleteBookButton({ bookId, libraryId }: { bookId: string; librar
     }
   }
 
+  const open = () => setShowConfirm(true);
+
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setShowConfirm(true)}
-        disabled={deleting}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-destructive/30 bg-destructive/10 text-destructive text-sm font-medium hover:bg-destructive/20 transition-colors disabled:opacity-50"
-      >
-        {deleting ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="trash" size="sm" />}
-        {t("bookDetail.delete")}
-      </button>
+      {children ? (
+        children(open)
+      ) : (
+        <button
+          type="button"
+          onClick={open}
+          disabled={deleting}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-destructive/30 bg-destructive/10 text-destructive text-sm font-medium hover:bg-destructive/20 transition-colors disabled:opacity-50"
+        >
+          {deleting ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="trash" size="sm" />}
+          {t("bookDetail.delete")}
+        </button>
+      )}
 
       <Modal isOpen={showConfirm} onClose={() => setShowConfirm(false)} maxWidth="sm">
         <div className="p-6">

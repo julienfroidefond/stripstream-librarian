@@ -1,37 +1,13 @@
 import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto } from "@/lib/api";
 import { BooksGrid, EmptyState } from "@/app/components/BookCard";
 import { BooksGridWithMissingToggle } from "@/app/components/ShowMissingToggle";
-import { MarkSeriesReadButton } from "@/app/components/MarkSeriesReadButton";
-import { RefreshButton } from "@/app/components/RefreshButton";
 import { MarkBookReadButton } from "@/app/components/MarkBookReadButton";
 import { ProviderIcon, providerLabel } from "@/app/components/ProviderIcon";
-import nextDynamic from "next/dynamic";
+import { SeriesActionsToolbar } from "@/app/components/SeriesActionsToolbar";
 import { OffsetPagination } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import Image from "next/image";
 import Link from "next/link";
-
-const EditSeriesForm = nextDynamic(
-  () => import("@/app/components/EditSeriesForm").then(m => m.EditSeriesForm)
-);
-const MetadataSearchModal = nextDynamic(
-  () => import("@/app/components/MetadataSearchModal").then(m => m.MetadataSearchModal)
-);
-const ReadingStatusModal = nextDynamic(
-  () => import("@/app/components/ReadingStatusModal").then(m => m.ReadingStatusModal)
-);
-const ProwlarrSearchModal = nextDynamic(
-  () => import("@/app/components/ProwlarrSearchModal").then(m => m.ProwlarrSearchModal)
-);
-const DeleteSeriesButton = nextDynamic(
-  () => import("@/app/components/DeleteSeriesButton").then(m => m.DeleteSeriesButton)
-);
-const MergeSeriesButton = nextDynamic(
-  () => import("@/app/components/MergeSeriesButton").then(m => m.MergeSeriesButton)
-);
-const RenameSeriesBooksModal = nextDynamic(
-  () => import("@/app/components/RenameSeriesBooksModal").then(m => m.RenameSeriesBooksModal)
-);
 import { notFound } from "next/navigation";
 import { getServerTranslations } from "@/lib/i18n/server";
 
@@ -257,64 +233,31 @@ export default async function SeriesDetailPage({
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <RefreshButton target="series-detail" seriesId={seriesId} />
-            <MarkSeriesReadButton
-              seriesId={seriesId}
-              seriesName={seriesName}
-              bookCount={booksPage.total}
-              booksReadCount={booksReadCount}
-            />
-            <EditSeriesForm
-              libraryId={libraryId}
-              seriesId={seriesId}
-              seriesName={seriesName}
-              currentAuthors={seriesMeta?.authors ?? []}
-              currentPublishers={seriesMeta?.publishers ?? []}
-              currentBookAuthor={seriesMeta?.book_author ?? booksPage.items[0]?.author ?? null}
-              currentBookLanguage={seriesMeta?.book_language ?? booksPage.items[0]?.language ?? null}
-              currentDescription={seriesMeta?.description ?? null}
-              currentStartYear={seriesMeta?.start_year ?? null}
-              currentTotalVolumes={seriesMeta?.total_volumes ?? null}
-              currentStatus={seriesMeta?.status ?? null}
-              currentLockedFields={seriesMeta?.locked_fields ?? {}}
-            />
-            <ProwlarrSearchModal
-              seriesName={seriesName}
-              libraryId={libraryId}
-              missingBooks={missingData?.missing_books ?? null}
-              initialProwlarrConfigured={prowlarrConfigured}
-              initialQbConfigured={qbConfigured}
-            />
-            <MetadataSearchModal
-              libraryId={libraryId}
-              seriesName={seriesName}
-              existingLink={existingLink}
-              initialMissing={missingData}
-              initialHiddenProviders={hiddenProviders}
-            />
-            <ReadingStatusModal
-              libraryId={libraryId}
-              seriesId={seriesId}
-              seriesName={seriesName}
-              readingStatusProvider={library.reading_status_provider ?? null}
-              existingLink={readingStatusLink}
-            />
-            <RenameSeriesBooksModal
-              seriesId={seriesId}
-              seriesName={seriesName}
-              initialFormat={typeof renameFormat === "string" ? renameFormat : null}
-              initialFormatHs={typeof renameFormatHs === "string" ? renameFormatHs : null}
-            />
-            <MergeSeriesButton
-              seriesId={seriesId}
-              seriesName={seriesName}
-              libraryId={libraryId}
-            />
-            <DeleteSeriesButton
-              seriesId={seriesId}
-            />
-          </div>
+          <SeriesActionsToolbar
+            libraryId={libraryId}
+            seriesId={seriesId}
+            seriesName={seriesName}
+            bookCount={booksPage.total}
+            booksReadCount={booksReadCount}
+            editAuthors={seriesMeta?.authors ?? []}
+            editPublishers={seriesMeta?.publishers ?? []}
+            editBookAuthor={seriesMeta?.book_author ?? booksPage.items[0]?.author ?? null}
+            editBookLanguage={seriesMeta?.book_language ?? booksPage.items[0]?.language ?? null}
+            editDescription={seriesMeta?.description ?? null}
+            editStartYear={seriesMeta?.start_year ?? null}
+            editTotalVolumes={seriesMeta?.total_volumes ?? null}
+            editStatus={seriesMeta?.status ?? null}
+            editLockedFields={seriesMeta?.locked_fields ?? {}}
+            existingLink={existingLink}
+            missingData={missingData}
+            hiddenProviders={hiddenProviders}
+            readingStatusProvider={library.reading_status_provider ?? null}
+            readingStatusLink={readingStatusLink}
+            prowlarrConfigured={prowlarrConfigured}
+            qbConfigured={qbConfigured}
+            renameFormat={typeof renameFormat === "string" ? renameFormat : null}
+            renameFormatHs={typeof renameFormatHs === "string" ? renameFormatHs : null}
+          />
         </div>
       </div>
 

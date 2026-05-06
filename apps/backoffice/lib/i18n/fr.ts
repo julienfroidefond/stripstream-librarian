@@ -47,6 +47,11 @@ const fr = {
   "common.via": "via",
   "common.refresh": "Rafraîchir",
   "common.refreshing": "Rafraîchissement...",
+  "common.moreActions": "Plus d'actions",
+  "actionsMenu.metadata": "Métadonnées",
+  "actionsMenu.download": "Téléchargement",
+  "actionsMenu.files": "Fichiers",
+  "actionsMenu.actions": "Actions",
 
   // Reading status
   "status.unread": "Non lu",

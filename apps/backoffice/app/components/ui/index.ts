@@ -22,3 +22,4 @@ export { CursorPagination, OffsetPagination } from "./Pagination";
 export { Tooltip } from "./Tooltip";
 export { toast, Toaster } from "./Toast";
 export { Modal } from "./Modal";
+export { ActionsMenu, ActionsMenuItem, ActionsMenuSection } from "./ActionsMenu";

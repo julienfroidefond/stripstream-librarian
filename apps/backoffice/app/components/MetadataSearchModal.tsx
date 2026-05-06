@@ -27,6 +27,7 @@ interface MetadataSearchModalProps {
   existingLink: ExternalMetadataLinkDto | null;
   initialMissing: MissingBooksDto | null;
   initialHiddenProviders?: string[];
+  children?: (open: () => void) => React.ReactNode;
 }
 
 type ModalStep = "idle" | "searching" | "results" | "confirm" | "syncing" | "done" | "linked";
@@ -37,6 +38,7 @@ export function MetadataSearchModal({
   existingLink,
   initialMissing,
   initialHiddenProviders,
+  children,
 }: MetadataSearchModalProps) {
   const { t } = useTranslation();
   const router = useRouter();
@@ -703,13 +705,17 @@ export function MetadataSearchModal({
 
   return (
     <>
-      <button
-        onClick={handleOpen}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
-      >
-        <Icon name="search" size="sm" />
-        {existingLink && existingLink.status === "approved" ? t("metadata.metadataButton") : t("metadata.searchButton")}
-      </button>
+      {children ? (
+        children(handleOpen)
+      ) : (
+        <button
+          onClick={handleOpen}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
+        >
+          <Icon name="search" size="sm" />
+          {existingLink && existingLink.status === "approved" ? t("metadata.metadataButton") : t("metadata.searchButton")}
+        </button>
+      )}
 
       {modal}
     </>

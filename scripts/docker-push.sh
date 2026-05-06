@@ -4,7 +4,7 @@ set -e
 REGISTRY="docker.io"
 OWNER="julienfroidefond32"
 SERVICES=("api" "indexer" "backoffice" "docs")
-PLATFORMS="linux/amd64"
+PLATFORMS="linux/arm64"
 BUILDER_NAME="stripstream-multiarch"
 
 # ─── Version bump ───────────────────────────────────────────────────────────

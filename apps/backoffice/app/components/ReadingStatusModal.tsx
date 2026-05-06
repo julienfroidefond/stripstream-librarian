@@ -13,6 +13,7 @@ interface ReadingStatusModalProps {
   seriesName: string;
   readingStatusProvider: string | null;
   existingLink: AnilistSeriesLinkDto | null;
+  children?: (open: () => void) => React.ReactNode;
 }
 
 type ModalStep = "idle" | "searching" | "results" | "linked";
@@ -23,6 +24,7 @@ export function ReadingStatusModal({
   seriesName,
   readingStatusProvider,
   existingLink,
+  children,
 }: ReadingStatusModalProps) {
   const { t } = useTranslation();
   const router = useRouter();
@@ -113,14 +115,18 @@ export function ReadingStatusModal({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={handleOpen}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
-      >
-        <Icon name="link" size="sm" />
-        {t("readingStatus.button")}
-      </button>
+      {children ? (
+        children(handleOpen)
+      ) : (
+        <button
+          type="button"
+          onClick={handleOpen}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
+        >
+          <Icon name="link" size="sm" />
+          {t("readingStatus.button")}
+        </button>
+      )}
 
       {isOpen && createPortal(
         <>

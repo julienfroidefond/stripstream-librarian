@@ -42,7 +42,8 @@ function LockButton({
 
 const SERIES_STATUS_VALUES = ["", "ongoing", "ended", "hiatus", "cancelled", "upcoming"] as const;
 
-interface EditSeriesFormProps {
+export interface EditSeriesFormProps {
+  children?: (open: () => void) => React.ReactNode;
   libraryId: string;
   seriesId: string;
   seriesName: string;
@@ -70,6 +71,7 @@ export function EditSeriesForm({
   currentTotalVolumes,
   currentStatus,
   currentLockedFields,
+  children,
 }: EditSeriesFormProps) {
   const { t } = useTranslation();
   const router = useRouter();
@@ -469,14 +471,20 @@ export function EditSeriesForm({
     </Modal>
   );
 
+  const open = () => setIsOpen(true);
+
   return (
     <>
-      <button
-        onClick={() => setIsOpen(true)}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
-      >
-        <span>✏️</span> {t("editSeries.title")}
-      </button>
+      {children ? (
+        children(open)
+      ) : (
+        <button
+          onClick={open}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
+        >
+          <span>✏️</span> {t("editSeries.title")}
+        </button>
+      )}
       {modal}
     </>
   );

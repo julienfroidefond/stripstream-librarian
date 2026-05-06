@@ -49,6 +49,11 @@ const en: Record<TranslationKey, string> = {
   "common.via": "via",
   "common.refresh": "Refresh",
   "common.refreshing": "Refreshing...",
+  "common.moreActions": "More actions",
+  "actionsMenu.metadata": "Metadata",
+  "actionsMenu.download": "Download",
+  "actionsMenu.files": "Files",
+  "actionsMenu.actions": "Actions",
 
   // Reading status
   "status.unread": "Unread",

@@ -16,9 +16,10 @@ interface Props {
   target: Target;
   seriesId?: string;
   className?: string;
+  children?: (onClick: () => void, pending: boolean) => React.ReactNode;
 }
 
-export function RefreshButton({ target, seriesId, className = "" }: Props) {
+export function RefreshButton({ target, seriesId, className = "", children }: Props) {
   const { t } = useTranslation();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -31,6 +32,10 @@ export function RefreshButton({ target, seriesId, className = "" }: Props) {
       router.refresh();
     });
   };
+
+  if (children) {
+    return <>{children(onClick, pending)}</>;
+  }
 
   return (
     <Button

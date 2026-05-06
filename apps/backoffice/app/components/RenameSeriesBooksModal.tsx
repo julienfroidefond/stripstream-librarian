@@ -23,17 +23,21 @@ interface RenameResponse {
 
 type ModalStep = "idle" | "loading" | "preview" | "executing" | "done" | "error";
 
+interface RenameSeriesBooksModalProps {
+  seriesId: string;
+  seriesName: string;
+  initialFormat?: string | null;
+  initialFormatHs?: string | null;
+  children?: (open: () => void) => React.ReactNode;
+}
+
 export function RenameSeriesBooksModal({
   seriesId,
   seriesName,
   initialFormat,
   initialFormatHs,
-}: {
-  seriesId: string;
-  seriesName: string;
-  initialFormat?: string | null;
-  initialFormatHs?: string | null;
-}) {
+  children,
+}: RenameSeriesBooksModalProps) {
   const { t } = useTranslation();
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
@@ -114,14 +118,18 @@ export function RenameSeriesBooksModal({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={handleOpen}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-foreground text-sm font-medium hover:bg-muted transition-colors"
-      >
-        <Icon name="edit" size="sm" />
-        {t("rename.button")}
-      </button>
+      {children ? (
+        children(handleOpen)
+      ) : (
+        <button
+          type="button"
+          onClick={handleOpen}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-foreground text-sm font-medium hover:bg-muted transition-colors"
+        >
+          <Icon name="edit" size="sm" />
+          {t("rename.button")}
+        </button>
+      )}
 
       <Modal isOpen={isOpen} onClose={handleClose} title={t("rename.modalTitle")} maxWidth="3xl" disableClose={step === "executing"}>
         <div className="p-6 space-y-4">

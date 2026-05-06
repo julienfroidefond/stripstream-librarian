@@ -7,6 +7,7 @@ import { useTranslation } from "../../lib/i18n/context";
 
 interface ConvertButtonProps {
   bookId: string;
+  children?: (action: () => Promise<void>, isLoading: boolean) => React.ReactNode;
 }
 
 type ConvertState =
@@ -15,7 +16,7 @@ type ConvertState =
   | { type: "success"; jobId: string }
   | { type: "error"; message: string };
 
-export function ConvertButton({ bookId }: ConvertButtonProps) {
+export function ConvertButton({ bookId, children }: ConvertButtonProps) {
   const { t } = useTranslation();
   const [state, setState] = useState<ConvertState>({ type: "idle" });
 
@@ -58,6 +59,10 @@ export function ConvertButton({ bookId }: ConvertButtonProps) {
         </button>
       </div>
     );
+  }
+
+  if (children) {
+    return <>{children(handleConvert, state.type === "loading")}</>;
   }
 
   return (

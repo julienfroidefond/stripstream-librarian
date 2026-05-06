@@ -12,15 +12,19 @@ type SeriesResult = {
   metadata_provider: string | null;
 };
 
+interface MergeSeriesButtonProps {
+  seriesId: string;
+  seriesName: string;
+  libraryId: string;
+  children?: (open: () => void) => React.ReactNode;
+}
+
 export function MergeSeriesButton({
   seriesId,
   seriesName,
   libraryId,
-}: {
-  seriesId: string;
-  seriesName: string;
-  libraryId: string;
-}) {
+  children,
+}: MergeSeriesButtonProps) {
   const { t } = useTranslation();
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
@@ -98,16 +102,22 @@ export function MergeSeriesButton({
     setSelected(null);
   }
 
+  const open = () => { setIsOpen(true); setQuery(seriesName); search(seriesName); };
+
   return (
     <>
-      <button
-        type="button"
-        onClick={() => { setIsOpen(true); setQuery(seriesName); search(seriesName); }}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-foreground text-sm font-medium hover:bg-muted transition-colors"
-      >
-        <Icon name="merge" size="sm" />
-        {t("seriesDetail.merge")}
-      </button>
+      {children ? (
+        children(open)
+      ) : (
+        <button
+          type="button"
+          onClick={open}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-foreground text-sm font-medium hover:bg-muted transition-colors"
+        >
+          <Icon name="merge" size="sm" />
+          {t("seriesDetail.merge")}
+        </button>
+      )}
 
       <Modal
         isOpen={isOpen}
