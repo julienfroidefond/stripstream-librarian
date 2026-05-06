@@ -2681,4 +2681,76 @@ mod tests {
         assert!(!is_hs_subfolder("Tome 1"));
         assert!(!is_hs_subfolder("Shonen"));
     }
+
+    // ─── CBZ_INDEX_CACHE invalidation on mtime change ─────────────────────
+    //
+    // Regression test for a bug where the global cache was keyed only on the
+    // file path. After replacing a CBZ in place (different content, same path),
+    // the parser kept returning the OLD image list — leading to "page out of
+    // range" errors and stale page renders.
+
+    fn write_single_image_cbz(path: &Path, image_name: &str) -> std::io::Result<()> {
+        use std::io::Write;
+        let file = std::fs::File::create(path)?;
+        let mut zip = zip::ZipWriter::new(file);
+        let opts: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file(image_name, opts).map_err(std::io::Error::other)?;
+        // Minimal valid JPEG: just the SOI/EOI markers — enough to satisfy is_image_name.
+        zip.write_all(&[0xFF, 0xD8, 0xFF, 0xD9])?;
+        zip.finish().map_err(std::io::Error::other)?;
+        Ok(())
+    }
+
+    #[test]
+    fn cbz_index_cache_invalidates_on_mtime_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.cbz");
+
+        // First version: a single image "001.jpg". Read once to populate cache.
+        write_single_image_cbz(&path, "001.jpg").unwrap();
+        let mtime_before = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let names = get_cbz_image_index(&path, &mut archive);
+        assert_eq!(names, vec!["001.jpg".to_string()]);
+
+        // Replace the file in place with a new image. Force a future mtime so
+        // the test is robust regardless of filesystem mtime resolution.
+        write_single_image_cbz(&path, "002.jpg").unwrap();
+        let new_mtime = mtime_before + std::time::Duration::from_secs(10);
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(new_mtime)
+            .unwrap();
+
+        let file = std::fs::File::open(&path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let names = get_cbz_image_index(&path, &mut archive);
+        assert_eq!(
+            names,
+            vec!["002.jpg".to_string()],
+            "cache must invalidate when file mtime changes"
+        );
+    }
+
+    #[test]
+    fn cbz_index_cache_returns_cached_on_unchanged_mtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.cbz");
+        write_single_image_cbz(&path, "001.jpg").unwrap();
+
+        let file = std::fs::File::open(&path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let first = get_cbz_image_index(&path, &mut archive);
+
+        // Second call — mtime unchanged, should return cached value.
+        let file = std::fs::File::open(&path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let second = get_cbz_image_index(&path, &mut archive);
+
+        assert_eq!(first, second);
+    }
 }

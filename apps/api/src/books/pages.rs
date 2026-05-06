@@ -624,3 +624,34 @@ fn format_matches(source: &ImageFormat, target: &OutputFormat) -> bool {
     )
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cache_key_changes_when_mtime_changes() {
+        // Same file, same render params, different mtime → different cache key.
+        // This ensures an in-place file replacement invalidates the disk cache.
+        let a = get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 600);
+        let b = get_cache_key("/libraries/x.cbz", 2000, 1, "webp", 80, 600);
+        assert_ne!(a, b, "cache key must include mtime");
+    }
+
+    #[test]
+    fn cache_key_stable_when_inputs_unchanged() {
+        let a = get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 600);
+        let b = get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 600);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn cache_key_changes_with_path_and_render_params() {
+        let base = get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 600);
+        assert_ne!(base, get_cache_key("/libraries/y.cbz", 1000, 1, "webp", 80, 600));
+        assert_ne!(base, get_cache_key("/libraries/x.cbz", 1000, 2, "webp", 80, 600));
+        assert_ne!(base, get_cache_key("/libraries/x.cbz", 1000, 1, "jpeg", 80, 600));
+        assert_ne!(base, get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 90, 600));
+        assert_ne!(base, get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 800));
+    }
+}
+

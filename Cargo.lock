@@ -1862,6 +1862,7 @@ dependencies = [
  "natord",
  "pdfium-render",
  "regex",
+ "tempfile",
  "tracing",
  "unrar",
  "zip 8.2.0",
