@@ -82,7 +82,7 @@ export function MobileNav({ navItems, users, activeUserId, setActiveUserAction }
           <span className="text-sm font-semibold text-muted-foreground tracking-wide uppercase">{t("nav.navigation")}</span>
         </div>
 
-        <nav className="flex flex-col gap-1 p-3 flex-1">
+        <nav className="flex flex-col gap-1 p-3 flex-1 overflow-y-auto overscroll-contain">
           {navItems.map((item) => (
             <Link
               key={item.href}
