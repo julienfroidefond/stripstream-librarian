@@ -103,7 +103,8 @@ pub async fn cleanup_stale_jobs(pool: &PgPool) -> Result<()> {
 }
 
 /// Job types processed by the API, not the indexer.
-const API_ONLY_JOB_TYPES: &[&str] = &["metadata_batch", "metadata_refresh", "metadata_refresh_all"];
+/// Must match API_JOB_TYPES in apps/api/src/jobs/poller.rs.
+const API_ONLY_JOB_TYPES: &[&str] = &["metadata_batch", "metadata_batch_rematch", "metadata_refresh", "metadata_refresh_all", "reading_status_push", "download_detection"];
 
 /// Job types that modify book/thumbnail data and must not run concurrently.
 const EXCLUSIVE_JOB_TYPES: &[&str] = &[

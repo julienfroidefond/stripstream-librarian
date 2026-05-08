@@ -18,6 +18,10 @@ Stripstream Librarian — gestionnaire de bibliothèque de bandes dessinées/ebo
 
 Crates partagés : `crates/core` (config env, paths), `crates/parsers` (CBZ/CBR/PDF/EPUB), `crates/notifications` (Telegram).
 
+### Docker
+
+API et Indexer partagent un seul Dockerfile (`apps/api/Dockerfile`) avec deux targets (`--target api` / `--target indexer`). Le stage `builder` compile les deux binaires en un seul `cargo build`, le cache layer est réutilisé pour le deuxième target. CI via `.gitea/workflows/deploy.yml` : détection des services modifiés (`dorny/paths-filter`), build conditionnel, registry cache, deploy automatique.
+
 ### Metadata Providers
 
 6 providers dans `apps/api/src/metadata_providers/` : `google_books`, `open_library`, `comicvine`, `anilist`, `bedetheque`, `senscritique`. Tous implémentent le trait `MetadataProvider` (`search_series` + `get_series_books`). SensCritique utilise l'API GraphQL (`apollo.senscritique.com`), Bedetheque du scraping HTML.
@@ -68,7 +72,7 @@ cd apps/backoffice && npm install && npm run dev  # http://localhost:7082
 # Docs dev
 cd apps/docs && npm install && npm run dev -- --port 7083
 
-# Docker (multi-arch amd64+arm64)
+# Docker
 ./scripts/docker-push.sh              # interactive: bump version, select services, build & push
 
 # Migrations
@@ -206,6 +210,8 @@ Le user PostgreSQL doit avoir le droit `CREATEDB` : `ALTER USER stripstream CREA
 - **Metadata description** : tous les providers doivent stocker `description` dans `metadata_json` (pas seulement dans `candidate.description`). Sans ça, la description est perdue lors du cycle match → approve → sync car `sync_series_metadata` n'a accès qu'à `metadata_json`.
 - **Duplicate torrent detection** : quand un torrent existant est trouvé par magnet hash, vérifier que `content_path` existe sur disque avant de lancer l'import. Les anciens répertoires `sl-*` sont nettoyés après import.
 - **Missing books dedup** : `external_book_metadata` peut contenir des doublons par `volume_number` (éditions multiples). Les queries d'affichage utilisent `DISTINCT ON (volume_number)`.
+- **Stale pending jobs** : les jobs `pending` depuis > 30 min sont marqués `failed` au cleanup (sinon ils bloquent le `NOT EXISTS` du scheduler et empêchent les prochains jobs planifiés).
+- **Import count** : `ImportedFile.already_existed` distingue les fichiers réellement copiés de ceux déjà présents. Le comptage et les notifications ne comptent que les vrais nouveaux fichiers.
 
 > Voir `AGENTS.md` pour les conventions de code détaillées et les patterns par module.
 > Des `AGENTS.md` spécifiques existent dans `apps/api/`, `apps/indexer/`, `apps/backoffice/`, `crates/parsers/`.
