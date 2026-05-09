@@ -290,6 +290,8 @@ pub struct ProwlarrDiscoveryItem {
 pub struct ProwlarrDiscoveryQuery {
     pub limit: Option<usize>,
     pub nocache: Option<String>,
+    /// "seeders" (default) or "date"
+    pub sort: Option<String>,
 }
 
 /// GET /discovery/prowlarr — search Prowlarr indexers and group by series name
@@ -298,8 +300,13 @@ pub async fn prowlarr_discovery(
     Query(params): Query<ProwlarrDiscoveryQuery>,
 ) -> Result<Json<Vec<ProwlarrDiscoveryItem>>, ApiError> {
     let limit = params.limit.unwrap_or(100).min(200);
+    let sort_by_date = params.sort.as_deref() == Some("date");
 
-    let cache_key = "discovery:prowlarr".to_string();
+    let cache_key = if sort_by_date {
+        "discovery:prowlarr:date".to_string()
+    } else {
+        "discovery:prowlarr".to_string()
+    };
     let skip_cache = params.nocache.as_deref() == Some("true");
 
     // Check cache (unless nocache requested)
@@ -333,14 +340,29 @@ pub async fn prowlarr_discovery(
         .map_err(|e| ApiError::internal(format!("HTTP client error: {e}")))?;
 
     // Search Prowlarr with multiple queries to get a broad set of results.
-    // Empty query returns recent releases; named queries find popular series.
-    let queries = vec![
-        "".to_string(),      // recent releases
-        "manga".to_string(),
-        "bd".to_string(),
-        "comics".to_string(),
-        "tome".to_string(),
-    ];
+    // - sort_by_date: target generic terms that bring back many recent releases
+    //   (each search is bounded by indexer recency, so we cast a wide net)
+    // - default: mix of empty + named queries for popular series
+    let queries: Vec<String> = if sort_by_date {
+        vec![
+            "".to_string(),
+            "manga".to_string(),
+            "bd".to_string(),
+            "comics".to_string(),
+            "tome".to_string(),
+            "scan".to_string(),
+            "vf".to_string(),
+            "fr".to_string(),
+        ]
+    } else {
+        vec![
+            "".to_string(),
+            "manga".to_string(),
+            "bd".to_string(),
+            "comics".to_string(),
+            "tome".to_string(),
+        ]
+    };
 
     let mut raw: Vec<serde_json::Value> = Vec::new();
 
@@ -426,13 +448,31 @@ pub async fn prowlarr_discovery(
 
         entry.release_count += 1;
         entry.total_seeders += seeders;
-        if seeders > entry.best_seeders {
+
+        // Decide if this release becomes the new "representative" for the series.
+        // - sort_by_date: prefer the most recent release
+        // - default: prefer the release with the most seeders
+        let is_first = entry.best_release_title.is_empty();
+        let should_replace = if sort_by_date {
+            match (publish_date.as_deref(), entry.best_publish_date.as_deref()) {
+                (Some(new_d), Some(old_d)) => new_d > old_d,
+                (Some(_), None) => true,
+                _ => false,
+            }
+        } else {
+            seeders > entry.best_seeders
+        };
+
+        if is_first || should_replace {
             entry.best_seeders = seeders;
             entry.best_release_title = title.clone();
             entry.best_download_url = download_url;
             entry.best_size = size;
             entry.best_publish_date = publish_date;
             entry.best_info_url = info_url;
+        } else if seeders > entry.best_seeders {
+            // In date mode, still track the highest seeder count seen even if not the rep
+            entry.best_seeders = seeders;
         }
         for vol in &volumes {
             if !entry.volumes_found.contains(vol) {
@@ -460,11 +500,19 @@ pub async fn prowlarr_discovery(
         }
     }
 
-    // Sort volumes and sort items by best_seeders descending
+    // Sort volumes and sort items based on requested mode
     for item in &mut items {
         item.volumes_found.sort_unstable();
     }
-    items.sort_by(|a, b| b.best_seeders.cmp(&a.best_seeders));
+    if sort_by_date {
+        // Most recent first; entries without a date go last
+        items.sort_by(|a, b| {
+            b.best_publish_date.as_deref().unwrap_or("")
+                .cmp(a.best_publish_date.as_deref().unwrap_or(""))
+        });
+    } else {
+        items.sort_by(|a, b| b.best_seeders.cmp(&a.best_seeders));
+    }
 
     tracing::info!("[DISCOVERY] Prowlarr: {} series found from {} raw releases", items.len(), raw.len());
 

@@ -30,6 +30,21 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+function formatPublishDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / 86400000);
+  if (diffDays < 0) return d.toLocaleDateString();
+  if (diffDays < 1) return "auj.";
+  if (diffDays < 7) return `${diffDays}j`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}sem.`;
+  if (diffDays < 365) return `${Math.floor(diffDays / 30)}mois`;
+  return d.toLocaleDateString();
+}
+
 function formatVolumes(volumes: number[]): string {
   if (volumes.length === 0) return "—";
   if (volumes.length <= 3) return volumes.join(", ");
@@ -47,13 +62,14 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
   const [addedSet, setAddedSet] = useState<Set<string>>(new Set());
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterSearch, setFilterSearch] = useState("");
+  const [sort, setSort] = useState<"seeders" | "date">("seeders");
 
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
       setError(null);
       try {
-        const resp = await fetch(`/api/discovery/prowlarr?limit=100${nocache ? "&nocache=true" : ""}`);
+        const resp = await fetch(`/api/discovery/prowlarr?limit=100&sort=${sort}${nocache ? "&nocache=true" : ""}`);
         if (!resp.ok) {
           const data = await resp.json().catch(() => ({}));
           setError(data?.error || `Error ${resp.status}`);
@@ -68,7 +84,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
       }
     }
     fetchData();
-  }, []);
+  }, [sort, nocache]);
 
   async function handleAdd(item: ProwlarrItem, libraryId: string) {
     const key = item.series_name;
@@ -147,6 +163,21 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
           placeholder={t("common.search")}
           className="text-sm border border-border rounded-lg px-3 py-1.5 bg-background w-48"
         />
+        <div className="flex gap-0.5">
+          {(["seeders", "date"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setSort(s)}
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                sort === s
+                  ? "bg-primary/15 text-primary border-primary/30"
+                  : "bg-card text-muted-foreground border-border hover:border-primary/30"
+              }`}
+            >
+              {s === "seeders" ? t("discovery.prowlarrSortSeeders") : t("discovery.prowlarrSortDate")}
+            </button>
+          ))}
+        </div>
         <div className="flex flex-wrap gap-1">
           <button
             onClick={() => setFilterCategory("all")}
@@ -189,6 +220,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
               <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrReleases")}</th>
               <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrSeeders")}</th>
               <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrSize")}</th>
+              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrDate")}</th>
               <th className="text-right px-3 py-2.5 font-medium text-muted-foreground w-24"></th>
             </tr>
           </thead>
@@ -243,6 +275,7 @@ function ProwlarrRow({ item, idx, libraries, adding, onAdd }: {
         </span>
       </td>
       <td className="px-3 py-2 text-right text-muted-foreground text-xs">{formatSize(item.best_size)}</td>
+      <td className="px-3 py-2 text-right text-muted-foreground text-xs">{formatPublishDate(item.best_publish_date)}</td>
       <td className="px-3 py-2 text-right">
         {adding ? (
           <Icon name="spinner" size="sm" className="animate-spin text-muted-foreground" />
