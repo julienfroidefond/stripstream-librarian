@@ -43,6 +43,7 @@ pub async fn list_series(
     });
 
     let series_status_expr = r#"CASE
+              WHEN sc.book_count = 0 THEN 'unread'
               WHEN sc.books_read_count = sc.book_count THEN 'read'
               WHEN sc.books_read_count = 0 THEN 'unread'
               ELSE 'reading'
@@ -276,6 +277,7 @@ pub async fn list_all_series(
     });
 
     let series_status_expr = r#"CASE
+              WHEN sc.book_count = 0 THEN 'unread'
               WHEN sc.books_read_count = sc.book_count THEN 'read'
               WHEN sc.books_read_count = 0 THEN 'unread'
               ELSE 'reading'
