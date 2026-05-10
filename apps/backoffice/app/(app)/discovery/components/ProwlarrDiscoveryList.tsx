@@ -16,8 +16,11 @@ interface ProwlarrItem {
   best_size: number;
   best_publish_date: string | null;
   best_info_url: string | null;
+  best_indexer: string | null;
   volumes_found: number[];
 }
+
+const PAGE_SIZE = 25;
 
 interface Library {
   id: string;
@@ -63,13 +66,19 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterSearch, setFilterSearch] = useState("");
   const [sort, setSort] = useState<"seeders" | "date">("seeders");
+  const [page, setPage] = useState(1);
+
+  // Reset to page 1 whenever filters or sort change
+  useEffect(() => {
+    setPage(1);
+  }, [filterCategory, filterSearch, sort]);
 
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
       setError(null);
       try {
-        const resp = await fetch(`/api/discovery/prowlarr?limit=100&sort=${sort}${nocache ? "&nocache=true" : ""}`);
+        const resp = await fetch(`/api/discovery/prowlarr?limit=200&sort=${sort}${nocache ? "&nocache=true" : ""}`);
         if (!resp.ok) {
           const data = await resp.json().catch(() => ({}));
           setError(data?.error || `Error ${resp.status}`);
@@ -152,6 +161,11 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
     .filter((i) => filterCategory === "all" || i.categories.includes(filterCategory))
     .filter((i) => !filterSearch || i.series_name.toLowerCase().includes(filterSearch.toLowerCase()));
 
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const visibleItems = filteredItems.slice(pageStart, pageStart + PAGE_SIZE);
+
   return (
     <div className="space-y-3">
       {/* Filters */}
@@ -215,6 +229,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
             <tr>
               <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-8">#</th>
               <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrSeries")}</th>
+              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrProvider")}</th>
               <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrCategories")}</th>
               <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.volumes", { count: "" })}</th>
               <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrReleases")}</th>
@@ -225,13 +240,52 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {filteredItems.map((item, idx) => (
-              <ProwlarrRow key={item.series_name} item={item} idx={idx} libraries={libraries} adding={addingSet.has(item.series_name)} onAdd={handleAdd} />
+            {visibleItems.map((item, idx) => (
+              <ProwlarrRow key={item.series_name} item={item} idx={pageStart + idx} libraries={libraries} adding={addingSet.has(item.series_name)} onAdd={handleAdd} />
             ))}
           </tbody>
         </table>
       </div>
     </div>
+
+    {totalPages > 1 && (
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="text-muted-foreground">
+          {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filteredItems.length)} / {filteredItems.length}
+        </span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setPage(1)}
+            disabled={currentPage === 1}
+            className="px-2 py-1 rounded-md border border-border bg-card text-muted-foreground hover:border-primary/30 disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            «
+          </button>
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="px-2 py-1 rounded-md border border-border bg-card text-muted-foreground hover:border-primary/30 disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            ‹
+          </button>
+          <span className="px-2 text-muted-foreground tabular-nums">{currentPage} / {totalPages}</span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            className="px-2 py-1 rounded-md border border-border bg-card text-muted-foreground hover:border-primary/30 disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            ›
+          </button>
+          <button
+            onClick={() => setPage(totalPages)}
+            disabled={currentPage === totalPages}
+            className="px-2 py-1 rounded-md border border-border bg-card text-muted-foreground hover:border-primary/30 disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            »
+          </button>
+        </div>
+      </div>
+    )}
     </div>
   );
 }
@@ -253,12 +307,27 @@ function ProwlarrRow({ item, idx, libraries, adding, onAdd }: {
             <Icon name="books" size="sm" className="text-muted-foreground/40" />
           </div>
           <div>
-            <p className="font-medium text-foreground">{item.series_name}</p>
+            {item.best_info_url ? (
+              <a
+                href={item.best_info_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-primary hover:underline inline-flex items-center gap-1"
+              >
+                {item.series_name}
+                <Icon name="externalLink" size="sm" className="opacity-60" />
+              </a>
+            ) : (
+              <p className="font-medium text-foreground">{item.series_name}</p>
+            )}
             <p className="text-[10px] text-muted-foreground truncate max-w-xs" title={item.best_release_title}>
               {item.best_release_title}
             </p>
           </div>
         </div>
+      </td>
+      <td className="px-3 py-2 text-xs text-muted-foreground">
+        {item.best_indexer ?? "—"}
       </td>
       <td className="px-3 py-2">
         <div className="flex flex-wrap gap-1">

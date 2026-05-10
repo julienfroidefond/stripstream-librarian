@@ -1078,6 +1078,7 @@ const en: Record<TranslationKey, string> = {
   "discovery.prowlarrDate": "Date",
   "discovery.prowlarrSortSeeders": "Seeders",
   "discovery.prowlarrSortDate": "Recent",
+  "discovery.prowlarrProvider": "Provider",
   "discovery.prowlarrBestRelease": "Best release",
   "discovery.hardRefresh": "Refresh (bypass cache)",
   "library.tags": "Tags",

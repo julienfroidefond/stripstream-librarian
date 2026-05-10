@@ -283,6 +283,8 @@ pub struct ProwlarrDiscoveryItem {
     pub best_size: i64,
     pub best_publish_date: Option<String>,
     pub best_info_url: Option<String>,
+    #[serde(default)]
+    pub best_indexer: Option<String>,
     pub volumes_found: Vec<i32>,
 }
 
@@ -443,6 +445,7 @@ pub async fn prowlarr_discovery(
             best_size: 0,
             best_publish_date: None,
             best_info_url: None,
+            best_indexer: None,
             volumes_found: Vec::new(),
         });
 
@@ -470,6 +473,7 @@ pub async fn prowlarr_discovery(
             entry.best_size = size;
             entry.best_publish_date = publish_date;
             entry.best_info_url = info_url;
+            entry.best_indexer = if indexer.is_empty() { None } else { Some(indexer.clone()) };
         } else if seeders > entry.best_seeders {
             // In date mode, still track the highest seeder count seen even if not the rep
             entry.best_seeders = seeders;
