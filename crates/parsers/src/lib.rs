@@ -147,11 +147,14 @@ pub fn extract_volumes(title: &str) -> Vec<i32> {
                 continue;
             }
 
-            // For single-char prefixes (t, v), ensure it's at a word boundary
-            if needs_boundary && ci > 0 && chars[ci - 1].is_alphanumeric() {
-                ci += plen;
-                continue;
-            }
+            // For single-char prefixes (t, v): word boundary check.
+            // Standard boundary = previous char is non-alphanumeric.
+            // Exception: alphabetic-then-digit "glued" form like "FrontierT01" is
+            // also valid, BUT only when the prefix is directly followed by digits
+            // (no separator) AND at least 2 digits — limits false positives like
+            // "Asterisk" being read as a volume.
+            let prev_is_alpha = ci > 0 && chars[ci - 1].is_alphabetic();
+            let prev_is_alphanumeric = ci > 0 && chars[ci - 1].is_alphanumeric();
 
             // Skip "v" inside brackets like [V2] — that's a version, not a volume
             if needs_boundary && ci > 0 && chars[ci - 1] == '[' {
@@ -161,14 +164,42 @@ pub fn extract_volumes(title: &str) -> Vec<i32> {
 
             // Skip optional spaces, dots, underscores, or '#' after prefix
             let mut i = ci + plen;
+            let after_prefix = i;
             while i < len && (chars[i] == ' ' || chars[i] == '.' || chars[i] == '_' || chars[i] == '#') {
                 i += 1;
             }
+            let had_separator = i > after_prefix;
 
             // Read digits
             let digit_start = i;
             while i < len && chars[i].is_ascii_digit() {
                 i += 1;
+            }
+            let digit_count = i - digit_start;
+
+            // Apply boundary rules:
+            // - If previous is a digit → never accept (e.g., "MP3" should not match)
+            // - If previous is alpha:
+            //     - With separator (space/dot/_/#): reject (e.g., "FrontT 1" no, but
+            //       "FrontT1" via no-sep+2digit allowed below)
+            //     - Without separator AND digits >= 2: accept the glued form
+            // - Otherwise (boundary OK): accept
+            if needs_boundary {
+                let prev_is_digit = ci > 0 && chars[ci - 1].is_ascii_digit();
+                if prev_is_digit {
+                    ci += plen;
+                    continue;
+                }
+                if prev_is_alpha {
+                    if had_separator || digit_count < 2 {
+                        ci += plen;
+                        continue;
+                    }
+                } else if prev_is_alphanumeric {
+                    // shouldn't happen (alphanumeric without alpha = digit, already handled)
+                    ci += plen;
+                    continue;
+                }
             }
 
             if i > digit_start {
@@ -1995,6 +2026,20 @@ mod tests {
         assert_eq!(sorted(extract_volumes("Naruto Tome 12")), vec![12]);
         assert_eq!(sorted(extract_volumes("Vol.03")), vec![3]);
         assert_eq!(sorted(extract_volumes("v07")), vec![7]);
+    }
+
+    #[test]
+    fn extract_volumes_glued_t_prefix() {
+        // T directly attached to the series name (no separator), 2+ digits
+        assert_eq!(sorted(extract_volumes("Shangri-la FrontierT01.cbz")), vec![1]);
+        assert_eq!(sorted(extract_volumes("Shangri-la Frontiert05.cbz")), vec![5]);
+        assert_eq!(sorted(extract_volumes("NarutoT42")), vec![42]);
+        // 1-digit glued form NOT matched (too risky for false positives)
+        assert_eq!(sorted(extract_volumes("WordT5")), Vec::<i32>::new());
+        // Pure word with no digits not affected
+        assert_eq!(sorted(extract_volumes("Asterisk")), Vec::<i32>::new());
+        // Digit-then-T-then-digit not matched (e.g., MP3T01 — looks suspicious)
+        assert_eq!(sorted(extract_volumes("MP3T01")), Vec::<i32>::new());
     }
 
     #[test]
