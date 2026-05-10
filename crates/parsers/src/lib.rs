@@ -279,6 +279,38 @@ pub fn extract_volumes(title: &str) -> Vec<i32> {
                 }
             }
         }
+
+        // Pattern C: trailing " NN" right before a known file extension
+        // (e.g., "Shangri-La Frontier 18.cbz" → 18)
+        // Only triggers when no other pattern matched, and the number is the
+        // last token of the filename to avoid ambiguity.
+        if volumes.is_empty() {
+            const EXTENSIONS: &[&str] = &[".cbz", ".cbr", ".pdf", ".epub", ".zip"];
+            let lower_str: String = chars.iter().collect();
+            for ext in EXTENSIONS {
+                if let Some(ext_pos) = lower_str.rfind(ext) {
+                    // Convert byte position to char position
+                    let ext_char_pos = lower_str[..ext_pos].chars().count();
+                    // Walk back from ext_char_pos to find digits
+                    let mut end = ext_char_pos;
+                    let mut start = end;
+                    while start > 0 && chars[start - 1].is_ascii_digit() {
+                        start -= 1;
+                    }
+                    // Require digits AND a space (not alphanumeric) before them
+                    if end > start && start > 0 && chars[start - 1] == ' ' {
+                        let num_str: String = chars[start..end].iter().collect();
+                        if let Ok(num) = num_str.parse::<i32>() {
+                            // Sanity: reject very large numbers (unlikely volumes)
+                            if num <= 999 {
+                                volumes.push(num);
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
     }
 
     volumes
@@ -2026,6 +2058,19 @@ mod tests {
         assert_eq!(sorted(extract_volumes("Naruto Tome 12")), vec![12]);
         assert_eq!(sorted(extract_volumes("Vol.03")), vec![3]);
         assert_eq!(sorted(extract_volumes("v07")), vec![7]);
+    }
+
+    #[test]
+    fn extract_volumes_trailing_bare_number() {
+        // Series name + space + number + extension
+        assert_eq!(sorted(extract_volumes("Shangri-La Frontier 18.cbz")), vec![18]);
+        assert_eq!(sorted(extract_volumes("Shangri-la Frontier 01.cbz")), vec![1]);
+        assert_eq!(sorted(extract_volumes("My Series 7.pdf")), vec![7]);
+        assert_eq!(sorted(extract_volumes("Some manga 123.epub")), vec![123]);
+        // Should NOT trigger when a prefix-based pattern already matched
+        assert_eq!(sorted(extract_volumes("One Piece T05 18.cbz")), vec![5]);
+        // No space before digits → reject (avoids matching ISBN-like junk)
+        assert_eq!(sorted(extract_volumes("Series123.cbz")), Vec::<i32>::new());
     }
 
     #[test]
