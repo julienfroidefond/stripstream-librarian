@@ -280,34 +280,42 @@ pub fn extract_volumes(title: &str) -> Vec<i32> {
             }
         }
 
-        // Pattern C: trailing " NN" right before a known file extension
-        // (e.g., "Shangri-La Frontier 18.cbz" → 18)
-        // Only triggers when no other pattern matched, and the number is the
-        // last token of the filename to avoid ambiguity.
+        // Pattern C: trailing " NN" at the end of the string OR right before a
+        // known file extension. Handles:
+        //   "Shangri-La Frontier 18.cbz" → 18
+        //   "Shangri-La Frontier 18"     → 18 (after file_stem() strips the ext)
+        // Requires a preceding space (no glued digits) and a small number
+        // (≤999) to limit false positives.
         if volumes.is_empty() {
             const EXTENSIONS: &[&str] = &[".cbz", ".cbr", ".pdf", ".epub", ".zip"];
             let lower_str: String = chars.iter().collect();
-            for ext in EXTENSIONS {
-                if let Some(ext_pos) = lower_str.rfind(ext) {
-                    // Convert byte position to char position
-                    let ext_char_pos = lower_str[..ext_pos].chars().count();
-                    // Walk back from ext_char_pos to find digits
-                    let mut end = ext_char_pos;
-                    let mut start = end;
-                    while start > 0 && chars[start - 1].is_ascii_digit() {
-                        start -= 1;
-                    }
-                    // Require digits AND a space (not alphanumeric) before them
-                    if end > start && start > 0 && chars[start - 1] == ' ' {
-                        let num_str: String = chars[start..end].iter().collect();
-                        if let Ok(num) = num_str.parse::<i32>() {
-                            // Sanity: reject very large numbers (unlikely volumes)
-                            if num <= 999 {
-                                volumes.push(num);
-                            }
+
+            // Find the position where the number must end: either before a
+            // known extension, or at the end of the string.
+            let end_pos: Option<usize> = EXTENSIONS
+                .iter()
+                .find_map(|ext| {
+                    lower_str.rfind(ext).map(|byte_pos| {
+                        // Convert byte position to char position
+                        lower_str[..byte_pos].chars().count()
+                    })
+                })
+                .or(Some(chars.len()));
+
+            if let Some(end) = end_pos {
+                // Walk back from end to find digits
+                let mut start = end;
+                while start > 0 && chars[start - 1].is_ascii_digit() {
+                    start -= 1;
+                }
+                // Require digits AND a space (not alphanumeric) before them
+                if end > start && start > 0 && chars[start - 1] == ' ' {
+                    let num_str: String = chars[start..end].iter().collect();
+                    if let Ok(num) = num_str.parse::<i32>() {
+                        if num <= 999 {
+                            volumes.push(num);
                         }
                     }
-                    break;
                 }
             }
         }
@@ -2071,6 +2079,20 @@ mod tests {
         assert_eq!(sorted(extract_volumes("One Piece T05 18.cbz")), vec![5]);
         // No space before digits → reject (avoids matching ISBN-like junk)
         assert_eq!(sorted(extract_volumes("Series123.cbz")), Vec::<i32>::new());
+        // Filename without extension — covers the rename bug where file_stem()
+        // strips the extension before calling extract_volume.
+        assert_eq!(sorted(extract_volumes("Shangri-La Frontier 18")), vec![18]);
+        assert_eq!(sorted(extract_volumes("Some Series 7")), vec![7]);
+    }
+
+    #[test]
+    fn extract_volume_works_after_file_stem() {
+        // Reproduces the rename flow: filename with and without extension
+        // must yield the same volume number.
+        assert_eq!(extract_volume("Shangri-La Frontier 18.cbz"), Some(18));
+        assert_eq!(extract_volume("Shangri-La Frontier 18"), Some(18));
+        assert_eq!(extract_volume("Shangri-la Frontier 01"), Some(1));
+        assert_eq!(extract_volume("Shangri-La Frontier 24"), Some(24));
     }
 
     #[test]
