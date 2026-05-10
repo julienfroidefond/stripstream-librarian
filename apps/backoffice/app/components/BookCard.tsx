@@ -267,14 +267,36 @@ export function BooksGridWithMissing({
     return <BooksGrid books={books} compact={compact} />;
   }
 
-  // Merge owned and missing books, sorted by volume_number
+  // Merge owned and missing books, sorted by volume_number.
+  // Filter out missing entries whose volume_number is already covered by an
+  // owned book (handles the case where the link's external_book_metadata
+  // wasn't rematched after the local book was scanned).
   type MergedItem =
     | { kind: "owned"; book: BookDto & { coverUrl?: string } }
     | { kind: "missing"; book: MissingBook };
 
+  const ownedVolumes = new Set(
+    books.map((b) => b.volume).filter((v): v is number => v != null)
+  );
+  const ownedTitleVolumes = new Set<number>();
+  for (const b of books) {
+    // Extract a trailing volume number from the title as a fallback when
+    // book.volume is NULL in DB (e.g., older imports before parser fix).
+    const m = b.title?.match(/(?:t|tome|vol\.?|volume)\s*0*(\d{1,3})\b/i);
+    if (m) ownedTitleVolumes.add(parseInt(m[1], 10));
+    const trailing = b.title?.match(/\s0*(\d{1,3})$/);
+    if (trailing) ownedTitleVolumes.add(parseInt(trailing[1], 10));
+  }
+
+  const filteredMissing = missingBooks.filter(
+    (m) =>
+      m.volume_number == null ||
+      (!ownedVolumes.has(m.volume_number) && !ownedTitleVolumes.has(m.volume_number))
+  );
+
   const merged: MergedItem[] = [
     ...books.map((b) => ({ kind: "owned" as const, book: b })),
-    ...missingBooks.map((b) => ({ kind: "missing" as const, book: b })),
+    ...filteredMissing.map((b) => ({ kind: "missing" as const, book: b })),
   ].sort((a, b) => {
     const va = a.kind === "owned" ? a.book.volume : a.book.volume_number;
     const vb = b.kind === "owned" ? b.book.volume : b.book.volume_number;

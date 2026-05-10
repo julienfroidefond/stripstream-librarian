@@ -1051,7 +1051,9 @@ export async function rejectMetadataMatch(id: string) {
 export async function getMetadataLink(seriesId: string) {
   const params = new URLSearchParams();
   params.set("series_id", seriesId);
-  return apiFetch<ExternalMetadataLinkDto[]>(`/metadata/links?${params.toString()}`, { next: { revalidate: 30 } });
+  return apiFetch<ExternalMetadataLinkDto[]>(`/metadata/links?${params.toString()}`, {
+    next: { revalidate: 10, tags: ["metadata", `series:${seriesId}`] },
+  });
 }
 
 export async function getReadingStatusLink(seriesId: string) {
@@ -1061,7 +1063,9 @@ export async function getReadingStatusLink(seriesId: string) {
 }
 
 export async function getMissingBooks(linkId: string) {
-  return apiFetch<MissingBooksDto>(`/metadata/missing/${linkId}`, { next: { revalidate: 30 } });
+  return apiFetch<MissingBooksDto>(`/metadata/missing/${linkId}`, {
+    next: { revalidate: 10, tags: ["metadata", `link:${linkId}`] },
+  });
 }
 
 export async function deleteMetadataLink(id: string) {
