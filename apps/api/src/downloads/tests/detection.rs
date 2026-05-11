@@ -663,3 +663,73 @@ async fn volume_zero_cleanup_deletes_entry_with_only_zero(pool: sqlx::PgPool) {
         .unwrap();
     assert!(!exists, "entry with only volume 0 should be deleted after cleanup");
 }
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn detection_includes_series_without_books(pool: sqlx::PgPool) {
+    // Library setup
+    let library_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Test Lib', '/libraries/test')")
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Series WITHOUT books (discovery-only series)
+    let empty_series_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Discovered Series')")
+        .bind(empty_series_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Series WITH books
+    let owned_series_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Owned Series')")
+        .bind(owned_series_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO books (id, library_id, series_id, title, abs_path, kind, volume_type) \
+         VALUES ($1, $2, $3, 'Owned 1', '/libraries/test/owned.cbz', 'comic', 'regular')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(library_id)
+    .bind(owned_series_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Run the same query as process_download_detection
+    let rows: Vec<(String, Option<Uuid>)> = sqlx::query_as(
+        r#"
+        SELECT s.name AS name, s.id::uuid AS series_id
+        FROM series s
+        WHERE s.library_id = $1
+        UNION ALL
+        SELECT 'unclassified' AS name, NULL::uuid AS series_id
+        WHERE EXISTS (
+            SELECT 1 FROM books b
+            WHERE b.library_id = $1 AND b.series_id IS NULL
+        )
+        ORDER BY 1
+        "#,
+    )
+    .bind(library_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    let names: Vec<String> = rows.iter().map(|(name, _)| name.clone()).collect();
+    assert!(
+        names.contains(&"Discovered Series".to_string()),
+        "series without books must be included so detection scans them; got: {names:?}"
+    );
+    assert!(names.contains(&"Owned Series".to_string()));
+    assert!(
+        !names.contains(&"unclassified".to_string()),
+        "no orphan books → no unclassified entry"
+    );
+}

@@ -687,13 +687,20 @@ pub(crate) async fn process_download_detection(
             .await
             .map_err(|e| e.message)?;
 
-    // Fetch all series with their metadata link status
+    // Fetch all series in this library (with or without books — series added
+    // via Discovery have no books yet but still need detection).
+    // Also add an "unclassified" pseudo-series if there are orphan books.
     let all_series_rows: Vec<(String, Option<uuid::Uuid>)> = sqlx::query_as(
         r#"
-        SELECT DISTINCT COALESCE(s.name, 'unclassified') AS name, b.series_id
-        FROM books b
-        LEFT JOIN series s ON s.id = b.series_id
-        WHERE b.library_id = $1
+        SELECT s.name AS name, s.id::uuid AS series_id
+        FROM series s
+        WHERE s.library_id = $1
+        UNION ALL
+        SELECT 'unclassified' AS name, NULL::uuid AS series_id
+        WHERE EXISTS (
+            SELECT 1 FROM books b
+            WHERE b.library_id = $1 AND b.series_id IS NULL
+        )
         ORDER BY 1
         "#,
     )
