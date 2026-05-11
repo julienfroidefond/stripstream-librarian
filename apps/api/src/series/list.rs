@@ -348,7 +348,7 @@ pub async fn list_all_series(
             LEFT JOIN books b ON b.series_id = s.id
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
             {lib_cond}
-            GROUP BY s.id, s.name, s.library_id
+            GROUP BY s.id, s.name, s.library_id, s.created_at
         ),
         {missing_cte},
         {metadata_links_cte}
@@ -361,6 +361,8 @@ pub async fn list_all_series(
     );
 
     let series_order_clause = if query.sort.as_deref() == Some("latest") {
+        // For series without books, latest_created_at falls back to s.created_at
+        // (see series_counts CTE), so the value is never NULL.
         "sc.latest_created_at DESC".to_string()
     } else {
         "REGEXP_REPLACE(LOWER(sc.name), '[0-9].*$', ''), COALESCE((REGEXP_MATCH(LOWER(sc.name), '\\d+'))[1]::int, 0), sc.name ASC".to_string()
@@ -394,12 +396,12 @@ pub async fn list_all_series(
                 s.library_id,
                 COUNT(b.id) as book_count,
                 COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count,
-                MAX(b.created_at) as latest_created_at
+                COALESCE(MAX(b.created_at), s.created_at) as latest_created_at
             FROM series s
             LEFT JOIN books b ON b.series_id = s.id
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
             {lib_cond}
-            GROUP BY s.id, s.name, s.library_id
+            GROUP BY s.id, s.name, s.library_id, s.created_at
         ),
         {missing_cte},
         {metadata_links_cte}
