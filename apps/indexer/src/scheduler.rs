@@ -120,9 +120,10 @@ pub async fn check_and_schedule_reading_status_push(pool: &PgPool) -> Result<()>
 }
 
 pub async fn check_and_schedule_download_detection(pool: &PgPool) -> Result<()> {
-    // Only schedule if Prowlarr is configured
+    // Only schedule if Prowlarr is configured. The setting JSON uses the
+    // 'url' key (see apps/api/src/integrations/discovery/mod.rs), not 'base_url'.
     let prowlarr_configured: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM app_settings WHERE key = 'prowlarr' AND value->>'base_url' IS NOT NULL AND value->>'base_url' != '')"
+        "SELECT EXISTS(SELECT 1 FROM app_settings WHERE key = 'prowlarr' AND value->>'url' IS NOT NULL AND value->>'url' != '')"
     )
     .fetch_one(pool)
     .await
