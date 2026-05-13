@@ -682,6 +682,16 @@ pub(crate) async fn process_download_detection(
     job_id: Uuid,
     library_id: Uuid,
 ) -> Result<(i32, i64), String> {
+    // Capture the job start time so we can later count releases that were
+    // first discovered during this run (detected_at >= job_started_at).
+    let job_started_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+        "SELECT COALESCE(started_at, created_at) FROM index_jobs WHERE id = $1",
+    )
+    .bind(job_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
     let (prowlarr_url, prowlarr_api_key, categories) =
         prowlarr::load_prowlarr_config_internal(pool)
             .await
@@ -975,9 +985,28 @@ pub(crate) async fn process_download_detection(
         }
     }
 
+    // Count releases newly discovered during this run.
+    // merge_releases preserves detected_at for releases that already existed,
+    // so anything with detected_at >= job_started_at is genuinely new.
+    let new_releases: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*) FROM available_downloads ad,
+             jsonb_array_elements(ad.available_releases) AS rel
+        WHERE ad.library_id = $1
+          AND rel->>'detected_at' IS NOT NULL
+          AND (rel->>'detected_at')::timestamptz >= $2
+        "#,
+    )
+    .bind(library_id)
+    .bind(job_started_at)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+
     let stats = serde_json::json!({
         "total_series": total as i64,
         "found": count_found,
+        "new_releases": new_releases,
         "not_found": count_not_found,
         "no_missing": count_no_missing,
         "no_metadata": count_no_metadata,
@@ -994,7 +1023,7 @@ pub(crate) async fn process_download_detection(
     .map_err(|e| e.to_string())?;
 
     info!(
-        "[DOWNLOAD_DETECTION] job={job_id} completed: {total} series, found={count_found}, not_found={count_not_found}, no_missing={count_no_missing}, no_metadata={count_no_metadata}, errors={count_errors}"
+        "[DOWNLOAD_DETECTION] job={job_id} completed: {total} series, found={count_found}, new_releases={new_releases}, not_found={count_not_found}, no_missing={count_no_missing}, no_metadata={count_no_metadata}, errors={count_errors}"
     );
 
     let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
@@ -1010,6 +1039,7 @@ pub(crate) async fn process_download_detection(
             library_name,
             total_series: total,
             found: count_found,
+            new_releases,
             not_found: count_not_found,
             no_missing: count_no_missing,
             no_metadata: count_no_metadata,

@@ -316,6 +316,9 @@ pub enum NotificationEvent {
         library_name: Option<String>,
         total_series: i32,
         found: i64,
+        /// Number of release titles newly discovered during this run
+        /// (across all series, not seen in previous detections).
+        new_releases: i64,
         not_found: i64,
         no_missing: i64,
         no_metadata: i64,
@@ -689,6 +692,7 @@ fn format_event(event: &NotificationEvent) -> String {
             library_name,
             total_series,
             found,
+            new_releases,
             not_found,
             no_missing,
             no_metadata,
@@ -701,6 +705,9 @@ fn format_event(event: &NotificationEvent) -> String {
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("📥 Found: <b>{found}</b> / <b>{total_series}</b> series"),
             ];
+            if *new_releases > 0 {
+                lines.push(format!("🆕 New releases: <b>{new_releases}</b>"));
+            }
             if *not_found > 0 {
                 lines.push(format!("🔍 Not found: <b>{not_found}</b>"));
             }
