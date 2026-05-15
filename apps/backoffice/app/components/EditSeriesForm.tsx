@@ -511,8 +511,8 @@ export function EditSeriesForm({
                     <input
                       ref={setGenreInputEl}
                       value={genreInput}
-                      onChange={(e) => { setGenreInput(e.target.value); setShowGenreSuggestions(true); if (genreInputEl) setInputRect(genreInputEl.getBoundingClientRect()); }}
-                      onFocus={() => { setShowGenreSuggestions(true); if (genreInputEl) setInputRect(genreInputEl.getBoundingClientRect()); }}
+                      onChange={(e) => { setGenreInput(e.target.value); setShowGenreSuggestions(true); if (genreContainerRef.current) setInputRect(genreContainerRef.current.getBoundingClientRect()); }}
+                      onFocus={() => { setShowGenreSuggestions(true); if (genreContainerRef.current) setInputRect(genreContainerRef.current.getBoundingClientRect()); }}
                       onKeyDown={handleGenreKeyDown}
                       disabled={isPending}
                       placeholder={t("editSeries.addGenre")}
@@ -534,7 +534,7 @@ export function EditSeriesForm({
                       );
                       return suggestions.length > 0 ? createPortal(
                         <ul
-                          style={{ position: "fixed", top: inputRect.bottom + 4, left: inputRect.left, width: inputRect.width }}
+                          style={{ position: "fixed", top: inputRect.bottom + 4, left: inputRect.left, width: genreInputEl ? genreInputEl.getBoundingClientRect().width : inputRect.width }}
                           className="z-[200] max-h-48 overflow-y-auto rounded-md border border-border bg-card shadow-xl"
                         >
                           {suggestions.map((g) => (
