@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Modal } from "./ui/Modal";
 import { useRouter } from "next/navigation";
 import { FormField, FormLabel, FormInput } from "./ui/Form";
@@ -93,6 +94,7 @@ export function EditSeriesForm({
   const [allGenres, setAllGenres] = useState<string[]>([]);
   const [showGenreSuggestions, setShowGenreSuggestions] = useState(false);
   const genreContainerRef = useRef<HTMLDivElement>(null);
+  const [dropdownRect, setDropdownRect] = useState<DOMRect | null>(null);
   const [publishers, setPublishers] = useState<string[]>(currentPublishers);
   const [publisherInput, setPublisherInput] = useState("");
   const [publisherInputEl, setPublisherInputEl] = useState<HTMLInputElement | null>(null);
@@ -509,8 +511,8 @@ export function EditSeriesForm({
                     <input
                       ref={setGenreInputEl}
                       value={genreInput}
-                      onChange={(e) => { setGenreInput(e.target.value); setShowGenreSuggestions(true); }}
-                      onFocus={() => setShowGenreSuggestions(true)}
+                      onChange={(e) => { setGenreInput(e.target.value); setShowGenreSuggestions(true); if (genreContainerRef.current) setDropdownRect(genreContainerRef.current.getBoundingClientRect()); }}
+                      onFocus={() => { setShowGenreSuggestions(true); if (genreContainerRef.current) setDropdownRect(genreContainerRef.current.getBoundingClientRect()); }}
                       onKeyDown={handleGenreKeyDown}
                       disabled={isPending}
                       placeholder={t("editSeries.addGenre")}
@@ -525,13 +527,16 @@ export function EditSeriesForm({
                     >
                       +
                     </button>
-                    {showGenreSuggestions && (() => {
+                    {showGenreSuggestions && dropdownRect && (() => {
                       const q = genreInput.toLowerCase();
                       const suggestions = allGenres.filter(
                         (g) => !genres.includes(g) && (q === "" || g.toLowerCase().includes(q))
                       );
-                      return suggestions.length > 0 ? (
-                        <ul className="absolute top-full left-0 right-10 z-50 mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-popover shadow-md">
+                      return suggestions.length > 0 ? createPortal(
+                        <ul
+                          style={{ position: "fixed", top: dropdownRect.bottom + 4, left: dropdownRect.left, width: dropdownRect.width - 44 }}
+                          className="z-[200] max-h-48 overflow-y-auto rounded-md border border-border bg-popover shadow-md"
+                        >
                           {suggestions.map((g) => (
                             <li key={g}>
                               <button
@@ -543,7 +548,8 @@ export function EditSeriesForm({
                               </button>
                             </li>
                           ))}
-                        </ul>
+                        </ul>,
+                        document.body
                       ) : null;
                     })()}
                   </div>

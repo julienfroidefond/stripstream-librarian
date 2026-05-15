@@ -874,7 +874,7 @@ export async function fetchSeriesMetadata(seriesId: string) {
 }
 
 export async function fetchAllGenres(): Promise<string[]> {
-  return apiFetch<string[]>("/series/genres").catch(() => []);
+  return fetch("/api/series/genres").then((r) => r.json()).catch(() => []);
 }
 
 export type UpdateSeriesRequest = {
