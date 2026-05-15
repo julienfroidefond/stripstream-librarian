@@ -15,6 +15,7 @@ export function DownloadDetectionReportCard({ report, t }: { report: DownloadDet
       <CardContent>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <StatBox value={report.found} label={t("jobDetail.downloadFound")} variant="success" />
+          <StatBox value={report.new_releases ?? 0} label={t("jobDetail.downloadNewReleases")} variant="primary" />
           <StatBox value={report.not_found} label={t("jobDetail.downloadNotFound")} />
           <StatBox value={report.no_missing} label={t("jobDetail.downloadNoMissing")} variant="primary" />
           <StatBox value={report.no_metadata} label={t("jobDetail.downloadNoMetadata")} />

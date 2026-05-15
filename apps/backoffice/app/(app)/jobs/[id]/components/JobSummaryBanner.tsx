@@ -70,7 +70,9 @@ export function JobSummaryBanner({
           )}
           {isDownloadDetection && downloadDetectionReport && (
             <span className="ml-2 text-success/80">
-              — {downloadDetectionReport.found} {t("jobDetail.downloadFound").toLowerCase()}, {downloadDetectionReport.not_found} {t("jobDetail.downloadNotFound").toLowerCase()}, {downloadDetectionReport.errors} {t("jobDetail.errors").toLowerCase()}
+              — {downloadDetectionReport.found} {t("jobDetail.downloadFound").toLowerCase()}
+              {(downloadDetectionReport.new_releases ?? 0) > 0 && `, ${downloadDetectionReport.new_releases} ${t("jobDetail.downloadNewReleases").toLowerCase()}`}
+              , {downloadDetectionReport.not_found} {t("jobDetail.downloadNotFound").toLowerCase()}, {downloadDetectionReport.errors} {t("jobDetail.errors").toLowerCase()}
             </span>
           )}
           {!isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && !isDownloadDetection && job.stats_json && (

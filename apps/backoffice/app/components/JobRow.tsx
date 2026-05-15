@@ -25,6 +25,7 @@ interface JobRowProps {
       linked?: number;
       pushed?: number;
       found?: number;
+      new_releases?: number;
     } | null;
     progress_percent: number | null;
     processed_files: number | null;
@@ -225,6 +226,14 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
                     <span className="inline-flex items-center gap-1 text-success">
                       <Icon name="download" size="sm" />
                       {job.stats_json.found}
+                    </span>
+                  </Tooltip>
+                )}
+                {isDownloadDetection && (job.stats_json?.new_releases ?? 0) > 0 && (
+                  <Tooltip label={t("jobRow.downloadNew", { count: job.stats_json!.new_releases! })}>
+                    <span className="inline-flex items-center gap-1 text-primary">
+                      <Icon name="plus" size="sm" />
+                      {job.stats_json!.new_releases}
                     </span>
                   </Tooltip>
                 )}

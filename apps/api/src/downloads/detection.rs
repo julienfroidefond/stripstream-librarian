@@ -24,6 +24,9 @@ pub struct DownloadDetectionReportDto {
     pub status: String,
     pub total_series: i64,
     pub found: i64,
+    /// Number of release titles newly discovered during this run.
+    #[serde(default)]
+    pub new_releases: i64,
     pub not_found: i64,
     pub no_missing: i64,
     pub no_metadata: i64,
@@ -235,7 +238,7 @@ pub async fn get_detection_report(
     axum::extract::Path(job_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<DownloadDetectionReportDto>, ApiError> {
     let row = sqlx::query(
-        "SELECT status, total_files FROM index_jobs WHERE id = $1 AND type = 'download_detection'",
+        "SELECT status, total_files, stats_json FROM index_jobs WHERE id = $1 AND type = 'download_detection'",
     )
     .bind(job_id)
     .fetch_optional(&state.pool)
@@ -244,6 +247,12 @@ pub async fn get_detection_report(
 
     let job_status: String = row.get("status");
     let total_files: Option<i32> = row.get("total_files");
+    let stats_json: Option<serde_json::Value> = row.get("stats_json");
+    let new_releases = stats_json
+        .as_ref()
+        .and_then(|v| v.get("new_releases"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
 
     let counts = sqlx::query(
         "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
@@ -276,6 +285,7 @@ pub async fn get_detection_report(
         status: job_status,
         total_series: total_files.unwrap_or(0) as i64,
         found,
+        new_releases,
         not_found,
         no_missing,
         no_metadata,

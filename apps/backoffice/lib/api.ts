@@ -40,6 +40,10 @@ export type IndexJobDto = {
     errors: number;
     warnings: number;
     refreshed?: number;
+    found?: number;
+    new_releases?: number;
+    linked?: number;
+    pushed?: number;
   } | null;
   progress_percent: number | null;
   processed_files: number | null;
@@ -1235,6 +1239,7 @@ export type DownloadDetectionReportDto = {
   status: string;
   total_series: number;
   found: number;
+  new_releases?: number;
   not_found: number;
   no_missing: number;
   no_metadata: number;
