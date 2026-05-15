@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "../../lib/i18n/context";
 import { StatusBadge, Badge, ProgressBar } from "./ui";
 
@@ -30,13 +30,21 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
   const [error, setError] = useState<string | null>(null);
   const [isComplete, setIsComplete] = useState(false);
 
+  // Stash mutable callbacks in refs so we don't re-open the SSE on every parent
+  // render (onComplete is typically an inline arrow function in the parent,
+  // and t changes shape often enough to retrigger the effect).
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+  const tRef = useRef(t);
+  tRef.current = t;
+
   useEffect(() => {
     const eventSource = new EventSource(`/api/jobs/${jobId}/stream`);
-    
+
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        
+
         const progressData: ProgressEvent = {
           job_id: data.id,
           status: data.status,
@@ -52,23 +60,23 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
         if (data.status === "success" || data.status === "failed" || data.status === "cancelled") {
           setIsComplete(true);
           eventSource.close();
-          onComplete?.();
+          onCompleteRef.current?.();
         }
-      } catch (err) {
-        setError(t("jobProgress.sseError"));
+      } catch {
+        setError(tRef.current("jobProgress.sseError"));
       }
     };
-    
+
     eventSource.onerror = (err) => {
       console.error("SSE error:", err);
       eventSource.close();
-      setError(t("jobProgress.connectionLost"));
+      setError(tRef.current("jobProgress.connectionLost"));
     };
 
     return () => {
       eventSource.close();
     };
-  }, [jobId, onComplete, t]);
+  }, [jobId]);
 
   if (error) {
     return (
