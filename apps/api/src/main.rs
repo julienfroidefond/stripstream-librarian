@@ -199,6 +199,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/series", get(series::list_all_series))
         .route("/series/:series_id/details", get(series::get_series_by_id))
         .route("/series/:series_id/metadata", get(series::get_series_metadata_by_id))
+        .route("/series/:series_id/related", get(series::get_related_series))
         .route("/series/ongoing", get(series::ongoing_series))
         .route("/series/statuses", get(series::series_statuses))
         .route("/series/provider-statuses", get(series::provider_statuses))

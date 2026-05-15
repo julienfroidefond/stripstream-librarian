@@ -3,6 +3,7 @@ pub mod create;
 pub mod list;
 pub mod merge;
 pub mod ongoing;
+pub mod related;
 pub mod update;
 #[cfg(test)]
 mod tests;
@@ -12,6 +13,7 @@ pub use create::*;
 pub use list::*;
 pub use merge::*;
 pub use ongoing::*;
+pub use related::*;
 pub use update::*;
 
 use axum::{extract::{Path, State}, Json};

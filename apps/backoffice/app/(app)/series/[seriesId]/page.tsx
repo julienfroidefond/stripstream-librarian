@@ -1,5 +1,6 @@
-import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto } from "@/lib/api";
+import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto } from "@/lib/api";
 import { BooksGrid, EmptyState } from "@/app/components/BookCard";
+import { SeriesRelatedCarousel } from "@/app/components/SeriesRelatedCarousel";
 import { BooksGridWithMissingToggle } from "@/app/components/ShowMissingToggle";
 import { MarkBookReadButton } from "@/app/components/MarkBookReadButton";
 import { ProviderIcon, providerLabel } from "@/app/components/ProviderIcon";
@@ -52,13 +53,16 @@ export default async function SeriesDetailPage({
   // Get series name from metadata for display
   const seriesName = seriesMeta?.series_name ?? "";
 
-  // Fetch books using seriesId for the filter query
-  const booksPage = await fetchBooks(libraryId, seriesId, page, limit).catch(() => ({
-    items: [] as BookDto[],
-    total: 0,
-    page: 1,
-    limit,
-  }));
+  // Fetch books and related series in parallel
+  const [booksPage, relatedSeries] = await Promise.all([
+    fetchBooks(libraryId, seriesId, page, limit).catch(() => ({
+      items: [] as BookDto[],
+      total: 0,
+      page: 1,
+      limit,
+    })),
+    fetchRelatedSeries(seriesId, 12).catch(() => []),
+  ]);
 
   const hiddenProviders: string[] = [];
   if (!metadataProviders?.comicvine?.api_key) hiddenProviders.push("comicvine");
@@ -315,6 +319,8 @@ export default async function SeriesDetailPage({
           <EmptyState message={t("librarySeries.noBooksInSeries")} />
         );
       })()}
+
+      <SeriesRelatedCarousel items={relatedSeries} t={t} />
     </div>
   );
 }

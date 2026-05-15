@@ -166,6 +166,10 @@ const fr = {
   "series.showMissing": "Afficher {{count}} tome(s) manquant(s)",
   "series.hideMissing": "Masquer les tomes manquants",
   "series.readCount": "{{read}}/{{total}} lu{{plural}}",
+  "series.relatedTitle": "Séries similaires",
+  "series.relatedSameAuthor": "Même auteur",
+  "series.relatedSameGenre": "Même genre",
+  "series.relatedSamePublisher": "Même éditeur",
 
   // Authors page
   "nav.authors": "Auteurs",

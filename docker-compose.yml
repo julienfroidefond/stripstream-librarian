@@ -19,6 +19,7 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      target: api
     env_file:
       - .env
     ports:
@@ -39,7 +40,8 @@ services:
   indexer:
     build:
       context: .
-      dockerfile: apps/indexer/Dockerfile
+      dockerfile: apps/api/Dockerfile
+      target: indexer
     env_file:
       - .env
     ports:

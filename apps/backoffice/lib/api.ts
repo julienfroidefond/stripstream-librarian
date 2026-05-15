@@ -163,6 +163,21 @@ export type SeriesDto = {
   cover_url: string | null;
 };
 
+export type RelatedSeriesDto = {
+  series_id: string;
+  name: string;
+  book_count: number;
+  books_read_count: number;
+  first_book_id: string | null;
+  first_book_updated_at: string | null;
+  library_id: string;
+  series_status: string | null;
+  metadata_provider: string | null;
+  cover_url: string | null;
+  score: number;
+  match_reasons: string[];
+};
+
 export type AnilistStatusDto = {
   connected: boolean;
   user_id: number;
@@ -502,6 +517,12 @@ export async function fetchAllSeries(
 export async function fetchSeriesById(seriesId: string): Promise<SeriesDto> {
   return apiFetch<SeriesDto>(`/series/${seriesId}/details`, {
     next: { revalidate: 15, tags: ["series", `series:${seriesId}`] },
+  });
+}
+
+export async function fetchRelatedSeries(seriesId: string, limit = 10): Promise<RelatedSeriesDto[]> {
+  return apiFetch<RelatedSeriesDto[]>(`/series/${seriesId}/related?limit=${limit}`, {
+    next: { revalidate: 60, tags: ["series", `series:${seriesId}`] },
   });
 }
 
