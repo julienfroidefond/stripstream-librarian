@@ -188,6 +188,16 @@ export default async function SeriesDetailPage({
             )}
           </div>
 
+          {seriesMeta && seriesMeta.genres.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {seriesMeta.genres.map((g) => (
+                <span key={g} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success/10 text-success border border-success/20">
+                  {g}
+                </span>
+              ))}
+            </div>
+          )}
+
           {seriesMeta?.description && (
             <SafeHtml html={seriesMeta.description} className="text-sm text-muted-foreground leading-relaxed" />
           )}
