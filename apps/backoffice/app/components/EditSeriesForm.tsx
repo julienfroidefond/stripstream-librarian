@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect, useCallback, useRef } from "react";
-import { createPortal } from "react-dom";
+import { useState, useTransition, useEffect, useCallback } from "react";
 import { Modal } from "./ui/Modal";
 import { useRouter } from "next/navigation";
 import { FormField, FormLabel, FormInput } from "./ui/Form";
@@ -92,9 +91,6 @@ export function EditSeriesForm({
   const [genreInput, setGenreInput] = useState("");
   const [genreInputEl, setGenreInputEl] = useState<HTMLInputElement | null>(null);
   const [allGenres, setAllGenres] = useState<string[]>([]);
-  const [showGenreSuggestions, setShowGenreSuggestions] = useState(false);
-  const genreContainerRef = useRef<HTMLDivElement>(null);
-  const [inputRect, setInputRect] = useState<DOMRect | null>(null);
   const [publishers, setPublishers] = useState<string[]>(currentPublishers);
   const [publisherInput, setPublisherInput] = useState("");
   const [publisherInputEl, setPublisherInputEl] = useState<HTMLInputElement | null>(null);
@@ -181,7 +177,6 @@ export function EditSeriesForm({
     setAuthorInput("");
     setGenres(currentGenres);
     setGenreInput("");
-    setShowGenreSuggestions(false);
     setPublishers(currentPublishers);
     setPublisherInput("");
     setDescription(currentDescription ?? "");
@@ -210,17 +205,6 @@ export function EditSeriesForm({
       fetchAllGenres().then(setAllGenres);
     }
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!showGenreSuggestions) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (genreContainerRef.current && !genreContainerRef.current.contains(e.target as Node)) {
-        setShowGenreSuggestions(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showGenreSuggestions]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -507,18 +491,30 @@ export function EditSeriesForm({
                       ))}
                     </div>
                   )}
-                  <div ref={genreContainerRef} className="relative flex gap-2">
+                  <div className="flex gap-2">
                     <input
                       ref={setGenreInputEl}
+                      list="genre-datalist"
                       value={genreInput}
-                      onChange={(e) => { setGenreInput(e.target.value); setShowGenreSuggestions(true); if (genreContainerRef.current) setInputRect(genreContainerRef.current.getBoundingClientRect()); }}
-                      onFocus={() => { setShowGenreSuggestions(true); if (genreContainerRef.current) setInputRect(genreContainerRef.current.getBoundingClientRect()); }}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setGenreInput(v);
+                        if (allGenres.includes(v) && !genres.includes(v)) {
+                          setGenres((prev) => [...prev, v]);
+                          setGenreInput("");
+                          setTimeout(() => genreInputEl?.focus(), 0);
+                        }
+                      }}
                       onKeyDown={handleGenreKeyDown}
                       disabled={isPending}
                       placeholder={t("editSeries.addGenre")}
                       className="flex h-10 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      autoComplete="off"
                     />
+                    <datalist id="genre-datalist">
+                      {allGenres.filter((g) => !genres.includes(g)).map((g) => (
+                        <option key={g} value={g} />
+                      ))}
+                    </datalist>
                     <button
                       type="button"
                       onClick={addGenre}
@@ -527,31 +523,6 @@ export function EditSeriesForm({
                     >
                       +
                     </button>
-                    {showGenreSuggestions && inputRect && (() => {
-                      const q = genreInput.toLowerCase();
-                      const suggestions = allGenres.filter(
-                        (g) => !genres.includes(g) && (q === "" || g.toLowerCase().includes(q))
-                      );
-                      return suggestions.length > 0 ? createPortal(
-                        <ul
-                          style={{ position: "fixed", top: inputRect.bottom + 4, left: inputRect.left, width: genreInputEl ? genreInputEl.getBoundingClientRect().width : inputRect.width }}
-                          className="z-[200] max-h-48 overflow-y-auto rounded-md border border-border bg-card shadow-xl"
-                        >
-                          {suggestions.map((g) => (
-                            <li key={g}>
-                              <button
-                                type="button"
-                                onMouseDown={(e) => { e.preventDefault(); setGenres((prev) => [...prev, g]); setGenreInput(""); setShowGenreSuggestions(false); genreInputEl?.focus(); }}
-                                className="w-full px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
-                              >
-                                {g}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>,
-                        document.body
-                      ) : null;
-                    })()}
                   </div>
                 </div>
               </FormField>
