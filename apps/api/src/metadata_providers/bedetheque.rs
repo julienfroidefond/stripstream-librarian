@@ -412,13 +412,6 @@ async fn fetch_series_details(
         }
     }
 
-    // Style: "Manga - Shônen", "Franco-belge", etc. — prepend to genres if present
-    if let Some(val) = extract_info_value(&page_text, "Style") {
-        let style = val.lines().next().unwrap_or(val).trim().to_string();
-        if !style.is_empty() && !details.genres.contains(&style) {
-            details.genres.insert(0, style);
-        }
-    }
 
     // Album count from serie-info text (e.g. "Tomes : 8")
     if let Ok(re) = regex::Regex::new(r"Tomes?\s*:\s*(\d+)") {
