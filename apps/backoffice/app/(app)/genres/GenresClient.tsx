@@ -137,8 +137,10 @@ export function GenresClient({ initialGenres, initialUntagged, libraries }: Prop
   // Series browser
   const [seriesFilter, setSeriesFilter] = useState<GenreFilter>(null); // null = sans genre
   const [libraryFilter, setLibraryFilter] = useState<string | null>(null);
+  const [browserGenres, setBrowserGenres] = useState<GenreDto[]>(initialGenres);
   const [seriesList, setSeriesList] = useState<SeriesDto[]>(initialUntagged);
   const [seriesTotal, setSeriesTotal] = useState(initialUntagged.length);
+  const [untaggedCount, setUntaggedCount] = useState(initialUntagged.length);
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [seriesSearch, setSeriesSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -151,9 +153,13 @@ export function GenresClient({ initialGenres, initialUntagged, libraries }: Prop
   };
 
   const refreshGenres = useCallback(async () => {
-    const res = await fetch("/api/genres");
+    const [res, res2] = await Promise.all([
+      fetch("/api/genres"),
+      fetch(libraryFilter ? `/api/genres?library_id=${libraryFilter}` : "/api/genres"),
+    ]);
     if (res.ok) setGenres(await res.json());
-  }, []);
+    if (res2.ok) setBrowserGenres(await res2.json());
+  }, [libraryFilter]);
 
   const fetchSeriesForFilter = useCallback(async (genre: GenreFilter, libId: string | null) => {
     setSeriesLoading(true);
@@ -168,6 +174,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries }: Prop
           const data: SeriesDto[] = await res.json();
           setSeriesList(data);
           setSeriesTotal(data.length);
+          setUntaggedCount(data.length);
         }
       } else {
         const params = new URLSearchParams({ genre, limit: "500" });
@@ -190,9 +197,23 @@ export function GenresClient({ initialGenres, initialUntagged, libraries }: Prop
     filterRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   };
 
+  const fetchBrowserGenres = useCallback(async (libId: string | null) => {
+    const qs = libId ? `?library_id=${libId}` : "";
+    const [genresRes, untaggedRes] = await Promise.all([
+      fetch(`/api/genres${qs}`),
+      fetch(`/api/genres/untagged-series${qs}`),
+    ]);
+    if (genresRes.ok) setBrowserGenres(await genresRes.json());
+    if (untaggedRes.ok) {
+      const data: SeriesDto[] = await untaggedRes.json();
+      setUntaggedCount(data.length);
+    }
+  }, []);
+
   const handleLibraryChange = (libId: string | null) => {
     setLibraryFilter(libId);
     fetchSeriesForFilter(seriesFilter, libId);
+    fetchBrowserGenres(libId);
   };
 
   const handleRename = async (oldName: string) => {
@@ -387,34 +408,34 @@ export function GenresClient({ initialGenres, initialUntagged, libraries }: Prop
         </div>
 
         {/* Filter tabs */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-4 scrollbar-none">
+        <div className="flex flex-wrap items-center gap-2 mb-4">
           <button
             onClick={() => handleFilterChange(null)}
-            className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
               seriesFilter === null
                 ? "bg-foreground text-background border-foreground"
                 : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
             }`}
           >
             {t("genres.untaggedSeries")}
-            {seriesFilter === null && seriesTotal > 0 && (
-              <span className="ml-1.5 opacity-70">{seriesTotal}</span>
-            )}
+            <span className="ml-1.5 opacity-70">
+              ({seriesFilter === null ? seriesTotal : untaggedCount})
+            </span>
           </button>
-          {genres.map(g => (
+          {browserGenres.filter(g => g.series_count > 0).map(g => (
             <button
               key={g.name}
               onClick={() => handleFilterChange(g.name)}
-              className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
                 seriesFilter === g.name
                   ? "bg-success/15 text-success border-success/40"
                   : "border-border text-muted-foreground hover:border-success/30 hover:text-foreground"
               }`}
             >
               {g.name}
-              {seriesFilter === g.name && seriesTotal > 0 && (
-                <span className="ml-1.5 opacity-70">{seriesTotal}</span>
-              )}
+              <span className="ml-1.5 opacity-70">
+                ({seriesFilter === g.name ? seriesTotal : g.series_count})
+              </span>
             </button>
           ))}
         </div>

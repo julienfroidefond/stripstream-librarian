@@ -161,6 +161,7 @@ pub(crate) async fn upsert_series_metadata(
                 ELSE series.authors
             END,
             genres = CASE
+                WHEN array_length(series.genres, 1) > 0 THEN series.genres
                 WHEN array_length(EXCLUDED.genres, 1) > 0 THEN EXCLUDED.genres
                 ELSE series.genres
             END,

@@ -14,6 +14,12 @@ pub struct GenreDto {
 }
 
 #[derive(Deserialize, ToSchema)]
+pub struct ListGenresQuery {
+    #[schema(value_type = Option<String>)]
+    pub library_id: Option<Uuid>,
+}
+
+#[derive(Deserialize, ToSchema)]
 pub struct RenameGenreRequest {
     pub new_name: String,
 }
@@ -25,11 +31,14 @@ pub struct AssignGenreRequest {
     pub series_ids: Vec<Uuid>,
 }
 
-/// List all genres with their series count
+/// List all genres with their series count, optionally filtered by library
 #[utoipa::path(
     get,
     path = "/genres",
     tag = "genres",
+    params(
+        ("library_id" = Option<String>, Query, description = "Filter counts by library UUID"),
+    ),
     responses(
         (status = 200, body = Vec<GenreDto>),
         (status = 401, description = "Unauthorized"),
@@ -38,17 +47,33 @@ pub struct AssignGenreRequest {
 )]
 pub async fn list_genres(
     State(state): State<AppState>,
+    Query(query): Query<ListGenresQuery>,
 ) -> Result<Json<Vec<GenreDto>>, ApiError> {
-    let rows = sqlx::query(
-        r#"
-        SELECT g, COUNT(s.id)::bigint AS series_count
-        FROM series s, unnest(s.genres) g
-        GROUP BY g
-        ORDER BY g
-        "#,
-    )
-    .fetch_all(&state.pool)
-    .await?;
+    let rows = if let Some(lib_id) = query.library_id {
+        sqlx::query(
+            r#"
+            SELECT g, COUNT(s.id)::bigint AS series_count
+            FROM series s, unnest(s.genres) g
+            WHERE s.library_id = $1
+            GROUP BY g
+            ORDER BY g
+            "#,
+        )
+        .bind(lib_id)
+        .fetch_all(&state.pool)
+        .await?
+    } else {
+        sqlx::query(
+            r#"
+            SELECT g, COUNT(s.id)::bigint AS series_count
+            FROM series s, unnest(s.genres) g
+            GROUP BY g
+            ORDER BY g
+            "#,
+        )
+        .fetch_all(&state.pool)
+        .await?
+    };
 
     let genres = rows
         .into_iter()
