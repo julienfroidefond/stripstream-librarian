@@ -133,6 +133,7 @@ pub struct SeriesMetadata {
     pub series_name: String,
     /// Authors of the series (series-level metadata, distinct from per-book author field)
     pub authors: Vec<String>,
+    pub genres: Vec<String>,
     pub description: Option<String>,
     pub publishers: Vec<String>,
     pub start_year: Option<i32>,

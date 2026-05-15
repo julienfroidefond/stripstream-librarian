@@ -907,6 +907,8 @@ const en: Record<TranslationKey, string> = {
   "editSeries.bookLanguage": "Language (books)",
   "editSeries.publishers": "Publisher(s)",
   "editSeries.addPublisher": "Add a publisher (Enter to confirm)",
+  "editSeries.genres": "Genre(s)",
+  "editSeries.addGenre": "Add a genre (Enter to confirm)",
   "editSeries.descriptionPlaceholder": "Synopsis or series description…",
 
   // Convert button

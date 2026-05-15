@@ -856,6 +856,7 @@ export async function updateBook(bookId: string, data: UpdateBookRequest) {
 export type SeriesMetadataDto = {
   series_name: string;
   authors: string[];
+  genres: string[];
   description: string | null;
   publishers: string[];
   start_year: number | null;

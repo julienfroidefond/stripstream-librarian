@@ -37,6 +37,7 @@ interface Props {
   booksReadCount: number;
   // Edit data
   editAuthors: string[];
+  editGenres: string[];
   editPublishers: string[];
   editBookAuthor: string | null;
   editBookLanguage: string | null;
@@ -93,6 +94,7 @@ export function SeriesActionsToolbar(props: Props) {
         seriesId={props.seriesId}
         seriesName={props.seriesName}
         currentAuthors={props.editAuthors}
+        currentGenres={props.editGenres}
         currentPublishers={props.editPublishers}
         currentBookAuthor={props.editBookAuthor}
         currentBookLanguage={props.editBookLanguage}

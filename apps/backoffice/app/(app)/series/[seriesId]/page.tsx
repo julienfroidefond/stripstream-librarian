@@ -244,6 +244,7 @@ export default async function SeriesDetailPage({
             bookCount={booksPage.total}
             booksReadCount={booksReadCount}
             editAuthors={seriesMeta?.authors ?? []}
+            editGenres={seriesMeta?.genres ?? []}
             editPublishers={seriesMeta?.publishers ?? []}
             editBookAuthor={seriesMeta?.book_author ?? booksPage.items[0]?.author ?? null}
             editBookLanguage={seriesMeta?.book_language ?? booksPage.items[0]?.language ?? null}

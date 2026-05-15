@@ -48,6 +48,7 @@ export interface EditSeriesFormProps {
   seriesId: string;
   seriesName: string;
   currentAuthors: string[];
+  currentGenres: string[];
   currentPublishers: string[];
   currentBookAuthor: string | null;
   currentBookLanguage: string | null;
@@ -63,6 +64,7 @@ export function EditSeriesForm({
   seriesId,
   seriesName,
   currentAuthors,
+  currentGenres,
   currentPublishers,
   currentBookAuthor,
   currentBookLanguage,
@@ -84,6 +86,9 @@ export function EditSeriesForm({
   const [authors, setAuthors] = useState<string[]>(currentAuthors);
   const [authorInput, setAuthorInput] = useState("");
   const [authorInputEl, setAuthorInputEl] = useState<HTMLInputElement | null>(null);
+  const [genres, setGenres] = useState<string[]>(currentGenres);
+  const [genreInput, setGenreInput] = useState("");
+  const [genreInputEl, setGenreInputEl] = useState<HTMLInputElement | null>(null);
   const [publishers, setPublishers] = useState<string[]>(currentPublishers);
   const [publisherInput, setPublisherInput] = useState("");
   const [publisherInputEl, setPublisherInputEl] = useState<HTMLInputElement | null>(null);
@@ -124,6 +129,26 @@ export function EditSeriesForm({
     }
   };
 
+  const addGenre = () => {
+    const v = genreInput.trim();
+    if (v && !genres.includes(v)) {
+      setGenres([...genres, v]);
+    }
+    setGenreInput("");
+    genreInputEl?.focus();
+  };
+
+  const removeGenre = (idx: number) => {
+    setGenres(genres.filter((_, i) => i !== idx));
+  };
+
+  const handleGenreKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addGenre();
+    }
+  };
+
   const addPublisher = () => {
     const v = publisherInput.trim();
     if (v && !publishers.includes(v)) {
@@ -148,6 +173,8 @@ export function EditSeriesForm({
     setNewName(seriesName === "unclassified" ? "" : seriesName);
     setAuthors(currentAuthors);
     setAuthorInput("");
+    setGenres(currentGenres);
+    setGenreInput("");
     setPublishers(currentPublishers);
     setPublisherInput("");
     setDescription(currentDescription ?? "");
@@ -160,7 +187,7 @@ export function EditSeriesForm({
     setBookLanguage(currentBookLanguage ?? "");
     setError(null);
     setIsOpen(false);
-  }, [seriesName, currentAuthors, currentPublishers, currentDescription, currentStartYear, currentTotalVolumes, currentBookAuthor, currentBookLanguage, currentLockedFields]);
+  }, [seriesName, currentAuthors, currentGenres, currentPublishers, currentDescription, currentStartYear, currentTotalVolumes, currentBookAuthor, currentBookLanguage, currentLockedFields]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -180,6 +207,10 @@ export function EditSeriesForm({
       ? [...new Set([...authors, authorInput.trim()])]
       : authors;
 
+    const finalGenres = genreInput.trim()
+      ? [...new Set([...genres, genreInput.trim()])]
+      : genres;
+
     const finalPublishers = publisherInput.trim()
       ? [...new Set([...publishers, publisherInput.trim()])]
       : publishers;
@@ -190,6 +221,7 @@ export function EditSeriesForm({
         const body: Record<string, unknown> = {
           new_name: effectiveName,
           authors: finalAuthors,
+          genres: finalGenres,
           publishers: finalPublishers,
           description: description.trim() || null,
           start_year: startYear.trim() ? parseInt(startYear.trim(), 10) : null,
@@ -415,6 +447,56 @@ export function EditSeriesForm({
                       type="button"
                       onClick={addPublisher}
                       disabled={isPending || !publisherInput.trim()}
+                      className="px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </FormField>
+
+              {/* Genres — multi-valeur */}
+              <FormField className="sm:col-span-2">
+                <div className="flex items-center gap-1">
+                  <FormLabel>{t("editSeries.genres")}</FormLabel>
+                  <LockButton locked={!!lockedFields.genres} onToggle={() => toggleLock("genres")} disabled={isPending} />
+                </div>
+                <div className="space-y-2">
+                  {genres.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {genres.map((g, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-success/10 text-success text-xs font-medium"
+                        >
+                          {g}
+                          <button
+                            type="button"
+                            onClick={() => removeGenre(i)}
+                            disabled={isPending}
+                            className="hover:text-destructive transition-colors ml-0.5"
+                            aria-label={t("editBook.removeAuthor", { name: g })}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <input
+                      ref={setGenreInputEl}
+                      value={genreInput}
+                      onChange={(e) => setGenreInput(e.target.value)}
+                      onKeyDown={handleGenreKeyDown}
+                      disabled={isPending}
+                      placeholder={t("editSeries.addGenre")}
+                      className="flex h-10 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    />
+                    <button
+                      type="button"
+                      onClick={addGenre}
+                      disabled={isPending || !genreInput.trim()}
                       className="px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
                     >
                       +

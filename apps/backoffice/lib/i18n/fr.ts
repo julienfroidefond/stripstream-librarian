@@ -905,6 +905,8 @@ const fr = {
   "editSeries.bookLanguage": "Langue (livres)",
   "editSeries.publishers": "Éditeur(s)",
   "editSeries.addPublisher": "Ajouter un éditeur (Entrée pour valider)",
+  "editSeries.genres": "Genre(s)",
+  "editSeries.addGenre": "Ajouter un genre (Entrée pour valider)",
   "editSeries.descriptionPlaceholder": "Synopsis ou description de la série…",
 
   // Convert button

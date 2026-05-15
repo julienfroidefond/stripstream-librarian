@@ -14,6 +14,8 @@ pub struct UpdateSeriesRequest {
     /// Series-level authors list (stored in series)
     #[serde(default)]
     pub authors: Vec<String>,
+    #[serde(default)]
+    pub genres: Vec<String>,
     /// Per-book author propagation: absent = keep books unchanged, present = overwrite all books
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<Option<String>>,
@@ -90,6 +92,10 @@ pub async fn update_series(
         .map(|a| a.trim().to_string())
         .filter(|a| !a.is_empty())
         .collect();
+    let genres: Vec<String> = body.genres.iter()
+        .map(|g| g.trim().to_string())
+        .filter(|g| !g.is_empty())
+        .collect();
     let locked_fields = body.locked_fields.clone().unwrap_or(serde_json::json!({}));
 
     // 1. Update books: author/language only if opted-in
@@ -132,6 +138,7 @@ pub async fn update_series(
             book_author = CASE WHEN $10 THEN $11 ELSE book_author END,
             book_language = CASE WHEN $12 THEN $13 ELSE book_language END,
             original_name = COALESCE($14, original_name),
+            genres = $15,
             updated_at = NOW()
         WHERE id = $1
         "#,
@@ -150,6 +157,7 @@ pub async fn update_series(
     .bind(apply_language)
     .bind(&language_value)
     .bind(&original_name)
+    .bind(&genres)
     .execute(&state.pool)
     .await?;
 

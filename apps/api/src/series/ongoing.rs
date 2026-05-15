@@ -221,7 +221,7 @@ pub async fn get_series_metadata(
 ) -> Result<Json<SeriesMetadata>, ApiError> {
     // Fetch series row (contains metadata directly)
     let series_row = sqlx::query(
-        "SELECT name, authors, description, publishers, start_year, total_volumes, status, locked_fields, book_author, book_language \
+        "SELECT name, authors, genres, description, publishers, start_year, total_volumes, status, locked_fields, book_author, book_language \
          FROM series WHERE id = $1 AND library_id = $2"
     )
     .bind(series_id)
@@ -238,6 +238,7 @@ pub async fn get_series_metadata(
     Ok(Json(SeriesMetadata {
         series_name: series_row.as_ref().map(|r| r.get::<String, _>("name")).unwrap_or_default(),
         authors: series_row.as_ref().map(|r| r.get::<Vec<String>, _>("authors")).unwrap_or_default(),
+        genres: series_row.as_ref().map(|r| r.get::<Vec<String>, _>("genres")).unwrap_or_default(),
         description: series_row.as_ref().and_then(|r| r.get("description")),
         publishers: series_row.as_ref().map(|r| r.get::<Vec<String>, _>("publishers")).unwrap_or_default(),
         start_year: series_row.as_ref().and_then(|r| r.get("start_year")),
