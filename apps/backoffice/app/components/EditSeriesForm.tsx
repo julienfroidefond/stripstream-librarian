@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition, useEffect, useCallback } from "react";
+import { useState, useTransition, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Modal } from "./ui/Modal";
 import { useRouter } from "next/navigation";
 import { FormField, FormLabel, FormInput } from "./ui/Form";
@@ -89,7 +90,8 @@ export function EditSeriesForm({
   const [authorInputEl, setAuthorInputEl] = useState<HTMLInputElement | null>(null);
   const [genres, setGenres] = useState<string[]>(currentGenres);
   const [genreInput, setGenreInput] = useState("");
-  const [genreInputEl, setGenreInputEl] = useState<HTMLInputElement | null>(null);
+  const genreInputRef = useRef<HTMLInputElement>(null);
+  const [showGenreSuggestions, setShowGenreSuggestions] = useState(false);
   const [allGenres, setAllGenres] = useState<string[]>([]);
   const [publishers, setPublishers] = useState<string[]>(currentPublishers);
   const [publisherInput, setPublisherInput] = useState("");
@@ -131,13 +133,14 @@ export function EditSeriesForm({
     }
   };
 
-  const addGenre = () => {
-    const v = genreInput.trim();
+  const addGenre = (value?: string) => {
+    const v = (value ?? genreInput).trim();
     if (v && !genres.includes(v)) {
-      setGenres([...genres, v]);
+      setGenres((prev) => [...prev, v]);
     }
     setGenreInput("");
-    genreInputEl?.focus();
+    setShowGenreSuggestions(false);
+    genreInputRef.current?.focus();
   };
 
   const removeGenre = (idx: number) => {
@@ -177,6 +180,7 @@ export function EditSeriesForm({
     setAuthorInput("");
     setGenres(currentGenres);
     setGenreInput("");
+    setShowGenreSuggestions(false);
     setPublishers(currentPublishers);
     setPublisherInput("");
     setDescription(currentDescription ?? "");
@@ -205,6 +209,17 @@ export function EditSeriesForm({
       fetchAllGenres().then(setAllGenres);
     }
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!showGenreSuggestions) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (!genreInputRef.current?.contains(e.target as Node)) {
+        setShowGenreSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [showGenreSuggestions]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -492,32 +507,56 @@ export function EditSeriesForm({
                     </div>
                   )}
                   <div className="flex gap-2">
-                    <input
-                      ref={setGenreInputEl}
-                      list="genre-datalist"
-                      value={genreInput}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setGenreInput(v);
-                        if (allGenres.includes(v) && !genres.includes(v)) {
-                          setGenres((prev) => [...prev, v]);
-                          setGenreInput("");
-                          setTimeout(() => genreInputEl?.focus(), 0);
-                        }
-                      }}
-                      onKeyDown={handleGenreKeyDown}
-                      disabled={isPending}
-                      placeholder={t("editSeries.addGenre")}
-                      className="flex h-10 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    />
-                    <datalist id="genre-datalist">
-                      {allGenres.filter((g) => !genres.includes(g)).map((g) => (
-                        <option key={g} value={g} />
-                      ))}
-                    </datalist>
+                    <div className="relative flex-1">
+                      <input
+                        ref={genreInputRef}
+                        value={genreInput}
+                        onChange={(e) => { setGenreInput(e.target.value); setShowGenreSuggestions(true); }}
+                        onFocus={() => setShowGenreSuggestions(true)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") { e.preventDefault(); addGenre(); }
+                          if (e.key === "Escape") setShowGenreSuggestions(false);
+                        }}
+                        disabled={isPending}
+                        placeholder={t("editSeries.addGenre")}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        autoComplete="off"
+                      />
+                      {showGenreSuggestions && (() => {
+                        const rect = genreInputRef.current?.getBoundingClientRect();
+                        if (!rect) return null;
+                        const q = genreInput.toLowerCase();
+                        const suggestions = allGenres.filter(
+                          (g) => !genres.includes(g) && (q === "" || g.toLowerCase().includes(q))
+                        );
+                        if (!suggestions.length) return null;
+                        return createPortal(
+                          <ul
+                            style={{ position: "fixed", top: rect.bottom + 6, left: rect.left, width: rect.width, zIndex: 9999 }}
+                            className="overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+                          >
+                            <div className="max-h-52 overflow-y-auto">
+                              {suggestions.map((g) => (
+                                <li key={g}>
+                                  <button
+                                    type="button"
+                                    onMouseDown={(e) => { e.preventDefault(); addGenre(g); }}
+                                    className="w-full px-3 py-2.5 text-left text-sm text-foreground hover:bg-success/10 hover:text-success transition-colors flex items-center gap-2 group"
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-success/40 group-hover:bg-success transition-colors flex-shrink-0" />
+                                    {g}
+                                  </button>
+                                </li>
+                              ))}
+                            </div>
+                          </ul>,
+                          document.body
+                        );
+                      })()}
+                    </div>
                     <button
                       type="button"
-                      onClick={addGenre}
+                      onClick={() => addGenre()}
                       disabled={isPending || !genreInput.trim()}
                       className="px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
                     >
