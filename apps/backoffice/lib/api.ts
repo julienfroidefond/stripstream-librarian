@@ -873,6 +873,10 @@ export async function fetchSeriesMetadata(seriesId: string) {
   );
 }
 
+export async function fetchAllGenres(): Promise<string[]> {
+  return apiFetch<string[]>("/series/genres").catch(() => []);
+}
+
 export type UpdateSeriesRequest = {
   new_name: string;
   authors: string[];

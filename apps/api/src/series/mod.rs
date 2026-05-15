@@ -187,6 +187,28 @@ pub async fn get_series_by_name(
 
 // ─── Series statuses ─────────────────────────────────────────────────────────
 
+/// List all distinct genre values present across all series
+#[utoipa::path(
+    get,
+    path = "/series/genres",
+    tag = "series",
+    responses(
+        (status = 200, body = Vec<String>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn series_genres(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<String>>, ApiError> {
+    let rows: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT unnest(genres) AS g FROM series WHERE cardinality(genres) > 0 ORDER BY g"
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(rows))
+}
+
 /// List all distinct series status values present in the database
 #[utoipa::path(
     get,
