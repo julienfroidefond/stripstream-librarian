@@ -3,6 +3,7 @@ pub mod create;
 pub mod list;
 pub mod merge;
 pub mod ongoing;
+pub mod recommendations;
 pub mod related;
 pub mod update;
 #[cfg(test)]
@@ -13,6 +14,7 @@ pub use create::*;
 pub use list::*;
 pub use merge::*;
 pub use ongoing::*;
+pub use recommendations::*;
 pub use related::*;
 pub use update::*;
 

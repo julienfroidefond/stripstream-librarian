@@ -208,6 +208,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/series/ongoing", get(series::ongoing_series))
         .route("/series/statuses", get(series::series_statuses))
         .route("/series/genres", get(series::series_genres))
+        .route("/series/recommendations", get(series::get_recommendations))
         .route("/series/provider-statuses", get(series::provider_statuses))
         .route("/series/mark-read", axum::routing::post(reading::mark_series_read))
         .route("/authors", get(authors::list_authors))
