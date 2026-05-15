@@ -2,6 +2,7 @@ mod authors;
 mod books;
 mod downloads;
 mod error;
+mod genres;
 mod handlers;
 mod integrations;
 mod jobs;
@@ -178,6 +179,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/discovery/hide", axum::routing::post(integrations::discovery::hide_suggestion))
         .route("/discovery/unhide", axum::routing::post(integrations::discovery::unhide_suggestion))
         .route("/discovery/hidden", get(integrations::discovery::list_hidden))
+        .route("/genres", get(genres::list_genres))
+        .route("/genres/assign", axum::routing::post(genres::assign_genre))
+        .route("/genres/untagged-series", get(genres::untagged_series))
+        .route("/genres/:name", axum::routing::patch(genres::rename_genre).delete(genres::delete_genre))
         .merge(settings::settings_routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),

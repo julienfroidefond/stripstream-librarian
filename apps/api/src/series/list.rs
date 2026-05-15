@@ -325,6 +325,10 @@ pub async fn list_all_series(
         "AND sc.book_count > 0".to_string()
     } else { String::new() };
 
+    let genre_cond = if query.genre.is_some() {
+        p += 1; format!("AND ${p} = ANY(s.genres)")
+    } else { String::new() };
+
     // Missing counts CTE
     let missing_cte = if query.library_id.is_some() {
         helpers::build_missing_counts_cte(Some("$1"))
@@ -356,7 +360,7 @@ pub async fn list_all_series(
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
         LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = sc.library_id
-        WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {author_cond} {has_books_cond}
+        WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {author_cond} {has_books_cond} {genre_cond}
         "#
     );
 
@@ -433,6 +437,7 @@ pub async fn list_all_series(
           {metadata_provider_cond}
           {author_cond}
           {has_books_cond}
+          {genre_cond}
         ORDER BY {series_order_clause}
         LIMIT ${limit_p} OFFSET ${offset_p}
         "#
@@ -468,6 +473,10 @@ pub async fn list_all_series(
     if let Some(ref author) = query.author {
         count_builder = count_builder.bind(author.clone());
         data_builder = data_builder.bind(author.clone());
+    }
+    if let Some(ref genre) = query.genre {
+        count_builder = count_builder.bind(genre.clone());
+        data_builder = data_builder.bind(genre.clone());
     }
 
     count_builder = count_builder.bind(user_id);

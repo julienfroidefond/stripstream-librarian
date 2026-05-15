@@ -1092,6 +1092,32 @@ const en: Record<TranslationKey, string> = {
   "library.tags": "Tags",
   "library.tagsPlaceholder": "Add a tag...",
 
+  // Nav
+  "nav.genres": "Genres",
+
+  // Genres management page
+  "genres.title": "Genre management",
+  "genres.allGenres": "All genres",
+  "genres.seriesCount": "{{count}} series",
+  "genres.rename": "Rename",
+  "genres.delete": "Delete",
+  "genres.renameTitle": "Rename genre",
+  "genres.newName": "New name",
+  "genres.newNamePlaceholder": "New genre name...",
+  "genres.deleteConfirm": "Remove this genre from all series?",
+  "genres.untaggedSeries": "Series without genre",
+  "genres.untaggedCount": "{{count}} series without genre (limit 500)",
+  "genres.selectAll": "Select all",
+  "genres.deselectAll": "Deselect all",
+  "genres.assignGenre": "Assign genre",
+  "genres.assignGenrePlaceholder": "Genre name to assign...",
+  "genres.assignButton": "Assign to {{count}} series",
+  "genres.noUntagged": "All series have at least one genre.",
+  "genres.noGenres": "No genres found.",
+  "genres.assignSuccess": "Genre assigned to {{count}} series.",
+  "genres.renameSuccess": "Genre renamed.",
+  "genres.deleteSuccess": "Genre deleted.",
+
   // Settings - Torrent Import
   "settings.torrentImport": "Auto import",
   "settings.torrentImportDesc": "When enabled, torrents added via the backoffice are tracked and files are automatically imported into the library when the download completes.",

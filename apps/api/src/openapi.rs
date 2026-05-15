@@ -218,9 +218,19 @@ pub struct ClientApiDoc;
         crate::integrations::anilist_sync::preview_sync,
         crate::integrations::anilist_sync::sync_to_anilist,
         crate::integrations::anilist_sync::pull_from_anilist,
+        // Genres
+        crate::genres::list_genres,
+        crate::genres::rename_genre,
+        crate::genres::delete_genre,
+        crate::genres::assign_genre,
+        crate::genres::untagged_series,
     ),
     components(
         schemas(
+            // Genres
+            crate::genres::GenreDto,
+            crate::genres::RenameGenreRequest,
+            crate::genres::AssignGenreRequest,
             // Books
             crate::books::ListBooksQuery,
             crate::books::BookItem,
@@ -376,6 +386,7 @@ pub struct ClientApiDoc;
         (name = "reading_status", description = "Reading status match and push jobs"),
         (name = "anilist", description = "AniList integration for reading status sync"),
         (name = "komga", description = "Komga read-status sync"),
+        (name = "genres", description = "Genre management"),
         (name = "series (deprecated)", description = "Deprecated series endpoints (use direct /series/{id} variants)"),
     ),
     modifiers(&SecurityAddon)

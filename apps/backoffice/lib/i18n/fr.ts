@@ -1090,6 +1090,32 @@ const fr = {
   "library.tags": "Tags",
   "library.tagsPlaceholder": "Ajouter un tag...",
 
+  // Nav
+  "nav.genres": "Genres",
+
+  // Genres management page
+  "genres.title": "Gestion des genres",
+  "genres.allGenres": "Tous les genres",
+  "genres.seriesCount": "{{count}} série{{plural}}",
+  "genres.rename": "Renommer",
+  "genres.delete": "Supprimer",
+  "genres.renameTitle": "Renommer le genre",
+  "genres.newName": "Nouveau nom",
+  "genres.newNamePlaceholder": "Nouveau nom du genre...",
+  "genres.deleteConfirm": "Supprimer ce genre de toutes les séries ?",
+  "genres.untaggedSeries": "Séries sans genre",
+  "genres.untaggedCount": "{{count}} série{{plural}} sans genre (limite 500)",
+  "genres.selectAll": "Tout sélectionner",
+  "genres.deselectAll": "Tout désélectionner",
+  "genres.assignGenre": "Affecter un genre",
+  "genres.assignGenrePlaceholder": "Nom du genre à affecter...",
+  "genres.assignButton": "Affecter à {{count}} série{{plural}}",
+  "genres.noUntagged": "Toutes les séries ont au moins un genre.",
+  "genres.noGenres": "Aucun genre trouvé.",
+  "genres.assignSuccess": "Genre affecté à {{count}} série{{plural}}.",
+  "genres.renameSuccess": "Genre renommé.",
+  "genres.deleteSuccess": "Genre supprimé.",
+
   // Settings - Torrent Import
   "settings.torrentImport": "Import automatique",
   "settings.torrentImportDesc": "Lorsqu'activé, les torrents ajoutés via le backoffice sont suivis et les fichiers sont automatiquement importés dans la bibliothèque à la fin du téléchargement.",

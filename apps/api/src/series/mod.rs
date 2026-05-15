@@ -119,6 +119,9 @@ pub struct ListAllSeriesQuery {
     /// Sort order: "title" (default) or "latest" (most recently added first)
     #[schema(value_type = Option<String>, example = "latest")]
     pub sort: Option<String>,
+    /// Filter by genre (exact match, case-sensitive)
+    #[schema(value_type = Option<String>, example = "Fantasy")]
+    pub genre: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]

@@ -9,9 +9,9 @@ import { useTranslation } from "../../lib/i18n/context";
 import type { UserDto } from "@/lib/api";
 
 type NavItem = {
-  href: "/" | "/books" | "/series" | "/authors" | "/libraries" | "/discovery" | "/downloads" | "/jobs" | "/tokens" | "/settings";
+  href: "/" | "/books" | "/series" | "/authors" | "/libraries" | "/discovery" | "/downloads" | "/jobs" | "/tokens" | "/settings" | "/genres";
   label: string;
-  icon: "dashboard" | "books" | "series" | "authors" | "libraries" | "search" | "download" | "jobs" | "tokens" | "settings";
+  icon: "dashboard" | "books" | "series" | "authors" | "libraries" | "search" | "download" | "jobs" | "tokens" | "settings" | "tag";
   color?: string;
 };
 

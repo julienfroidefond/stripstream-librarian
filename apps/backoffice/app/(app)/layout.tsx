@@ -17,9 +17,9 @@ import { getServerTranslations } from "@/lib/i18n/server";
 import type { TranslationKey } from "@/lib/i18n/fr";
 
 type NavItem = {
-  href: "/" | "/books" | "/series" | "/authors" | "/libraries" | "/discovery" | "/jobs" | "/tokens" | "/settings" | "/downloads";
+  href: "/" | "/books" | "/series" | "/authors" | "/libraries" | "/discovery" | "/jobs" | "/tokens" | "/settings" | "/downloads" | "/genres";
   labelKey: TranslationKey;
-  icon: "dashboard" | "books" | "series" | "authors" | "libraries" | "search" | "jobs" | "tokens" | "settings" | "download";
+  icon: "dashboard" | "books" | "series" | "authors" | "libraries" | "search" | "jobs" | "tokens" | "settings" | "download" | "tag";
   color?: string;
 };
 
@@ -27,6 +27,7 @@ const navItems: NavItem[] = [
   { href: "/books", labelKey: "nav.books", icon: "books", color: "text-success" },
   { href: "/series", labelKey: "nav.series", icon: "series", color: "text-warning" },
   { href: "/authors", labelKey: "nav.authors", icon: "authors", color: "text-violet-500" },
+  { href: "/genres", labelKey: "nav.genres", icon: "tag", color: "text-pink-500" },
   { href: "/libraries", labelKey: "nav.libraries", icon: "libraries", color: "text-primary" },
   { href: "/discovery", labelKey: "nav.discovery", icon: "search", color: "text-cyan-500" },
   { href: "/downloads", labelKey: "nav.downloads", icon: "download", color: "text-emerald-500" },
