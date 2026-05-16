@@ -17,6 +17,7 @@ type Props = {
   initialGenres: GenreDto[];
   initialUntagged: SeriesDto[];
   libraries: LibraryDto[];
+  initialTotalSeries: number;
 };
 
 // null = "sans genre"
@@ -118,17 +119,38 @@ function GenreSeriesModal({ genre, onClose }: { genre: string; onClose: () => vo
   );
 }
 
-function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+function StatCard({
+  emoji,
+  label,
+  value,
+  sub,
+  color,
+}: {
+  emoji: string;
+  label: string;
+  value: string | number;
+  sub?: string;
+  color: "violet" | "green" | "blue" | "amber";
+}) {
+  const palette = {
+    violet: "border-violet-500/30 bg-violet-500/5 [&_span]:text-violet-400",
+    green:  "border-emerald-500/30 bg-emerald-500/5 [&_span]:text-emerald-400",
+    blue:   "border-blue-500/30 bg-blue-500/5 [&_span]:text-blue-400",
+    amber:  "border-amber-500/30 bg-amber-500/5 [&_span]:text-amber-400",
+  }[color];
   return (
-    <div className="bg-card rounded-2xl border border-border p-4 flex flex-col gap-1">
-      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
-      <p className="text-2xl font-bold tracking-tight text-foreground">{value}</p>
+    <div className={`rounded-2xl border p-4 flex flex-col gap-2 ${palette}`}>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
+        <span className="text-xl">{emoji}</span>
+      </div>
+      <p className="text-3xl font-bold tracking-tight text-foreground">{value}</p>
       {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
     </div>
   );
 }
 
-export function GenresClient({ initialGenres, initialUntagged, libraries }: Props) {
+export function GenresClient({ initialGenres, initialUntagged, libraries, initialTotalSeries }: Props) {
   const { t } = useTranslation();
   const [genres, setGenres] = useState<GenreDto[]>(initialGenres);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -142,14 +164,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries }: Prop
   const [genreCovers, setGenreCovers] = useState<Record<string, SeriesDto[]>>({});
 
   // Stats
-  const [totalSeries, setTotalSeries] = useState(0);
-
-  useEffect(() => {
-    fetch("/api/series?limit=1")
-      .then(r => r.json())
-      .then(d => setTotalSeries(d.total ?? 0))
-      .catch(() => {});
-  }, []);
+  const [totalSeries] = useState(initialTotalSeries);
 
   // Fetch preview covers for all genres once on mount
   useEffect(() => {
@@ -369,17 +384,21 @@ export function GenresClient({ initialGenres, initialUntagged, libraries }: Prop
 
       {/* ── Stats banner ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label={`🏷️ ${t("genres.allGenres")}`} value={genres.length} />
+        <StatCard emoji="🏷️" label={t("genres.allGenres")} value={genres.length} color="violet" />
         <StatCard
-          label={`✅ ${t("genres.taggedSeries")}`}
+          emoji="✅"
+          label={t("genres.taggedSeries")}
           value={tagged}
           sub={totalSeries > 0 ? `sur ${totalSeries} au total` : undefined}
+          color="green"
         />
-        <StatCard label={`📈 ${t("genres.tagRate")}`} value={`${pct}%`} />
+        <StatCard emoji="📈" label={t("genres.tagRate")} value={`${pct}%`} color="blue" />
         <StatCard
-          label={`⭐ ${t("genres.topGenre")}`}
+          emoji="⭐"
+          label={t("genres.topGenre")}
           value={topGenre?.name ?? "—"}
           sub={topGenre ? `${topGenre.series_count} séries` : undefined}
+          color="amber"
         />
       </div>
 

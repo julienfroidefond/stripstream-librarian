@@ -8,10 +8,11 @@ export const dynamic = "force-dynamic";
 export default async function GenresPage() {
   const { t } = await getServerTranslations();
 
-  const [genres, untagged, libraries] = await Promise.all([
+  const [genres, untagged, libraries, seriesPage] = await Promise.all([
     apiFetch<GenreDto[]>("/genres").catch(() => [] as GenreDto[]),
     apiFetch<SeriesDto[]>("/genres/untagged-series").catch(() => [] as SeriesDto[]),
     fetchLibraries().catch(() => [] as LibraryDto[]),
+    apiFetch<{ total: number }>("/series?limit=1").catch(() => ({ total: 0 })),
   ]);
 
   return (
@@ -24,7 +25,7 @@ export default async function GenresPage() {
           {t("genres.title")}
         </h1>
       </div>
-      <GenresClient initialGenres={genres} initialUntagged={untagged} libraries={libraries} />
+      <GenresClient initialGenres={genres} initialUntagged={untagged} libraries={libraries} initialTotalSeries={seriesPage.total} />
     </div>
   );
 }
