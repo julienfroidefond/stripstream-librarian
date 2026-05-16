@@ -194,6 +194,7 @@ pub async fn get_recommendations(
         LEFT JOIN meta_links     ml  ON ml.series_id  = s.id
         LEFT JOIN book_counts    bc  ON bc.series_id  = s.id
         WHERE bo.series_id IS NOT NULL  -- must match at least one source
+          AND COALESCE(bc.book_count, 0) > 0
         ORDER BY score DESC, COALESCE(bc.book_count, 0) DESC
         LIMIT $3
         "#,

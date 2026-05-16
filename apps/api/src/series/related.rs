@@ -128,6 +128,7 @@ pub async fn get_related_series(
         LEFT JOIN first_books fb ON fb.series_id = s.id
         LEFT JOIN meta_links ml ON ml.series_id = s.id
         WHERE s.id != $1
+          AND COALESCE(bc.book_count, 0) > 0
           AND (
             s.authors && ref.authors
             OR s.genres && ref.genres
