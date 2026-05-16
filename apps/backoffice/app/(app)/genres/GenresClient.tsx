@@ -322,14 +322,14 @@ export function GenresClient({ initialGenres, initialUntagged, libraries }: Prop
 
       {/* ── Genre pills ─────────────────────────────────────────────── */}
       <section>
-        <div className="flex items-center justify-between gap-4 mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4 mb-4">
           <h2 className="text-lg font-semibold shrink-0">
             {t("genres.allGenres")} <span className="text-muted-foreground font-normal text-base">({genres.length})</span>
           </h2>
           {genres.length > 8 && (
             <input
               type="text"
-              className="h-8 px-3 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary w-56"
+              className="h-8 px-3 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary w-full sm:w-56"
               placeholder={t("common.search") + "…"}
               value={genreFilter}
               onChange={e => setGenreFilter(e.target.value)}
@@ -339,13 +339,13 @@ export function GenresClient({ initialGenres, initialUntagged, libraries }: Prop
         {genres.length === 0 ? (
           <p className="text-muted-foreground text-sm">{t("genres.noGenres")}</p>
         ) : (
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
             {filteredGenres.map((g) => (
               <div key={g.name} className="group relative">
                 {renaming === g.name ? (
                   <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-primary bg-background shadow-sm">
                     <input
-                      className="h-6 w-36 bg-transparent text-sm focus:outline-none text-foreground"
+                      className="h-6 min-w-0 flex-1 bg-transparent text-sm focus:outline-none text-foreground"
                       value={renameValue}
                       autoFocus
                       onChange={e => setRenameValue(e.target.value)}
@@ -362,16 +362,16 @@ export function GenresClient({ initialGenres, initialUntagged, libraries }: Prop
                     </button>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-xl border border-border bg-card hover:border-success/40 transition-colors">
+                  <div className="flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-xl border border-border bg-card hover:border-success/40 transition-colors w-full">
                     <button
                       onClick={() => setActiveGenreModal(g.name)}
-                      className="flex items-center gap-1.5 text-sm font-medium text-foreground hover:text-success transition-colors"
+                      className="flex items-center gap-1.5 text-sm font-medium text-foreground hover:text-success transition-colors min-w-0 flex-1"
                     >
                       <span className="w-2 h-2 rounded-full bg-success/60 shrink-0" />
-                      {g.name}
-                      <span className="text-xs text-muted-foreground font-normal ml-0.5">{g.series_count}</span>
+                      <span className="truncate">{g.name}</span>
+                      <span className="text-xs text-muted-foreground font-normal ml-0.5 shrink-0">{g.series_count}</span>
                     </button>
-                    <div className="flex items-center gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-0.5 ml-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                       <button onClick={() => { setRenaming(g.name); setRenameValue(g.name); }} disabled={busy} title={t("genres.rename")}
                         className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>

@@ -1115,6 +1115,8 @@ const fr = {
   "genres.assignSuccess": "Genre affecté à {{count}} série{{plural}}.",
   "genres.renameSuccess": "Genre renommé.",
   "genres.deleteSuccess": "Genre supprimé.",
+  "genres.distribution": "Répartition par genre",
+  "genres.byLibrary": "Séries par bibliothèque",
 
   // Settings - Torrent Import
   "settings.torrentImport": "Import automatique",
