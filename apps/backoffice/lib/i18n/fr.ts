@@ -1117,6 +1117,9 @@ const fr = {
   "genres.deleteSuccess": "Genre supprimé.",
   "genres.distribution": "Répartition par genre",
   "genres.byLibrary": "Séries par bibliothèque",
+  "genres.taggedSeries": "Séries taguées",
+  "genres.tagRate": "Taux de taggage",
+  "genres.topGenre": "Genre phare",
 
   // Settings - Torrent Import
   "settings.torrentImport": "Import automatique",

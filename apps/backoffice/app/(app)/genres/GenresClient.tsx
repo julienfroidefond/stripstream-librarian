@@ -30,7 +30,7 @@ function SeriesCoverImage({ series }: { series: SeriesDto }) {
         alt={series.name}
         fill
         className="object-cover"
-        sizes="56px"
+        sizes="80px"
       />
     );
   }
@@ -43,13 +43,7 @@ function SeriesCoverImage({ series }: { series: SeriesDto }) {
   return null;
 }
 
-function GenreSeriesModal({
-  genre,
-  onClose,
-}: {
-  genre: string;
-  onClose: () => void;
-}) {
+function GenreSeriesModal({ genre, onClose }: { genre: string; onClose: () => void }) {
   const { t } = useTranslation();
   const [series, setSeries] = useState<SeriesDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -124,6 +118,16 @@ function GenreSeriesModal({
   );
 }
 
+function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+  return (
+    <div className="bg-card rounded-2xl border border-border p-4 flex flex-col gap-1">
+      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
+      <p className="text-2xl font-bold tracking-tight text-foreground">{value}</p>
+      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+    </div>
+  );
+}
+
 export function GenresClient({ initialGenres, initialUntagged, libraries }: Props) {
   const { t } = useTranslation();
   const [genres, setGenres] = useState<GenreDto[]>(initialGenres);
@@ -134,8 +138,35 @@ export function GenresClient({ initialGenres, initialUntagged, libraries }: Prop
   const [activeGenreModal, setActiveGenreModal] = useState<string | null>(null);
   const [genreFilter, setGenreFilter] = useState("");
 
+  // Genre covers for cards
+  const [genreCovers, setGenreCovers] = useState<Record<string, SeriesDto[]>>({});
+
+  // Stats
+  const [totalSeries, setTotalSeries] = useState(0);
+
+  useEffect(() => {
+    fetch("/api/series?limit=1")
+      .then(r => r.json())
+      .then(d => setTotalSeries(d.total ?? 0))
+      .catch(() => {});
+  }, []);
+
+  // Fetch preview covers for all genres once on mount
+  useEffect(() => {
+    if (initialGenres.length === 0) return;
+    Promise.all(
+      initialGenres.map(g =>
+        fetch(`/api/series?genre=${encodeURIComponent(g.name)}&limit=4`)
+          .then(r => r.json())
+          .then(d => [g.name, d.items ?? []] as const)
+          .catch(() => [g.name, []] as const)
+      )
+    ).then(pairs => setGenreCovers(Object.fromEntries(pairs)));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Series browser
-  const [seriesFilter, setSeriesFilter] = useState<GenreFilter>(null); // null = sans genre
+  const [seriesFilter, setSeriesFilter] = useState<GenreFilter>(null);
   const [libraryFilter, setLibraryFilter] = useState<string | null>(null);
   const [browserGenres, setBrowserGenres] = useState<GenreDto[]>(initialGenres);
   const [seriesList, setSeriesList] = useState<SeriesDto[]>(initialUntagged);
@@ -227,6 +258,12 @@ export function GenresClient({ initialGenres, initialUntagged, libraries }: Prop
         body: JSON.stringify({ new_name: newName }),
       });
       if (seriesFilter === oldName) setSeriesFilter(newName);
+      setGenreCovers(prev => {
+        const next = { ...prev };
+        next[newName] = next[oldName] ?? [];
+        delete next[oldName];
+        return next;
+      });
       setRenaming(null);
       setRenameValue("");
       await refreshGenres();
@@ -241,6 +278,11 @@ export function GenresClient({ initialGenres, initialUntagged, libraries }: Prop
     setBusy(true);
     try {
       await fetch(`/api/genres/${encodeURIComponent(name)}`, { method: "DELETE" });
+      setGenreCovers(prev => {
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
       if (seriesFilter === name) {
         setSeriesFilter(null);
         await Promise.all([refreshGenres(), fetchSeriesForFilter(null, libraryFilter)]);
@@ -306,6 +348,11 @@ export function GenresClient({ initialGenres, initialUntagged, libraries }: Prop
     ? genres.filter(g => g.name.toLowerCase().includes(genreFilter.toLowerCase()))
     : genres;
 
+  // Stats
+  const tagged = totalSeries > 0 ? totalSeries - untaggedCount : 0;
+  const pct = totalSeries > 0 ? Math.round((tagged / totalSeries) * 100) : 0;
+  const topGenre = [...genres].sort((a, b) => b.series_count - a.series_count)[0];
+
   return (
     <div className="space-y-10">
       {/* Toast */}
@@ -320,9 +367,25 @@ export function GenresClient({ initialGenres, initialUntagged, libraries }: Prop
         <GenreSeriesModal genre={activeGenreModal} onClose={() => setActiveGenreModal(null)} />
       )}
 
-      {/* ── Genre pills ─────────────────────────────────────────────── */}
+      {/* ── Stats banner ─────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <StatCard label={`🏷️ ${t("genres.allGenres")}`} value={genres.length} />
+        <StatCard
+          label={`✅ ${t("genres.taggedSeries")}`}
+          value={tagged}
+          sub={totalSeries > 0 ? `sur ${totalSeries} au total` : undefined}
+        />
+        <StatCard label={`📈 ${t("genres.tagRate")}`} value={`${pct}%`} />
+        <StatCard
+          label={`⭐ ${t("genres.topGenre")}`}
+          value={topGenre?.name ?? "—"}
+          sub={topGenre ? `${topGenre.series_count} séries` : undefined}
+        />
+      </div>
+
+      {/* ── Genre cards ──────────────────────────────────────────────── */}
       <section>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4 mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4 mb-5">
           <h2 className="text-lg font-semibold shrink-0">
             {t("genres.allGenres")} <span className="text-muted-foreground font-normal text-base">({genres.length})</span>
           </h2>
@@ -339,52 +402,89 @@ export function GenresClient({ initialGenres, initialUntagged, libraries }: Prop
         {genres.length === 0 ? (
           <p className="text-muted-foreground text-sm">{t("genres.noGenres")}</p>
         ) : (
-          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
-            {filteredGenres.map((g) => (
-              <div key={g.name} className="group relative">
-                {renaming === g.name ? (
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-primary bg-background shadow-sm">
-                    <input
-                      className="h-6 min-w-0 flex-1 bg-transparent text-sm focus:outline-none text-foreground"
-                      value={renameValue}
-                      autoFocus
-                      onChange={e => setRenameValue(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === "Enter") handleRename(g.name);
-                        if (e.key === "Escape") { setRenaming(null); setRenameValue(""); }
-                      }}
-                    />
-                    <button onClick={() => handleRename(g.name)} disabled={busy} className="text-primary hover:text-primary/70 disabled:opacity-50" title={t("common.save")}>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                    </button>
-                    <button onClick={() => { setRenaming(null); setRenameValue(""); }} className="text-muted-foreground hover:text-foreground" title={t("common.cancel")}>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-xl border border-border bg-card hover:border-success/40 transition-colors w-full">
-                    <button
-                      onClick={() => setActiveGenreModal(g.name)}
-                      className="flex items-center gap-1.5 text-sm font-medium text-foreground hover:text-success transition-colors min-w-0 flex-1"
-                    >
-                      <span className="w-2 h-2 rounded-full bg-success/60 shrink-0" />
-                      <span className="truncate">{g.name}</span>
-                      <span className="text-xs text-muted-foreground font-normal ml-0.5 shrink-0">{g.series_count}</span>
-                    </button>
-                    <div className="flex items-center gap-0.5 ml-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => { setRenaming(g.name); setRenameValue(g.name); }} disabled={busy} title={t("genres.rename")}
-                        className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors">
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                      </button>
-                      <button onClick={() => handleDelete(g.name)} disabled={busy} title={t("genres.delete")}
-                        className="p-1 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive disabled:opacity-50 transition-colors">
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                      </button>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            {filteredGenres.map(g => {
+              const covers = genreCovers[g.name] ?? [];
+              return (
+                <div key={g.name} className="group relative bg-card rounded-2xl border border-border overflow-hidden hover:border-primary/40 hover:shadow-lg transition-all duration-200">
+                  {/* Cover hero — clickable to open modal */}
+                  <button
+                    onClick={() => setActiveGenreModal(g.name)}
+                    className="w-full block focus:outline-none"
+                    tabIndex={-1}
+                  >
+                    <div className="h-32 relative bg-muted overflow-hidden">
+                      {covers.length > 0 ? (
+                        <SeriesCoverImage series={covers[Math.floor(covers.length * (g.name.length % 4) / 4)]} />
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/25">
+                          <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                          </svg>
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
                     </div>
+                  </button>
+
+                  {/* Card body */}
+                  <div className="p-3">
+                    {renaming === g.name ? (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          className="h-6 min-w-0 flex-1 bg-transparent text-sm focus:outline-none text-foreground border-b border-primary"
+                          value={renameValue}
+                          autoFocus
+                          onChange={e => setRenameValue(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === "Enter") handleRename(g.name);
+                            if (e.key === "Escape") { setRenaming(null); setRenameValue(""); }
+                          }}
+                        />
+                        <button onClick={() => handleRename(g.name)} disabled={busy} className="text-primary hover:text-primary/70 disabled:opacity-50" title={t("common.save")}>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                        </button>
+                        <button onClick={() => { setRenaming(null); setRenameValue(""); }} className="text-muted-foreground hover:text-foreground" title={t("common.cancel")}>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-start justify-between gap-1.5 mb-2">
+                          <button
+                            onClick={() => setActiveGenreModal(g.name)}
+                            className="font-semibold text-sm text-foreground hover:text-primary transition-colors text-left leading-snug min-w-0"
+                          >
+                            {g.name}
+                          </button>
+                          <span className="text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0 mt-px">
+                            {g.series_count}
+                          </span>
+                        </div>
+                        <div className="flex gap-0.5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => { setRenaming(g.name); setRenameValue(g.name); }}
+                            disabled={busy}
+                            title={t("genres.rename")}
+                            className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                          </button>
+                          <button
+                            onClick={() => handleDelete(g.name)}
+                            disabled={busy}
+                            title={t("genres.delete")}
+                            className="p-1 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive disabled:opacity-50 transition-colors"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
-                )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </section>

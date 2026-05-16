@@ -1119,6 +1119,9 @@ const en: Record<TranslationKey, string> = {
   "genres.deleteSuccess": "Genre deleted.",
   "genres.distribution": "Genre distribution",
   "genres.byLibrary": "Series by library",
+  "genres.taggedSeries": "Tagged series",
+  "genres.tagRate": "Tag rate",
+  "genres.topGenre": "Top genre",
 
   // Settings - Torrent Import
   "settings.torrentImport": "Auto import",
