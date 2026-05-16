@@ -296,7 +296,7 @@ pub async fn get_series_by_id(
             LIMIT 1
         )
         SELECT sc.name, sc.series_id, sc.book_count, sc.books_read_count,
-               COALESCE(fb.id, '00000000-0000-0000-0000-000000000000'::uuid) as first_book_id,
+               fb.id as first_book_id,
                fb.updated_at as first_book_updated_at,
                sc.library_id, sc.series_status,
                mc.missing_count,
