@@ -426,18 +426,14 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
               const covers = genreCovers[g.name] ?? [];
               return (
                 <div key={g.name} className="group relative bg-card rounded-2xl border border-border overflow-hidden hover:border-primary/40 hover:shadow-lg transition-all duration-200">
-                  {/* Cover hero — clickable to open modal */}
-                  <button
-                    onClick={() => setActiveGenreModal(g.name)}
-                    className="w-full block focus:outline-none"
-                    tabIndex={-1}
-                  >
-                    <div className="h-32 relative bg-muted overflow-hidden">
+                  {/* Cover hero */}
+                  <button onClick={() => setActiveGenreModal(g.name)} className="w-full block focus:outline-none" tabIndex={-1}>
+                    <div className="h-14 relative bg-muted overflow-hidden">
                       {covers.length > 0 ? (
                         <SeriesCoverImage series={covers[Math.floor(covers.length * (g.name.length % 4) / 4)]} />
                       ) : (
                         <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/25">
-                          <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                           </svg>
                         </div>
@@ -446,10 +442,10 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
                     </div>
                   </button>
 
-                  {/* Card body */}
-                  <div className="p-3">
+                  {/* Card body — single row */}
+                  <div className="px-2.5 py-2 flex items-center gap-1.5 min-w-0">
                     {renaming === g.name ? (
-                      <div className="flex items-center gap-1.5">
+                      <>
                         <input
                           className="h-6 min-w-0 flex-1 bg-transparent text-sm focus:outline-none text-foreground border-b border-primary"
                           value={renameValue}
@@ -460,44 +456,40 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
                             if (e.key === "Escape") { setRenaming(null); setRenameValue(""); }
                           }}
                         />
-                        <button onClick={() => handleRename(g.name)} disabled={busy} className="text-primary hover:text-primary/70 disabled:opacity-50" title={t("common.save")}>
+                        <button onClick={() => handleRename(g.name)} disabled={busy} className="text-primary hover:text-primary/70 disabled:opacity-50 shrink-0" title={t("common.save")}>
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
                         </button>
-                        <button onClick={() => { setRenaming(null); setRenameValue(""); }} className="text-muted-foreground hover:text-foreground" title={t("common.cancel")}>
+                        <button onClick={() => { setRenaming(null); setRenameValue(""); }} className="text-muted-foreground hover:text-foreground shrink-0" title={t("common.cancel")}>
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
-                      </div>
+                      </>
                     ) : (
                       <>
-                        <div className="flex items-start justify-between gap-1.5 mb-2">
-                          <button
-                            onClick={() => setActiveGenreModal(g.name)}
-                            className="font-semibold text-sm text-foreground hover:text-primary transition-colors text-left leading-snug min-w-0"
-                          >
-                            {g.name}
-                          </button>
-                          <span className="text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0 mt-px">
-                            {g.series_count}
-                          </span>
-                        </div>
-                        <div className="flex gap-0.5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => { setRenaming(g.name); setRenameValue(g.name); }}
-                            disabled={busy}
-                            title={t("genres.rename")}
-                            className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                          </button>
-                          <button
-                            onClick={() => handleDelete(g.name)}
-                            disabled={busy}
-                            title={t("genres.delete")}
-                            className="p-1 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive disabled:opacity-50 transition-colors"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => setActiveGenreModal(g.name)}
+                          className="font-semibold text-sm text-foreground hover:text-primary transition-colors text-left truncate flex-1 min-w-0"
+                        >
+                          {g.name}
+                        </button>
+                        <span className="text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0">
+                          {g.series_count}
+                        </span>
+                        <button
+                          onClick={() => { setRenaming(g.name); setRenameValue(g.name); }}
+                          disabled={busy}
+                          title={t("genres.rename")}
+                          className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors shrink-0"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                        </button>
+                        <button
+                          onClick={() => handleDelete(g.name)}
+                          disabled={busy}
+                          title={t("genres.delete")}
+                          className="p-1 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive disabled:opacity-50 transition-colors shrink-0"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
                       </>
                     )}
                   </div>
