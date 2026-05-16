@@ -10,6 +10,7 @@ use tracing::{info, warn};
 
 use crate::{error::ApiError, state::AppState};
 use crate::job_helpers::{is_job_cancelled, update_progress};
+use crate::metadata_providers::senscritique::RATE_LIMITED_ERROR;
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -577,14 +578,8 @@ async fn process_metadata_refresh_inner(
     let mut errors = 0i32;
     let mut all_results: Vec<SeriesRefreshResult> = Vec::new();
 
-    let mut last_provider: Option<String> = None;
+    let mut sc_rate_limited = false;
     for (link_id, series_name, provider_name, external_id) in &links {
-        // Throttle SensCritique requests to avoid 429
-        if provider_name == "senscritique" && last_provider.as_deref() == Some("senscritique") {
-            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        }
-        last_provider = Some(provider_name.clone());
-
         // Check cancellation
         if is_job_cancelled(pool, job_id).await {
             sqlx::query(
@@ -595,6 +590,23 @@ async fn process_metadata_refresh_inner(
             .await
             .map_err(|e| e.to_string())?;
             return Ok(());
+        }
+
+        // Circuit breaker: skip remaining SensCritique links after a 429
+        if provider_name == "senscritique" && sc_rate_limited {
+            warn!("[METADATA_REFRESH] job={job_id} skipping '{series_name}' (SensCritique rate-limited)");
+            errors += 1;
+            all_results.push(SeriesRefreshResult {
+                series_name: series_name.clone(),
+                provider: provider_name.clone(),
+                status: "error".to_string(),
+                series_changes: vec![],
+                book_changes: vec![],
+                error: Some("Skipped: SensCritique rate-limited earlier in this job".to_string()),
+            });
+            processed += 1;
+            update_progress(pool, job_id, processed, total, series_name).await;
+            continue;
         }
 
         match refresh_link(pool, *link_id, library_id, series_name, provider_name, external_id).await {
@@ -608,8 +620,13 @@ async fn process_metadata_refresh_inner(
                 all_results.push(result);
             }
             Err(e) => {
+                if provider_name == "senscritique" && e.contains(RATE_LIMITED_ERROR) {
+                    sc_rate_limited = true;
+                    warn!("[METADATA_REFRESH] job={job_id} SensCritique rate-limited on '{series_name}', skipping remaining SC links");
+                } else {
+                    warn!("[METADATA_REFRESH] job={job_id} error on series='{series_name}': {e}");
+                }
                 errors += 1;
-                warn!("[METADATA_REFRESH] job={job_id} error on series='{series_name}': {e}");
                 all_results.push(SeriesRefreshResult {
                     series_name: series_name.clone(),
                     provider: provider_name.clone(),

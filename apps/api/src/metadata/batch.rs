@@ -9,6 +9,7 @@ use utoipa::ToSchema;
 use tracing::{info, warn};
 
 use crate::{error::ApiError, job_helpers::{is_job_cancelled, update_progress, insert_event}, state::AppState};
+use crate::metadata_providers::senscritique::RATE_LIMITED_ERROR;
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -525,6 +526,7 @@ pub(crate) async fn process_metadata_batch(
         .collect();
 
     let mut processed = 0i32;
+    let mut sc_rate_limited = false;
 
     for series_name in &series_names {
         // Check cancellation
@@ -560,6 +562,18 @@ pub(crate) async fn process_metadata_batch(
             processed += 1;
             update_progress(pool, job_id, processed, total, series_name).await;
             insert_event(pool, job_id, "metadata_already_linked", "info", Some("series"), Some(series_name), None, None).await;
+            continue;
+        }
+
+        // Circuit breaker: skip if SensCritique was rate-limited earlier in this job
+        let primary_is_sc = primary_name == "senscritique";
+        let fallback_is_sc = fallback_name.as_deref() == Some("senscritique");
+        if sc_rate_limited && (primary_is_sc || fallback_is_sc) {
+            warn!("[METADATA_BATCH] job={job_id} skipping '{series_name}' (SensCritique rate-limited)");
+            insert_event(pool, job_id, "metadata_error", "error", Some("series"), Some(series_name),
+                Some("Skipped: SensCritique rate-limited earlier in this job"), None).await;
+            processed += 1;
+            update_progress(pool, job_id, processed, total, series_name).await;
             continue;
         }
 
@@ -804,6 +818,13 @@ pub(crate) async fn process_metadata_batch(
                 ).await;
             }
             "error" => {
+                // Detect SensCritique 429 and trip the circuit breaker for this job
+                if let Some(ref e) = error_msg {
+                    if e.contains(RATE_LIMITED_ERROR) {
+                        sc_rate_limited = true;
+                        warn!("[METADATA_BATCH] job={job_id} SensCritique rate-limited on '{series_name}', skipping remaining SC lookups");
+                    }
+                }
                 insert_event(
                     pool, job_id, "error", "error", Some("series"), Some(series_name), error_msg.as_deref(),
                     Some(serde_json::json!({

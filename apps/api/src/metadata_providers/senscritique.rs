@@ -831,6 +831,8 @@ async fn graphql_request(
     graphql_request_url(client, GRAPHQL_URL, body).await
 }
 
+pub const RATE_LIMITED_ERROR: &str = "SensCritique GraphQL: rate limited (429)";
+
 async fn graphql_request_url(
     client: &reqwest::Client,
     url: &str,
@@ -849,15 +851,16 @@ async fn graphql_request_url(
             .map_err(|e| format!("SensCritique GraphQL request failed: {e}"))?;
 
         if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            if attempt < max_retries {
-                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-                delay_ms *= 2; // exponential backoff
-                continue;
-            }
-            return Err("SensCritique GraphQL returned HTTP 429 Too Many Requests (after retries)".to_string());
+            // Don't retry on 429 — back off immediately so the caller can circuit-break
+            return Err(RATE_LIMITED_ERROR.to_string());
         }
 
         if !resp.status().is_success() {
+            if attempt < max_retries {
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                delay_ms *= 2;
+                continue;
+            }
             return Err(format!("SensCritique GraphQL returned HTTP {}", resp.status()));
         }
 
