@@ -20,8 +20,6 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS sqlx-installer
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/tmp/sqlx-target,id=sqlx-target \
-    CARGO_TARGET_DIR=/tmp/sqlx-target \
     cargo install sqlx-cli --no-default-features --features postgres --locked
 
 # ─── Builder ─────────────────────────────────────────────────────────────────
