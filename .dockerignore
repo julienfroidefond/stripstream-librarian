@@ -1,0 +1,8 @@
+target/
+apps/backoffice/.next/
+apps/backoffice/node_modules/
+apps/docs/node_modules/
+apps/docs/.astro/
+apps/reader/
+.git/
+*.md

@@ -20,7 +20,7 @@ Crates partagés : `crates/core` (config env, paths), `crates/parsers` (CBZ/CBR/
 
 ### Docker
 
-API et Indexer partagent un seul Dockerfile (`apps/api/Dockerfile`) avec deux targets (`--target api` / `--target indexer`). Le stage `builder` compile les deux binaires en un seul `cargo build`, le cache layer est réutilisé pour le deuxième target. CI via `.gitea/workflows/deploy.yml` : détection des services modifiés (`dorny/paths-filter`), build conditionnel, registry cache, deploy automatique.
+API et Indexer partagent un seul Dockerfile (`apps/api/Dockerfile`) avec deux targets (`--target api` / `--target indexer`). Build via **cargo-chef** : stage `planner` → `recipe.json`, stage `builder` cuit les dépendances (layer cachée dans le registry), puis compile l'app. Stage `sqlx-installer` séparé pour éviter de recompiler sqlx-cli à chaque changement source. **mold** linker activé (`RUSTFLAGS`). CI via `.gitea/workflows/deploy.yml` : détection des services modifiés (`dorny/paths-filter`), build conditionnel, registry cache `mode=max`, deploy automatique.
 
 ### Metadata Providers
 
