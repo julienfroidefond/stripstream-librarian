@@ -18,9 +18,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 # ─── sqlx-cli: separate stage so app rebuilds never retrigger this ───────────
 FROM chef AS sqlx-installer
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    cargo install sqlx-cli --no-default-features --features postgres --locked
+RUN cargo install sqlx-cli --no-default-features --features postgres --locked
 
 # ─── Builder ─────────────────────────────────────────────────────────────────
 FROM chef AS builder
