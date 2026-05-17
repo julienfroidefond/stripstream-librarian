@@ -149,4 +149,11 @@ jobs:
           BUILDKIT_PROGRESS=plain ./scripts/stack.sh up stripstream
 
       - name: Cleanup old images
-        run: docker image prune -f
+        run: |
+          # Remove dangling images
+          docker image prune -f
+          # Remove old versioned stripstream images — keep only :latest
+          docker images --format "{{.Repository}}:{{.Tag}}" \
+            | grep "julienfroidefond32/stripstream" \
+            | grep -vE ":(latest|buildcache)$" \
+            | xargs -r docker rmi -f || true
