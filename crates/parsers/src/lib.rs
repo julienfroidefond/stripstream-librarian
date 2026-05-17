@@ -732,6 +732,15 @@ fn analyze_cbz(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {
         }
     }
 
+    // zip v8 is stricter about local-header extra fields and CRC validation — fall back to
+    // the raw streaming reader which bypasses those checks (method 0/8 only).
+    if allow_fallback {
+        if let Ok(result) = analyze_cbz_streaming(path) {
+            tracing::debug!(target: "extraction", "[EXTRACTION] Streaming fallback succeeded for {} (by_name read failed)", path.display());
+            return Ok(result);
+        }
+    }
+
     Err(anyhow::anyhow!("all entries unreadable in cbz: {}", path.display()))
 }
 
