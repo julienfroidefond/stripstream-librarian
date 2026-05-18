@@ -359,9 +359,10 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     }
   };
 
-  const filteredGenres = genreFilter
+  const filteredGenres = (genreFilter
     ? genres.filter(g => g.name.toLowerCase().includes(genreFilter.toLowerCase()))
-    : genres;
+    : genres
+  ).sort((a, b) => b.series_count - a.series_count);
 
   // Stats
   const tagged = totalSeries > 0 ? totalSeries - untaggedCount : 0;
