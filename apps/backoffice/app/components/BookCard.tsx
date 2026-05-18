@@ -107,12 +107,12 @@ export const BookCard = memo(function BookCard({ book, readingStatus, compact }:
                 </span>
               )}
               {book.volume_type === "hs" ? (
-                <span className="text-[10px] font-medium text-orange-500">HS{book.volume ? ` #${book.volume}` : ""}</span>
+                <span className="text-[10px] font-medium text-orange-500">HS{book.volume != null ? ` #${book.volume}` : ""}</span>
               ) : book.volume_type === "integral" ? (
-                <span className="text-[10px] font-medium text-blue-500">INT{book.volume ? ` #${book.volume}` : ""}</span>
+                <span className="text-[10px] font-medium text-blue-500">INT{book.volume != null ? ` #${book.volume}` : ""}</span>
               ) : book.volume_type === "oneshot" ? (
                 <span className="text-[10px] font-medium text-purple-500">One-shot</span>
-              ) : book.volume ? (
+              ) : book.volume != null ? (
                 <span className="text-[10px] text-muted-foreground">#{book.volume}</span>
               ) : null}
             </div>
@@ -161,12 +161,12 @@ export const BookCard = memo(function BookCard({ book, readingStatus, compact }:
           <p className="text-xs text-muted-foreground/80 truncate mb-2">
             {book.series}
             {book.volume_type === "hs" ? (
-              <span className="text-orange-500 font-medium"> HS{book.volume ? ` #${book.volume}` : ""}</span>
+              <span className="text-orange-500 font-medium"> HS{book.volume != null ? ` #${book.volume}` : ""}</span>
             ) : book.volume_type === "integral" ? (
-              <span className="text-blue-500 font-medium"> INT{book.volume ? ` #${book.volume}` : ""}</span>
+              <span className="text-blue-500 font-medium"> INT{book.volume != null ? ` #${book.volume}` : ""}</span>
             ) : book.volume_type === "oneshot" ? (
               <span className="text-purple-500 font-medium"> One-shot</span>
-            ) : book.volume ? (
+            ) : book.volume != null ? (
               <span className="text-primary font-medium"> #{book.volume}</span>
             ) : null}
           </p>
