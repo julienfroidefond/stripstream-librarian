@@ -1,5 +1,6 @@
 target/
 .env
+scripts/.env
 .DS_Store
 tmp/
 /libraries/
