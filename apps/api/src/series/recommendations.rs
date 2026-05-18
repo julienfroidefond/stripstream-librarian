@@ -153,7 +153,10 @@ pub async fn get_recommendations(
             SELECT DISTINCT ON (series_id)
                 series_id, id AS first_book_id, updated_at AS first_book_updated_at
             FROM books
-            ORDER BY series_id, volume ASC NULLS LAST, created_at ASC
+            ORDER BY series_id,
+                CASE WHEN volume_type = 'regular' THEN 0 ELSE 1 END,
+                volume ASC NULLS LAST,
+                created_at ASC
         ),
         meta_links AS (
             SELECT DISTINCT ON (series_id) series_id, provider

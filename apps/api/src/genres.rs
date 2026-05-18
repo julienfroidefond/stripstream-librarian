@@ -230,8 +230,8 @@ pub async fn untagged_series(
             NULL::text AS metadata_provider,
             NULL::integer AS anilist_id,
             NULL::text AS anilist_url,
-            (SELECT b2.id FROM books b2 WHERE b2.series_id = s.id ORDER BY b2.volume NULLS LAST LIMIT 1) AS first_book_id,
-            (SELECT b2.updated_at FROM books b2 WHERE b2.series_id = s.id ORDER BY b2.volume NULLS LAST LIMIT 1) AS first_book_updated_at
+            (SELECT b2.id FROM books b2 WHERE b2.series_id = s.id ORDER BY CASE WHEN b2.volume_type = 'regular' THEN 0 ELSE 1 END, b2.volume NULLS LAST LIMIT 1) AS first_book_id,
+            (SELECT b2.updated_at FROM books b2 WHERE b2.series_id = s.id ORDER BY CASE WHEN b2.volume_type = 'regular' THEN 0 ELSE 1 END, b2.volume NULLS LAST LIMIT 1) AS first_book_updated_at
         FROM series s
         LEFT JOIN books b ON b.series_id = s.id
         WHERE cardinality(s.genres) = 0 {lib_cond}

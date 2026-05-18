@@ -112,6 +112,7 @@ pub async fn search_books(
                 ROW_NUMBER() OVER (
                     PARTITION BY b.library_id, COALESCE(s.name, 'unclassified')
                     ORDER BY
+                        CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
                         REGEXP_REPLACE(LOWER(b.title), '[0-9]+', '', 'g'),
                         COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),
                         b.title ASC

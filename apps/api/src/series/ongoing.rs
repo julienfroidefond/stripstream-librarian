@@ -292,7 +292,10 @@ pub async fn get_series_by_id(
         first_book AS (
             SELECT b.id, b.series_id, b.updated_at
             FROM books b WHERE b.series_id = $1
-            ORDER BY b.volume NULLS LAST, b.title ASC
+            ORDER BY
+                CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
+                b.volume NULLS LAST,
+                b.title ASC
             LIMIT 1
         )
         SELECT sc.name, sc.series_id, sc.book_count, sc.books_read_count,
