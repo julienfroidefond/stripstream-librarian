@@ -401,6 +401,12 @@ async fn get_series_books_impl(external_id: &str) -> Result<Vec<BookCandidate>, 
             .map_err(|_| format!("invalid product id: {pid_str}"))?;
         // Single product — return it as a single book
         fetch_single_book(&client, pid).await
+    } else if external_id.chars().all(|c| c.is_ascii_digit()) {
+        // Legacy bare numeric ID — treat as franchise
+        let fid: i64 = external_id
+            .parse()
+            .map_err(|_| format!("invalid legacy franchise id: {external_id}"))?;
+        fetch_franchise_books(&client, fid, None).await
     } else {
         Err(format!("unrecognized external_id format: {external_id}"))
     }
