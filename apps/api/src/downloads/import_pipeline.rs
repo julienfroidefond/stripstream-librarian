@@ -254,6 +254,52 @@ pub(super) async fn do_import(
         }
     }
 
+    // Cleanup: remove old single-volume files in target_dir for volumes we just imported
+    // under a different filename (e.g. old naming convention left behind when dest path differed).
+    // Only in replace mode — the user explicitly asked to replace existing files.
+    if replace_existing {
+        let imported_volume_map: std::collections::HashMap<i32, String> = imported
+            .iter()
+            .filter(|f| f.volume > 0)
+            .map(|f| {
+                let dest_filename = std::path::Path::new(&f.destination)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                (f.volume, dest_filename)
+            })
+            .collect();
+
+        if !imported_volume_map.is_empty() {
+            if let Ok(entries) = std::fs::read_dir(&target_dir) {
+                for entry in entries.flatten() {
+                    let entry_path = entry.path();
+                    if !entry_path.is_file() {
+                        continue;
+                    }
+                    let fname = entry_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let vols = extract_volumes(&fname);
+                    if vols.len() == 1 {
+                        let vol = vols[0];
+                        if let Some(new_fname) = imported_volume_map.get(&vol) {
+                            if &fname != new_fname {
+                                info!("[IMPORT] Removing old file for volume {}: {:?}", vol, entry_path);
+                                if let Err(e) = std::fs::remove_file(&entry_path) {
+                                    warn!("[IMPORT] Failed to remove old file {:?}: {}", entry_path, e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Ok(ImportResult {
         imported,
         skipped,
