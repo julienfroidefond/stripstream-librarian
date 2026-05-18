@@ -533,7 +533,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
               ({seriesFilter === null ? seriesTotal : untaggedCount})
             </span>
           </button>
-          {browserGenres.filter(g => g.series_count > 0).map(g => (
+          {[...browserGenres].sort((a, b) => b.series_count - a.series_count).filter(g => g.series_count > 0).map(g => (
             <button
               key={g.name}
               onClick={() => handleFilterChange(g.name)}
