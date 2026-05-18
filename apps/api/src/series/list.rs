@@ -120,6 +120,7 @@ pub async fn list_series(
                 ROW_NUMBER() OVER (
                     PARTITION BY b.series_id
                     ORDER BY
+                        CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
                         b.volume NULLS LAST,
                         REGEXP_REPLACE(LOWER(b.title), '[0-9].*$', ''),
                         COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),
@@ -384,6 +385,7 @@ pub async fn list_all_series(
                 ROW_NUMBER() OVER (
                     PARTITION BY b.series_id
                     ORDER BY
+                        CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
                         b.volume NULLS LAST,
                         REGEXP_REPLACE(LOWER(b.title), '[0-9].*$', ''),
                         COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),
