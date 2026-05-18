@@ -86,9 +86,10 @@ export default async function SeriesDetailPage({
   const booksReadCount = booksPage.items.filter((b) => b.reading_status === "read").length;
   const displayName = seriesName === "unclassified" ? t("books.unclassified") : seriesName;
 
-  // Use first book cover as series cover, fallback to provider cover_url
-  const coverBookId = booksPage.items[0]?.id;
-  const coverBookUpdatedAt = booksPage.items[0]?.updated_at;
+  // Use first_book_id from series DTO (already prioritizes regular volumes over HS),
+  // fallback to provider cover_url
+  const coverBookId = seriesDto.first_book_id;
+  const coverBookUpdatedAt = seriesDto.first_book_updated_at;
   const seriesCoverUrl = seriesDto.cover_url;
 
   return (
