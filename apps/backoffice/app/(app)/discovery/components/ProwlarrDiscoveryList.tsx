@@ -75,10 +75,6 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
     setPage(1);
   }, [filterCategory, filterIndexer, filterSearch, sort]);
 
-  // Reset indexer filter when sort mode changes (avoid stale selection)
-  useEffect(() => {
-    setFilterIndexer("all");
-  }, [sort]);
 
   useEffect(() => {
     async function fetchData() {
@@ -177,7 +173,38 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
 
   return (
     <div className="space-y-3">
-      {/* Filters */}
+      {/* Provider (primary filter — upstream) */}
+      {allIndexers.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          <button
+            onClick={() => setFilterIndexer("all")}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+              filterIndexer === "all"
+                ? "bg-primary/15 text-primary border-primary/30"
+                : "bg-card text-muted-foreground border-border hover:border-primary/30"
+            }`}
+          >
+            {t("discovery.prowlarrAllProviders")}
+          </button>
+          {allIndexers.map((indexer) => {
+            const isActive = filterIndexer === indexer;
+            return (
+              <button
+                key={indexer}
+                onClick={() => setFilterIndexer(isActive ? "all" : indexer)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                  isActive
+                    ? "bg-primary/15 text-primary border-primary/30"
+                    : "bg-card text-muted-foreground border-border hover:border-primary/30"
+                }`}
+              >
+                {indexer}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {/* Secondary filters */}
       <div className="flex flex-wrap items-center gap-2">
         <input
           type="text"
@@ -229,36 +256,6 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
             );
           })}
         </div>
-        {allIndexers.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            <button
-              onClick={() => setFilterIndexer("all")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
-                filterIndexer === "all"
-                  ? "bg-secondary/20 text-secondary-foreground border-secondary/30"
-                  : "bg-card text-muted-foreground border-border hover:border-secondary/30"
-              }`}
-            >
-              {t("discovery.prowlarrAllProviders")}
-            </button>
-            {allIndexers.map((indexer) => {
-              const isActive = filterIndexer === indexer;
-              return (
-                <button
-                  key={indexer}
-                  onClick={() => setFilterIndexer(isActive ? "all" : indexer)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
-                    isActive
-                      ? "bg-secondary/20 text-secondary-foreground border-secondary/30"
-                      : "bg-card text-muted-foreground border-border hover:border-secondary/30"
-                  }`}
-                >
-                  {indexer}
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
 
     <div className="border border-border rounded-xl overflow-hidden">
