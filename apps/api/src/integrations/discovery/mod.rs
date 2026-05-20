@@ -332,10 +332,14 @@ pub async fn prowlarr_discovery(
     if !skip_cache {
         if let Some(cached) = get_cached_raw::<Vec<ProwlarrDiscoveryItem>>(&state.pool, &cache_key).await {
             let all_indexers = all_indexers_from(&cached);
-            let owned_filtered = filter_prowlarr_owned(&state.pool, cached).await;
-            let items = owned_filtered
+            // Filter by indexer first to reduce the ownership-check workload
+            let pre_filtered: Vec<ProwlarrDiscoveryItem> = if let Some(idx) = indexer_filter {
+                cached.into_iter().filter(|i| i.indexers.iter().any(|x| x == idx)).collect()
+            } else {
+                cached
+            };
+            let items = filter_prowlarr_owned(&state.pool, pre_filtered).await
                 .into_iter()
-                .filter(|i| indexer_filter.map_or(true, |idx| i.indexers.iter().any(|x| x == idx)))
                 .take(limit)
                 .collect();
             return Ok(Json(ProwlarrDiscoveryResponse { items, all_indexers }));
@@ -553,16 +557,16 @@ pub async fn prowlarr_discovery(
     // Cache full result set (7 days)
     set_cached_raw(&state.pool, &cache_key, "prowlarr", "discovery", &items, 168).await;
 
-    // Filter out already-owned, then by indexer if requested, then limit
+    // Filter by indexer first, then filter owned, then limit
     let before_filter = items.len();
-    let filtered = filter_prowlarr_owned(&state.pool, items).await;
-    tracing::info!("[DISCOVERY] Prowlarr: {} after filter (was {})", filtered.len(), before_filter);
-    let result_items = filtered
-        .into_iter()
-        .filter(|i| indexer_filter.map_or(true, |idx| i.indexers.iter().any(|x| x == idx)))
-        .take(limit)
-        .collect();
-    Ok(Json(ProwlarrDiscoveryResponse { items: result_items, all_indexers }))
+    let pre_filtered: Vec<ProwlarrDiscoveryItem> = if let Some(idx) = indexer_filter {
+        items.into_iter().filter(|i| i.indexers.iter().any(|x| x == idx)).collect()
+    } else {
+        items
+    };
+    let result_items = filter_prowlarr_owned(&state.pool, pre_filtered).await;
+    tracing::info!("[DISCOVERY] Prowlarr: {} after filter (was {})", result_items.len(), before_filter);
+    Ok(Json(ProwlarrDiscoveryResponse { items: result_items.into_iter().take(limit).collect(), all_indexers }))
 }
 
 /// Guess a more specific category from the torrent title keywords.

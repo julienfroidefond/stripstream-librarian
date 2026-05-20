@@ -85,7 +85,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
       setLoading(true);
       setError(null);
       try {
-        const indexerParam = filterIndexer !== "all" ? `&indexer=${encodeURIComponent(filterIndexer)}` : "";
+          const indexerParam = filterIndexer !== "all" ? `&indexer=${encodeURIComponent(filterIndexer)}` : "";
         const limit = filterIndexer !== "all" ? 100 : 200;
         const resp = await fetch(`/api/discovery/prowlarr?limit=${limit}&sort=${sort}${nocache ? "&nocache=true" : ""}${indexerParam}`);
         if (!resp.ok) {
