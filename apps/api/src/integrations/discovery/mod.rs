@@ -313,24 +313,36 @@ pub async fn prowlarr_discovery(
     let sort_by_date = params.sort.as_deref() == Some("date");
     let indexer_filter = params.indexer.as_deref().filter(|s| !s.is_empty());
 
-    let cache_key = if sort_by_date {
-        "discovery:prowlarr:date".to_string()
-    } else {
-        "discovery:prowlarr".to_string()
-    };
+    // Single cache regardless of sort mode — sort is applied in memory when reading.
+    // This ensures all providers are always present regardless of which sort was
+    // active when the cache was first populated.
+    let cache_key = "discovery:prowlarr".to_string();
     let skip_cache = params.nocache.as_deref() == Some("true");
 
     // Helper: collect unique sorted indexers from a slice
     fn all_indexers_from(items: &[ProwlarrDiscoveryItem]) -> Vec<String> {
-        let mut set: std::collections::BTreeSet<String> = items.iter()
+        let set: std::collections::BTreeSet<String> = items.iter()
             .flat_map(|i| i.indexers.iter().cloned())
             .collect();
         set.into_iter().collect()
     }
 
+    // Sort a mutable slice by the requested mode
+    fn apply_sort(items: &mut Vec<ProwlarrDiscoveryItem>, by_date: bool) {
+        if by_date {
+            items.sort_by(|a, b| {
+                b.best_publish_date.as_deref().unwrap_or("")
+                    .cmp(a.best_publish_date.as_deref().unwrap_or(""))
+            });
+        } else {
+            items.sort_by(|a, b| b.best_seeders.cmp(&a.best_seeders));
+        }
+    }
+
     // Check cache (unless nocache requested)
     if !skip_cache {
-        if let Some(cached) = get_cached_raw::<Vec<ProwlarrDiscoveryItem>>(&state.pool, &cache_key).await {
+        if let Some(mut cached) = get_cached_raw::<Vec<ProwlarrDiscoveryItem>>(&state.pool, &cache_key).await {
+            apply_sort(&mut cached, sort_by_date);
             let all_indexers = all_indexers_from(&cached);
             // Filter by indexer first to reduce the ownership-check workload
             let pre_filtered: Vec<ProwlarrDiscoveryItem> = if let Some(idx) = indexer_filter {
@@ -368,30 +380,19 @@ pub async fn prowlarr_discovery(
         .build()
         .map_err(|e| ApiError::internal(format!("HTTP client error: {e}")))?;
 
-    // Search Prowlarr with multiple queries to get a broad set of results.
-    // - sort_by_date: target generic terms that bring back many recent releases
-    //   (each search is bounded by indexer recency, so we cast a wide net)
-    // - default: mix of empty + named queries for popular series
-    let queries: Vec<String> = if sort_by_date {
-        vec![
-            "".to_string(),
-            "manga".to_string(),
-            "bd".to_string(),
-            "comics".to_string(),
-            "tome".to_string(),
-            "scan".to_string(),
-            "vf".to_string(),
-            "fr".to_string(),
-        ]
-    } else {
-        vec![
-            "".to_string(),
-            "manga".to_string(),
-            "bd".to_string(),
-            "comics".to_string(),
-            "tome".to_string(),
-        ]
-    };
+    // Search Prowlarr with a broad set of queries to surface content from all
+    // configured indexers. A single query set is used regardless of sort mode
+    // since sort is now applied in memory (single unified cache).
+    let queries: Vec<String> = vec![
+        "".to_string(),
+        "manga".to_string(),
+        "bd".to_string(),
+        "comics".to_string(),
+        "tome".to_string(),
+        "scan".to_string(),
+        "vf".to_string(),
+        "fr".to_string(),
+    ];
 
     let mut raw: Vec<serde_json::Value> = Vec::new();
 
@@ -531,19 +532,12 @@ pub async fn prowlarr_discovery(
         }
     }
 
-    // Sort volumes and sort items based on requested mode
+    // Sort volumes; cache is stored unsorted — sort applied per-request in memory
     for item in &mut items {
         item.volumes_found.sort_unstable();
     }
-    if sort_by_date {
-        // Most recent first; entries without a date go last
-        items.sort_by(|a, b| {
-            b.best_publish_date.as_deref().unwrap_or("")
-                .cmp(a.best_publish_date.as_deref().unwrap_or(""))
-        });
-    } else {
-        items.sort_by(|a, b| b.best_seeders.cmp(&a.best_seeders));
-    }
+    // Store by seeders for the canonical cache order; apply_sort will re-order on read
+    items.sort_by(|a, b| b.best_seeders.cmp(&a.best_seeders));
 
     tracing::info!("[DISCOVERY] Prowlarr: {} series found from {} raw releases", items.len(), raw.len());
 
@@ -556,6 +550,9 @@ pub async fn prowlarr_discovery(
 
     // Cache full result set (7 days)
     set_cached_raw(&state.pool, &cache_key, "prowlarr", "discovery", &items, 168).await;
+
+    apply_sort(&mut items, sort_by_date);
+    let all_indexers = all_indexers_from(&items);
 
     // Filter by indexer first, then filter owned, then limit
     let before_filter = items.len();
