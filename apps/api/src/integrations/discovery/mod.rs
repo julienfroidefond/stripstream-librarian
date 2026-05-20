@@ -309,7 +309,7 @@ pub async fn prowlarr_discovery(
     State(state): State<AppState>,
     Query(params): Query<ProwlarrDiscoveryQuery>,
 ) -> Result<Json<ProwlarrDiscoveryResponse>, ApiError> {
-    let limit = params.limit.unwrap_or(100).min(500);
+    let limit = params.limit.unwrap_or(100).min(200);
     let sort_by_date = params.sort.as_deref() == Some("date");
     let indexer_filter = params.indexer.as_deref().filter(|s| !s.is_empty());
 
@@ -380,29 +380,39 @@ pub async fn prowlarr_discovery(
         .build()
         .map_err(|e| ApiError::internal(format!("HTTP client error: {e}")))?;
 
-    // Search Prowlarr with a broad set of queries to surface content from all
-    // configured indexers. A single query set is used regardless of sort mode
-    // since sort is now applied in memory (single unified cache).
-    let queries: Vec<String> = vec![
-        "".to_string(),
-        "manga".to_string(),
-        "bd".to_string(),
-        "comics".to_string(),
-        "tome".to_string(),
-        "scan".to_string(),
-        "vf".to_string(),
-        "fr".to_string(),
-    ];
+    // Two passes to maximise coverage in the unified cache:
+    // - Pass 1 (relevance/seeders): broad term queries, Prowlarr default order
+    // - Pass 2 (recent): empty query with publishDate sort to surface recent
+    //   releases that wouldn't appear in the top results of pass 1
+    // GUID deduplication below ensures no double-counting.
+    struct ProwlarrRequest {
+        query: String,
+        sort_key: Option<&'static str>,
+    }
+    let mut requests: Vec<ProwlarrRequest> = vec![
+        "".to_string(), "manga".to_string(), "bd".to_string(),
+        "comics".to_string(), "tome".to_string(), "scan".to_string(),
+        "vf".to_string(), "fr".to_string(),
+    ]
+    .into_iter()
+    .map(|q| ProwlarrRequest { query: q, sort_key: None })
+    .collect();
+    // Extra date pass — one empty query sorted by publishDate
+    requests.push(ProwlarrRequest { query: "".to_string(), sort_key: Some("publishDate") });
 
     let mut raw: Vec<serde_json::Value> = Vec::new();
 
-    for query in &queries {
+    for req in &requests {
         let mut params_vec: Vec<(&str, String)> = vec![
-            ("query", query.clone()),
+            ("query", req.query.clone()),
             ("type", "search".to_string()),
         ];
         for cat in &categories {
             params_vec.push(("categories", cat.to_string()));
+        }
+        if let Some(sort_key) = req.sort_key {
+            params_vec.push(("sortKey", sort_key.to_string()));
+            params_vec.push(("sortDirection", "descending".to_string()));
         }
 
         let resp = client
@@ -540,13 +550,6 @@ pub async fn prowlarr_discovery(
     items.sort_by(|a, b| b.best_seeders.cmp(&a.best_seeders));
 
     tracing::info!("[DISCOVERY] Prowlarr: {} series found from {} raw releases", items.len(), raw.len());
-
-    let all_indexers: Vec<String> = {
-        let mut set: std::collections::BTreeSet<String> = items.iter()
-            .flat_map(|i| i.indexers.iter().cloned())
-            .collect();
-        set.into_iter().collect()
-    };
 
     // Cache full result set (7 days)
     set_cached_raw(&state.pool, &cache_key, "prowlarr", "discovery", &items, 168).await;
