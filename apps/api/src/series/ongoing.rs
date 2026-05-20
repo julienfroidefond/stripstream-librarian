@@ -159,7 +159,7 @@ pub async fn ongoing_books(
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
             WHERE COALESCE(brp.status, 'unread') != 'read'
         )
-        SELECT id, library_id, kind, format, title, author, authors, series, volume, volume_type, language, page_count,
+        SELECT id, library_id, kind, format, title, author, authors, series, series_id, volume, volume_type, language, page_count,
                thumbnail_path, updated_at, reading_status, reading_current_page, reading_last_read_at
         FROM next_books
         WHERE rn = 1
