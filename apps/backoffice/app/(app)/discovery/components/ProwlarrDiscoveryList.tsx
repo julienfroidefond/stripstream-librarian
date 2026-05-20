@@ -243,9 +243,6 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
             </button>
             {allIndexers.map((indexer) => {
               const isActive = filterIndexer === indexer;
-              const count = isActive
-                ? filteredItems.length
-                : items.filter((i) => !addedSet.has(i.series_name) && i.indexers.includes(indexer)).length;
               return (
                 <button
                   key={indexer}
@@ -256,7 +253,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
                       : "bg-card text-muted-foreground border-border hover:border-secondary/30"
                   }`}
                 >
-                  {indexer} ({count})
+                  {indexer}
                 </button>
               );
             })}
