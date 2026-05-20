@@ -64,6 +64,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
   const [addingSet, setAddingSet] = useState<Set<string>>(new Set());
   const [addedSet, setAddedSet] = useState<Set<string>>(new Set());
   const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [filterIndexer, setFilterIndexer] = useState<string>("all");
   const [filterSearch, setFilterSearch] = useState("");
   const [sort, setSort] = useState<"seeders" | "date">("seeders");
   const [page, setPage] = useState(1);
@@ -71,7 +72,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
   // Reset to page 1 whenever filters or sort change
   useEffect(() => {
     setPage(1);
-  }, [filterCategory, filterSearch, sort]);
+  }, [filterCategory, filterIndexer, filterSearch, sort]);
 
   useEffect(() => {
     async function fetchData() {
@@ -153,12 +154,13 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
     );
   }
 
-  // Collect all unique categories for filter
   const allCategories = [...new Set(items.flatMap((i) => i.categories))].sort();
+  const allIndexers = [...new Set(items.flatMap((i) => i.indexers))].sort();
 
   const filteredItems = items
     .filter((i) => !addedSet.has(i.series_name))
     .filter((i) => filterCategory === "all" || i.categories.includes(filterCategory))
+    .filter((i) => filterIndexer === "all" || i.indexers.includes(filterIndexer))
     .filter((i) => !filterSearch || i.series_name.toLowerCase().includes(filterSearch.toLowerCase()));
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
@@ -220,6 +222,36 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
             );
           })}
         </div>
+        {allIndexers.length > 1 && (
+          <div className="flex flex-wrap gap-1">
+            <button
+              onClick={() => setFilterIndexer("all")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                filterIndexer === "all"
+                  ? "bg-secondary/20 text-secondary-foreground border-secondary/30"
+                  : "bg-card text-muted-foreground border-border hover:border-secondary/30"
+              }`}
+            >
+              {t("discovery.prowlarrAllProviders")}
+            </button>
+            {allIndexers.map((indexer) => {
+              const count = items.filter((i) => !addedSet.has(i.series_name) && i.indexers.includes(indexer)).length;
+              return (
+                <button
+                  key={indexer}
+                  onClick={() => setFilterIndexer(indexer === filterIndexer ? "all" : indexer)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                    filterIndexer === indexer
+                      ? "bg-secondary/20 text-secondary-foreground border-secondary/30"
+                      : "bg-card text-muted-foreground border-border hover:border-secondary/30"
+                  }`}
+                >
+                  {indexer} ({count})
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
     <div className="border border-border rounded-xl overflow-hidden">

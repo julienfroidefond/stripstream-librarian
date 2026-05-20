@@ -1085,6 +1085,7 @@ const fr = {
   "discovery.prowlarrSortSeeders": "Seeders",
   "discovery.prowlarrSortDate": "Récents",
   "discovery.prowlarrProvider": "Provider",
+  "discovery.prowlarrAllProviders": "Tous les providers",
   "discovery.prowlarrBestRelease": "Meilleure release",
   "discovery.hardRefresh": "Rafraîchir (ignorer le cache)",
   "library.tags": "Tags",
