@@ -57,6 +57,8 @@ pub struct BookItem {
     pub author: Option<String>,
     pub authors: Vec<String>,
     pub series: Option<String>,
+    #[schema(value_type = Option<String>)]
+    pub series_id: Option<Uuid>,
     pub volume: Option<i32>,
     pub volume_type: String,
     pub language: Option<String>,
@@ -214,7 +216,7 @@ pub async fn list_books(
     let data_sql = format!(
         r#"
         WITH {metadata_links_cte}
-        SELECT b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, s.name AS series, b.volume, b.volume_type, b.language, b.page_count, b.thumbnail_path, b.updated_at,
+        SELECT b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.volume_type, b.language, b.page_count, b.thumbnail_path, b.updated_at,
                COALESCE(brp.status, 'unread') AS reading_status,
                brp.current_page AS reading_current_page,
                brp.last_read_at AS reading_last_read_at
@@ -292,6 +294,7 @@ pub async fn list_books(
                 author: row.get("author"),
                 authors: row.get::<Vec<String>, _>("authors"),
                 series: row.get("series"),
+                series_id: row.get("series_id"),
                 volume: row.get("volume"),
                 volume_type: row.get("volume_type"),
                 language: row.get("language"),

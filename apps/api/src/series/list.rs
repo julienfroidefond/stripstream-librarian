@@ -155,7 +155,7 @@ pub async fn list_series(
             ml.provider as metadata_provider,
             asl.anilist_id,
             asl.anilist_url,
-            s.cover_url
+            s.cover_url, s.genres, s.authors, s.description
         FROM series_counts sc
         LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id AND sb.rn = 1
         LEFT JOIN series s ON s.id = sc.series_id
@@ -229,6 +229,9 @@ pub async fn list_series(
             anilist_id: row.get("anilist_id"),
             anilist_url: row.get("anilist_url"),
             cover_url: row.get("cover_url"),
+            genres: row.get::<Vec<String>, _>("genres"),
+            authors: row.get::<Vec<String>, _>("authors"),
+            description: row.get("description"),
         })
         .collect();
 
@@ -424,7 +427,7 @@ pub async fn list_all_series(
             ml.provider as metadata_provider,
             asl.anilist_id,
             asl.anilist_url,
-            s.cover_url
+            s.cover_url, s.genres, s.authors, s.description
         FROM series_counts sc
         LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id AND sb.rn = 1
         LEFT JOIN series s ON s.id = sc.series_id
@@ -506,6 +509,9 @@ pub async fn list_all_series(
             anilist_id: row.get("anilist_id"),
             anilist_url: row.get("anilist_url"),
             cover_url: row.get("cover_url"),
+            genres: row.get::<Vec<String>, _>("genres"),
+            authors: row.get::<Vec<String>, _>("authors"),
+            description: row.get("description"),
         })
         .collect();
 

@@ -57,6 +57,9 @@ pub struct SeriesItem {
     pub anilist_id: Option<i32>,
     pub anilist_url: Option<String>,
     pub cover_url: Option<String>,
+    pub genres: Vec<String>,
+    pub authors: Vec<String>,
+    pub description: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]

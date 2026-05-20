@@ -231,7 +231,10 @@ pub async fn untagged_series(
             NULL::integer AS anilist_id,
             NULL::text AS anilist_url,
             (SELECT b2.id FROM books b2 WHERE b2.series_id = s.id ORDER BY CASE WHEN b2.volume_type = 'regular' THEN 0 ELSE 1 END, b2.volume NULLS LAST LIMIT 1) AS first_book_id,
-            (SELECT b2.updated_at FROM books b2 WHERE b2.series_id = s.id ORDER BY CASE WHEN b2.volume_type = 'regular' THEN 0 ELSE 1 END, b2.volume NULLS LAST LIMIT 1) AS first_book_updated_at
+            (SELECT b2.updated_at FROM books b2 WHERE b2.series_id = s.id ORDER BY CASE WHEN b2.volume_type = 'regular' THEN 0 ELSE 1 END, b2.volume NULLS LAST LIMIT 1) AS first_book_updated_at,
+            s.genres,
+            s.authors,
+            s.description
         FROM series s
         LEFT JOIN books b ON b.series_id = s.id
         WHERE cardinality(s.genres) = 0 {lib_cond}
@@ -264,6 +267,9 @@ pub async fn untagged_series(
             anilist_url: r.get("anilist_url"),
             first_book_id: r.get("first_book_id"),
             first_book_updated_at: r.get("first_book_updated_at"),
+            genres: r.get::<Vec<String>, _>("genres"),
+            authors: r.get::<Vec<String>, _>("authors"),
+            description: r.get("description"),
         })
         .collect();
 

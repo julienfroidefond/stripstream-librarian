@@ -65,9 +65,11 @@ pub async fn ongoing_series(
                 ) AS rn
             FROM books b
         )
-        SELECT ss.name, ss.series_id, ss.book_count, ss.books_read_count, fb.id AS first_book_id, fb.updated_at AS first_book_updated_at, fb.library_id
+        SELECT ss.name, ss.series_id, ss.book_count, ss.books_read_count, fb.id AS first_book_id, fb.updated_at AS first_book_updated_at, fb.library_id,
+               s.genres, s.authors, s.description
         FROM series_stats ss
         JOIN first_books fb ON fb.series_id = ss.series_id AND fb.rn = 1
+        JOIN series s ON s.id = ss.series_id
         ORDER BY ss.last_read_at DESC NULLS LAST
         LIMIT $1
         "#,
@@ -93,6 +95,9 @@ pub async fn ongoing_series(
             anilist_id: None,
             anilist_url: None,
             cover_url: None,
+            genres: row.get::<Vec<String>, _>("genres"),
+            authors: row.get::<Vec<String>, _>("authors"),
+            description: row.get("description"),
         })
         .collect();
 
@@ -138,7 +143,7 @@ pub async fn ongoing_books(
         ),
         next_books AS (
             SELECT
-                b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, s.name AS series, b.volume, b.volume_type,
+                b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.volume_type,
                 b.language, b.page_count, b.thumbnail_path, b.updated_at,
                 COALESCE(brp.status, 'unread') AS reading_status,
                 brp.current_page AS reading_current_page,
@@ -180,6 +185,7 @@ pub async fn ongoing_books(
                 author: row.get("author"),
                 authors: row.get::<Vec<String>, _>("authors"),
                 series: row.get("series"),
+                series_id: row.get("series_id"),
                 volume: row.get("volume"),
                 volume_type: row.get("volume_type"),
                 language: row.get("language"),
@@ -305,7 +311,7 @@ pub async fn get_series_by_id(
                mc.missing_count,
                ml.provider as metadata_provider,
                asl.anilist_id, asl.anilist_url,
-               s.cover_url
+               s.cover_url, s.genres, s.authors, s.description
         FROM series_counts sc
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN first_book fb ON fb.series_id = sc.series_id
@@ -349,6 +355,9 @@ pub async fn get_series_by_id(
         anilist_id: row.get("anilist_id"),
         anilist_url: row.get("anilist_url"),
         cover_url: row.get("cover_url"),
+        genres: row.get::<Vec<String>, _>("genres"),
+        authors: row.get::<Vec<String>, _>("authors"),
+        description: row.get("description"),
     }))
 }
 
