@@ -65,6 +65,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
   const [addedSet, setAddedSet] = useState<Set<string>>(new Set());
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterIndexer, setFilterIndexer] = useState<string>("all");
+  const [allIndexers, setAllIndexers] = useState<string[]>([]);
   const [filterSearch, setFilterSearch] = useState("");
   const [sort, setSort] = useState<"seeders" | "date">("seeders");
   const [page, setPage] = useState(1);
@@ -74,19 +75,27 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
     setPage(1);
   }, [filterCategory, filterIndexer, filterSearch, sort]);
 
+  // Reset indexer filter when sort mode changes (avoid stale selection)
+  useEffect(() => {
+    setFilterIndexer("all");
+  }, [sort]);
+
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
       setError(null);
       try {
-        const resp = await fetch(`/api/discovery/prowlarr?limit=200&sort=${sort}${nocache ? "&nocache=true" : ""}`);
+        const indexerParam = filterIndexer !== "all" ? `&indexer=${encodeURIComponent(filterIndexer)}` : "";
+        const limit = filterIndexer !== "all" ? 100 : 200;
+        const resp = await fetch(`/api/discovery/prowlarr?limit=${limit}&sort=${sort}${nocache ? "&nocache=true" : ""}${indexerParam}`);
         if (!resp.ok) {
           const data = await resp.json().catch(() => ({}));
           setError(data?.error || `Error ${resp.status}`);
           return;
         }
         const data = await resp.json();
-        setItems(data);
+        setItems(data.items ?? []);
+        if (data.all_indexers?.length) setAllIndexers(data.all_indexers);
       } catch {
         setError("Network error");
       } finally {
@@ -94,7 +103,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
       }
     }
     fetchData();
-  }, [sort, nocache]);
+  }, [sort, nocache, filterIndexer]);
 
   async function handleAdd(item: ProwlarrItem, libraryId: string) {
     const key = item.series_name;
@@ -155,12 +164,10 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
   }
 
   const allCategories = [...new Set(items.flatMap((i) => i.categories))].sort();
-  const allIndexers = [...new Set(items.flatMap((i) => i.indexers))].sort();
 
   const filteredItems = items
     .filter((i) => !addedSet.has(i.series_name))
     .filter((i) => filterCategory === "all" || i.categories.includes(filterCategory))
-    .filter((i) => filterIndexer === "all" || i.indexers.includes(filterIndexer))
     .filter((i) => !filterSearch || i.series_name.toLowerCase().includes(filterSearch.toLowerCase()));
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
@@ -222,7 +229,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
             );
           })}
         </div>
-        {allIndexers.length > 1 && (
+        {allIndexers.length > 0 && (
           <div className="flex flex-wrap gap-1">
             <button
               onClick={() => setFilterIndexer("all")}
@@ -235,13 +242,16 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
               {t("discovery.prowlarrAllProviders")}
             </button>
             {allIndexers.map((indexer) => {
-              const count = items.filter((i) => !addedSet.has(i.series_name) && i.indexers.includes(indexer)).length;
+              const isActive = filterIndexer === indexer;
+              const count = isActive
+                ? filteredItems.length
+                : items.filter((i) => !addedSet.has(i.series_name) && i.indexers.includes(indexer)).length;
               return (
                 <button
                   key={indexer}
-                  onClick={() => setFilterIndexer(indexer === filterIndexer ? "all" : indexer)}
+                  onClick={() => setFilterIndexer(isActive ? "all" : indexer)}
                   className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
-                    filterIndexer === indexer
+                    isActive
                       ? "bg-secondary/20 text-secondary-foreground border-secondary/30"
                       : "bg-card text-muted-foreground border-border hover:border-secondary/30"
                   }`}

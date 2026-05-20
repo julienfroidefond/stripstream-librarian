@@ -288,21 +288,30 @@ pub struct ProwlarrDiscoveryItem {
     pub volumes_found: Vec<i32>,
 }
 
+#[derive(Serialize)]
+pub struct ProwlarrDiscoveryResponse {
+    pub items: Vec<ProwlarrDiscoveryItem>,
+    pub all_indexers: Vec<String>,
+}
+
 #[derive(Deserialize)]
 pub struct ProwlarrDiscoveryQuery {
     pub limit: Option<usize>,
     pub nocache: Option<String>,
     /// "seeders" (default) or "date"
     pub sort: Option<String>,
+    /// Filter results to a specific indexer name
+    pub indexer: Option<String>,
 }
 
 /// GET /discovery/prowlarr — search Prowlarr indexers and group by series name
 pub async fn prowlarr_discovery(
     State(state): State<AppState>,
     Query(params): Query<ProwlarrDiscoveryQuery>,
-) -> Result<Json<Vec<ProwlarrDiscoveryItem>>, ApiError> {
-    let limit = params.limit.unwrap_or(100).min(200);
+) -> Result<Json<ProwlarrDiscoveryResponse>, ApiError> {
+    let limit = params.limit.unwrap_or(100).min(500);
     let sort_by_date = params.sort.as_deref() == Some("date");
+    let indexer_filter = params.indexer.as_deref().filter(|s| !s.is_empty());
 
     let cache_key = if sort_by_date {
         "discovery:prowlarr:date".to_string()
@@ -311,11 +320,25 @@ pub async fn prowlarr_discovery(
     };
     let skip_cache = params.nocache.as_deref() == Some("true");
 
+    // Helper: collect unique sorted indexers from a slice
+    fn all_indexers_from(items: &[ProwlarrDiscoveryItem]) -> Vec<String> {
+        let mut set: std::collections::BTreeSet<String> = items.iter()
+            .flat_map(|i| i.indexers.iter().cloned())
+            .collect();
+        set.into_iter().collect()
+    }
+
     // Check cache (unless nocache requested)
     if !skip_cache {
         if let Some(cached) = get_cached_raw::<Vec<ProwlarrDiscoveryItem>>(&state.pool, &cache_key).await {
-            let filtered = filter_prowlarr_owned(&state.pool, cached).await;
-            return Ok(Json(filtered.into_iter().take(limit).collect()));
+            let all_indexers = all_indexers_from(&cached);
+            let owned_filtered = filter_prowlarr_owned(&state.pool, cached).await;
+            let items = owned_filtered
+                .into_iter()
+                .filter(|i| indexer_filter.map_or(true, |idx| i.indexers.iter().any(|x| x == idx)))
+                .take(limit)
+                .collect();
+            return Ok(Json(ProwlarrDiscoveryResponse { items, all_indexers }));
         }
     }
 
@@ -396,7 +419,7 @@ pub async fn prowlarr_discovery(
     }
 
     if raw.is_empty() {
-        return Ok(Json(vec![]));
+        return Ok(Json(ProwlarrDiscoveryResponse { items: vec![], all_indexers: vec![] }));
     }
 
     // Group by extracted series name
@@ -520,14 +543,26 @@ pub async fn prowlarr_discovery(
 
     tracing::info!("[DISCOVERY] Prowlarr: {} series found from {} raw releases", items.len(), raw.len());
 
-    // Cache for 6 hours
-    set_cached_raw(&state.pool, &cache_key, "prowlarr", "discovery", &items, 168).await; // 7 days
+    let all_indexers: Vec<String> = {
+        let mut set: std::collections::BTreeSet<String> = items.iter()
+            .flat_map(|i| i.indexers.iter().cloned())
+            .collect();
+        set.into_iter().collect()
+    };
 
-    // Filter out already-owned
+    // Cache full result set (7 days)
+    set_cached_raw(&state.pool, &cache_key, "prowlarr", "discovery", &items, 168).await;
+
+    // Filter out already-owned, then by indexer if requested, then limit
     let before_filter = items.len();
     let filtered = filter_prowlarr_owned(&state.pool, items).await;
     tracing::info!("[DISCOVERY] Prowlarr: {} after filter (was {})", filtered.len(), before_filter);
-    Ok(Json(filtered.into_iter().take(limit).collect()))
+    let result_items = filtered
+        .into_iter()
+        .filter(|i| indexer_filter.map_or(true, |idx| i.indexers.iter().any(|x| x == idx)))
+        .take(limit)
+        .collect();
+    Ok(Json(ProwlarrDiscoveryResponse { items: result_items, all_indexers }))
 }
 
 /// Guess a more specific category from the torrent title keywords.
