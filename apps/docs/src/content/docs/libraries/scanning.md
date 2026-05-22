@@ -1,6 +1,6 @@
 ---
 title: Scan & Indexation
-description: Pipeline d'indexation en deux phases
+description: Pipeline d'indexation en deux phases (discovery + analysis)
 ---
 
 ## Pipeline en deux phases
