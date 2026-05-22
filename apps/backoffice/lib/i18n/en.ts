@@ -164,6 +164,7 @@ const en: Record<TranslationKey, string> = {
   "series.wishlist": "Wishlist",
   "series.wishlistOnly": "Wishlist only",
   "series.inLibrary": "In library",
+  "series.oneshotsOnly": "Oneshots only",
   "series.matchingQuery": "matching",
   "series.noResults": "No series found matching your filters",
   "series.noSeries": "No series available",

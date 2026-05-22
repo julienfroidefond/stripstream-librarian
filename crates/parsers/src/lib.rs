@@ -402,6 +402,17 @@ pub fn extract_volume(filename: &str) -> Option<i32> {
     extract_volumes(filename).into_iter().next()
 }
 
+/// Check if a directory name is a oneshot folder at library root level.
+fn is_oneshot_folder(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    // Strip leading underscores/dots (e.g. "_oneshots", "_oneshot")
+    let stripped = lower.trim_start_matches(['_', '.']);
+    const PATTERNS: &[&str] = &[
+        "oneshots", "oneshot", "one-shots", "one-shot", "one shots", "one shot",
+    ];
+    PATTERNS.iter().any(|p| stripped == *p)
+}
+
 /// Check if a directory name is an HS/special subfolder (not a series).
 fn is_hs_subfolder(name: &str) -> bool {
     let lower = name.to_lowercase();
@@ -622,6 +633,29 @@ pub fn parse_metadata_fast(path: &Path, _format: BookFormat, library_root: &Path
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "Untitled".to_string());
+
+    // Detect oneshot folder: file is exactly one level below library root in a known oneshot dir.
+    let in_oneshot_folder = path
+        .parent()
+        .and_then(|p| p.strip_prefix(library_root).ok())
+        .map(|rel| {
+            let mut comps = rel.components();
+            match (comps.next(), comps.next()) {
+                (Some(first), None) => is_oneshot_folder(&first.as_os_str().to_string_lossy()),
+                _ => false,
+            }
+        })
+        .unwrap_or(false);
+
+    if in_oneshot_folder {
+        return ParsedMetadata {
+            title: filename.clone(),
+            series: Some(filename),
+            volume: None,
+            volume_type: VolumeType::Oneshot,
+            page_count: None,
+        };
+    }
 
     // Check for INT patterns first (before HS, since "INTHS" contains "HS")
     let (volume, volume_type) = if let Some((int_number, _)) = extract_int_info(&filename) {
@@ -2651,6 +2685,57 @@ mod tests {
         let root = Path::new("/libraries/manga");
         let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
         assert_eq!(meta.series, Some("Dragon Ball".to_string()));
+    }
+
+    // ─── oneshot folder ───────────────────────────────────────────────────────
+
+    #[test]
+    fn oneshot_folder_uses_filename_as_series() {
+        let path = Path::new("/libraries/bd/Oneshots/Blacksad.cbz");
+        let root = Path::new("/libraries/bd");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.series, Some("Blacksad".to_string()));
+        assert_eq!(meta.volume_type, VolumeType::Oneshot);
+        assert_eq!(meta.volume, None);
+    }
+
+    #[test]
+    fn oneshot_folder_case_insensitive() {
+        let path = Path::new("/libraries/bd/ONESHOTS/My One Shot.cbz");
+        let root = Path::new("/libraries/bd");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.series, Some("My One Shot".to_string()));
+        assert_eq!(meta.volume_type, VolumeType::Oneshot);
+    }
+
+    #[test]
+    fn oneshot_folder_hyphenated() {
+        let path = Path::new("/libraries/bd/One-Shots/Persepolis.cbz");
+        let root = Path::new("/libraries/bd");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.series, Some("Persepolis".to_string()));
+        assert_eq!(meta.volume_type, VolumeType::Oneshot);
+    }
+
+    #[test]
+    fn oneshot_folder_underscore_prefix() {
+        let path = Path::new("/libraries/bd/_Oneshots/Maus.cbz");
+        let root = Path::new("/libraries/bd");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        assert_eq!(meta.series, Some("Maus".to_string()));
+        assert_eq!(meta.volume_type, VolumeType::Oneshot);
+    }
+
+    #[test]
+    fn non_oneshot_folder_not_affected() {
+        // "Oneshots" nested 2 levels deep — NOT treated as oneshot folder
+        let path = Path::new("/libraries/bd/MySeries/Oneshots/Extra.cbz");
+        let root = Path::new("/libraries/bd");
+        let meta = parse_metadata_fast(path, BookFormat::Cbz, root);
+        // Not oneshot type — the 2-level check correctly prevents matching
+        assert_ne!(meta.volume_type, VolumeType::Oneshot);
+        // Series is the immediate parent dir (normal behaviour)
+        assert_eq!(meta.series, Some("Oneshots".to_string()));
     }
 
     #[test]

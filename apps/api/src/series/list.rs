@@ -338,6 +338,12 @@ pub async fn list_all_series(
         p += 1; format!("AND ${p} = ANY(s.genres)")
     } else { String::new() };
 
+    let oneshot_cond = match query.oneshot.as_deref() {
+        Some("true") => "AND EXISTS (SELECT 1 FROM books bos WHERE bos.series_id = s.id AND bos.volume_type = 'oneshot')".to_string(),
+        Some("false") => "AND NOT EXISTS (SELECT 1 FROM books bos WHERE bos.series_id = s.id AND bos.volume_type = 'oneshot')".to_string(),
+        _ => String::new(),
+    };
+
     // Missing counts CTE
     let missing_cte = if query.library_id.is_some() {
         helpers::build_missing_counts_cte(Some("$1"))
@@ -369,7 +375,7 @@ pub async fn list_all_series(
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
         LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = sc.library_id
-        WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {author_cond} {has_books_cond} {no_books_cond} {genre_cond}
+        WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {author_cond} {has_books_cond} {no_books_cond} {genre_cond} {oneshot_cond}
         "#
     );
 
@@ -449,6 +455,7 @@ pub async fn list_all_series(
           {has_books_cond}
           {no_books_cond}
           {genre_cond}
+          {oneshot_cond}
         ORDER BY {series_order_clause}
         LIMIT ${limit_p} OFFSET ${offset_p}
         "#

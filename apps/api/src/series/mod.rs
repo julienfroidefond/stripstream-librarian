@@ -130,6 +130,9 @@ pub struct ListAllSeriesQuery {
     /// Filter by genre (exact match, case-sensitive)
     #[schema(value_type = Option<String>, example = "Fantasy")]
     pub genre: Option<String>,
+    /// Filter oneshot series: "true" for oneshots only, "false" to exclude oneshots
+    #[schema(value_type = Option<String>, example = "true")]
+    pub oneshot: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]

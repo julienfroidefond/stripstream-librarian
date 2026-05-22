@@ -162,6 +162,7 @@ const fr = {
   "series.wishlist": "Wishlist",
   "series.wishlistOnly": "Wishlist uniquement",
   "series.inLibrary": "Dans la bibliothèque",
+  "series.oneshotsOnly": "Oneshots uniquement",
   "series.matchingQuery": "correspondant à",
   "series.noResults": "Aucune série trouvée correspondant à vos filtres",
   "series.noSeries": "Aucune série disponible",

@@ -44,6 +44,37 @@ Le verrouillage est stocké dans la colonne JSONB `locked_fields` (ex: `{"descri
 
 `get_or_create_series` vérifie `name` et `original_name` pour éviter les doublons. Matching case-insensitive et accent-insensitive sur les deux champs.
 
+## Dossier Oneshots
+
+Un dossier placé **directement à la racine d'une bibliothèque** et dont le nom correspond à un pattern oneshot est traité spécialement par l'indexer : chaque fichier devient sa propre série avec un seul livre de type `oneshot`.
+
+### Nommage du dossier
+
+Les noms reconnus (insensible à la casse, préfixe `_` ou `.` accepté) :
+
+| Exemples valides |
+|-----------------|
+| `Oneshots/` |
+| `Oneshot/` |
+| `One-Shots/` |
+| `One-Shot/` |
+| `One Shots/` |
+| `_Oneshots/` |
+| `_oneshot/` |
+
+### Comportement
+
+- `MonOneshot.cbz` dans ce dossier → série **"MonOneshot"**, 1 livre, `volume_type = oneshot`
+- Pas de numéro de volume assigné
+- Le titre du livre = le nom de fichier (sans extension)
+- Le reader voit ces séries comme n'importe quelle autre série (un seul livre)
+
+### Filtre dans la liste des séries
+
+Un filtre "Oneshots uniquement" est disponible sur la page Séries pour n'afficher que les oneshots (ou les exclure).
+
+**API** : paramètre `oneshot=true` (oneshots seulement) ou `oneshot=false` (exclure les oneshots).
+
 ## Wishlist
 
 Les séries **sans livres** fonctionnent comme une wishlist — elles ont été ajoutées via la découverte mais pas encore importées dans la bibliothèque.

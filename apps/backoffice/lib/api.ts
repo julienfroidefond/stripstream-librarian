@@ -498,6 +498,7 @@ export async function fetchAllSeries(
   author?: string,
   noBooks?: boolean,
   hasBooks?: boolean,
+  oneshot?: boolean,
 ): Promise<SeriesPageDto> {
   const params = new URLSearchParams();
   if (libraryId) params.set("library_id", libraryId);
@@ -510,6 +511,7 @@ export async function fetchAllSeries(
   if (author) params.set("author", author);
   if (noBooks) params.set("no_books", "true");
   if (hasBooks) params.set("has_books", "true");
+  if (oneshot !== undefined) params.set("oneshot", oneshot ? "true" : "false");
   params.set("page", page.toString());
   params.set("limit", limit.toString());
 
