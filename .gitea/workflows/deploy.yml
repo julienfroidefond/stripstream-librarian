@@ -19,20 +19,23 @@ jobs:
       docs: ${{ steps.filter.outputs.docs }}
       version: ${{ steps.filter.outputs.version }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
       - name: Read version and detect changes
         id: filter
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
+          # Manual clone — no Node.js action, no post-step, no submodule foreach
+          REPO=$(mktemp -d)
+          git -c "http.extraheader=Authorization: Bearer ${GITHUB_TOKEN}" \
+            clone --depth=1 --no-recurse-submodules \
+            "${GITHUB_SERVER_URL%/}/${GITHUB_REPOSITORY}.git" \
+            "$REPO"
+          cd "$REPO"
           # Version from Cargo.toml
           v=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Detected version: $v"
-          # Files changed in the HEAD commit (works with depth=1 clone)
+          # Files changed in the HEAD commit
           changed=$(git show --name-only --pretty="" HEAD)
           echo "Changed files:"
           echo "$changed"
@@ -54,6 +57,7 @@ jobs:
           else
             echo "docs=false" >> "$GITHUB_OUTPUT"
           fi
+          rm -rf "$REPO"
 
 
   build:
