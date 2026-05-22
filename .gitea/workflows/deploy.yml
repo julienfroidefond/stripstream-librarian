@@ -57,8 +57,16 @@ jobs:
     needs: detect
     runs-on: mac-orbstack-runner
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Clone repository
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          REPO_DIR="$HOME/build-${{ github.run_id }}"
+          echo "REPO_DIR=$REPO_DIR" >> "$GITHUB_ENV"
+          git clone --quiet --depth=1 \
+            -c "http.extraheader=Authorization: Bearer ${GITHUB_TOKEN}" \
+            "${{ github.server_url }}/${{ github.repository }}.git" \
+            "$REPO_DIR"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -76,8 +84,8 @@ jobs:
         if: needs.detect.outputs.api == 'true'
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: apps/api/Dockerfile
+          context: ${{ env.REPO_DIR }}
+          file: ${{ env.REPO_DIR }}/apps/api/Dockerfile
           target: api
           platforms: ${{ env.PLATFORMS }}
           push: true
@@ -91,8 +99,8 @@ jobs:
         if: needs.detect.outputs.api == 'true'
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: apps/api/Dockerfile
+          context: ${{ env.REPO_DIR }}
+          file: ${{ env.REPO_DIR }}/apps/api/Dockerfile
           target: indexer
           platforms: ${{ env.PLATFORMS }}
           push: true
@@ -108,8 +116,8 @@ jobs:
         if: needs.detect.outputs.backoffice == 'true'
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: apps/backoffice/Dockerfile
+          context: ${{ env.REPO_DIR }}
+          file: ${{ env.REPO_DIR }}/apps/backoffice/Dockerfile
           platforms: ${{ env.PLATFORMS }}
           push: true
           tags: |
@@ -122,8 +130,8 @@ jobs:
         if: needs.detect.outputs.docs == 'true'
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: apps/docs/Dockerfile
+          context: ${{ env.REPO_DIR }}
+          file: ${{ env.REPO_DIR }}/apps/docs/Dockerfile
           platforms: ${{ env.PLATFORMS }}
           push: true
           tags: |
@@ -131,6 +139,10 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:${{ needs.detect.outputs.version }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:buildcache,mode=max
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf "$REPO_DIR"
 
   deploy:
     needs: [detect, build]
