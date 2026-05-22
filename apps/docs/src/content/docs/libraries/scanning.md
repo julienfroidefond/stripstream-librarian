@@ -65,8 +65,29 @@ Patterns supportés (par ordre de priorité) :
 | `regular` | Volume standard numéroté (défaut) | Par défaut |
 | `hs` | Hors-série / édition spéciale | HS, Hors-Série, Spécial, Bonus |
 | `integral` | Omnibus / intégrale | INT, INTHS, Intégrale |
-| `oneshot` | Livre autonome | Manuel uniquement |
+| `oneshot` | Livre autonome | Dossier Oneshots à la racine de la bibliothèque (auto) ou manuel |
 
 :::important
 Seuls les volumes `regular` participent à la numérotation des tomes. Les HS, oneshot et intégrales sont exclus du comptage de manquants et du matching metadata.
 :::
+
+### Dossier Oneshots
+
+Un dossier placé **directement à la racine d'une bibliothèque** dont le nom correspond à un pattern oneshot est traité automatiquement : chaque fichier devient sa propre série avec un seul livre de type `oneshot`.
+
+Noms reconnus (insensible à la casse, préfixe `_` ou `.` accepté) : `Oneshots`, `Oneshot`, `One-Shots`, `One-Shot`, `One Shots`, `One Shot`.
+
+```
+Ma Bibliothèque/
+├── Oneshots/
+│   ├── Blacksad.cbz       → série "Blacksad", 1 livre, volume_type = oneshot
+│   └── Persepolis.cbz     → série "Persepolis", 1 livre, volume_type = oneshot
+└── Dragon Ball/
+    └── T01.cbz            → série "Dragon Ball", volume_type = regular
+```
+
+- Le titre du livre = nom de fichier sans extension
+- Aucun numéro de volume assigné
+- Un dossier `Oneshots` imbriqué (2 niveaux ou plus) n'est **pas** traité comme dossier oneshot
+
+Voir aussi la [gestion des séries](/series/management) pour le filtre par type de volume.
