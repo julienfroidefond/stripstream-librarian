@@ -1,5 +1,6 @@
 import { getSettings, getCacheStats, getThumbnailStats, fetchUsers, apiFetch } from "@/lib/api";
 import SettingsPage from "./SettingsPage";
+import { TokensTab } from "./components/TokensTab";
 import packageJson from "../../../package.json";
 
 export const dynamic = "force-dynamic";
@@ -23,8 +24,8 @@ async function fetchIndexerVersion(): Promise<string> {
   return "?";
 }
 
-export default async function SettingsPageWrapper({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  const { tab } = await searchParams;
+export default async function SettingsPageWrapper({ searchParams }: { searchParams: Promise<{ tab?: string; created?: string }> }) {
+  const { tab, created: createdToken } = await searchParams;
   const [settings, cacheStats, thumbnailStats, users, prowlarr, qbittorrent, torrentImport, telegram, anilist, komga, metadataProviders, statusMappings, seriesStatuses, providerStatuses, apiVersion, indexerVersion, renameFormat, renameFormatHs] = await Promise.all([
     getSettings().catch(() => ({
       image_processing: { format: "webp", quality: 85, filter: "lanczos3", max_width: 2160 },
@@ -64,6 +65,7 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
       initialThumbnailStats={thumbnailStats}
       users={users}
       initialTab={tab}
+      tokensContent={<TokensTab createdToken={createdToken} />}
       initialProwlarr={prowlarr}
       initialQbittorrent={qbittorrent}
       initialTorrentImport={torrentImport}

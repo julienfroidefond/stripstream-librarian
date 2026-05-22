@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, FormRow, Icon, toast, Toaster } from "@/app/components/ui";
 import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, UserDto } from "@/lib/api";
@@ -34,9 +34,10 @@ interface SettingsPageProps {
   initialRenameFormat: string | null;
   initialRenameFormatHs: string | null;
   versions?: { api: string; indexer: string; backoffice: string };
+  tokensContent?: ReactNode;
 }
 
-export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, initialRenameFormatHs, versions }: SettingsPageProps) {
+export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, initialRenameFormatHs, versions, tokensContent }: SettingsPageProps) {
   const { t, locale, setLocale } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -51,7 +52,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
   const [clearResult, setClearResult] = useState<ClearCacheResponse | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const VALID_TABS = ["general", "downloadTools", "metadata", "readingStatus", "notifications"] as const;
+  const VALID_TABS = ["general", "downloadTools", "metadata", "readingStatus", "notifications", "tokens"] as const;
   type TabId = typeof VALID_TABS[number];
 
   function resolveTab(tab: string | null | undefined): TabId {
@@ -118,11 +119,12 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
   }
 
   const tabs = [
-    { id: "general" as const, label: t("settings.general"), icon: "settings" as const },
-    { id: "downloadTools" as const, label: t("settings.downloadTools"), icon: "play" as const },
-    { id: "metadata" as const, label: t("settings.metadata"), icon: "tag" as const },
-    { id: "readingStatus" as const, label: t("settings.readingStatus"), icon: "eye" as const },
-    { id: "notifications" as const, label: t("settings.notifications"), icon: "bell" as const },
+    { id: "general" as const, label: t("settings.general"), icon: "settings" as const, color: "text-slate-400" },
+    { id: "downloadTools" as const, label: t("settings.downloadTools"), icon: "play" as const, color: "text-sky-500" },
+    { id: "metadata" as const, label: t("settings.metadata"), icon: "tag" as const, color: "text-violet-500" },
+    { id: "readingStatus" as const, label: t("settings.readingStatus"), icon: "eye" as const, color: "text-amber-500" },
+    { id: "notifications" as const, label: t("settings.notifications"), icon: "bell" as const, color: "text-orange-500" },
+    { id: "tokens" as const, label: t("nav.tokens"), icon: "tokens" as const, color: "text-rose-500" },
   ];
 
   return (
@@ -146,7 +148,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                 : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
             }`}
           >
-            <Icon name={tab.icon} size="sm" />
+            <Icon name={tab.icon} size="sm" className={tab.color} />
             {tab.label}
           </button>
         ))}
@@ -621,6 +623,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         <AnilistTab handleUpdateSetting={handleUpdateSetting} users={users} initialData={initialAnilist} />
         <KomgaSyncCard users={users} initialData={initialKomga} />
       </>)}
+
+      {activeTab === "tokens" && tokensContent}
 
       <Toaster />
     </>
