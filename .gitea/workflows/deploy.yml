@@ -19,41 +19,38 @@ jobs:
       docs: ${{ steps.filter.outputs.docs }}
       version: ${{ steps.filter.outputs.version }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
       - name: Read version and detect changes
         id: filter
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          # Version from Cargo.toml
-          v=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          REPO=$(mktemp -d)
+          git clone --quiet --depth=1 \
+            -c "http.extraheader=Authorization: Bearer ${GITHUB_TOKEN}" \
+            "${{ github.server_url }}/${{ github.repository }}.git" \
+            "$REPO"
+          v=$(grep '^version = ' "$REPO/Cargo.toml" | head -1 | sed 's/version = "\(.*\)"/\1/')
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Detected version: $v"
-          # Files changed in the HEAD commit
-          changed=$(git show --name-only --pretty="" HEAD)
+          changed=$(git -C "$REPO" show --name-only --pretty="" HEAD)
           echo "Changed files:"
           echo "$changed"
-          # api: Rust sources, Cargo files, migrations
           if echo "$changed" | grep -qE "^(apps/api/|apps/indexer/|crates/|Cargo\.toml|Cargo\.lock|infra/migrations/)"; then
             echo "api=true" >> "$GITHUB_OUTPUT"
           else
             echo "api=false" >> "$GITHUB_OUTPUT"
           fi
-          # backoffice: Next.js app
           if echo "$changed" | grep -qE "^apps/backoffice/"; then
             echo "backoffice=true" >> "$GITHUB_OUTPUT"
           else
             echo "backoffice=false" >> "$GITHUB_OUTPUT"
           fi
-          # docs: Astro/Starlight
           if echo "$changed" | grep -qE "^apps/docs/"; then
             echo "docs=true" >> "$GITHUB_OUTPUT"
           else
             echo "docs=false" >> "$GITHUB_OUTPUT"
           fi
+          rm -rf "$REPO"
 
 
   build:
