@@ -147,11 +147,6 @@ jobs:
   deploy:
     needs: [detect, build]
     runs-on: mac-orbstack-runner
-    # Skip deploy when no service was rebuilt (e.g. doc-only or workflow-only commit)
-    if: |
-      needs.detect.outputs.api == 'true' ||
-      needs.detect.outputs.backoffice == 'true' ||
-      needs.detect.outputs.docs == 'true'
     steps:
       - name: Pull images and restart stack
         env:
