@@ -31,7 +31,6 @@ const navItems: NavItem[] = [
   { href: "/libraries", labelKey: "nav.libraries", icon: "libraries", color: "text-primary" },
   { href: "/discovery", labelKey: "nav.discovery", icon: "search", color: "text-cyan-500" },
   { href: "/downloads", labelKey: "nav.downloads", icon: "download", color: "text-emerald-500" },
-  { href: "/jobs", labelKey: "nav.jobs", icon: "jobs", color: "text-amber-500" },
   { href: "/tokens", labelKey: "nav.tokens", icon: "tokens", color: "text-rose-500" },
   { href: "/settings", labelKey: "nav.settings", icon: "settings", color: "text-slate-400" },
 ];

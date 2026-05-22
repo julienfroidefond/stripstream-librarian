@@ -30,8 +30,7 @@ interface Job {
 // Icons
 const JobsIcon = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-    <rect x="2" y="3" width="20" height="18" rx="2" />
-    <path d="M6 8h12M6 12h12M6 16h8" strokeLinecap="round" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
   </svg>
 );
 
