@@ -496,6 +496,8 @@ export async function fetchAllSeries(
   hasMissing?: boolean,
   metadataProvider?: string,
   author?: string,
+  noBooks?: boolean,
+  hasBooks?: boolean,
 ): Promise<SeriesPageDto> {
   const params = new URLSearchParams();
   if (libraryId) params.set("library_id", libraryId);
@@ -506,6 +508,8 @@ export async function fetchAllSeries(
   if (hasMissing) params.set("has_missing", "true");
   if (metadataProvider) params.set("metadata_provider", metadataProvider);
   if (author) params.set("author", author);
+  if (noBooks) params.set("no_books", "true");
+  if (hasBooks) params.set("has_books", "true");
   params.set("page", page.toString());
   params.set("limit", limit.toString());
 

@@ -121,6 +121,9 @@ pub struct ListAllSeriesQuery {
     /// Only return series with at least one book: "true" to exclude empty series
     #[schema(value_type = Option<String>, example = "true")]
     pub has_books: Option<String>,
+    /// Only return series with no books (wishlist): "true" to show only empty series
+    #[schema(value_type = Option<String>, example = "true")]
+    pub no_books: Option<String>,
     /// Sort order: "title" (default) or "latest" (most recently added first)
     #[schema(value_type = Option<String>, example = "latest")]
     pub sort: Option<String>,

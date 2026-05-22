@@ -29,13 +29,14 @@ export default async function SeriesPage({
   const sort = paramString(sp, "sort");
   const seriesStatus = paramString(sp, "series_status");
   const hasMissing = paramBool(sp, "has_missing");
+  const booksFilter = paramString(sp, "books_filter"); // "wishlist" | "in_library" | ""
   const metadataProvider = paramString(sp, "metadata_provider");
   const page = paramInt(sp, "page", 1);
   const limit = paramInt(sp, "limit", 20);
 
   const [libraries, seriesPage, dbStatuses] = await Promise.all([
     fetchLibraries().catch(() => [] as LibraryDto[]),
-    fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit, sort, seriesStatus, hasMissing, metadataProvider).catch(
+    fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit, sort, seriesStatus, hasMissing, metadataProvider, undefined, booksFilter === "wishlist", booksFilter === "in_library").catch(
       () => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }) as SeriesPageDto
     ),
     fetchSeriesStatuses().catch(() => [] as string[]),
@@ -48,7 +49,7 @@ export default async function SeriesPage({
     { value: "latest", label: t("books.sortLatest") },
   ];
 
-  const hasFilters = searchQuery || libraryId || readingStatus || sort || seriesStatus || hasMissing || metadataProvider;
+  const hasFilters = searchQuery || libraryId || readingStatus || sort || seriesStatus || hasMissing || booksFilter || metadataProvider;
 
   const libraryOptions = [
     { value: "", label: t("books.allLibraries") },
@@ -77,6 +78,12 @@ export default async function SeriesPage({
   const missingOptions = [
     { value: "", label: t("common.all") },
     { value: "true", label: t("series.missingBooks") },
+  ];
+
+  const wishlistOptions = [
+    { value: "", label: t("common.all") },
+    { value: "wishlist", label: t("series.wishlistOnly") },
+    { value: "in_library", label: t("series.inLibrary") },
   ];
 
   const metadataOptions = [
@@ -116,6 +123,7 @@ export default async function SeriesPage({
               status: readingStatus || "",
               series_status: seriesStatus || "",
               has_missing: hasMissing ? "true" : "",
+              books_filter: booksFilter || "",
               metadata_provider: metadataProvider || "",
               sort: sort || "",
             }}
@@ -125,6 +133,7 @@ export default async function SeriesPage({
               { name: "status", type: "select", label: t("series.reading"), options: statusOptions },
               { name: "series_status", type: "select", label: t("editSeries.status"), options: seriesStatusOptions },
               { name: "has_missing", type: "select", label: t("series.missing"), options: missingOptions },
+              { name: "books_filter", type: "select", label: t("series.wishlist"), options: wishlistOptions },
               { name: "metadata_provider", type: "select", label: t("series.metadata"), options: metadataOptions },
               { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },
             ]}
