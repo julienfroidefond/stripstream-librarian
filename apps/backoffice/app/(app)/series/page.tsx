@@ -29,14 +29,15 @@ export default async function SeriesPage({
   const sort = paramString(sp, "sort");
   const seriesStatus = paramString(sp, "series_status");
   const hasMissing = paramBool(sp, "has_missing");
-  const booksFilter = paramString(sp, "books_filter"); // "wishlist" | "in_library" | "oneshot" | ""
+  const booksFilter = paramString(sp, "books_filter"); // "wishlist" | "in_library" | ""
+  const volumeTypeFilter = paramString(sp, "volume_type"); // "regular" | "oneshot" | "hs" | "integral" | ""
   const metadataProvider = paramString(sp, "metadata_provider");
   const page = paramInt(sp, "page", 1);
   const limit = paramInt(sp, "limit", 20);
 
   const [libraries, seriesPage, dbStatuses] = await Promise.all([
     fetchLibraries().catch(() => [] as LibraryDto[]),
-    fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit, sort, seriesStatus, hasMissing, metadataProvider, undefined, booksFilter === "wishlist", booksFilter === "in_library", booksFilter === "oneshot" ? true : booksFilter === "no_oneshot" ? false : undefined).catch(
+    fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit, sort, seriesStatus, hasMissing, metadataProvider, undefined, booksFilter === "wishlist", booksFilter === "in_library", volumeTypeFilter || undefined).catch(
       () => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }) as SeriesPageDto
     ),
     fetchSeriesStatuses().catch(() => [] as string[]),
@@ -49,7 +50,7 @@ export default async function SeriesPage({
     { value: "latest", label: t("books.sortLatest") },
   ];
 
-  const hasFilters = searchQuery || libraryId || readingStatus || sort || seriesStatus || hasMissing || booksFilter || metadataProvider;
+  const hasFilters = searchQuery || libraryId || readingStatus || sort || seriesStatus || hasMissing || booksFilter || volumeTypeFilter || metadataProvider;
 
   const libraryOptions = [
     { value: "", label: t("books.allLibraries") },
@@ -84,7 +85,14 @@ export default async function SeriesPage({
     { value: "", label: t("common.all") },
     { value: "wishlist", label: t("series.wishlistOnly") },
     { value: "in_library", label: t("series.inLibrary") },
-    { value: "oneshot", label: t("series.oneshotsOnly") },
+  ];
+
+  const volumeTypeOptions = [
+    { value: "", label: t("common.all") },
+    { value: "regular", label: t("volumeType.regular") },
+    { value: "oneshot", label: t("volumeType.oneshot") },
+    { value: "hs", label: t("volumeType.hs") },
+    { value: "integral", label: t("volumeType.integral") },
   ];
 
   const metadataOptions = [
@@ -125,6 +133,7 @@ export default async function SeriesPage({
               series_status: seriesStatus || "",
               has_missing: hasMissing ? "true" : "",
               books_filter: booksFilter || "",
+              volume_type: volumeTypeFilter || "",
               metadata_provider: metadataProvider || "",
               sort: sort || "",
             }}
@@ -135,6 +144,7 @@ export default async function SeriesPage({
               { name: "series_status", type: "select", label: t("editSeries.status"), options: seriesStatusOptions },
               { name: "has_missing", type: "select", label: t("series.missing"), options: missingOptions },
               { name: "books_filter", type: "select", label: t("series.wishlist"), options: wishlistOptions },
+              { name: "volume_type", type: "select", label: t("series.volumeType"), options: volumeTypeOptions },
               { name: "metadata_provider", type: "select", label: t("series.metadata"), options: metadataOptions },
               { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },
             ]}

@@ -71,9 +71,17 @@ Les noms reconnus (insensible à la casse, préfixe `_` ou `.` accepté) :
 
 ### Filtre dans la liste des séries
 
-Un filtre "Oneshots uniquement" est disponible sur la page Séries pour n'afficher que les oneshots (ou les exclure).
+Un filtre **Type** est disponible sur la page Séries pour filtrer par type de volume.
 
-**API** : paramètre `oneshot=true` (oneshots seulement) ou `oneshot=false` (exclure les oneshots).
+| Valeur | Description |
+|--------|-------------|
+| (tous) | Toutes les séries |
+| Régulier | Séries avec au moins un tome régulier |
+| One-shot | Séries avec au moins un oneshot |
+| Hors-Série | Séries avec au moins un hors-série |
+| Intégrales | Séries avec au moins une intégrale |
+
+**API** : paramètre `volume_type=oneshot` (ou `regular`, `hs`, `integral`).
 
 ## Wishlist
 

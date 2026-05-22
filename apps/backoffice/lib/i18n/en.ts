@@ -161,6 +161,7 @@ const en: Record<TranslationKey, string> = {
   "series.reading": "Reading",
   "series.missing": "Missing",
   "series.missingBooks": "Missing books",
+  "series.volumeType": "Type",
   "series.wishlist": "Wishlist",
   "series.wishlistOnly": "Wishlist only",
   "series.inLibrary": "In library",

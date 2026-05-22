@@ -338,11 +338,11 @@ pub async fn list_all_series(
         p += 1; format!("AND ${p} = ANY(s.genres)")
     } else { String::new() };
 
-    let oneshot_cond = match query.oneshot.as_deref() {
-        Some("true") => "AND EXISTS (SELECT 1 FROM books bos WHERE bos.series_id = s.id AND bos.volume_type = 'oneshot')".to_string(),
-        Some("false") => "AND NOT EXISTS (SELECT 1 FROM books bos WHERE bos.series_id = s.id AND bos.volume_type = 'oneshot')".to_string(),
-        _ => String::new(),
-    };
+    let oneshot_cond = if let Some(vt) = query.volume_type.as_deref() {
+        let safe_vt = match vt { "regular" | "oneshot" | "hs" | "integral" => vt, _ => "" };
+        if safe_vt.is_empty() { String::new() }
+        else { format!("AND EXISTS (SELECT 1 FROM books bvt WHERE bvt.series_id = s.id AND bvt.volume_type = '{safe_vt}')") }
+    } else { String::new() };
 
     // Missing counts CTE
     let missing_cte = if query.library_id.is_some() {

@@ -159,6 +159,7 @@ const fr = {
   "series.reading": "Lecture",
   "series.missing": "Manquant",
   "series.missingBooks": "Livres manquants",
+  "series.volumeType": "Type",
   "series.wishlist": "Wishlist",
   "series.wishlistOnly": "Wishlist uniquement",
   "series.inLibrary": "Dans la bibliothèque",
