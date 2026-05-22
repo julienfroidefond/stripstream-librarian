@@ -204,9 +204,8 @@ export function DownloadsIndicator() {
         href="/downloads"
         className="
           flex items-center justify-center
-          px-2.5 py-1.5
-          rounded-lg
-          text-xs font-medium
+          h-9 w-9
+          rounded-md
           text-muted-foreground
           hover:text-foreground
           hover:bg-accent
@@ -345,7 +344,7 @@ export function DownloadsIndicator() {
         ref={buttonRef}
         className={`
           flex items-center gap-1.5
-          px-2.5 py-1.5
+          h-9 px-2.5
           rounded-lg
           border
           text-xs font-medium
