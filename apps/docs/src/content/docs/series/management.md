@@ -43,3 +43,23 @@ Le verrouillage est stocké dans la colonne JSONB `locked_fields` (ex: `{"descri
 ## Déduplication au renommage
 
 `get_or_create_series` vérifie `name` et `original_name` pour éviter les doublons. Matching case-insensitive et accent-insensitive sur les deux champs.
+
+## Wishlist
+
+Les séries **sans livres** fonctionnent comme une wishlist — elles ont été ajoutées via la découverte mais pas encore importées dans la bibliothèque.
+
+Sur la page Séries, un filtre permet de basculer entre trois états :
+
+| Valeur | Description |
+|--------|-------------|
+| (tous) | Toutes les séries |
+| Wishlist | Séries sans livres (ajoutées en wishlist) |
+| Dans la bibliothèque | Séries avec au moins un livre |
+
+### API
+
+Le paramètre `no_books=true` retourne uniquement les séries sans livres. Le paramètre `has_books=true` retourne uniquement les séries avec au moins un livre. Les deux sont mutuellement exclusifs.
+
+### Nettoyage automatique
+
+Les séries sans livres **et** sans metadata links **et** sans downloads disponibles sont supprimées automatiquement lors du nettoyage des séries orphelines. Les séries ajoutées via la découverte (avec metadata links) sont préservées.

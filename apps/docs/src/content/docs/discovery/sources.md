@@ -15,7 +15,7 @@ description: Parcourir et découvrir de nouvelles séries
 | SensCritique Top BD | SensCritique `top` | Rang | — |
 | SensCritique Top Manga | SensCritique `poll` | Rang | — |
 | AniList | AniList trending manga | Popularité | — |
-| Prowlarr | Prowlarr releases agrégées | Seeders | — |
+| Prowlarr | Prowlarr releases agrégées | Seeders + récents | — |
 
 ## Cache
 
@@ -27,6 +27,10 @@ description: Parcourir et découvrir de nouvelles séries
 
 - Les séries déjà possédées sont filtrées côté serveur
 - Les suggestions masquées sont filtrées (hide/unhide par utilisateur)
+
+## Recommandations personnalisées
+
+Un onglet **Recommandations** propose des séries de votre bibliothèque non encore commencées, basées sur vos dernières lectures. Voir [Séries liées & Recommandations](/series/related/) pour le détail du scoring.
 
 ## Masquer des suggestions
 
