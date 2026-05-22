@@ -22,14 +22,13 @@ jobs:
       - name: Read version and detect changes
         id: filter
         run: |
-          cd /Users/julienfroidefond/Sites/stripstream-librarian
-          git fetch origin main --quiet
+          cd "$GITHUB_WORKSPACE"
           # Version from Cargo.toml
           v=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Detected version: $v"
-          # Diff between last two commits
-          changed=$(git diff --name-only HEAD~1 HEAD)
+          # Files changed in the HEAD commit (works with depth=1 clone)
+          changed=$(git show --name-only --pretty="" HEAD)
           echo "Changed files:"
           echo "$changed"
           # api: Rust sources, Cargo files, migrations
