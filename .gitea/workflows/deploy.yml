@@ -17,36 +17,40 @@ jobs:
       api: ${{ steps.filter.outputs.api }}
       backoffice: ${{ steps.filter.outputs.backoffice }}
       docs: ${{ steps.filter.outputs.docs }}
-      version: ${{ steps.version.outputs.version }}
+      version: ${{ steps.filter.outputs.version }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 2  # need parent commit for path-filter to diff against
-
-      - name: Read version from Cargo.toml
-        id: version
+      - name: Read version and detect changes
+        id: filter
         run: |
+          cd /Users/julienfroidefond/Sites/stripstream-librarian
+          git fetch origin main --quiet
+          # Version from Cargo.toml
           v=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Detected version: $v"
+          # Diff between last two commits
+          changed=$(git diff --name-only HEAD~1 HEAD)
+          echo "Changed files:"
+          echo "$changed"
+          # api: Rust sources, Cargo files, migrations
+          if echo "$changed" | grep -qE "^(apps/api/|apps/indexer/|crates/|Cargo\.toml|Cargo\.lock|infra/migrations/)"; then
+            echo "api=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "api=false" >> "$GITHUB_OUTPUT"
+          fi
+          # backoffice: Next.js app
+          if echo "$changed" | grep -qE "^apps/backoffice/"; then
+            echo "backoffice=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "backoffice=false" >> "$GITHUB_OUTPUT"
+          fi
+          # docs: Astro/Starlight
+          if echo "$changed" | grep -qE "^apps/docs/"; then
+            echo "docs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Detect changed services
-        id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            api:
-              - 'apps/api/**'
-              - 'apps/indexer/**'
-              - 'crates/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - 'infra/migrations/**'
-            backoffice:
-              - 'apps/backoffice/**'
-            docs:
-              - 'apps/docs/**'
 
   build:
     needs: detect
