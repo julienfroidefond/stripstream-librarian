@@ -25,14 +25,14 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           REPO=$(mktemp -d)
-          git clone --quiet --depth=1 \
+          git clone --quiet --depth=2 \
             -c "http.extraheader=Authorization: Bearer ${GITHUB_TOKEN}" \
             "${{ github.server_url }}/${{ github.repository }}.git" \
             "$REPO"
           v=$(grep '^version = ' "$REPO/Cargo.toml" | head -1 | sed 's/version = "\(.*\)"/\1/')
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Detected version: $v"
-          changed=$(git -C "$REPO" show --name-only --pretty="" HEAD)
+          changed=$(git -C "$REPO" diff --name-only HEAD~1 HEAD)
           echo "Changed files:"
           echo "$changed"
           if echo "$changed" | grep -qE "^(apps/api/|apps/indexer/|crates/|Cargo\.toml|Cargo\.lock|infra/migrations/)"; then
