@@ -19,10 +19,14 @@ jobs:
       docs: ${{ steps.filter.outputs.docs }}
       version: ${{ steps.filter.outputs.version }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Read version and detect changes
         id: filter
         run: |
-          cd "$GITHUB_WORKSPACE"
           # Version from Cargo.toml
           v=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
           echo "version=$v" >> "$GITHUB_OUTPUT"
