@@ -19,15 +19,21 @@ jobs:
       docs: ${{ steps.filter.outputs.docs }}
       version: ${{ steps.filter.outputs.version }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Read version and detect changes
         id: filter
         run: |
           # Version from Cargo.toml
-          v=$(grep '^version = ' "$GITHUB_WORKSPACE/Cargo.toml" | head -1 | sed 's/version = "\(.*\)"/\1/')
+          v=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Detected version: $v"
           # Files changed in the HEAD commit
-          changed=$(git -C "$GITHUB_WORKSPACE" show --name-only --pretty="" HEAD)
+          changed=$(git show --name-only --pretty="" HEAD)
           echo "Changed files:"
           echo "$changed"
           # api: Rust sources, Cargo files, migrations
