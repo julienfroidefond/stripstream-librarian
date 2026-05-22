@@ -39,7 +39,7 @@ export default async function DiscoveryPage({
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Icon name="search" size="xl" className="text-indigo-500" />
+        <Icon name="search" size="xl" className="text-rose-500" />
         <h1 className="text-3xl font-bold text-foreground">{t("discovery.title")}</h1>
       </div>
 
