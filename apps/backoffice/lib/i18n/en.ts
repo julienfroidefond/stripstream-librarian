@@ -44,7 +44,7 @@ const en: Record<TranslationKey, string> = {
   "common.first": "First",
   "common.previousPage": "Previous page",
   "common.nextPage": "Next page",
-  "common.backoffice": "backoffice",
+  "common.backoffice": "BO",
   "common.and": "and",
   "common.via": "via",
   "common.refresh": "Refresh",

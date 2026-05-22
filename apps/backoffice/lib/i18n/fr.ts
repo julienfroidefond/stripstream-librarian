@@ -42,7 +42,7 @@ const fr = {
   "common.first": "Premier",
   "common.previousPage": "Page précédente",
   "common.nextPage": "Page suivante",
-  "common.backoffice": "backoffice",
+  "common.backoffice": "BO",
   "common.and": "et",
   "common.via": "via",
   "common.refresh": "Rafraîchir",
