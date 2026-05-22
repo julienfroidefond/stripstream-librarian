@@ -28,7 +28,7 @@ const navItems: NavItem[] = [
   { href: "/authors", labelKey: "nav.authors", icon: "authors", color: "text-violet-500" },
   { href: "/genres", labelKey: "nav.genres", icon: "tag", color: "text-pink-500" },
   { href: "/libraries", labelKey: "nav.libraries", icon: "libraries", color: "text-primary" },
-  { href: "/discovery", labelKey: "nav.discovery", icon: "search", color: "text-cyan-500" },
+  { href: "/discovery", labelKey: "nav.discovery", icon: "search", color: "text-orange-500" },
 ];
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
