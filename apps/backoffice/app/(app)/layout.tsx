@@ -32,7 +32,6 @@ const navItems: NavItem[] = [
   { href: "/discovery", labelKey: "nav.discovery", icon: "search", color: "text-cyan-500" },
   { href: "/downloads", labelKey: "nav.downloads", icon: "download", color: "text-emerald-500" },
   { href: "/tokens", labelKey: "nav.tokens", icon: "tokens", color: "text-rose-500" },
-  { href: "/settings", labelKey: "nav.settings", icon: "settings", color: "text-slate-400" },
 ];
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
@@ -86,13 +85,23 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             <DownloadsIndicator />
             <JobsIndicator />
             <ThemeToggle />
-            <div className="hidden md:block">
+            <div className="hidden md:flex items-center">
+              <Link
+                href="/settings"
+                title={t("nav.settings")}
+                className="h-9 w-9 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-200"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </Link>
               <LogoutButton />
             </div>
             <MobileNav
               navItems={[
                 { href: "/", label: t("nav.dashboard"), icon: "dashboard" },
                 ...navItems.map(item => ({ ...item, label: t(item.labelKey) })),
+                { href: "/settings", label: t("nav.settings"), icon: "settings" as const },
               ]}
               users={users}
               activeUserId={activeUserId}
