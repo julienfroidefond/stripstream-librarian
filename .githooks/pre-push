@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+[ -z "$VERSION" ] && exit 0
+
+TAG="v$VERSION"
+git rev-parse "$TAG" >/dev/null 2>&1 && exit 0
+
+echo "pre-push: tagging $TAG"
+git tag "$TAG"
