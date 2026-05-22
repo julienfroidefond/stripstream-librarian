@@ -6,9 +6,8 @@ import { revalidatePath } from "next/cache";
 import { ThemeToggle } from "@/app/theme-toggle";
 import { JobsIndicator } from "@/app/components/JobsIndicator";
 import { DownloadsIndicator } from "@/app/components/DownloadsIndicator";
-import { NavIcon, Icon } from "@/app/components/ui";
+import { NavIcon } from "@/app/components/ui";
 import { NavLink } from "@/app/components/NavLink";
-import { CollapsibleNav, CollapsibleNavProvider, NavToggleButton } from "@/app/components/CollapsibleNav";
 import { LogoutButton } from "@/app/components/LogoutButton";
 import { MobileNav } from "@/app/components/MobileNav";
 import { UserSwitcher } from "@/app/components/UserSwitcher";
@@ -52,16 +51,15 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <CollapsibleNavProvider>
       <header
         className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/70 backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-background/60"
         style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
-        {/* Row 1: Logo + actions */}
-        <div className="container mx-auto flex h-12 items-center justify-between px-4">
+        <div className="container mx-auto grid grid-cols-[auto_1fr_auto] h-12 items-center gap-2 px-4">
+          {/* Logo */}
           <Link
             href="/"
-            className="flex items-center gap-3 hover:opacity-80 transition-opacity duration-200"
+            className="flex items-center gap-3 hover:opacity-80 transition-opacity duration-200 shrink-0"
           >
             <Image src="/logo.webp" alt="StripStream" width={32} height={32} className="rounded-lg" />
             <div className="flex items-baseline gap-2">
@@ -72,7 +70,18 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             </div>
           </Link>
 
-          <div className="flex items-center gap-1.5">
+          {/* Nav items — desktop only */}
+          <nav className="hidden md:flex items-center justify-center gap-1">
+            {navItems.map((item) => (
+              <NavLink key={item.href} href={item.href} title={t(item.labelKey)}>
+                <NavIcon name={item.icon} className={item.color} />
+                <span className="ml-2 hidden xl:inline">{t(item.labelKey)}</span>
+              </NavLink>
+            ))}
+          </nav>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1.5 justify-end">
             <div className="hidden md:block">
               <UserSwitcher
                 users={users}
@@ -105,21 +114,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
               activeUserId={activeUserId}
               setActiveUserAction={setActiveUserAction}
             />
-            <NavToggleButton />
           </div>
         </div>
-
-        {/* Row 2: Collapsible navigation */}
-        <CollapsibleNav>
-          {navItems.map((item) => (
-            <NavLink key={item.href} href={item.href} title={t(item.labelKey)}>
-              <NavIcon name={item.icon} className={item.color} />
-              <span className="ml-2 hidden xl:inline">{t(item.labelKey)}</span>
-            </NavLink>
-          ))}
-        </CollapsibleNav>
       </header>
-      </CollapsibleNavProvider>
 
       <main
         className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-16"
