@@ -11,7 +11,7 @@ import { NavLink } from "@/app/components/NavLink";
 import { LogoutButton } from "@/app/components/LogoutButton";
 import { MobileNav } from "@/app/components/MobileNav";
 import { UserSwitcher } from "@/app/components/UserSwitcher";
-import { fetchUsers } from "@/lib/api";
+import { fetchUsers, fetchDownloadsEnabled } from "@/lib/api";
 import { getServerTranslations } from "@/lib/i18n/server";
 import type { TranslationKey } from "@/lib/i18n/fr";
 
@@ -35,7 +35,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const { t } = await getServerTranslations();
   const cookieStore = await cookies();
   const activeUserId = cookieStore.get("as_user_id")?.value || null;
-  const users = await fetchUsers().catch(() => []);
+  const [users, downloadsEnabled] = await Promise.all([
+    fetchUsers().catch(() => []),
+    fetchDownloadsEnabled(),
+  ]);
 
   async function setActiveUserAction(formData: FormData) {
     "use server";
@@ -89,7 +92,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
                 setActiveUserAction={setActiveUserAction}
               />
             </div>
-            <DownloadsIndicator />
+            {downloadsEnabled && <DownloadsIndicator />}
             <JobsIndicator />
             <ThemeToggle />
             <div className="hidden md:flex items-center">

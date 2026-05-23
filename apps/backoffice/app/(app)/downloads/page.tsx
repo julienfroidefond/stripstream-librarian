@@ -1,4 +1,5 @@
-import { fetchTorrentDownloads, TorrentDownloadDto, LatestFoundPerLibraryDto, apiFetch } from "@/lib/api";
+import { redirect } from "next/navigation";
+import { fetchTorrentDownloads, TorrentDownloadDto, LatestFoundPerLibraryDto, apiFetch, fetchDownloadsEnabled } from "@/lib/api";
 import { DownloadsPage } from "./DownloadsPage";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,9 @@ async function isQbConfigured(): Promise<boolean> {
 }
 
 export default async function Page() {
+  const downloadsEnabled = await fetchDownloadsEnabled();
+  if (!downloadsEnabled) redirect("/");
+
   const [downloads, latestFound, qbConfigured] = await Promise.all([
     fetchTorrentDownloads().catch(() => [] as TorrentDownloadDto[]),
     apiFetch<LatestFoundPerLibraryDto[]>("/download-detection/latest-found").catch(() => [] as LatestFoundPerLibraryDto[]),
