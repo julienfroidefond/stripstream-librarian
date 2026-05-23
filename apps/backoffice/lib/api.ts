@@ -602,6 +602,12 @@ export async function getSettings() {
   return apiFetch<Settings>("/settings", { cache: "no-store" });
 }
 
+export async function fetchDownloadsEnabled(): Promise<boolean> {
+  return apiFetch<{ enabled: boolean }>("/settings/downloads_enabled")
+    .then(d => d?.enabled === true)
+    .catch(() => false);
+}
+
 export async function updateSetting(key: string, value: unknown) {
   return apiFetch<unknown>(`/settings/${key}`, {
     method: "POST",

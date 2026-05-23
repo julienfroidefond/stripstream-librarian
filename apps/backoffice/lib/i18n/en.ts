@@ -578,6 +578,8 @@ const en: Record<TranslationKey, string> = {
   "settings.general": "General",
   "settings.integrations": "Integrations",
   "settings.downloadTools": "Download Tools",
+  "settings.downloadsEnabled": "Enable download features",
+  "settings.downloadsEnabledDesc": "Enables the Prowlarr search interface, qBittorrent integration, and download detection jobs.",
   "settings.metadata": "Metadata",
   "settings.readingStatus": "Reading Status",
   "settings.savedSuccess": "Settings saved successfully",

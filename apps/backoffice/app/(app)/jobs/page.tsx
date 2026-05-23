@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startMetadataRefreshAll, startReadingStatusMatch, startReadingStatusPush, startDownloadDetection, apiFetch, IndexJobDto, LibraryDto } from "@/lib/api";
+import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startMetadataRefreshAll, startReadingStatusMatch, startReadingStatusPush, startDownloadDetection, fetchDownloadsEnabled, IndexJobDto, LibraryDto } from "@/lib/api";
 import { JobsList } from "@/app/components/JobsList";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/app/components/ui";
 import { LibraryBadgeSelector } from "./components/LibraryBadgeSelector";
@@ -27,12 +27,11 @@ function errorRedirect(error: unknown): never {
 export default async function JobsPage({ searchParams }: { searchParams: Promise<{ highlight?: string; library?: string; error?: string }> }) {
   const { highlight, library, error: errorMsg } = await searchParams;
   const { t } = await getServerTranslations();
-  const [jobs, libraries, prowlarrSettings] = await Promise.all([
+  const [jobs, libraries, prowlarrConfigured] = await Promise.all([
     listJobs().catch(() => [] as IndexJobDto[]),
     fetchLibraries().catch(() => [] as LibraryDto[]),
-    apiFetch<{ url?: string }>("/settings/prowlarr").catch(() => null),
+    fetchDownloadsEnabled(),
   ]);
-  const prowlarrConfigured = !!prowlarrSettings?.url;
 
   const libraryMap = new Map(libraries.map(l => [l.id, l.name]));
   const readingStatusLibraries = libraries.filter(l => l.reading_status_provider);

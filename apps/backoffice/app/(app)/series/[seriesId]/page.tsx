@@ -1,4 +1,4 @@
-import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto } from "@/lib/api";
+import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, fetchDownloadsEnabled, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto } from "@/lib/api";
 import { BooksGrid, EmptyState } from "@/app/components/BookCard";
 import { SeriesRelatedCarousel } from "@/app/components/SeriesRelatedCarousel";
 import { BooksGridWithMissingToggle } from "@/app/components/ShowMissingToggle";
@@ -39,9 +39,7 @@ export default async function SeriesDetailPage({
     fetchSeriesMetadata(seriesId).catch(() => null as SeriesMetadataDto | null),
     getMetadataLink(seriesId).catch(() => [] as ExternalMetadataLinkDto[]),
     getReadingStatusLink(seriesId).catch(() => null as AnilistSeriesLinkDto | null),
-    apiFetch<{ api_key?: string }>("/settings/prowlarr")
-      .then(d => !!(d?.api_key?.trim()))
-      .catch(() => false),
+    fetchDownloadsEnabled(),
     apiFetch<{ url?: string; username?: string }>("/settings/qbittorrent")
       .then(d => !!(d?.url?.trim() && d?.username?.trim()))
       .catch(() => false),

@@ -74,10 +74,10 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
   useEffect(() => {
     if (initialProwlarrConfigured !== undefined && initialQbConfigured !== undefined) return;
     if (initialProwlarrConfigured === undefined) {
-      fetch("/api/settings/prowlarr")
+      fetch("/api/settings/downloads_enabled")
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
-          setIsConfigured(!!(data && data.api_key && data.api_key.trim()));
+          setIsConfigured(!!(data?.enabled));
         })
         .catch(() => setIsConfigured(false));
     }

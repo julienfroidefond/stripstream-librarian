@@ -1,4 +1,4 @@
-import { getSettings, getCacheStats, getThumbnailStats, fetchUsers, apiFetch } from "@/lib/api";
+import { getSettings, getCacheStats, getThumbnailStats, fetchUsers, apiFetch, fetchDownloadsEnabled } from "@/lib/api";
 import SettingsPage from "./SettingsPage";
 import { TokensTab } from "./components/TokensTab";
 import packageJson from "../../../package.json";
@@ -26,7 +26,7 @@ async function fetchIndexerVersion(): Promise<string> {
 
 export default async function SettingsPageWrapper({ searchParams }: { searchParams: Promise<{ tab?: string; created?: string }> }) {
   const { tab, created: createdToken } = await searchParams;
-  const [settings, cacheStats, thumbnailStats, users, prowlarr, qbittorrent, torrentImport, telegram, anilist, komga, metadataProviders, statusMappings, seriesStatuses, providerStatuses, apiVersion, indexerVersion, renameFormat, renameFormatHs] = await Promise.all([
+  const [settings, cacheStats, thumbnailStats, users, prowlarr, qbittorrent, torrentImport, telegram, anilist, komga, metadataProviders, statusMappings, seriesStatuses, providerStatuses, apiVersion, indexerVersion, renameFormat, renameFormatHs, downloadsEnabled] = await Promise.all([
     getSettings().catch(() => ({
       image_processing: { format: "webp", quality: 85, filter: "lanczos3", max_width: 2160 },
       cache: { enabled: true, directory: "/tmp/stripstream-image-cache", max_size_mb: 10000 },
@@ -50,6 +50,7 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
     fetchIndexerVersion(),
     apiFetch<string>("/settings/rename_format").catch(() => null),
     apiFetch<string>("/settings/rename_format_hs").catch(() => null),
+    fetchDownloadsEnabled(),
   ]);
 
   const versions = {
@@ -78,6 +79,7 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
       initialProviderStatuses={providerStatuses as string[]}
       initialRenameFormat={typeof renameFormat === "string" ? renameFormat : null}
       initialRenameFormatHs={typeof renameFormatHs === "string" ? renameFormatHs : null}
+      initialDownloadsEnabled={downloadsEnabled}
       versions={versions}
     />
   );

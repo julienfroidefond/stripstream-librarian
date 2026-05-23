@@ -1,4 +1,4 @@
-import { fetchLibraries, apiFetch } from "@/lib/api";
+import { fetchLibraries, apiFetch, fetchDownloadsEnabled } from "@/lib/api";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { Icon } from "@/app/components/ui";
 import { DiscoveryGrid } from "./components/DiscoveryGrid";
@@ -31,9 +31,7 @@ export default async function DiscoveryPage({
   const [libraries, trending, prowlarrConfigured] = await Promise.all([
     fetchLibraries().catch(() => []),
     apiFetch<DiscoverySuggestion[]>(`/discovery/trending?provider=${provider}&limit=100`).catch(() => []),
-    apiFetch<{ api_key?: string }>("/settings/prowlarr")
-      .then(d => !!(d?.api_key?.trim()))
-      .catch(() => false),
+    fetchDownloadsEnabled(),
   ]);
 
   return (

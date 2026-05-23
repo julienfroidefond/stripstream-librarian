@@ -33,11 +33,12 @@ interface SettingsPageProps {
   initialProviderStatuses: string[];
   initialRenameFormat: string | null;
   initialRenameFormatHs: string | null;
+  initialDownloadsEnabled: boolean;
   versions?: { api: string; indexer: string; backoffice: string };
   tokensContent?: ReactNode;
 }
 
-export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, initialRenameFormatHs, versions, tokensContent }: SettingsPageProps) {
+export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, initialRenameFormatHs, initialDownloadsEnabled, versions, tokensContent }: SettingsPageProps) {
   const { t, locale, setLocale } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -51,6 +52,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
   const [isClearing, setIsClearing] = useState(false);
   const [clearResult, setClearResult] = useState<ClearCacheResponse | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [downloadsEnabled, setDownloadsEnabled] = useState(initialDownloadsEnabled);
 
   const VALID_TABS = ["general", "downloadTools", "metadata", "readingStatus", "notifications", "tokens"] as const;
   type TabId = typeof VALID_TABS[number];
@@ -607,6 +609,47 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       </>)}
 
       {activeTab === "downloadTools" && (<>
+      {/* Downloads feature toggle */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Icon name="play" size="md" />
+            {t("settings.downloadsEnabled")}
+          </CardTitle>
+          <CardDescription>{t("settings.downloadsEnabledDesc")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={downloadsEnabled}
+            onClick={async () => {
+              const next = !downloadsEnabled;
+              setDownloadsEnabled(next);
+              try {
+                const resp = await fetch("/api/settings/downloads_enabled", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ value: { enabled: next } }),
+                });
+                if (resp.ok) {
+                  toast(t("settings.savedSuccess"), "success");
+                } else {
+                  setDownloadsEnabled(!next);
+                  toast(t("settings.savedError"), "error");
+                }
+              } catch {
+                setDownloadsEnabled(!next);
+                toast(t("settings.saveError"), "error");
+              }
+            }}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${downloadsEnabled ? "bg-primary" : "bg-muted"}`}
+          >
+            <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${downloadsEnabled ? "translate-x-6" : "translate-x-1"}`} />
+          </button>
+        </CardContent>
+      </Card>
+
       {/* Prowlarr */}
       <ProwlarrCard handleUpdateSetting={handleUpdateSetting} initialData={initialProwlarr} />
 
