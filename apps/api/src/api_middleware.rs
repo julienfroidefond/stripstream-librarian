@@ -5,7 +5,7 @@ use axum::{
 };
 use std::time::Duration;
 use std::sync::atomic::Ordering;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::state::AppState;
 
@@ -21,7 +21,16 @@ pub async fn request_counter(
     let response = next.run(req).await;
     let status = response.status().as_u16();
     let elapsed = start.elapsed();
-    info!("{} {} {} {}ms", method, uri.path(), status, elapsed.as_millis());
+    let path = uri.path();
+    // High-frequency polling routes logged at debug to avoid log noise
+    let noisy = matches!(path,
+        "/health" | "/index/status" | "/torrent-downloads" | "/settings/downloads_enabled"
+    );
+    if noisy {
+        debug!("{} {} {} {}ms", method, path, status, elapsed.as_millis());
+    } else {
+        info!("{} {} {} {}ms", method, path, status, elapsed.as_millis());
+    }
     response
 }
 
