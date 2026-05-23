@@ -634,6 +634,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                 });
                 if (resp.ok) {
                   toast(t("settings.savedSuccess"), "success");
+                  router.refresh();
                 } else {
                   setDownloadsEnabled(!next);
                   toast(t("settings.savedError"), "error");
