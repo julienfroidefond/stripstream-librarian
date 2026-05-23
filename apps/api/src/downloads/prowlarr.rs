@@ -37,12 +37,6 @@ pub struct ProwlarrRawRelease {
     pub protocol: Option<String>,
     pub info_url: Option<String>,
     pub categories: Option<Vec<ProwlarrCategory>>,
-    /// Native cover URL returned by some Prowlarr indexers.
-    #[serde(default)]
-    pub cover_url: Option<String>,
-    /// HTML description — some RSS indexers embed a poster <img> here.
-    #[serde(default)]
-    pub description: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -65,9 +59,6 @@ pub struct ProwlarrRelease {
     /// All volumes extracted from the release title (not just missing ones).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub all_volumes: Vec<i32>,
-    /// Best-effort cover: native Prowlarr field, or first <img> from description.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cover_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -81,11 +72,6 @@ pub struct ProwlarrCategory {
 pub struct ProwlarrSearchResponse {
     pub results: Vec<ProwlarrRelease>,
     pub query: String,
-    /// Cover from our local series DB (metadata cover_url or first-book thumbnail id).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub series_cover_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub series_first_book_id: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -174,35 +160,6 @@ async fn load_prowlarr_config(
     Ok((url, config.api_key, categories))
 }
 
-// ─── Image helpers ───────────────────────────────────────────────────────────
-
-/// Extract the first HTTP image URL from an HTML description string.
-/// Handles `src="..."` and `src='...'`. Returns `None` if nothing found.
-fn extract_image_from_description(desc: &str) -> Option<String> {
-    let lower = desc.to_lowercase();
-    let img_start = lower.find("<img")?;
-    let after = &desc[img_start..];
-    let after_lower = after.to_lowercase();
-    for (prefix, end_char) in &[("src=\"", '"'), ("src='", '\'')] {
-        if let Some(pos) = after_lower.find(prefix) {
-            let start = pos + prefix.len();
-            if let Some(end) = after[start..].find(*end_char) {
-                let url = &after[start..start + end];
-                if url.starts_with("http") {
-                    return Some(url.to_string());
-                }
-            }
-        }
-    }
-    None
-}
-
-fn resolve_cover(raw: &ProwlarrRawRelease) -> Option<String> {
-    raw.cover_url
-        .clone()
-        .or_else(|| raw.description.as_deref().and_then(extract_image_from_description))
-}
-
 // ─── Volume matching ─────────────────────────────────────────────────────────
 
 /// Match releases against missing volume numbers.
@@ -222,7 +179,6 @@ fn match_missing_volumes(
             let matched = if matched_vols.is_empty() { None } else { Some(matched_vols) };
 
             ProwlarrRelease {
-                cover_url: resolve_cover(&r),
                 guid: r.guid,
                 title: r.title,
                 size: r.size,
@@ -315,7 +271,6 @@ async fn do_prowlarr_search(
             .map(|r| {
                 let all_volumes = extract_volumes(&r.title);
                 ProwlarrRelease {
-                    cover_url: resolve_cover(&r),
                     guid: r.guid,
                     title: r.title,
                     size: r.size,
@@ -334,7 +289,7 @@ async fn do_prowlarr_search(
             .collect()
     };
 
-    Ok(ProwlarrSearchResponse { results, query: query.to_string(), series_cover_url: None, series_first_book_id: None })
+    Ok(ProwlarrSearchResponse { results, query: query.to_string() })
 }
 
 /// Test the Prowlarr connection against the given base URL.
@@ -411,7 +366,7 @@ pub async fn search_prowlarr(
         format!("\"{}\"", body.series_name)
     };
 
-    let mut response = do_prowlarr_search(
+    let response = do_prowlarr_search(
         &url,
         &api_key,
         &query,
@@ -419,24 +374,6 @@ pub async fn search_prowlarr(
         body.missing_volumes.as_deref(),
     )
     .await?;
-
-    // Best-effort: enrich with series cover from local DB
-    if let Ok(Some(row)) = sqlx::query(
-        "SELECT s.cover_url, \
-         (SELECT id::text FROM books WHERE series_id = s.id AND thumbnail_path IS NOT NULL \
-          ORDER BY volume NULLS LAST LIMIT 1) AS first_book_id \
-         FROM series s \
-         WHERE LOWER(unaccent(s.name)) = LOWER(unaccent($1)) \
-            OR LOWER(unaccent(s.original_name)) = LOWER(unaccent($1)) \
-         LIMIT 1",
-    )
-    .bind(&body.series_name)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        response.series_cover_url = row.try_get("cover_url").ok().flatten();
-        response.series_first_book_id = row.try_get("first_book_id").ok().flatten();
-    }
 
     Ok(Json(response))
 }

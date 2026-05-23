@@ -350,7 +350,7 @@ pub async fn prowlarr_discovery(
             } else {
                 cached
             };
-            let items = filter_prowlarr_owned(&state.pool, pre_filtered).await
+            let items: Vec<ProwlarrDiscoveryItem> = filter_prowlarr_owned(&state.pool, pre_filtered).await
                 .into_iter()
                 .take(limit)
                 .collect();
@@ -376,7 +376,9 @@ pub async fn prowlarr_discovery(
     }
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
+        .user_agent("Stripstream-Librarian")
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| ApiError::internal(format!("HTTP client error: {e}")))?;
 
@@ -422,10 +424,21 @@ pub async fn prowlarr_discovery(
             .send()
             .await;
 
-        if let Ok(resp) = resp {
-            if resp.status().is_success() {
+        match resp {
+            Err(e) if e.is_connect() || e.is_timeout() => {
+                return Err(ApiError::internal(format!("Prowlarr unreachable: {e}")));
+            }
+            Err(e) => {
+                tracing::warn!("[DISCOVERY] Prowlarr request error for query={:?}: {e}", req.query);
+            }
+            Ok(resp) if resp.status().is_success() => {
+                let count_before = raw.len();
                 let results: Vec<serde_json::Value> = resp.json().await.unwrap_or_default();
                 raw.extend(results);
+                tracing::info!("[DISCOVERY] query={:?} → {} results (+{})", req.query, raw.len(), raw.len() - count_before);
+            }
+            Ok(resp) => {
+                tracing::warn!("[DISCOVERY] Prowlarr non-success status={} for query={:?}", resp.status(), req.query);
             }
         }
 
@@ -566,7 +579,8 @@ pub async fn prowlarr_discovery(
     };
     let result_items = filter_prowlarr_owned(&state.pool, pre_filtered).await;
     tracing::info!("[DISCOVERY] Prowlarr: {} after filter (was {})", result_items.len(), before_filter);
-    Ok(Json(ProwlarrDiscoveryResponse { items: result_items.into_iter().take(limit).collect(), all_indexers }))
+    let result_items: Vec<ProwlarrDiscoveryItem> = result_items.into_iter().take(limit).collect();
+    Ok(Json(ProwlarrDiscoveryResponse { items: result_items, all_indexers }))
 }
 
 /// Guess a more specific category from the torrent title keywords.
