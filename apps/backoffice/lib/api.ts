@@ -1384,11 +1384,14 @@ export type ProwlarrRelease = {
   categories: ProwlarrCategory[] | null;
   matchedMissingVolumes: number[] | null;
   allVolumes?: number[];
+  coverUrl?: string | null;
 };
 
 export type ProwlarrSearchResponse = {
   results: ProwlarrRelease[];
   query: string;
+  seriesCoverUrl?: string | null;
+  seriesFirstBookId?: string | null;
 };
 
 export type ProwlarrTestResponse = {
