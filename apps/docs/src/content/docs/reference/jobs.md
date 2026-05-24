@@ -7,9 +7,9 @@ description: Types de jobs et cycle de vie
 
 | Type | Description |
 |------|-------------|
-| `rebuild` | Scan incrémental |
-| `full_rebuild` | Rescan complet du filesystem |
-| `rescan` | Scan approfondi pour nouveaux formats |
+| `rebuild` | Scan incrémental — ne visite que les dossiers modifiés (via `directory_mtimes`) |
+| `full_rebuild` | Reconstruit tout depuis zéro — supprime tous les livres en DB puis rescanne le filesystem complet |
+| `rescan` | Visite tous les dossiers sans se fier au cache `directory_mtimes` — utile pour forcer la relecture sans effacer les données |
 | `thumbnail_rebuild` | Générer les miniatures manquantes |
 | `thumbnail_regenerate` | Supprimer et régénérer toutes les miniatures |
 | `cbr_to_cbz` | Convertir RAR en ZIP |

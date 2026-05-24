@@ -1,77 +1,114 @@
 ---
 title: Synchronisation des métadonnées
-description: Comment les métadonnées sont synchronisées entre providers et base locale
+description: Enrichir les séries avec des métadonnées externes — workflow utilisateur et règles de mise à jour
 ---
 
-## Workflow de matching
+La synchronisation des métadonnées permet d'enrichir chaque série avec des informations issues de providers externes : description, couverture, auteurs, statut de publication, liste des tomes, etc.
 
-1. **Recherche** : interroger un provider, obtenir des candidats avec scores de confiance
-2. **Match** : lier une série à un résultat externe (statut `pending`)
-3. **Approbation** : valider et synchroniser les métadonnées
-4. **Rejet** : écarter un match
+## Workflow utilisateur
 
-## Logique de synchronisation partagée
+### 1 — Rechercher des métadonnées pour une série
 
-Les trois chemins de sync (approve, batch auto-match, refresh) utilisent le **même code factorisé** (`shared_sync.rs`).
+Sur la page d'une série, cliquez sur le bouton **Rechercher des métadonnées** (icône loupe). Une fenêtre s'ouvre avec les résultats du provider configuré pour votre bibliothèque.
 
-### Champs synchronisés — Série
+Chaque résultat affiche le titre, les auteurs, la couverture, le nombre de tomes et un score de confiance (0 à 1).
 
-| Champ | Source | Règle de mise à jour |
-|-------|--------|---------------------|
-| `description` | `metadata_json.description` | Remplace si non-vide |
-| `authors` | metadata_json ou candidat | Remplace si tableau non-vide |
-| `publishers` | metadata_json ou candidat | Remplace si tableau non-vide |
-| `start_year` | metadata_json ou candidat | `COALESCE(new, existing)` |
-| `total_volumes` | total_volumes_external ou candidat | `COALESCE(new, existing)` |
-| `status` | metadata_json (normalisé via `status_mappings`) | `COALESCE(new, existing)` |
-| `genres` | metadata_json | Remplace si tableau non-vide |
-| `cover_url` | metadata_json ou candidat | Remplace si non-vide |
+### 2 — Approuver ou rejeter
 
-:::important
-Tous les champs respectent le **verrouillage** (`locked_fields`). Si un champ est verrouillé, la synchronisation ne le modifie pas.
-:::
+- **Approuver** : valide le lien et synchronise immédiatement tous les champs (description, couverture, auteurs, statut, genres, tomes)
+- **Rejeter** : écarte ce résultat sans synchroniser
 
-La série est créée si absente (`INSERT ... ON CONFLICT DO UPDATE`), ce qui permet la création depuis la découverte.
+Un seul lien peut être approuvé à la fois par série.
 
-### Champs synchronisés — Livres
+### 3 — Verrouiller des champs
+
+Après synchronisation, vous pouvez modifier manuellement n'importe quel champ. Pour empêcher le prochain refresh de l'écraser, activez le **verrou** sur ce champ via l'icône cadenas à côté du champ éditable.
+
+### 4 — Rafraîchir
+
+Le bouton **Refresh** re-télécharge les données du provider et met à jour les champs non verrouillés. Utile quand un nouveau tome est sorti et que `total_volumes` doit être actualisé.
+
+---
+
+## Matching en masse
+
+Plutôt que de matcher série par série, utilisez le job **Batch metadata** depuis la page Jobs :
+
+- Traite toutes les séries sans lien approuvé
+- Valide automatiquement les matchs avec un score de confiance de 1.0
+- Les autres résultats sont listés dans le rapport du job pour traitement manuel
+
+Voir [Batch & Refresh](/metadata/batch-refresh/) pour le détail des statuts de résultat.
+
+---
+
+## Champs synchronisés
+
+### Série
 
 | Champ | Règle de mise à jour |
 |-------|---------------------|
+| `description` | Remplace si non-vide |
+| `authors` | Remplace si le tableau est non-vide |
+| `publishers` | Remplace si le tableau est non-vide |
+| `start_year` | Remplace si absent en base |
+| `total_volumes` | Remplace si absent en base |
+| `status` | Remplace si absent en base (normalisé via les mappings de statut) |
+| `genres` | Remplace si le tableau est non-vide |
+| `cover_url` | Remplace si non-vide |
+
+### Livres
+
+Pour chaque tome de la série, les champs suivants sont mis à jour :
+
+| Champ | Règle |
+|-------|-------|
 | `summary` | Remplace si non-vide |
 | `isbn` | Remplace si non-vide |
 | `publish_date` | Remplace si non-vide |
 | `language` | Remplace si non-vide |
-| `authors` / `author` | Remplace si tableau non-vide |
+| `authors` | Remplace si tableau non-vide |
 
-Tous les champs livres respectent aussi le verrouillage.
+:::important
+Tous les champs respectent le **verrouillage** (`locked_fields`). Un champ verrouillé n'est jamais modifié par la synchronisation, quelle que soit la source.
+:::
 
 ### Matching des livres
 
 Les livres externes sont appariés aux livres locaux en deux étapes :
 
-1. **Par numéro de volume** : correspondance exacte (skip volume 0 = HS chez les providers)
-2. **Par titre** : containment case-insensitive si le volume n'a pas matché
+1. **Par numéro de volume** — correspondance exacte (le volume 0 = HS chez les providers est ignoré)
+2. **Par titre** — containment case-insensitive si le numéro de volume n'a pas suffi
 
-Seuls les livres `volume_type IN ('regular', 'integral')` participent au matching.
+Seuls les livres `regular` et `integral` participent au matching.
+
+---
 
 ## Scoring de confiance
 
-### Niveau provider
-- Similarité de nom (Jaccard/containment normalisé)
-- Bonus pour les éditions avec plus de volumes
+Le score (0.0 → 1.0) combine la similarité de nom avec un boost selon le nombre de tomes :
 
-### Boost par le nombre de livres locaux
 | Condition | Boost |
 |-----------|-------|
-| Exact match (local == total_volumes) | +0.30 |
-| Proche (±2 volumes) | +0.15 |
+| Nombre de tomes identique (local == provider) | +0.30 |
+| Proche (±2 tomes) | +0.15 |
 
-- Candidats retriés par confiance après boost
-- Seuil d'auto-match : confiance == 1.0
+Seul un score de **1.0** déclenche la validation automatique dans le job batch. En dessous, le match est proposé pour validation manuelle.
+
+---
 
 ## Verrouillage de champs
 
-- Champs série verrouillables : `description`, `authors`, `publishers`, `start_year`, `total_volumes`, `status`
-- Champs livre verrouillables : `summary`, `isbn`, `publish_date`, `language`, `authors`
-- Stocké en JSONB : `{"description": true, "authors": true}`
-- Les rapports de sync distinguent les champs mis à jour vs ignorés (verrouillés)
+Champs verrouillables sur une **série** : `description`, `authors`, `publishers`, `start_year`, `total_volumes`, `status`, `genres`
+
+Champs verrouillables sur un **livre** : `summary`, `isbn`, `publish_date`, `language`, `authors`
+
+Les rapports de synchronisation distinguent les champs mis à jour de ceux ignorés (verrouillés).
+
+---
+
+## Mappings de statut
+
+Le statut retourné par les providers (`ongoing`, `ended`, `completed`…) n'est pas toujours homogène. Les **status mappings** permettent de normaliser les valeurs des providers vers vos propres labels.
+
+Accès : **Settings → onglet Général → Status Mappings**.

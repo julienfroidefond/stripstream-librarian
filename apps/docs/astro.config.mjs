@@ -19,6 +19,7 @@ export default defineConfig({
 						{ label: 'Introduction', slug: 'getting-started/introduction' },
 						{ label: 'Installation', slug: 'getting-started/installation' },
 						{ label: 'Configuration', slug: 'getting-started/configuration' },
+						{ label: 'Dashboard', slug: 'getting-started/dashboard' },
 					],
 				},
 				{
@@ -84,6 +85,7 @@ export default defineConfig({
 					items: [
 						{ label: 'API', slug: 'reference/api' },
 						{ label: 'Jobs', slug: 'reference/jobs' },
+						{ label: 'Utilisateurs & Tokens', slug: 'reference/users-tokens' },
 						{ label: 'Variables d\'environnement', slug: 'reference/environment' },
 					],
 				},

@@ -53,5 +53,14 @@ Tous les providers stockent la `description` dans `metadata_json` pour garantir 
 
 ## Configuration
 
-- Provider par défaut configurable globalement et par bibliothèque
+- Provider par défaut configurable **par bibliothèque** dans les paramètres de la bibliothèque (icône ⚙️ → section Métadonnées)
 - Provider de fallback si le principal est indisponible
+
+### Clé API ComicVine
+
+ComicVine requiert une clé API gratuite :
+
+1. Créez un compte sur [comicvine.gamespot.com](https://comicvine.gamespot.com) et récupérez votre clé API dans les paramètres du compte
+2. Dans Stripstream : **Settings → onglet Général → Providers → ComicVine API Key**
+
+Sans clé configurée, les recherches ComicVine échouent silencieusement et tombent sur le provider de fallback.
