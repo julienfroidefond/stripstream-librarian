@@ -7,6 +7,8 @@ Les genres sont des tags libres attachés aux séries. Ils peuvent être issus d
 
 ## Page Genres
 
+![Page de gestion des genres — compteurs, grille de genres avec couvertures, et navigateur de séries](/screenshots/genres-management.png)
+
 La page `/genres` du backoffice centralise toute la gestion :
 
 - **Grille de genres** — chaque genre affiché sous forme de pill avec le nombre de séries associées, filtrables par bibliothèque

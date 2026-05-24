@@ -91,6 +91,8 @@ Quand qBittorrent termine le téléchargement, l'indexer détecte la complétion
 
 ## Page Téléchargements
 
+![Page téléchargements : historique des téléchargements et volumes disponibles au téléchargement](/screenshots/downloads-page.png)
+
 ### Historique des téléchargements
 
 Chaque téléchargement envoyé à qBittorrent apparaît dans la liste avec son statut :
@@ -141,6 +143,8 @@ Cliquez sur une ligne pour déplier les releases disponibles pour cette série. 
 ## Recherche manuelle depuis une série
 
 Sur la page d'une série, le bouton **Prowlarr** ouvre une recherche ciblée dans Prowlarr pour cette série. Les résultats sont triés par pertinence et affichent les volumes manquants matchés. Vous pouvez envoyer directement un résultat à qBittorrent depuis cette fenêtre.
+
+![Fenêtre de recherche Prowlarr manuelle avec résultats triés par seeders](/screenshots/prowlarr-search.png)
 
 ---
 

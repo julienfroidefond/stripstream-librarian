@@ -5,6 +5,8 @@ description: Présentation du tableau de bord
 
 Le dashboard est la page d'accueil du backoffice. Il donne une vue d'ensemble de votre bibliothèque en temps réel.
 
+![Dashboard — compteurs globaux et graphiques d'activité](/screenshots/dashboard.png)
+
 ## Compteurs globaux
 
 Six indicateurs en haut de page :

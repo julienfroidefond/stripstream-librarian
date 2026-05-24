@@ -16,7 +16,9 @@ L'intégration AniList permet de synchroniser votre progression de lecture dans 
 
 ### 2 — Configurer dans Stripstream
 
-Dans **Settings → onglet AniList** :
+Dans **Settings → onglet Statut de lecture** :
+
+![Page de configuration AniList dans les paramètres](/screenshots/anilist-config.png)
 
 1. Collez le **Client ID** dans le champ dédié
 2. Cliquez sur **Connecter** — une fenêtre s'ouvre sur AniList pour autoriser l'accès

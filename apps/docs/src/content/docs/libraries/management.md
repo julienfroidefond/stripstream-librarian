@@ -17,6 +17,8 @@ L'icône corbeille sur la carte de la bibliothèque supprime la bibliothèque et
 
 Cliquez sur l'icône engrenage ⚙️ d'une bibliothèque pour ouvrir ses paramètres. Ils sont organisés en cinq sections.
 
+![Modal des paramètres d'une bibliothèque](/screenshots/library-settings.png)
+
 ---
 
 ### Indexation

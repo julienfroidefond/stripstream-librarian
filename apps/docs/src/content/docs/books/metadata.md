@@ -3,6 +3,8 @@ title: Métadonnées des livres
 description: Champs de métadonnées extraits et gérés
 ---
 
+![Page détail d'un livre — métadonnées, statut de lecture, et aperçu des pages](/screenshots/book-detail.png)
+
 ## Champs extraits automatiquement
 
 | Champ | Source |

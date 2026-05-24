@@ -3,6 +3,8 @@ title: Gestion des séries
 description: Organisation et métadonnées des séries
 ---
 
+![Page détail d'une série — couverture, métadonnées, progression de lecture et grille de livres](/screenshots/series-detail.png)
+
 ## Agrégation automatique
 
 Les séries sont dérivées de la structure de répertoires pendant le scan. Les livres sans série sont groupés comme "unclassified".
@@ -85,6 +87,8 @@ Chaque champ peut être verrouillé individuellement pour empêcher la synchroni
 Le verrouillage est stocké dans la colonne JSONB `locked_fields` (ex: `{"description": true}`).
 
 ## Fusion de séries
+
+![Modal de fusion — recherche de la série à absorber avec aperçu du nombre de livres et du provider](/screenshots/series-merge.png)
 
 - Fusionner une série source dans une série cible
 - Transfère les livres, metadata links, downloads disponibles, liens AniList

@@ -3,6 +3,8 @@ title: Renommage
 description: Renommer les livres d'une série avec un template
 ---
 
+![Modal de renommage avec aperçu avant/après pour chaque livre](/screenshots/books-renaming.png)
+
 ## Templates de renommage
 
 Trois templates séparés selon le type de volume :

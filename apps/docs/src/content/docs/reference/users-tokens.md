@@ -3,7 +3,9 @@ title: Utilisateurs & Tokens
 description: Gérer les utilisateurs et les tokens d'API
 ---
 
-La gestion des utilisateurs et des tokens se fait dans **Settings → onglet Tokens**.
+La gestion des utilisateurs et des tokens se fait dans **Settings → onglet Jetons**.
+
+![Page utilisateurs et tokens API — liste des utilisateurs, création de token avec portée et utilisateur associé](/screenshots/users-tokens-page.png)
 
 ## Utilisateurs
 
@@ -85,6 +87,8 @@ Le sélecteur dans la colonne **Utilisateur** du tableau permet de changer l'uti
 ## Multi-utilisateurs et lecture
 
 Le modèle multi-utilisateurs est pensé pour les foyers ou groupes qui partagent une même instance mais veulent une progression de lecture séparée.
+
+![Sélecteur d'utilisateur dans le backoffice — bascule entre Admin et les utilisateurs lecteurs](/screenshots/user-selector.png)
 
 Concrètement :
 - Sur la page d'une série, un filtre par lecteur permet de voir les statuts de chaque utilisateur

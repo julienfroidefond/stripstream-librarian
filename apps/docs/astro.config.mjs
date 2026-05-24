@@ -86,6 +86,7 @@ export default defineConfig({
 						{ label: 'API', slug: 'reference/api' },
 						{ label: 'Jobs', slug: 'reference/jobs' },
 						{ label: 'Utilisateurs & Tokens', slug: 'reference/users-tokens' },
+						{ label: 'Auteurs', slug: 'reference/authors' },
 						{ label: 'Variables d\'environnement', slug: 'reference/environment' },
 					],
 				},

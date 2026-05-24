@@ -11,7 +11,9 @@ La synchronisation des métadonnées permet d'enrichir chaque série avec des in
 
 Sur la page d'une série, cliquez sur le bouton **Rechercher des métadonnées** (icône loupe). Une fenêtre s'ouvre avec les résultats du provider configuré pour votre bibliothèque.
 
-Chaque résultat affiche le titre, les auteurs, la couverture, le nombre de tomes et un score de confiance (0 à 1).
+![Fenêtre de recherche de métadonnées avec résultats et scores de confiance](/screenshots/metadata-search.png)
+
+Chaque résultat affiche le titre, les auteurs, la couverture, le nombre de tomes et un score de confiance (0 à 1). Les boutons de provider en haut permettent de relancer la recherche sur un autre provider sans fermer la fenêtre.
 
 ### 2 — Approuver ou rejeter
 
@@ -23,6 +25,8 @@ Un seul lien peut être approuvé à la fois par série.
 ### 3 — Verrouiller des champs
 
 Après synchronisation, vous pouvez modifier manuellement n'importe quel champ. Pour empêcher le prochain refresh de l'écraser, activez le **verrou** sur ce champ via l'icône cadenas à côté du champ éditable.
+
+![Modal d'édition d'une série — les cadenas oranges indiquent les champs verrouillés](/screenshots/series-edit-locked-fields.png)
 
 ### 4 — Rafraîchir
 
