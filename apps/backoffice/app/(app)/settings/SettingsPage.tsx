@@ -54,7 +54,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
   const [isSaving, setIsSaving] = useState(false);
   const [downloadsEnabled, setDownloadsEnabled] = useState(initialDownloadsEnabled);
 
-  const VALID_TABS = ["general", "downloadTools", "metadata", "readingStatus", "notifications", "tokens"] as const;
+  const VALID_TABS = ["general", "media", "downloadTools", "metadata", "readingStatus", "notifications", "tokens"] as const;
   type TabId = typeof VALID_TABS[number];
 
   function resolveTab(tab: string | null | undefined): TabId {
@@ -122,6 +122,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
 
   const tabs = [
     { id: "general" as const, label: t("settings.general"), icon: "settings" as const, color: "text-slate-400" },
+    { id: "media" as const, label: t("settings.media"), icon: "image" as const, color: "text-cyan-500" },
     { id: "downloadTools" as const, label: t("settings.downloadTools"), icon: "play" as const, color: "text-sky-500" },
     { id: "metadata" as const, label: t("settings.metadata"), icon: "tag" as const, color: "text-violet-500" },
     { id: "readingStatus" as const, label: t("settings.readingStatus"), icon: "eye" as const, color: "text-amber-500" },
@@ -177,6 +178,140 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         </CardContent>
       </Card>
 
+      {/* Limits Settings */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Icon name="performance" size="md" />
+            {t("settings.performanceLimits")}
+          </CardTitle>
+          <CardDescription>{t("settings.performanceDesc")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <FormRow>
+              <FormField className="flex-1">
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.concurrentRenders")}</label>
+                <FormInput
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={settings.limits.concurrent_renders}
+                  onChange={(e) => {
+                    const concurrent_renders = parseInt(e.target.value) || 4;
+                    const newSettings = { ...settings, limits: { ...settings.limits, concurrent_renders } };
+                    setSettings(newSettings);
+                  }}
+                  onBlur={() => handleUpdateSetting("limits", settings.limits)}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t("settings.concurrentRendersHelp")}
+                </p>
+              </FormField>
+              <FormField className="flex-1">
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.timeoutSeconds")}</label>
+                <FormInput
+                  type="number"
+                  min={5}
+                  max={300}
+                  value={settings.limits.timeout_seconds}
+                  onChange={(e) => {
+                    const timeout_seconds = parseInt(e.target.value) || 12;
+                    const newSettings = { ...settings, limits: { ...settings.limits, timeout_seconds } };
+                    setSettings(newSettings);
+                  }}
+                  onBlur={() => handleUpdateSetting("limits", settings.limits)}
+                />
+              </FormField>
+              <FormField className="flex-1">
+                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.rateLimit")}</label>
+                <FormInput
+                  type="number"
+                  min={10}
+                  max={1000}
+                  value={settings.limits.rate_limit_per_second}
+                  onChange={(e) => {
+                    const rate_limit_per_second = parseInt(e.target.value) || 120;
+                    const newSettings = { ...settings, limits: { ...settings.limits, rate_limit_per_second } };
+                    setSettings(newSettings);
+                  }}
+                  onBlur={() => handleUpdateSetting("limits", settings.limits)}
+                />
+              </FormField>
+            </FormRow>
+            <p className="text-sm text-muted-foreground">
+              {t("settings.limitsNote")}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Rename Format */}
+      <RenameFormatCard handleUpdateSetting={handleUpdateSetting} initialRenameFormat={initialRenameFormat} initialRenameFormatHs={initialRenameFormatHs} />
+
+      {/* About */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Icon name="document" size="md" />
+            {t("settings.about")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-lg font-semibold text-foreground">Stripstream Librarian</h3>
+              <p className="text-sm text-muted-foreground mt-1">{t("settings.aboutDesc")}</p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/40">
+                <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                  <Icon name="settings" size="sm" className="text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">API</p>
+                  <p className="text-sm font-mono font-medium text-foreground">{versions?.api ?? "?"}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/40">
+                <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                  <Icon name="jobs" size="sm" className="text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Indexer</p>
+                  <p className="text-sm font-mono font-medium text-foreground">{versions?.indexer ?? "?"}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/40">
+                <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                  <Icon name="books" size="sm" className="text-primary" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Backoffice</p>
+                  <p className="text-sm font-mono font-medium text-foreground">{versions?.backoffice ?? "?"}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 pt-2 text-sm">
+              <a
+                href="https://git.julienfroidefond.com/julienfroidefond/stripstream-librarian"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline flex items-center gap-1.5"
+              >
+                <Icon name="externalLink" size="sm" />
+                Gitea
+              </a>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      </>)}
+
+      {activeTab === "media" && (<>
       {/* Image Processing Settings */}
       <Card className="mb-6">
         <CardHeader>
@@ -336,74 +471,6 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         </CardContent>
       </Card>
 
-      {/* Limits Settings */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Icon name="performance" size="md" />
-            {t("settings.performanceLimits")}
-          </CardTitle>
-          <CardDescription>{t("settings.performanceDesc")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <FormRow>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.concurrentRenders")}</label>
-                <FormInput
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={settings.limits.concurrent_renders}
-                  onChange={(e) => {
-                    const concurrent_renders = parseInt(e.target.value) || 4;
-                    const newSettings = { ...settings, limits: { ...settings.limits, concurrent_renders } };
-                    setSettings(newSettings);
-                  }}
-                  onBlur={() => handleUpdateSetting("limits", settings.limits)}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  {t("settings.concurrentRendersHelp")}
-                </p>
-              </FormField>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.timeoutSeconds")}</label>
-                <FormInput
-                  type="number"
-                  min={5}
-                  max={300}
-                  value={settings.limits.timeout_seconds}
-                  onChange={(e) => {
-                    const timeout_seconds = parseInt(e.target.value) || 12;
-                    const newSettings = { ...settings, limits: { ...settings.limits, timeout_seconds } };
-                    setSettings(newSettings);
-                  }}
-                  onBlur={() => handleUpdateSetting("limits", settings.limits)}
-                />
-              </FormField>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.rateLimit")}</label>
-                <FormInput
-                  type="number"
-                  min={10}
-                  max={1000}
-                  value={settings.limits.rate_limit_per_second}
-                  onChange={(e) => {
-                    const rate_limit_per_second = parseInt(e.target.value) || 120;
-                    const newSettings = { ...settings, limits: { ...settings.limits, rate_limit_per_second } };
-                    setSettings(newSettings);
-                  }}
-                  onBlur={() => handleUpdateSetting("limits", settings.limits)}
-                />
-              </FormField>
-            </FormRow>
-            <p className="text-sm text-muted-foreground">
-              {t("settings.limitsNote")}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Thumbnail Settings */}
       <Card className="mb-6">
         <CardHeader>
@@ -534,70 +601,6 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
           </div>
         </CardContent>
       </Card>
-
-      {/* Rename Format */}
-      <RenameFormatCard handleUpdateSetting={handleUpdateSetting} initialRenameFormat={initialRenameFormat} initialRenameFormatHs={initialRenameFormatHs} />
-
-      {/* About */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Icon name="document" size="md" />
-            {t("settings.about")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-lg font-semibold text-foreground">Stripstream Librarian</h3>
-              <p className="text-sm text-muted-foreground mt-1">{t("settings.aboutDesc")}</p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/40">
-                <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-                  <Icon name="settings" size="sm" className="text-primary" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">API</p>
-                  <p className="text-sm font-mono font-medium text-foreground">{versions?.api ?? "?"}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/40">
-                <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-                  <Icon name="jobs" size="sm" className="text-primary" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Indexer</p>
-                  <p className="text-sm font-mono font-medium text-foreground">{versions?.indexer ?? "?"}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/40">
-                <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-                  <Icon name="books" size="sm" className="text-primary" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Backoffice</p>
-                  <p className="text-sm font-mono font-medium text-foreground">{versions?.backoffice ?? "?"}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4 pt-2 text-sm">
-              <a
-                href="https://git.julienfroidefond.com/julienfroidefond/stripstream-librarian"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline flex items-center gap-1.5"
-              >
-                <Icon name="externalLink" size="sm" />
-                Gitea
-              </a>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       </>)}
 
       {activeTab === "metadata" && (<>

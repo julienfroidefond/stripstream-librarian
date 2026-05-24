@@ -575,6 +575,7 @@ const fr = {
   "settings.title": "Paramètres",
   "settings.general": "Général",
   "settings.integrations": "Intégrations",
+  "settings.media": "Images & cache",
   "settings.downloadTools": "Outils de téléchargement",
   "settings.downloadsEnabled": "Activer les fonctionnalités de téléchargement",
   "settings.downloadsEnabledDesc": "Active l'interface de recherche Prowlarr, l'envoi vers qBittorrent et les jobs de détection de téléchargements.",
