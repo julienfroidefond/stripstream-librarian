@@ -33,11 +33,31 @@ Chaque fichier est identifié par un fingerprint : `SHA256(taille + mtime + nom)
 
 ## Types de scan
 
-| Type | Description |
-|------|-------------|
-| **Incrémental** (`rebuild`) | Utilise le cache mtime pour ne scanner que les répertoires modifiés |
-| **Complet** (`full_rebuild`) | Re-parcourt tous les répertoires, ignore le cache mtime |
-| **Rescan** (`rescan`) | Scan approfondi pour découvrir les nouveaux formats supportés |
+### Scan incrémental (défaut)
+
+Le plus rapide. L'indexer se souvient de la date de dernière modification de chaque dossier — il ne revisite que les dossiers qui ont changé depuis le dernier scan. Les livres déjà connus restent intacts dans la base.
+
+**Quand l'utiliser :** usage courant, après avoir ajouté ou supprimé quelques fichiers.
+
+---
+
+### Rescan
+
+Visite **tous** les dossiers (même ceux inchangés), mais conserve les livres déjà enregistrés. Utile si l'indexer a raté des changements ou si vous venez de modifier la configuration (nouveaux formats supportés, renommage de dossiers...).
+
+**Quand l'utiliser :** si des fichiers semblent manquants alors qu'ils sont bien présents sur le disque.
+
+---
+
+### Scan complet
+
+**Efface d'abord tous les livres de la bibliothèque**, puis repart de zéro. C'est l'option nucléaire : tout est recréé comme si la bibliothèque était scannée pour la première fois. Plus lent, mais garantit un état propre.
+
+**Quand l'utiliser :** après une réorganisation majeure de l'arborescence, ou si la base de données semble incohérente.
+
+:::caution
+Les métadonnées éditées manuellement (descriptions, notes, liens metadata) **ne sont pas effacées** par un scan complet — seuls les livres et leurs fichiers associés sont recréés.
+:::
 
 ## Détection des séries
 
