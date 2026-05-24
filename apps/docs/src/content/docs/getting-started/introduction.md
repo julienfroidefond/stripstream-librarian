@@ -10,10 +10,11 @@ description: Présentation de Stripstream Librarian
 - **Multi-bibliothèques** : créez et gérez plusieurs bibliothèques indépendantes
 - **Multi-formats** : CBZ, CBR, PDF, EPUB supportés nativement
 - **Indexation automatique** : scan en deux phases (découverte rapide + analyse approfondie)
-- **Métadonnées externes** : 6 providers pour enrichir automatiquement vos séries
-- **Découverte** : parcourez les tendances et tops depuis SensCritique, AniList, Bedetheque
-- **Intégrations** : Prowlarr, qBittorrent, AniList, Komga, Telegram
-- **Interface web** : backoffice complet avec dashboard, recherche, gestion des séries
+- **Métadonnées externes** : 6 providers pour enrichir automatiquement vos séries (AniList, SensCritique, Bédéthèque, ComicVine, Google Books, Open Library)
+- **Découverte** : parcourez les tendances et tops depuis SensCritique, AniList, Bédéthèque
+- **Téléchargements automatiques** : détectez les volumes manquants via Prowlarr, téléchargez via qBittorrent, importez automatiquement dans la bibliothèque
+- **Progression de lecture** : suivez votre avancement tome par tome, synchronisez avec AniList
+- **Interface web** : backoffice complet avec dashboard, recherche, gestion des séries et genres
 
 ## Architecture
 

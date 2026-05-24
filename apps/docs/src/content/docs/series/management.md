@@ -7,6 +7,64 @@ description: Organisation et métadonnées des séries
 
 Les séries sont dérivées de la structure de répertoires pendant le scan. Les livres sans série sont groupés comme "unclassified".
 
+## Structure de dossiers
+
+Voici un exemple complet couvrant tous les cas reconnus par le scanner :
+
+```
+Ma Bibliothèque/                         ← racine de la bibliothèque
+│
+├── Dragon Ball/
+│   ├── Dragon Ball T01.cbz              → série "Dragon Ball", tome 1,   regular
+│   ├── Dragon Ball T02.cbz              → série "Dragon Ball", tome 2,   regular
+│   ├── Dragon Ball HS1.cbz              → série "Dragon Ball", HS 1,     hs       (détecté via le nom de fichier)
+│   ├── Dragon Ball INT.cbz              → série "Dragon Ball", intégrale, integral (détecté via le nom de fichier)
+│   ├── Hors-Série/                      ← sous-dossier spécial → remonte au parent
+│   │   └── Dragon Ball HS2.cbz          → série "Dragon Ball", HS 2,     hs
+│   └── Intégrales/                      ← sous-dossier spécial → remonte au parent
+│       └── Dragon Ball INT 2.cbz        → série "Dragon Ball", intégrale, integral
+│
+├── Naruto/
+│   ├── Naruto T01.cbz                   → série "Naruto", tome 1,        regular
+│   └── Specials/                        ← sous-dossier spécial → remonte au parent
+│       └── Naruto Special.cbz           → série "Naruto",                hs
+│
+├── Shonen/                              ← dossier de catégorie (ignoré, non spécial)
+│   └── One Piece/                       ← parent immédiat du fichier = nom de série
+│       ├── One Piece T01.cbz            → série "One Piece", tome 1,     regular
+│       └── One Piece T02.cbz            → série "One Piece", tome 2,     regular
+│
+├── Oneshots/                            ← dossier oneshot à la racine
+│   ├── Blacksad.cbz                     → série "Blacksad",  1 livre,    oneshot
+│   └── Persepolis.cbz                   → série "Persepolis", 1 livre,   oneshot
+│
+└── livre-isole.cbz                      → pas de série (fichier à la racine)
+```
+
+**Règles de dérivation de la série** :
+
+1. La série = **répertoire parent immédiat** du fichier.
+2. Si ce parent est un sous-dossier spécial (voir liste ci-dessous), on remonte d'un cran.
+3. Si le fichier est dans un dossier `Oneshots` **directement à la racine**, chaque fichier devient sa propre série (`oneshot`).
+4. Un fichier posé directement à la racine n'a pas de série.
+
+**Sous-dossiers spéciaux reconnus** (insensible à la casse) :
+
+`HS` · `Hors-Série` · `Hors-Série` · `Hors Serie` · `Spécial` · `Specials` · `Spéciaux` · `Bonus` · `Extras` · `Extra` · `Intégrale` · `Intégrales` · `INT`
+
+:::note
+Un dossier `Oneshots` imbriqué à 2 niveaux ou plus (`Shonen/Oneshots/…`) n'est **pas** traité comme dossier oneshot — les fichiers seront rattachés à la série `"Oneshots"`.
+:::
+
+**Détection du type de volume depuis le nom de fichier** :
+
+| Pattern dans le nom | Type assigné |
+|---------------------|-------------|
+| `HS`, `HS1`, `Hors-Série 3`, `Bonus -…` | `hs` |
+| `INT`, `INT.02`, `INTHS`, `Intégrale 5` | `integral` |
+| Tout autre numérotation | `regular` |
+| Fichier dans un dossier `Oneshots` racine | `oneshot` |
+
 ## Métadonnées de série
 
 | Champ | Description |

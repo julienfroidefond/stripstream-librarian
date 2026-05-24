@@ -64,6 +64,12 @@ export default defineConfig({
 					],
 				},
 				{
+					label: 'Téléchargements',
+					items: [
+						{ label: 'Vue d\'ensemble', slug: 'downloads/overview' },
+					],
+				},
+				{
 					label: 'Intégrations',
 					items: [
 						{ label: 'AniList', slug: 'integrations/anilist' },
