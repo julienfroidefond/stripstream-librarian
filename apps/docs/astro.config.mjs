@@ -62,6 +62,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Sources', slug: 'discovery/sources' },
 						{ label: 'Ajouter à la bibliothèque', slug: 'discovery/add-to-library' },
+						{ label: 'Wishlist', slug: 'discovery/wishlist' },
 					],
 				},
 				{

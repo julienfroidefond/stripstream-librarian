@@ -7,6 +7,7 @@ import { useTranslation } from "@/lib/i18n/context";
 import type { DiscoverySuggestion } from "../page";
 import { DiscoveryCard } from "./DiscoveryCard";
 import { ProwlarrDiscoveryList } from "./ProwlarrDiscoveryList";
+import { WishlistTab } from "./WishlistTab";
 
 interface Library {
   id: string;
@@ -14,7 +15,7 @@ interface Library {
   tags: string[];
 }
 
-type TabId = "trending" | "prowlarr";
+type TabId = "trending" | "prowlarr" | "wishlist";
 
 const PROVIDERS = [
   { id: "sc_trending_bd", label: "Nouveautés BD", description: "", hasPeriod: true },
@@ -145,6 +146,7 @@ export function DiscoveryGrid({
   const tabs: { id: TabId; label: string }[] = [
     { id: "trending", label: t("discovery.trending") },
     ...(prowlarrConfigured ? [{ id: "prowlarr" as TabId, label: t("discovery.prowlarr") }] : []),
+    { id: "wishlist", label: t("discovery.wishlist") },
   ];
 
   return (
@@ -287,6 +289,7 @@ export function DiscoveryGrid({
       )}
 
       {activeTab === "prowlarr" && <ProwlarrDiscoveryList key={prowlarrKey} libraries={libraries} nocache={prowlarrKey > 0} />}
+      {activeTab === "wishlist" && <WishlistTab libraries={libraries} />}
     </div>
   );
 }
