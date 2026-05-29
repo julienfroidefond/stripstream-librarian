@@ -1109,6 +1109,7 @@ const fr = {
   "discovery.prowlarrExisting": "Déjà dans la bibliothèque",
   "discovery.prowlarrNewMeta": "Nouvelle série",
   "discovery.prowlarrDownloadTo": "Télécharger → {{name}}",
+  "discovery.prowlarrHideMine": "Masquer possédées",
   "library.tags": "Tags",
   "library.tagsPlaceholder": "Ajouter un tag...",
 

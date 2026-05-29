@@ -1111,6 +1111,7 @@ const en: Record<TranslationKey, string> = {
   "discovery.prowlarrExisting": "Already in library",
   "discovery.prowlarrNewMeta": "New series",
   "discovery.prowlarrDownloadTo": "Download → {{name}}",
+  "discovery.prowlarrHideMine": "Hide owned",
   "library.tags": "Tags",
   "library.tagsPlaceholder": "Add a tag...",
 

@@ -54,12 +54,13 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
   const [allIndexers, setAllIndexers] = useState<string[]>([]);
   const [filterSearch, setFilterSearch] = useState("");
   const [sort, setSort] = useState<"seeders" | "date">("seeders");
+  const [hideMine, setHideMine] = useState(false);
   const [page, setPage] = useState(1);
 
   // Reset to page 1 whenever filters or sort change
   useEffect(() => {
     setPage(1);
-  }, [filterCategory, filterIndexer, filterSearch, sort]);
+  }, [filterCategory, filterIndexer, filterSearch, sort, hideMine]);
 
 
   useEffect(() => {
@@ -115,6 +116,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
 
   const filteredItems = items
     .filter((i) => !addedSet.has(i.series_name))
+    .filter((i) => !hideMine || !i.local_series_id)
     .filter((i) => filterCategory === "all" || i.categories.includes(filterCategory))
     .filter((i) => !filterSearch || i.series_name.toLowerCase().includes(filterSearch.toLowerCase()));
 
@@ -165,6 +167,16 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
           placeholder={t("common.search")}
           className="text-sm border border-border rounded-lg px-3 py-1.5 bg-background w-48"
         />
+        <button
+          onClick={() => setHideMine((v) => !v)}
+          className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+            hideMine
+              ? "bg-green-500/15 text-green-600 border-green-500/30"
+              : "bg-card text-muted-foreground border-border hover:border-primary/30"
+          }`}
+        >
+          {t("discovery.prowlarrHideMine")}
+        </button>
         <div className="flex gap-0.5">
           {(["seeders", "date"] as const).map((s) => (
             <button

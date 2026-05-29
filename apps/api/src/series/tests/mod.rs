@@ -21,6 +21,9 @@ fn series_item_has_series_id() {
         anilist_id: None,
         anilist_url: None,
         cover_url: None,
+        genres: vec![],
+        authors: vec![],
+        description: None,
     };
     let json = serde_json::to_value(&item).unwrap();
     assert!(json["series_id"].is_string());
@@ -34,6 +37,7 @@ fn series_metadata_serializes() {
         series_name: "Naruto".to_string(),
         description: Some("A ninja story".to_string()),
         authors: vec!["Kishimoto".to_string()],
+        genres: vec![],
         publishers: vec![],
         book_author: None,
         book_language: None,
@@ -72,6 +76,9 @@ fn series_item_includes_library_id() {
         anilist_id: Some(12345),
         anilist_url: Some("https://anilist.co/manga/12345".to_string()),
         cover_url: None,
+        genres: vec![],
+        authors: vec![],
+        description: None,
     };
     let json = serde_json::to_value(&item).unwrap();
     assert_eq!(json["library_id"], lib_id.to_string());
