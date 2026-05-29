@@ -365,6 +365,26 @@ pub async fn prowlarr_discovery(
         }
     }
 
+    // Acquire fetch lock to prevent concurrent fetches from hammering indexers
+    let _fetch_guard = state.prowlarr_fetch_lock.lock().await;
+
+    // Re-check cache after acquiring lock — a concurrent request may have populated it
+    if !skip_cache {
+        if let Some(mut cached) = get_cached_raw::<Vec<ProwlarrDiscoveryItem>>(&state.pool, &cache_key).await {
+            apply_sort(&mut cached, sort_by_date);
+            let all_indexers = all_indexers_from(&cached);
+            let pre_filtered: Vec<ProwlarrDiscoveryItem> = if let Some(idx) = indexer_filter {
+                cached.into_iter().filter(|i| i.indexers.iter().any(|x| x == idx)).collect()
+            } else {
+                cached
+            };
+            let filtered = filter_prowlarr_owned(&state.pool, pre_filtered).await;
+            let annotated = annotate_local_matches(&state.pool, filtered).await;
+            let items: Vec<ProwlarrDiscoveryItem> = annotated.into_iter().take(limit).collect();
+            return Ok(Json(ProwlarrDiscoveryResponse { items, all_indexers }));
+        }
+    }
+
     // Load Prowlarr config
     let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'prowlarr'")
         .fetch_optional(&state.pool)
@@ -398,10 +418,10 @@ pub async fn prowlarr_discovery(
         query: String,
         sort_key: Option<&'static str>,
     }
+    // 5 queries instead of 8 — "scan"/"vf"/"fr" overlapped heavily and triggered rate limits
     let mut requests: Vec<ProwlarrRequest> = vec![
         "".to_string(), "manga".to_string(), "bd".to_string(),
-        "comics".to_string(), "tome".to_string(), "scan".to_string(),
-        "vf".to_string(), "fr".to_string(),
+        "comics".to_string(), "tome".to_string(),
     ]
     .into_iter()
     .map(|q| ProwlarrRequest { query: q, sort_key: None })
@@ -449,8 +469,8 @@ pub async fn prowlarr_discovery(
             }
         }
 
-        // Small delay between requests to avoid rate limiting
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        // Delay between requests — 1 s to avoid triggering indexer rate limits
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
     }
 
     if raw.is_empty() {

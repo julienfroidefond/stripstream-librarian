@@ -89,6 +89,7 @@ async fn main() -> anyhow::Result<()> {
             requests_in_window: 0,
         })),
         settings: Arc::new(RwLock::new(dynamic_settings)),
+        prowlarr_fetch_lock: Arc::new(Mutex::new(())),
     };
 
     let admin_routes = Router::new()

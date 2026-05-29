@@ -118,6 +118,7 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
   const [selectedExisting, setSelectedExisting] = useState<SeriesDto | null>(null);
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   async function runSearch(libId: string, query: string, provider?: string) {
     setSearching(true);
@@ -184,6 +185,7 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
     setSelectedExisting(null);
     setSearchError(null);
     setErrorMessage(null);
+    setDownloadError(null);
 
     if (libraries.length === 1) {
       startSearchStep(libraries[0].id);
@@ -289,7 +291,7 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
 
       if (download && mode === "prowlarr" && item?.best_download_url) {
         const seriesName = selectedExisting?.name ?? selectedCandidate?.title ?? item.series_name;
-        await fetch("/api/qbittorrent/add", {
+        const dlResp = await fetch("/api/qbittorrent/add", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -299,6 +301,10 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
             expected_volumes: item.volumes_found,
           }),
         });
+        if (!dlResp.ok) {
+          const err = await dlResp.json().catch(() => ({}));
+          setDownloadError(err?.error ?? `Erreur téléchargement (${dlResp.status})`);
+        }
       }
 
       setStep("done");
@@ -549,6 +555,11 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
               </p>
               {mode === "prowlarr" && !item?.best_download_url && (
                 <p className="text-xs text-muted-foreground">{t("discovery.prowlarrNoDownload")}</p>
+              )}
+              {downloadError && (
+                <p className="text-xs text-amber-600 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 max-w-xs">
+                  ⚠ {downloadError}
+                </p>
               )}
               <button onClick={close} className="mt-1 px-4 py-2 rounded-lg border border-border text-sm hover:bg-muted transition-colors">
                 {t("common.close")}

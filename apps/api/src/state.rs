@@ -17,6 +17,8 @@ pub struct AppState {
     pub metrics: Arc<Metrics>,
     pub read_rate_limit: Arc<Mutex<ReadRateLimit>>,
     pub settings: Arc<RwLock<DynamicSettings>>,
+    /// Prevents concurrent Prowlarr discovery fetches from hammering indexers simultaneously
+    pub prowlarr_fetch_lock: Arc<Mutex<()>>,
 }
 
 #[derive(Clone)]
