@@ -286,8 +286,13 @@ pub async fn delete_series(
     if let Some(ref dir) = series_dir {
         let dir_path = std::path::Path::new(dir);
         if dir_path.exists() {
-            match std::fs::remove_dir_all(dir) {
+            // Use remove_dir (non-recursive) so shared folders like Oneshots/ are preserved
+            // when they still contain other books after deletion.
+            match std::fs::remove_dir(dir) {
                 Ok(()) => tracing::info!("[SERIES] Deleted series directory: {}", dir),
+                Err(e) if e.kind() == std::io::ErrorKind::DirectoryNotEmpty => {
+                    tracing::info!("[SERIES] Directory not empty, keeping: {}", dir);
+                }
                 Err(e) => tracing::warn!("[SERIES] Failed to delete series directory {}: {}", dir, e),
             }
         }

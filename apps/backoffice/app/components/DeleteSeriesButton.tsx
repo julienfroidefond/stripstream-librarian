@@ -25,6 +25,7 @@ export function DeleteSeriesButton({ seriesId, children }: DeleteSeriesButtonPro
         { method: "DELETE" }
       );
       if (resp.ok) {
+        router.refresh();
         router.push("/series");
       }
     } finally {
