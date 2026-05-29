@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
+import { ProwlarrAddModal } from "./ProwlarrAddModal";
 
 interface ProwlarrItem {
   series_name: string;
@@ -61,7 +62,6 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
   const [items, setItems] = useState<ProwlarrItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [addingSet, setAddingSet] = useState<Set<string>>(new Set());
   const [addedSet, setAddedSet] = useState<Set<string>>(new Set());
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterIndexer, setFilterIndexer] = useState<string>("all");
@@ -101,42 +101,8 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
     fetchData();
   }, [sort, nocache, filterIndexer]);
 
-  async function handleAdd(item: ProwlarrItem, libraryId: string) {
-    const key = item.series_name;
-    setAddingSet((prev) => new Set(prev).add(key));
-    try {
-      const resp = await fetch("/api/discovery/add-to-library", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          library_id: libraryId,
-          provider: "prowlarr",
-          external_id: `prowlarr:${item.series_name}`,
-          title: item.series_name,
-          description: null,
-          authors: [],
-          publishers: [],
-          genres: item.categories,
-          start_year: null,
-          total_volumes: (item.volumes_found?.length ?? 0) > 0 ? Math.max(...item.volumes_found) : null,
-          status: null,
-          cover_url: null,
-          external_url: null,
-        }),
-      });
-      if (resp.ok) {
-        setAddedSet((prev) => new Set(prev).add(key));
-      } else {
-        const err = await resp.json().catch(() => ({}));
-        console.error("[Prowlarr add]", err?.error || resp.status);
-      }
-    } finally {
-      setAddingSet((prev) => {
-        const next = new Set(prev);
-        next.delete(key);
-        return next;
-      });
-    }
+  function handleAdded(seriesName: string) {
+    setAddedSet((prev) => new Set(prev).add(seriesName));
   }
 
   if (loading) {
@@ -277,7 +243,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
           </thead>
           <tbody className="divide-y divide-border">
             {visibleItems.map((item, idx) => (
-              <ProwlarrRow key={item.series_name} item={item} idx={pageStart + idx} libraries={libraries} adding={addingSet.has(item.series_name)} onAdd={handleAdd} />
+              <ProwlarrRow key={item.series_name} item={item} idx={pageStart + idx} libraries={libraries} onAdded={() => handleAdded(item.series_name)} />
             ))}
           </tbody>
         </table>
@@ -326,14 +292,12 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
   );
 }
 
-function ProwlarrRow({ item, idx, libraries, adding, onAdd }: {
+function ProwlarrRow({ item, idx, libraries, onAdded }: {
   item: ProwlarrItem;
   idx: number;
   libraries: Library[];
-  adding: boolean;
-  onAdd: (item: ProwlarrItem, libraryId: string) => void;
+  onAdded: () => void;
 }) {
-  const [showPicker, setShowPicker] = useState(false);
   return (
     <tr className="hover:bg-muted/30 transition-colors">
       <td className="px-3 py-2 text-muted-foreground text-xs">{idx + 1}</td>
@@ -382,24 +346,11 @@ function ProwlarrRow({ item, idx, libraries, adding, onAdd }: {
       <td className="px-3 py-2 text-right text-muted-foreground text-xs">{formatSize(item.best_size)}</td>
       <td className="px-3 py-2 text-right text-muted-foreground text-xs">{formatPublishDate(item.best_publish_date)}</td>
       <td className="px-3 py-2 text-right">
-        {adding ? (
-          <Icon name="spinner" size="sm" className="animate-spin text-muted-foreground" />
-        ) : libraries.length === 1 ? (
-          <Button variant="outline" size="xs" onClick={() => onAdd(item, libraries[0].id)}>+</Button>
-        ) : (
-          <div className="relative">
-            <Button variant="outline" size="xs" onClick={() => setShowPicker((v) => !v)}>+</Button>
-            {showPicker && (
-              <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-lg p-1 z-10 min-w-32">
-                {libraries.map((lib) => (
-                  <button key={lib.id} onClick={() => { onAdd(item, lib.id); setShowPicker(false); }} className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted transition-colors">
-                    {lib.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        <ProwlarrAddModal item={item} libraries={libraries} onAdded={onAdded}>
+          {(open) => (
+            <Button variant="outline" size="xs" onClick={open}>+</Button>
+          )}
+        </ProwlarrAddModal>
       </td>
     </tr>
   );

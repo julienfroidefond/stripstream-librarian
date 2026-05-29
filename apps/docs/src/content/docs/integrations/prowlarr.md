@@ -3,6 +3,10 @@ title: Prowlarr
 description: Recherche d'indexeurs et détection de téléchargements
 ---
 
+## Découverte (onglet Prowlarr)
+
+L'onglet **Prowlarr** de la page Découverte agrège les releases disponibles par série. Le bouton "+" ouvre un modal d'ajout guidé — voir [Ajouter à la bibliothèque](/discovery/add-to-library/) pour le détail du flow.
+
 ## Recherche
 
 Recherchez Prowlarr pour les volumes manquants d'une série :
