@@ -24,6 +24,9 @@ export interface ProwlarrItem {
   best_info_url: string | null;
   best_indexer: string | null;
   volumes_found: number[];
+  local_series_id: string | null;
+  local_series_name: string | null;
+  volumes_already_owned: number[];
 }
 
 interface Library {

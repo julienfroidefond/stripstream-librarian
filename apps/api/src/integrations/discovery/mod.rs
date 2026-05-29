@@ -286,6 +286,14 @@ pub struct ProwlarrDiscoveryItem {
     #[serde(default)]
     pub best_indexer: Option<String>,
     pub volumes_found: Vec<i32>,
+    /// Local series matched by normalized name (unaccent + lowercase)
+    #[serde(default)]
+    pub local_series_id: Option<String>,
+    #[serde(default)]
+    pub local_series_name: Option<String>,
+    /// Subset of volumes_found already present in the local series
+    #[serde(default)]
+    pub volumes_already_owned: Vec<i32>,
 }
 
 #[derive(Serialize)]
@@ -350,10 +358,9 @@ pub async fn prowlarr_discovery(
             } else {
                 cached
             };
-            let items: Vec<ProwlarrDiscoveryItem> = filter_prowlarr_owned(&state.pool, pre_filtered).await
-                .into_iter()
-                .take(limit)
-                .collect();
+            let filtered = filter_prowlarr_owned(&state.pool, pre_filtered).await;
+            let annotated = annotate_local_matches(&state.pool, filtered).await;
+            let items: Vec<ProwlarrDiscoveryItem> = annotated.into_iter().take(limit).collect();
             return Ok(Json(ProwlarrDiscoveryResponse { items, all_indexers }));
         }
     }
@@ -498,6 +505,9 @@ pub async fn prowlarr_discovery(
             best_info_url: None,
             best_indexer: None,
             volumes_found: Vec::new(),
+            local_series_id: None,
+            local_series_name: None,
+            volumes_already_owned: Vec::new(),
         });
 
         entry.release_count += 1;
@@ -577,9 +587,10 @@ pub async fn prowlarr_discovery(
     } else {
         items
     };
-    let result_items = filter_prowlarr_owned(&state.pool, pre_filtered).await;
-    tracing::info!("[DISCOVERY] Prowlarr: {} after filter (was {})", result_items.len(), before_filter);
-    let result_items: Vec<ProwlarrDiscoveryItem> = result_items.into_iter().take(limit).collect();
+    let filtered = filter_prowlarr_owned(&state.pool, pre_filtered).await;
+    tracing::info!("[DISCOVERY] Prowlarr: {} after filter (was {})", filtered.len(), before_filter);
+    let annotated = annotate_local_matches(&state.pool, filtered).await;
+    let result_items: Vec<ProwlarrDiscoveryItem> = annotated.into_iter().take(limit).collect();
     Ok(Json(ProwlarrDiscoveryResponse { items: result_items, all_indexers }))
 }
 
@@ -628,6 +639,84 @@ pub fn extract_series_name_from_torrent(title: &str) -> String {
         }
     }
     title[..best_pos].trim().to_string()
+}
+
+/// Annotate Prowlarr items with matching local series (2 batch queries).
+/// Uses unaccent + lowercase matching to catch accent differences.
+async fn annotate_local_matches(
+    pool: &sqlx::PgPool,
+    mut items: Vec<ProwlarrDiscoveryItem>,
+) -> Vec<ProwlarrDiscoveryItem> {
+    if items.is_empty() {
+        return items;
+    }
+
+    // Query 1: find local series whose normalized name matches any item
+    let norm_names: Vec<String> = items.iter()
+        .map(|i| i.series_name.to_lowercase())
+        .collect();
+
+    let matched_rows = sqlx::query(
+        "SELECT id::text, name, LOWER(unaccent(name)) AS norm_name \
+         FROM series \
+         WHERE LOWER(unaccent(name)) = ANY($1)",
+    )
+    .bind(&norm_names)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    if matched_rows.is_empty() {
+        return items;
+    }
+
+    // Build norm_name → (series_id, series_name) map
+    let match_map: std::collections::HashMap<String, (String, String)> = matched_rows.iter()
+        .map(|r| {
+            let norm: String = r.get("norm_name");
+            let id: String = r.get("id");
+            let name: String = r.get("name");
+            (norm, (id, name))
+        })
+        .collect();
+
+    let matched_ids: Vec<String> = match_map.values().map(|(id, _)| id.clone()).collect();
+
+    // Query 2: get all regular volume numbers for matched series
+    let volume_rows = sqlx::query(
+        "SELECT series_id::text, volume_number \
+         FROM books \
+         WHERE series_id::text = ANY($1) AND volume_type = 'regular' AND volume_number IS NOT NULL",
+    )
+    .bind(&matched_ids)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    // series_id → Vec<volume_number>
+    let mut owned_volumes: std::collections::HashMap<String, Vec<i32>> = std::collections::HashMap::new();
+    for row in &volume_rows {
+        let sid: String = row.get("series_id");
+        let vol: i32 = row.get("volume_number");
+        owned_volumes.entry(sid).or_default().push(vol);
+    }
+
+    // Annotate items
+    for item in &mut items {
+        let norm = item.series_name.to_lowercase();
+        // Try exact unaccent match first, then plain lowercase
+        if let Some((sid, sname)) = match_map.get(&norm) {
+            let owned = owned_volumes.get(sid).cloned().unwrap_or_default();
+            item.volumes_already_owned = item.volumes_found.iter()
+                .filter(|v| owned.contains(v))
+                .copied()
+                .collect();
+            item.local_series_id = Some(sid.clone());
+            item.local_series_name = Some(sname.clone());
+        }
+    }
+
+    items
 }
 
 /// Filter out Prowlarr results for series already in the library

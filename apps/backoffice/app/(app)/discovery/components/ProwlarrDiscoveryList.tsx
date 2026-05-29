@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { Button, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 import { SeriesAddModal, type ProwlarrItem } from "./SeriesAddModal";
@@ -308,6 +309,21 @@ function ProwlarrRow({ item, idx, libraries, onAdded }: {
             <p className="text-[10px] text-muted-foreground truncate max-w-xs" title={item.best_release_title}>
               {item.best_release_title}
             </p>
+            {item.local_series_id && (
+              <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                <Link
+                  href={`/series/${item.local_series_id}`}
+                  className="text-[10px] text-green-600 dark:text-green-500 hover:underline"
+                >
+                  ✓ {item.local_series_name ?? item.series_name}
+                </Link>
+                {item.volumes_already_owned.length > 0 && (
+                  <span className="text-[10px] text-muted-foreground">
+                    · {item.volumes_already_owned.map((v) => `T${v}`).join(", ")} possédé{item.volumes_already_owned.length > 1 ? "s" : ""}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </td>
