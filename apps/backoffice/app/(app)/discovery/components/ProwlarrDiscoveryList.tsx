@@ -3,23 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
-import { ProwlarrAddModal } from "./ProwlarrAddModal";
+import { SeriesAddModal, type ProwlarrItem } from "./SeriesAddModal";
 
-interface ProwlarrItem {
-  series_name: string;
-  release_count: number;
-  best_seeders: number;
-  total_seeders: number;
-  categories: string[];
-  indexers: string[];
-  best_release_title: string;
-  best_download_url: string | null;
-  best_size: number;
-  best_publish_date: string | null;
-  best_info_url: string | null;
-  best_indexer: string | null;
-  volumes_found: number[];
-}
 
 const PAGE_SIZE = 25;
 
@@ -346,11 +331,11 @@ function ProwlarrRow({ item, idx, libraries, onAdded }: {
       <td className="px-3 py-2 text-right text-muted-foreground text-xs">{formatSize(item.best_size)}</td>
       <td className="px-3 py-2 text-right text-muted-foreground text-xs">{formatPublishDate(item.best_publish_date)}</td>
       <td className="px-3 py-2 text-right">
-        <ProwlarrAddModal item={item} libraries={libraries} onAdded={onAdded}>
+        <SeriesAddModal mode="prowlarr" item={item} libraries={libraries} onAdded={onAdded}>
           {(open) => (
             <Button variant="outline" size="xs" onClick={open}>+</Button>
           )}
-        </ProwlarrAddModal>
+        </SeriesAddModal>
       </td>
     </tr>
   );

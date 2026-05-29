@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Icon } from "@/app/components/ui";
+import { Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
+import { SeriesAddModal } from "./SeriesAddModal";
 import type { DiscoverySuggestion } from "../page";
 
 interface Library {
@@ -23,10 +24,8 @@ export function DiscoveryCard({
   onHidden?: (externalId: string) => void;
 }) {
   const { t } = useTranslation();
-  const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
   const [hidden, setHidden] = useState(false);
-  const [showLibraryPicker, setShowLibraryPicker] = useState(false);
   const [imgError, setImgError] = useState(false);
 
   async function handleHide() {
@@ -46,38 +45,6 @@ export function DiscoveryCard({
         onHidden?.(suggestion.external_id);
       }
     } catch { /* ignore */ }
-  }
-
-  async function handleAdd(libraryId: string) {
-    setAdding(true);
-    try {
-      const resp = await fetch("/api/discovery/add-to-library", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          library_id: libraryId,
-          provider: suggestion.provider,
-          external_id: suggestion.external_id,
-          title: suggestion.title,
-          description: suggestion.description,
-          authors: suggestion.authors,
-          publishers: [],
-          genres: suggestion.genres,
-          start_year: suggestion.start_year,
-          total_volumes: suggestion.total_volumes,
-          status: suggestion.status,
-          cover_url: suggestion.cover_url,
-          external_url: (suggestion.provider === "bedetheque" || suggestion.provider === "senscritique" || suggestion.provider.startsWith("sc_")) ? suggestion.external_url : null,
-        }),
-      });
-      if (resp.ok) {
-        setAdded(true);
-        onAdded(suggestion.external_id);
-      }
-    } finally {
-      setAdding(false);
-      setShowLibraryPicker(false);
-    }
   }
 
   const hasImage = suggestion.cover_url && !imgError;
@@ -166,42 +133,25 @@ export function DiscoveryCard({
           <div className="text-center text-[11px] text-green-600 font-medium py-1">
             {t("discovery.added")}
           </div>
-        ) : showLibraryPicker ? (
-          <div className="space-y-0.5">
-            {libraries.map((lib) => (
-              <button
-                key={lib.id}
-                onClick={() => handleAdd(lib.id)}
-                disabled={adding}
-                className="w-full text-left text-[11px] px-2 py-1 rounded hover:bg-muted transition-colors disabled:opacity-50"
-              >
-                {lib.name}
-              </button>
-            ))}
-          </div>
         ) : (
           <div className="flex gap-1.5">
-            <button
-              type="button"
-              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium border border-primary/20 hover:bg-primary/20 transition-colors disabled:opacity-50"
-              onClick={() => {
-                if (libraries.length === 1) {
-                  handleAdd(libraries[0].id);
-                } else {
-                  setShowLibraryPicker(true);
-                }
-              }}
-              disabled={adding}
+            <SeriesAddModal
+              mode="discovery"
+              suggestion={suggestion}
+              libraries={libraries}
+              onAdded={() => { setAdded(true); onAdded(suggestion.external_id); }}
             >
-              {adding ? (
-                <Icon name="spinner" size="sm" className="animate-spin" />
-              ) : (
-                <>
+              {(open) => (
+                <button
+                  type="button"
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary text-xs font-medium border border-primary/20 hover:bg-primary/20 transition-colors"
+                  onClick={open}
+                >
                   <Icon name="plus" size="sm" />
                   {t("discovery.add")}
-                </>
+                </button>
               )}
-            </button>
+            </SeriesAddModal>
             <button
               type="button"
               onClick={handleHide}
