@@ -358,8 +358,7 @@ pub async fn prowlarr_discovery(
             } else {
                 cached
             };
-            let filtered = filter_prowlarr_owned(&state.pool, pre_filtered).await;
-            let annotated = annotate_local_matches(&state.pool, filtered).await;
+            let annotated = annotate_local_matches(&state.pool, pre_filtered).await;
             let items: Vec<ProwlarrDiscoveryItem> = annotated.into_iter().take(limit).collect();
             return Ok(Json(ProwlarrDiscoveryResponse { items, all_indexers }));
         }
@@ -378,8 +377,7 @@ pub async fn prowlarr_discovery(
             } else {
                 cached
             };
-            let filtered = filter_prowlarr_owned(&state.pool, pre_filtered).await;
-            let annotated = annotate_local_matches(&state.pool, filtered).await;
+            let annotated = annotate_local_matches(&state.pool, pre_filtered).await;
             let items: Vec<ProwlarrDiscoveryItem> = annotated.into_iter().take(limit).collect();
             return Ok(Json(ProwlarrDiscoveryResponse { items, all_indexers }));
         }
@@ -600,16 +598,13 @@ pub async fn prowlarr_discovery(
     apply_sort(&mut items, sort_by_date);
     let all_indexers = all_indexers_from(&items);
 
-    // Filter by indexer first, then filter owned, then limit
-    let before_filter = items.len();
+    // Filter by indexer then annotate with local library matches
     let pre_filtered: Vec<ProwlarrDiscoveryItem> = if let Some(idx) = indexer_filter {
         items.into_iter().filter(|i| i.indexers.iter().any(|x| x == idx)).collect()
     } else {
         items
     };
-    let filtered = filter_prowlarr_owned(&state.pool, pre_filtered).await;
-    tracing::info!("[DISCOVERY] Prowlarr: {} after filter (was {})", filtered.len(), before_filter);
-    let annotated = annotate_local_matches(&state.pool, filtered).await;
+    let annotated = annotate_local_matches(&state.pool, pre_filtered).await;
     let result_items: Vec<ProwlarrDiscoveryItem> = annotated.into_iter().take(limit).collect();
     Ok(Json(ProwlarrDiscoveryResponse { items: result_items, all_indexers }))
 }
@@ -758,17 +753,16 @@ async fn annotate_local_matches(
         return items;
     }
 
-    // Query 1: find local series whose normalized name matches any item
-    let norm_names: Vec<String> = items.iter()
-        .map(|i| i.series_name.to_lowercase())
-        .collect();
+    let item_names: Vec<String> = items.iter().map(|i| i.series_name.clone()).collect();
 
+    // Normalize both sides with unaccent so "Asterix" matches "Astérix" in DB
     let matched_rows = sqlx::query(
-        "SELECT id::text, name, LOWER(unaccent(name)) AS norm_name \
-         FROM series \
-         WHERE LOWER(unaccent(name)) = ANY($1)",
+        "SELECT s.id::text, s.name, inputs.raw_name \
+         FROM series s \
+         JOIN (SELECT unnest($1::text[]) AS raw_name) AS inputs \
+           ON LOWER(unaccent(s.name)) = LOWER(unaccent(inputs.raw_name))",
     )
-    .bind(&norm_names)
+    .bind(&item_names)
     .fetch_all(pool)
     .await
     .unwrap_or_default();
@@ -777,13 +771,13 @@ async fn annotate_local_matches(
         return items;
     }
 
-    // Build norm_name → (series_id, series_name) map
+    // Build raw_item_name → (series_id, series_name) map
     let match_map: std::collections::HashMap<String, (String, String)> = matched_rows.iter()
         .map(|r| {
-            let norm: String = r.get("norm_name");
+            let raw: String = r.get("raw_name");
             let id: String = r.get("id");
             let name: String = r.get("name");
-            (norm, (id, name))
+            (raw, (id, name))
         })
         .collect();
 
@@ -808,11 +802,9 @@ async fn annotate_local_matches(
         owned_volumes.entry(sid).or_default().push(vol);
     }
 
-    // Annotate items
+    // Annotate items — look up by the original item name (matched in SQL via unaccent)
     for item in &mut items {
-        let norm = item.series_name.to_lowercase();
-        // Try exact unaccent match first, then plain lowercase
-        if let Some((sid, sname)) = match_map.get(&norm) {
+        if let Some((sid, sname)) = match_map.get(&item.series_name) {
             let owned = owned_volumes.get(sid).cloned().unwrap_or_default();
             item.volumes_already_owned = item.volumes_found.iter()
                 .filter(|v| owned.contains(v))
@@ -826,29 +818,6 @@ async fn annotate_local_matches(
     items
 }
 
-/// Filter out Prowlarr results for series already in the library
-async fn filter_prowlarr_owned(
-    pool: &sqlx::PgPool,
-    items: Vec<ProwlarrDiscoveryItem>,
-) -> Vec<ProwlarrDiscoveryItem> {
-    if items.is_empty() {
-        return items;
-    }
-
-    let names: Vec<String> = items.iter().map(|i| i.series_name.to_lowercase()).collect();
-    let owned: Vec<String> = sqlx::query_scalar(
-        "SELECT LOWER(name) FROM series WHERE LOWER(name) = ANY($1)",
-    )
-    .bind(&names)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
-
-    items
-        .into_iter()
-        .filter(|i| !owned.contains(&i.series_name.to_lowercase()))
-        .collect()
-}
 
 // ─── Generic cache helpers for typed data ───────────────────────────────────
 
