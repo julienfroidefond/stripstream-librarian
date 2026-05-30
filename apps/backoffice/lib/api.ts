@@ -1487,6 +1487,12 @@ export async function fetchReadingLists(): Promise<ReadingListDto[]> {
   return apiFetch<ReadingListDto[]>("/reading-lists");
 }
 
+export async function fetchSeriesReadingLists(seriesId: string): Promise<ReadingListDto[]> {
+  return apiFetch<ReadingListDto[]>(`/reading-lists?series_id=${seriesId}`, {
+    next: { revalidate: 15, tags: [`series:${seriesId}`, "reading-lists"] },
+  });
+}
+
 export async function fetchSeriesMemberships(): Promise<SeriesMembershipDto[]> {
   return apiFetch<SeriesMembershipDto[]>("/reading-lists/memberships");
 }

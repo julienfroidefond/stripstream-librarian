@@ -1,4 +1,4 @@
-import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, fetchDownloadsEnabled, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto } from "@/lib/api";
+import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, fetchDownloadsEnabled, fetchSeriesReadingLists, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto, ReadingListDto } from "@/lib/api";
 import { BooksGrid, EmptyState } from "@/app/components/BookCard";
 import { SeriesRelatedCarousel } from "@/app/components/SeriesRelatedCarousel";
 import { BooksGridWithMissingToggle } from "@/app/components/ShowMissingToggle";
@@ -7,6 +7,7 @@ import { ProviderIcon, providerLabel } from "@/app/components/ProviderIcon";
 import { SeriesActionsToolbar } from "@/app/components/SeriesActionsToolbar";
 import { OffsetPagination } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
+import { Bookmark } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -52,7 +53,7 @@ export default async function SeriesDetailPage({
   const seriesName = seriesMeta?.series_name ?? "";
 
   // Fetch books and related series in parallel
-  const [booksPage, relatedSeries] = await Promise.all([
+  const [booksPage, relatedSeries, seriesReadingLists] = await Promise.all([
     fetchBooks(libraryId, seriesId, page, limit).catch(() => ({
       items: [] as BookDto[],
       total: 0,
@@ -60,6 +61,7 @@ export default async function SeriesDetailPage({
       limit,
     })),
     fetchRelatedSeries(seriesId, 12).catch(() => []),
+    fetchSeriesReadingLists(seriesId).catch(() => [] as ReadingListDto[]),
   ]);
 
   const hiddenProviders: string[] = [];
@@ -193,6 +195,21 @@ export default async function SeriesDetailPage({
                 <span key={g} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success/10 text-success border border-success/20">
                   {g}
                 </span>
+              ))}
+            </div>
+          )}
+
+          {seriesReadingLists.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {seriesReadingLists.map((list) => (
+                <Link
+                  key={list.id}
+                  href={`/reading-lists/${list.id}`}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-cyan-500/10 text-cyan-600 border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors"
+                >
+                  <Bookmark className="w-3 h-3" />
+                  {list.name}
+                </Link>
               ))}
             </div>
           )}

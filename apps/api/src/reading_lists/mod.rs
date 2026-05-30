@@ -1,4 +1,4 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -490,11 +490,17 @@ pub async fn get_memberships(
     ))
 }
 
-/// List all reading lists (with series count)
+#[derive(Deserialize)]
+pub struct ListReadingListsQuery {
+    pub series_id: Option<Uuid>,
+}
+
+/// List all reading lists (with series count), optionally filtered by series membership
 #[utoipa::path(
     get,
     path = "/reading-lists",
     tag = "reading-lists",
+    params(("series_id" = Option<String>, Query, description = "Filter to lists containing this series UUID")),
     responses(
         (status = 200, body = Vec<ReadingListDto>),
         (status = 401, description = "Unauthorized"),
@@ -503,6 +509,7 @@ pub async fn get_memberships(
 )]
 pub async fn list_reading_lists(
     State(state): State<AppState>,
+    Query(query): Query<ListReadingListsQuery>,
 ) -> Result<Json<Vec<ReadingListDto>>, ApiError> {
     let rows = sqlx::query(
         r#"
@@ -523,10 +530,15 @@ pub async fn list_reading_lists(
                ) AS preview_covers
         FROM reading_lists rl
         LEFT JOIN reading_list_items rli ON rli.list_id = rl.id
+        WHERE ($1::uuid IS NULL OR EXISTS (
+            SELECT 1 FROM reading_list_items rli_f
+            WHERE rli_f.list_id = rl.id AND rli_f.series_id = $1
+        ))
         GROUP BY rl.id
         ORDER BY rl.name
         "#,
     )
+    .bind(query.series_id)
     .fetch_all(&state.pool)
     .await?;
 
