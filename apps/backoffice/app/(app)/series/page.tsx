@@ -191,13 +191,13 @@ export default async function SeriesPage({
                       </div>
                     ) : covers.length === 1 ? (
                       <div className="aspect-[2/3] overflow-hidden">
-                        <img src={covers[0]} alt={list.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                        <img src={getBookCoverUrl(covers[0])} alt={list.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                       </div>
                     ) : (
                       <div className="aspect-[2/3] grid grid-cols-2 grid-rows-2 gap-0.5 overflow-hidden">
-                        {[...covers, null, null, null, null].slice(0, 4).map((url, i) => (
+                        {[...covers, null, null, null, null].slice(0, 4).map((bookId, i) => (
                           <div key={i} className="overflow-hidden bg-muted">
-                            {url ? <img src={url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" /> : <div className="w-full h-full bg-muted" />}
+                            {bookId ? <img src={getBookCoverUrl(bookId)} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" /> : <div className="w-full h-full bg-muted" />}
                           </div>
                         ))}
                       </div>

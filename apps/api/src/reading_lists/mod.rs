@@ -357,11 +357,15 @@ async fn fetch_list_dto(pool: &sqlx::PgPool, id: Uuid) -> Result<ReadingListDto,
         SELECT rl.id, rl.name, rl.description, rl.created_at, rl.updated_at,
                COUNT(rli.id)::bigint AS series_count,
                ARRAY(
-                   SELECT s.cover_url
+                   SELECT fb.id::text
                    FROM reading_list_items rli2
                    JOIN series s ON s.id = rli2.series_id
+                   CROSS JOIN LATERAL (
+                       SELECT b.id FROM books b WHERE b.series_id = s.id
+                       ORDER BY CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END, b.volume NULLS LAST
+                       LIMIT 1
+                   ) fb
                    WHERE rli2.list_id = rl.id
-                     AND s.cover_url IS NOT NULL AND s.cover_url <> ''
                    ORDER BY rli2.position
                    LIMIT 4
                ) AS preview_covers
@@ -505,11 +509,15 @@ pub async fn list_reading_lists(
         SELECT rl.id, rl.name, rl.description, rl.created_at, rl.updated_at,
                COUNT(rli.id)::bigint AS series_count,
                ARRAY(
-                   SELECT s.cover_url
+                   SELECT fb.id::text
                    FROM reading_list_items rli2
                    JOIN series s ON s.id = rli2.series_id
+                   CROSS JOIN LATERAL (
+                       SELECT b.id FROM books b WHERE b.series_id = s.id
+                       ORDER BY CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END, b.volume NULLS LAST
+                       LIMIT 1
+                   ) fb
                    WHERE rli2.list_id = rl.id
-                     AND s.cover_url IS NOT NULL AND s.cover_url <> ''
                    ORDER BY rli2.position
                    LIMIT 4
                ) AS preview_covers

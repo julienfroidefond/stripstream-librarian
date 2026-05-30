@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useTranslation } from "@/lib/i18n/context";
 import type { ReadingListDto } from "@/lib/api";
+import { getBookCoverUrl } from "@/lib/api";
 import { Modal } from "@/app/components/ui/Modal";
 
 type Props = {
@@ -27,17 +28,17 @@ function CoverMosaic({ covers, name }: { covers: string[]; name: string }) {
   if (covers.length === 1) {
     return (
       <div className="w-full aspect-square overflow-hidden">
-        <img src={covers[0]} alt={name} className="w-full h-full object-cover" />
+        <img src={getBookCoverUrl(covers[0])} alt={name} className="w-full h-full object-cover" />
       </div>
     );
   }
 
   return (
     <div className="w-full aspect-square grid grid-cols-2 grid-rows-2 gap-0.5 overflow-hidden">
-      {filled.map((url, i) => (
+      {filled.map((bookId, i) => (
         <div key={i} className="overflow-hidden bg-muted">
-          {url ? (
-            <img src={url} alt="" className="w-full h-full object-cover" />
+          {bookId ? (
+            <img src={getBookCoverUrl(bookId)} alt="" className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full bg-muted" />
           )}

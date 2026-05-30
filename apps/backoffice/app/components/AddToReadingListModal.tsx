@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Modal } from "./ui/Modal";
 import { useTranslation } from "@/lib/i18n/context";
 import type { ReadingListDto } from "@/lib/api";
+import { getBookCoverUrl } from "@/lib/api";
 
 interface Props {
   seriesId: string;
@@ -87,12 +88,12 @@ export function AddToReadingListModal({ seriesId, children }: Props) {
                           </svg>
                         </div>
                       ) : list.preview_covers.length === 1 ? (
-                        <img src={list.preview_covers[0]} alt="" className="w-full h-full object-cover" />
+                        <img src={getBookCoverUrl(list.preview_covers[0])} alt="" className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full grid grid-cols-2 gap-px">
-                          {[...list.preview_covers, null, null, null, null].slice(0, 4).map((url, i) => (
+                          {[...list.preview_covers, null, null, null, null].slice(0, 4).map((bookId, i) => (
                             <div key={i} className="overflow-hidden bg-muted">
-                              {url ? <img src={url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-muted/50" />}
+                              {bookId ? <img src={getBookCoverUrl(bookId)} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-muted/50" />}
                             </div>
                           ))}
                         </div>
