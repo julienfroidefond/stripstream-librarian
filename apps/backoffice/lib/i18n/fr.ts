@@ -54,6 +54,7 @@ const fr = {
   "actionsMenu.download": "Téléchargement",
   "actionsMenu.files": "Fichiers",
   "actionsMenu.actions": "Actions",
+  "actionsMenu.readingLists": "Listes",
 
   // Reading status
   "status.unread": "Non lu",

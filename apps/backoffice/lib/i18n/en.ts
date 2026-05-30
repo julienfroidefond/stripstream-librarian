@@ -56,6 +56,7 @@ const en: Record<TranslationKey, string> = {
   "actionsMenu.download": "Download",
   "actionsMenu.files": "Files",
   "actionsMenu.actions": "Actions",
+  "actionsMenu.readingLists": "Lists",
 
   // Reading status
   "status.unread": "Unread",

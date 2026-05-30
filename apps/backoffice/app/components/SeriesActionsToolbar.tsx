@@ -179,7 +179,7 @@ export function SeriesActionsToolbar(props: Props) {
           </MergeSeriesButton>
         </ActionsMenuSection>
 
-        <ActionsMenuSection label={t("nav.readingLists")}>
+        <ActionsMenuSection label={t("actionsMenu.readingLists")}>
           <AddToReadingListModal seriesId={props.seriesId} seriesName={props.seriesName}>
             {(open) => (
               <ActionsMenuItem icon="🔖" onClick={open}>
