@@ -224,6 +224,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/metadata/links", get(metadata::get_metadata_links))
         .route("/metadata/missing/:id", get(metadata::get_missing_books))
         .route("/reading-lists", get(reading_lists::list_reading_lists))
+        .route("/reading-lists/memberships", get(reading_lists::get_memberships))
         .route("/reading-lists/:id", get(reading_lists::get_reading_list))
         .route_layer(middleware::from_fn_with_state(state.clone(), api_middleware::read_rate_limit))
         .route_layer(middleware::from_fn_with_state(

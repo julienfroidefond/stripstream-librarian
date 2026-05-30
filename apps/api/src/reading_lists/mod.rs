@@ -439,6 +439,42 @@ async fn fetch_list_items(
 // Client + Admin read handlers
 // ---------------------------------------------------------------------------
 
+#[derive(Serialize, ToSchema)]
+pub struct SeriesMembershipDto {
+    #[schema(value_type = String)]
+    pub series_id: Uuid,
+    #[schema(value_type = String)]
+    pub list_id: Uuid,
+}
+
+/// Get all series→reading-list memberships (for mixed grid view)
+#[utoipa::path(
+    get,
+    path = "/reading-lists/memberships",
+    tag = "reading-lists",
+    responses(
+        (status = 200, body = Vec<SeriesMembershipDto>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn get_memberships(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<SeriesMembershipDto>>, ApiError> {
+    let rows = sqlx::query("SELECT series_id, list_id FROM reading_list_items")
+        .fetch_all(&state.pool)
+        .await?;
+
+    Ok(Json(
+        rows.into_iter()
+            .map(|r| SeriesMembershipDto {
+                series_id: r.get("series_id"),
+                list_id: r.get("list_id"),
+            })
+            .collect(),
+    ))
+}
+
 /// List all reading lists (with series count)
 #[utoipa::path(
     get,

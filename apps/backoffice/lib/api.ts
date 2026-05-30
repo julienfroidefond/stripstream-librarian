@@ -1476,8 +1476,17 @@ export type ReadingListDetailDto = {
   updated_at: string;
 };
 
+export type SeriesMembershipDto = {
+  series_id: string;
+  list_id: string;
+};
+
 export async function fetchReadingLists(): Promise<ReadingListDto[]> {
   return apiFetch<ReadingListDto[]>("/reading-lists");
+}
+
+export async function fetchSeriesMemberships(): Promise<SeriesMembershipDto[]> {
+  return apiFetch<SeriesMembershipDto[]>("/reading-lists/memberships");
 }
 
 export async function fetchReadingList(id: string): Promise<ReadingListDetailDto> {
