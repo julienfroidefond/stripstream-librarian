@@ -123,9 +123,9 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
   const allCategories = [...new Set(items.flatMap((i) => i.categories))].sort();
 
   const filteredItems = items
-    .filter((i) => !addedSet.has(i.series_name))
+    .filter((i) => !addedSet.has(i.best_release_title))
     .filter((i) => !hideMine || !i.local_series_id)
-    .filter((i) => !filterSearch || i.series_name.toLowerCase().includes(filterSearch.toLowerCase()));
+    .filter((i) => !filterSearch || i.best_release_title.toLowerCase().includes(filterSearch.toLowerCase()));
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -208,7 +208,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
                 : "bg-card text-muted-foreground border-border hover:border-primary/30"
             }`}
           >
-            {t("common.all")} ({items.filter((i) => !addedSet.has(i.series_name)).length})
+            {t("common.all")} ({filteredItems.length})
           </button>
           {allCategories.map((cat) => {
             const isActive = filterCategory === cat;
@@ -222,7 +222,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
                     : "bg-card text-muted-foreground border-border hover:border-primary/30"
                 }`}
               >
-                {cat} · {items.filter((i) => !addedSet.has(i.series_name) && i.categories.includes(cat)).length}
+                {cat} · {items.filter((i) => !addedSet.has(i.best_release_title) && i.categories.includes(cat)).length}
               </button>
             );
           })}
@@ -239,7 +239,6 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
               <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrProvider")}</th>
               <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrCategories")}</th>
               <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.volumes", { count: "" })}</th>
-              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrReleases")}</th>
               <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrSeeders")}</th>
               <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrSize")}</th>
               <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrDate")}</th>
@@ -248,7 +247,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
           </thead>
           <tbody className="divide-y divide-border">
             {visibleItems.map((item, idx) => (
-              <ProwlarrRow key={item.series_name} item={item} idx={pageStart + idx} libraries={libraries} onAdded={() => handleAdded(item.series_name)} />
+              <ProwlarrRow key={item.best_release_title} item={item} idx={pageStart + idx} libraries={libraries} onAdded={() => handleAdded(item.best_release_title)} />
             ))}
           </tbody>
         </table>
@@ -307,43 +306,35 @@ function ProwlarrRow({ item, idx, libraries, onAdded }: {
     <tr className="hover:bg-muted/30 transition-colors">
       <td className="px-3 py-2 text-muted-foreground text-xs">{idx + 1}</td>
       <td className="px-3 py-2">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-10 rounded bg-muted/50 flex items-center justify-center shrink-0">
-            <Icon name="books" size="sm" className="text-muted-foreground/40" />
-          </div>
-          <div>
-            {item.best_info_url ? (
-              <a
-                href={item.best_info_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium text-primary hover:underline inline-flex items-center gap-1"
-              >
-                {item.series_name}
-                <Icon name="externalLink" size="sm" className="opacity-60" />
-              </a>
-            ) : (
-              <p className="font-medium text-foreground">{item.series_name}</p>
-            )}
-            <p className="text-[10px] text-muted-foreground truncate max-w-xs" title={item.best_release_title}>
+        <div>
+          {item.best_info_url ? (
+            <a
+              href={item.best_info_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-medium text-primary hover:underline inline-flex items-center gap-1 break-all"
+            >
               {item.best_release_title}
-            </p>
-            {item.local_series_id && (
-              <div className="flex flex-wrap items-center gap-1 mt-0.5">
-                <Link
-                  href={`/series/${item.local_series_id}`}
-                  className="text-[10px] text-green-600 dark:text-green-500 hover:underline"
-                >
-                  ✓ {item.local_series_name ?? item.series_name}
-                </Link>
-                {item.volumes_already_owned.length > 0 && (
-                  <span className="text-[10px] text-muted-foreground">
-                    · {item.volumes_already_owned.map((v) => `T${v}`).join(", ")} possédé{item.volumes_already_owned.length > 1 ? "s" : ""}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
+              <Icon name="externalLink" size="sm" className="opacity-60 shrink-0" />
+            </a>
+          ) : (
+            <p className="text-sm font-medium text-foreground break-all">{item.best_release_title}</p>
+          )}
+          {item.local_series_id && (
+            <div className="flex flex-wrap items-center gap-1 mt-0.5">
+              <Link
+                href={`/series/${item.local_series_id}`}
+                className="text-[10px] text-green-600 dark:text-green-500 hover:underline"
+              >
+                ✓ {item.local_series_name ?? item.series_name}
+              </Link>
+              {item.volumes_already_owned.length > 0 && (
+                <span className="text-[10px] text-muted-foreground">
+                  · {item.volumes_already_owned.map((v) => `T${v}`).join(", ")} possédé{item.volumes_already_owned.length > 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </td>
       <td className="px-3 py-2 text-xs text-muted-foreground">
@@ -357,7 +348,6 @@ function ProwlarrRow({ item, idx, libraries, onAdded }: {
         </div>
       </td>
       <td className="px-3 py-2 text-center text-xs text-muted-foreground">{formatVolumes(item.volumes_found ?? [])}</td>
-      <td className="px-3 py-2 text-right text-muted-foreground">{item.release_count}</td>
       <td className="px-3 py-2 text-right">
         <span className={`font-medium ${item.best_seeders >= 10 ? "text-green-600" : item.best_seeders >= 3 ? "text-amber-600" : "text-red-500"}`}>
           {item.best_seeders}

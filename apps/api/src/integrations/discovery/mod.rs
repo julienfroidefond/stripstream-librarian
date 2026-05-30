@@ -478,19 +478,19 @@ pub async fn prowlarr_discovery(
         return Ok(Json(ProwlarrDiscoveryResponse { items: vec![], all_indexers: vec![] }));
     }
 
-    // Group by extracted series name
-    let mut series_map: std::collections::HashMap<String, ProwlarrDiscoveryItem> = std::collections::HashMap::new();
-
-    // Deduplicate by GUID to avoid counting the same release from multiple queries
+    // One item per release — no aggregation by series.
+    // Deduplicate by GUID to avoid counting the same release from multiple passes.
     let mut seen_guids = std::collections::HashSet::new();
+    let mut items: Vec<ProwlarrDiscoveryItem> = Vec::new();
 
     for release in &raw {
         let guid = release.get("guid").and_then(|g| g.as_str()).unwrap_or("").to_string();
         if !guid.is_empty() && !seen_guids.insert(guid) {
-            continue; // already processed
+            continue;
         }
 
         let title = release.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string();
+        if title.is_empty() { continue; }
         let seeders = release.get("seeders").and_then(|s| s.as_i64()).unwrap_or(0) as i32;
         let size = release.get("size").and_then(|s| s.as_i64()).unwrap_or(0);
         let download_url = release.get("downloadUrl").and_then(|u| u.as_str()).map(String::from);
@@ -506,86 +506,31 @@ pub async fn prowlarr_discovery(
             }).collect())
             .unwrap_or_default();
 
-        // Extract series name from torrent title
+        // Extract series name for local-library annotation only
         let series_name = extract_series_name_from_torrent(&title);
-        if series_name.is_empty() {
-            continue;
-        }
-
-        // Extract volume numbers from the title
         let volumes = parsers::extract_volumes(&title);
 
-        let key = series_name.to_lowercase();
-        let entry = series_map.entry(key).or_insert_with(|| ProwlarrDiscoveryItem {
-            series_name: series_name.clone(),
-            release_count: 0,
-            best_seeders: 0,
-            total_seeders: 0,
-            categories: Vec::new(),
-            indexers: Vec::new(),
-            best_release_title: String::new(),
-            best_download_url: None,
-            best_size: 0,
-            best_publish_date: None,
-            best_info_url: None,
-            best_indexer: None,
-            volumes_found: Vec::new(),
+        items.push(ProwlarrDiscoveryItem {
+            series_name,
+            release_count: 1,
+            best_seeders: seeders,
+            total_seeders: seeders,
+            categories: cats,
+            indexers: if indexer.is_empty() { vec![] } else { vec![indexer.clone()] },
+            best_release_title: title,
+            best_download_url: download_url,
+            best_size: size,
+            best_publish_date: publish_date,
+            best_info_url: info_url,
+            best_indexer: if indexer.is_empty() { None } else { Some(indexer) },
+            volumes_found: volumes,
             local_series_id: None,
             local_series_name: None,
-            volumes_already_owned: Vec::new(),
+            volumes_already_owned: vec![],
         });
-
-        entry.release_count += 1;
-        entry.total_seeders += seeders;
-
-        // Decide if this release becomes the new "representative" for the series.
-        // - sort_by_date: prefer the most recent release
-        // - default: prefer the release with the most seeders
-        let is_first = entry.best_release_title.is_empty();
-        let should_replace = if sort_by_date {
-            match (publish_date.as_deref(), entry.best_publish_date.as_deref()) {
-                (Some(new_d), Some(old_d)) => new_d > old_d,
-                (Some(_), None) => true,
-                _ => false,
-            }
-        } else {
-            seeders > entry.best_seeders
-        };
-
-        if is_first || should_replace {
-            entry.best_seeders = seeders;
-            entry.best_release_title = title.clone();
-            entry.best_download_url = download_url;
-            entry.best_size = size;
-            entry.best_publish_date = publish_date;
-            entry.best_info_url = info_url;
-            entry.best_indexer = if indexer.is_empty() { None } else { Some(indexer.clone()) };
-        } else if seeders > entry.best_seeders {
-            // In date mode, still track the highest seeder count seen even if not the rep
-            entry.best_seeders = seeders;
-        }
-        for vol in &volumes {
-            if !entry.volumes_found.contains(vol) {
-                entry.volumes_found.push(*vol);
-            }
-        }
-        for cat in &cats {
-            if !entry.categories.contains(cat) {
-                entry.categories.push(cat.clone());
-            }
-        }
-        if !indexer.is_empty() && !entry.indexers.contains(&indexer) {
-            entry.indexers.push(indexer);
-        }
     }
 
-    let mut items: Vec<ProwlarrDiscoveryItem> = series_map.into_values().collect();
-
-    // Sort volumes; cache is stored unsorted — sort applied per-request in memory
-    for item in &mut items {
-        item.volumes_found.sort_unstable();
-    }
-    // Store by seeders for the canonical cache order; apply_sort will re-order on read
+    // Sort by seeders by default; apply_sort will re-order per-request
     items.sort_by(|a, b| b.best_seeders.cmp(&a.best_seeders));
 
     tracing::info!("[DISCOVERY] Prowlarr: {} series found from {} raw releases", items.len(), raw.len());
