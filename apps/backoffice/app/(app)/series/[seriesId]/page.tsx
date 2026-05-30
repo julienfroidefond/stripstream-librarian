@@ -7,7 +7,7 @@ import { ProviderIcon, providerLabel } from "@/app/components/ProviderIcon";
 import { SeriesActionsToolbar } from "@/app/components/SeriesActionsToolbar";
 import { OffsetPagination } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
-import { Bookmark } from "lucide-react";
+import { Icon } from "@/app/components/ui/Icon";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -207,7 +207,7 @@ export default async function SeriesDetailPage({
                   href={`/reading-lists/${list.id}`}
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-cyan-500/10 text-cyan-600 border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors"
                 >
-                  <Bookmark className="w-3 h-3" />
+                  <Icon name="bookmark" size="sm" className="!w-3 !h-3" />
                   {list.name}
                 </Link>
               ))}
