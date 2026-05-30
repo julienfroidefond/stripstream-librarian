@@ -182,7 +182,7 @@ export function SeriesActionsToolbar(props: Props) {
         <ActionsMenuSection label={t("nav.readingLists")}>
           <AddToReadingListModal seriesId={props.seriesId} seriesName={props.seriesName}>
             {(open) => (
-              <ActionsMenuItem icon="🔖" onClick={open} keepOpen>
+              <ActionsMenuItem icon="🔖" onClick={open}>
                 {t("readingLists.addToList")}
               </ActionsMenuItem>
             )}
