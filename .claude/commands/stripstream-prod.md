@@ -21,8 +21,11 @@ Run an operation against the production Stripstream API.
 
 **Auth header**: `Authorization: Bearer <token>`
 
-**Scripts pattern**: write a `scripts/<name>.mjs` that imports credentials from `scripts/.env`, then run it with `node scripts/<name>.mjs`.
+**Approach**: Make API calls directly with `curl` via Bash — do NOT write scripts. Source credentials with `source scripts/.env` before each curl block.
 
 **Input**: Describe the operation to perform (e.g., "assign genres to untagged series", "rename genre X to Y", "list all series missing metadata").
 
-Use `ANTHROPIC_API_KEY` from `process.env` for any Claude calls within the script (it's already in the shell environment).
+**Notes**:
+- `GET /series?genre=<name>` filters series by genre (useful to find which series uses a genre before renaming it)
+- To rename a genre: find the series using it, then `PATCH /series/{id}` with the updated genres array — the old genre disappears automatically when no series reference it anymore
+- `GET /admin/series` returns 404 — do not use it
