@@ -693,8 +693,6 @@ const fr = {
   "settings.prowlarrApiKeyPlaceholder": "Clé API Prowlarr",
   "settings.prowlarrCategories": "Catégories",
   "settings.prowlarrCategoriesHelp": "ID de catégories Newznab séparés par des virgules (7030 = Comics, 7020 = Ebooks)",
-  "settings.prowlarrDiscoveryLimit": "Nb de résultats (discovery)",
-  "settings.prowlarrDiscoveryLimitHelp": "Prowlarr renvoie plus de résultats bruts que ce chiffre ; le tri et le regroupement par série sont faits côté serveur.",
   "settings.testConnection": "Tester la connexion",
   "settings.testing": "Test en cours...",
   "settings.testSuccess": "Connexion réussie",

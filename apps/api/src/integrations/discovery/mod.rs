@@ -319,20 +319,6 @@ pub async fn prowlarr_discovery(
     let sort_by_date = params.sort.as_deref() == Some("date");
     let indexer_filter = params.indexer.as_deref().filter(|s| !s.is_empty());
 
-    // Load discovery_limit from prowlarr settings (defaults to 300, max 1000)
-    let limit: usize = {
-        let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'prowlarr'")
-            .fetch_optional(&state.pool)
-            .await
-            .ok()
-            .flatten();
-        row.and_then(|r| {
-            let v: serde_json::Value = r.get("value");
-            v.get("discovery_limit").and_then(|n| n.as_u64()).map(|n| n.clamp(10, 1000) as usize)
-        })
-        .unwrap_or(300)
-    };
-
     // Single cache regardless of sort mode — sort is applied in memory when reading.
     // This ensures all providers are always present regardless of which sort was
     // active when the cache was first populated.
@@ -371,7 +357,7 @@ pub async fn prowlarr_discovery(
                 cached
             };
             let annotated = annotate_local_matches(&state.pool, pre_filtered).await;
-            let items: Vec<ProwlarrDiscoveryItem> = annotated.into_iter().take(limit).collect();
+            let items: Vec<ProwlarrDiscoveryItem> = annotated;
             return Ok(Json(ProwlarrDiscoveryResponse { items, all_indexers }));
         }
     }
@@ -390,7 +376,7 @@ pub async fn prowlarr_discovery(
                 cached
             };
             let annotated = annotate_local_matches(&state.pool, pre_filtered).await;
-            let items: Vec<ProwlarrDiscoveryItem> = annotated.into_iter().take(limit).collect();
+            let items: Vec<ProwlarrDiscoveryItem> = annotated;
             return Ok(Json(ProwlarrDiscoveryResponse { items, all_indexers }));
         }
     }
@@ -606,8 +592,7 @@ pub async fn prowlarr_discovery(
         items
     };
     let annotated = annotate_local_matches(&state.pool, pre_filtered).await;
-    let result_items: Vec<ProwlarrDiscoveryItem> = annotated.into_iter().take(limit).collect();
-    Ok(Json(ProwlarrDiscoveryResponse { items: result_items, all_indexers }))
+    Ok(Json(ProwlarrDiscoveryResponse { items: annotated, all_indexers }))
 }
 
 

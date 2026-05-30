@@ -11,23 +11,18 @@ export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdat
   const [prowlarrCategories, setProwlarrCategories] = useState(
     Array.isArray(initialData?.categories) ? (initialData.categories as number[]).join(", ") : "7030, 7020"
   );
-  const [discoveryLimit, setDiscoveryLimit] = useState(
-    initialData?.discovery_limit ? String(initialData.discovery_limit) : "300"
-  );
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  function saveProwlarr(url?: string, apiKey?: string, cats?: string, limit?: string) {
+  function saveProwlarr(url?: string, apiKey?: string, cats?: string) {
     const categories = (cats ?? prowlarrCategories)
       .split(",")
       .map((s) => parseInt(s.trim()))
       .filter((n) => !isNaN(n));
-    const discovery_limit = parseInt(limit ?? discoveryLimit) || 300;
     handleUpdateSetting("prowlarr", {
       url: url ?? prowlarrUrl,
       api_key: apiKey ?? prowlarrApiKey,
       categories,
-      discovery_limit,
     });
   }
 
@@ -97,22 +92,6 @@ export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdat
               <p className="text-xs text-muted-foreground mt-1">{t("settings.prowlarrCategoriesHelp")}</p>
             </FormField>
           </div>
-          <div className="flex gap-4">
-            <FormField className="w-40">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.prowlarrDiscoveryLimit")}</label>
-              <FormInput
-                type="number"
-                min={10}
-                max={1000}
-                placeholder="300"
-                value={discoveryLimit}
-                onChange={(e) => setDiscoveryLimit(e.target.value)}
-                onBlur={() => saveProwlarr()}
-              />
-              <p className="text-xs text-muted-foreground mt-1">{t("settings.prowlarrDiscoveryLimitHelp")}</p>
-            </FormField>
-          </div>
-
           <div className="flex items-center gap-3">
             <Button
               onClick={handleTestConnection}
