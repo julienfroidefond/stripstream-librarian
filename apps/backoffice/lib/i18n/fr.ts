@@ -709,6 +709,7 @@ const fr = {
   "prowlarr.missingVolumes": "Volumes manquants",
   "prowlarr.columnTitle": "Titre",
   "prowlarr.columnIndexer": "Indexeur",
+  "prowlarr.columnCategory": "Cat.",
   "prowlarr.columnSize": "Taille",
   "prowlarr.columnSeeders": "Seeds",
   "prowlarr.columnLeechers": "Peers",

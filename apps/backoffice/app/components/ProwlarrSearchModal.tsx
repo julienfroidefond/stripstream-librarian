@@ -255,6 +255,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                           {([
                             { id: "title" as const, label: t("prowlarr.columnTitle"), align: "" },
                             { id: null, label: t("prowlarr.columnIndexer"), align: "" },
+                            { id: null, label: t("prowlarr.columnCategory"), align: "" },
                             { id: "size" as const, label: t("prowlarr.columnSize"), align: "text-right" },
                             { id: "seeders" as const, label: t("prowlarr.columnSeeders"), align: "text-center" },
                           ] as const).map((col, i) => (
@@ -289,7 +290,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                           return (
                           <tr key={release.guid} className={`transition-colors ${hasMissing ? "bg-green-500/10 hover:bg-green-500/20 border-l-2 border-l-green-500" : "hover:bg-muted/20"}`}>
                             <td className="px-3 py-2 max-w-[400px]">
-                              <span className="truncate block" title={release.title}>
+                              <span className="break-all block">
                                 {release.title}
                               </span>
                               {hasMissing && (
@@ -304,6 +305,15 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                             </td>
                             <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
                               {release.indexer || "—"}
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex flex-wrap gap-1">
+                                {release.categories?.map((cat) => (
+                                  <span key={cat.id} title={cat.name ?? undefined} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground whitespace-nowrap">
+                                    {cat.id}
+                                  </span>
+                                )) ?? "—"}
+                              </div>
                             </td>
                             <td className="px-3 py-2 text-right text-muted-foreground whitespace-nowrap">
                               {release.size > 0 ? formatSize(release.size) : "—"}

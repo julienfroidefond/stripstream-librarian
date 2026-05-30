@@ -711,6 +711,7 @@ const en: Record<TranslationKey, string> = {
   "prowlarr.missingVolumes": "Missing volumes",
   "prowlarr.columnTitle": "Title",
   "prowlarr.columnIndexer": "Indexer",
+  "prowlarr.columnCategory": "Cat.",
   "prowlarr.columnSize": "Size",
   "prowlarr.columnSeeders": "Seeds",
   "prowlarr.columnLeechers": "Peers",
