@@ -419,65 +419,75 @@ pub async fn prowlarr_discovery(
         .build()
         .map_err(|e| ApiError::internal(format!("HTTP client error: {e}")))?;
 
-    // Two passes to maximise coverage in the unified cache:
-    // - Pass 1 (relevance/seeders): broad term queries, Prowlarr default order
-    // - Pass 2 (recent): empty query with publishDate sort to surface recent
-    //   releases that wouldn't appear in the top results of pass 1
-    // GUID deduplication below ensures no double-counting.
-    struct ProwlarrRequest {
-        query: String,
+    // Prowlarr caps each response at 100 results. Paginate with offset to reach `limit`.
+    // Two passes: default sort (seeders) + publishDate sort for recent releases.
+    // GUID deduplication below ensures no double-counting across pages and passes.
+    const PROWLARR_PAGE_SIZE: usize = 100;
+
+    struct ProwlarrPass {
         sort_key: Option<&'static str>,
     }
-    let requests: Vec<ProwlarrRequest> = vec![
-        ProwlarrRequest { query: "".to_string(), sort_key: None },
-        ProwlarrRequest { query: "".to_string(), sort_key: Some("publishDate") },
+    let passes: Vec<ProwlarrPass> = vec![
+        ProwlarrPass { sort_key: None },
+        ProwlarrPass { sort_key: Some("publishDate") },
     ];
 
     let mut raw: Vec<serde_json::Value> = Vec::new();
 
-    for req in &requests {
-        let mut params_vec: Vec<(&str, String)> = vec![
-            ("query", req.query.clone()),
-            ("type", "search".to_string()),
-            ("limit", limit.to_string()),
-        ];
-        for cat in &categories {
-            params_vec.push(("categories", cat.to_string()));
-        }
-        if let Some(sort_key) = req.sort_key {
-            params_vec.push(("sortKey", sort_key.to_string()));
-            params_vec.push(("sortDirection", "descending".to_string()));
-        }
+    for pass in &passes {
+        let pages_needed = limit.div_ceil(PROWLARR_PAGE_SIZE);
+        for page in 0..pages_needed {
+            let offset = page * PROWLARR_PAGE_SIZE;
+            let mut params_vec: Vec<(&str, String)> = vec![
+                ("query", String::new()),
+                ("type", "search".to_string()),
+                ("limit", PROWLARR_PAGE_SIZE.to_string()),
+                ("offset", offset.to_string()),
+            ];
+            for cat in &categories {
+                params_vec.push(("categories", cat.to_string()));
+            }
+            if let Some(sort_key) = pass.sort_key {
+                params_vec.push(("sortKey", sort_key.to_string()));
+                params_vec.push(("sortDirection", "descending".to_string()));
+            }
 
-        let request = client
-            .get(format!("{prowlarr_url}/api/v1/search"))
-            .query(&params_vec)
-            .header("X-Api-Key", &api_key)
-            .build()
-            .map_err(|e| ApiError::internal(format!("Prowlarr request build error: {e}")))?;
-        tracing::info!("[DISCOVERY] Prowlarr request URL: {}", request.url());
-        let resp = client.execute(request).await;
+            let request = client
+                .get(format!("{prowlarr_url}/api/v1/search"))
+                .query(&params_vec)
+                .header("X-Api-Key", &api_key)
+                .build()
+                .map_err(|e| ApiError::internal(format!("Prowlarr request build error: {e}")))?;
+            tracing::info!("[DISCOVERY] Prowlarr request URL: {}", request.url());
+            let resp = client.execute(request).await;
 
-        match resp {
-            Err(e) if e.is_connect() || e.is_timeout() => {
-                return Err(ApiError::internal(format!("Prowlarr unreachable: {e}")));
+            match resp {
+                Err(e) if e.is_connect() || e.is_timeout() => {
+                    return Err(ApiError::internal(format!("Prowlarr unreachable: {e}")));
+                }
+                Err(e) => {
+                    tracing::warn!("[DISCOVERY] Prowlarr request error offset={offset}: {e}");
+                    break;
+                }
+                Ok(resp) if resp.status().is_success() => {
+                    let results: Vec<serde_json::Value> = resp.json().await.unwrap_or_default();
+                    let got = results.len();
+                    raw.extend(results);
+                    tracing::info!("[DISCOVERY] sort={:?} offset={offset} → {got} results (total raw: {})", pass.sort_key, raw.len());
+                    // Stop paginating early if Prowlarr returned fewer than a full page
+                    if got < PROWLARR_PAGE_SIZE {
+                        break;
+                    }
+                }
+                Ok(resp) => {
+                    tracing::warn!("[DISCOVERY] Prowlarr non-success status={} offset={offset}", resp.status());
+                    break;
+                }
             }
-            Err(e) => {
-                tracing::warn!("[DISCOVERY] Prowlarr request error for query={:?}: {e}", req.query);
-            }
-            Ok(resp) if resp.status().is_success() => {
-                let count_before = raw.len();
-                let results: Vec<serde_json::Value> = resp.json().await.unwrap_or_default();
-                raw.extend(results);
-                tracing::info!("[DISCOVERY] query={:?} → {} results (+{})", req.query, raw.len(), raw.len() - count_before);
-            }
-            Ok(resp) => {
-                tracing::warn!("[DISCOVERY] Prowlarr non-success status={} for query={:?}", resp.status(), req.query);
-            }
+
+            // Delay between requests to avoid triggering indexer rate limits
+            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
         }
-
-        // Delay between requests — 1 s to avoid triggering indexer rate limits
-        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
     }
 
     if raw.is_empty() {
