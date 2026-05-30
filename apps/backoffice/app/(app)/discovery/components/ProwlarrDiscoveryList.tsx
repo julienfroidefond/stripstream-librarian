@@ -35,6 +35,11 @@ function formatPublishDate(iso: string | null): string {
   return d.toLocaleDateString();
 }
 
+function categoryShortId(cat: string): string {
+  const m = cat.match(/\((\d+)\)$/);
+  return m ? m[1] : cat;
+}
+
 function formatVolumes(volumes: number[]): string {
   if (volumes.length === 0) return "—";
   if (volumes.length <= 3) return volumes.join(", ");
@@ -215,7 +220,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
                     : "bg-card text-muted-foreground border-border hover:border-primary/30"
                 }`}
               >
-                {cat} ({count})
+                {cat} · {count}
               </button>
             );
           })}
@@ -345,7 +350,7 @@ function ProwlarrRow({ item, idx, libraries, onAdded }: {
       <td className="px-3 py-2">
         <div className="flex flex-wrap gap-1">
           {item.categories.slice(0, 2).map((cat) => (
-            <span key={cat} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{cat}</span>
+            <span key={cat} title={cat} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground whitespace-nowrap">{categoryShortId(cat)}</span>
           ))}
         </div>
       </td>

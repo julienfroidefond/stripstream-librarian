@@ -416,16 +416,10 @@ pub async fn prowlarr_discovery(
         query: String,
         sort_key: Option<&'static str>,
     }
-    // 5 queries instead of 8 — "scan"/"vf"/"fr" overlapped heavily and triggered rate limits
-    let mut requests: Vec<ProwlarrRequest> = vec![
-        "".to_string(), "manga".to_string(), "bd".to_string(),
-        "comics".to_string(), "tome".to_string(),
-    ]
-    .into_iter()
-    .map(|q| ProwlarrRequest { query: q, sort_key: None })
-    .collect();
-    // Extra date pass — one empty query sorted by publishDate
-    requests.push(ProwlarrRequest { query: "".to_string(), sort_key: Some("publishDate") });
+    let requests: Vec<ProwlarrRequest> = vec![
+        ProwlarrRequest { query: "".to_string(), sort_key: None },
+        ProwlarrRequest { query: "".to_string(), sort_key: Some("publishDate") },
+    ];
 
     let mut raw: Vec<serde_json::Value> = Vec::new();
 
@@ -496,7 +490,14 @@ pub async fn prowlarr_discovery(
         let info_url = release.get("infoUrl").and_then(|u| u.as_str()).map(String::from);
         let cats: Vec<String> = release.get("categories")
             .and_then(|c| c.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.get("name").and_then(|n| n.as_str()).map(String::from)).collect())
+            .map(|arr| arr.iter().filter_map(|v| {
+                let name = v.get("name").and_then(|n| n.as_str())?;
+                let id = v.get("id").and_then(|i| i.as_i64());
+                Some(match id {
+                    Some(id) => format!("{name} ({id})"),
+                    None => name.to_string(),
+                })
+            }).collect())
             .unwrap_or_default();
 
         // Extract series name from torrent title
@@ -572,16 +573,7 @@ pub async fn prowlarr_discovery(
         }
     }
 
-    // Enrich categories by guessing from torrent title when indexer only returns generic categories
     let mut items: Vec<ProwlarrDiscoveryItem> = series_map.into_values().collect();
-    for item in &mut items {
-        let guessed = guess_category_from_title(&item.best_release_title);
-        if let Some(cat) = guessed {
-            if !item.categories.contains(&cat) {
-                item.categories.insert(0, cat);
-            }
-        }
-    }
 
     // Sort volumes; cache is stored unsorted — sort applied per-request in memory
     for item in &mut items {
@@ -609,36 +601,6 @@ pub async fn prowlarr_discovery(
     Ok(Json(ProwlarrDiscoveryResponse { items: result_items, all_indexers }))
 }
 
-/// Guess a more specific category from the torrent title keywords.
-fn guess_category_from_title(title: &str) -> Option<String> {
-    let lower = title.to_lowercase();
-    // Manga indicators
-    if lower.contains("manga") || lower.contains("[jp]") || lower.contains(".jp.")
-        || lower.contains("nagatoro") || lower.contains("tome") && lower.contains("ebook")
-    {
-        return Some("Manga".to_string());
-    }
-    // Comics indicators
-    if lower.contains("comics") || lower.contains("marvel") || lower.contains("dc comics")
-        || lower.contains("[en]") || lower.contains(".en.")
-    {
-        return Some("Comics".to_string());
-    }
-    // BD indicators (French bande dessinée)
-    if lower.contains(" bd ") || lower.contains("[bd]") || lower.contains("-bd-")
-        || lower.contains("bande dessinée") || lower.contains("bande dessinee")
-        || lower.contains("cbz") || lower.contains("cbr")
-    {
-        return Some("BD".to_string());
-    }
-    // French language markers → likely BD
-    if lower.contains("[fr]") || lower.contains(".fr.") || lower.contains("/fr")
-        || lower.contains("- fr") || lower.ends_with(" fr")
-    {
-        return Some("BD".to_string());
-    }
-    None
-}
 
 pub fn extract_series_name_from_torrent(title: &str) -> String {
     // Dot-separated NRC-style: "Series.Name.T31.Author.Year.FR.[CBZ]-NRC"
