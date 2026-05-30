@@ -249,7 +249,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                     {query && <span className="ml-1 text-xs opacity-70">({query})</span>}
                   </p>
                   <div className="overflow-x-auto rounded-lg border border-border">
-                    <table className="w-full text-sm">
+                    <table className="w-full min-w-[640px] text-sm">
                       <thead>
                         <tr className="bg-muted/50 text-left">
                           {([
@@ -289,8 +289,8 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                           const hasMissing = release.matchedMissingVolumes && release.matchedMissingVolumes.length > 0;
                           return (
                           <tr key={release.guid} className={`transition-colors ${hasMissing ? "bg-green-500/10 hover:bg-green-500/20 border-l-2 border-l-green-500" : "hover:bg-muted/20"}`}>
-                            <td className="px-3 py-2 max-w-[400px]">
-                              <span className="break-all block">
+                            <td className="px-3 py-2 min-w-[200px] max-w-[400px]">
+                              <span className="break-words block">
                                 {release.title}
                               </span>
                               {hasMissing && (
