@@ -1,27 +1,15 @@
 "use client";
 
-import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import type { Route } from "next";
 import { useTranslation } from "@/lib/i18n/context";
 
-export function GroupByToggle({ active }: { active: boolean }) {
+export function GroupByToggle({ active, href }: { active: boolean; href: Route }) {
   const { t } = useTranslation();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
-  function toggle() {
-    const params = new URLSearchParams(searchParams.toString());
-    if (active) {
-      params.delete("group_by");
-    } else {
-      params.set("group_by", "reading_list");
-    }
-    router.push(`/series?${params.toString()}`);
-  }
 
   return (
-    <button
-      type="button"
-      onClick={toggle}
+    <Link
+      href={href}
       title={active ? t("series.groupByReadingListOff") : t("series.groupByReadingList")}
       className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
         active
@@ -33,6 +21,6 @@ export function GroupByToggle({ active }: { active: boolean }) {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
       </svg>
       {t("series.groupByReadingList")}
-    </button>
+    </Link>
   );
 }

@@ -124,7 +124,10 @@ export default async function SeriesPage({
           {t("series.title")}
         </h1>
         <div className="flex items-center gap-2">
-          <GroupByToggle active={isGroupedByList} />
+          <GroupByToggle
+            active={isGroupedByList}
+            href={isGroupedByList ? "/series" : "/series?group_by=reading_list"}
+          />
           <RefreshButton target="series" />
           <CreateSeriesButton libraries={libraries.map(lib => ({ id: lib.id, name: lib.name }))} />
         </div>
