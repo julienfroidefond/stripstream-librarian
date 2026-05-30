@@ -39,25 +39,16 @@ export default async function SeriesPage({
 
   const isGroupedByList = groupBy === "reading_list";
 
-  const [libraries, seriesPage, dbStatuses, readingLists, memberships] = await Promise.all([
+  const [libraries, seriesPage, dbStatuses, readingLists] = await Promise.all([
     fetchLibraries().catch(() => [] as LibraryDto[]),
-    fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit, sort, seriesStatus, hasMissing, metadataProvider, undefined, booksFilter === "wishlist", booksFilter === "in_library", volumeTypeFilter || undefined).catch(
-      () => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }) as SeriesPageDto
-    ),
+    isGroupedByList
+      ? Promise.resolve({ items: [] as SeriesDto[], total: 0, page: 1, limit } as SeriesPageDto)
+      : fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit, sort, seriesStatus, hasMissing, metadataProvider, undefined, booksFilter === "wishlist", booksFilter === "in_library", volumeTypeFilter || undefined).catch(
+          () => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }) as SeriesPageDto
+        ),
     fetchSeriesStatuses().catch(() => [] as string[]),
     isGroupedByList ? fetchReadingLists().catch(() => [] as ReadingListDto[]) : Promise.resolve([] as ReadingListDto[]),
-    isGroupedByList ? fetchSeriesMemberships().catch(() => []) : Promise.resolve([]),
   ]);
-
-  // Build series→list map and deduplicated grid items when grouped
-  const seriesListMap = new Map<string, ReadingListDto>();
-  if (isGroupedByList) {
-    const listsById = new Map(readingLists.map((l) => [l.id, l]));
-    for (const m of memberships) {
-      const list = listsById.get(m.list_id);
-      if (list) seriesListMap.set(m.series_id, list);
-    }
-  }
 
   const series = seriesPage.items;
   const totalPages = Math.ceil(seriesPage.total / limit);
@@ -172,70 +163,69 @@ export default async function SeriesPage({
         </CardContent>
       </Card>
 
+      {isGroupedByList ? (
+        readingLists.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-4 text-muted-foreground">
+            <svg className="w-14 h-14 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+            </svg>
+            <p className="text-sm">{t("readingLists.empty")}</p>
+            <Link href="/reading-lists" className="text-sm text-primary hover:underline">{t("readingLists.title")}</Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            {readingLists.map((list) => {
+              const covers = list.preview_covers;
+              return (
+                <Link
+                  key={list.id}
+                  href={`/reading-lists/${list.id}`}
+                  className="group flex flex-col rounded-xl overflow-hidden border border-border/50 bg-card hover:border-border hover:shadow-lg transition-all duration-200"
+                >
+                  <div className="relative overflow-hidden">
+                    {covers.length === 0 ? (
+                      <div className="aspect-[2/3] bg-gradient-to-br from-cyan-500/20 to-primary/20 flex items-center justify-center">
+                        <svg className="w-10 h-10 text-muted-foreground/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                        </svg>
+                      </div>
+                    ) : covers.length === 1 ? (
+                      <div className="aspect-[2/3] overflow-hidden">
+                        <img src={covers[0]} alt={list.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      </div>
+                    ) : (
+                      <div className="aspect-[2/3] grid grid-cols-2 grid-rows-2 gap-0.5 overflow-hidden">
+                        {[...covers, null, null, null, null].slice(0, 4).map((url, i) => (
+                          <div key={i} className="overflow-hidden bg-muted">
+                            {url ? <img src={url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" /> : <div className="w-full h-full bg-muted" />}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="px-2 py-1.5">
+                    <h3 className="font-medium text-foreground truncate text-xs" title={list.name}>{list.name}</h3>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {t("readingLists.seriesCount", { count: list.series_count, plural: list.series_count !== 1 ? "s" : "" })}
+                    </p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )
+      ) : (<>
       {/* Results count */}
       <p className="text-sm text-muted-foreground mb-4">
         {seriesPage.total} {t("series.title").toLowerCase()}
         {searchQuery && <> {t("series.matchingQuery")} &quot;{searchQuery}&quot;</>}
       </p>
 
-      {/* Series Grid (mixed with reading list cards when grouped) */}
       {series.length > 0 ? (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-            {(() => {
-              const shownLists = new Set<string>();
-              return series.flatMap((s) => {
-                const list = isGroupedByList ? seriesListMap.get(s.series_id) : undefined;
-                if (list) {
-                  if (shownLists.has(list.id)) return [];
-                  shownLists.add(list.id);
-                  const covers = list.preview_covers;
-                  return [(
-                    <Link
-                      key={`list-${list.id}`}
-                      href={`/reading-lists/${list.id}`}
-                      className="group flex flex-col rounded-xl overflow-hidden border border-cyan-500/40 bg-card hover:border-cyan-500 hover:shadow-lg transition-all duration-200"
-                    >
-                      <div className="relative overflow-hidden">
-                        {covers.length === 0 ? (
-                          <div className="aspect-[2/3] bg-gradient-to-br from-cyan-500/20 to-primary/20 flex items-center justify-center">
-                            <svg className="w-10 h-10 text-muted-foreground/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-                            </svg>
-                          </div>
-                        ) : covers.length === 1 ? (
-                          <div className="aspect-[2/3] overflow-hidden">
-                            <img src={covers[0]} alt={list.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                          </div>
-                        ) : (
-                          <div className="aspect-[2/3] grid grid-cols-2 grid-rows-2 gap-0.5 overflow-hidden">
-                            {[...covers, null, null, null, null].slice(0, 4).map((url, i) => (
-                              <div key={i} className="overflow-hidden bg-muted">
-                                {url ? <img src={url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-muted" />}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        <div className="absolute top-1.5 left-1.5">
-                          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-cyan-500 text-white">
-                            <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-                            </svg>
-                            Liste
-                          </span>
-                        </div>
-                      </div>
-                      <div className="px-2 py-1.5">
-                        <h3 className="font-medium text-foreground truncate text-xs" title={list.name}>{list.name}</h3>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
-                          {t("readingLists.seriesCount", { count: list.series_count, plural: list.series_count !== 1 ? "s" : "" })}
-                        </p>
-                      </div>
-                    </Link>
-                  )];
-                }
-                return [(
-                  <div key={s.series_id} className="group">
+            {series.map((s) => (
+              <div key={s.series_id} className="group">
                 <div className="bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden group-hover:shadow-md group-hover:-translate-y-1 transition-all duration-200">
                   <Link href={`/series/${s.series_id}`} className="block">
                     <div className="aspect-[2/3] relative bg-muted/50">
@@ -298,9 +288,7 @@ export default async function SeriesPage({
                   </div>
                 </div>
               </div>
-                )];
-              });
-            })()}
+            ))}
           </div>
 
           <OffsetPagination
@@ -322,6 +310,7 @@ export default async function SeriesPage({
           </p>
         </div>
       )}
+      </>)}
     </>
   );
 }
