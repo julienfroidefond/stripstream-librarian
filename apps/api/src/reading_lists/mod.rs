@@ -19,6 +19,7 @@ pub struct ReadingListDto {
     pub name: String,
     pub description: Option<String>,
     pub series_count: i64,
+    pub preview_covers: Vec<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -115,6 +116,7 @@ pub async fn create_reading_list(
         name: row.get("name"),
         description: row.get("description"),
         series_count: 0,
+        preview_covers: vec![],
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
     }))
@@ -170,6 +172,7 @@ pub async fn update_reading_list(
         name: row.get("name"),
         description: row.get("description"),
         series_count,
+        preview_covers: vec![],
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
     }))
@@ -349,7 +352,16 @@ async fn fetch_list_dto(pool: &sqlx::PgPool, id: Uuid) -> Result<ReadingListDto,
     let row = sqlx::query(
         r#"
         SELECT rl.id, rl.name, rl.description, rl.created_at, rl.updated_at,
-               COUNT(rli.id)::bigint AS series_count
+               COUNT(rli.id)::bigint AS series_count,
+               ARRAY(
+                   SELECT s.cover_url
+                   FROM reading_list_items rli2
+                   JOIN series s ON s.id = rli2.series_id
+                   WHERE rli2.list_id = rl.id
+                     AND s.cover_url IS NOT NULL AND s.cover_url <> ''
+                   ORDER BY rli2.position
+                   LIMIT 4
+               ) AS preview_covers
         FROM reading_lists rl
         LEFT JOIN reading_list_items rli ON rli.list_id = rl.id
         WHERE rl.id = $1
@@ -366,6 +378,7 @@ async fn fetch_list_dto(pool: &sqlx::PgPool, id: Uuid) -> Result<ReadingListDto,
         name: row.get("name"),
         description: row.get("description"),
         series_count: row.get("series_count"),
+        preview_covers: row.get::<Vec<String>, _>("preview_covers"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
     })
@@ -393,8 +406,7 @@ async fn fetch_list_items(
         LEFT JOIN LATERAL (
             SELECT provider, external_id, external_url
             FROM external_metadata_links
-            WHERE library_id = s.library_id
-              AND series_name = s.name
+            WHERE series_id = s.id
               AND status = 'approved'
             ORDER BY approved_at DESC NULLS LAST
             LIMIT 1
@@ -444,7 +456,16 @@ pub async fn list_reading_lists(
     let rows = sqlx::query(
         r#"
         SELECT rl.id, rl.name, rl.description, rl.created_at, rl.updated_at,
-               COUNT(rli.id)::bigint AS series_count
+               COUNT(rli.id)::bigint AS series_count,
+               ARRAY(
+                   SELECT s.cover_url
+                   FROM reading_list_items rli2
+                   JOIN series s ON s.id = rli2.series_id
+                   WHERE rli2.list_id = rl.id
+                     AND s.cover_url IS NOT NULL AND s.cover_url <> ''
+                   ORDER BY rli2.position
+                   LIMIT 4
+               ) AS preview_covers
         FROM reading_lists rl
         LEFT JOIN reading_list_items rli ON rli.list_id = rl.id
         GROUP BY rl.id
@@ -461,6 +482,7 @@ pub async fn list_reading_lists(
             name: r.get("name"),
             description: r.get("description"),
             series_count: r.get("series_count"),
+            preview_covers: r.get::<Vec<String>, _>("preview_covers"),
             created_at: r.get("created_at"),
             updated_at: r.get("updated_at"),
         })

@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useTranslation } from "@/lib/i18n/context";
 import type { ReadingListDto } from "@/lib/api";
 import { Modal } from "@/app/components/ui/Modal";
@@ -11,9 +10,45 @@ type Props = {
   initialLists: ReadingListDto[];
 };
 
+function CoverMosaic({ covers, name }: { covers: string[]; name: string }) {
+  const filled = [...covers, ...Array(4).fill(null)].slice(0, 4);
+  const hasCovers = covers.length > 0;
+
+  if (!hasCovers) {
+    return (
+      <div className="w-full aspect-square bg-gradient-to-br from-cyan-500/20 to-primary/20 flex items-center justify-center">
+        <svg className="w-10 h-10 text-muted-foreground/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+        </svg>
+      </div>
+    );
+  }
+
+  if (covers.length === 1) {
+    return (
+      <div className="w-full aspect-square overflow-hidden">
+        <img src={covers[0]} alt={name} className="w-full h-full object-cover" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full aspect-square grid grid-cols-2 grid-rows-2 gap-0.5 overflow-hidden">
+      {filled.map((url, i) => (
+        <div key={i} className="overflow-hidden bg-muted">
+          {url ? (
+            <img src={url} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full bg-muted" />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ReadingListsClient({ initialLists }: Props) {
   const { t } = useTranslation();
-  const router = useRouter();
   const [lists, setLists] = useState<ReadingListDto[]>(initialLists);
   const [showCreate, setShowCreate] = useState(false);
   const [createName, setCreateName] = useState("");
@@ -43,7 +78,9 @@ export function ReadingListsClient({ initialLists }: Props) {
     }
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(e: React.MouseEvent, id: string) {
+    e.preventDefault();
+    e.stopPropagation();
     if (!confirm(t("readingLists.deleteConfirm"))) return;
     setDeletingId(id);
     try {
@@ -76,49 +113,52 @@ export function ReadingListsClient({ initialLists }: Props) {
       </div>
 
       {lists.length === 0 ? (
-        <p className="text-muted-foreground text-center py-12">{t("readingLists.empty")}</p>
+        <div className="flex flex-col items-center justify-center py-24 gap-4 text-muted-foreground">
+          <svg className="w-16 h-16 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+          </svg>
+          <p className="text-sm">{t("readingLists.empty")}</p>
+        </div>
       ) : (
-        <div className="grid gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {lists.map((list) => (
-            <div
+            <Link
               key={list.id}
-              className="flex items-center gap-4 p-4 rounded-xl border border-border/50 bg-card hover:bg-accent/30 transition-colors"
+              href={`/reading-lists/${list.id}`}
+              className="group relative flex flex-col rounded-xl overflow-hidden border border-border/50 bg-card hover:border-border hover:shadow-lg transition-all duration-200"
             >
-              <Link href={`/reading-lists/${list.id}`} className="flex-1 min-w-0">
-                <p className="font-semibold text-foreground truncate">{list.name}</p>
+              {/* Cover mosaic */}
+              <div className="relative overflow-hidden">
+                <CoverMosaic covers={list.preview_covers} name={list.name} />
+                {/* Hover overlay with delete button */}
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200" />
+                <button
+                  type="button"
+                  onClick={(e) => handleDelete(e, list.id)}
+                  disabled={deletingId === list.id}
+                  className="absolute top-2 right-2 p-1.5 rounded-lg bg-background/80 text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-all duration-200 backdrop-blur-sm"
+                  title={t("common.delete")}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Info */}
+              <div className="p-3 flex flex-col gap-1">
+                <p className="font-semibold text-foreground text-sm leading-tight line-clamp-2">{list.name}</p>
                 {list.description && (
-                  <p className="text-sm text-muted-foreground truncate mt-0.5">{list.description}</p>
+                  <p className="text-xs text-muted-foreground line-clamp-1">{list.description}</p>
                 )}
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="text-xs text-muted-foreground/70 mt-0.5">
                   {t("readingLists.seriesCount", {
                     count: list.series_count,
                     plural: list.series_count !== 1 ? "s" : "",
                   })}
                 </p>
-              </Link>
-              <div className="flex items-center gap-2 shrink-0">
-                <Link
-                  href={`/reading-lists/${list.id}`}
-                  className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                  title={t("common.edit")}
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(list.id)}
-                  disabled={deletingId === list.id}
-                  className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                  title={t("common.delete")}
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}

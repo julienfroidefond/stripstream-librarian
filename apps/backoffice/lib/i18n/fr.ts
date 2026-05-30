@@ -1177,6 +1177,8 @@ const fr = {
   "readingLists.created": "Liste créée.",
   "readingLists.updated": "Liste mise à jour.",
   "readingLists.deleted": "Liste supprimée.",
+  "readingLists.alreadyInList": "Déjà dans la liste",
+  "readingLists.noResults": "Aucun résultat",
 } as const;
 
 export type TranslationKey = keyof typeof fr;

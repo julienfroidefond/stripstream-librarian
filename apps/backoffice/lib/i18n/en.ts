@@ -1179,6 +1179,8 @@ const en: Record<TranslationKey, string> = {
   "readingLists.created": "List created.",
   "readingLists.updated": "List updated.",
   "readingLists.deleted": "List deleted.",
+  "readingLists.alreadyInList": "Already in list",
+  "readingLists.noResults": "No results",
 };
 
 export default en;
