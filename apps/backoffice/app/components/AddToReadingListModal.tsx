@@ -81,21 +81,13 @@ export function AddToReadingListModal({ seriesId, children }: Props) {
                   >
                     {/* Mini cover mosaic */}
                     <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-muted">
-                      {list.preview_covers.length === 0 ? (
+                      {list.preview_covers[0] ? (
+                        <img src={getBookCoverUrl(list.preview_covers[0])} alt="" className="w-full h-full object-cover" />
+                      ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           <svg className="w-4 h-4 text-muted-foreground/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                           </svg>
-                        </div>
-                      ) : list.preview_covers.length === 1 ? (
-                        <img src={getBookCoverUrl(list.preview_covers[0])} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full grid grid-cols-2 gap-px">
-                          {[...list.preview_covers, null, null, null, null].slice(0, 4).map((bookId, i) => (
-                            <div key={i} className="overflow-hidden bg-muted">
-                              {bookId ? <img src={getBookCoverUrl(bookId)} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-muted/50" />}
-                            </div>
-                          ))}
                         </div>
                       )}
                     </div>

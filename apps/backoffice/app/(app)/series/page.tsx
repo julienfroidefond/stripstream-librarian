@@ -182,24 +182,14 @@ export default async function SeriesPage({
                   href={`/reading-lists/${list.id}`}
                   className="group flex flex-col rounded-xl overflow-hidden border border-border/50 bg-card hover:border-border hover:shadow-lg transition-all duration-200"
                 >
-                  <div className="relative overflow-hidden">
-                    {covers.length === 0 ? (
-                      <div className="aspect-[2/3] bg-gradient-to-br from-cyan-500/20 to-primary/20 flex items-center justify-center">
+                  <div className="relative overflow-hidden aspect-[2/3]">
+                    {covers[0] ? (
+                      <img src={getBookCoverUrl(covers[0])} alt={list.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-cyan-500/20 to-primary/20 flex items-center justify-center">
                         <svg className="w-10 h-10 text-muted-foreground/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                         </svg>
-                      </div>
-                    ) : covers.length === 1 ? (
-                      <div className="aspect-[2/3] overflow-hidden">
-                        <img src={getBookCoverUrl(covers[0])} alt={list.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                      </div>
-                    ) : (
-                      <div className="aspect-[2/3] grid grid-cols-2 grid-rows-2 gap-0.5 overflow-hidden">
-                        {[...covers, null, null, null, null].slice(0, 4).map((bookId, i) => (
-                          <div key={i} className="overflow-hidden bg-muted">
-                            {bookId ? <img src={getBookCoverUrl(bookId)} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" /> : <div className="w-full h-full bg-muted" />}
-                          </div>
-                        ))}
                       </div>
                     )}
                   </div>
