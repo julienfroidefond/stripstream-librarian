@@ -229,7 +229,7 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
 
               {/* Cover */}
               <Link href={`/series/${item.id}`} className="shrink-0">
-                <div className="w-11 h-16 rounded-lg overflow-hidden bg-muted shadow-sm">
+                <div className="w-14 h-20 rounded-lg overflow-hidden bg-muted shadow-sm">
                   {(item.first_book_id || item.cover_url) ? (
                     <img
                       src={item.first_book_id ? getBookCoverUrl(item.first_book_id, item.first_book_updated_at) : (item.cover_url ?? "")}
