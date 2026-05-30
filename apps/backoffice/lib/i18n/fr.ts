@@ -1150,6 +1150,33 @@ const fr = {
   "settings.torrentImportDesc": "Lorsqu'activé, les torrents ajoutés via le backoffice sont suivis et les fichiers sont automatiquement importés dans la bibliothèque à la fin du téléchargement.",
   "settings.torrentImportEnabled": "Activer l'import automatique",
   "settings.torrentImportPollingInfo": "L'API interroge qBittorrent toutes les 30 secondes pour détecter les téléchargements terminés. Aucune configuration supplémentaire dans qBittorrent n'est nécessaire.",
+
+  // Reading lists
+  "nav.readingLists": "Listes de lecture",
+  "readingLists.title": "Listes de lecture",
+  "readingLists.empty": "Aucune liste de lecture.",
+  "readingLists.create": "Nouvelle liste",
+  "readingLists.createTitle": "Créer une liste de lecture",
+  "readingLists.name": "Nom",
+  "readingLists.namePlaceholder": "Nom de la liste...",
+  "readingLists.description": "Description (optionnel)",
+  "readingLists.descriptionPlaceholder": "Description...",
+  "readingLists.seriesCount": "{{count}} série{{plural}}",
+  "readingLists.deleteConfirm": "Supprimer cette liste de lecture ?",
+  "readingLists.editTitle": "Modifier la liste",
+  "readingLists.backToList": "Retour aux listes",
+  "readingLists.noSeries": "Aucune série dans cette liste.",
+  "readingLists.addSeries": "Ajouter une série",
+  "readingLists.searchSeries": "Rechercher une série...",
+  "readingLists.removeSeries": "Retirer de la liste",
+  "readingLists.moveUp": "Monter",
+  "readingLists.moveDown": "Descendre",
+  "readingLists.reorderSaved": "Ordre enregistré.",
+  "readingLists.seriesAdded": "Série ajoutée.",
+  "readingLists.seriesRemoved": "Série retirée.",
+  "readingLists.created": "Liste créée.",
+  "readingLists.updated": "Liste mise à jour.",
+  "readingLists.deleted": "Liste supprimée.",
 } as const;
 
 export type TranslationKey = keyof typeof fr;

@@ -1440,3 +1440,96 @@ export type QBittorrentTestResponse = {
   message: string;
   version: string | null;
 };
+
+// ---------------------------------------------------------------------------
+// Reading lists
+// ---------------------------------------------------------------------------
+
+export type ReadingListDto = {
+  id: string;
+  name: string;
+  description: string | null;
+  series_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReadingListSeriesDto = {
+  id: string;
+  name: string;
+  cover_url: string | null;
+  provider: string | null;
+  external_id: string | null;
+  external_url: string | null;
+  library_id: string;
+  library_name: string;
+  position: number;
+};
+
+export type ReadingListDetailDto = {
+  id: string;
+  name: string;
+  description: string | null;
+  items: ReadingListSeriesDto[];
+  created_at: string;
+  updated_at: string;
+};
+
+export async function fetchReadingLists(): Promise<ReadingListDto[]> {
+  return apiFetch<ReadingListDto[]>("/reading-lists");
+}
+
+export async function fetchReadingList(id: string): Promise<ReadingListDetailDto> {
+  return apiFetch<ReadingListDetailDto>(`/reading-lists/${id}`);
+}
+
+export async function createReadingList(
+  name: string,
+  description?: string
+): Promise<ReadingListDto> {
+  return apiFetch<ReadingListDto>("/reading-lists", {
+    method: "POST",
+    body: JSON.stringify({ name, description }),
+  });
+}
+
+export async function updateReadingList(
+  id: string,
+  data: { name?: string; description?: string }
+): Promise<ReadingListDto> {
+  return apiFetch<ReadingListDto>(`/reading-lists/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteReadingList(id: string): Promise<void> {
+  await apiFetch(`/reading-lists/${id}`, { method: "DELETE" });
+}
+
+export async function addSeriesToReadingList(
+  listId: string,
+  seriesId: string
+): Promise<void> {
+  await apiFetch(`/reading-lists/${listId}/series`, {
+    method: "POST",
+    body: JSON.stringify({ series_id: seriesId }),
+  });
+}
+
+export async function removeSeriesFromReadingList(
+  listId: string,
+  seriesId: string
+): Promise<void> {
+  await apiFetch(`/reading-lists/${listId}/series/${seriesId}`, { method: "DELETE" });
+}
+
+export async function reorderReadingListSeries(
+  listId: string,
+  seriesIds: string[]
+): Promise<void> {
+  await apiFetch(`/reading-lists/${listId}/series/reorder`, {
+    method: "PUT",
+    body: JSON.stringify({ series_ids: seriesIds }),
+  });
+}

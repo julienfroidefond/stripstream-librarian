@@ -12,6 +12,7 @@ mod metadata_providers;
 mod api_middleware;
 mod openapi;
 mod reading;
+mod reading_lists;
 mod responses;
 mod search;
 mod series;
@@ -184,6 +185,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/genres/assign", axum::routing::post(genres::assign_genre))
         .route("/genres/untagged-series", get(genres::untagged_series))
         .route("/genres/:name", axum::routing::patch(genres::rename_genre).delete(genres::delete_genre))
+        .route("/reading-lists", axum::routing::post(reading_lists::create_reading_list))
+        .route("/reading-lists/:id", axum::routing::patch(reading_lists::update_reading_list).delete(reading_lists::delete_reading_list))
+        .route("/reading-lists/:id/series", axum::routing::post(reading_lists::add_series))
+        .route("/reading-lists/:id/series/:series_id", delete(reading_lists::remove_series))
+        .route("/reading-lists/:id/series/reorder", axum::routing::put(reading_lists::reorder_series))
         .merge(settings::settings_routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
@@ -217,6 +223,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/search", get(search::search_books))
         .route("/metadata/links", get(metadata::get_metadata_links))
         .route("/metadata/missing/:id", get(metadata::get_missing_books))
+        .route("/reading-lists", get(reading_lists::list_reading_lists))
+        .route("/reading-lists/:id", get(reading_lists::get_reading_list))
         .route_layer(middleware::from_fn_with_state(state.clone(), api_middleware::read_rate_limit))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),

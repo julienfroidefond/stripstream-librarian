@@ -30,9 +30,14 @@ use utoipa::OpenApi;
         crate::libraries::list_libraries,
         crate::metadata::handlers::get_metadata_links,
         crate::metadata::handlers::get_missing_books,
+        crate::reading_lists::list_reading_lists,
+        crate::reading_lists::get_reading_list,
     ),
     components(
         schemas(
+            crate::reading_lists::ReadingListDto,
+            crate::reading_lists::ReadingListDetailDto,
+            crate::reading_lists::ReadingListSeriesDto,
             crate::books::ListBooksQuery,
             crate::books::BookItem,
             crate::books::BooksPage,
@@ -92,6 +97,7 @@ use utoipa::OpenApi;
         (name = "authors", description = "Author browsing and listing"),
         (name = "stats", description = "Collection statistics and dashboard data"),
         (name = "libraries", description = "Library listing"),
+        (name = "reading-lists", description = "Reading lists: curated ordered collections of series"),
     ),
     modifiers(&SecurityAddon)
 )]
@@ -227,6 +233,15 @@ pub struct ClientApiDoc;
         crate::genres::delete_genre,
         crate::genres::assign_genre,
         crate::genres::untagged_series,
+        // Reading lists
+        crate::reading_lists::list_reading_lists,
+        crate::reading_lists::get_reading_list,
+        crate::reading_lists::create_reading_list,
+        crate::reading_lists::update_reading_list,
+        crate::reading_lists::delete_reading_list,
+        crate::reading_lists::add_series,
+        crate::reading_lists::remove_series,
+        crate::reading_lists::reorder_series,
     ),
     components(
         schemas(
@@ -234,6 +249,14 @@ pub struct ClientApiDoc;
             crate::genres::GenreDto,
             crate::genres::RenameGenreRequest,
             crate::genres::AssignGenreRequest,
+            // Reading lists
+            crate::reading_lists::ReadingListDto,
+            crate::reading_lists::ReadingListDetailDto,
+            crate::reading_lists::ReadingListSeriesDto,
+            crate::reading_lists::CreateReadingListRequest,
+            crate::reading_lists::UpdateReadingListRequest,
+            crate::reading_lists::AddSeriesRequest,
+            crate::reading_lists::ReorderSeriesRequest,
             // Books
             crate::books::ListBooksQuery,
             crate::books::BookItem,
@@ -390,6 +413,7 @@ pub struct ClientApiDoc;
         (name = "anilist", description = "AniList integration for reading status sync"),
         (name = "komga", description = "Komga read-status sync"),
         (name = "genres", description = "Genre management"),
+        (name = "reading-lists", description = "Reading lists: curated ordered collections of series"),
         (name = "series (deprecated)", description = "Deprecated series endpoints (use direct /series/{id} variants)"),
     ),
     modifiers(&SecurityAddon)

@@ -1152,6 +1152,33 @@ const en: Record<TranslationKey, string> = {
   "settings.torrentImportDesc": "When enabled, torrents added via the backoffice are tracked and files are automatically imported into the library when the download completes.",
   "settings.torrentImportEnabled": "Enable auto import",
   "settings.torrentImportPollingInfo": "The API polls qBittorrent every 30 seconds to detect completed downloads. No additional configuration in qBittorrent is required.",
+
+  // Reading lists
+  "nav.readingLists": "Reading Lists",
+  "readingLists.title": "Reading Lists",
+  "readingLists.empty": "No reading lists.",
+  "readingLists.create": "New List",
+  "readingLists.createTitle": "Create Reading List",
+  "readingLists.name": "Name",
+  "readingLists.namePlaceholder": "List name...",
+  "readingLists.description": "Description (optional)",
+  "readingLists.descriptionPlaceholder": "Description...",
+  "readingLists.seriesCount": "{{count}} series",
+  "readingLists.deleteConfirm": "Delete this reading list?",
+  "readingLists.editTitle": "Edit list",
+  "readingLists.backToList": "Back to lists",
+  "readingLists.noSeries": "No series in this list.",
+  "readingLists.addSeries": "Add a series",
+  "readingLists.searchSeries": "Search for a series...",
+  "readingLists.removeSeries": "Remove from list",
+  "readingLists.moveUp": "Move up",
+  "readingLists.moveDown": "Move down",
+  "readingLists.reorderSaved": "Order saved.",
+  "readingLists.seriesAdded": "Series added.",
+  "readingLists.seriesRemoved": "Series removed.",
+  "readingLists.created": "List created.",
+  "readingLists.updated": "List updated.",
+  "readingLists.deleted": "List deleted.",
 };
 
 export default en;

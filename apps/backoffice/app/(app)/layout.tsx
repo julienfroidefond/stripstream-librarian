@@ -16,9 +16,9 @@ import { getServerTranslations } from "@/lib/i18n/server";
 import type { TranslationKey } from "@/lib/i18n/fr";
 
 type NavItem = {
-  href: "/" | "/books" | "/series" | "/authors" | "/libraries" | "/discovery" | "/jobs" | "/tokens" | "/settings" | "/downloads" | "/genres";
+  href: "/" | "/books" | "/series" | "/authors" | "/libraries" | "/discovery" | "/jobs" | "/tokens" | "/settings" | "/downloads" | "/genres" | "/reading-lists";
   labelKey: TranslationKey;
-  icon: "dashboard" | "books" | "series" | "authors" | "libraries" | "search" | "jobs" | "tokens" | "settings" | "download" | "tag";
+  icon: "dashboard" | "books" | "series" | "authors" | "libraries" | "search" | "jobs" | "tokens" | "settings" | "download" | "tag" | "bookmark";
   color?: string;
 };
 
@@ -27,6 +27,7 @@ const navItems: NavItem[] = [
   { href: "/series", labelKey: "nav.series", icon: "series", color: "text-warning" },
   { href: "/authors", labelKey: "nav.authors", icon: "authors", color: "text-violet-500" },
   { href: "/genres", labelKey: "nav.genres", icon: "tag", color: "text-pink-500" },
+  { href: "/reading-lists", labelKey: "nav.readingLists", icon: "bookmark", color: "text-cyan-500" },
   { href: "/libraries", labelKey: "nav.libraries", icon: "libraries", color: "text-primary" },
   { href: "/discovery", labelKey: "nav.discovery", icon: "search", color: "text-rose-500" },
 ];
