@@ -695,6 +695,8 @@ const en: Record<TranslationKey, string> = {
   "settings.prowlarrApiKeyPlaceholder": "Prowlarr API key",
   "settings.prowlarrCategories": "Categories",
   "settings.prowlarrCategoriesHelp": "Comma-separated Newznab category IDs (7030 = Comics, 7020 = Ebooks)",
+  "settings.prowlarrDiscoveryLimit": "Result count (discovery)",
+  "settings.prowlarrDiscoveryLimitHelp": "Prowlarr returns more raw results than this number; sorting and grouping by series happen server-side.",
   "settings.testConnection": "Test connection",
   "settings.testing": "Testing...",
   "settings.testSuccess": "Connection successful",

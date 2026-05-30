@@ -4,7 +4,7 @@ import { apiFetch } from "@/lib/api";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const limit = searchParams.get("limit") || "100";
+    const limit = searchParams.get("limit") || "300";
     const nocache = searchParams.get("nocache") || "";
     const sort = searchParams.get("sort") || "";
     const indexer = searchParams.get("indexer") || "";

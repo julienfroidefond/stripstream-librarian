@@ -304,7 +304,6 @@ pub struct ProwlarrDiscoveryResponse {
 
 #[derive(Deserialize)]
 pub struct ProwlarrDiscoveryQuery {
-    pub limit: Option<usize>,
     pub nocache: Option<String>,
     /// "seeders" (default) or "date"
     pub sort: Option<String>,
@@ -317,9 +316,22 @@ pub async fn prowlarr_discovery(
     State(state): State<AppState>,
     Query(params): Query<ProwlarrDiscoveryQuery>,
 ) -> Result<Json<ProwlarrDiscoveryResponse>, ApiError> {
-    let limit = params.limit.unwrap_or(100).min(200);
     let sort_by_date = params.sort.as_deref() == Some("date");
     let indexer_filter = params.indexer.as_deref().filter(|s| !s.is_empty());
+
+    // Load discovery_limit from prowlarr settings (defaults to 300, max 1000)
+    let limit: usize = {
+        let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'prowlarr'")
+            .fetch_optional(&state.pool)
+            .await
+            .ok()
+            .flatten();
+        row.and_then(|r| {
+            let v: serde_json::Value = r.get("value");
+            v.get("discovery_limit").and_then(|n| n.as_u64()).map(|n| n.clamp(10, 1000) as usize)
+        })
+        .unwrap_or(300)
+    };
 
     // Single cache regardless of sort mode — sort is applied in memory when reading.
     // This ensures all providers are always present regardless of which sort was
@@ -469,6 +481,17 @@ pub async fn prowlarr_discovery(
         return Ok(Json(ProwlarrDiscoveryResponse { items: vec![], all_indexers: vec![] }));
     }
 
+    // Keep only releases whose category IDs intersect the configured list (mirrors Prowlarr UI filtering)
+    let cat_id_set: std::collections::HashSet<i64> = categories.iter().map(|&c| c as i64).collect();
+    let raw: Vec<serde_json::Value> = raw.into_iter().filter(|r| {
+        r.get("categories")
+            .and_then(|c| c.as_array())
+            .map(|arr| arr.iter().any(|v| {
+                v.get("id").and_then(|i| i.as_i64()).map(|id| cat_id_set.contains(&id)).unwrap_or(false)
+            }))
+            .unwrap_or(true)
+    }).collect();
+
     // Group by extracted series name
     let mut series_map: std::collections::HashMap<String, ProwlarrDiscoveryItem> = std::collections::HashMap::new();
 
@@ -488,15 +511,14 @@ pub async fn prowlarr_discovery(
         let indexer = release.get("indexer").and_then(|i| i.as_str()).unwrap_or("").to_string();
         let publish_date = release.get("publishDate").and_then(|d| d.as_str()).map(String::from);
         let info_url = release.get("infoUrl").and_then(|u| u.as_str()).map(String::from);
+        // Only keep categories that are in the configured list (strips parent 7000 etc.)
         let cats: Vec<String> = release.get("categories")
             .and_then(|c| c.as_array())
             .map(|arr| arr.iter().filter_map(|v| {
                 let name = v.get("name").and_then(|n| n.as_str())?;
-                let id = v.get("id").and_then(|i| i.as_i64());
-                Some(match id {
-                    Some(id) => format!("{name} ({id})"),
-                    None => name.to_string(),
-                })
+                let id = v.get("id").and_then(|i| i.as_i64())?;
+                if !cat_id_set.contains(&id) { return None; }
+                Some(format!("{name} ({id})"))
             }).collect())
             .unwrap_or_default();
 
