@@ -60,6 +60,7 @@ export function MetadataSearchModal({
   const [syncReport, setSyncReport] = useState<SyncReport | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshDone, setRefreshDone] = useState(false);
+  const [unlinking, setUnlinking] = useState(false);
 
   // Provider selector: empty string = library default
   const [searchProvider, setSearchProvider] = useState("");
@@ -216,6 +217,8 @@ export function MetadataSearchModal({
 
   async function handleUnlink() {
     if (!linkId) return;
+    setUnlinking(true);
+    setError(null);
     try {
       const resp = await fetch(`/api/metadata/links?id=${linkId}`, { method: "DELETE" });
       if (resp.ok) {
@@ -223,8 +226,15 @@ export function MetadataSearchModal({
         setMissing(null);
         handleClose();
         router.refresh();
+      } else {
+        const body = await resp.json().catch(() => ({}));
+        setError(body?.error ?? t("common.networkError"));
       }
-    } catch { /* ignore */ }
+    } catch {
+      setError(t("common.networkError"));
+    } finally {
+      setUnlinking(false);
+    }
   }
 
   function confidenceBadge(confidence: number) {
@@ -691,9 +701,10 @@ export function MetadataSearchModal({
                       <button
                         type="button"
                         onClick={handleUnlink}
-                        className="p-2.5 rounded-lg border border-destructive/30 bg-destructive/5 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                        disabled={unlinking}
+                        className="p-2.5 rounded-lg border border-destructive/30 bg-destructive/5 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-60"
                       >
-                        {t("metadata.unlink")}
+                        {unlinking ? <Icon name="spinner" size="sm" className="animate-spin" /> : t("metadata.unlink")}
                       </button>
                     </div>
                   </div>

@@ -230,9 +230,9 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
               {/* Cover */}
               <Link href={`/series/${item.id}`} className="shrink-0">
                 <div className="w-11 h-16 rounded-lg overflow-hidden bg-muted shadow-sm">
-                  {(item.cover_url || item.first_book_id) ? (
+                  {(item.first_book_id || item.cover_url) ? (
                     <img
-                      src={item.cover_url ?? getBookCoverUrl(item.first_book_id!, item.first_book_updated_at)}
+                      src={item.first_book_id ? getBookCoverUrl(item.first_book_id, item.first_book_updated_at) : (item.cover_url ?? "")}
                       alt={item.name}
                       className="w-full h-full object-cover"
                     />
@@ -329,9 +329,9 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
                     className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-accent transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <div className="w-9 h-12 rounded-md overflow-hidden shrink-0 bg-muted shadow-sm">
-                      {(series.cover_url || series.first_book_id) ? (
+                      {(series.first_book_id || series.cover_url) ? (
                         <img
-                          src={series.cover_url ?? getBookCoverUrl(series.first_book_id!, series.first_book_updated_at)}
+                          src={series.first_book_id ? getBookCoverUrl(series.first_book_id, series.first_book_updated_at) : (series.cover_url ?? "")}
                           alt={series.name}
                           className="w-full h-full object-cover"
                         />

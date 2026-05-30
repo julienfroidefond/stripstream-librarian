@@ -657,14 +657,24 @@ pub async fn delete_metadata_link(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
 ) -> Result<Json<crate::responses::DeletedResponse>, ApiError> {
-    let result = sqlx::query("DELETE FROM external_metadata_links WHERE id = $1")
+    let mut tx = state.pool.begin().await?;
+
+    // Fetch series_id before deleting so we can clear cover_url
+    let row = sqlx::query("DELETE FROM external_metadata_links WHERE id = $1 RETURNING series_id")
         .bind(id)
-        .execute(&state.pool)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| ApiError::not_found("link not found"))?;
+
+    let series_id: uuid::Uuid = row.get("series_id");
+
+    // Clear cover_url on the series so the stale external image is removed
+    sqlx::query("UPDATE series SET cover_url = NULL WHERE id = $1")
+        .bind(series_id)
+        .execute(&mut *tx)
         .await?;
 
-    if result.rows_affected() == 0 {
-        return Err(ApiError::not_found("link not found"));
-    }
+    tx.commit().await?;
 
     Ok(Json(crate::responses::DeletedResponse::new(id)))
 }
