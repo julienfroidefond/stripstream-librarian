@@ -668,11 +668,20 @@ pub async fn delete_metadata_link(
 
     let series_id: uuid::Uuid = row.get("series_id");
 
-    // Clear cover_url on the series so the stale external image is removed
-    sqlx::query("UPDATE series SET cover_url = NULL WHERE id = $1")
-        .bind(series_id)
-        .execute(&mut *tx)
-        .await?;
+    // Clear stale external fields on the series (respect locked_fields)
+    sqlx::query(
+        r#"UPDATE series SET
+            cover_url = NULL,
+            description = CASE WHEN (locked_fields->>'description')::boolean IS TRUE THEN description ELSE NULL END,
+            authors = CASE WHEN (locked_fields->>'authors')::boolean IS TRUE THEN authors ELSE '{}' END,
+            status = CASE WHEN (locked_fields->>'status')::boolean IS TRUE THEN status ELSE NULL END,
+            total_volumes = CASE WHEN (locked_fields->>'total_volumes')::boolean IS TRUE THEN total_volumes ELSE NULL END,
+            start_year = CASE WHEN (locked_fields->>'start_year')::boolean IS TRUE THEN start_year ELSE NULL END
+        WHERE id = $1"#,
+    )
+    .bind(series_id)
+    .execute(&mut *tx)
+    .await?;
 
     tx.commit().await?;
 
