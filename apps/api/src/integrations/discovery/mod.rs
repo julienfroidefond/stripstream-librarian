@@ -439,6 +439,7 @@ pub async fn prowlarr_discovery(
         let mut params_vec: Vec<(&str, String)> = vec![
             ("query", req.query.clone()),
             ("type", "search".to_string()),
+            ("limit", limit.to_string()),
         ];
         for cat in &categories {
             params_vec.push(("categories", cat.to_string()));
