@@ -6,6 +6,7 @@ import { ActionsMenu, ActionsMenuItem, ActionsMenuSection } from "./ui";
 import { MarkSeriesReadButton } from "./MarkSeriesReadButton";
 import { RefreshButton } from "./RefreshButton";
 import { useTranslation } from "../../lib/i18n/context";
+import { AddToReadingListModal } from "./AddToReadingListModal";
 
 const EditSeriesForm = nextDynamic(
   () => import("./EditSeriesForm").then(m => m.EditSeriesForm)
@@ -176,6 +177,16 @@ export function SeriesActionsToolbar(props: Props) {
               </ActionsMenuItem>
             )}
           </MergeSeriesButton>
+        </ActionsMenuSection>
+
+        <ActionsMenuSection label={t("nav.readingLists")}>
+          <AddToReadingListModal seriesId={props.seriesId} seriesName={props.seriesName}>
+            {(open) => (
+              <ActionsMenuItem icon="🔖" onClick={open} keepOpen>
+                {t("readingLists.addToList")}
+              </ActionsMenuItem>
+            )}
+          </AddToReadingListModal>
         </ActionsMenuSection>
 
         <ActionsMenuSection label={t("actionsMenu.actions")}>

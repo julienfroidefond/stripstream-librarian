@@ -175,6 +175,8 @@ const fr = {
   "series.relatedSameAuthor": "Même auteur",
   "series.relatedSameGenre": "Même genre",
   "series.relatedSamePublisher": "Même éditeur",
+  "series.groupByReadingList": "Listes de lecture",
+  "series.groupByReadingListOff": "Toutes les séries",
 
   // Authors page
   "nav.authors": "Auteurs",
@@ -1179,6 +1181,7 @@ const fr = {
   "readingLists.deleted": "Liste supprimée.",
   "readingLists.alreadyInList": "Déjà dans la liste",
   "readingLists.noResults": "Aucun résultat",
+  "readingLists.addToList": "Ajouter à une liste de lecture",
 } as const;
 
 export type TranslationKey = keyof typeof fr;

@@ -177,6 +177,8 @@ const en: Record<TranslationKey, string> = {
   "series.relatedSameAuthor": "Same author",
   "series.relatedSameGenre": "Same genre",
   "series.relatedSamePublisher": "Same publisher",
+  "series.groupByReadingList": "Reading lists",
+  "series.groupByReadingListOff": "All series",
 
   // Authors page
   "nav.authors": "Authors",
@@ -1181,6 +1183,7 @@ const en: Record<TranslationKey, string> = {
   "readingLists.deleted": "List deleted.",
   "readingLists.alreadyInList": "Already in list",
   "readingLists.noResults": "No results",
+  "readingLists.addToList": "Add to reading list",
 };
 
 export default en;

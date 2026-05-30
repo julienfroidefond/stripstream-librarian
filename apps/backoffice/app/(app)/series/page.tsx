@@ -1,4 +1,4 @@
-import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, LibraryDto, SeriesDto, SeriesPageDto, getBookCoverUrl } from "@/lib/api";
+import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, fetchReadingLists, LibraryDto, SeriesDto, SeriesPageDto, ReadingListDto, getBookCoverUrl } from "@/lib/api";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { paramString, paramStringOr, paramInt, paramBool } from "@/lib/searchParams";
 import { MarkSeriesReadButton } from "@/app/components/MarkSeriesReadButton";
@@ -13,6 +13,7 @@ import nextDynamic from "next/dynamic";
 const CreateSeriesButton = nextDynamic(
   () => import("@/app/components/CreateSeriesButton").then(m => m.CreateSeriesButton)
 );
+import { GroupByToggle } from "@/app/components/GroupByToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -32,15 +33,21 @@ export default async function SeriesPage({
   const booksFilter = paramString(sp, "books_filter"); // "wishlist" | "in_library" | ""
   const volumeTypeFilter = paramString(sp, "volume_type"); // "regular" | "oneshot" | "hs" | "integral" | ""
   const metadataProvider = paramString(sp, "metadata_provider");
+  const groupBy = paramString(sp, "group_by"); // "reading_list" | ""
   const page = paramInt(sp, "page", 1);
   const limit = paramInt(sp, "limit", 20);
 
-  const [libraries, seriesPage, dbStatuses] = await Promise.all([
+  const isGroupedByList = groupBy === "reading_list";
+
+  const [libraries, seriesPage, dbStatuses, readingLists] = await Promise.all([
     fetchLibraries().catch(() => [] as LibraryDto[]),
-    fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit, sort, seriesStatus, hasMissing, metadataProvider, undefined, booksFilter === "wishlist", booksFilter === "in_library", volumeTypeFilter || undefined).catch(
-      () => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }) as SeriesPageDto
-    ),
+    isGroupedByList
+      ? Promise.resolve({ items: [] as SeriesDto[], total: 0, page: 1, limit } as SeriesPageDto)
+      : fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit, sort, seriesStatus, hasMissing, metadataProvider, undefined, booksFilter === "wishlist", booksFilter === "in_library", volumeTypeFilter || undefined).catch(
+          () => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }) as SeriesPageDto
+        ),
     fetchSeriesStatuses().catch(() => [] as string[]),
+    isGroupedByList ? fetchReadingLists().catch(() => [] as ReadingListDto[]) : Promise.resolve([] as ReadingListDto[]),
   ]);
 
   const series = seriesPage.items;
@@ -117,6 +124,7 @@ export default async function SeriesPage({
           {t("series.title")}
         </h1>
         <div className="flex items-center gap-2">
+          <GroupByToggle active={isGroupedByList} />
           <RefreshButton target="series" />
           <CreateSeriesButton libraries={libraries.map(lib => ({ id: lib.id, name: lib.name }))} />
         </div>
@@ -152,6 +160,61 @@ export default async function SeriesPage({
         </CardContent>
       </Card>
 
+      {/* Reading list grouped view */}
+      {isGroupedByList ? (
+        readingLists.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-4 text-muted-foreground">
+            <svg className="w-14 h-14 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+            </svg>
+            <p className="text-sm">{t("readingLists.empty")}</p>
+            <Link href="/reading-lists" className="text-sm text-primary hover:underline">{t("readingLists.title")}</Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+            {readingLists.map((list) => {
+              const covers = list.preview_covers;
+              return (
+                <Link
+                  key={list.id}
+                  href={`/reading-lists/${list.id}`}
+                  className="group flex flex-col rounded-xl overflow-hidden border border-border/50 bg-card hover:border-border hover:shadow-lg transition-all duration-200"
+                >
+                  <div className="relative overflow-hidden">
+                    {covers.length === 0 ? (
+                      <div className="aspect-square bg-gradient-to-br from-cyan-500/20 to-primary/20 flex items-center justify-center">
+                        <svg className="w-10 h-10 text-muted-foreground/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                        </svg>
+                      </div>
+                    ) : covers.length === 1 ? (
+                      <div className="aspect-square overflow-hidden">
+                        <img src={covers[0]} alt={list.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      </div>
+                    ) : (
+                      <div className="aspect-square grid grid-cols-2 grid-rows-2 gap-0.5 overflow-hidden">
+                        {[...covers, null, null, null, null].slice(0, 4).map((url, i) => (
+                          <div key={i} className="overflow-hidden bg-muted">
+                            {url ? <img src={url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" /> : <div className="w-full h-full bg-muted" />}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-3">
+                    <p className="font-semibold text-foreground text-sm leading-tight line-clamp-2">{list.name}</p>
+                    {list.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{list.description}</p>}
+                    <p className="text-xs text-muted-foreground/60 mt-1">
+                      {t("readingLists.seriesCount", { count: list.series_count, plural: list.series_count !== 1 ? "s" : "" })}
+                    </p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )
+      ) : (
+      <>
       {/* Results count */}
       <p className="text-sm text-muted-foreground mb-4">
         {seriesPage.total} {t("series.title").toLowerCase()}
@@ -247,6 +310,8 @@ export default async function SeriesPage({
             {hasFilters ? t("series.noResults") : t("series.noSeries")}
           </p>
         </div>
+      )}
+      </>
       )}
     </>
   );
