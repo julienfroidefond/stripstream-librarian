@@ -1155,7 +1155,7 @@ const fr = {
   "settings.torrentImportPollingInfo": "L'API interroge qBittorrent toutes les 30 secondes pour détecter les téléchargements terminés. Aucune configuration supplémentaire dans qBittorrent n'est nécessaire.",
 
   // Reading lists
-  "nav.readingLists": "Listes de lecture",
+  "nav.readingLists": "Listes",
   "readingLists.title": "Listes de lecture",
   "readingLists.empty": "Aucune liste de lecture.",
   "readingLists.create": "Nouvelle liste",

@@ -1157,7 +1157,7 @@ const en: Record<TranslationKey, string> = {
   "settings.torrentImportPollingInfo": "The API polls qBittorrent every 30 seconds to detect completed downloads. No additional configuration in qBittorrent is required.",
 
   // Reading lists
-  "nav.readingLists": "Reading Lists",
+  "nav.readingLists": "Lists",
   "readingLists.title": "Reading Lists",
   "readingLists.empty": "No reading lists.",
   "readingLists.create": "New List",
