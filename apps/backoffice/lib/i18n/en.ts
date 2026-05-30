@@ -175,6 +175,7 @@ const en: Record<TranslationKey, string> = {
   "series.hideMissing": "Hide missing volumes",
   "series.readCount": "{{read}}/{{total}} read",
   "series.relatedTitle": "Similar Series",
+  "series.relatedSameReadingList": "Same list",
   "series.relatedSameAuthor": "Same author",
   "series.relatedSameGenre": "Same genre",
   "series.relatedSamePublisher": "Same publisher",

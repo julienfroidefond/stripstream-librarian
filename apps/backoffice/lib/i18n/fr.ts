@@ -173,6 +173,7 @@ const fr = {
   "series.hideMissing": "Masquer les tomes manquants",
   "series.readCount": "{{read}}/{{total}} lu{{plural}}",
   "series.relatedTitle": "Séries similaires",
+  "series.relatedSameReadingList": "Même liste",
   "series.relatedSameAuthor": "Même auteur",
   "series.relatedSameGenre": "Même genre",
   "series.relatedSamePublisher": "Même éditeur",

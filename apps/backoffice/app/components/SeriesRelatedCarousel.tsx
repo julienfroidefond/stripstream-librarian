@@ -5,12 +5,14 @@ import { getBookCoverUrl } from "@/lib/api";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 
 const REASON_KEYS: Record<string, string> = {
+  same_reading_list: "series.relatedSameReadingList",
   same_author: "series.relatedSameAuthor",
   same_genre: "series.relatedSameGenre",
   same_publisher: "series.relatedSamePublisher",
 };
 
 const REASON_COLORS: Record<string, string> = {
+  same_reading_list: "bg-cyan-500/15 text-cyan-600",
   same_author: "bg-primary/15 text-primary",
   same_genre: "bg-success/15 text-success",
   same_publisher: "bg-warning/15 text-warning",
