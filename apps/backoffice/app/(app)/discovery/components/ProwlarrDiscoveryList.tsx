@@ -73,9 +73,12 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
       setLoading(true);
       setError(null);
       try {
-          const indexerParam = filterIndexer !== "all" ? `&indexer=${encodeURIComponent(filterIndexer)}` : "";
-        const limit = 300;
-        const resp = await fetch(`/api/discovery/prowlarr?limit=${limit}&sort=${sort}${nocache ? "&nocache=true" : ""}${indexerParam}`);
+        const p = new URLSearchParams();
+        p.set("sort", sort);
+        if (nocache) p.set("nocache", "true");
+        if (filterIndexer !== "all") p.set("indexer", filterIndexer);
+        if (filterCategory !== "all") p.set("category", categoryShortId(filterCategory));
+        const resp = await fetch(`/api/discovery/prowlarr?${p.toString()}`);
         if (!resp.ok) {
           const data = await resp.json().catch(() => ({}));
           setError(data?.error || `Error ${resp.status}`);
@@ -91,7 +94,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
       }
     }
     fetchData();
-  }, [sort, nocache, filterIndexer]);
+  }, [sort, nocache, filterIndexer, filterCategory]);
 
   function handleAdded(seriesName: string) {
     setAddedSet((prev) => new Set(prev).add(seriesName));
@@ -122,7 +125,6 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
   const filteredItems = items
     .filter((i) => !addedSet.has(i.series_name))
     .filter((i) => !hideMine || !i.local_series_id)
-    .filter((i) => filterCategory === "all" || i.categories.includes(filterCategory))
     .filter((i) => !filterSearch || i.series_name.toLowerCase().includes(filterSearch.toLowerCase()));
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
@@ -209,18 +211,18 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
             {t("common.all")} ({items.filter((i) => !addedSet.has(i.series_name)).length})
           </button>
           {allCategories.map((cat) => {
-            const count = items.filter((i) => !addedSet.has(i.series_name) && i.categories.includes(cat)).length;
+            const isActive = filterCategory === cat;
             return (
               <button
                 key={cat}
-                onClick={() => setFilterCategory(cat === filterCategory ? "all" : cat)}
+                onClick={() => setFilterCategory(isActive ? "all" : cat)}
                 className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
-                  filterCategory === cat
+                  isActive
                     ? "bg-primary/15 text-primary border-primary/30"
                     : "bg-card text-muted-foreground border-border hover:border-primary/30"
                 }`}
               >
-                {cat} · {count}
+                {cat} · {items.filter((i) => !addedSet.has(i.series_name) && i.categories.includes(cat)).length}
               </button>
             );
           })}

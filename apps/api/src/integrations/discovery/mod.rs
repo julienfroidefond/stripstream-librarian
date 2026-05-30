@@ -309,6 +309,8 @@ pub struct ProwlarrDiscoveryQuery {
     pub sort: Option<String>,
     /// Filter results to a specific indexer name
     pub indexer: Option<String>,
+    /// Restrict Prowlarr search to a single category ID (e.g. "7030")
+    pub category: Option<String>,
 }
 
 /// GET /discovery/prowlarr — search Prowlarr indexers and group by series name
@@ -318,11 +320,14 @@ pub async fn prowlarr_discovery(
 ) -> Result<Json<ProwlarrDiscoveryResponse>, ApiError> {
     let sort_by_date = params.sort.as_deref() == Some("date");
     let indexer_filter = params.indexer.as_deref().filter(|s| !s.is_empty());
+    let category_filter = params.category.as_deref().and_then(|s| s.parse::<i32>().ok());
 
-    // Single cache regardless of sort mode — sort is applied in memory when reading.
-    // This ensures all providers are always present regardless of which sort was
-    // active when the cache was first populated.
-    let cache_key = "discovery:prowlarr".to_string();
+    // Cache key includes the category filter so single-category fetches don't pollute
+    // the "all categories" cache and vice versa.
+    let cache_key = match category_filter {
+        Some(cat_id) => format!("discovery:prowlarr:cat:{cat_id}"),
+        None => "discovery:prowlarr".to_string(),
+    };
     let skip_cache = params.nocache.as_deref() == Some("true");
 
     // Helper: collect unique sorted indexers from a slice
@@ -389,10 +394,16 @@ pub async fn prowlarr_discovery(
     let value: serde_json::Value = row.get("value");
     let prowlarr_url = value.get("url").and_then(|u| u.as_str()).unwrap_or("").trim_end_matches('/').to_string();
     let api_key = value.get("api_key").and_then(|k| k.as_str()).unwrap_or("").to_string();
-    let categories: Vec<i32> = value.get("categories")
+    let configured_categories: Vec<i32> = value.get("categories")
         .and_then(|c| c.as_array())
         .map(|arr| arr.iter().filter_map(|v| v.as_i64().map(|n| n as i32)).collect())
         .unwrap_or_else(|| vec![7030, 7020]);
+    // When a specific category is requested, restrict the Prowlarr query to that one
+    // so all 100 results per pass are focused on that category.
+    let categories: Vec<i32> = match category_filter {
+        Some(cat_id) => vec![cat_id],
+        None => configured_categories,
+    };
 
     if prowlarr_url.is_empty() || api_key.is_empty() {
         return Err(ApiError::bad_request("Prowlarr URL and API key must be configured"));

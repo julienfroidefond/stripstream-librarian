@@ -4,11 +4,16 @@ import { apiFetch } from "@/lib/api";
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const limit = searchParams.get("limit") || "300";
     const nocache = searchParams.get("nocache") || "";
     const sort = searchParams.get("sort") || "";
     const indexer = searchParams.get("indexer") || "";
-    const data = await apiFetch(`/discovery/prowlarr?limit=${limit}${nocache ? "&nocache=true" : ""}${sort ? `&sort=${sort}` : ""}${indexer ? `&indexer=${encodeURIComponent(indexer)}` : ""}`);
+    const category = searchParams.get("category") || "";
+    const params = new URLSearchParams();
+    if (nocache) params.set("nocache", "true");
+    if (sort) params.set("sort", sort);
+    if (indexer) params.set("indexer", indexer);
+    if (category) params.set("category", category);
+    const data = await apiFetch(`/discovery/prowlarr?${params.toString()}`);
     return NextResponse.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch Prowlarr discovery";
