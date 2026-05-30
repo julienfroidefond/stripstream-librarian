@@ -1,4 +1,5 @@
 import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, fetchReadingLists, fetchSeriesMemberships, LibraryDto, SeriesDto, SeriesPageDto, ReadingListDto, getBookCoverUrl } from "@/lib/api";
+import { ReadingListCover } from "@/app/components/ReadingListCover";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { paramString, paramStringOr, paramInt, paramBool } from "@/lib/searchParams";
 import { MarkSeriesReadButton } from "@/app/components/MarkSeriesReadButton";
@@ -182,17 +183,7 @@ export default async function SeriesPage({
                   href={`/reading-lists/${list.id}`}
                   className="group flex flex-col rounded-xl overflow-hidden border border-border/50 bg-card hover:border-border hover:shadow-lg transition-all duration-200"
                 >
-                  <div className="relative overflow-hidden aspect-[2/3]">
-                    {covers[0] ? (
-                      <img src={getBookCoverUrl(covers[0])} alt={list.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                    ) : (
-                      <div className="w-full h-full bg-gradient-to-br from-cyan-500/20 to-primary/20 flex items-center justify-center">
-                        <svg className="w-10 h-10 text-muted-foreground/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-                        </svg>
-                      </div>
-                    )}
-                  </div>
+                  <ReadingListCover covers={covers} name={list.name} />
                   <div className="px-2 py-1.5">
                     <h3 className="font-medium text-foreground truncate text-xs" title={list.name}>{list.name}</h3>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
