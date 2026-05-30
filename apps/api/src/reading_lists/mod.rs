@@ -357,17 +357,18 @@ async fn fetch_list_dto(pool: &sqlx::PgPool, id: Uuid) -> Result<ReadingListDto,
         SELECT rl.id, rl.name, rl.description, rl.created_at, rl.updated_at,
                COUNT(rli.id)::bigint AS series_count,
                ARRAY(
-                   SELECT fb.id::text
+                   SELECT COALESCE(fb.id::text, s.cover_url)
                    FROM reading_list_items rli2
                    JOIN series s ON s.id = rli2.series_id
-                   CROSS JOIN LATERAL (
+                   LEFT JOIN LATERAL (
                        SELECT b.id FROM books b WHERE b.series_id = s.id
                        ORDER BY CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END, b.volume NULLS LAST
                        LIMIT 1
-                   ) fb
+                   ) fb ON TRUE
                    WHERE rli2.list_id = rl.id
+                     AND (fb.id IS NOT NULL OR s.cover_url IS NOT NULL)
                    ORDER BY rli2.position
-                   LIMIT 4
+                   LIMIT 5
                ) AS preview_covers
         FROM reading_lists rl
         LEFT JOIN reading_list_items rli ON rli.list_id = rl.id
@@ -516,17 +517,18 @@ pub async fn list_reading_lists(
         SELECT rl.id, rl.name, rl.description, rl.created_at, rl.updated_at,
                COUNT(rli.id)::bigint AS series_count,
                ARRAY(
-                   SELECT fb.id::text
+                   SELECT COALESCE(fb.id::text, s.cover_url)
                    FROM reading_list_items rli2
                    JOIN series s ON s.id = rli2.series_id
-                   CROSS JOIN LATERAL (
+                   LEFT JOIN LATERAL (
                        SELECT b.id FROM books b WHERE b.series_id = s.id
                        ORDER BY CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END, b.volume NULLS LAST
                        LIMIT 1
-                   ) fb
+                   ) fb ON TRUE
                    WHERE rli2.list_id = rl.id
+                     AND (fb.id IS NOT NULL OR s.cover_url IS NOT NULL)
                    ORDER BY rli2.position
-                   LIMIT 4
+                   LIMIT 5
                ) AS preview_covers
         FROM reading_lists rl
         LEFT JOIN reading_list_items rli ON rli.list_id = rl.id

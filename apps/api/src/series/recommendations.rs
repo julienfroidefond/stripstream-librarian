@@ -135,6 +135,15 @@ pub async fn get_recommendations(
             WHERE s.id NOT IN (SELECT series_id FROM started)
               AND s.publishers && sa.all_publishers
         ),
+        reading_list_scores AS (
+            SELECT rli2.series_id, COUNT(*)::bigint AS cnt
+            FROM source_series src
+            JOIN reading_list_items rli1 ON rli1.series_id = src.series_id
+            JOIN reading_list_items rli2 ON rli2.list_id = rli1.list_id
+            WHERE rli2.series_id NOT IN (SELECT series_id FROM started)
+              AND rli2.series_id != src.series_id
+            GROUP BY rli2.series_id
+        ),
         -- Step 5: for each candidate, which source series match?
         because_of AS (
             SELECT
@@ -144,7 +153,12 @@ pub async fn get_recommendations(
             JOIN source_series ss ON (
                 cand.authors    && ss.authors    OR
                 cand.genres     && ss.genres     OR
-                cand.publishers && ss.publishers
+                cand.publishers && ss.publishers OR
+                EXISTS (
+                    SELECT 1 FROM reading_list_items rli1
+                    JOIN reading_list_items rli2 ON rli2.list_id = rli1.list_id
+                    WHERE rli1.series_id = ss.series_id AND rli2.series_id = cand.id
+                )
             )
             WHERE cand.id NOT IN (SELECT series_id FROM started)
             GROUP BY cand.id
@@ -182,21 +196,24 @@ pub async fn get_recommendations(
             (
                 COALESCE(gs.cnt, 0) * 2 +
                 COALESCE(as_.cnt, 0) * 3 +
-                COALESCE(ps.cnt, 0) * 1
+                COALESCE(ps.cnt, 0) * 1 +
+                COALESCE(rls.cnt, 0) * 5
             )              AS score,
             bo.source_names,
-            (as_.cnt IS NOT NULL)  AS has_same_author,
-            (gs.cnt IS NOT NULL)   AS has_same_genre,
-            (ps.cnt IS NOT NULL)   AS has_same_publisher
+            (as_.cnt IS NOT NULL)   AS has_same_author,
+            (gs.cnt IS NOT NULL)    AS has_same_genre,
+            (ps.cnt IS NOT NULL)    AS has_same_publisher,
+            (rls.cnt IS NOT NULL)   AS has_same_reading_list
         FROM series s
-        LEFT JOIN genre_scores   gs  ON gs.series_id  = s.id
-        LEFT JOIN author_scores  as_ ON as_.series_id = s.id
-        LEFT JOIN publisher_scores ps ON ps.series_id = s.id
-        LEFT JOIN because_of     bo  ON bo.series_id  = s.id
-        LEFT JOIN first_books    fb  ON fb.series_id  = s.id
-        LEFT JOIN meta_links     ml  ON ml.series_id  = s.id
-        LEFT JOIN book_counts    bc  ON bc.series_id  = s.id
-        WHERE bo.series_id IS NOT NULL  -- must match at least one source
+        LEFT JOIN genre_scores      gs  ON gs.series_id  = s.id
+        LEFT JOIN author_scores     as_ ON as_.series_id = s.id
+        LEFT JOIN publisher_scores  ps  ON ps.series_id  = s.id
+        LEFT JOIN reading_list_scores rls ON rls.series_id = s.id
+        LEFT JOIN because_of        bo  ON bo.series_id  = s.id
+        LEFT JOIN first_books       fb  ON fb.series_id  = s.id
+        LEFT JOIN meta_links        ml  ON ml.series_id  = s.id
+        LEFT JOIN book_counts       bc  ON bc.series_id  = s.id
+        WHERE (bo.series_id IS NOT NULL OR rls.cnt IS NOT NULL)  -- must match at least one source
           AND COALESCE(bc.book_count, 0) > 0
         ORDER BY score DESC, COALESCE(bc.book_count, 0) DESC
         LIMIT $3
@@ -211,19 +228,15 @@ pub async fn get_recommendations(
     let items = rows
         .into_iter()
         .map(|row| {
+            let has_same_reading_list: bool = row.get("has_same_reading_list");
             let has_same_author: bool = row.get("has_same_author");
             let has_same_genre: bool = row.get("has_same_genre");
             let has_same_publisher: bool = row.get("has_same_publisher");
             let mut match_reasons = Vec::new();
-            if has_same_author {
-                match_reasons.push("same_author".to_string());
-            }
-            if has_same_genre {
-                match_reasons.push("same_genre".to_string());
-            }
-            if has_same_publisher {
-                match_reasons.push("same_publisher".to_string());
-            }
+            if has_same_reading_list { match_reasons.push("same_reading_list".to_string()); }
+            if has_same_author { match_reasons.push("same_author".to_string()); }
+            if has_same_genre { match_reasons.push("same_genre".to_string()); }
+            if has_same_publisher { match_reasons.push("same_publisher".to_string()); }
 
             let because_of: Vec<String> = row
                 .try_get::<Vec<String>, _>("source_names")

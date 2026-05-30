@@ -11,10 +11,16 @@ type Props = {
   initialLists: ReadingListDto[];
 };
 
-function CoverMosaic({ covers, name }: { covers: string[]; name: string }) {
-  const firstBookId = covers[0] ?? null;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function coverSrc(value: string): string {
+  return UUID_RE.test(value) ? getBookCoverUrl(value) : value;
+}
 
-  if (!firstBookId) {
+function CoverFilmstrip({ covers, name }: { covers: string[]; name: string }) {
+  const main = covers[0] ?? null;
+  const strip = covers.slice(1, 5); // jusqu'à 4 thumbs
+
+  if (!main) {
     return (
       <div className="w-full aspect-[2/3] bg-gradient-to-br from-cyan-500/20 to-primary/20 flex items-center justify-center">
         <svg className="w-10 h-10 text-muted-foreground/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -25,8 +31,28 @@ function CoverMosaic({ covers, name }: { covers: string[]; name: string }) {
   }
 
   return (
-    <div className="w-full aspect-[2/3] overflow-hidden">
-      <img src={getBookCoverUrl(firstBookId)} alt={name} className="w-full h-full object-cover" />
+    <div className="relative w-full aspect-[2/3] overflow-hidden">
+      {/* Cover principale */}
+      <img src={coverSrc(main)} alt={name} className="w-full h-full object-cover" />
+
+      {/* Filmstrip — visible seulement si autres covers */}
+      {strip.length > 0 && (
+        <>
+          {/* Gradient très sombre sur la moitié basse */}
+          <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black via-black/70 to-transparent" />
+          {/* Rangée de miniatures — max 3 */}
+          <div className="absolute inset-x-0 bottom-3 flex gap-2 justify-center px-3">
+            {strip.slice(0, 3).map((bookId) => (
+              <div
+                key={bookId}
+                className="w-12 aspect-[2/3] rounded-md overflow-hidden border border-white/30 shadow-lg flex-shrink-0"
+              >
+                <img src={coverSrc(bookId)} alt="" className="w-full h-full object-cover" />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -112,8 +138,8 @@ export function ReadingListsClient({ initialLists }: Props) {
               className="group relative flex flex-col rounded-xl overflow-hidden border border-border/50 bg-card hover:border-border hover:shadow-lg transition-all duration-200"
             >
               {/* Cover mosaic */}
-              <div className="relative overflow-hidden">
-                <CoverMosaic covers={list.preview_covers} name={list.name} />
+              <div className="relative">
+                <CoverFilmstrip covers={list.preview_covers} name={list.name} />
                 {/* Hover overlay with delete button */}
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200" />
                 <button
