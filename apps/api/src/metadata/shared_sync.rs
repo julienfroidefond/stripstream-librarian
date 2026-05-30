@@ -136,7 +136,7 @@ pub(crate) async fn upsert_series_metadata(
         DO UPDATE SET
             description = CASE
                 WHEN (series.locked_fields->>'description')::boolean IS TRUE THEN series.description
-                ELSE COALESCE(NULLIF(EXCLUDED.description, ''), series.description)
+                ELSE COALESCE(series.description, NULLIF(EXCLUDED.description, ''))
             END,
             publishers = CASE
                 WHEN (series.locked_fields->>'publishers')::boolean IS TRUE THEN series.publishers

@@ -152,6 +152,30 @@ pub(crate) async fn create_series_with_metadata(
             state, link_id, params.library_id, &params.name, provider, external_id,
         )
         .await;
+
+        // Override series.cover_url with the provider's tome 1 cover (more authoritative
+        // than the discovery thumbnail that may have been sent in the request).
+        let _ = sqlx::query(
+            "UPDATE series
+             SET cover_url = (
+                 SELECT cover_url FROM external_book_metadata
+                 WHERE link_id = $1
+                   AND cover_url IS NOT NULL AND cover_url != ''
+                 ORDER BY volume_number NULLS LAST, id
+                 LIMIT 1
+             )
+             WHERE id = $2
+               AND (locked_fields->>'cover_url')::boolean IS NOT TRUE
+               AND EXISTS (
+                   SELECT 1 FROM external_book_metadata
+                   WHERE link_id = $1
+                     AND cover_url IS NOT NULL AND cover_url != ''
+               )",
+        )
+        .bind(link_id)
+        .bind(series_id)
+        .execute(pool)
+        .await;
     }
 
     Ok(CreateSeriesResult {
