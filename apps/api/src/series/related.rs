@@ -85,6 +85,13 @@ pub async fn get_related_series(
             WHERE s.id != $1 AND sg = rg
             GROUP BY s.id
         ),
+        reading_list_scores AS (
+            SELECT rli2.series_id, COUNT(*)::bigint AS cnt
+            FROM reading_list_items rli1
+            JOIN reading_list_items rli2 ON rli2.list_id = rli1.list_id
+            WHERE rli1.series_id = $1 AND rli2.series_id != $1
+            GROUP BY rli2.series_id
+        ),
         book_counts AS (
             SELECT series_id, COUNT(*) AS book_count
             FROM books
@@ -118,15 +125,18 @@ pub async fn get_related_series(
             (
                 COALESCE(asc_.cnt, 0) * 3 +
                 COALESCE(gsc_.cnt, 0) * 2 +
-                CASE WHEN s.publishers && ref.publishers THEN 1 ELSE 0 END
+                CASE WHEN s.publishers && ref.publishers THEN 1 ELSE 0 END +
+                COALESCE(rlsc.cnt, 0) * 5
             ) AS score,
             (asc_.cnt IS NOT NULL) AS has_same_author,
             (gsc_.cnt IS NOT NULL) AS has_same_genre,
-            (s.publishers && ref.publishers) AS has_same_publisher
+            (s.publishers && ref.publishers) AS has_same_publisher,
+            (rlsc.cnt IS NOT NULL) AS has_same_reading_list
         FROM series s
         CROSS JOIN ref
         LEFT JOIN author_scores asc_ ON asc_.series_id = s.id
         LEFT JOIN genre_scores gsc_ ON gsc_.series_id = s.id
+        LEFT JOIN reading_list_scores rlsc ON rlsc.series_id = s.id
         LEFT JOIN book_counts bc ON bc.series_id = s.id
         LEFT JOIN first_books fb ON fb.series_id = s.id
         LEFT JOIN meta_links ml ON ml.series_id = s.id
@@ -136,6 +146,7 @@ pub async fn get_related_series(
             s.authors && ref.authors
             OR s.genres && ref.genres
             OR s.publishers && ref.publishers
+            OR rlsc.cnt IS NOT NULL
           )
         ORDER BY score DESC, COALESCE(bc.book_count, 0) DESC
         LIMIT $2
@@ -149,7 +160,9 @@ pub async fn get_related_series(
         let has_same_author: bool = row.get("has_same_author");
         let has_same_genre: bool = row.get("has_same_genre");
         let has_same_publisher: bool = row.get("has_same_publisher");
+        let has_same_reading_list: bool = row.get("has_same_reading_list");
         let mut match_reasons = Vec::new();
+        if has_same_reading_list { match_reasons.push("same_reading_list".to_string()); }
         if has_same_author { match_reasons.push("same_author".to_string()); }
         if has_same_genre { match_reasons.push("same_genre".to_string()); }
         if has_same_publisher { match_reasons.push("same_publisher".to_string()); }
