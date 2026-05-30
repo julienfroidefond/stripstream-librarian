@@ -448,12 +448,14 @@ pub async fn prowlarr_discovery(
             params_vec.push(("sortDirection", "descending".to_string()));
         }
 
-        let resp = client
+        let request = client
             .get(format!("{prowlarr_url}/api/v1/search"))
             .query(&params_vec)
             .header("X-Api-Key", &api_key)
-            .send()
-            .await;
+            .build()
+            .map_err(|e| ApiError::internal(format!("Prowlarr request build error: {e}")))?;
+        tracing::info!("[DISCOVERY] Prowlarr request URL: {}", request.url());
+        let resp = client.execute(request).await;
 
         match resp {
             Err(e) if e.is_connect() || e.is_timeout() => {
@@ -481,17 +483,6 @@ pub async fn prowlarr_discovery(
         return Ok(Json(ProwlarrDiscoveryResponse { items: vec![], all_indexers: vec![] }));
     }
 
-    // Keep only releases whose category IDs intersect the configured list (mirrors Prowlarr UI filtering)
-    let cat_id_set: std::collections::HashSet<i64> = categories.iter().map(|&c| c as i64).collect();
-    let raw: Vec<serde_json::Value> = raw.into_iter().filter(|r| {
-        r.get("categories")
-            .and_then(|c| c.as_array())
-            .map(|arr| arr.iter().any(|v| {
-                v.get("id").and_then(|i| i.as_i64()).map(|id| cat_id_set.contains(&id)).unwrap_or(false)
-            }))
-            .unwrap_or(true)
-    }).collect();
-
     // Group by extracted series name
     let mut series_map: std::collections::HashMap<String, ProwlarrDiscoveryItem> = std::collections::HashMap::new();
 
@@ -511,13 +502,11 @@ pub async fn prowlarr_discovery(
         let indexer = release.get("indexer").and_then(|i| i.as_str()).unwrap_or("").to_string();
         let publish_date = release.get("publishDate").and_then(|d| d.as_str()).map(String::from);
         let info_url = release.get("infoUrl").and_then(|u| u.as_str()).map(String::from);
-        // Only keep categories that are in the configured list (strips parent 7000 etc.)
         let cats: Vec<String> = release.get("categories")
             .and_then(|c| c.as_array())
             .map(|arr| arr.iter().filter_map(|v| {
                 let name = v.get("name").and_then(|n| n.as_str())?;
                 let id = v.get("id").and_then(|i| i.as_i64())?;
-                if !cat_id_set.contains(&id) { return None; }
                 Some(format!("{name} ({id})"))
             }).collect())
             .unwrap_or_default();
