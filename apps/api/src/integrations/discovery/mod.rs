@@ -533,7 +533,7 @@ pub async fn prowlarr_discovery(
     // Sort by seeders by default; apply_sort will re-order per-request
     items.sort_by(|a, b| b.best_seeders.cmp(&a.best_seeders));
 
-    tracing::info!("[DISCOVERY] Prowlarr: {} series found from {} raw releases", items.len(), raw.len());
+    tracing::info!("[DISCOVERY] Prowlarr: {} releases (deduplicated from {} raw)", items.len(), raw.len());
 
     // Cache full result set (7 days)
     set_cached_raw(&state.pool, &cache_key, "prowlarr", "discovery", &items, 168).await;
