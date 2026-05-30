@@ -11,7 +11,7 @@ export function GroupByToggle({ active, href }: { active: boolean; href: Route }
     <Link
       href={href}
       title={active ? t("series.groupByReadingListOff") : t("series.groupByReadingList")}
-      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
+      className={`flex items-center gap-2 px-3 h-9 rounded-md border text-xs font-medium transition-colors ${
         active
           ? "border-cyan-500 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400"
           : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary"
