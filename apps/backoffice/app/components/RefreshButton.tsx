@@ -48,7 +48,7 @@ export function RefreshButton({ target, seriesId, className = "", children }: Pr
       title={t("common.refresh")}
     >
       <svg
-        className={`w-4 h-4 mr-1.5 ${pending ? "animate-spin" : ""}`}
+        className={`w-4 h-4 sm:mr-1.5 ${pending ? "animate-spin" : ""}`}
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -61,7 +61,7 @@ export function RefreshButton({ target, seriesId, className = "", children }: Pr
         <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
         <path d="M3 21v-5h5" />
       </svg>
-      {pending ? t("common.refreshing") : t("common.refresh")}
+      <span className="hidden sm:inline">{pending ? t("common.refreshing") : t("common.refresh")}</span>
     </Button>
   );
 }
