@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useTranslation } from "@/lib/i18n/context";
 import type { ReadingListDetailDto, ReadingListSeriesDto, SeriesDto } from "@/lib/api";
+import { getBookCoverUrl } from "@/lib/api";
 import { Modal } from "@/app/components/ui/Modal";
 import { ProviderIcon } from "@/app/components/ProviderIcon";
 
@@ -77,6 +78,8 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
         id: series.series_id,
         name: series.name,
         cover_url: series.cover_url,
+        first_book_id: series.first_book_id,
+        first_book_updated_at: series.first_book_updated_at,
         provider: series.metadata_provider,
         external_id: null,
         external_url: null,
@@ -227,8 +230,12 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
               {/* Cover */}
               <Link href={`/series/${item.id}`} className="shrink-0">
                 <div className="w-11 h-16 rounded-lg overflow-hidden bg-muted shadow-sm">
-                  {item.cover_url ? (
-                    <img src={item.cover_url} alt={item.name} className="w-full h-full object-cover" />
+                  {(item.cover_url || item.first_book_id) ? (
+                    <img
+                      src={item.cover_url ?? getBookCoverUrl(item.first_book_id!, item.first_book_updated_at)}
+                      alt={item.name}
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <svg className="w-5 h-5 text-muted-foreground/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -322,8 +329,12 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
                     className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-accent transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <div className="w-9 h-12 rounded-md overflow-hidden shrink-0 bg-muted shadow-sm">
-                      {series.cover_url ? (
-                        <img src={series.cover_url} alt={series.name} className="w-full h-full object-cover" />
+                      {(series.cover_url || series.first_book_id) ? (
+                        <img
+                          src={series.cover_url ?? getBookCoverUrl(series.first_book_id!, series.first_book_updated_at)}
+                          alt={series.name}
+                          className="w-full h-full object-cover"
+                        />
                       ) : (
                         <div className="w-full h-full bg-muted" />
                       )}

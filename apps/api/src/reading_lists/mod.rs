@@ -41,6 +41,9 @@ pub struct ReadingListSeriesDto {
     pub id: Uuid,
     pub name: String,
     pub cover_url: Option<String>,
+    #[schema(value_type = String)]
+    pub first_book_id: Option<Uuid>,
+    pub first_book_updated_at: Option<chrono::DateTime<chrono::Utc>>,
     pub provider: Option<String>,
     pub external_id: Option<String>,
     pub external_url: Option<String>,
@@ -399,7 +402,13 @@ async fn fetch_list_items(
             rli.position,
             eml.provider,
             eml.external_id,
-            eml.external_url
+            eml.external_url,
+            (SELECT b.id FROM books b WHERE b.series_id = s.id
+             ORDER BY CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END, b.volume NULLS LAST
+             LIMIT 1) AS first_book_id,
+            (SELECT b.updated_at FROM books b WHERE b.series_id = s.id
+             ORDER BY CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END, b.volume NULLS LAST
+             LIMIT 1) AS first_book_updated_at
         FROM reading_list_items rli
         JOIN series s ON s.id = rli.series_id
         JOIN libraries l ON l.id = s.library_id
@@ -425,6 +434,8 @@ async fn fetch_list_items(
             id: r.get("series_id"),
             name: r.get("series_name"),
             cover_url: r.get("cover_url"),
+            first_book_id: r.get("first_book_id"),
+            first_book_updated_at: r.get("first_book_updated_at"),
             provider: r.get("provider"),
             external_id: r.get("external_id"),
             external_url: r.get("external_url"),

@@ -1459,6 +1459,8 @@ export type ReadingListSeriesDto = {
   id: string;
   name: string;
   cover_url: string | null;
+  first_book_id: string | null;
+  first_book_updated_at: string | null;
   provider: string | null;
   external_id: string | null;
   external_url: string | null;
