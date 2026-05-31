@@ -73,6 +73,17 @@ export default defineConfig({
 					],
 				},
 				{
+					label: 'Jobs',
+					items: [
+						{ label: 'Vue d\'ensemble', slug: 'jobs/overview' },
+						{ label: 'Indexation', slug: 'jobs/indexation' },
+						{ label: 'Miniatures', slug: 'jobs/miniatures' },
+						{ label: 'Métadonnées', slug: 'jobs/metadonnees' },
+						{ label: 'Téléchargements', slug: 'jobs/telechargements' },
+						{ label: 'AniList', slug: 'jobs/anilist' },
+					],
+				},
+				{
 					label: 'Intégrations',
 					items: [
 						{ label: 'AniList', slug: 'integrations/anilist' },
@@ -86,7 +97,6 @@ export default defineConfig({
 					label: 'Référence',
 					items: [
 						{ label: 'API', slug: 'reference/api' },
-						{ label: 'Jobs', slug: 'reference/jobs' },
 						{ label: 'Utilisateurs & Tokens', slug: 'reference/users-tokens' },
 						{ label: 'Auteurs', slug: 'reference/authors' },
 						{ label: 'Variables d\'environnement', slug: 'reference/environment' },
