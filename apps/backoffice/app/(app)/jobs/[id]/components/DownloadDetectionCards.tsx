@@ -5,6 +5,58 @@ import type { DownloadDetectionReportDto, DownloadDetectionResultDto } from "@/l
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 import { compressVolumes } from "@/lib/volumeRanges";
 
+interface RssRelease {
+  title: string;
+  indexer?: string | null;
+  size: number;
+  seeders?: number | null;
+  publish_date?: string | null;
+}
+
+export function RssSnapshotCard({ releases, t }: {
+  releases: RssRelease[];
+  t: TranslateFunction;
+}) {
+  return (
+    <Card className="lg:col-span-2">
+      <CardHeader>
+        <CardTitle>{t("jobDetail.rssSnapshotTitle")}</CardTitle>
+        <CardDescription>{t("jobDetail.rssSnapshotDesc", { count: String(releases.length) })}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto max-h-96 overflow-y-auto rounded-lg border border-border">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
+              <tr>
+                <th className="text-left p-2 font-medium text-muted-foreground">Title</th>
+                <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">Indexer</th>
+                <th className="text-right p-2 font-medium text-muted-foreground whitespace-nowrap">Size</th>
+                <th className="text-right p-2 font-medium text-muted-foreground whitespace-nowrap">Seeders</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/40">
+              {releases.map((r, i) => (
+                <tr key={i} className="hover:bg-accent/30 transition-colors">
+                  <td className="p-2 font-mono text-foreground max-w-xs truncate" title={r.title}>{r.title}</td>
+                  <td className="p-2 text-muted-foreground whitespace-nowrap">{r.indexer ?? "—"}</td>
+                  <td className="p-2 text-right text-muted-foreground whitespace-nowrap">
+                    {r.size ? `${(r.size / 1024 / 1024).toFixed(0)} MB` : "—"}
+                  </td>
+                  <td className="p-2 text-right whitespace-nowrap">
+                    {r.seeders != null ? (
+                      <span className="text-success font-medium">{r.seeders}</span>
+                    ) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function RssPollStatsCard({
   stats,
   t,

@@ -8,13 +8,7 @@ interface JobSummaryBannerProps {
     started_at: string | null;
     finished_at: string | null;
     error_opt: string | null;
-    stats_json: {
-      scanned_files: number;
-      indexed_files: number;
-      removed_files: number;
-      errors: number;
-      warnings: number;
-    } | null;
+    stats_json: Record<string, unknown> | null;
     total_files: number | null;
     processed_files: number | null;
   };
@@ -84,11 +78,16 @@ export function JobSummaryBanner({
           )}
           {!isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && !isDownloadDetection && !isRssPoll && job.stats_json && (
             <span className="ml-2 text-success/80">
-              — {job.stats_json.scanned_files} {t("jobDetail.scanned").toLowerCase()}, {job.stats_json.indexed_files} {t("jobDetail.indexed").toLowerCase()}
-              {job.stats_json.removed_files > 0 && `, ${job.stats_json.removed_files} ${t("jobDetail.removed").toLowerCase()}`}
-              {(job.stats_json.warnings ?? 0) > 0 && `, ${job.stats_json.warnings} ${t("jobDetail.warnings").toLowerCase()}`}
-              {job.stats_json.errors > 0 && `, ${job.stats_json.errors} ${t("jobDetail.errors").toLowerCase()}`}
-              {job.total_files != null && job.total_files > 0 && `, ${job.total_files} ${t("jobType.thumbnail_rebuild").toLowerCase()}`}
+              {(() => {
+                const s = job.stats_json as { scanned_files?: number; indexed_files?: number; removed_files?: number; errors?: number; warnings?: number };
+                return <>
+                  — {s.scanned_files} {t("jobDetail.scanned").toLowerCase()}, {s.indexed_files} {t("jobDetail.indexed").toLowerCase()}
+                  {(s.removed_files ?? 0) > 0 && `, ${s.removed_files} ${t("jobDetail.removed").toLowerCase()}`}
+                  {(s.warnings ?? 0) > 0 && `, ${s.warnings} ${t("jobDetail.warnings").toLowerCase()}`}
+                  {(s.errors ?? 0) > 0 && `, ${s.errors} ${t("jobDetail.errors").toLowerCase()}`}
+                  {job.total_files != null && job.total_files > 0 && `, ${job.total_files} ${t("jobType.thumbnail_rebuild").toLowerCase()}`}
+                </>;
+              })()}
             </span>
           )}
           {!isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && !job.stats_json && isThumbnailOnly && job.total_files != null && (

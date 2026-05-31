@@ -10,12 +10,7 @@ interface JobTimelineCardProps {
     finished_at: string | null;
     phase2_started_at: string | null;
     generating_thumbnails_started_at: string | null;
-    stats_json: {
-      scanned_files: number;
-      indexed_files: number;
-      removed_files: number;
-      warnings: number;
-    } | null;
+    stats_json: Record<string, unknown> | null;
     total_files: number | null;
     processed_files: number | null;
   };
@@ -58,11 +53,16 @@ export function JobTimelineCard({ job, isThumbnailOnly, t, locale, formatDuratio
                   <p className="text-xs text-muted-foreground">{new Date(job.started_at).toLocaleString(locale)}</p>
                   <p className="text-xs text-primary/80 font-medium mt-0.5">
                     {t("jobDetail.duration", { duration: formatDuration(job.started_at, job.phase2_started_at) })}
-                    {job.stats_json && (
+                    {job.stats_json && (job.stats_json as { scanned_files?: number }).scanned_files != null && (
                       <span className="text-muted-foreground font-normal ml-1">
-                        · {job.stats_json.scanned_files} {t("jobDetail.scanned").toLowerCase()}, {job.stats_json.indexed_files} {t("jobDetail.indexed").toLowerCase()}
-                        {job.stats_json.removed_files > 0 && `, ${job.stats_json.removed_files} ${t("jobDetail.removed").toLowerCase()}`}
-                        {(job.stats_json.warnings ?? 0) > 0 && `, ${job.stats_json.warnings} ${t("jobDetail.warnings").toLowerCase()}`}
+                        {(() => {
+                          const s = job.stats_json as { scanned_files?: number; indexed_files?: number; removed_files?: number; warnings?: number };
+                          return <>
+                            · {s.scanned_files} {t("jobDetail.scanned").toLowerCase()}, {s.indexed_files} {t("jobDetail.indexed").toLowerCase()}
+                            {(s.removed_files ?? 0) > 0 && `, ${s.removed_files} ${t("jobDetail.removed").toLowerCase()}`}
+                            {(s.warnings ?? 0) > 0 && `, ${s.warnings} ${t("jobDetail.warnings").toLowerCase()}`}
+                          </>;
+                        })()}
                       </span>
                     )}
                   </p>

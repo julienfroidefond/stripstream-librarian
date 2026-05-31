@@ -361,11 +361,21 @@ pub(crate) async fn process_rss_poll(
         .unwrap_or(0)
     };
 
+    // Cap snapshot at 200 releases to bound storage per job
+    let snapshot: Vec<_> = rss_releases.iter().take(200).map(|r| serde_json::json!({
+        "title": r.title,
+        "indexer": r.indexer,
+        "size": r.size,
+        "seeders": r.seeders,
+        "publish_date": r.publish_date,
+    })).collect();
+
     let stats = serde_json::json!({
         "total_series": total as i64,
         "found": count_found,
         "new_releases": new_releases,
         "rss_releases_fetched": rss_releases.len() as i64,
+        "rss_releases": snapshot,
     });
 
     sqlx::query(
@@ -376,6 +386,23 @@ pub(crate) async fn process_rss_poll(
     .execute(pool)
     .await
     .map_err(|e| e.to_string())?;
+
+    // Keep rss_releases snapshot only for the 5 most recent successful jobs
+    let _ = sqlx::query(
+        r#"
+        UPDATE index_jobs
+        SET stats_json = stats_json - 'rss_releases'
+        WHERE type = 'prowlarr_rss'
+          AND id NOT IN (
+            SELECT id FROM index_jobs
+            WHERE type = 'prowlarr_rss' AND status = 'success'
+            ORDER BY finished_at DESC
+            LIMIT 5
+          )
+        "#,
+    )
+    .execute(pool)
+    .await;
 
     info!(
         "[RSS_POLL] job={job_id} completed: {total} series, found={count_found}, new_releases={new_releases}"

@@ -470,6 +470,8 @@ const en: Record<TranslationKey, string> = {
   "jobDetail.downloadErrors": "Detection errors",
   "jobDetail.downloadErrorsDesc": "{{count}} series with errors during detection",
   "jobDetail.rssPollFetched": "{{count}} releases fetched from Prowlarr",
+  "jobDetail.rssSnapshotTitle": "Prowlarr RSS feed",
+  "jobDetail.rssSnapshotDesc": "{{count}} releases received — snapshot of this run (kept for the last 5 jobs only)",
   "jobDetail.seriesChecked": "Series checked",
 
   // Job types

@@ -12,7 +12,7 @@ import { JobProgressCard, IndexStatsCard, ThumbnailStatsCard } from "./component
 import { MetadataBatchReportCard, MetadataRefreshReportCard, MetadataRefreshChangesCard } from "./components/MetadataReportCards";
 import { MetadataBatchQuickMatch } from "./components/MetadataBatchQuickMatch";
 import { ReadingStatusMatchReportCard, ReadingStatusMatchResultsCard, ReadingStatusPushReportCard, ReadingStatusPushResultsCard } from "./components/ReadingStatusReportCards";
-import { DownloadDetectionReportCard, DownloadDetectionErrorsCard } from "./components/DownloadDetectionCards";
+import { DownloadDetectionReportCard, DownloadDetectionErrorsCard, RssSnapshotCard } from "./components/DownloadDetectionCards";
 import { DownloadDetectionAvailableResults } from "./components/DownloadDetectionAvailableResults";
 import { JobErrorsCard } from "./components/JobErrorsCard";
 import { JobEventsCard, type JobEvent } from "./components/JobEventsCard";
@@ -38,11 +38,12 @@ interface JobDetails {
   processed_files: number | null;
   total_files: number | null;
   stats_json: {
-    scanned_files: number;
-    indexed_files: number;
-    removed_files: number;
-    errors: number;
-    warnings: number;
+    scanned_files?: number;
+    indexed_files?: number;
+    removed_files?: number;
+    errors?: number;
+    warnings?: number;
+    rss_releases?: Array<{ title: string; indexer?: string | null; size: number; seeders?: number | null; publish_date?: string | null }>;
   } | null;
   error_opt: string | null;
 }
@@ -298,6 +299,11 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
               libraryName={job.library_name || ""}
             />
           </div>
+        )}
+
+        {/* RSS snapshot — flux brut Prowlarr, disponible pour les 5 derniers jobs seulement */}
+        {isRssPoll && job.stats_json?.rss_releases && job.stats_json.rss_releases.length > 0 && (
+          <RssSnapshotCard releases={job.stats_json.rss_releases} t={t} />
         )}
 
         {/* Metadata batch results */}

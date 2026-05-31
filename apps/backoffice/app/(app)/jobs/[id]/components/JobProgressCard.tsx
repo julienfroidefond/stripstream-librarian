@@ -11,13 +11,7 @@ interface JobProgressCardProps {
     processed_files: number | null;
     progress_percent: number | null;
     current_file: string | null;
-    stats_json: {
-      scanned_files: number;
-      indexed_files: number;
-      removed_files: number;
-      errors: number;
-      warnings: number;
-    } | null;
+    stats_json: Record<string, unknown> | null;
   };
   isThumbnailOnly: boolean;
   progressTitle: string;
@@ -80,9 +74,10 @@ export function IndexStatsCard({ job, t, formatDuration, formatSpeed, durationMs
   formatSpeed: (count: number, durationMs: number) => string;
   durationMs: number;
 }) {
-  if (!job.stats_json) return null;
+  const s = job.stats_json as { scanned_files?: number; indexed_files?: number; removed_files?: number; errors?: number; warnings?: number } | null;
+  if (!s) return null;
 
-  const speedCount = job.stats_json.scanned_files;
+  const speedCount = s.scanned_files ?? 0;
 
   return (
     <Card>
@@ -97,11 +92,11 @@ export function IndexStatsCard({ job, t, formatDuration, formatSpeed, durationMs
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-          <StatBox value={job.stats_json.scanned_files} label={t("jobDetail.scanned")} variant="success" />
-          <StatBox value={job.stats_json.indexed_files} label={t("jobDetail.indexed")} variant="primary" />
-          <StatBox value={job.stats_json.removed_files} label={t("jobDetail.removed")} variant="warning" />
-          <StatBox value={job.stats_json.warnings ?? 0} label={t("jobDetail.warnings")} variant={(job.stats_json.warnings ?? 0) > 0 ? "warning" : "default"} />
-          <StatBox value={job.stats_json.errors} label={t("jobDetail.errors")} variant={job.stats_json.errors > 0 ? "error" : "default"} />
+          <StatBox value={s.scanned_files ?? 0} label={t("jobDetail.scanned")} variant="success" />
+          <StatBox value={s.indexed_files ?? 0} label={t("jobDetail.indexed")} variant="primary" />
+          <StatBox value={s.removed_files ?? 0} label={t("jobDetail.removed")} variant="warning" />
+          <StatBox value={s.warnings ?? 0} label={t("jobDetail.warnings")} variant={(s.warnings ?? 0) > 0 ? "warning" : "default"} />
+          <StatBox value={s.errors ?? 0} label={t("jobDetail.errors")} variant={(s.errors ?? 0) > 0 ? "error" : "default"} />
         </div>
       </CardContent>
     </Card>

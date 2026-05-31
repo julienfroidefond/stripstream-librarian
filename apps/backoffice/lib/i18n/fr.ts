@@ -468,6 +468,8 @@ const fr = {
   "jobDetail.downloadErrors": "Erreurs de détection",
   "jobDetail.downloadErrorsDesc": "{{count}} série(s) en erreur lors de la détection",
   "jobDetail.rssPollFetched": "{{count}} releases récupérées depuis Prowlarr",
+  "jobDetail.rssSnapshotTitle": "Flux RSS Prowlarr",
+  "jobDetail.rssSnapshotDesc": "{{count}} releases reçues — snapshot du dernier passage (conservé sur les 5 derniers jobs)",
   "jobDetail.seriesChecked": "Séries vérifiées",
 
   // Job types
