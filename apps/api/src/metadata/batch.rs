@@ -910,6 +910,18 @@ pub(crate) async fn process_metadata_batch(
         .await
         .ok()
         .flatten();
+
+    let new_matches: Vec<String> = sqlx::query(
+        "SELECT entity_name FROM index_job_events WHERE job_id = $1 AND event_type = 'metadata_matched' ORDER BY created_at LIMIT 10",
+    )
+    .bind(job_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .filter_map(|r| r.try_get::<Option<String>, _>("entity_name").ok().flatten())
+    .collect();
+
     notifications::notify(
         pool.clone(),
         notifications::NotificationEvent::MetadataBatchCompleted {
@@ -922,6 +934,7 @@ pub(crate) async fn process_metadata_batch(
             too_many: n_too_many,
             already_linked: n_already_linked,
             errors: n_errors,
+            new_matches,
         },
     );
 

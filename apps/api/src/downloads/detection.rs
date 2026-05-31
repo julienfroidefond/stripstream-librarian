@@ -1043,6 +1043,27 @@ pub(crate) async fn process_download_detection(
         .ok()
         .flatten();
 
+    let new_items: Vec<(String, String)> = sqlx::query(
+        r#"
+        SELECT DISTINCT s.name AS series_name, rel->>'title' AS release_title
+        FROM available_downloads ad
+        CROSS JOIN jsonb_array_elements(ad.available_releases) AS rel
+        JOIN series s ON s.id = ad.series_id
+        WHERE ad.library_id = $1
+          AND (rel->>'detected_at')::timestamptz >= $2
+        ORDER BY s.name
+        LIMIT 10
+        "#,
+    )
+    .bind(library_id)
+    .bind(job_started_at)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|r| (r.get::<String, _>("series_name"), r.get::<String, _>("release_title")))
+    .collect();
+
     notifications::notify(
         pool.clone(),
         notifications::NotificationEvent::DownloadDetectionCompleted {
@@ -1054,6 +1075,7 @@ pub(crate) async fn process_download_detection(
             no_missing: count_no_missing,
             no_metadata: count_no_metadata,
             errors: count_errors,
+            new_items,
         },
     );
 

@@ -265,6 +265,8 @@ pub enum NotificationEvent {
         too_many: i64,
         already_linked: i64,
         errors: i64,
+        /// Series newly auto-matched this run, capped at 10
+        new_matches: Vec<String>,
     },
     MetadataBatchFailed {
         library_name: Option<String>,
@@ -316,13 +318,13 @@ pub enum NotificationEvent {
         library_name: Option<String>,
         total_series: i32,
         found: i64,
-        /// Number of release titles newly discovered during this run
-        /// (across all series, not seen in previous detections).
         new_releases: i64,
         not_found: i64,
         no_missing: i64,
         no_metadata: i64,
         errors: i64,
+        /// New releases detected this run: (series_name, release_title), capped at 10
+        new_items: Vec<(String, String)>,
     },
     DownloadDetectionFailed {
         library_name: Option<String>,
@@ -509,6 +511,7 @@ fn format_event(event: &NotificationEvent) -> String {
             too_many,
             already_linked,
             errors,
+            new_matches,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let mut lines = vec![
@@ -519,6 +522,16 @@ fn format_event(event: &NotificationEvent) -> String {
             ];
             if *auto_matched > 0 {
                 lines.push(format!("✅ Auto-matched: <b>{auto_matched}</b>"));
+            }
+            if !new_matches.is_empty() {
+                lines.push(String::new());
+                lines.push("🆕 <b>New matches:</b>".to_string());
+                for name in new_matches.iter().take(10) {
+                    lines.push(format!("  • {}", truncate(name, 60)));
+                }
+                if new_matches.len() > 10 {
+                    lines.push(format!("  … and {} more", new_matches.len() - 10));
+                }
             }
             let mut warnings = Vec::new();
             if *low_confidence > 0 {
@@ -697,6 +710,7 @@ fn format_event(event: &NotificationEvent) -> String {
             no_missing,
             no_metadata,
             errors,
+            new_items,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let mut lines = vec![
@@ -707,6 +721,16 @@ fn format_event(event: &NotificationEvent) -> String {
             ];
             if *new_releases > 0 {
                 lines.push(format!("🆕 New releases: <b>{new_releases}</b>"));
+            }
+            if !new_items.is_empty() {
+                lines.push(String::new());
+                lines.push("📦 <b>New releases detected:</b>".to_string());
+                for (series, title) in new_items.iter().take(10) {
+                    lines.push(format!("  • <b>{}</b> — {}", truncate(series, 40), truncate(title, 60)));
+                }
+                if new_items.len() > 10 {
+                    lines.push(format!("  … and {} more", new_items.len() - 10));
+                }
             }
             if *not_found > 0 {
                 lines.push(format!("🔍 Not found: <b>{not_found}</b>"));

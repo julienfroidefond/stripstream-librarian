@@ -382,6 +382,48 @@ pub(crate) async fn process_rss_poll(
     );
 
     if new_releases > 0 {
+        let new_items: Vec<(String, String)> = if let Some(lid) = library_id {
+            sqlx::query(
+                r#"
+                SELECT DISTINCT s.name AS series_name, rel->>'title' AS release_title
+                FROM available_downloads ad
+                CROSS JOIN jsonb_array_elements(ad.available_releases) AS rel
+                JOIN series s ON s.id = ad.series_id
+                WHERE ad.library_id = $1
+                  AND (rel->>'detected_at')::timestamptz >= $2
+                ORDER BY s.name
+                LIMIT 10
+                "#,
+            )
+            .bind(lid)
+            .bind(job_started_at)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|r| (r.get::<String, _>("series_name"), r.get::<String, _>("release_title")))
+            .collect()
+        } else {
+            sqlx::query(
+                r#"
+                SELECT DISTINCT s.name AS series_name, rel->>'title' AS release_title
+                FROM available_downloads ad
+                CROSS JOIN jsonb_array_elements(ad.available_releases) AS rel
+                JOIN series s ON s.id = ad.series_id
+                WHERE (rel->>'detected_at')::timestamptz >= $1
+                ORDER BY s.name
+                LIMIT 10
+                "#,
+            )
+            .bind(job_started_at)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|r| (r.get::<String, _>("series_name"), r.get::<String, _>("release_title")))
+            .collect()
+        };
+
         notifications::notify(
             pool.clone(),
             notifications::NotificationEvent::DownloadDetectionCompleted {
@@ -393,6 +435,7 @@ pub(crate) async fn process_rss_poll(
                 no_missing: 0,
                 no_metadata: 0,
                 errors: 0,
+                new_items,
             },
         );
     }
