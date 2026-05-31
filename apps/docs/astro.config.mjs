@@ -34,6 +34,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Formats supportés', slug: 'books/formats' },
 						{ label: 'Métadonnées', slug: 'books/metadata' },
+						{ label: 'Auteurs', slug: 'books/authors' },
 						{ label: 'Miniatures', slug: 'books/thumbnails' },
 						{ label: 'Renommage', slug: 'books/renaming' },
 						{ label: 'Conversion CBR→CBZ', slug: 'books/conversion' },
@@ -98,7 +99,6 @@ export default defineConfig({
 					items: [
 						{ label: 'API', slug: 'reference/api' },
 						{ label: 'Utilisateurs & Tokens', slug: 'reference/users-tokens' },
-						{ label: 'Auteurs', slug: 'reference/authors' },
 						{ label: 'Variables d\'environnement', slug: 'reference/environment' },
 					],
 				},
