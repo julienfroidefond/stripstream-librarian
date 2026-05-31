@@ -324,6 +324,8 @@ const fr = {
   "jobs.groupProwlarr": "Téléchargement",
   "jobs.downloadDetection": "Détection de téléchargements",
   "jobs.downloadDetectionShort": "Cherche sur Prowlarr les releases disponibles pour les volumes manquants",
+  "jobs.rssPoll": "Polling RSS Prowlarr",
+  "jobs.rssPollShort": "Récupère le flux RSS Prowlarr et matche localement (une seule requête)",
 
   // Jobs list
   "jobsList.id": "ID",
@@ -465,6 +467,8 @@ const fr = {
   "jobDetail.downloadMissingCount": "{{count}} manquant(s)",
   "jobDetail.downloadErrors": "Erreurs de détection",
   "jobDetail.downloadErrorsDesc": "{{count}} série(s) en erreur lors de la détection",
+  "jobDetail.rssPollFetched": "{{count}} releases récupérées depuis Prowlarr",
+  "jobDetail.seriesChecked": "Séries vérifiées",
 
   // Job types
   "jobType.rebuild": "Indexation",
@@ -507,6 +511,9 @@ const fr = {
   "jobType.download_detection": "Détection téléchargements",
   "jobType.download_detectionLabel": "Détection de téléchargements disponibles",
   "jobType.download_detectionDesc": "Analyse les séries avec des volumes manquants et interroge Prowlarr pour trouver les releases disponibles. Ne télécharge rien — produit uniquement un rapport des opportunités.",
+  "jobType.prowlarr_rss": "Prowlarr RSS",
+  "jobType.prowlarr_rssLabel": "Polling RSS Prowlarr",
+  "jobType.prowlarr_rssDesc": "Récupère les releases récentes depuis Prowlarr en une seule requête et les rapproche de toutes les séries avec des volumes manquants. Plus rapide que la détection classique.",
 
   // Status badges
   "statusBadge.extracting_pages": "Extraction des pages",

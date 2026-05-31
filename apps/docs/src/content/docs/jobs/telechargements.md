@@ -1,13 +1,13 @@
 ---
-title: Job de détection de téléchargements
-description: Détection automatique des releases disponibles via Prowlarr
+title: Jobs de détection de téléchargements
+description: Détection automatique des releases disponibles via Prowlarr — détection classique et polling RSS
 ---
 
-Le job `download_detection` interroge Prowlarr pour trouver des releases correspondant aux volumes manquants de chaque série. Il est exécuté par le service **API** (job poller) et est **non-exclusif**.
+Deux jobs complémentaires permettent de détecter des releases disponibles via Prowlarr. Tous deux sont exécutés par le service **API** (job poller), sont **non-exclusifs**, et alimentent la même table `available_downloads`.
 
 ---
 
-## `download_detection`
+## `download_detection` — Détection classique
 
 ### Prérequis
 
@@ -74,11 +74,82 @@ Après le job, les entrées `available_downloads` dont la liste de releases est 
 
 ---
 
-## Ordonnancement automatique
+### Ordonnancement automatique
 
 Si `download_detection_mode != 'manual'` et que Prowlarr est configuré, l'ordonnanceur crée automatiquement un job selon l'intervalle défini dans les paramètres de la bibliothèque.
 
 Condition supplémentaire : aucun job `download_detection` ne doit être déjà actif (`pending` ou `running`) pour cette bibliothèque.
+
+---
+
+## `prowlarr_rss` — Polling RSS
+
+### Principe
+
+Au lieu de faire **N requêtes Prowlarr** (une par série), le job `prowlarr_rss` effectue **une seule requête** avec une query vide pour récupérer les releases récentes (RSS-style), puis les rapproche en mémoire de toutes les séries de la bibliothèque ayant des volumes manquants.
+
+| | `download_detection` | `prowlarr_rss` |
+|--|---------------------|----------------|
+| Requêtes Prowlarr | 1 par série | 1 au total |
+| Correspondance | Prowlarr filtre par nom | Matching local sur le titre |
+| Couverture | Toute l'histoire de l'indexer | Releases récentes uniquement |
+| Fréquence conseillée | Horaire / quotidien | Toutes les 30 min |
+
+### Prérequis
+
+Identiques à `download_detection` : Prowlarr configuré, séries avec un **lien metadata approuvé** et des volumes manquants.
+
+### Règles métier
+
+**Fetch des releases**
+
+Une requête unique est envoyée à Prowlarr (`/api/v1/search?query=&type=search`) avec les catégories configurées. Prowlarr retourne les releases récentes de tous ses indexers.
+
+**Matching titre / série**
+
+Pour chaque série avec des volumes manquants, le titre de chaque release est normalisé puis comparé au nom de la série :
+
+- Points et underscores → espaces
+- Accents courants supprimés (`é→e`, `à→a`, etc.)
+- Comparaison insensible à la casse
+
+Si le titre normalisé **contient** le nom normalisé de la série, `match_title_volumes` est appliqué pour identifier les volumes couverts.
+
+**Résultats et fusion**
+
+Identiques à `download_detection` : upsert dans `available_downloads` via `merge_releases()`, `detected_at` préservé pour les releases déjà connues.
+
+### Résultats par série
+
+| `event_type` | Signification |
+|-------------|---------------|
+| `downloads_found` | Des releases correspondantes ont été trouvées dans le flux RSS |
+| `downloads_not_found` | Aucune release ne correspond à cette série dans le flux courant |
+
+### Rapport de job
+
+| Champ | Signification |
+|-------|--------------|
+| `total_series` | Séries avec volumes manquants vérifiées |
+| `found` | Séries pour lesquelles des releases ont été trouvées |
+| `new_releases` | Nouvelles releases détectées lors de ce run |
+| `rss_releases_fetched` | Nombre total de releases récupérées depuis Prowlarr |
+
+### Ordonnancement automatique
+
+Le job est déclenché automatiquement toutes les **30 minutes** par l'indexer pour chaque bibliothèque, à condition que :
+- Prowlarr soit configuré
+- Aucun job `prowlarr_rss` ne soit déjà actif pour cette bibliothèque
+- Le dernier job `prowlarr_rss` terminé date de plus de 30 minutes
+
+Aucun paramètre bibliothèque n'est requis (intervalle fixe, non configurable).
+
+### API
+
+```
+POST /prowlarr-rss/start
+{ "library_id": "uuid" }   // optionnel — toutes les bibliothèques si absent
+```
 
 ---
 

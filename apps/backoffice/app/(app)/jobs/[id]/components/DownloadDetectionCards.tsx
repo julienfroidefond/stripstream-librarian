@@ -5,6 +5,32 @@ import type { DownloadDetectionReportDto, DownloadDetectionResultDto } from "@/l
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 import { compressVolumes } from "@/lib/volumeRanges";
 
+export function RssPollStatsCard({
+  stats,
+  t,
+}: {
+  stats: { total_series?: number; found?: number; new_releases?: number; rss_releases_fetched?: number };
+  t: TranslateFunction;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("jobType.prowlarr_rssLabel")}</CardTitle>
+        <CardDescription>
+          {t("jobDetail.rssPollFetched", { count: String(stats.rss_releases_fetched ?? 0) })}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <StatBox value={stats.total_series ?? 0} label={t("jobDetail.seriesChecked")} />
+          <StatBox value={stats.found ?? 0} label={t("jobDetail.downloadFound")} variant="success" />
+          <StatBox value={stats.new_releases ?? 0} label={t("jobDetail.downloadNewReleases")} variant="primary" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function DownloadDetectionReportCard({ report, t }: { report: DownloadDetectionReportDto; t: TranslateFunction }) {
   return (
     <Card>

@@ -38,6 +38,7 @@ export function JobSummaryBanner({
   const isReadingStatusMatch = job.type === "reading_status_match";
   const isReadingStatusPush = job.type === "reading_status_push";
   const isDownloadDetection = job.type === "download_detection";
+  const isRssPoll = job.type === "prowlarr_rss";
   const isThumbnailOnly = job.type === "thumbnail_rebuild" || job.type === "thumbnail_regenerate";
 
   if (isCompleted && job.started_at) {
@@ -75,7 +76,13 @@ export function JobSummaryBanner({
               , {downloadDetectionReport.not_found} {t("jobDetail.downloadNotFound").toLowerCase()}, {downloadDetectionReport.errors} {t("jobDetail.errors").toLowerCase()}
             </span>
           )}
-          {!isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && !isDownloadDetection && job.stats_json && (
+          {isRssPoll && job.stats_json && (
+            <span className="ml-2 text-success/80">
+              — {(job.stats_json as unknown as { found?: number }).found ?? 0} {t("jobDetail.downloadFound").toLowerCase()}
+              {((job.stats_json as unknown as { new_releases?: number }).new_releases ?? 0) > 0 && `, ${(job.stats_json as unknown as { new_releases?: number }).new_releases} ${t("jobDetail.downloadNewReleases").toLowerCase()}`}
+            </span>
+          )}
+          {!isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && !isDownloadDetection && !isRssPoll && job.stats_json && (
             <span className="ml-2 text-success/80">
               — {job.stats_json.scanned_files} {t("jobDetail.scanned").toLowerCase()}, {job.stats_json.indexed_files} {t("jobDetail.indexed").toLowerCase()}
               {job.stats_json.removed_files > 0 && `, ${job.stats_json.removed_files} ${t("jobDetail.removed").toLowerCase()}`}

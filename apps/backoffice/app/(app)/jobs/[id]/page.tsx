@@ -113,6 +113,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     reading_status_match: { label: t("jobType.reading_status_matchLabel"), description: t("jobType.reading_status_matchDesc"), isThumbnailOnly: false },
     reading_status_push: { label: t("jobType.reading_status_pushLabel"), description: t("jobType.reading_status_pushDesc"), isThumbnailOnly: false },
     download_detection: { label: t("jobType.download_detectionLabel"), description: t("jobType.download_detectionDesc"), isThumbnailOnly: false },
+    prowlarr_rss: { label: t("jobType.prowlarr_rssLabel"), description: t("jobType.prowlarr_rssDesc"), isThumbnailOnly: false },
   };
 
   const isMetadataBatch = job.type === "metadata_batch" || job.type === "metadata_batch_rematch";
@@ -120,6 +121,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
   const isReadingStatusMatch = job.type === "reading_status_match";
   const isReadingStatusPush = job.type === "reading_status_push";
   const isDownloadDetection = job.type === "download_detection";
+  const isRssPoll = job.type === "prowlarr_rss";
 
   let batchReport: MetadataBatchReportDto | null = null;
   let batchResults: MetadataBatchResultDto[] = [];
@@ -157,7 +159,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
   let downloadDetectionResults: DownloadDetectionResultDto[] = [];
   let downloadDetectionErrors: DownloadDetectionResultDto[] = [];
   let qbConfigured = false;
-  if (isDownloadDetection) {
+  if (isDownloadDetection || isRssPoll) {
     [downloadDetectionReport, downloadDetectionResults, downloadDetectionErrors, qbConfigured] = await Promise.all([
       getDownloadDetectionReport(id).catch(() => null),
       getDownloadDetectionResults(id, "found").catch(() => []),
@@ -193,6 +195,8 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     ? t("jobDetail.readingStatusPush")
     : isDownloadDetection
     ? t("jobDetail.downloadDetection")
+    : isRssPoll
+    ? t("jobType.prowlarr_rss")
     : isThumbnailOnly
       ? t("jobType.thumbnail_rebuild")
       : isExtractingPages
@@ -211,6 +215,8 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     ? t("jobDetail.readingStatusPushDesc")
     : isDownloadDetection
     ? t("jobDetail.downloadDetectionDesc")
+    : isRssPoll
+    ? t("jobType.prowlarr_rssDesc")
     : isThumbnailOnly
       ? undefined
       : isExtractingPages
@@ -261,7 +267,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
         />
 
         {/* Index Statistics */}
-        {job.stats_json && !isThumbnailOnly && !isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && !isDownloadDetection && (
+        {job.stats_json && !isThumbnailOnly && !isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && !isDownloadDetection && !isRssPoll && (
           <IndexStatsCard job={job} t={t} formatDuration={formatDuration} formatSpeed={formatSpeed} durationMs={durationMs} />
         )}
 
@@ -281,10 +287,10 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
         {isReadingStatusPush && readingStatusPushReport && <ReadingStatusPushReportCard report={readingStatusPushReport} t={t} />}
         {isReadingStatusPush && <ReadingStatusPushResultsCard results={readingStatusPushResults} libraryId={job.library_id} t={t} />}
 
-        {/* Download detection */}
-        {isDownloadDetection && downloadDetectionReport && <DownloadDetectionReportCard report={downloadDetectionReport} t={t} />}
-        {isDownloadDetection && <DownloadDetectionErrorsCard results={downloadDetectionErrors} t={t} />}
-        {isDownloadDetection && downloadDetectionResults.length > 0 && (
+        {/* Download detection + Prowlarr RSS (partagent les mêmes events/endpoints) */}
+        {(isDownloadDetection || isRssPoll) && downloadDetectionReport && <DownloadDetectionReportCard report={downloadDetectionReport} t={t} />}
+        {(isDownloadDetection || isRssPoll) && <DownloadDetectionErrorsCard results={downloadDetectionErrors} t={t} />}
+        {(isDownloadDetection || isRssPoll) && downloadDetectionResults.length > 0 && (
           <div className="lg:col-span-2">
             <DownloadDetectionAvailableResults
               results={downloadDetectionResults}

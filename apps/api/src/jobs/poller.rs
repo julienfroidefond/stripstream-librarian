@@ -4,7 +4,7 @@ use sqlx::{PgPool, Row};
 use tracing::{error, info, trace};
 use uuid::Uuid;
 
-use crate::{downloads::detection as download_detection, metadata, reading};
+use crate::{downloads::{detection as download_detection, rss_poll}, metadata, reading};
 
 /// Poll for pending API-only jobs (`metadata_batch`, `metadata_refresh`) and process them.
 /// This mirrors the indexer's worker loop but for job types handled by the API.
@@ -68,6 +68,9 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                             .await
                             .map(|_| ())
                         }
+                        "prowlarr_rss" => {
+                            rss_poll::process_rss_poll(&pool_clone, job_id, library_id).await
+                        }
                         _ => Err(format!("Unknown API job type: {job_type}")),
                     };
 
@@ -109,7 +112,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                                     },
                                 );
                             }
-                            "download_detection" => {
+                            "download_detection" | "prowlarr_rss" => {
                                 notifications::notify(
                                     pool_clone,
                                     notifications::NotificationEvent::DownloadDetectionFailed {
@@ -135,7 +138,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
     }
 }
 
-const API_JOB_TYPES: &[&str] = &["metadata_batch", "metadata_batch_rematch", "metadata_refresh", "metadata_refresh_all", "reading_status_push", "download_detection"];
+const API_JOB_TYPES: &[&str] = &["metadata_batch", "metadata_batch_rematch", "metadata_refresh", "metadata_refresh_all", "reading_status_push", "download_detection", "prowlarr_rss"];
 
 async fn claim_next_api_job(pool: &PgPool) -> Result<Option<(Uuid, String, Uuid)>, sqlx::Error> {
     let mut tx = pool.begin().await?;

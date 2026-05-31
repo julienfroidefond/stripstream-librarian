@@ -184,6 +184,57 @@ pub async fn check_and_schedule_download_detection(pool: &PgPool) -> Result<()> 
     Ok(())
 }
 
+pub async fn check_and_schedule_prowlarr_rss(pool: &PgPool) -> Result<()> {
+    let prowlarr_configured: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM app_settings WHERE key = 'prowlarr' AND value->>'url' IS NOT NULL AND value->>'url' != '')"
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if !prowlarr_configured {
+        return Ok(());
+    }
+
+    // Schedule for libraries that:
+    // - have no prowlarr_rss job running/pending
+    // - have no prowlarr_rss job that finished within the last 30 minutes
+    let libraries: Vec<Uuid> = sqlx::query_scalar(
+        r#"
+        SELECT id FROM libraries
+        WHERE NOT EXISTS (
+            SELECT 1 FROM index_jobs
+            WHERE library_id = libraries.id
+              AND type = 'prowlarr_rss'
+              AND status IN ('pending', 'running')
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM index_jobs
+            WHERE library_id = libraries.id
+              AND type = 'prowlarr_rss'
+              AND finished_at > NOW() - INTERVAL '30 minutes'
+        )
+        "#
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for library_id in libraries {
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'prowlarr_rss', 'pending')"
+        )
+        .bind(job_id)
+        .bind(library_id)
+        .execute(pool)
+        .await?;
+
+        info!("[SCHEDULER] Created prowlarr_rss job {} for library {}", job_id, library_id);
+    }
+
+    Ok(())
+}
+
 pub async fn check_and_schedule_metadata_refreshes(pool: &PgPool) -> Result<()> {
     let libraries = sqlx::query(
         r#"

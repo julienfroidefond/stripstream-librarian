@@ -238,7 +238,7 @@ pub async fn get_detection_report(
     axum::extract::Path(job_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<DownloadDetectionReportDto>, ApiError> {
     let row = sqlx::query(
-        "SELECT status, total_files, stats_json FROM index_jobs WHERE id = $1 AND type = 'download_detection'",
+        "SELECT status, total_files, stats_json FROM index_jobs WHERE id = $1 AND type IN ('download_detection', 'prowlarr_rss')",
     )
     .bind(job_id)
     .fetch_optional(&state.pool)
@@ -1129,7 +1129,7 @@ async fn search_prowlarr_for_series(
     Ok((matched, raw_count))
 }
 
-async fn insert_event(
+pub(crate) async fn insert_event(
     pool: &PgPool,
     job_id: Uuid,
     event_type: &str,

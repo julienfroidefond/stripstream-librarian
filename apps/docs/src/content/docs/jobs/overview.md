@@ -14,7 +14,7 @@ Les jobs sont des tâches de fond asynchrones qui effectuent les opérations lou
 | [Indexation](../indexation/) | `rebuild`, `rescan`, `full_rebuild` | Indexer |
 | [Miniatures](../miniatures/) | `thumbnail_rebuild`, `thumbnail_regenerate`, `cbr_to_cbz` | Indexer |
 | [Métadonnées](../metadonnees/) | `metadata_batch`, `metadata_batch_rematch`, `metadata_refresh`, `metadata_refresh_all` | API |
-| [Téléchargements](../telechargements/) | `download_detection` | API |
+| [Téléchargements](../telechargements/) | `download_detection`, `prowlarr_rss` | API |
 | [AniList](../anilist/) | `reading_status_match`, `reading_status_push` | API |
 
 ---
@@ -48,7 +48,7 @@ pending → running → success
 - `cbr_to_cbz`
 - `metadata_batch`, `metadata_batch_rematch`, `metadata_refresh`, `metadata_refresh_all`
 - `reading_status_match`, `reading_status_push`
-- `download_detection`
+- `download_detection`, `prowlarr_rss`
 
 ---
 
@@ -60,7 +60,7 @@ pending → running → success
 | 2 | `rebuild`, `rescan`, `scan` |
 | 3 | `thumbnail_rebuild`, `thumbnail_regenerate`, `cbr_to_cbz` |
 
-Les jobs API (`metadata_*`, `reading_status_*`, `download_detection`) sont traités dans l'ordre de création (FIFO).
+Les jobs API (`metadata_*`, `reading_status_*`, `download_detection`, `prowlarr_rss`) sont traités dans l'ordre de création (FIFO).
 
 ---
 
@@ -81,6 +81,7 @@ Plusieurs types de jobs peuvent être déclenchés automatiquement selon la conf
 |-----|----------------------|-----------|
 | `rebuild` / `full_rebuild` | `scan_mode` + `monitor_enabled` | `next_scan_at <= NOW()` et aucun job actif |
 | `download_detection` | `download_detection_mode` | `next_download_detection_at <= NOW()`, Prowlarr configuré, aucun job actif |
+| `prowlarr_rss` | *(fixe, 30 min)* | Dernier job terminé depuis > 30 min, Prowlarr configuré, aucun job actif |
 | `reading_status_push` | `reading_status_push_mode` | `next_reading_status_push_at <= NOW()`, provider AniList configuré, liens AniList existants |
 | `metadata_refresh` | `metadata_refresh_mode` | `next_metadata_refresh_at <= NOW()`, liens approuvés existants, aucun job actif |
 

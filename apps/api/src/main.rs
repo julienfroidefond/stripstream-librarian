@@ -168,6 +168,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/reading-status/push/:id/report", get(reading::get_push_report))
         .route("/reading-status/push/:id/results", get(reading::get_push_results))
         .route("/download-detection/start", axum::routing::post(downloads::start_detection))
+        .route("/prowlarr-rss/start", axum::routing::post(downloads::start_rss_poll))
         .route("/download-detection/latest-found", get(downloads::get_latest_found))
         .route("/download-detection/:id/report", get(downloads::get_detection_report))
         .route("/download-detection/:id/results", get(downloads::get_detection_results))

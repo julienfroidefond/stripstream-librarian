@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startMetadataRefreshAll, startReadingStatusMatch, startReadingStatusPush, startDownloadDetection, fetchDownloadsEnabled, IndexJobDto, LibraryDto } from "@/lib/api";
+import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startMetadataRefreshAll, startReadingStatusMatch, startReadingStatusPush, startDownloadDetection, startRssPoll, fetchDownloadsEnabled, IndexJobDto, LibraryDto } from "@/lib/api";
 import { JobsList } from "@/app/components/JobsList";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/app/components/ui";
 import { LibraryBadgeSelector } from "./components/LibraryBadgeSelector";
@@ -118,6 +118,13 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     "use server";
     const libraryId = formData.get("library_id") as string;
     try { const result = await startDownloadDetection(libraryId || undefined); revalidatePath("/jobs"); jobRedirect(result.id, libraryId); }
+    catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
+  }
+
+  async function triggerRssPoll(formData: FormData) {
+    "use server";
+    const libraryId = formData.get("library_id") as string;
+    try { const result = await startRssPoll(libraryId || undefined); revalidatePath("/jobs"); jobRedirect(result.id ?? undefined, libraryId); }
     catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
   }
 
@@ -325,6 +332,16 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                       <span className="font-medium text-sm text-foreground">{t("jobs.downloadDetection")}</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1 ml-6">{t("jobs.downloadDetectionShort")}</p>
+                  </button>
+                  <button type="submit" formAction={triggerRssPoll}
+                    className="w-full text-left rounded-lg border border-input bg-background p-3 hover:bg-accent/50 transition-colors group cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 5c7.18 0 13 5.82 13 13M6 11a7 7 0 017 7M6 17a1 1 0 110 2 1 1 0 010-2z" />
+                      </svg>
+                      <span className="font-medium text-sm text-foreground">{t("jobs.rssPoll")}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 ml-6">{t("jobs.rssPollShort")}</p>
                   </button>
                 </div>
               </div>}

@@ -1260,6 +1260,13 @@ export async function startDownloadDetection(libraryId?: string) {
   });
 }
 
+export async function startRssPoll(libraryId?: string) {
+  return apiFetch<{ id: string | null; status: string }>("/prowlarr-rss/start", {
+    method: "POST",
+    body: JSON.stringify(libraryId ? { library_id: libraryId } : {}),
+  });
+}
+
 export type AvailableReleaseDto = {
   title: string;
   size: number;

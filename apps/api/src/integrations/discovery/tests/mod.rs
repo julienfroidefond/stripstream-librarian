@@ -27,6 +27,7 @@ fn test_state(pool: sqlx::PgPool) -> AppState {
             requests_in_window: 0,
         })),
         settings: Arc::new(RwLock::new(DynamicSettings::default())),
+        prowlarr_fetch_lock: Arc::new(Mutex::new(())),
     }
 }
 

@@ -326,6 +326,8 @@ const en: Record<TranslationKey, string> = {
   "jobs.groupProwlarr": "Download",
   "jobs.downloadDetection": "Download detection",
   "jobs.downloadDetectionShort": "Search Prowlarr for available releases matching missing volumes",
+  "jobs.rssPoll": "Prowlarr RSS poll",
+  "jobs.rssPollShort": "Fetch Prowlarr RSS feed and match locally (single request)",
 
   // Jobs list
   "jobsList.id": "ID",
@@ -467,6 +469,8 @@ const en: Record<TranslationKey, string> = {
   "jobDetail.downloadMissingCount": "{{count}} missing",
   "jobDetail.downloadErrors": "Detection errors",
   "jobDetail.downloadErrorsDesc": "{{count}} series with errors during detection",
+  "jobDetail.rssPollFetched": "{{count}} releases fetched from Prowlarr",
+  "jobDetail.seriesChecked": "Series checked",
 
   // Job types
   "jobType.rebuild": "Indexing",
@@ -509,6 +513,9 @@ const en: Record<TranslationKey, string> = {
   "jobType.download_detection": "Download detection",
   "jobType.download_detectionLabel": "Available downloads detection",
   "jobType.download_detectionDesc": "Scans series with missing volumes and queries Prowlarr to find available releases. Downloads nothing — produces a report of opportunities only.",
+  "jobType.prowlarr_rss": "Prowlarr RSS",
+  "jobType.prowlarr_rssLabel": "Prowlarr RSS polling",
+  "jobType.prowlarr_rssDesc": "Fetches recent releases from Prowlarr in a single request and matches them against all series with missing volumes. Faster than classic detection.",
 
   // Status badges
   "statusBadge.extracting_pages": "Extracting pages",

@@ -39,7 +39,7 @@ interface JobRowProps {
   formatDuration: (start: string, end: string | null) => string;
 }
 
-const REPLAYABLE_TYPES = new Set(["rebuild", "full_rebuild", "rescan", "scan", "thumbnail_rebuild", "thumbnail_regenerate", "metadata_batch", "metadata_batch_rematch", "metadata_refresh", "metadata_refresh_all", "reading_status_match", "reading_status_push", "download_detection"]);
+const REPLAYABLE_TYPES = new Set(["rebuild", "full_rebuild", "rescan", "scan", "thumbnail_rebuild", "thumbnail_regenerate", "metadata_batch", "metadata_batch_rematch", "metadata_refresh", "metadata_refresh_all", "reading_status_match", "reading_status_push", "download_detection", "prowlarr_rss"]);
 
 export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, formatDate, formatDuration }: JobRowProps) {
   const { t } = useTranslation();
@@ -70,7 +70,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
   const isMetadataRefresh = job.type === "metadata_refresh" || job.type === "metadata_refresh_all";
   const isReadingStatusMatch = job.type === "reading_status_match";
   const isReadingStatusPush = job.type === "reading_status_push";
-  const isDownloadDetection = job.type === "download_detection";
+  const isDownloadDetection = job.type === "download_detection" || job.type === "prowlarr_rss";
 
   // Thumbnails progress (Phase 2: extracting_pages + generating_thumbnails)
   const thumbInProgress = hasThumbnailPhase && (job.status === "running" || isPhase2);
