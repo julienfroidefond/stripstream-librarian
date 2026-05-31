@@ -196,41 +196,39 @@ pub async fn check_and_schedule_prowlarr_rss(pool: &PgPool) -> Result<()> {
         return Ok(());
     }
 
-    // Schedule for libraries that:
-    // - have no prowlarr_rss job running/pending
-    // - have no prowlarr_rss job that finished within the last 30 minutes
-    let libraries: Vec<Uuid> = sqlx::query_scalar(
-        r#"
-        SELECT id FROM libraries
-        WHERE NOT EXISTS (
-            SELECT 1 FROM index_jobs
-            WHERE library_id = libraries.id
-              AND type = 'prowlarr_rss'
-              AND status IN ('pending', 'running')
-        )
-        AND NOT EXISTS (
-            SELECT 1 FROM index_jobs
-            WHERE library_id = libraries.id
-              AND type = 'prowlarr_rss'
-              AND finished_at > NOW() - INTERVAL '30 minutes'
-        )
-        "#
+    // One global job covers all libraries with a single RSS fetch.
+    // Skip if a global job is already pending/running or finished within 30 min.
+    let already_active: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'prowlarr_rss' AND status IN ('pending', 'running'))"
     )
-    .fetch_all(pool)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if already_active {
+        return Ok(());
+    }
+
+    let recent_run: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'prowlarr_rss' AND finished_at > NOW() - INTERVAL '30 minutes')"
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if recent_run {
+        return Ok(());
+    }
+
+    let job_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO index_jobs (id, type, status) VALUES ($1, 'prowlarr_rss', 'pending')"
+    )
+    .bind(job_id)
+    .execute(pool)
     .await?;
 
-    for library_id in libraries {
-        let job_id = Uuid::new_v4();
-        sqlx::query(
-            "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'prowlarr_rss', 'pending')"
-        )
-        .bind(job_id)
-        .bind(library_id)
-        .execute(pool)
-        .await?;
-
-        info!("[SCHEDULER] Created prowlarr_rss job {} for library {}", job_id, library_id);
-    }
+    info!("[SCHEDULER] Created global prowlarr_rss job {}", job_id);
 
     Ok(())
 }

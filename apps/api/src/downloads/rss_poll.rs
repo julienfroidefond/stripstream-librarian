@@ -23,51 +23,49 @@ pub async fn start_rss_poll(
     prowlarr::check_prowlarr_configured(&state.pool).await?;
 
     if body.library_id.is_none() {
-        let library_ids: Vec<Uuid> =
-            sqlx::query_scalar("SELECT id FROM libraries ORDER BY name")
-                .fetch_all(&state.pool)
-                .await?;
+        // Global job: one RSS fetch covers all libraries
+        let existing: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM index_jobs WHERE library_id IS NULL AND type = 'prowlarr_rss' AND status IN ('pending', 'running') LIMIT 1",
+        )
+        .fetch_optional(&state.pool)
+        .await?;
 
-        let mut last_job_id: Option<Uuid> = None;
-        for library_id in library_ids {
-            let existing: Option<Uuid> = sqlx::query_scalar(
-                "SELECT id FROM index_jobs WHERE library_id = $1 AND type = 'prowlarr_rss' AND status IN ('pending', 'running') LIMIT 1",
-            )
-            .bind(library_id)
-            .fetch_optional(&state.pool)
-            .await?;
-            if existing.is_some() {
-                continue;
-            }
-            let job_id = Uuid::new_v4();
-            sqlx::query(
-                "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'prowlarr_rss', 'running', NOW())",
-            )
-            .bind(job_id)
-            .bind(library_id)
-            .execute(&state.pool)
-            .await?;
-            let pool = state.pool.clone();
-            tokio::spawn(async move {
-                if let Err(e) = process_rss_poll(&pool, job_id, library_id).await {
-                    tracing::warn!("[RSS_POLL] job {job_id} failed: {e}");
-                    let _ = sqlx::query(
-                        "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
-                    )
-                    .bind(job_id)
-                    .bind(&e)
-                    .execute(&pool)
-                    .await;
-                }
-            });
-            last_job_id = Some(job_id);
+        if let Some(existing_id) = existing {
+            return Ok(Json(serde_json::json!({
+                "id": existing_id.to_string(),
+                "status": "already_running",
+            })));
         }
+
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, type, status, started_at) VALUES ($1, 'prowlarr_rss', 'running', NOW())",
+        )
+        .bind(job_id)
+        .execute(&state.pool)
+        .await?;
+
+        let pool = state.pool.clone();
+        tokio::spawn(async move {
+            if let Err(e) = process_rss_poll(&pool, job_id, None).await {
+                tracing::warn!("[RSS_POLL] job {job_id} failed: {e}");
+                let _ = sqlx::query(
+                    "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
+                )
+                .bind(job_id)
+                .bind(&e)
+                .execute(&pool)
+                .await;
+            }
+        });
+
         return Ok(Json(serde_json::json!({
-            "id": last_job_id.map(|id| id.to_string()),
+            "id": job_id.to_string(),
             "status": "started",
         })));
     }
 
+    // Per-library trigger (backward compat — still fetches RSS for just this library)
     let library_id: Uuid = body
         .library_id
         .unwrap()
@@ -105,7 +103,7 @@ pub async fn start_rss_poll(
 
     let pool = state.pool.clone();
     tokio::spawn(async move {
-        if let Err(e) = process_rss_poll(&pool, job_id, library_id).await {
+        if let Err(e) = process_rss_poll(&pool, job_id, Some(library_id)).await {
             tracing::warn!("[RSS_POLL] job {job_id} failed: {e}");
             let _ = sqlx::query(
                 "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
@@ -127,10 +125,14 @@ pub async fn start_rss_poll(
 // Background processing
 // ---------------------------------------------------------------------------
 
+/// Process a prowlarr_rss job.
+/// When library_id is None, fetches the RSS feed once and matches against all
+/// libraries — this is the normal scheduler path.
+/// When library_id is Some, processes only that library (manual per-lib trigger).
 pub(crate) async fn process_rss_poll(
     pool: &PgPool,
     job_id: Uuid,
-    library_id: Uuid,
+    library_id: Option<Uuid>,
 ) -> Result<(), String> {
     let job_started_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
         "SELECT COALESCE(started_at, created_at) FROM index_jobs WHERE id = $1",
@@ -145,24 +147,43 @@ pub(crate) async fn process_rss_poll(
             .await
             .map_err(|e| e.message)?;
 
-    // Load all series in this library that have an approved metadata link with missing volumes
-    let series_rows = sqlx::query(
-        r#"
-        SELECT s.id AS series_id, s.name AS series_name, eml.id AS link_id
-        FROM series s
-        JOIN external_metadata_links eml ON eml.series_id = s.id
-            AND eml.library_id = $1 AND eml.status = 'approved'
-        WHERE EXISTS (
-            SELECT 1 FROM external_book_metadata ebm
-            WHERE ebm.link_id = eml.id AND ebm.book_id IS NULL
+    // Load all series that have an approved metadata link with missing volumes.
+    // When library_id is None, covers every library (single RSS fetch).
+    let series_rows = if let Some(lid) = library_id {
+        sqlx::query(
+            r#"
+            SELECT s.id AS series_id, s.name AS series_name, eml.id AS link_id, eml.library_id AS library_id
+            FROM series s
+            JOIN external_metadata_links eml ON eml.series_id = s.id
+                AND eml.library_id = $1 AND eml.status = 'approved'
+            WHERE EXISTS (
+                SELECT 1 FROM external_book_metadata ebm
+                WHERE ebm.link_id = eml.id AND ebm.book_id IS NULL
+            )
+            ORDER BY s.name
+            "#,
         )
-        ORDER BY s.name
-        "#,
-    )
-    .bind(library_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+        .bind(lid)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| e.to_string())?
+    } else {
+        sqlx::query(
+            r#"
+            SELECT s.id AS series_id, s.name AS series_name, eml.id AS link_id, eml.library_id AS library_id
+            FROM series s
+            JOIN external_metadata_links eml ON eml.series_id = s.id AND eml.status = 'approved'
+            WHERE EXISTS (
+                SELECT 1 FROM external_book_metadata ebm
+                WHERE ebm.link_id = eml.id AND ebm.book_id IS NULL
+            )
+            ORDER BY s.name
+            "#,
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| e.to_string())?
+    };
 
     if series_rows.is_empty() {
         sqlx::query(
@@ -184,12 +205,13 @@ pub(crate) async fn process_rss_poll(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Build series info: (series_id, name, missing_volumes)
-    let mut series_info: Vec<(Uuid, String, Vec<i32>)> = Vec::new();
+    // Build series info: (series_id, name, missing_volumes, library_id)
+    let mut series_info: Vec<(Uuid, String, Vec<i32>, Uuid)> = Vec::new();
     for row in &series_rows {
         let series_id: Uuid = row.get("series_id");
         let series_name: String = row.get("series_name");
         let link_id: Uuid = row.get("link_id");
+        let lib_id: Uuid = row.get("library_id");
 
         let missing_vols: Vec<i32> = sqlx::query_scalar(
             "SELECT volume_number FROM external_book_metadata WHERE link_id = $1 AND book_id IS NULL AND volume_number IS NOT NULL AND volume_number > 0 ORDER BY volume_number",
@@ -199,7 +221,7 @@ pub(crate) async fn process_rss_poll(
         .await
         .unwrap_or_default();
 
-        series_info.push((series_id, series_name, missing_vols));
+        series_info.push((series_id, series_name, missing_vols, lib_id));
     }
 
     let blacklisted_titles: std::collections::HashSet<String> =
@@ -216,13 +238,14 @@ pub(crate) async fn process_rss_poll(
         .build()
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
+    // Single RSS fetch regardless of how many libraries/series are covered
     let rss_releases = fetch_rss_releases(&client, &prowlarr_url, &prowlarr_api_key, &categories).await?;
 
     info!("[RSS_POLL] job={job_id} fetched {} releases from Prowlarr", rss_releases.len());
 
     let now_str = chrono::Utc::now().to_rfc3339();
 
-    for (series_id, series_name, missing_volumes) in &series_info {
+    for (series_id, series_name, missing_volumes, lib_id) in &series_info {
         if missing_volumes.is_empty() {
             continue;
         }
@@ -260,7 +283,6 @@ pub(crate) async fn process_rss_poll(
             continue;
         }
 
-        // Stamp with detected_at already done above; upsert into available_downloads
         let releases_json = serde_json::to_value(&matched_releases).ok();
         insert_event(pool, job_id, "downloads_found", "info", Some(series_name), None,
             Some(serde_json::json!({
@@ -278,7 +300,7 @@ pub(crate) async fn process_rss_poll(
                    available_releases = merge_releases(available_downloads.available_releases, EXCLUDED.available_releases), \
                    updated_at = NOW()",
             )
-            .bind(library_id)
+            .bind(lib_id)
             .bind(series_id)
             .bind(missing_count)
             .bind(rj)
@@ -308,20 +330,36 @@ pub(crate) async fn process_rss_poll(
         }
     }
 
-    let new_releases: i64 = sqlx::query_scalar(
-        r#"
-        SELECT COUNT(*) FROM available_downloads ad,
-             jsonb_array_elements(ad.available_releases) AS rel
-        WHERE ad.library_id = $1
-          AND rel->>'detected_at' IS NOT NULL
-          AND (rel->>'detected_at')::timestamptz >= $2
-        "#,
-    )
-    .bind(library_id)
-    .bind(job_started_at)
-    .fetch_one(pool)
-    .await
-    .unwrap_or(0);
+    // Count new releases detected during this run
+    let new_releases: i64 = if let Some(lid) = library_id {
+        sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) FROM available_downloads ad,
+                 jsonb_array_elements(ad.available_releases) AS rel
+            WHERE ad.library_id = $1
+              AND rel->>'detected_at' IS NOT NULL
+              AND (rel->>'detected_at')::timestamptz >= $2
+            "#,
+        )
+        .bind(lid)
+        .bind(job_started_at)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0)
+    } else {
+        sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) FROM available_downloads ad,
+                 jsonb_array_elements(ad.available_releases) AS rel
+            WHERE rel->>'detected_at' IS NOT NULL
+              AND (rel->>'detected_at')::timestamptz >= $1
+            "#,
+        )
+        .bind(job_started_at)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0)
+    };
 
     let stats = serde_json::json!({
         "total_series": total as i64,
@@ -343,19 +381,11 @@ pub(crate) async fn process_rss_poll(
         "[RSS_POLL] job={job_id} completed: {total} series, found={count_found}, new_releases={new_releases}"
     );
 
-    let library_name: Option<String> =
-        sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-            .bind(library_id)
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
-
     if new_releases > 0 {
         notifications::notify(
             pool.clone(),
             notifications::NotificationEvent::DownloadDetectionCompleted {
-                library_name,
+                library_name: None,
                 total_series: total,
                 found: count_found,
                 new_releases,

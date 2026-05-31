@@ -14,16 +14,19 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
     loop {
         match claim_next_api_job(&pool).await {
             Ok(Some((job_id, job_type, library_id))) => {
-                info!("[JOB_POLLER] Claimed {job_type} job {job_id} library={library_id}");
+                info!("[JOB_POLLER] Claimed {job_type} job {job_id} library={library_id:?}");
 
                 let pool_clone = pool.clone();
-                let library_name: Option<String> =
+                let library_name: Option<String> = if let Some(lid) = library_id {
                     sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-                        .bind(library_id)
+                        .bind(lid)
                         .fetch_optional(&pool)
                         .await
                         .ok()
-                        .flatten();
+                        .flatten()
+                } else {
+                    None
+                };
 
                 tokio::spawn(async move {
                     let result = match job_type.as_str() {
@@ -31,7 +34,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                             metadata::process_metadata_refresh(
                                 &pool_clone,
                                 job_id,
-                                library_id,
+                                library_id.unwrap(),
                             )
                             .await
                         }
@@ -39,7 +42,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                             metadata::process_metadata_refresh_all(
                                 &pool_clone,
                                 job_id,
-                                library_id,
+                                library_id.unwrap(),
                             )
                             .await
                         }
@@ -47,7 +50,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                             metadata::process_metadata_batch(
                                 &pool_clone,
                                 job_id,
-                                library_id,
+                                library_id.unwrap(),
                             )
                             .await
                         }
@@ -55,7 +58,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                             reading::status_push::process_reading_status_push(
                                 &pool_clone,
                                 job_id,
-                                library_id,
+                                library_id.unwrap(),
                             )
                             .await
                         }
@@ -63,7 +66,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                             download_detection::process_download_detection(
                                 &pool_clone,
                                 job_id,
-                                library_id,
+                                library_id.unwrap(),
                             )
                             .await
                             .map(|_| ())
@@ -140,7 +143,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
 
 const API_JOB_TYPES: &[&str] = &["metadata_batch", "metadata_batch_rematch", "metadata_refresh", "metadata_refresh_all", "reading_status_push", "download_detection", "prowlarr_rss"];
 
-async fn claim_next_api_job(pool: &PgPool) -> Result<Option<(Uuid, String, Uuid)>, sqlx::Error> {
+async fn claim_next_api_job(pool: &PgPool) -> Result<Option<(Uuid, String, Option<Uuid>)>, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     let row = sqlx::query(
@@ -149,7 +152,7 @@ async fn claim_next_api_job(pool: &PgPool) -> Result<Option<(Uuid, String, Uuid)
         FROM index_jobs
         WHERE status = 'pending'
           AND type = ANY($1)
-          AND library_id IS NOT NULL
+          AND (library_id IS NOT NULL OR type = 'prowlarr_rss')
         ORDER BY created_at ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1
@@ -166,7 +169,7 @@ async fn claim_next_api_job(pool: &PgPool) -> Result<Option<(Uuid, String, Uuid)
 
     let id: Uuid = row.get("id");
     let job_type: String = row.get("type");
-    let library_id: Uuid = row.get("library_id");
+    let library_id: Option<Uuid> = row.try_get("library_id").ok().flatten();
 
     sqlx::query(
         "UPDATE index_jobs SET status = 'running', started_at = NOW(), error_opt = NULL WHERE id = $1",
@@ -178,6 +181,7 @@ async fn claim_next_api_job(pool: &PgPool) -> Result<Option<(Uuid, String, Uuid)
     tx.commit().await?;
     Ok(Some((id, job_type, library_id)))
 }
+
 
 #[cfg(test)]
 #[path = "tests/poller.rs"]
