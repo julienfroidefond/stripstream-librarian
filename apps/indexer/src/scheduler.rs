@@ -196,8 +196,18 @@ pub async fn check_and_schedule_prowlarr_rss(pool: &PgPool) -> Result<()> {
         return Ok(());
     }
 
+    // Read configured interval (minutes), default 30
+    let interval_minutes: i32 = sqlx::query_scalar(
+        "SELECT COALESCE((value->>'rss_poll_interval_minutes')::int, 30) FROM app_settings WHERE key = 'prowlarr'"
+    )
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or(30);
+
     // One global job covers all libraries with a single RSS fetch.
-    // Skip if a global job is already pending/running or finished within 30 min.
+    // Skip if a global job is already pending/running or finished within the configured interval.
     let already_active: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'prowlarr_rss' AND status IN ('pending', 'running'))"
     )
@@ -210,8 +220,9 @@ pub async fn check_and_schedule_prowlarr_rss(pool: &PgPool) -> Result<()> {
     }
 
     let recent_run: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'prowlarr_rss' AND finished_at > NOW() - INTERVAL '30 minutes')"
+        "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'prowlarr_rss' AND finished_at > NOW() - INTERVAL '1 minute' * $1)"
     )
+    .bind(interval_minutes)
     .fetch_one(pool)
     .await
     .unwrap_or(false);

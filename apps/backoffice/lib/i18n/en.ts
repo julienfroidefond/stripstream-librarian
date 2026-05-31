@@ -708,6 +708,8 @@ const en: Record<TranslationKey, string> = {
   "settings.prowlarrApiKeyPlaceholder": "Prowlarr API key",
   "settings.prowlarrCategories": "Categories",
   "settings.prowlarrCategoriesHelp": "Comma-separated Newznab category IDs (7030 = Comics, 7020 = Ebooks)",
+  "settings.prowlarrRssInterval": "RSS poll interval (minutes)",
+  "settings.prowlarrRssIntervalHelp": "How often the Prowlarr RSS feed is polled (minimum 5 min, default 30 min)",
   "settings.testConnection": "Test connection",
   "settings.testing": "Testing...",
   "settings.testSuccess": "Connection successful",

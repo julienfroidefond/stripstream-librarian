@@ -706,6 +706,8 @@ const fr = {
   "settings.prowlarrApiKeyPlaceholder": "Clé API Prowlarr",
   "settings.prowlarrCategories": "Catégories",
   "settings.prowlarrCategoriesHelp": "ID de catégories Newznab séparés par des virgules (7030 = Comics, 7020 = Ebooks)",
+  "settings.prowlarrRssInterval": "Intervalle RSS (minutes)",
+  "settings.prowlarrRssIntervalHelp": "Fréquence du polling RSS Prowlarr (minimum 5 min, défaut 30 min)",
   "settings.testConnection": "Tester la connexion",
   "settings.testing": "Test en cours...",
   "settings.testSuccess": "Connexion réussie",
