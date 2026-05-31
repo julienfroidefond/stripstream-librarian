@@ -86,14 +86,17 @@ Condition supplémentaire : aucun job `download_detection` ne doit être déjà 
 
 ### Principe
 
-Au lieu de faire **N requêtes Prowlarr** (une par série), le job `prowlarr_rss` effectue **une seule requête** avec une query vide pour récupérer les releases récentes (RSS-style), puis les rapproche en mémoire de toutes les séries de la bibliothèque ayant des volumes manquants.
+Au lieu de faire **N requêtes Prowlarr** (une par série), le job `prowlarr_rss` effectue **une seule requête** avec une query vide pour récupérer les releases récentes (RSS-style), puis les rapproche en mémoire de **toutes les bibliothèques** ayant des séries avec des volumes manquants.
+
+Le job est **global** (`library_id = NULL`) : une seule instance couvre toutes les bibliothèques.
 
 | | `download_detection` | `prowlarr_rss` |
 |--|---------------------|----------------|
 | Requêtes Prowlarr | 1 par série | 1 au total |
 | Correspondance | Prowlarr filtre par nom | Matching local sur le titre |
 | Couverture | Toute l'histoire de l'indexer | Releases récentes uniquement |
-| Fréquence conseillée | Horaire / quotidien | Toutes les 30 min |
+| Périmètre | Par bibliothèque | Toutes les bibliothèques |
+| Fréquence conseillée | Horaire / quotidien | 30 min à 1h |
 
 ### Prérequis
 
@@ -107,7 +110,7 @@ Une requête unique est envoyée à Prowlarr (`/api/v1/search?query=&type=search
 
 **Matching titre / série**
 
-Pour chaque série avec des volumes manquants, le titre de chaque release est normalisé puis comparé au nom de la série :
+Pour chaque série (toutes bibliothèques confondues) avec des volumes manquants, le titre de chaque release est normalisé puis comparé au nom de la série :
 
 - Points et underscores → espaces
 - Accents courants supprimés (`é→e`, `à→a`, etc.)
@@ -118,6 +121,14 @@ Si le titre normalisé **contient** le nom normalisé de la série, `match_title
 **Résultats et fusion**
 
 Identiques à `download_detection` : upsert dans `available_downloads` via `merge_releases()`, `detected_at` préservé pour les releases déjà connues.
+
+**Snapshot du flux RSS**
+
+Les releases brutes retournées par Prowlarr (max 200) sont stockées dans `stats_json.rss_releases` pour consultation dans le backoffice. Ce snapshot est **purgé automatiquement** : seuls les 5 derniers jobs `success` le conservent — les jobs plus anciens gardent uniquement les stats agrégées.
+
+**Notification Telegram**
+
+Une notification est envoyée uniquement si `new_releases > 0` (nouvelles releases détectées ce run), pour éviter le spam sur les polls sans résultat.
 
 ### Résultats par série
 
@@ -130,25 +141,34 @@ Identiques à `download_detection` : upsert dans `available_downloads` via `merg
 
 | Champ | Signification |
 |-------|--------------|
-| `total_series` | Séries avec volumes manquants vérifiées |
+| `total_series` | Séries avec volumes manquants vérifiées (toutes bibliothèques) |
 | `found` | Séries pour lesquelles des releases ont été trouvées |
 | `new_releases` | Nouvelles releases détectées lors de ce run |
 | `rss_releases_fetched` | Nombre total de releases récupérées depuis Prowlarr |
 
 ### Ordonnancement automatique
 
-Le job est déclenché automatiquement toutes les **30 minutes** par l'indexer pour chaque bibliothèque, à condition que :
-- Prowlarr soit configuré
-- Aucun job `prowlarr_rss` ne soit déjà actif pour cette bibliothèque
-- Le dernier job `prowlarr_rss` terminé date de plus de 30 minutes
+L'intervalle est configurable dans **Settings → Download tools → Prowlarr → Polling RSS automatique** :
 
-Aucun paramètre bibliothèque n'est requis (intervalle fixe, non configurable).
+| Option | Valeur |
+|--------|--------|
+| Désactivé | Aucun job automatique |
+| Toutes les 30 minutes | (défaut) |
+| Toutes les heures | |
+| Toutes les 6 / 12 heures | |
+| Une fois par jour / semaine | |
+
+Conditions pour déclencher un job :
+- Prowlarr configuré
+- Intervalle ≠ 0 (non désactivé)
+- Aucun job `prowlarr_rss` global déjà actif (`pending` ou `running`)
+- Le dernier job `prowlarr_rss` global terminé date de plus de l'intervalle configuré
 
 ### API
 
 ```
 POST /prowlarr-rss/start
-{ "library_id": "uuid" }   // optionnel — toutes les bibliothèques si absent
+{ "library_id": "uuid" }   // optionnel — job global si absent
 ```
 
 ---
