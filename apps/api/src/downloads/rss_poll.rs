@@ -351,19 +351,21 @@ pub(crate) async fn process_rss_poll(
             .ok()
             .flatten();
 
-    notifications::notify(
-        pool.clone(),
-        notifications::NotificationEvent::DownloadDetectionCompleted {
-            library_name,
-            total_series: total,
-            found: count_found,
-            new_releases,
-            not_found: count_not_found,
-            no_missing: 0,
-            no_metadata: 0,
-            errors: 0,
-        },
-    );
+    if new_releases > 0 {
+        notifications::notify(
+            pool.clone(),
+            notifications::NotificationEvent::DownloadDetectionCompleted {
+                library_name,
+                total_series: total,
+                found: count_found,
+                new_releases,
+                not_found: count_not_found,
+                no_missing: 0,
+                no_metadata: 0,
+                errors: 0,
+            },
+        );
+    }
 
     Ok(())
 }
