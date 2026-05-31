@@ -15,7 +15,7 @@ description: Parcourir et découvrir de nouvelles séries
 | SensCritique Top BD | SensCritique `top` | Rang | — |
 | SensCritique Top Manga | SensCritique `poll` | Rang | — |
 | AniList | AniList trending manga | Popularité | — |
-| Prowlarr | Prowlarr releases agrégées | Seeders + récents | — |
+| Prowlarr | Prowlarr releases individuelles | Seeders + récents | Catégorie |
 
 ## Cache
 
@@ -25,8 +25,9 @@ description: Parcourir et découvrir de nouvelles séries
 | Trending / best | 24 heures |
 | Prowlarr | 7 jours |
 
-- Les séries déjà possédées sont filtrées côté serveur
+- Les séries déjà possédées sont filtrées côté serveur (annotées "Déjà possédée" dans l'onglet Prowlarr)
 - Les suggestions masquées sont filtrées (hide/unhide par utilisateur)
+- L'onglet Prowlarr affiche chaque **release individuellement** (titre, catégorie, indexer, seeders) — le filtre catégorie déclenche une requête Prowlarr ciblée
 
 ## Recommandations personnalisées
 

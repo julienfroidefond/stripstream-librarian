@@ -11,6 +11,7 @@ Sur la page détail d'une série, un carousel **"Séries liées"** propose autom
 
 | Critère | Poids |
 |---------|-------|
+| Même liste de lecture | ×5 par liste commune |
 | Même auteur | ×3 par auteur commun |
 | Même genre | ×2 par genre commun |
 | Même éditeur | ×1 |
@@ -24,7 +25,7 @@ GET /series/{series_id}/related?limit=10
 ```
 
 - `limit` : entre 1 et 50 (défaut 10)
-- Réponse : liste de `RelatedSeriesItem` avec `score` et `match_reasons` (`same_author`, `same_genre`, `same_publisher`)
+- Réponse : liste de `RelatedSeriesItem` avec `score` et `match_reasons` (`same_reading_list`, `same_author`, `same_genre`, `same_publisher`)
 
 ## Recommandations personnalisées
 
