@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, Icon } from "@/app/components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 
 export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void>; initialData: Record<string, unknown> | null }) {
@@ -14,6 +14,16 @@ export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdat
   const [rssPollInterval, setRssPollInterval] = useState(
     initialData?.rss_poll_interval_minutes != null ? String(initialData.rss_poll_interval_minutes) : "30"
   );
+
+  const RSS_INTERVAL_OPTIONS = [
+    { value: "0",     label: t("settings.prowlarrRssIntervalDisabled") },
+    { value: "30",    label: t("settings.prowlarrRssInterval30m") },
+    { value: "60",    label: t("settings.prowlarrRssInterval1h") },
+    { value: "360",   label: t("settings.prowlarrRssInterval6h") },
+    { value: "720",   label: t("settings.prowlarrRssInterval12h") },
+    { value: "1440",  label: t("settings.prowlarrRssInterval1d") },
+    { value: "10080", label: t("settings.prowlarrRssInterval1w") },
+  ];
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -27,7 +37,7 @@ export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdat
       url: url ?? prowlarrUrl,
       api_key: apiKey ?? prowlarrApiKey,
       categories,
-      rss_poll_interval_minutes: isNaN(parsedInterval) || parsedInterval < 5 ? 30 : parsedInterval,
+      rss_poll_interval_minutes: isNaN(parsedInterval) ? 30 : parsedInterval,
     });
   }
 
@@ -98,17 +108,16 @@ export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdat
             </FormField>
           </div>
           <div className="flex gap-4">
-            <FormField className="w-48">
+            <FormField className="w-64">
               <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.prowlarrRssInterval")}</label>
-              <FormInput
-                type="number"
-                min="5"
-                step="5"
-                placeholder="30"
+              <FormSelect
                 value={rssPollInterval}
-                onChange={(e) => setRssPollInterval(e.target.value)}
-                onBlur={() => saveProwlarr()}
-              />
+                onChange={(e) => { setRssPollInterval(e.target.value); saveProwlarr(undefined, undefined, undefined, e.target.value); }}
+              >
+                {RSS_INTERVAL_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </FormSelect>
               <p className="text-xs text-muted-foreground mt-1">{t("settings.prowlarrRssIntervalHelp")}</p>
             </FormField>
           </div>

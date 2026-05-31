@@ -196,7 +196,7 @@ pub async fn check_and_schedule_prowlarr_rss(pool: &PgPool) -> Result<()> {
         return Ok(());
     }
 
-    // Read configured interval (minutes), default 30
+    // Read configured interval (minutes); 0 means disabled, default 30
     let interval_minutes: i32 = sqlx::query_scalar(
         "SELECT COALESCE((value->>'rss_poll_interval_minutes')::int, 30) FROM app_settings WHERE key = 'prowlarr'"
     )
@@ -205,6 +205,10 @@ pub async fn check_and_schedule_prowlarr_rss(pool: &PgPool) -> Result<()> {
     .ok()
     .flatten()
     .unwrap_or(30);
+
+    if interval_minutes == 0 {
+        return Ok(());
+    }
 
     // One global job covers all libraries with a single RSS fetch.
     // Skip if a global job is already pending/running or finished within the configured interval.
