@@ -43,7 +43,7 @@ interface JobDetails {
     removed_files?: number;
     errors?: number;
     warnings?: number;
-    rss_releases?: Array<{ title: string; indexer?: string | null; size: number; seeders?: number | null; publish_date?: string | null }>;
+    rss_releases?: Array<{ title: string; indexer?: string | null; size: number; seeders?: number | null; leechers?: number | null; publish_date?: string | null; categories?: string[] | null }>;
   } | null;
   error_opt: string | null;
 }
@@ -301,11 +301,6 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
           </div>
         )}
 
-        {/* RSS snapshot — flux brut Prowlarr, disponible pour les 5 derniers jobs seulement */}
-        {isRssPoll && job.stats_json?.rss_releases && job.stats_json.rss_releases.length > 0 && (
-          <RssSnapshotCard releases={job.stats_json.rss_releases} t={t} />
-        )}
-
         {/* Metadata batch results */}
         {isMetadataBatch && <MetadataBatchQuickMatch results={batchResults} libraryId={job.library_id} />}
 
@@ -314,6 +309,11 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
 
         {/* File errors */}
         <JobErrorsCard errors={errors} t={t} locale={locale} />
+
+        {/* RSS snapshot — flux brut Prowlarr, disponible pour les 5 derniers jobs seulement */}
+        {isRssPoll && job.stats_json?.rss_releases && job.stats_json.rss_releases.length > 0 && (
+          <RssSnapshotCard releases={job.stats_json.rss_releases} t={t} />
+        )}
       </div>
     </>
   );

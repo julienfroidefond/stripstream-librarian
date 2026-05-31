@@ -10,7 +10,16 @@ interface RssRelease {
   indexer?: string | null;
   size: number;
   seeders?: number | null;
+  leechers?: number | null;
   publish_date?: string | null;
+  categories?: string[] | null;
+}
+
+function formatPublishDate(raw: string | null | undefined): string {
+  if (!raw) return "—";
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  return d.toLocaleDateString(undefined, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 export function RssSnapshotCard({ releases, t }: {
@@ -24,21 +33,32 @@ export function RssSnapshotCard({ releases, t }: {
         <CardDescription>{t("jobDetail.rssSnapshotDesc", { count: String(releases.length) })}</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto max-h-96 overflow-y-auto rounded-lg border border-border">
+        <div className="overflow-x-auto max-h-[500px] overflow-y-auto rounded-lg border border-border">
           <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
+            <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm z-10">
               <tr>
-                <th className="text-left p-2 font-medium text-muted-foreground">Title</th>
+                <th className="text-left p-2 font-medium text-muted-foreground">Titre</th>
                 <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">Indexer</th>
-                <th className="text-right p-2 font-medium text-muted-foreground whitespace-nowrap">Size</th>
+                <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">Catégories</th>
+                <th className="text-right p-2 font-medium text-muted-foreground whitespace-nowrap">Taille</th>
                 <th className="text-right p-2 font-medium text-muted-foreground whitespace-nowrap">Seeders</th>
+                <th className="text-right p-2 font-medium text-muted-foreground whitespace-nowrap">Date</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/40">
               {releases.map((r, i) => (
                 <tr key={i} className="hover:bg-accent/30 transition-colors">
-                  <td className="p-2 font-mono text-foreground max-w-xs truncate" title={r.title}>{r.title}</td>
+                  <td className="p-2 font-mono text-foreground max-w-sm truncate" title={r.title}>{r.title}</td>
                   <td className="p-2 text-muted-foreground whitespace-nowrap">{r.indexer ?? "—"}</td>
+                  <td className="p-2 text-muted-foreground">
+                    {r.categories?.length ? (
+                      <div className="flex flex-wrap gap-1">
+                        {r.categories.map((c) => (
+                          <span key={c} className="px-1.5 py-0.5 rounded bg-muted text-[10px] whitespace-nowrap">{c}</span>
+                        ))}
+                      </div>
+                    ) : "—"}
+                  </td>
                   <td className="p-2 text-right text-muted-foreground whitespace-nowrap">
                     {r.size ? `${(r.size / 1024 / 1024).toFixed(0)} MB` : "—"}
                   </td>
@@ -46,6 +66,9 @@ export function RssSnapshotCard({ releases, t }: {
                     {r.seeders != null ? (
                       <span className="text-success font-medium">{r.seeders}</span>
                     ) : "—"}
+                  </td>
+                  <td className="p-2 text-right text-muted-foreground whitespace-nowrap">
+                    {formatPublishDate(r.publish_date)}
                   </td>
                 </tr>
               ))}

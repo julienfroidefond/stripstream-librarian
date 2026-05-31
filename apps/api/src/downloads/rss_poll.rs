@@ -367,7 +367,11 @@ pub(crate) async fn process_rss_poll(
         "indexer": r.indexer,
         "size": r.size,
         "seeders": r.seeders,
+        "leechers": r.leechers,
         "publish_date": r.publish_date,
+        "categories": r.categories.as_ref().map(|cats| cats.iter()
+            .filter_map(|c| c.name.as_deref())
+            .collect::<Vec<_>>()),
     })).collect();
 
     let stats = serde_json::json!({
