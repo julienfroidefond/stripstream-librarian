@@ -97,6 +97,10 @@ pub async fn search_books(
         )
         AND ($2::uuid IS NULL OR b.library_id = $2)
         AND ($3::text IS NULL OR b.kind = $3)
+        AND ($5::uuid IS NULL OR NOT EXISTS (
+            SELECT 1 FROM user_genre_restrictions ugr
+            WHERE ugr.user_id = $5 AND ugr.genre = ANY(s.genres)
+        ))
         ORDER BY
             CASE WHEN b.title ILIKE $1 THEN 0 ELSE 1 END,
             b.title ASC
@@ -154,6 +158,7 @@ pub async fn search_books(
             .bind(library_id_uuid)
             .bind(kind_filter)
             .bind(limit_val)
+            .bind(user_id)
             .fetch_all(&state.pool),
         sqlx::query(series_sql)
             .bind(&q_pattern)

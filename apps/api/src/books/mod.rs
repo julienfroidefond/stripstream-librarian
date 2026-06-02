@@ -201,7 +201,11 @@ pub async fn list_books(
              {rs_cond}
              {author_cond}
              {metadata_cond}
-             {q_cond}"#
+             {q_cond}
+             AND (${uid_p}::uuid IS NULL OR NOT EXISTS (
+                 SELECT 1 FROM user_genre_restrictions ugr
+                 WHERE ugr.user_id = ${uid_p} AND ugr.genre = ANY(s.genres)
+             ))"#
     );
 
     let order_clause = if query.sort.as_deref() == Some("latest") {
@@ -232,6 +236,10 @@ pub async fn list_books(
           {author_cond}
           {metadata_cond}
           {q_cond}
+          AND (${uid_p}::uuid IS NULL OR NOT EXISTS (
+              SELECT 1 FROM user_genre_restrictions ugr
+              WHERE ugr.user_id = ${uid_p} AND ugr.genre = ANY(s.genres)
+          ))
         ORDER BY {order_clause}
         LIMIT ${limit_p} OFFSET ${offset_p}
         "#
