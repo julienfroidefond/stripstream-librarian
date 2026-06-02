@@ -102,21 +102,14 @@ pub async fn get_recommendations(
             LEFT JOIN LATERAL unnest(ss.authors)    AS a ON TRUE
             LEFT JOIN LATERAL unnest(ss.publishers) AS p ON TRUE
         ),
-        -- Step 3: series the user has already touched (any reading progress)
-        started AS (
-            SELECT DISTINCT b.series_id
-            FROM book_reading_progress brp
-            JOIN books b ON b.id = brp.book_id
-            WHERE brp.user_id = $1
-        ),
-        -- Step 4: score every other series
+        -- Step 3: score every other series (excluding source series themselves to avoid self-match)
         genre_scores AS (
             SELECT s.id AS series_id, COUNT(*)::bigint AS cnt
             FROM series s
             CROSS JOIN source_attrs sa
             JOIN LATERAL unnest(s.genres) sg ON TRUE
             JOIN LATERAL unnest(sa.all_genres) rg ON sg = rg
-            WHERE s.id NOT IN (SELECT series_id FROM started)
+            WHERE s.id NOT IN (SELECT series_id FROM source_series)
             GROUP BY s.id
         ),
         author_scores AS (
@@ -125,14 +118,14 @@ pub async fn get_recommendations(
             CROSS JOIN source_attrs sa
             JOIN LATERAL unnest(s.authors) sa2 ON TRUE
             JOIN LATERAL unnest(sa.all_authors) ra ON sa2 = ra
-            WHERE s.id NOT IN (SELECT series_id FROM started)
+            WHERE s.id NOT IN (SELECT series_id FROM source_series)
             GROUP BY s.id
         ),
         publisher_scores AS (
             SELECT s.id AS series_id, 1::bigint AS cnt
             FROM series s
             CROSS JOIN source_attrs sa
-            WHERE s.id NOT IN (SELECT series_id FROM started)
+            WHERE s.id NOT IN (SELECT series_id FROM source_series)
               AND s.publishers && sa.all_publishers
         ),
         reading_list_scores AS (
@@ -140,11 +133,11 @@ pub async fn get_recommendations(
             FROM source_series src
             JOIN reading_list_items rli1 ON rli1.series_id = src.series_id
             JOIN reading_list_items rli2 ON rli2.list_id = rli1.list_id
-            WHERE rli2.series_id NOT IN (SELECT series_id FROM started)
+            WHERE rli2.series_id NOT IN (SELECT series_id FROM source_series)
               AND rli2.series_id != src.series_id
             GROUP BY rli2.series_id
         ),
-        -- Step 5: for each candidate, which source series match?
+        -- Step 4: for each candidate, which source series match?
         because_of AS (
             SELECT
                 cand.id AS series_id,
@@ -160,8 +153,18 @@ pub async fn get_recommendations(
                     WHERE rli1.series_id = ss.series_id AND rli2.series_id = cand.id
                 )
             )
-            WHERE cand.id NOT IN (SELECT series_id FROM started)
+            WHERE cand.id NOT IN (SELECT series_id FROM source_series)
             GROUP BY cand.id
+        ),
+        -- Step 5: completion ratio per candidate (to penalise already-read series)
+        read_completion AS (
+            SELECT
+                b.series_id,
+                COUNT(*) FILTER (WHERE b.volume_type = 'regular') AS total_regular,
+                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read' AND b.volume_type = 'regular') AS read_regular
+            FROM books b
+            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND brp.user_id = $1
+            GROUP BY b.series_id
         ),
         first_books AS (
             SELECT DISTINCT ON (series_id)
@@ -198,7 +201,11 @@ pub async fn get_recommendations(
                 COALESCE(as_.cnt, 0) * 3 +
                 COALESCE(ps.cnt, 0) * 1 +
                 COALESCE(rls.cnt, 0) * 5
-            )              AS score,
+            ) / CASE
+                WHEN COALESCE(rc.total_regular, 0) > 0 AND rc.read_regular >= rc.total_regular THEN 10
+                WHEN COALESCE(rc.read_regular, 0) > 0 THEN 2
+                ELSE 1
+            END            AS score,
             bo.source_names,
             (as_.cnt IS NOT NULL)   AS has_same_author,
             (gs.cnt IS NOT NULL)    AS has_same_genre,
@@ -210,6 +217,7 @@ pub async fn get_recommendations(
         LEFT JOIN publisher_scores  ps  ON ps.series_id  = s.id
         LEFT JOIN reading_list_scores rls ON rls.series_id = s.id
         LEFT JOIN because_of        bo  ON bo.series_id  = s.id
+        LEFT JOIN read_completion   rc  ON rc.series_id  = s.id
         LEFT JOIN first_books       fb  ON fb.series_id  = s.id
         LEFT JOIN meta_links        ml  ON ml.series_id  = s.id
         LEFT JOIN book_counts       bc  ON bc.series_id  = s.id

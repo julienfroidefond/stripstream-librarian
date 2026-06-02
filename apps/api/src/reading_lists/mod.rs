@@ -426,12 +426,27 @@ async fn fetch_list_items(
             ORDER BY approved_at DESC NULLS LAST
             LIMIT 1
         ) eml ON true
+        LEFT JOIN LATERAL (
+            SELECT
+                COUNT(*) FILTER (WHERE b2.volume_type = 'regular') AS total_regular,
+                COUNT(brp2.book_id) FILTER (WHERE brp2.status = 'read' AND b2.volume_type = 'regular') AS read_regular
+            FROM books b2
+            LEFT JOIN book_reading_progress brp2 ON brp2.book_id = b2.id
+                AND $2::uuid IS NOT NULL AND brp2.user_id = $2
+            WHERE b2.series_id = s.id
+        ) progress ON true
         WHERE rli.list_id = $1
           AND ($2::uuid IS NULL OR NOT EXISTS (
               SELECT 1 FROM user_genre_restrictions ugr
               WHERE ugr.user_id = $2 AND ugr.genre = ANY(s.genres)
           ))
-        ORDER BY rli.position, rli.created_at
+        ORDER BY
+            CASE WHEN $2::uuid IS NOT NULL
+                  AND progress.total_regular > 0
+                  AND progress.read_regular >= progress.total_regular
+                 THEN 1 ELSE 0 END ASC,
+            rli.position,
+            rli.created_at
         "#,
     )
     .bind(list_id)
