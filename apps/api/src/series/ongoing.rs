@@ -70,6 +70,10 @@ pub async fn ongoing_series(
         FROM series_stats ss
         JOIN first_books fb ON fb.series_id = ss.series_id AND fb.rn = 1
         JOIN series s ON s.id = ss.series_id
+        WHERE ($2::uuid IS NULL OR NOT EXISTS (
+            SELECT 1 FROM user_genre_restrictions ugr
+            WHERE ugr.user_id = $2 AND ugr.genre = ANY(s.genres)
+        ))
         ORDER BY ss.last_read_at DESC NULLS LAST
         LIMIT $1
         "#,
@@ -135,6 +139,10 @@ pub async fn ongoing_books(
             FROM series s
             JOIN books b ON b.series_id = s.id
             LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
+            WHERE ($2::uuid IS NULL OR NOT EXISTS (
+                SELECT 1 FROM user_genre_restrictions ugr
+                WHERE ugr.user_id = $2 AND ugr.genre = ANY(s.genres)
+            ))
             GROUP BY s.id
             HAVING (
                 COUNT(brp.book_id) FILTER (WHERE brp.status IN ('read', 'reading')) > 0
@@ -333,6 +341,10 @@ pub async fn get_series_by_id(
             ORDER BY eml.series_id, eml.created_at DESC
         ) ml ON ml.series_id = sc.series_id
         LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
+        WHERE ($2::uuid IS NULL OR NOT EXISTS (
+            SELECT 1 FROM user_genre_restrictions ugr
+            WHERE ugr.user_id = $2 AND ugr.genre = ANY(s.genres)
+        ))
         "#
     )
     .bind(series_id)

@@ -585,6 +585,7 @@ const en: Record<TranslationKey, string> = {
   "users.createdAt": "Created",
   "users.actions": "Actions",
   "users.noUsers": "No users",
+  "users.blockedGenres": "Blocked genres",
 
   // Settings page
   "settings.title": "Settings",

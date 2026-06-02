@@ -434,6 +434,21 @@ export async function updateUser(id: string, username: string): Promise<void> {
   });
 }
 
+export type UserGenreRestrictionsDto = {
+  blocked_genres: string[];
+};
+
+export async function fetchUserGenreRestrictions(userId: string): Promise<UserGenreRestrictionsDto> {
+  return apiFetch<UserGenreRestrictionsDto>(`/admin/users/${userId}/genre-restrictions`);
+}
+
+export async function setUserGenreRestrictions(userId: string, blockedGenres: string[]): Promise<UserGenreRestrictionsDto> {
+  return apiFetch<UserGenreRestrictionsDto>(`/admin/users/${userId}/genre-restrictions`, {
+    method: "PUT",
+    body: JSON.stringify({ blocked_genres: blockedGenres }),
+  });
+}
+
 export async function revokeToken(id: string) {
   return apiFetch<void>(`/admin/tokens/${id}`, { method: "DELETE" });
 }
@@ -886,7 +901,7 @@ export async function fetchSeriesMetadata(seriesId: string) {
 }
 
 export async function fetchAllGenres(): Promise<string[]> {
-  return fetch("/api/series/genres").then((r) => r.json()).catch(() => []);
+  return apiFetch<string[]>("/series/genres").catch(() => []);
 }
 
 export type UpdateSeriesRequest = {

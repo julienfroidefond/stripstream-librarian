@@ -1,4 +1,4 @@
-use axum::extract::{Path, Query, State};
+use axum::extract::{Extension, Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -6,7 +6,7 @@ use sqlx::Row;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{error::ApiError, state::AppState};
+use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -395,6 +395,7 @@ async fn fetch_list_dto(pool: &sqlx::PgPool, id: Uuid) -> Result<ReadingListDto,
 async fn fetch_list_items(
     pool: &sqlx::PgPool,
     list_id: Uuid,
+    user_id: Option<Uuid>,
 ) -> Result<Vec<ReadingListSeriesDto>, sqlx::Error> {
     let rows = sqlx::query(
         r#"
@@ -426,10 +427,15 @@ async fn fetch_list_items(
             LIMIT 1
         ) eml ON true
         WHERE rli.list_id = $1
+          AND ($2::uuid IS NULL OR NOT EXISTS (
+              SELECT 1 FROM user_genre_restrictions ugr
+              WHERE ugr.user_id = $2 AND ugr.genre = ANY(s.genres)
+          ))
         ORDER BY rli.position, rli.created_at
         "#,
     )
     .bind(list_id)
+    .bind(user_id)
     .fetch_all(pool)
     .await?;
 
@@ -575,10 +581,12 @@ pub async fn list_reading_lists(
 )]
 pub async fn get_reading_list(
     State(state): State<AppState>,
+    user: Option<Extension<AuthUser>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ReadingListDetailDto>, ApiError> {
+    let user_id: Option<Uuid> = user.map(|u| u.0.user_id);
     let dto = fetch_list_dto(&state.pool, id).await?;
-    let items = fetch_list_items(&state.pool, id).await?;
+    let items = fetch_list_items(&state.pool, id, user_id).await?;
 
     Ok(Json(ReadingListDetailDto {
         id: dto.id,

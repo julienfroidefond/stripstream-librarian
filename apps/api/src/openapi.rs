@@ -209,6 +209,10 @@ pub struct ClientApiDoc;
         crate::users::accounts::create_user,
         crate::users::accounts::update_user,
         crate::users::accounts::delete_user,
+        crate::users::genre_restrictions::get_genre_restrictions,
+        crate::users::genre_restrictions::add_genre_restriction,
+        crate::users::genre_restrictions::remove_genre_restriction,
+        crate::users::genre_restrictions::set_genre_restrictions,
         // Integrations
         crate::integrations::komga::sync_komga_read_books,
         crate::integrations::komga::list_sync_reports,
@@ -374,6 +378,9 @@ pub struct ClientApiDoc;
             // Users
             crate::users::accounts::UserResponse,
             crate::users::accounts::CreateUserRequest,
+            crate::users::genre_restrictions::UserGenreRestrictionsResponse,
+            crate::users::genre_restrictions::AddGenreRestrictionRequest,
+            crate::users::genre_restrictions::SetGenreRestrictionsRequest,
             // Integrations
             crate::integrations::komga::KomgaSyncRequest,
             crate::integrations::komga::KomgaSyncResponse,

@@ -33,6 +33,18 @@ Cliquez directement sur le nom dans le tableau pour le modifier inline.
 
 Le bouton supprimer retire l'utilisateur et ses données de lecture. Cette action est irréversible.
 
+### Restrictions par genre
+
+Il est possible de masquer certains genres pour un utilisateur spécifique. Les séries dont au moins un genre est bloqué n'apparaissent plus dans aucun listing (bibliothèque, recherche, recommandations, séries en cours, listes de lecture).
+
+Cliquez sur **Gérer les restrictions** dans la colonne Actions d'un utilisateur pour ouvrir la modale de configuration :
+
+![Modale de restriction de genres — liste des genres avec cases à cocher, les genres bloqués sont barrés en rouge](/screenshots/genre-restrictions-modal.png)
+
+Cochez les genres à bloquer, puis **Enregistrer**. La colonne **Genres bloqués** du tableau affiche un résumé des restrictions actives pour chaque utilisateur.
+
+Par défaut, aucune restriction n'est active — les utilisateurs voient l'ensemble du catalogue.
+
 ---
 
 ## Tokens API

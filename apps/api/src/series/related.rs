@@ -1,4 +1,4 @@
-use axum::extract::{Path, Query, State};
+use axum::extract::{Extension, Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -6,7 +6,7 @@ use sqlx::Row;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{error::ApiError, state::AppState};
+use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
 #[derive(Deserialize, ToSchema)]
 pub struct RelatedSeriesQuery {
@@ -53,9 +53,11 @@ pub struct RelatedSeriesItem {
 )]
 pub async fn get_related_series(
     State(state): State<AppState>,
+    user: Option<Extension<AuthUser>>,
     Path(series_id): Path<Uuid>,
     Query(query): Query<RelatedSeriesQuery>,
 ) -> Result<Json<Vec<RelatedSeriesItem>>, ApiError> {
+    let user_id: Option<Uuid> = user.map(|u| u.0.user_id);
     let limit = query.limit.unwrap_or(10).clamp(1, 50);
 
     // Check series exists
@@ -148,11 +150,16 @@ pub async fn get_related_series(
             OR s.publishers && ref.publishers
             OR rlsc.cnt IS NOT NULL
           )
+          AND ($3::uuid IS NULL OR NOT EXISTS (
+              SELECT 1 FROM user_genre_restrictions ugr
+              WHERE ugr.user_id = $3 AND ugr.genre = ANY(s.genres)
+          ))
         ORDER BY score DESC, COALESCE(bc.book_count, 0) DESC
         LIMIT $2
     "#)
     .bind(series_id)
     .bind(limit)
+    .bind(user_id)
     .fetch_all(&state.pool)
     .await?;
 

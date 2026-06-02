@@ -85,6 +85,10 @@ pub async fn list_series(
     let limit_p = p + 2;
     let offset_p = p + 3;
 
+    let genre_restriction_cond = format!(
+        "AND (${user_id_p}::uuid IS NULL OR NOT EXISTS (SELECT 1 FROM user_genre_restrictions ugr WHERE ugr.user_id = ${user_id_p} AND ugr.genre = ANY(s.genres)))"
+    );
+
     let missing_cte = helpers::build_missing_counts_cte(Some("$1"));
     let metadata_links_cte = helpers::METADATA_LINKS_CTE;
 
@@ -106,7 +110,7 @@ pub async fn list_series(
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
         LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = $1
-        WHERE TRUE {q_cond} {count_rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {has_books_cond}
+        WHERE TRUE {q_cond} {count_rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {has_books_cond} {genre_restriction_cond}
         "#
     );
 
@@ -169,6 +173,7 @@ pub async fn list_series(
           {missing_cond}
           {metadata_provider_cond}
           {has_books_cond}
+          {genre_restriction_cond}
         ORDER BY
             REGEXP_REPLACE(LOWER(sc.name), '[0-9].*$', ''),
             COALESCE(
@@ -357,6 +362,10 @@ pub async fn list_all_series(
     let limit_p = p + 2;
     let offset_p = p + 3;
 
+    let genre_restriction_cond = format!(
+        "AND (${user_id_p}::uuid IS NULL OR NOT EXISTS (SELECT 1 FROM user_genre_restrictions ugr WHERE ugr.user_id = ${user_id_p} AND ugr.genre = ANY(s.genres)))"
+    );
+
     let count_sql = format!(
         r#"
         WITH series_counts AS (
@@ -375,7 +384,7 @@ pub async fn list_all_series(
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
         LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = sc.library_id
-        WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {author_cond} {has_books_cond} {no_books_cond} {genre_cond} {oneshot_cond}
+        WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {author_cond} {has_books_cond} {no_books_cond} {genre_cond} {oneshot_cond} {genre_restriction_cond}
         "#
     );
 
@@ -456,6 +465,7 @@ pub async fn list_all_series(
           {no_books_cond}
           {genre_cond}
           {oneshot_cond}
+          {genre_restriction_cond}
         ORDER BY {series_order_clause}
         LIMIT ${limit_p} OFFSET ${offset_p}
         "#

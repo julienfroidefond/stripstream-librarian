@@ -1,11 +1,11 @@
-use axum::{extract::{Query, State}, Json};
+use axum::{extract::{Extension, Query, State}, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{error::ApiError, state::AppState};
+use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
 #[derive(Deserialize, ToSchema)]
 pub struct SearchQuery {
@@ -64,8 +64,10 @@ pub struct SearchResponse {
 )]
 pub async fn search_books(
     State(state): State<AppState>,
+    user: Option<Extension<AuthUser>>,
     Query(query): Query<SearchQuery>,
 ) -> Result<Json<SearchResponse>, ApiError> {
+    let user_id: Option<Uuid> = user.map(|u| u.0.user_id);
     if query.q.trim().is_empty() {
         return Err(ApiError::bad_request("q is required"));
     }
@@ -137,6 +139,11 @@ pub async fn search_books(
         FROM series_counts sc
         JOIN sorted_books sb ON sb.library_id = sc.library_id AND sb.name = sc.name AND sb.rn = 1
         WHERE sc.name ILIKE $1
+          AND ($5::uuid IS NULL OR NOT EXISTS (
+              SELECT 1 FROM user_genre_restrictions ugr
+              JOIN series sg ON sg.id = sc.series_id
+              WHERE ugr.user_id = $5 AND ugr.genre = ANY(sg.genres)
+          ))
         ORDER BY sc.name ASC
         LIMIT $4
     "#;
@@ -153,6 +160,7 @@ pub async fn search_books(
             .bind(library_id_uuid)
             .bind(kind_filter) // unused in series query but keeps bind positions consistent
             .bind(limit_val)
+            .bind(user_id)
             .fetch_all(&state.pool)
     );
 

@@ -583,6 +583,7 @@ const fr = {
   "users.createdAt": "Créé le",
   "users.actions": "Actions",
   "users.noUsers": "Aucun utilisateur",
+  "users.blockedGenres": "Genres bloqués",
 
   // Settings page
   "settings.title": "Paramètres",

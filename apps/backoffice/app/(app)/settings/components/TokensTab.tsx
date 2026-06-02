@@ -1,15 +1,25 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { listTokens, createToken, revokeToken, deleteToken, updateToken, fetchUsers, createUser, deleteUser, updateUser, TokenDto, UserDto } from "@/lib/api";
+import { listTokens, createToken, revokeToken, deleteToken, updateToken, fetchUsers, createUser, deleteUser, updateUser, TokenDto, UserDto, fetchAllGenres, fetchUserGenreRestrictions, setUserGenreRestrictions } from "@/lib/api";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, Badge, FormField, FormInput, FormSelect, FormRow } from "@/app/components/ui";
 import { TokenUserSelect } from "@/app/components/TokenUserSelect";
 import { UsernameEdit } from "@/app/components/UsernameEdit";
+import { UserGenreRestrictions } from "@/app/components/UserGenreRestrictions";
 import { getServerTranslations } from "@/lib/i18n/server";
 
 export async function TokensTab({ createdToken }: { createdToken?: string }) {
   const { t } = await getServerTranslations();
   const tokens = await listTokens().catch(() => [] as TokenDto[]);
   const users = await fetchUsers().catch(() => [] as UserDto[]);
+  const allGenres = await fetchAllGenres().catch(() => [] as string[]);
+  const userRestrictions = await Promise.all(
+    users.map((u) =>
+      fetchUserGenreRestrictions(u.id)
+        .then((r) => ({ userId: u.id, blocked: r.blocked_genres }))
+        .catch(() => ({ userId: u.id, blocked: [] as string[] }))
+    )
+  );
+  const restrictionsMap = Object.fromEntries(userRestrictions.map((r) => [r.userId, r.blocked]));
 
   async function createTokenAction(formData: FormData) {
     "use server";
@@ -63,6 +73,15 @@ export async function TokensTab({ createdToken }: { createdToken?: string }) {
     }
   }
 
+  async function setGenreRestrictionsAction(formData: FormData) {
+    "use server";
+    const id = formData.get("id") as string;
+    const raw = formData.get("blocked_genres") as string;
+    const blockedGenres: string[] = raw ? JSON.parse(raw) : [];
+    await setUserGenreRestrictions(id, blockedGenres);
+    revalidatePath("/settings");
+  }
+
   async function reassignTokenAction(formData: FormData) {
     "use server";
     const id = formData.get("id") as string;
@@ -105,6 +124,7 @@ export async function TokensTab({ createdToken }: { createdToken?: string }) {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("status.read")}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("status.reading")}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("users.createdAt")}</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("users.blockedGenres")}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("users.actions")}</th>
               </tr>
             </thead>
@@ -121,6 +141,7 @@ export async function TokensTab({ createdToken }: { createdToken?: string }) {
                 <td className="px-4 py-3 text-sm text-muted-foreground/50">—</td>
                 <td className="px-4 py-3 text-sm text-muted-foreground/50">—</td>
                 <td className="px-4 py-3 text-sm text-muted-foreground/50">—</td>
+                <td className="px-4 py-3 text-sm text-muted-foreground/50">—</td>
               </tr>
               {(() => {
                 const unassigned = tokens.filter(tok => tok.scope === "read" && !tok.user_id && !tok.revoked_at);
@@ -129,6 +150,7 @@ export async function TokensTab({ createdToken }: { createdToken?: string }) {
                   <tr className="hover:bg-accent/50 transition-colors bg-warning/5">
                     <td className="px-4 py-3 text-sm font-medium text-muted-foreground italic">{t("tokens.noUser")}</td>
                     <td className="px-4 py-3 text-sm text-warning font-medium">{unassigned.length}</td>
+                    <td className="px-4 py-3 text-sm text-muted-foreground/50">—</td>
                     <td className="px-4 py-3 text-sm text-muted-foreground/50">—</td>
                     <td className="px-4 py-3 text-sm text-muted-foreground/50">—</td>
                     <td className="px-4 py-3 text-sm text-muted-foreground/50">—</td>
@@ -156,15 +178,36 @@ export async function TokensTab({ createdToken }: { createdToken?: string }) {
                     {new Date(user.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-4 py-3">
-                    <form action={deleteUserAction}>
-                      <input type="hidden" name="id" value={user.id} />
-                      <Button type="submit" variant="destructive" size="xs">
-                        <svg className="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                        {t("common.delete")}
-                      </Button>
-                    </form>
+                    {(restrictionsMap[user.id] ?? []).length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {(restrictionsMap[user.id] ?? []).map((g) => (
+                          <span key={g} className="inline-block px-1.5 py-0.5 rounded text-xs font-medium bg-destructive/10 text-destructive border border-destructive/20">
+                            {g}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground/40 text-xs">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <UserGenreRestrictions
+                        userId={user.id}
+                        initialBlockedGenres={restrictionsMap[user.id] ?? []}
+                        allGenres={allGenres}
+                        action={setGenreRestrictionsAction}
+                      />
+                      <form action={deleteUserAction}>
+                        <input type="hidden" name="id" value={user.id} />
+                        <Button type="submit" variant="destructive" size="xs">
+                          <svg className="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          {t("common.delete")}
+                        </Button>
+                      </form>
+                    </div>
                   </td>
                 </tr>
               ))}

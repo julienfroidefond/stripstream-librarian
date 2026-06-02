@@ -121,6 +121,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/folders", get(index_jobs::list_folders))
         .route("/admin/users", get(users::accounts::list_users).post(users::accounts::create_user))
         .route("/admin/users/:id", delete(users::accounts::delete_user).patch(users::accounts::update_user))
+        .route("/admin/users/:id/genre-restrictions", get(users::genre_restrictions::get_genre_restrictions).post(users::genre_restrictions::add_genre_restriction).put(users::genre_restrictions::set_genre_restrictions))
+        .route("/admin/users/:id/genre-restrictions/:genre", delete(users::genre_restrictions::remove_genre_restriction))
         .route("/admin/tokens", get(tokens::list_tokens).post(tokens::create_token))
         .route("/admin/tokens/:id", delete(tokens::revoke_token).patch(tokens::update_token))
         .route("/admin/tokens/:id/delete", axum::routing::post(tokens::delete_token))

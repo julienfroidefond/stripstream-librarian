@@ -1,6 +1,23 @@
 use super::*;
 use sqlx::Row;
 
+async fn create_test_user(pool: &sqlx::PgPool, username: &str) -> Uuid {
+    sqlx::query_scalar("INSERT INTO users (id, username) VALUES (gen_random_uuid(), $1) RETURNING id")
+        .bind(username)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn block_genre_for_user(pool: &sqlx::PgPool, user_id: Uuid, genre: &str) {
+    sqlx::query("INSERT INTO user_genre_restrictions (user_id, genre) VALUES ($1, $2) ON CONFLICT DO NOTHING")
+        .bind(user_id)
+        .bind(genre)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
 async fn create_test_library(pool: &sqlx::PgPool, name: &str) -> Uuid {
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
@@ -19,6 +36,19 @@ async fn create_test_series(pool: &sqlx::PgPool, library_id: Uuid, name: &str) -
     )
     .bind(library_id)
     .bind(name)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+async fn create_test_series_with_genres(pool: &sqlx::PgPool, library_id: Uuid, name: &str, genres: &[&str]) -> Uuid {
+    let genres_vec: Vec<String> = genres.iter().map(|g| g.to_string()).collect();
+    sqlx::query_scalar(
+        "INSERT INTO series (id, library_id, name, genres, created_at, updated_at) VALUES (gen_random_uuid(), $1, $2, $3, NOW(), NOW()) RETURNING id",
+    )
+    .bind(library_id)
+    .bind(name)
+    .bind(&genres_vec)
     .fetch_one(pool)
     .await
     .unwrap()
@@ -86,6 +116,11 @@ const SERIES_SQL: &str = r#"
     FROM series_counts sc
     JOIN sorted_books sb ON sb.library_id = sc.library_id AND sb.name = sc.name AND sb.rn = 1
     WHERE sc.name ILIKE $1
+      AND ($5::uuid IS NULL OR NOT EXISTS (
+          SELECT 1 FROM user_genre_restrictions ugr
+          JOIN series sg ON sg.id = sc.series_id
+          WHERE ugr.user_id = $5 AND ugr.genre = ANY(sg.genres)
+      ))
     ORDER BY sc.name ASC
     LIMIT $4
 "#;
@@ -254,6 +289,7 @@ async fn search_series_returns_series_id(pool: sqlx::PgPool) {
         .bind(None::<Uuid>)
         .bind(None::<&str>)
         .bind(20i64)
+        .bind(None::<Uuid>)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -275,9 +311,51 @@ async fn search_series_excludes_unclassified(pool: sqlx::PgPool) {
         .bind(None::<Uuid>)
         .bind(None::<&str>)
         .bind(20i64)
+        .bind(None::<Uuid>)
         .fetch_all(&pool)
         .await
         .unwrap();
 
     assert_eq!(rows.len(), 0);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_series_genre_restriction_hides_blocked(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "comics").await;
+
+    let shonen_id = create_test_series_with_genres(&pool, lib_id, "Dragon Ball", &["shonen"]).await;
+    let mystery_id = create_test_series_with_genres(&pool, lib_id, "Dragon Mystery", &["mystere"]).await;
+
+    create_test_book(&pool, lib_id, Some(shonen_id), "Dragon Ball Vol 1", "comic", None, &[]).await;
+    create_test_book(&pool, lib_id, Some(mystery_id), "Dragon Mystery Vol 1", "comic", None, &[]).await;
+
+    let user_id = create_test_user(&pool, "alice").await;
+    block_genre_for_user(&pool, user_id, "mystere").await;
+
+    // With restriction: only shonen series visible
+    let rows = sqlx::query(SERIES_SQL)
+        .bind("%Dragon%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .bind(Some(user_id))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<Uuid, _>("series_id"), shonen_id);
+
+    // Without restriction (no user): both series visible
+    let rows = sqlx::query(SERIES_SQL)
+        .bind("%Dragon%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .bind(None::<Uuid>)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 2);
 }

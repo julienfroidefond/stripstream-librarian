@@ -215,6 +215,10 @@ pub async fn get_recommendations(
         LEFT JOIN book_counts       bc  ON bc.series_id  = s.id
         WHERE (bo.series_id IS NOT NULL OR rls.cnt IS NOT NULL)  -- must match at least one source
           AND COALESCE(bc.book_count, 0) > 0
+          AND NOT EXISTS (
+              SELECT 1 FROM user_genre_restrictions ugr
+              WHERE ugr.user_id = $1 AND ugr.genre = ANY(s.genres)
+          )
         ORDER BY score DESC, COALESCE(bc.book_count, 0) DESC
         LIMIT $3
         "#,
