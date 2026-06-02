@@ -35,7 +35,7 @@ Les recommandations sont basées sur l'historique de lecture de l'utilisateur co
 
 1. Les **N dernières séries** lues ou en cours de lecture sont prises comme source (défaut : 3, max : 5)
 2. Leurs genres, auteurs et éditeurs sont agrégés
-3. Les séries de la bibliothèque **non encore commencées** sont scorées selon les mêmes poids que les séries liées
+3. Les séries de la bibliothèque **non encore commencées** (aucun livre lu ou en cours) sont scorées selon les mêmes poids que les séries liées — les séries déjà lues ou en cours sont exclues des résultats
 4. Chaque recommandation indique `because_of` : les séries sources qui ont déclenché la suggestion
 
 ### API
@@ -50,6 +50,8 @@ GET /series/recommendations?sources=3&limit=20
 | `limit` | 20 | 50 | Nombre de recommandations retournées |
 
 Retourne `[]` si l'utilisateur n'a pas d'historique de lecture ou si le token ne porte pas d'utilisateur (admin).
+
+> Les restrictions de genre s'appliquent : les séries dont un genre est bloqué pour l'utilisateur n'apparaissent pas dans les recommandations.
 
 ### Champs de réponse
 

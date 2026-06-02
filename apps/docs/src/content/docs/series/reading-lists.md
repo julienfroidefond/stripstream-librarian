@@ -38,6 +38,14 @@ Sur la page d'une série, la section **Listes de lecture** indique les listes do
 
 Dans la page détail d'une liste, chaque série dispose de boutons **↑ / ↓** (visibles au survol) pour la déplacer dans la liste. L'ordre est persisté immédiatement côté serveur.
 
+Les séries dont **tous les volumes réguliers ont été lus** sont automatiquement repoussées en bas de liste, quel que soit leur position manuelle. L'ordre des séries non terminées est preservé.
+
+---
+
+## Restrictions de genre
+
+Les séries dont un genre est bloqué pour l'utilisateur connecté n'apparaissent pas dans le contenu d'une liste. Voir [Utilisateurs & Tokens](/reference/users-tokens/) pour configurer les restrictions par utilisateur.
+
 ---
 
 ## Modifier ou supprimer une liste
