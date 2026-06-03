@@ -478,16 +478,77 @@ pub(crate) async fn process_rss_poll(
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Fetch recent releases from all Prowlarr indexers in parallel, aggregated
+/// and deduplicated by GUID. Each indexer is queried independently so private
+/// trackers that don't support empty-query browse don't suppress others.
 async fn fetch_rss_releases(
     client: &reqwest::Client,
     url: &str,
     api_key: &str,
     categories: &[i32],
 ) -> Result<Vec<prowlarr::ProwlarrRawRelease>, String> {
+    // Step 1: get the list of configured indexers
+    let indexers_resp = client
+        .get(format!("{url}/api/v1/indexer"))
+        .header("X-Api-Key", api_key)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch indexer list: {e}"))?;
+
+    let indexers: Vec<serde_json::Value> = if indexers_resp.status().is_success() {
+        indexers_resp.json().await.unwrap_or_default()
+    } else {
+        vec![]
+    };
+
+    let indexer_ids: Vec<i64> = indexers.iter()
+        .filter_map(|i| i["id"].as_i64())
+        .collect();
+
+    // Step 2: fire one request per indexer in parallel
+    let tasks: Vec<_> = indexer_ids.iter().map(|&id| {
+        let client = client.clone();
+        let url = url.to_string();
+        let api_key = api_key.to_string();
+        let categories = categories.to_vec();
+        async move {
+            fetch_rss_for_indexer(&client, &url, &api_key, &categories, id).await
+        }
+    }).collect();
+
+    let results = futures::future::join_all(tasks).await;
+
+    // Step 3: aggregate + deduplicate by GUID
+    let mut seen = std::collections::HashSet::new();
+    let mut all = Vec::new();
+    for result in results {
+        match result {
+            Ok(releases) => {
+                for r in releases {
+                    if seen.insert(r.guid.clone()) {
+                        all.push(r);
+                    }
+                }
+            }
+            Err(e) => tracing::debug!("[RSS_POLL] indexer fetch failed (skipped): {e}"),
+        }
+    }
+
+    Ok(all)
+}
+
+async fn fetch_rss_for_indexer(
+    client: &reqwest::Client,
+    url: &str,
+    api_key: &str,
+    categories: &[i32],
+    indexer_id: i64,
+) -> Result<Vec<prowlarr::ProwlarrRawRelease>, String> {
     let mut params: Vec<(&str, String)> = vec![
         ("query", String::new()),
         ("type", "search".to_string()),
-        ("limit", "1000".to_string()),
+        ("limit", "100".to_string()),
+        ("indexerIds", indexer_id.to_string()),
     ];
     for cat in categories {
         params.push(("categories", cat.to_string()));
@@ -499,15 +560,15 @@ async fn fetch_rss_releases(
         .header("X-Api-Key", api_key)
         .send()
         .await
-        .map_err(|e| format!("Prowlarr RSS request failed: {e}"))?;
+        .map_err(|e| format!("Prowlarr RSS request failed for indexer {indexer_id}: {e}"))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!("Prowlarr returned {status}: {text}"));
+        return Err(format!("Prowlarr returned {status} for indexer {indexer_id}: {text}"));
     }
 
     resp.json::<Vec<prowlarr::ProwlarrRawRelease>>()
         .await
-        .map_err(|e| format!("Failed to parse Prowlarr response: {e}"))
+        .map_err(|e| format!("Failed to parse Prowlarr response for indexer {indexer_id}: {e}"))
 }
