@@ -6,13 +6,14 @@ import Image from "next/image";
 import type { CurrentlyReadingItem, RecentlyReadItem } from "@/lib/api";
 import { getBookCoverUrl } from "@/lib/api";
 
-function FilterPills({ usernames, selected, allLabel, onSelect }: {
+function FilterPills({ usernames, selected, allLabel, onSelect, minUsers = 2 }: {
   usernames: string[];
   selected: string | null;
   allLabel: string;
   onSelect: (u: string | null) => void;
+  minUsers?: number;
 }) {
-  if (usernames.length <= 1) return null;
+  if (usernames.length < minUsers) return null;
   return (
     <div className="flex flex-wrap gap-1.5 mb-3">
       <button
@@ -111,10 +112,11 @@ export function RecentlyReadList({
   const usernames = [...new Set(items.map((i) => i.username).filter((u): u is string => !!u))];
   const [selected, setSelected] = useState<string | null>(null);
   const filtered = selected ? items.filter((i) => i.username === selected) : items;
+  const multiUser = usernames.length > 0;
 
   return (
     <div>
-      <FilterPills usernames={usernames} selected={selected} allLabel={allLabel} onSelect={setSelected} />
+      <FilterPills usernames={usernames} selected={selected} allLabel={allLabel} onSelect={setSelected} minUsers={1} />
       {filtered.length === 0 ? (
         <p className="text-muted-foreground text-sm text-center py-4">{emptyLabel}</p>
       ) : (
@@ -131,7 +133,7 @@ export function RecentlyReadList({
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">{book.title}</p>
                 {book.series && <p className="text-xs text-muted-foreground truncate">{book.series}</p>}
-                {book.username && usernames.length > 1 && (
+                {book.username && multiUser && (
                   <p className="text-[10px] text-primary/70 font-medium">{book.username}</p>
                 )}
               </div>
