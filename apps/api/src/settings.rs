@@ -106,7 +106,7 @@ pub async fn get_setting(
             let value: Value = row.get("value");
             Ok(Json(value))
         }
-        None => Err(ApiError::not_found(format!("setting '{}' not found", key))),
+        None => Ok(Json(Value::Null)),
     }
 }
 
