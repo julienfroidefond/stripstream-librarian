@@ -15,6 +15,7 @@ import { KomgaSyncCard } from "./components/KomgaSyncCard";
 import { AnilistTab } from "./components/AnilistTab";
 import { RenameFormatCard } from "./components/RenameFormatCard";
 import { ReadingOverviewTab } from "./components/ReadingOverviewTab";
+import { ArchivesTab } from "./components/ArchivesTab";
 
 interface SettingsPageProps {
   initialSettings: Settings;
@@ -55,7 +56,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
   const [isSaving, setIsSaving] = useState(false);
   const [downloadsEnabled, setDownloadsEnabled] = useState(initialDownloadsEnabled);
 
-  const VALID_TABS = ["general", "media", "downloadTools", "metadata", "readingStatus", "readingOverview", "notifications", "tokens"] as const;
+  const VALID_TABS = ["general", "media", "downloadTools", "metadata", "readingStatus", "readingOverview", "notifications", "tokens", "archives"] as const;
   type TabId = typeof VALID_TABS[number];
 
   function resolveTab(tab: string | null | undefined): TabId {
@@ -130,6 +131,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
     { id: "readingOverview" as const, label: t("settings.readingOverview"), icon: "chart" as const, color: "text-emerald-500" },
     { id: "notifications" as const, label: t("settings.notifications"), icon: "bell" as const, color: "text-orange-500" },
     { id: "tokens" as const, label: t("nav.tokens"), icon: "tokens" as const, color: "text-rose-500" },
+    { id: "archives" as const, label: t("settings.archives"), icon: "books" as const, color: "text-amber-500" },
   ];
 
   return (
@@ -157,13 +159,6 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             {tab.label}
           </button>
         ))}
-        <a
-          href="/settings/archives"
-          className="flex items-center gap-2 px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground hover:border-border transition-colors -mb-px whitespace-nowrap"
-        >
-          <Icon name="books" size="sm" className="text-amber-500" />
-          {t("settings.archives")}
-        </a>
       </div>
 
       {activeTab === "general" && (<>
@@ -681,6 +676,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       </>)}
 
       {activeTab === "readingOverview" && <ReadingOverviewTab />}
+
+      {activeTab === "archives" && <ArchivesTab />}
 
       {activeTab === "tokens" && tokensContent}
 
