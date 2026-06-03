@@ -119,13 +119,13 @@ function UserCard({ user }: { user: UserReadingOverviewDto }) {
           )}
 
           {/* Recently read */}
-          {user.recently_read.length > 0 && (
+          {(user.recently_read ?? []).length > 0 && (
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">
                 {t("settings.readingOverview.recentlyRead")}
               </p>
               <div className="space-y-1 max-h-80 overflow-y-auto pr-1">
-                {user.recently_read.map((book) => (
+                {(user.recently_read ?? []).map((book) => (
                   <BookRow key={book.book_id} book={book} showProgress={false} />
                 ))}
               </div>
