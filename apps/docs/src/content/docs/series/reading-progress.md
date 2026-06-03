@@ -43,6 +43,22 @@ Si plusieurs utilisateurs sont configurés, un sélecteur de lecteur est disponi
 
 ---
 
+## Compte admin et progression de lecture
+
+Le compte administrateur **ne peut pas enregistrer de progression de lecture** directement. C'est un choix de conception : l'admin n'a pas d'identité de lecteur propre.
+
+Pour suivre votre lecture depuis le backoffice, sélectionnez un utilisateur dans le **sélecteur de lecteur** (en haut à droite de l'interface). Les boutons *Marquer comme lu* n'apparaissent que lorsqu'un utilisateur est sélectionné.
+
+### Depuis l'API
+
+Les tokens de scope **admin** ne peuvent pas non plus enregistrer la progression. Pour qu'une application externe (KOReader, Panels…) puisse suivre la lecture :
+
+1. Créez un utilisateur lecteur dans Settings → Tokens
+2. Créez un token **read** associé à cet utilisateur
+3. Utilisez ce token dans votre application — la progression sera enregistrée pour cet utilisateur
+
+---
+
 ## Synchronisation avec des applications externes
 
 Votre progression peut être synchronisée avec d'autres services :

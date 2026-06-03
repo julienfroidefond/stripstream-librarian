@@ -298,6 +298,85 @@ pub async fn delete_series(
         }
     }
 
+    // Archive series + books + reading progress before deletion so data can be restored
+    // if the files are re-added to disk later.
+    sqlx::query(
+        r#"
+        INSERT INTO archived_series (id, library_id, name, description, authors, publishers, genres,
+                                     start_year, total_volumes, status, locked_fields, original_name,
+                                     book_author, book_language, cover_url, created_at, updated_at)
+        SELECT id, library_id, name, description, authors, publishers, genres,
+               start_year, total_volumes, status, locked_fields, original_name,
+               book_author, book_language, cover_url, created_at, updated_at
+        FROM series WHERE id = $1
+        ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name, description = EXCLUDED.description,
+            authors = EXCLUDED.authors, publishers = EXCLUDED.publishers,
+            genres = EXCLUDED.genres, start_year = EXCLUDED.start_year,
+            total_volumes = EXCLUDED.total_volumes, status = EXCLUDED.status,
+            locked_fields = EXCLUDED.locked_fields, cover_url = EXCLUDED.cover_url,
+            updated_at = EXCLUDED.updated_at, archived_at = NOW()
+        "#,
+    )
+    .bind(series_id)
+    .execute(&state.pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO archived_books (id, library_id, series_id, series_name, kind, format, title,
+                                    author, authors, volume, volume_type, language, page_count,
+                                    thumbnail_path, locked_fields, summary, isbn, publish_date,
+                                    created_at, updated_at)
+        SELECT b.id, b.library_id, b.series_id, s.name, b.kind, b.format, b.title,
+               b.author, b.authors, b.volume, b.volume_type, b.language, b.page_count,
+               b.thumbnail_path, b.locked_fields, b.summary, b.isbn, b.publish_date,
+               b.created_at, b.updated_at
+        FROM books b
+        LEFT JOIN series s ON s.id = b.series_id
+        WHERE b.series_id = $1
+        ON CONFLICT (id) DO UPDATE SET
+            title = EXCLUDED.title, volume = EXCLUDED.volume, volume_type = EXCLUDED.volume_type,
+            page_count = EXCLUDED.page_count, thumbnail_path = EXCLUDED.thumbnail_path,
+            updated_at = EXCLUDED.updated_at, archived_at = NOW()
+        "#,
+    )
+    .bind(series_id)
+    .execute(&state.pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO archived_book_files (id, archived_book_id, format, abs_path, size_bytes, mtime, fingerprint, created_at)
+        SELECT bf.id, bf.book_id, bf.format, bf.abs_path, bf.size_bytes, bf.mtime, bf.fingerprint, bf.created_at
+        FROM book_files bf
+        JOIN books b ON b.id = bf.book_id
+        WHERE b.series_id = $1
+        ON CONFLICT (id) DO UPDATE SET
+            abs_path = EXCLUDED.abs_path, size_bytes = EXCLUDED.size_bytes,
+            mtime = EXCLUDED.mtime, fingerprint = EXCLUDED.fingerprint
+        "#,
+    )
+    .bind(series_id)
+    .execute(&state.pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO archived_book_reading_progress (archived_book_id, user_id, status, current_page, last_read_at, updated_at)
+        SELECT brp.book_id, brp.user_id, brp.status, brp.current_page, brp.last_read_at, brp.updated_at
+        FROM book_reading_progress brp
+        JOIN books b ON b.id = brp.book_id
+        WHERE b.series_id = $1
+        ON CONFLICT (archived_book_id, user_id) DO UPDATE SET
+            status = EXCLUDED.status, current_page = EXCLUDED.current_page,
+            last_read_at = EXCLUDED.last_read_at, updated_at = EXCLUDED.updated_at
+        "#,
+    )
+    .bind(series_id)
+    .execute(&state.pool)
+    .await?;
+
     // Delete all books from DB (cascades to book_files, reading_progress, etc.)
     let book_ids: Vec<Uuid> = book_rows.iter().map(|r| r.get("id")).collect();
     if !book_ids.is_empty() {

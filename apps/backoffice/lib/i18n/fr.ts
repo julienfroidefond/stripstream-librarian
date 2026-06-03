@@ -595,6 +595,7 @@ const fr = {
   "settings.downloadsEnabledDesc": "Active l'interface de recherche Prowlarr, l'envoi vers qBittorrent et les jobs de détection de téléchargements.",
   "settings.metadata": "Métadonnées",
   "settings.readingStatus": "Statut de lecture",
+  "settings.archives": "Archives",
   "settings.savedSuccess": "Paramètres enregistrés avec succès",
   "settings.savedError": "Échec de l'enregistrement des paramètres",
   "settings.saveError": "Erreur lors de l'enregistrement des paramètres",

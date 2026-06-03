@@ -16,6 +16,7 @@ const readingStatusOverlayClasses: Record<ReadingStatus, string | null> = {
 interface BookCardProps {
   book: BookDto & { coverUrl?: string };
   readingStatus?: ReadingStatus;
+  hasActiveUser?: boolean;
 }
 
 const BookImage = memo(function BookImage({ src, alt, dimmed }: { src: string; alt: string; dimmed?: boolean }) {
@@ -57,7 +58,7 @@ const BookImage = memo(function BookImage({ src, alt, dimmed }: { src: string; a
   );
 });
 
-export const BookCard = memo(function BookCard({ book, readingStatus, compact }: BookCardProps & { compact?: boolean }) {
+export const BookCard = memo(function BookCard({ book, readingStatus, compact, hasActiveUser = true }: BookCardProps & { compact?: boolean }) {
   const { t } = useTranslation();
   const coverUrl = book.coverUrl || `/api/books/${book.id}/thumbnail`;
   const status = readingStatus ?? book.reading_status;
@@ -116,11 +117,13 @@ export const BookCard = memo(function BookCard({ book, readingStatus, compact }:
                 <span className="text-[10px] text-muted-foreground">#{book.volume}</span>
               ) : null}
             </div>
-            <MarkBookReadButton
-              bookId={book.id}
-              currentStatus={status ?? "unread"}
-              compact
-            />
+            {hasActiveUser && (
+              <MarkBookReadButton
+                bookId={book.id}
+                currentStatus={status ?? "unread"}
+                compact
+              />
+            )}
           </div>
         </div>
       </div>
@@ -198,13 +201,14 @@ export const BookCard = memo(function BookCard({ book, readingStatus, compact }:
 interface BooksGridProps {
   books: (BookDto & { coverUrl?: string })[];
   compact?: boolean;
+  hasActiveUser?: boolean;
 }
 
-export function BooksGrid({ books, compact }: BooksGridProps) {
+export function BooksGrid({ books, compact, hasActiveUser = true }: BooksGridProps) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
       {books.map((book) => (
-        <BookCard key={book.id} book={book} compact={compact} />
+        <BookCard key={book.id} book={book} compact={compact} hasActiveUser={hasActiveUser} />
       ))}
     </div>
   );
@@ -257,14 +261,16 @@ export function BooksGridWithMissing({
   missingBooks,
   showMissing,
   compact,
+  hasActiveUser = true,
 }: {
   books: (BookDto & { coverUrl?: string })[];
   missingBooks: MissingBook[];
   showMissing: boolean;
   compact?: boolean;
+  hasActiveUser?: boolean;
 }) {
   if (!showMissing) {
-    return <BooksGrid books={books} compact={compact} />;
+    return <BooksGrid books={books} compact={compact} hasActiveUser={hasActiveUser} />;
   }
 
   // Merge owned and missing books, sorted by volume_number.
@@ -310,7 +316,7 @@ export function BooksGridWithMissing({
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
       {merged.map((item, idx) =>
         item.kind === "owned" ? (
-          <BookCard key={item.book.id} book={item.book} compact={compact} />
+          <BookCard key={item.book.id} book={item.book} compact={compact} hasActiveUser={hasActiveUser} />
         ) : (
           <MissingBookCard key={`missing-${item.book.volume_number ?? idx}`} book={item.book} />
         )

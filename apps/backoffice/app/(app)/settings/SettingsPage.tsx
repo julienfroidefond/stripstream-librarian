@@ -155,6 +155,13 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             {tab.label}
           </button>
         ))}
+        <a
+          href="/settings/archives"
+          className="flex items-center gap-2 px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground hover:border-border transition-colors -mb-px whitespace-nowrap"
+        >
+          <Icon name="books" size="sm" className="text-amber-500" />
+          {t("settings.archives")}
+        </a>
       </div>
 
       {activeTab === "general" && (<>

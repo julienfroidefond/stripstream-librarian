@@ -1,4 +1,5 @@
 import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, getBookCoverUrl, LibraryDto, SeriesDto, SeriesPageDto } from "@/lib/api";
+import { cookies } from "next/headers";
 import { OffsetPagination } from "@/app/components/ui";
 import { MarkSeriesReadButton } from "@/app/components/MarkSeriesReadButton";
 import { LiveSearchForm } from "@/app/components/LiveSearchForm";
@@ -20,6 +21,8 @@ export default async function LibrarySeriesPage({
 }) {
   const { id } = await params;
   const { t } = await getServerTranslations();
+  const cookieStore = await cookies();
+  const hasActiveUser = !!cookieStore.get("as_user_id")?.value;
   const sp = await searchParams;
   const readingStatus = paramString(sp, "status");
   const sort = paramString(sp, "sort");
@@ -181,13 +184,15 @@ export default async function LibrarySeriesPage({
                       <p className="text-[11px] text-muted-foreground">
                         {t("series.readCount", { read: String(s.books_read_count), total: String(s.book_count), plural: s.book_count !== 1 ? "s" : "" })}
                       </p>
-                      <MarkSeriesReadButton
-                        seriesId={s.series_id}
-                        seriesName={s.name}
-                        bookCount={s.book_count}
-                        booksReadCount={s.books_read_count}
-                        compact
-                      />
+                      {hasActiveUser && (
+                        <MarkSeriesReadButton
+                          seriesId={s.series_id}
+                          seriesName={s.name}
+                          bookCount={s.book_count}
+                          booksReadCount={s.books_read_count}
+                          compact
+                        />
+                      )}
                     </div>
                   </div>
                 </div>

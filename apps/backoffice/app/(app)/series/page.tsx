@@ -1,4 +1,5 @@
 import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, fetchReadingLists, fetchSeriesMemberships, LibraryDto, SeriesDto, SeriesPageDto, ReadingListDto, getBookCoverUrl } from "@/lib/api";
+import { cookies } from "next/headers";
 import { ReadingListCover } from "@/app/components/ReadingListCover";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { paramString, paramStringOr, paramInt, paramBool } from "@/lib/searchParams";
@@ -24,6 +25,8 @@ export default async function SeriesPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { t } = await getServerTranslations();
+  const cookieStore = await cookies();
+  const hasActiveUser = !!cookieStore.get("as_user_id")?.value;
   const sp = await searchParams;
   const libraryId = paramString(sp, "library");
   const searchQuery = paramStringOr(sp, "q", "");
@@ -258,13 +261,15 @@ export default async function SeriesPage({
                       <p className="text-[11px] text-muted-foreground">
                         {t("series.readCount", { read: String(s.books_read_count), total: String(s.book_count), plural: s.book_count !== 1 ? "s" : "" })}
                       </p>
-                      <MarkSeriesReadButton
-                        seriesId={s.series_id}
-                        seriesName={s.name}
-                        bookCount={s.book_count}
-                        booksReadCount={s.books_read_count}
-                        compact
-                      />
+                      {hasActiveUser && (
+                        <MarkSeriesReadButton
+                          seriesId={s.series_id}
+                          seriesName={s.name}
+                          bookCount={s.book_count}
+                          booksReadCount={s.books_read_count}
+                          compact
+                        />
+                      )}
                     </div>
                   </div>
                 </div>

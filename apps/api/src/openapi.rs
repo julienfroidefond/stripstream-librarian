@@ -134,6 +134,8 @@ pub struct ClientApiDoc;
         crate::series::provider_statuses,
         crate::series::merge::merge_series,
         crate::series::create::create_series,
+        crate::series::list_archived_series,
+        crate::series::get_archived_series,
         // Reading
         crate::reading::progress::get_reading_progress,
         crate::reading::progress::update_reading_progress,
@@ -282,6 +284,9 @@ pub struct ClientApiDoc;
             crate::series::MergeSeriesResponse,
             crate::series::CreateSeriesRequest,
             crate::series::CreateSeriesResponse,
+            crate::series::ArchivedSeriesItem,
+            crate::series::ArchivedBookItem,
+            crate::series::ArchivedSeriesDetail,
             // Reading
             crate::reading::progress::ReadingProgressResponse,
             crate::reading::progress::UpdateReadingProgressRequest,

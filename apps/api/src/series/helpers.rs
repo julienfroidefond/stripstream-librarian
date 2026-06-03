@@ -78,6 +78,43 @@ pub(crate) struct CreateSeriesResult {
     pub metadata_link_id: Option<Uuid>,
 }
 
+/// Restore metadata from archive for a newly created series, then clean up the archive record.
+/// Only fills empty fields — does not overwrite existing values.
+async fn restore_series_from_archive(pool: &sqlx::PgPool, library_id: Uuid, name: &str) {
+    let _ = sqlx::query(
+        r#"
+        UPDATE series s
+        SET
+            description   = COALESCE(s.description, aseries.description),
+            authors       = CASE WHEN s.authors = '{}' THEN aseries.authors ELSE s.authors END,
+            publishers    = CASE WHEN s.publishers = '{}' THEN aseries.publishers ELSE s.publishers END,
+            genres        = CASE WHEN s.genres = '{}' THEN aseries.genres ELSE s.genres END,
+            total_volumes = COALESCE(s.total_volumes, aseries.total_volumes),
+            status        = COALESCE(s.status, aseries.status),
+            cover_url     = COALESCE(s.cover_url, aseries.cover_url),
+            locked_fields = CASE WHEN s.locked_fields = '{}' THEN aseries.locked_fields ELSE s.locked_fields END,
+            updated_at    = NOW()
+        FROM archived_series aseries
+        WHERE s.library_id = $1
+          AND aseries.library_id = $1
+          AND LOWER(unaccent(s.name)) = LOWER(unaccent($2))
+          AND LOWER(unaccent(aseries.name)) = LOWER(unaccent($2))
+        "#,
+    )
+    .bind(library_id)
+    .bind(name)
+    .execute(pool)
+    .await;
+
+    let _ = sqlx::query(
+        "DELETE FROM archived_series WHERE library_id = $1 AND LOWER(unaccent(name)) = LOWER(unaccent($2))",
+    )
+    .bind(library_id)
+    .bind(name)
+    .execute(pool)
+    .await;
+}
+
 /// Create a series, optionally link metadata, sync series + book metadata.
 /// Shared logic used by both `POST /series/create` and Discovery `add_to_library`.
 pub(crate) async fn create_series_with_metadata(
@@ -88,6 +125,9 @@ pub(crate) async fn create_series_with_metadata(
 
     // 1. Create or find the series
     let series_id = get_or_create_series(pool, params.library_id, &params.name).await?;
+
+    // 2. Restore metadata from archive if this series was previously deleted
+    restore_series_from_archive(pool, params.library_id, &params.name).await;
 
     // 2. Create the physical directory on disk
     if let Ok(root_path) = sqlx::query_scalar::<_, String>("SELECT root_path FROM libraries WHERE id = $1")

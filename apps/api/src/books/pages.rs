@@ -215,6 +215,10 @@ pub async fn get_page(
     let abs_path = remap_libraries_path(&abs_path);
     let input_format: String = row.get("format");
 
+    if !std::path::Path::new(&abs_path).exists() {
+        return Err(ApiError::not_found("source file not accessible"));
+    }
+
     let mtime_ns = file_mtime_ns(&abs_path);
     let disk_cache_key = get_cache_key(&abs_path, mtime_ns, n, format.extension(), quality, width);
     let cache_path = get_cache_path(&disk_cache_key, &format, &cache_dir_path);
@@ -440,6 +444,10 @@ pub async fn render_book_page_1(
     let abs_path: String = row.get("abs_path");
     let abs_path = remap_libraries_path(&abs_path);
     let input_format: String = row.get("format");
+
+    if !std::path::Path::new(&abs_path).exists() {
+        return Err(ApiError::not_found("source file not accessible"));
+    }
 
     let _permit = state
         .page_render_limit

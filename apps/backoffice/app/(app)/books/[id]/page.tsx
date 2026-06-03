@@ -1,4 +1,5 @@
 import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch, ReadingStatus } from "@/lib/api";
+import { cookies } from "next/headers";
 import { BookPreview } from "@/app/components/BookPreview";
 import { BookActionsToolbar } from "@/app/components/BookActionsToolbar";
 import { SafeHtml } from "@/app/components/SafeHtml";
@@ -29,6 +30,8 @@ export default async function BookDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const cookieStore = await cookies();
+  const hasActiveUser = !!cookieStore.get("as_user_id")?.value;
   const [book, libraries] = await Promise.all([
     fetchBook(id),
     fetchLibraries().catch(() => [] as { id: string; name: string }[])
@@ -154,7 +157,7 @@ export default async function BookDetailPage({
           )}
 
           {/* Action buttons toolbar */}
-          <BookActionsToolbar book={book} />
+          <BookActionsToolbar book={book} hasActiveUser={hasActiveUser} />
         </div>
       </div>
 

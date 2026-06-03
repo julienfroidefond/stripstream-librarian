@@ -10,10 +10,12 @@ export function BooksGridWithMissingToggle({
   books,
   missingBooks,
   compact,
+  hasActiveUser = true,
 }: {
   books: (BookDto & { coverUrl?: string })[];
   missingBooks: MissingBook[];
   compact?: boolean;
+  hasActiveUser?: boolean;
 }) {
   const { t } = useTranslation();
   const [showMissing, setShowMissing] = useState(true);
@@ -40,6 +42,7 @@ export function BooksGridWithMissingToggle({
         missingBooks={missingBooks}
         showMissing={showMissing}
         compact={compact}
+        hasActiveUser={hasActiveUser}
       />
     </div>
   );

@@ -1,4 +1,5 @@
 import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, fetchDownloadsEnabled, fetchSeriesReadingLists, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto, ReadingListDto } from "@/lib/api";
+import { cookies } from "next/headers";
 import { BooksGrid, EmptyState } from "@/app/components/BookCard";
 import { SeriesRelatedCarousel } from "@/app/components/SeriesRelatedCarousel";
 import { BooksGridWithMissingToggle } from "@/app/components/ShowMissingToggle";
@@ -24,6 +25,8 @@ export default async function SeriesDetailPage({
 }) {
   const { seriesId } = await params;
   const { t } = await getServerTranslations();
+  const cookieStore = await cookies();
+  const hasActiveUser = !!cookieStore.get("as_user_id")?.value;
   const searchParamsAwaited = await searchParams;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 50;
@@ -288,6 +291,7 @@ export default async function SeriesDetailPage({
             qbConfigured={qbConfigured}
             renameFormat={typeof renameFormat === "string" ? renameFormat : null}
             renameFormatHs={typeof renameFormatHs === "string" ? renameFormatHs : null}
+            hasActiveUser={hasActiveUser}
           />
         </div>
       </div>
@@ -310,6 +314,7 @@ export default async function SeriesDetailPage({
                 books={mainBooks}
                 missingBooks={missingForGrid}
                 compact
+                hasActiveUser={hasActiveUser}
               />
             )}
 
@@ -320,7 +325,7 @@ export default async function SeriesDetailPage({
                   <span className="text-orange-500">{t("volumeType.hs")}</span>
                   <span className="h-px flex-1 bg-border" />
                 </h3>
-                <BooksGrid books={hsBooks} compact />
+                <BooksGrid books={hsBooks} compact hasActiveUser={hasActiveUser} />
               </div>
             )}
 
@@ -331,7 +336,7 @@ export default async function SeriesDetailPage({
                   <span className="text-purple-500">{t("volumeType.oneshot")}</span>
                   <span className="h-px flex-1 bg-border" />
                 </h3>
-                <BooksGrid books={oneshotBooks} compact />
+                <BooksGrid books={oneshotBooks} compact hasActiveUser={hasActiveUser} />
               </div>
             )}
 

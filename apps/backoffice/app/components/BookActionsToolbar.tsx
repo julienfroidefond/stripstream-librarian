@@ -35,7 +35,7 @@ const RefreshIcon = ({ spinning }: { spinning: boolean }) => (
   </svg>
 );
 
-export function BookActionsToolbar({ book }: { book: BookDto }) {
+export function BookActionsToolbar({ book, hasActiveUser = true }: { book: BookDto; hasActiveUser?: boolean }) {
   const { t } = useTranslation();
 
   // Prowlarr search context for this book
@@ -51,7 +51,7 @@ export function BookActionsToolbar({ book }: { book: BookDto }) {
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <MarkBookReadButton bookId={book.id} currentStatus={book.reading_status} />
+      {hasActiveUser && <MarkBookReadButton bookId={book.id} currentStatus={book.reading_status} />}
       <EditBookForm book={book} />
       <ActionsMenu label={t("common.more")}>
         <ActionsMenuSection label={t("actionsMenu.download")}>

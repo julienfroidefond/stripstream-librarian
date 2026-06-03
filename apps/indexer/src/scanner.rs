@@ -780,6 +780,193 @@ pub async fn scan_library_discovery(
     handle_stale_deletions(state, job_id, library_id, root, &existing, &seen, stats).await?;
     upsert_directory_mtimes(state, library_id, &new_dir_mtimes).await;
 
+    if let Err(e) = restore_archived_data(&state.pool, library_id).await {
+        warn!("[SCAN] Failed to restore archived data for library {}: {}", library_id, e);
+    }
+
+    Ok(())
+}
+
+/// Archive a single book + its file + its reading progress before deletion.
+async fn archive_book(pool: &sqlx::PgPool, book_id: Uuid, file_id: Uuid) -> Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO archived_books (id, library_id, series_id, series_name, kind, format, title,
+                                    author, authors, volume, volume_type, language, page_count,
+                                    thumbnail_path, locked_fields, summary, isbn, publish_date,
+                                    created_at, updated_at)
+        SELECT b.id, b.library_id, b.series_id, s.name, b.kind, b.format, b.title,
+               b.author, b.authors, b.volume, b.volume_type, b.language, b.page_count,
+               b.thumbnail_path, b.locked_fields, b.summary, b.isbn, b.publish_date,
+               b.created_at, b.updated_at
+        FROM books b
+        LEFT JOIN series s ON s.id = b.series_id
+        WHERE b.id = $1
+        ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .bind(book_id)
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO archived_book_files (id, archived_book_id, format, abs_path, size_bytes, mtime, fingerprint, created_at)
+        SELECT id, book_id, format, abs_path, size_bytes, mtime, fingerprint, created_at
+        FROM book_files WHERE id = $1
+        ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .bind(file_id)
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO archived_book_reading_progress (archived_book_id, user_id, status, current_page, last_read_at, updated_at)
+        SELECT book_id, user_id, status, current_page, last_read_at, updated_at
+        FROM book_reading_progress WHERE book_id = $1
+        ON CONFLICT (archived_book_id, user_id) DO NOTHING
+        "#,
+    )
+    .bind(book_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Archive series that are about to lose all their books.
+async fn archive_empty_series(pool: &sqlx::PgPool, series_ids: &[Uuid]) -> Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO archived_series (id, library_id, name, description, authors, publishers, genres,
+                                     start_year, total_volumes, status, locked_fields, original_name,
+                                     book_author, book_language, cover_url, created_at, updated_at)
+        SELECT id, library_id, name, description, authors, publishers, genres,
+               start_year, total_volumes, status, locked_fields, original_name,
+               book_author, book_language, cover_url, created_at, updated_at
+        FROM series
+        WHERE id = ANY($1)
+          AND NOT EXISTS (SELECT 1 FROM books WHERE series_id = series.id)
+        ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .bind(series_ids)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Archive orphan series (no books, no metadata links, no available downloads).
+async fn archive_orphan_series(pool: &sqlx::PgPool, library_id: Uuid) -> Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO archived_series (id, library_id, name, description, authors, publishers, genres,
+                                     start_year, total_volumes, status, locked_fields, original_name,
+                                     book_author, book_language, cover_url, created_at, updated_at)
+        SELECT id, library_id, name, description, authors, publishers, genres,
+               start_year, total_volumes, status, locked_fields, original_name,
+               book_author, book_language, cover_url, created_at, updated_at
+        FROM series
+        WHERE library_id = $1
+          AND NOT EXISTS (SELECT 1 FROM books WHERE series_id = series.id)
+          AND NOT EXISTS (SELECT 1 FROM external_metadata_links WHERE series_id = series.id)
+          AND NOT EXISTS (SELECT 1 FROM available_downloads WHERE series_id = series.id)
+        ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .bind(library_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// After a scan, restore reading progress and series metadata for re-discovered books/series.
+/// Matches archived records by file path (books) or name+library (series).
+pub async fn restore_archived_data(pool: &sqlx::PgPool, library_id: Uuid) -> Result<()> {
+    // Restore reading progress for newly-inserted books that match archived file paths
+    let restored: i64 = sqlx::query_scalar(
+        r#"
+        WITH restored AS (
+            INSERT INTO book_reading_progress (book_id, user_id, status, current_page, last_read_at, updated_at)
+            SELECT b.id, abrp.user_id, abrp.status, abrp.current_page, abrp.last_read_at, abrp.updated_at
+            FROM books b
+            JOIN book_files bf ON bf.book_id = b.id
+            JOIN archived_book_files abf ON abf.abs_path = bf.abs_path
+            JOIN archived_book_reading_progress abrp ON abrp.archived_book_id = abf.archived_book_id
+            WHERE b.library_id = $1
+            ON CONFLICT (book_id, user_id) DO NOTHING
+            RETURNING book_id
+        )
+        SELECT COUNT(*) FROM restored
+        "#,
+    )
+    .bind(library_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+
+    if restored > 0 {
+        info!("[SCAN] Restored reading progress for {} books in library {}", restored, library_id);
+    }
+
+    // Restore series metadata for re-created series (only fill empty fields)
+    sqlx::query(
+        r#"
+        UPDATE series s
+        SET
+            description     = COALESCE(s.description, aseries.description),
+            authors         = CASE WHEN s.authors = '{}' THEN aseries.authors ELSE s.authors END,
+            publishers      = CASE WHEN s.publishers = '{}' THEN aseries.publishers ELSE s.publishers END,
+            genres          = CASE WHEN s.genres = '{}' THEN aseries.genres ELSE s.genres END,
+            total_volumes   = COALESCE(s.total_volumes, aseries.total_volumes),
+            status          = COALESCE(s.status, aseries.status),
+            cover_url       = COALESCE(s.cover_url, aseries.cover_url),
+            locked_fields   = CASE WHEN s.locked_fields = '{}' THEN aseries.locked_fields ELSE s.locked_fields END,
+            updated_at      = NOW()
+        FROM archived_series aseries
+        WHERE s.library_id = $1
+          AND s.library_id = aseries.library_id
+          AND LOWER(unaccent(s.name)) = LOWER(unaccent(aseries.name))
+        "#,
+    )
+    .bind(library_id)
+    .execute(pool)
+    .await?;
+
+    // Clean up archived books whose files are now active again
+    sqlx::query(
+        r#"
+        DELETE FROM archived_books
+        WHERE id IN (
+            SELECT ab.id FROM archived_books ab
+            JOIN archived_book_files abf ON abf.archived_book_id = ab.id
+            JOIN book_files bf ON bf.abs_path = abf.abs_path
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    // Clean up archived series whose series is now active again
+    sqlx::query(
+        r#"
+        DELETE FROM archived_series aseries
+        WHERE library_id = $1
+          AND EXISTS (
+              SELECT 1 FROM series s
+              WHERE s.library_id = aseries.library_id
+                AND LOWER(unaccent(s.name)) = LOWER(unaccent(aseries.name))
+          )
+        "#,
+    )
+    .bind(library_id)
+    .execute(pool)
+    .await?;
+
     Ok(())
 }
 
@@ -839,6 +1026,11 @@ async fn handle_stale_deletions(
         .await?
         .flatten();
 
+        // Archive book + file + reading progress before deletion
+        if let Err(e) = archive_book(&state.pool, *book_id, *file_id).await {
+            warn!("[SCAN] Failed to archive book {} before deletion: {}", book_id, e);
+        }
+
         sqlx::query("DELETE FROM book_files WHERE id = $1")
             .bind(file_id)
             .execute(&state.pool)
@@ -879,12 +1071,15 @@ async fn handle_stale_deletions(
     }
 
     // Clean up series that just lost ALL their books due to stale file deletion.
-    // These are scanner-created series whose directory was removed/renamed.
-    // We delete them even if they have metadata links or available_downloads,
-    // because they lost their on-disk presence. Discovery-created series
-    // (never had books deleted here) are NOT affected.
+    // Archive them first so metadata is preserved for restoration.
     if !affected_series_ids.is_empty() {
         let stale_series_ids: Vec<Uuid> = affected_series_ids.into_iter().collect();
+
+        // Archive series about to lose all books
+        if let Err(e) = archive_empty_series(&state.pool, &stale_series_ids).await {
+            warn!("[SCAN] Failed to archive series before deletion: {}", e);
+        }
+
         let stale_series_result = sqlx::query_scalar::<_, Uuid>(
             "DELETE FROM series WHERE id = ANY($1) \
              AND NOT EXISTS (SELECT 1 FROM books WHERE series_id = series.id) \
@@ -904,6 +1099,10 @@ async fn handle_stale_deletions(
 
     // Clean up other orphan series: no books, no metadata links, no available downloads
     // (preserves series added from Discovery that have metadata but no files yet)
+    if let Err(e) = archive_orphan_series(&state.pool, library_id).await {
+        warn!("[SCAN] Failed to archive orphan series: {}", e);
+    }
+
     let orphan_result = sqlx::query_scalar::<_, i32>(
         "DELETE FROM series WHERE library_id = $1 \
          AND NOT EXISTS (SELECT 1 FROM books WHERE series_id = series.id) \

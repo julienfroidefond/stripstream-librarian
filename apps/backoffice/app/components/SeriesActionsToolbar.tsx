@@ -36,6 +36,7 @@ interface Props {
   seriesName: string;
   bookCount: number;
   booksReadCount: number;
+  hasActiveUser?: boolean;
   // Edit data
   editAuthors: string[];
   editGenres: string[];
@@ -84,12 +85,14 @@ export function SeriesActionsToolbar(props: Props) {
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <MarkSeriesReadButton
-        seriesId={props.seriesId}
-        seriesName={props.seriesName}
-        bookCount={props.bookCount}
-        booksReadCount={props.booksReadCount}
-      />
+      {(props.hasActiveUser ?? true) && (
+        <MarkSeriesReadButton
+          seriesId={props.seriesId}
+          seriesName={props.seriesName}
+          bookCount={props.bookCount}
+          booksReadCount={props.booksReadCount}
+        />
+      )}
       <EditSeriesForm
         libraryId={props.libraryId}
         seriesId={props.seriesId}
