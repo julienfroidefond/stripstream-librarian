@@ -86,17 +86,21 @@ Condition supplémentaire : aucun job `download_detection` ne doit être déjà 
 
 ### Principe
 
-Au lieu de faire **N requêtes Prowlarr** (une par série), le job `prowlarr_rss` effectue **une seule requête** avec une query vide pour récupérer les releases récentes (RSS-style), puis les rapproche en mémoire de **toutes les bibliothèques** ayant des séries avec des volumes manquants.
+Au lieu de faire **N requêtes Prowlarr** (une par série), le job `prowlarr_rss` récupère les releases récentes de **chaque indexer Prowlarr en parallèle** (query vide, RSS-style), déduplique les résultats par GUID, puis les rapproche en mémoire de **toutes les bibliothèques** ayant des séries avec des volumes manquants.
 
 Le job est **global** (`library_id = NULL`) : une seule instance couvre toutes les bibliothèques.
 
 | | `download_detection` | `prowlarr_rss` |
 |--|---------------------|----------------|
-| Requêtes Prowlarr | 1 par série | 1 au total |
+| Requêtes Prowlarr | 1 par série | 1 par indexer (parallèle) |
 | Correspondance | Prowlarr filtre par nom | Matching local sur le titre |
 | Couverture | Toute l'histoire de l'indexer | Releases récentes uniquement |
 | Périmètre | Par bibliothèque | Toutes les bibliothèques |
 | Fréquence conseillée | Horaire / quotidien | 30 min à 1h |
+
+:::caution
+**Tous les indexers ne supportent pas le mode RSS.** Certains trackers (notamment les trackers privés comme C411) n'acceptent que les requêtes avec un terme de recherche explicite et retournent une erreur pour les queries vides. Ces indexers sont ignorés silencieusement — leurs releases restent accessibles via `download_detection`. Le rapport du job liste le résultat par indexer dans `rss_indexer_stats`.
+:::
 
 ### Prérequis
 
@@ -106,13 +110,13 @@ Identiques à `download_detection` : Prowlarr configuré, séries avec un **lien
 
 **Fetch des releases**
 
-Une requête unique est envoyée à Prowlarr (`/api/v1/search?query=&type=search`) avec les catégories configurées. Prowlarr retourne les releases récentes de tous ses indexers.
+La liste des indexers est d'abord récupérée via `/api/v1/indexer`. Une requête est ensuite envoyée **en parallèle** à chaque indexer (`/api/v1/search?query=&indexerIds=X&limit=100`) avec les catégories configurées. Les résultats sont agrégés et dédupliqués par GUID. Les indexers qui ne supportent pas les queries vides (trackers privés) retournent une erreur et sont simplement ignorés.
 
 **Matching titre / série**
 
 Pour chaque série (toutes bibliothèques confondues) avec des volumes manquants, le titre de chaque release est normalisé puis comparé au nom de la série :
 
-- Points et underscores → espaces
+- Points, underscores, tirets, apostrophes, crochets → espaces
 - Accents courants supprimés (`é→e`, `à→a`, etc.)
 - Comparaison insensible à la casse
 
@@ -144,7 +148,8 @@ Une notification est envoyée uniquement si `new_releases > 0` (nouvelles releas
 | `total_series` | Séries avec volumes manquants vérifiées (toutes bibliothèques) |
 | `found` | Séries pour lesquelles des releases ont été trouvées |
 | `new_releases` | Nouvelles releases détectées lors de ce run |
-| `rss_releases_fetched` | Nombre total de releases récupérées depuis Prowlarr |
+| `rss_releases_fetched` | Nombre total de releases agrégées depuis tous les indexers |
+| `rss_indexer_stats` | Détail par indexer : `id`, `name`, `count` (releases retournées), `error` si indisponible |
 
 ### Ordonnancement automatique
 
