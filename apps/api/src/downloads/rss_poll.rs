@@ -239,9 +239,10 @@ pub(crate) async fn process_rss_poll(
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
     // Single RSS fetch regardless of how many libraries/series are covered
-    let rss_releases = fetch_rss_releases(&client, &prowlarr_url, &prowlarr_api_key, &categories).await?;
+    let RssFetchResult { releases: rss_releases, indexer_stats } =
+        fetch_rss_releases(&client, &prowlarr_url, &prowlarr_api_key, &categories).await?;
 
-    info!("[RSS_POLL] job={job_id} fetched {} releases from Prowlarr", rss_releases.len());
+    info!("[RSS_POLL] job={job_id} fetched {} releases from Prowlarr ({} indexers)", rss_releases.len(), indexer_stats.len());
 
     let now_str = chrono::Utc::now().to_rfc3339();
 
@@ -379,6 +380,7 @@ pub(crate) async fn process_rss_poll(
         "found": count_found,
         "new_releases": new_releases,
         "rss_releases_fetched": rss_releases.len() as i64,
+        "rss_indexer_stats": indexer_stats,
         "rss_releases": snapshot,
     });
 
@@ -478,6 +480,11 @@ pub(crate) async fn process_rss_poll(
 // Helpers
 // ---------------------------------------------------------------------------
 
+pub(crate) struct RssFetchResult {
+    pub releases: Vec<prowlarr::ProwlarrRawRelease>,
+    pub indexer_stats: Vec<serde_json::Value>,
+}
+
 /// Fetch recent releases from all Prowlarr indexers in parallel, aggregated
 /// and deduplicated by GUID. Each indexer is queried independently so private
 /// trackers that don't support empty-query browse don't suppress others.
@@ -486,7 +493,7 @@ async fn fetch_rss_releases(
     url: &str,
     api_key: &str,
     categories: &[i32],
-) -> Result<Vec<prowlarr::ProwlarrRawRelease>, String> {
+) -> Result<RssFetchResult, String> {
     // Step 1: get the list of configured indexers
     let indexers_resp = client
         .get(format!("{url}/api/v1/indexer"))
@@ -501,40 +508,60 @@ async fn fetch_rss_releases(
         vec![]
     };
 
-    let indexer_ids: Vec<i64> = indexers.iter()
-        .filter_map(|i| i["id"].as_i64())
+    let indexer_meta: Vec<(i64, String)> = indexers.iter()
+        .filter_map(|i| {
+            let id = i["id"].as_i64()?;
+            let name = i["name"].as_str().unwrap_or("unknown").to_string();
+            Some((id, name))
+        })
         .collect();
 
     // Step 2: fire one request per indexer in parallel
-    let tasks: Vec<_> = indexer_ids.iter().map(|&id| {
+    let tasks: Vec<_> = indexer_meta.iter().map(|(id, name)| {
         let client = client.clone();
         let url = url.to_string();
         let api_key = api_key.to_string();
         let categories = categories.to_vec();
+        let indexer_id = *id;
+        let indexer_name = name.clone();
         async move {
-            fetch_rss_for_indexer(&client, &url, &api_key, &categories, id).await
+            let result = fetch_rss_for_indexer(&client, &url, &api_key, &categories, indexer_id).await;
+            (indexer_id, indexer_name, result)
         }
     }).collect();
 
     let results = futures::future::join_all(tasks).await;
 
-    // Step 3: aggregate + deduplicate by GUID
+    // Step 3: aggregate + deduplicate by GUID, collect per-indexer stats
     let mut seen = std::collections::HashSet::new();
     let mut all = Vec::new();
-    for result in results {
+    let mut indexer_stats = Vec::new();
+
+    for (id, name, result) in results {
         match result {
             Ok(releases) => {
+                let count = releases.len();
+                let mut deduped = 0usize;
                 for r in releases {
                     if seen.insert(r.guid.clone()) {
                         all.push(r);
+                        deduped += 1;
                     }
                 }
+                indexer_stats.push(serde_json::json!({
+                    "id": id, "name": name, "count": count, "deduped": deduped
+                }));
             }
-            Err(e) => tracing::debug!("[RSS_POLL] indexer fetch failed (skipped): {e}"),
+            Err(e) => {
+                tracing::debug!("[RSS_POLL] indexer {name} ({id}) fetch failed: {e}");
+                indexer_stats.push(serde_json::json!({
+                    "id": id, "name": name, "count": 0, "error": e
+                }));
+            }
         }
     }
 
-    Ok(all)
+    Ok(RssFetchResult { releases: all, indexer_stats })
 }
 
 async fn fetch_rss_for_indexer(
