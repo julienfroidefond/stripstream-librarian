@@ -1,143 +1,104 @@
 ---
-title: Vue d'ensemble des jobs
-description: Cycle de vie, statuts, exclusivité et ordonnancement des jobs
+title: Vue d'ensemble des tâches
+description: Ce que sont les tâches et comment elles s'exécutent
 ---
 
-Les jobs sont des tâches de fond asynchrones qui effectuent les opérations lourdes : scan de fichiers, génération de miniatures, synchronisation de métadonnées, détection de téléchargements, synchronisation AniList.
+Les tâches (jobs) sont des opérations longues qui s'exécutent en arrière-plan : scan de fichiers, génération de miniatures, synchronisation de métadonnées, détection de téléchargements, synchronisation AniList.
 
----
-
-## Catégories de jobs
-
-| Catégorie | Types | Exécuteur |
-|-----------|-------|-----------|
-| [Indexation](../indexation/) | `rebuild`, `rescan`, `full_rebuild` | Indexer |
-| [Miniatures](../miniatures/) | `thumbnail_rebuild`, `thumbnail_regenerate`, `cbr_to_cbz` | Indexer |
-| [Métadonnées](../metadonnees/) | `metadata_batch`, `metadata_batch_rematch`, `metadata_refresh`, `metadata_refresh_all` | API |
-| [Téléchargements](../telechargements/) | `download_detection`, `prowlarr_rss` | API |
-| [AniList](../anilist/) | `reading_status_match`, `reading_status_push` | API |
+Vous pouvez suivre leur progression en temps réel sur la page **Tâches**.
 
 ---
 
-## Cycle de vie
+## Catégories de tâches
+
+| Catégorie | Ce qu'elles font |
+|-----------|-----------------|
+| [Indexation](../indexation/) | Scanner les fichiers pour maintenir la bibliothèque à jour |
+| [Miniatures](../miniatures/) | Générer ou regénérer les miniatures de couverture |
+| [Métadonnées](../metadonnees/) | Rechercher et mettre à jour les métadonnées des séries |
+| [Téléchargements](../telechargements/) | Détecter les volumes manquants via Prowlarr |
+| [AniList](../anilist/) | Synchroniser la progression de lecture avec AniList |
+
+---
+
+## Cycle de vie d'une tâche
+
+Une tâche passe par les états suivants :
 
 ```
-pending → running → success
-                 → failed
-                 → cancelled
+En attente → En cours → Terminée
+                     → Échouée
+                     → Annulée
 ```
 
-**Statuts intermédiaires** (phase 2 des jobs d'indexation) :
-
-| Statut | Signification |
-|--------|--------------|
-| `extracting_pages` | Ouverture des archives, extraction du nombre de pages |
-| `generating_thumbnails` | Génération des miniatures WebP |
+Vous pouvez annuler une tâche en attente ou en cours depuis la page Tâches.
 
 ---
 
-## Jobs exclusifs vs non-exclusifs
+## Tâches exclusives et parallèles
 
-**Exclusifs** — ne peuvent pas coexister avec un autre job exclusif sur la même bibliothèque :
+Certaines tâches ne peuvent pas s'exécuter simultanément sur la même bibliothèque (par exemple deux scans en même temps). Si vous lancez une telle tâche alors qu'une autre est en cours, elle attend en file d'attente.
 
-- `rebuild`, `rescan`, `full_rebuild`
-- `thumbnail_rebuild`, `thumbnail_regenerate`
-
-**Non-exclusifs** — peuvent s'exécuter en parallèle :
-
-- `cbr_to_cbz`
-- `metadata_batch`, `metadata_batch_rematch`, `metadata_refresh`, `metadata_refresh_all`
-- `reading_status_match`, `reading_status_push`
-- `download_detection`, `prowlarr_rss`
+D'autres tâches (métadonnées, AniList, téléchargements) peuvent s'exécuter en parallèle sans restriction.
 
 ---
 
-## Priorité de traitement (jobs d'indexation)
+## Tâches automatiques
 
+Plusieurs tâches peuvent être déclenchées automatiquement selon la configuration de chaque bibliothèque :
+
+| Tâche | Se déclenche quand |
+|-------|-------------------|
+| Scan | Selon la fréquence configurée dans les paramètres de la bibliothèque |
+| Détection de téléchargements | Selon la fréquence configurée |
+| Polling RSS Prowlarr | Selon l'intervalle configuré dans Settings → Download tools |
+| Push AniList | Selon la fréquence configurée par bibliothèque |
+| Refresh métadonnées | Selon la fréquence configurée par bibliothèque |
+
+La valeur **Manuel** désactive l'automatisation pour une tâche donnée.
+
+---
+
+## Nettoyage des tâches bloquées
+
+Au démarrage, les tâches bloquées sont automatiquement marquées comme échouées :
+- Tâches "en cours" depuis le redémarrage précédent (crash ou redémarrage du service)
+- Tâches "en attente" depuis plus de 30 minutes (probablement bloquées par une tâche exclusive)
+
+---
+
+## Suivi de progression
+
+Sur la page Tâches, chaque tâche en cours affiche :
+- Pourcentage d'avancement
+- Fichier en cours de traitement
+- Compteurs (traités / total)
+- Durée écoulée
+
+Le rapport final de chaque tâche est consultable après son exécution, avec le détail des actions effectuées et des éventuelles erreurs.
+
+:::note[Détails techniques]
+**Statuts intermédiaires** pour les jobs d'indexation : `extracting_pages` (ouverture des archives, extraction du nombre de pages), `generating_thumbnails` (génération des miniatures WebP).
+
+**Priorité de traitement** (Indexer) :
 | Priorité | Types |
 |----------|-------|
 | 1 | `full_rebuild` |
 | 2 | `rebuild`, `rescan`, `scan` |
 | 3 | `thumbnail_rebuild`, `thumbnail_regenerate`, `cbr_to_cbz` |
 
-Les jobs API (`metadata_*`, `reading_status_*`, `download_detection`, `prowlarr_rss`) sont traités dans l'ordre de création (FIFO).
+Les jobs API (`metadata_*`, `reading_status_*`, `download_detection`, `prowlarr_rss`) sont traités en FIFO.
 
----
+**Suivi temps réel** : flux SSE via `GET /index/jobs/{id}/stream`. Chaque événement contient `job_id`, `status`, `current_file`, `progress_percent`, `processed_files`, `total_files`, `stats_json`.
 
-## Nettoyage des jobs bloqués
-
-Au démarrage de l'indexer, les jobs dans un état bloqué sont automatiquement marqués `failed` :
-
-- Jobs `running` depuis le démarrage précédent (crash/redémarrage)
-- Jobs `pending` depuis plus de **30 minutes** (jamais pris en charge, probablement bloqués par un job exclusif)
-
----
-
-## Ordonnancement automatique
-
-Plusieurs types de jobs peuvent être déclenchés automatiquement selon la configuration de chaque bibliothèque :
-
-| Job | Paramètre bibliothèque | Condition |
-|-----|----------------------|-----------|
-| `rebuild` / `full_rebuild` | `scan_mode` + `monitor_enabled` | `next_scan_at <= NOW()` et aucun job actif |
-| `download_detection` | `download_detection_mode` | `next_download_detection_at <= NOW()`, Prowlarr configuré, aucun job actif |
-| `prowlarr_rss` | `rss_poll_interval_minutes` (settings Prowlarr) | Dernier job terminé depuis > intervalle configuré, Prowlarr configuré, aucun job actif. `0` = désactivé. |
-| `reading_status_push` | `reading_status_push_mode` | `next_reading_status_push_at <= NOW()`, provider AniList configuré, liens AniList existants |
-| `metadata_refresh` | `metadata_refresh_mode` | `next_metadata_refresh_at <= NOW()`, liens approuvés existants, aucun job actif |
-
-La valeur `manual` désactive l'automatisation.
-
----
-
-## Suivi de progression
-
-### Server-Sent Events (SSE)
-
-```
-GET /index/jobs/{id}/stream
-```
-
-Retourne un flux d'événements en temps réel. Chaque événement contient :
-
-```json
-{
-  "job_id": "...",
-  "status": "running",
-  "current_file": "One Piece/tome_01.cbz",
-  "progress_percent": 42,
-  "processed_files": 213,
-  "total_files": 506,
-  "stats_json": { ... }
-}
-```
-
-Le flux se ferme automatiquement quand le job atteint `success`, `failed` ou `cancelled`.
-
-### Événements de job (`index_job_events`)
-
-Chaque action significative est tracée comme événement avec :
-
-| Champ | Valeurs |
-|-------|---------|
-| `level` | `info`, `warning`, `error` |
-| `event_type` | Voir la page de chaque catégorie |
-
-```
-GET /index/jobs/{id}/events?level=error&event_type=metadata_matched
-GET /index/jobs/{id}/errors
-```
-
----
-
-## API générale des jobs
-
+**API générale** :
 | Méthode | Endpoint | Description |
 |---------|----------|-------------|
 | `GET` | `/index/status` | 100 derniers jobs |
-| `GET` | `/index/jobs/active` | Jobs `pending` ou `running` |
-| `GET` | `/index/jobs/{id}/details` | Détail complet d'un job |
+| `GET` | `/index/jobs/active` | Jobs pending ou running |
+| `GET` | `/index/jobs/{id}/details` | Détail complet |
 | `GET` | `/index/jobs/{id}/events` | Événements du job |
-| `GET` | `/index/jobs/{id}/errors` | Erreurs non fatales du job |
+| `GET` | `/index/jobs/{id}/errors` | Erreurs non fatales |
 | `GET` | `/index/jobs/{id}/indexed-books` | Livres indexés pendant un scan |
-| `GET` | `/index/jobs/{id}/stream` | Flux SSE de progression |
-| `POST` | `/index/cancel/{id}` | Annuler un job (`pending` ou `running`) |
+| `POST` | `/index/cancel/{id}` | Annuler un job |
+:::

@@ -3,29 +3,50 @@ title: Configuration
 description: Variables d'environnement et configuration
 ---
 
-## Variables d'environnement
+## Configuration initiale
 
-### Requises
+La configuration de Stripstream se fait principalement via le fichier `.env` avant le premier démarrage. Copiez `.env.example` en `.env` et renseignez les valeurs requises.
 
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | URL de connexion PostgreSQL |
-| `API_BOOTSTRAP_TOKEN` | Token admin initial |
-| `ADMIN_USERNAME` | Nom d'utilisateur administrateur |
-| `ADMIN_PASSWORD` | Mot de passe administrateur |
-| `SESSION_SECRET` | Clé de session (min. 32 caractères) |
+### Variables requises
 
-### Optionnelles
+Ces variables doivent obligatoirement être définies — Stripstream ne démarrera pas sans elles :
 
-| Variable | Description | Défaut |
-|----------|-------------|--------|
-| `LIBRARIES_ROOT_PATH` | Remap des chemins bibliothèque | `/libraries/` |
-| `RUST_LOG` | Niveaux de log | `indexer=info,scan=info,...` |
+| Variable | Ce qu'elle représente |
+|----------|----------------------|
+| `DATABASE_URL` | Adresse de connexion à la base de données |
+| `API_BOOTSTRAP_TOKEN` | Token secret pour le premier accès admin |
+| `ADMIN_USERNAME` | Nom d'utilisateur du compte administrateur |
+| `ADMIN_PASSWORD` | Mot de passe du compte administrateur |
+| `SESSION_SECRET` | Clé secrète pour les sessions (min. 32 caractères) |
 
-## Logging
+### Variables optionnelles
 
-Les domaines de logging disponibles :
+| Variable | Description | Valeur par défaut |
+|----------|-------------|-------------------|
+| `LIBRARIES_ROOT_PATH` | Chemin de montage des bibliothèques dans le conteneur | `/libraries/` |
+| `RUST_LOG` | Niveau de verbosité des logs | `indexer=info,scan=info,...` |
 
+:::tip
+En production Docker, ne modifiez pas `LIBRARIES_ROOT_PATH`. Cette variable n'est utile qu'en développement local sans Docker, pour pointer vers le dossier réel de vos fichiers.
+:::
+
+---
+
+## Niveaux de logs
+
+Si vous souhaitez obtenir plus de détails dans les logs (par exemple pour diagnostiquer un problème de scan), ajustez `RUST_LOG` dans votre `.env` :
+
+```bash
+# Plus de détails sur le scan
+RUST_LOG="indexer=info,scan=debug,thumbnail=warn"
+
+# Tout en debug (très verbeux)
+RUST_LOG="debug"
+```
+
+Les niveaux disponibles, du plus silencieux au plus verbeux : `error`, `warn`, `info`, `debug`, `trace`.
+
+:::note[Détails techniques — domaines de log]
 | Domaine | Description |
 |---------|-------------|
 | `indexer` | Service d'indexation |
@@ -33,18 +54,4 @@ Les domaines de logging disponibles :
 | `extraction` | Extraction de pages |
 | `thumbnail` | Génération de miniatures |
 | `watcher` | Surveillance filesystem |
-
-Niveaux : `error`, `warn`, `info`, `debug`, `trace`
-
-Exemple :
-```bash
-RUST_LOG="indexer=info,scan=debug,thumbnail=warn"
-```
-
-## Chemins des bibliothèques
-
-Les chemins en base de données commencent par `/libraries/`. En développement local, utilisez `LIBRARIES_ROOT_PATH` pour remapper vers votre dossier réel.
-
-:::tip
-Les fonctions `remap_libraries_path()` et `unmap_libraries_path()` gèrent automatiquement la conversion des chemins.
 :::

@@ -5,45 +5,60 @@ description: Référence de l'API REST
 
 ## Documentation interactive
 
-L'API expose deux spécifications OpenAPI avec Swagger UI :
+L'API expose deux interfaces Swagger UI accessibles depuis votre navigateur :
 
-| Spec | URL | Scope |
-|------|-----|-------|
-| **Client API** | `/swagger-ui` | Endpoints read |
+| Interface | URL | Accès |
+|-----------|-----|-------|
+| **Client API** | `/swagger-ui` | Endpoints de lecture (lecture seule) |
 | **Admin API** | `/admin/swagger-ui` | Tous les endpoints |
 
-Dropdown pour basculer entre les specs.
+Un menu déroulant permet de basculer entre les deux spécifications.
 
-## Endpoints publics (sans auth)
+## Endpoints publics (sans authentification)
 
-- `GET /health` — Health check
-- `GET /ready` — Readiness
+- `GET /health` — État du service
+- `GET /ready` — Disponibilité
 - `GET /metrics` — Métriques Prometheus
 - `GET /swagger-ui` — Documentation Swagger
 
-## Endpoints lecture (scope `read`)
+## Endpoints de lecture (token read)
+
+Accessibles avec un token de scope `read` :
 
 - Bibliothèques, livres, séries, auteurs — listing et détail
 - Pages de livres et miniatures
-- Progression de lecture (get/update)
+- Progression de lecture (lecture et mise à jour)
 - Recherche full-text, statistiques
-- Metadata links (`GET /metadata/links?series_id=...`)
-- Livres manquants avec covers (`GET /metadata/missing/{link_id}`)
+- Métadonnées : liens (`GET /metadata/links?series_id=...`) et volumes manquants avec couvertures (`GET /metadata/missing/{link_id}`)
 
-## Endpoints admin (scope `admin`)
+## Endpoints admin (token admin)
+
+Accessibles avec un token de scope `admin` :
 
 - CRUD bibliothèques et configuration
-- Édition metadata livres, conversion CBR
-- Édition metadata séries
-- Gestion des jobs (trigger, cancel, stream SSE)
-- Gestion tokens API
-- Opérations metadata (search, match, approve, reject, batch, refresh)
+- Édition des métadonnées (livres et séries)
+- Conversion CBR, renommage
+- Gestion des tâches (déclenchement, annulation, flux SSE)
+- Gestion des tokens API
+- Opérations metadata (recherche, match, approbation, rejet, batch, refresh)
 - Intégrations externes (Prowlarr, qBittorrent, Komga)
 - Paramètres application et gestion du cache
 
 ## Authentification
 
-- **Bootstrap token** : token admin via variable `API_BOOTSTRAP_TOKEN`
-- **Tokens API** : format `stl_{prefix}_{secret}`, hash Argon2 en DB
-- Deux scopes : `admin` (accès complet) et `read` (lecture seule)
-- Rate limiting : fenêtre glissante configurable (défaut 120 req/s)
+Passez le token dans le header `Authorization` :
+
+```bash
+curl -H "Authorization: Bearer stl_abc_votre_token_complet" \
+  http://localhost:7080/api/series
+```
+
+:::note[Détails techniques]
+**Bootstrap token** : token admin initial via la variable d'environnement `API_BOOTSTRAP_TOKEN`. Utilisé uniquement pour créer les premiers tokens API depuis l'interface.
+
+**Tokens API** : format `stl_{prefix}_{secret}`, hash Argon2 en base de données. Deux scopes : `admin` (accès complet) et `read` (lecture seule).
+
+**Rate limiting** : fenêtre glissante configurable, défaut 120 req/s.
+
+**Dual spec OpenAPI** : Client API (`/openapi.json`, scope read) et Admin API (`/admin/openapi.json`, tous scopes). Les endpoints `GET /metadata/links` et `GET /metadata/missing/:id` sont en scope read.
+:::

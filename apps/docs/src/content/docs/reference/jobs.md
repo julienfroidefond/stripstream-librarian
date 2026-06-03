@@ -1,72 +1,88 @@
 ---
-title: Jobs
-description: Types de jobs et cycle de vie
+title: Référence des tâches
+description: Types de tâches disponibles et cycle de vie
 ---
 
-## Lancer un job
+## Lancer une tâche
 
 ![Page des tâches d'indexation — lanceur organisé par catégorie avec sélecteur de bibliothèque](/screenshots/jobs-launcher.png)
 
-Depuis la page **Tâches**, sélectionnez une bibliothèque (ou Toutes) puis cliquez sur l'action souhaitée. Les jobs en rouge/orange sont destructifs et affichent un avertissement.
+Depuis la page **Tâches**, sélectionnez une bibliothèque (ou Toutes) puis cliquez sur l'action souhaitée. Les tâches destructives sont signalées en rouge/orange et affichent un avertissement avant exécution.
 
-## Types de jobs
+## Types de tâches
 
 ### Indexation
 
-| Type (interne) | Libellé UI | Description |
-|----------------|-----------|-------------|
-| `rebuild` | Mise à jour | Scan incrémental — ne visite que les dossiers modifiés |
-| `rescan` | Rescan complet | Visite tous les dossiers sans cache mtime — sans effacer les données |
-| `full_rebuild` | Reconstruction complète ⚠️ | Supprime tout en DB puis rescanne depuis zéro — métadonnées et statuts de lecture perdus |
+| Libellé dans l'interface | Description |
+|--------------------------|-------------|
+| **Mise à jour** | Scan incrémental — ne revisite que les dossiers modifiés depuis le dernier scan |
+| **Rescan complet** | Visite tous les dossiers sans cache — conserve toutes les données |
+| **Reconstruction complète** ⚠️ | Supprime tout en base puis rescanne — métadonnées et statuts de lecture perdus |
 
 ### Miniatures
 
-| Type (interne) | Libellé UI | Description |
-|----------------|-----------|-------------|
-| `thumbnail_rebuild` | Générer les miniatures | Miniatures manquantes uniquement |
-| `thumbnail_regenerate` | Regénérer les miniatures ⚠️ | Recrée toutes les miniatures |
+| Libellé dans l'interface | Description |
+|--------------------------|-------------|
+| **Générer les miniatures** | Crée les miniatures manquantes uniquement |
+| **Regénérer les miniatures** ⚠️ | Supprime et recrée toutes les miniatures |
 
 ### Métadonnées
 
-| Type (interne) | Libellé UI | Description |
-|----------------|-----------|-------------|
-| `metadata_batch` | Métadonnées en lot | Auto-match les séries sans lien approuvé |
-| `metadata_batch_rematch` | Re-match métadonnées | Supprime les liens existants et re-matche avec le provider actuel |
-| `metadata_refresh` | Rafraîchir métadonnées | Met à jour les séries déjà liées (en cours uniquement) |
-| `metadata_refresh_all` | Rafraîchir toutes les métadonnées | Met à jour toutes les séries liées, y compris terminées et annulées |
+| Libellé dans l'interface | Description |
+|--------------------------|-------------|
+| **Métadonnées en lot** | Recherche et lie automatiquement les séries sans métadonnées approuvées |
+| **Re-match métadonnées** | Supprime les liens existants et re-matche avec le provider actuel |
+| **Rafraîchir métadonnées** | Met à jour les séries liées (en cours de publication uniquement) |
+| **Rafraîchir toutes les métadonnées** | Met à jour toutes les séries liées, y compris terminées |
 
-### Téléchargement
+### Téléchargements
 
-| Type (interne) | Libellé UI | Description |
-|----------------|-----------|-------------|
-| `download_detection` | Détection de téléchargements | Cherche sur Prowlarr les releases pour les volumes manquants |
+| Libellé dans l'interface | Description |
+|--------------------------|-------------|
+| **Détection de téléchargements** | Cherche sur Prowlarr les releases pour les volumes manquants |
 
 ### Synchronisation lecture (AniList)
 
-| Type (interne) | Description |
-|----------------|-------------|
-| `reading_status_match` | Pull — importe la progression depuis AniList |
-| `reading_status_push` | Push différentiel des statuts locaux vers AniList |
+| Libellé dans l'interface | Description |
+|--------------------------|-------------|
+| **Pull AniList** | Importe la progression depuis AniList vers Stripstream |
+| **Push AniList** | Envoie la progression locale vers AniList |
 
-## Historique des jobs
+## Historique des tâches
 
 ![Historique des jobs — liste filtrée par type, statut et bibliothèque avec stats et actions](/screenshots/jobs-history.png)
 
-L'historique liste tous les jobs avec type, statut, stats (livres ajoutés/supprimés, liens créés…), durée et date. Filtres disponibles : type, statut, bibliothèque. Chaque job peut être consulté (rapport détaillé) ou rejoué.
+L'historique liste toutes les tâches avec leur type, statut, statistiques (livres ajoutés/supprimés, liens créés…), durée et date. Filtres disponibles : type, statut, bibliothèque. Chaque tâche peut être consultée (rapport détaillé) ou relancée.
 
 ## Cycle de vie
 
 ```
-pending → running → success | failed | cancelled
+En attente → En cours → Terminée
+                     → Échouée
+                     → Annulée
 ```
-
-Statuts intermédiaires : `extracting_pages`, `generating_thumbnails`
 
 ## Suivi de progression
 
-- Progression temps réel via **Server-Sent Events** (SSE)
-- Pourcentage (0–100), fichier courant, compteurs traité/total
-- Timing : `started_at`, `finished_at`, `phase2_started_at`
-- Blob JSON de stats spécifiques au job
-- Suivi des erreurs par fichier (non-fatales : le job continue)
-- Support d'annulation pour les jobs pending/running
+- Progression en temps réel (percentage, fichier en cours, compteurs)
+- Rapport final avec statistiques détaillées
+- Journal des erreurs non fatales (le job continue malgré elles)
+- Annulation possible pour les tâches en attente ou en cours
+
+:::note[Détails techniques]
+**Types internes** :
+
+Indexation : `rebuild` (mise à jour), `rescan` (rescan complet), `full_rebuild` (reconstruction).
+
+Miniatures : `thumbnail_rebuild` (manquantes), `thumbnail_regenerate` (toutes), `cbr_to_cbz` (conversion).
+
+Métadonnées : `metadata_batch`, `metadata_batch_rematch`, `metadata_refresh`, `metadata_refresh_all`.
+
+Téléchargements : `download_detection`, `prowlarr_rss`.
+
+AniList : `reading_status_match`, `reading_status_push`.
+
+**Statuts intermédiaires** : `extracting_pages`, `generating_thumbnails`.
+
+**Champs de timing** : `started_at`, `finished_at`, `phase2_started_at`.
+:::

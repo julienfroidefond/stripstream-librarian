@@ -1,57 +1,75 @@
 ---
 title: Prowlarr
-description: Recherche d'indexeurs et détection de téléchargements
+description: Recherche de releases et détection automatique de volumes manquants
 ---
 
-## Découverte (onglet Prowlarr)
+Prowlarr est un gestionnaire d'indexeurs de torrents. Stripstream l'utilise pour trouver automatiquement les releases disponibles correspondant aux volumes manquants de vos séries.
 
-L'onglet **Prowlarr** de la page Découverte agrège les releases disponibles par série. Le bouton "+" ouvre un modal d'ajout guidé — voir [Ajouter à la bibliothèque](/discovery/add-to-library/) pour le détail du flow.
+## Configuration
 
-## Recherche
+Dans **Settings → Download tools → Prowlarr** :
+- **URL** : adresse de votre instance Prowlarr (ex. `http://prowlarr:9696`)
+- **Clé API** : disponible dans Prowlarr → Settings → General → API Key
 
-Recherchez Prowlarr pour les volumes manquants d'une série :
+---
 
-- Matching de patterns de volumes dans les titres (supporte `T##`, `Tome ##`, `Vol ##`, ranges `1-10`, intégrales)
-- Résultats : titre, taille, seeders/leechers, URL, volumes manquants matchés
-- Volume 0 (T0) exclu de la recherche
+## Découverte des releases (onglet Prowlarr)
+
+L'onglet **Prowlarr** de la page Découverte agrège les releases récentes disponibles par série. Le bouton "+" ouvre un assistant pour ajouter la série à votre bibliothèque — voir [Ajouter à la bibliothèque](/discovery/add-to-library/).
+
+---
+
+## Recherche manuelle depuis une série
+
+Sur la page d'une série, le bouton **Prowlarr** lance une recherche ciblée. Les résultats sont triés par pertinence et indiquent quels volumes manquants sont couverts par chaque release. Vous pouvez envoyer directement un résultat à qBittorrent.
+
+---
 
 ## Détection automatique
 
-Job `download_detection` — scan automatique de toutes les séries avec volumes manquants :
+Stripstream peut interroger automatiquement Prowlarr à intervalles réguliers pour toutes vos séries avec des volumes manquants. Les releases trouvées apparaissent dans la section **Volumes disponibles** de chaque série et sur la page Téléchargements.
 
-- Stocke les releases disponibles dans `available_downloads`
-- **`prowlarr_no_results`** (error) : Prowlarr a retourné 0 résultats bruts (problème indexeur)
-- **`downloads_not_found`** (info) : résultats trouvés mais aucun ne correspond aux volumes manquants
+La fréquence se configure dans les paramètres de chaque bibliothèque → section **Détection de téléchargements**.
 
-## Stratégie de fetch deux passes
+---
 
-Pour la page Découverte (onglet Prowlarr), le fetch se fait en deux passes afin de combiner meilleures sources et sorties récentes :
+## Polling RSS
 
-1. **Passe 1** — plusieurs requêtes par mots-clés (genres BD/manga), triées par **seeders** — remonte les releases les plus distribuées
-2. **Passe 2** — une requête vide triée par **publishDate décroissant** — remonte les sorties les plus récentes qui pourraient être absentes du top seeders
+En complément de la détection classique (une requête par série), le polling RSS récupère les sorties récentes de tous vos indexeurs en parallèle et les compare en mémoire à vos séries. Il est plus rapide et consomme moins de requêtes.
 
-Les résultats des deux passes sont dédupliqués par GUID et mis en cache **7 jours**. La limite totale de résultats retournés est de **200**.
+Configurez l'intervalle dans **Settings → Download tools → Prowlarr → Polling RSS automatique**.
 
-### Filtrage par indexer
+:::caution
+Certains indexeurs privés n'acceptent pas les requêtes RSS sans terme de recherche explicite. Ces indexeurs sont ignorés silencieusement par le polling RSS — leurs releases restent accessibles via la détection classique.
+:::
 
-Tous les indexers configurés dans Prowlarr apparaissent dans les boutons de filtre, même si leurs releases sont hors du top 200 global (ils sont détectés depuis le cache complet). Sélectionner un indexer re-fetche Prowlarr avec `?indexer=X` pour retourner les 100 meilleures releases de cet indexer spécifiquement.
+---
 
-## Releases
+## Gestion des releases
 
-- **Indicateur d'échec** : badge sur les releases qui ont eu des erreurs de téléchargement précédentes
-- **Blacklist** : masquez définitivement les releases indésirables (filtrées lors de la prochaine détection)
-- Panel de blacklist avec possibilité de réafficher
-- **Date de détection** (`detected_at`) : chaque release conserve la date de sa première découverte, même après un refresh
+**Indicateur d'échec** : une release est marquée si un téléchargement précédent l'utilisant a échoué. Elle reste disponible mais vous êtes averti.
 
-## Page Téléchargements
+**Blacklist** : masquez définitivement les releases indésirables — elles ne seront plus proposées lors des prochaines détections. Pour gérer la blacklist, accédez au panel via l'icône œil à côté du titre "Volumes disponibles" sur la page Téléchargements.
 
-Tri disponible :
+---
+
+## Tri sur la page Téléchargements
+
+La liste des volumes disponibles peut être triée par :
 
 | Tri | Description |
 |-----|-------------|
-| **Récent** (défaut) | Par `detected_at` le plus récent parmi les releases de la série |
-| Seeders | Par nombre de seeders du meilleur release |
+| **Récent** (défaut) | Releases détectées le plus récemment en premier |
+| Seeders | Par nombre de seeders de la meilleure release |
 | Manquants | Par nombre de volumes manquants |
-| Nom | Par nom de série |
+| Nom | Alphabétique |
 
-La date relative de détection est affichée sur chaque série (ex : "il y a 2h"). Ce tri est basé sur `detected_at` — la date de première découverte de la release — et non sur la date de mise à jour.
+:::note[Détails techniques]
+**Détection classique** : job `download_detection`. Stocke les résultats dans la table `available_downloads`. `detected_at` de chaque release est préservé entre les runs. Filtre les releases blacklistées (`release_blacklist`).
+
+**Polling RSS** : job `prowlarr_rss`, global (`library_id = NULL`). Fetch parallèle via `/api/v1/search?query=&indexerIds=X&limit=100`. Déduplication par GUID. Normalisation des titres : points, underscores, tirets, apostrophes → espaces, accents supprimés, insensible à la casse. Snapshot RSS (max 200 releases) stocké dans `stats_json.rss_releases`, purgé automatiquement — 5 derniers jobs `success` conservés.
+
+**Stratégie de fetch deux passes** (onglet Découverte) : passe 1 = requêtes par mots-clés genre triées par seeders ; passe 2 = requête vide triée par publishDate. Dédupliqué par GUID, mis en cache 7 jours, limite 200 résultats.
+
+**Blacklist** : stockée dans `release_blacklist` (titre + indexer + nom de série). Ne supprime pas les entrées `available_downloads` existantes — nettoyage au prochain run.
+:::

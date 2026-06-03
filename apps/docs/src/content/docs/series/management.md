@@ -5,11 +5,11 @@ description: Organisation et métadonnées des séries
 
 ![Page détail d'une série — couverture, métadonnées, progression de lecture et grille de livres](/screenshots/series-detail.png)
 
-## Agrégation automatique
+## Comment les séries sont créées
 
-Les séries sont dérivées de la structure de répertoires pendant le scan. Les livres sans série sont groupés comme "unclassified".
+Les séries sont créées automatiquement pendant le scan, à partir de la structure de dossiers. Chaque dossier contenant des livres devient une série. Les livres sans dossier parent sont regroupés sous le nom "unclassified".
 
-## Structure de dossiers
+## Structure de dossiers recommandée
 
 Voici un exemple complet couvrant tous les cas reconnus par le scanner :
 
@@ -17,150 +17,103 @@ Voici un exemple complet couvrant tous les cas reconnus par le scanner :
 Ma Bibliothèque/                         ← racine de la bibliothèque
 │
 ├── Dragon Ball/
-│   ├── Dragon Ball T01.cbz              → série "Dragon Ball", tome 1,   regular
-│   ├── Dragon Ball T02.cbz              → série "Dragon Ball", tome 2,   regular
-│   ├── Dragon Ball HS1.cbz              → série "Dragon Ball", HS 1,     hs       (détecté via le nom de fichier)
-│   ├── Dragon Ball INT.cbz              → série "Dragon Ball", intégrale, integral (détecté via le nom de fichier)
+│   ├── Dragon Ball T01.cbz              → série "Dragon Ball", tome 1,    régulier
+│   ├── Dragon Ball T02.cbz              → série "Dragon Ball", tome 2,    régulier
+│   ├── Dragon Ball HS1.cbz              → série "Dragon Ball", HS 1,      hors-série
+│   ├── Dragon Ball INT.cbz              → série "Dragon Ball", intégrale,  intégrale
 │   ├── Hors-Série/                      ← sous-dossier spécial → remonte au parent
-│   │   └── Dragon Ball HS2.cbz          → série "Dragon Ball", HS 2,     hs
+│   │   └── Dragon Ball HS2.cbz          → série "Dragon Ball", HS 2,      hors-série
 │   └── Intégrales/                      ← sous-dossier spécial → remonte au parent
-│       └── Dragon Ball INT 2.cbz        → série "Dragon Ball", intégrale, integral
+│       └── Dragon Ball INT 2.cbz        → série "Dragon Ball",            intégrale
 │
 ├── Naruto/
-│   ├── Naruto T01.cbz                   → série "Naruto", tome 1,        regular
+│   ├── Naruto T01.cbz                   → série "Naruto", tome 1,         régulier
 │   └── Specials/                        ← sous-dossier spécial → remonte au parent
-│       └── Naruto Special.cbz           → série "Naruto",                hs
+│       └── Naruto Special.cbz           → série "Naruto",                 hors-série
 │
-├── Shonen/                              ← dossier de catégorie (ignoré, non spécial)
-│   └── One Piece/                       ← parent immédiat du fichier = nom de série
-│       ├── One Piece T01.cbz            → série "One Piece", tome 1,     regular
-│       └── One Piece T02.cbz            → série "One Piece", tome 2,     regular
+├── Shonen/                              ← dossier de catégorie (ignoré)
+│   └── One Piece/                       ← parent immédiat = nom de série
+│       ├── One Piece T01.cbz            → série "One Piece", tome 1,      régulier
+│       └── One Piece T02.cbz            → série "One Piece", tome 2,      régulier
 │
 ├── Oneshots/                            ← dossier oneshot à la racine
-│   ├── Blacksad.cbz                     → série "Blacksad",  1 livre,    oneshot
-│   └── Persepolis.cbz                   → série "Persepolis", 1 livre,   oneshot
+│   ├── Blacksad.cbz                     → série "Blacksad",  1 livre,     oneshot
+│   └── Persepolis.cbz                   → série "Persepolis", 1 livre,    oneshot
 │
 └── livre-isole.cbz                      → pas de série (fichier à la racine)
 ```
 
-**Règles de dérivation de la série** :
+**Règles de détermination de la série** :
 
 1. La série = **répertoire parent immédiat** du fichier.
-2. Si ce parent est un sous-dossier spécial (voir liste ci-dessous), on remonte d'un cran.
-3. Si le fichier est dans un dossier `Oneshots` **directement à la racine**, chaque fichier devient sa propre série (`oneshot`).
+2. Si ce parent est un sous-dossier spécial (HS, Hors-Série, Specials, Bonus, Extras, Intégrales, INT…), le scanner remonte d'un cran.
+3. Si le fichier est dans un dossier `Oneshots` **directement à la racine**, chaque fichier devient sa propre série.
 4. Un fichier posé directement à la racine n'a pas de série.
-
-**Sous-dossiers spéciaux reconnus** (insensible à la casse) :
-
-`HS` · `Hors-Série` · `Hors-Série` · `Hors Serie` · `Spécial` · `Specials` · `Spéciaux` · `Bonus` · `Extras` · `Extra` · `Intégrale` · `Intégrales` · `INT`
 
 :::note
 Un dossier `Oneshots` imbriqué à 2 niveaux ou plus (`Shonen/Oneshots/…`) n'est **pas** traité comme dossier oneshot — les fichiers seront rattachés à la série `"Oneshots"`.
 :::
 
-**Détection du type de volume depuis le nom de fichier** :
+---
 
-| Pattern dans le nom | Type assigné |
-|---------------------|-------------|
-| `HS`, `HS1`, `Hors-Série 3`, `Bonus -…` | `hs` |
-| `INT`, `INT.02`, `INTHS`, `Intégrale 5` | `integral` |
-| Tout autre numérotation | `regular` |
-| Fichier dans un dossier `Oneshots` racine | `oneshot` |
+## Métadonnées d'une série
 
-## Métadonnées de série
+Sur la page détail d'une série, vous pouvez consulter et modifier :
 
-| Champ | Description |
-|-------|-------------|
-| `description` | Description de la série |
-| `publishers` | Éditeurs |
-| `start_year` | Année de début |
-| `status` | `ongoing`, `ended`, `completed`, `on_hold`, `hiatus` |
-| `total_volumes` | Nombre total de tomes (provider ou manuel) |
-| `authors` | Auteurs (agrégés depuis les livres ou metadata) |
-| `genres` | Genres |
-| `cover_url` | URL de couverture |
+- **Description** de la série
+- **Auteurs** (scénariste, dessinateur…)
+- **Éditeurs**
+- **Année de début**
+- **Statut** (en cours, terminée, en pause…)
+- **Nombre total de tomes** (utilisé pour calculer les volumes manquants)
+- **Genres**
+- **Couverture**
 
 ## Verrouillage de champs
 
-Chaque champ peut être verrouillé individuellement pour empêcher la synchronisation metadata d'écraser les modifications manuelles.
+Chaque champ peut être verrouillé individuellement pour empêcher une synchronisation de métadonnées d'écraser vos modifications manuelles. Activez le **verrou** via l'icône cadenas à côté du champ concerné.
 
-Le verrouillage est stocké dans la colonne JSONB `locked_fields` (ex: `{"description": true}`).
+---
 
-## Fusion de séries
+## Fusionner des séries
 
 ![Modal de fusion — recherche de la série à absorber avec aperçu du nombre de livres et du provider](/screenshots/series-merge.png)
 
-- Fusionner une série source dans une série cible
-- Transfère les livres, metadata links, downloads disponibles, liens AniList
-- Conserve les metadata links de la cible en cas de conflit (même provider)
-- Supprime la série source après fusion
-- Modal de recherche cross-library sur la page détail de série
+Si le scanner a créé deux séries distinctes pour ce qui est en réalité la même série (variation de nom, faute d'orthographe…), vous pouvez les fusionner :
 
-## Nettoyage des séries orphelines
+- Ouvrez la page de la série cible
+- Utilisez l'option **Fusionner avec…** pour chercher la série source à absorber
+- Tous les livres de la série source sont transférés vers la série cible
+- La série source est supprimée après fusion
 
-- Après suppression de livres obsolètes, les séries sans livres sont supprimées
-- Les séries créées par découverte (sans livres supprimés) sont préservées
-- Nettoyage supplémentaire : séries sans livres ET sans metadata links ET sans downloads
+La fusion transfère également les métadonnées, liens AniList et volumes disponibles au téléchargement. Les métadonnées de la série cible sont prioritaires en cas de conflit.
 
-## Déduplication au renommage
+---
 
-`get_or_create_series` vérifie `name` et `original_name` pour éviter les doublons. Matching case-insensitive et accent-insensitive sur les deux champs.
+## Filtrer les séries
 
-## Dossier Oneshots
+Sur la page **Séries**, plusieurs filtres sont disponibles :
 
-Un dossier placé **directement à la racine d'une bibliothèque** et dont le nom correspond à un pattern oneshot est traité spécialement par l'indexer : chaque fichier devient sa propre série avec un seul livre de type `oneshot`.
+**Par type de volume** — pour n'afficher que les séries contenant des tomes réguliers, des one-shots, des hors-séries ou des intégrales.
 
-### Nommage du dossier
+**Wishlist / bibliothèque** — les séries **sans livres** constituent votre wishlist (séries ajoutées depuis la découverte, pas encore téléchargées). Le filtre vous permet de basculer entre wishlist, séries possédées, ou tout afficher.
 
-Les noms reconnus (insensible à la casse, préfixe `_` ou `.` accepté) :
+---
 
-| Exemples valides |
-|-----------------|
-| `Oneshots/` |
-| `Oneshot/` |
-| `One-Shots/` |
-| `One-Shot/` |
-| `One Shots/` |
-| `_Oneshots/` |
-| `_oneshot/` |
+## Nettoyage automatique
 
-### Comportement
+Les séries qui n'ont plus aucun livre après un scan sont automatiquement supprimées — sauf si elles ont des métadonnées approuvées ou des volumes disponibles au téléchargement (c'est-à-dire les séries de votre wishlist).
 
-- `MonOneshot.cbz` dans ce dossier → série **"MonOneshot"**, 1 livre, `volume_type = oneshot`
-- Pas de numéro de volume assigné
-- Le titre du livre = le nom de fichier (sans extension)
-- Le reader voit ces séries comme n'importe quelle autre série (un seul livre)
+:::note[Détails techniques]
+**Champs de métadonnées** : `description`, `publishers`, `start_year`, `status` (`ongoing`, `ended`, `completed`, `on_hold`, `hiatus`), `total_volumes`, `authors`, `genres`, `cover_url`.
 
-### Filtre dans la liste des séries
+**Verrouillage** : stocké dans la colonne JSONB `locked_fields` (ex: `{"description": true}`).
 
-Un filtre **Type** est disponible sur la page Séries pour filtrer par type de volume.
+**Déduplication** : `get_or_create_series` vérifie `name` et `original_name` pour éviter les doublons. Matching `LOWER(unaccent())` sur les deux champs.
 
-| Valeur | Description |
-|--------|-------------|
-| (tous) | Toutes les séries |
-| Régulier | Séries avec au moins un tome régulier |
-| One-shot | Séries avec au moins un oneshot |
-| Hors-Série | Séries avec au moins un hors-série |
-| Intégrales | Séries avec au moins une intégrale |
+**Fusion** : transfère livres, metadata links, downloads disponibles, liens AniList. Conserve les metadata links de la cible en cas de conflit (même provider). Supprime la série source après fusion.
 
-**API** : paramètre `volume_type=oneshot` (ou `regular`, `hs`, `integral`).
+**Filtre wishlist** : paramètre API `no_books=true` (séries sans livres) / `has_books=true` (séries avec livres). Paramètre type : `volume_type=oneshot|regular|hs|integral`.
 
-## Wishlist
-
-Les séries **sans livres** fonctionnent comme une wishlist — elles ont été ajoutées via la découverte mais pas encore importées dans la bibliothèque.
-
-Sur la page Séries, un filtre permet de basculer entre trois états :
-
-| Valeur | Description |
-|--------|-------------|
-| (tous) | Toutes les séries |
-| Wishlist | Séries sans livres (ajoutées en wishlist) |
-| Dans la bibliothèque | Séries avec au moins un livre |
-
-### API
-
-Le paramètre `no_books=true` retourne uniquement les séries sans livres. Le paramètre `has_books=true` retourne uniquement les séries avec au moins un livre. Les deux sont mutuellement exclusifs.
-
-### Nettoyage automatique
-
-Les séries sans livres **et** sans metadata links **et** sans downloads disponibles sont supprimées automatiquement lors du nettoyage des séries orphelines. Les séries ajoutées via la découverte (avec metadata links) sont préservées.
+**Nettoyage** : séries supprimées si sans livres ET sans metadata links ET sans downloads disponibles.
+:::

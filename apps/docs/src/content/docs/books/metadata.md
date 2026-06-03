@@ -1,35 +1,48 @@
 ---
 title: Métadonnées des livres
-description: Champs de métadonnées extraits et gérés
+description: Informations disponibles sur chaque livre
 ---
 
 ![Page détail d'un livre — métadonnées, statut de lecture, et aperçu des pages](/screenshots/book-detail.png)
 
-## Champs extraits automatiquement
+## Informations disponibles sur un livre
 
-| Champ | Source |
-|-------|--------|
-| **Titre** | Nom de fichier ou métadonnées externes |
-| **Série** | Structure de répertoires (parent immédiat) |
-| **Volume** | Extraction depuis le nom de fichier |
-| **Type de volume** | Détection automatique (regular, hs, integral) |
-| **Auteur(s)** | Métadonnées externes ou édition manuelle |
-| **Nombre de pages** | Analyse de l'archive (phase 2) |
-| **Langue** | Métadonnées externes |
-| **Kind** | ebook, comic, bd |
+Chaque livre dans Stripstream dispose des informations suivantes :
 
-## Champs enrichis par les providers
+**Extraites automatiquement lors de l'indexation** :
+- Titre (depuis le nom de fichier)
+- Série (depuis la structure de dossiers)
+- Numéro de volume (depuis le nom de fichier)
+- Type de volume (régulier, hors-série, intégrale — détection automatique)
+- Nombre de pages (lors de la phase d'analyse)
 
-Lors de la synchronisation des métadonnées, les champs suivants sont mis à jour sur chaque livre :
+**Enrichies par les providers de métadonnées** :
+- Résumé du tome
+- ISBN
+- Date de publication
+- Langue
+- Auteurs
 
-| Champ | Règle de mise à jour |
-|-------|---------------------|
+**Gérées manuellement** :
+- Auteurs (édition directe)
+- Tous les champs ci-dessus peuvent être modifiés et verrouillés
+
+## Verrouillage de champs
+
+Chaque champ peut être verrouillé pour empêcher une synchronisation de métadonnées de l'écraser. Un champ verrouillé n'est jamais modifié automatiquement, quelle que soit la source.
+
+:::note[Détails techniques]
+**Champs extraits automatiquement** : `title`, `series` (répertoire parent), `volume` (parsing du nom), `volume_type` (regular/hs/integral/oneshot), `page_count` (phase 2), `kind` (ebook, comic, bd).
+
+**Règles de mise à jour par les providers** :
+
+| Champ | Règle |
+|-------|-------|
 | `summary` | Remplace si non-vide (`COALESCE(NULLIF(new, ''), existing)`) |
 | `isbn` | Remplace si non-vide |
 | `publish_date` | Remplace si non-vide |
 | `language` | Remplace si non-vide |
 | `authors` | Remplace si le nouveau tableau est non-vide |
 
-:::tip
-Tous ces champs respectent le **verrouillage** : si un champ est verrouillé, la synchronisation le passe.
+Tous ces champs respectent le verrouillage via `locked_fields`.
 :::

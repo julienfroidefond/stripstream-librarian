@@ -26,7 +26,7 @@ Dans **Settings → onglet Statut de lecture** :
 4. Cliquez sur **Tester la connexion** pour vérifier — votre nom d'utilisateur AniList s'affiche si tout est correct
 
 :::note
-Si vous préférez entrer un token manuellement (ex. token longue durée), utilisez la section **Token manuel** (dépliable sous le bouton Connecter). Vous pouvez aussi y renseigner votre User ID AniList directement si la détection automatique échoue.
+Si vous préférez entrer un token manuellement (ex. token longue durée), utilisez la section **Token manuel** (dépliable sous le bouton Connecter). Vous pouvez aussi y renseigner votre User ID AniList si la détection automatique échoue.
 :::
 
 ### 3 — Associer un utilisateur local
@@ -37,54 +37,54 @@ Dans la section **Utilisateur local**, sélectionnez quel utilisateur Stripstrea
 
 Dans les paramètres de chaque bibliothèque (icône ⚙️), section **État de lecture** :
 - **Provider** : sélectionnez `AniList`
-- **Synchronisation automatique** : choisissez la fréquence de push automatique (`Manuel`, `Toutes les heures`, `Quotidien`, `Hebdomadaire`)
+- **Synchronisation automatique** : choisissez la fréquence de push automatique
 
 ---
 
-## Pull — Importer depuis AniList
+## Importer depuis AniList (Pull)
 
-Le pull tire la progression depuis votre liste AniList et met à jour les statuts de lecture locaux.
+Le pull tire votre progression depuis AniList et met à jour les statuts de lecture locaux. Les séries que vous avez "en cours" ou "terminées" sur AniList sont mises à jour dans Stripstream.
 
-| Statut AniList | Statut Stripstream |
-|---------------|-------------------|
-| `PLANNING` | `unread` |
-| `CURRENT` | `reading` |
-| `COMPLETED` | `read` |
-
-**Déclenchement** : bouton **Pull depuis AniList** dans Settings → AniList, ou job `reading_status_match`.
+**Déclenchement** : bouton **Pull depuis AniList** dans Settings → AniList.
 
 Le rapport détaille par série : matched, updated, skipped, errors.
 
 ---
 
-## Push — Exporter vers AniList
+## Exporter vers AniList (Push)
 
-Le push envoie votre progression locale vers AniList. Seules les séries **modifiées depuis le dernier push** sont envoyées (push différentiel).
-
-| Statut Stripstream | Statut AniList |
-|-------------------|---------------|
-| `unread` | `PLANNING` |
-| `reading` | `CURRENT` |
-| `read` | `COMPLETED` |
+Le push envoie votre progression locale vers AniList. Seules les séries **modifiées depuis le dernier push** sont envoyées — pas besoin de tout renvoyer à chaque fois.
 
 :::caution
-Ne marque jamais une série comme `COMPLETED` sur AniList en se basant uniquement sur les livres **possédés** — il faut que tous les livres soient marqués **lus**.
+Stripstream ne marque jamais une série comme terminée sur AniList en se basant uniquement sur les livres **possédés** — il faut que tous les livres soient effectivement marqués **lus** dans Stripstream.
 :::
-
-**Déclenchement** : bouton **Push vers AniList** dans Settings → AniList, ou automatiquement selon la fréquence configurée par bibliothèque.
 
 **Prévisualisation** : le bouton **Prévisualiser** affiche ce qui sera envoyé sans effectuer le push — utile pour vérifier avant la première synchronisation.
 
----
-
-## Linking par série
-
-Sur la page d'une série, si elle est liée à AniList via les métadonnées, vous pouvez gérer le lien AniList individuellement : voir le statut actuel sur AniList, modifier manuellement le statut ou le nombre de tomes lus.
+**Déclenchement** : bouton **Push vers AniList** dans Settings → AniList, ou automatiquement selon la fréquence configurée par bibliothèque.
 
 ---
 
-## Rate limiting
+## Correspondance des statuts
 
-- Retry automatique avec attente de 10s sur HTTP 429
-- Abandon au second 429 consécutif pour éviter les bans
-- Push auto vérifié chaque minute par le scheduler de l'indexer
+| Statut sur AniList | Statut dans Stripstream |
+|-------------------|------------------------|
+| Planifié (PLANNING) | Non lu |
+| En cours (CURRENT) | En cours |
+| Terminé (COMPLETED) | Lu |
+
+---
+
+## Gestion par série
+
+Sur la page d'une série liée à AniList, vous pouvez consulter et modifier directement son statut AniList sans passer par une synchronisation complète.
+
+:::note[Détails techniques]
+Rate limiting : attente fixe de 700ms entre chaque requête AniList (~85 req/min). Retry 10s sur HTTP 429, abandon au second 429 consécutif.
+
+Le push est différentiel : une série est envoyée si `synced_at IS NULL` ou si la progression a changé depuis `synced_at`.
+
+Seuls les livres avec `volume_type IN ('regular', 'integral')` sont comptés pour le calcul du statut et du `progress` envoyé à AniList. Les hors-série et one-shots sont ignorés.
+
+Push auto vérifié chaque minute par le scheduler de l'indexer.
+:::

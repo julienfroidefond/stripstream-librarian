@@ -1,113 +1,114 @@
 ---
 title: Scan & Indexation
-description: Pipeline d'indexation en deux phases (discovery + analysis)
+description: Comment Stripstream indexe vos fichiers
 ---
 
-## Pipeline en deux phases
+## Comment fonctionne l'indexation
 
-### Phase 1 — Découverte (Discovery)
+Quand vous lancez un scan, Stripstream travaille en deux étapes successives :
 
-Scan rapide basé uniquement sur les noms de fichiers, **sans I/O sur les archives** :
+**Étape 1 — Découverte rapide** : Stripstream parcourt vos dossiers et enregistre immédiatement tous les nouveaux fichiers trouvés. Cette phase est très rapide car elle ne lit pas le contenu des archives — elle se base uniquement sur les noms de fichiers et la structure de dossiers. Vos livres apparaissent dans l'interface en quelques secondes.
 
-- Parcours des répertoires avec `WalkDir`
-- Extraction des métadonnées depuis le nom de fichier (titre, volume, série)
-- Insertion des livres avec `page_count = NULL` pour visibilité immédiate
-- Skip des répertoires inchangés via la table `directory_mtimes`
+**Étape 2 — Analyse approfondie** : Une fois la découverte terminée, Stripstream ouvre chaque archive pour compter les pages et extraire la première image afin de générer une miniature. Cette phase est plus longue mais s'exécute en arrière-plan sans bloquer l'interface.
 
 :::note
-Un `page_count = NULL` est normal après la phase discovery — la phase analysis le remplit ensuite.
+Si un livre n'affiche pas encore de miniature ou de nombre de pages, c'est normal — l'étape 2 est peut-être encore en cours.
 :::
 
-### Phase 2 — Analyse (Analysis)
-
-Traitement approfondi des archives :
-
-- Ouverture des archives, extraction du nombre de pages
-- Extraction de la première page pour les miniatures
-- Génération des miniatures WebP
-- Traitement des livres où `page_count IS NULL`
-
-### Fingerprint
-
-Chaque fichier est identifié par un fingerprint : `SHA256(taille + mtime + nom)`. Cela permet de détecter les changements sans relire les fichiers.
+---
 
 ## Types de scan
 
-### Scan incrémental (défaut)
+### Mise à jour (scan incrémental)
 
-Le plus rapide. L'indexer se souvient de la date de dernière modification de chaque dossier — il ne revisite que les dossiers qui ont changé depuis le dernier scan. Les livres déjà connus restent intacts dans la base.
+Le scan du quotidien. Stripstream se souvient de quels dossiers ont changé depuis la dernière fois et ne revisite que ceux-là. C'est le plus rapide.
 
 **Quand l'utiliser :** usage courant, après avoir ajouté ou supprimé quelques fichiers.
 
 ---
 
-### Rescan
+### Rescan complet
 
-Visite **tous** les dossiers (même ceux inchangés), mais conserve les livres déjà enregistrés. Utile si l'indexer a raté des changements ou si vous venez de modifier la configuration (nouveaux formats supportés, renommage de dossiers...).
+Visite **tous** les dossiers (même ceux inchangés), mais conserve les livres déjà enregistrés et leurs métadonnées. Utile si l'indexer a raté des changements ou si vous venez de modifier la configuration.
 
 **Quand l'utiliser :** si des fichiers semblent manquants alors qu'ils sont bien présents sur le disque.
 
 ---
 
-### Scan complet
+### Reconstruction complète
 
-**Efface d'abord tous les livres de la bibliothèque**, puis repart de zéro. C'est l'option nucléaire : tout est recréé comme si la bibliothèque était scannée pour la première fois. Plus lent, mais garantit un état propre.
+**Efface d'abord tous les livres de la bibliothèque**, puis repart de zéro. Tout est recréé comme si la bibliothèque était scannée pour la première fois. Plus lent, mais garantit un état propre.
 
 **Quand l'utiliser :** après une réorganisation majeure de l'arborescence, ou si la base de données semble incohérente.
 
 :::caution
-Les métadonnées éditées manuellement (descriptions, notes, liens metadata) **ne sont pas effacées** par un scan complet — seuls les livres et leurs fichiers associés sont recréés.
+Les métadonnées éditées manuellement (descriptions, notes, liens metadata) **ne sont pas effacées** par une reconstruction complète — seuls les livres et leurs fichiers associés sont recréés.
 :::
 
-## Détection des séries
+---
 
-La série est dérivée du **répertoire parent immédiat** du fichier. Si ce parent est un sous-dossier spécial (HS, Specials, Bonus, Extras, Intégrales, INT), le scanner remonte d'un cran.
+## Comment les séries sont détectées
+
+La série d'un livre est déterminée par le **répertoire parent immédiat** du fichier. Si ce parent est un sous-dossier spécial (HS, Specials, Bonus, Extras, Intégrales, INT), le scanner remonte d'un cran pour trouver le nom de la série.
 
 Exemple : `Shonen/Dragon Ball/T01.cbz` → série = "Dragon Ball"
 
-## Extraction du volume
+---
 
-Patterns supportés (par ordre de priorité) :
+## Détection du numéro de volume
 
-| Pattern | Exemple |
-|---------|---------|
-| `Tome ##`, `Tome.##` | `Dragon Ball Tome 01.cbz` |
-| `T##` | `Naruto T42.cbz` |
-| `Vol.##`, `Volume ##` | `One Piece Vol.12.pdf` |
-| `###` (hash) | `Bleach #5.cbz` |
-| `-## ` (tiret) | `Astérix -01.cbz` |
-| `Tome_##` | `Berserk Tome_33.cbz` |
+Stripstream reconnaît plusieurs formats de nommage pour extraire le numéro de tome :
 
-## Type de volume
+| Exemple de fichier | Volume détecté |
+|--------------------|---------------|
+| `Dragon Ball Tome 01.cbz` | Tome 1 |
+| `Naruto T42.cbz` | Tome 42 |
+| `One Piece Vol.12.pdf` | Volume 12 |
+| `Bleach #5.cbz` | Numéro 5 |
+| `Astérix -01.cbz` | Tome 1 |
 
-| Type | Description | Détection |
-|------|-------------|-----------|
-| `regular` | Volume standard numéroté (défaut) | Par défaut |
-| `hs` | Hors-série / édition spéciale | HS, Hors-Série, Spécial, Bonus |
-| `integral` | Omnibus / intégrale | INT, INTHS, Intégrale |
-| `oneshot` | Livre autonome | Dossier Oneshots à la racine de la bibliothèque (auto) ou manuel |
+---
+
+## Types de volumes
+
+Stripstream distingue quatre types de volumes :
+
+| Type | Description |
+|------|-------------|
+| **Régulier** | Tome standard numéroté |
+| **Hors-série** | Édition spéciale, bonus (détecté via HS, Hors-Série, Spécial… dans le nom) |
+| **Intégrale** | Omnibus ou intégrale (détecté via INT, Intégrale… dans le nom) |
+| **One-shot** | Livre autonome (fichier dans un dossier `Oneshots` à la racine) |
 
 :::important
-Seuls les volumes `regular` participent à la numérotation des tomes. Les HS, oneshot et intégrales sont exclus du comptage de manquants et du matching metadata.
+Seuls les volumes **réguliers** participent au comptage des tomes et à la détection des volumes manquants. Les hors-séries, oneshots et intégrales sont traités à part.
 :::
 
 ### Dossier Oneshots
 
-Un dossier placé **directement à la racine d'une bibliothèque** dont le nom correspond à un pattern oneshot est traité automatiquement : chaque fichier devient sa propre série avec un seul livre de type `oneshot`.
-
-Noms reconnus (insensible à la casse, préfixe `_` ou `.` accepté) : `Oneshots`, `Oneshot`, `One-Shots`, `One-Shot`, `One Shots`, `One Shot`.
+Un dossier nommé `Oneshots` (ou variantes) placé **directement à la racine d'une bibliothèque** est traité spécialement : chaque fichier qu'il contient devient sa propre série avec un seul livre.
 
 ```
 Ma Bibliothèque/
 ├── Oneshots/
-│   ├── Blacksad.cbz       → série "Blacksad", 1 livre, volume_type = oneshot
-│   └── Persepolis.cbz     → série "Persepolis", 1 livre, volume_type = oneshot
+│   ├── Blacksad.cbz       → série "Blacksad", 1 livre
+│   └── Persepolis.cbz     → série "Persepolis", 1 livre
 └── Dragon Ball/
-    └── T01.cbz            → série "Dragon Ball", volume_type = regular
+    └── T01.cbz            → série "Dragon Ball", tome 1
 ```
 
-- Le titre du livre = nom de fichier sans extension
-- Aucun numéro de volume assigné
-- Un dossier `Oneshots` imbriqué (2 niveaux ou plus) n'est **pas** traité comme dossier oneshot
+Un dossier `Oneshots` imbriqué plus profondément n'est **pas** traité comme dossier oneshot.
 
 Voir aussi la [gestion des séries](/series/management) pour le filtre par type de volume.
+
+:::note[Détails techniques]
+**Phase 1 — Discovery** : parcours WalkDir, empreinte `SHA256(taille + mtime + nom)` pour détecter les changements sans relire les archives, insertion avec `page_count = NULL`, skip des répertoires inchangés via la table `directory_mtimes`.
+
+**Phase 2 — Analysis** : traite les livres où `page_count IS NULL`, ouvre les archives, génère des miniatures WebP, concurrence bornée par Semaphore.
+
+**Patterns de volume reconnus** (par ordre de priorité) : `Tome ##`, `Tome.##`, `T##`, `Vol.##`, `Volume ##`, `###`, `-## `, `Tome_##`.
+
+**Sous-dossiers spéciaux reconnus** (insensible à la casse) : `HS`, `Hors-Série`, `Hors Serie`, `Spécial`, `Specials`, `Spéciaux`, `Bonus`, `Extras`, `Extra`, `Intégrale`, `Intégrales`, `INT`.
+
+**Noms de dossier Oneshots reconnus** (insensible à la casse, préfixe `_` ou `.` accepté) : `Oneshots`, `Oneshot`, `One-Shots`, `One-Shot`, `One Shots`, `One Shot`.
+:::

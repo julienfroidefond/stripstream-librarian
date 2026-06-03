@@ -1,143 +1,73 @@
 ---
-title: Jobs AniList
+title: Tâches AniList
 description: Liaison des séries et synchronisation de la progression de lecture vers AniList
 ---
 
-Les deux jobs AniList sont exécutés par le service **API** (job poller). Ils sont **non-exclusifs** et respectent le rate limit de l'API AniList : **700 ms entre chaque requête** (~85 req/min).
+Deux tâches gèrent la synchronisation avec AniList. Elles peuvent s'exécuter en parallèle avec d'autres tâches.
 
 ---
 
-## `reading_status_match` — Lier les séries à AniList
+## Lier les séries à AniList
 
-Recherche chaque série de la bibliothèque sur AniList et crée automatiquement les liens dans `anilist_series_links`.
+Cette tâche recherche chaque série de la bibliothèque sur AniList et crée automatiquement les correspondances. Elle est le prérequis à toute synchronisation de progression.
 
-### Prérequis
+**Ce qui se passe** :
+- Les séries déjà liées sont ignorées
+- Si une seule correspondance est trouvée, elle est liée automatiquement
+- Si plusieurs correspondances existent et que l'une est une correspondance exacte (même nom normalisé), elle est liée automatiquement
+- Si plusieurs correspondances existent sans correspondance exacte, la série est marquée "ambiguë" et vous devez faire le choix manuellement depuis la page de la série
 
-AniList configuré dans les paramètres de l'application.
+**Rapport** :
 
-### Règles métier
-
-**Sélection des séries**
-
-- Ignore les séries nommées `"unclassified"`
-- Ignore les séries déjà présentes dans `anilist_series_links` pour cette bibliothèque
-
-**Algorithme de matching par série**
-
-1. Recherche le nom de la série sur l'API AniList
-2. Évaluation des résultats :
-   - **Aucun résultat** → `anilist_no_results`
-   - **1 seul résultat** → lié automatiquement, même si le titre n'est pas identique
-   - **Plusieurs résultats avec match exact** (après normalisation du titre) → lié automatiquement sur le résultat exact
-   - **Plusieurs résultats sans match exact** → `anilist_ambiguous` (sélection manuelle requise depuis la page série)
-
-**Rate limit et gestion des erreurs**
-
-- Attente fixe de **700 ms** entre chaque requête AniList
-- En cas de HTTP 429 (rate limit atteint) : attente de **10 secondes** puis une tentative de reprise
-- Si la reprise échoue encore → le job s'arrête avec `failed`
-
-### Résultats par série
-
-| `event_type` | Niveau | Signification |
-|-------------|--------|---------------|
-| `anilist_linked` | `info` | Série liée avec succès |
-| `anilist_already_linked` | `info` | Déjà liée, ignorée |
-| `anilist_no_results` | `info` | Aucun résultat AniList |
-| `anilist_ambiguous` | `warning` | Plusieurs correspondances, sélection manuelle requise |
-| `error` | `error` | Erreur réseau ou API |
-
-### Rapport de job
-
-| Champ | Signification |
-|-------|--------------|
-| `linked` | Séries liées avec succès |
-| `already_linked` | Séries déjà liées, ignorées |
-| `no_results` | Séries sans résultat AniList |
-| `ambiguous` | Séries avec plusieurs correspondances |
-| `errors` | Erreurs techniques |
-
-### API
-
-```
-POST /reading-status/match
-{ "library_id": "uuid" }
-```
+| Résultat | Signification |
+|----------|---------------|
+| Lié | Série liée avec succès |
+| Déjà lié | Déjà lié, ignoré |
+| Aucun résultat | Série introuvable sur AniList |
+| Ambigu | Plusieurs correspondances, sélection manuelle requise |
 
 ---
 
-## `reading_status_push` — Synchroniser la progression vers AniList
+## Push vers AniList
 
-Pousse la progression de lecture de chaque série liée vers AniList. Seules les séries modifiées depuis la dernière synchronisation sont envoyées (**synchronisation différentielle**).
+Envoie votre progression de lecture vers AniList. Seules les séries **modifiées depuis le dernier push** sont envoyées — pas toute la bibliothèque à chaque fois.
 
-### Prérequis
+**Ce qui est envoyé** : le statut de la série (planifié / en cours / terminé) et le nombre de tomes lus.
 
-- AniList configuré avec un `local_user_id` (ID du compte AniList à mettre à jour)
-- Bibliothèque configurée avec `reading_status_provider = 'anilist'`
-- Liens `anilist_series_links` existants pour la bibliothèque (créés par `reading_status_match`)
+**Déclenchement automatique** : configurez la fréquence dans les paramètres de la bibliothèque → section **État de lecture**.
 
-### Règles métier
-
-**Sélection différentielle**
-
-Une série est poussée si au moins une de ces conditions est vraie :
-- `synced_at IS NULL` — jamais synchronisée
-- La progression de lecture d'un livre a été mise à jour depuis `synced_at`
-- Un nouveau livre a été créé dans la série depuis `synced_at`
-
-Les séries sans modification depuis le dernier push sont **ignorées**.
-
-**Calcul du statut AniList**
-
-| Statut AniList | Condition |
-|----------------|-----------|
-| `PLANNING` | 0 livre lu |
-| `CURRENT` | Au moins 1 livre lu mais pas tous |
-| `COMPLETED` | Tous les livres lus |
-
-:::important
-Seuls les livres avec `volume_type IN ('regular', 'integral')` sont comptés. Les hors-série (`hs`) et one-shots (`oneshot`) sont ignorés pour le calcul du statut et de la progression.
+:::note
+Seuls les tomes réguliers et les intégrales comptent pour la progression envoyée à AniList. Les hors-séries et one-shots sont ignorés.
 :::
 
-Le champ `progress` envoyé à AniList = nombre de livres `regular`/`integral` marqués comme lus.
+:::note[Détails techniques]
+Les deux tâches sont exécutées par l'API (job poller), non-exclusives. Rate limit AniList : 700ms entre chaque requête (~85 req/min). Retry 10s sur HTTP 429, abandon au second 429 consécutif.
 
-**Après un push réussi**
+**Matching** (`reading_status_match`) :
+- Ignore les séries `"unclassified"` et celles déjà dans `anilist_series_links` pour cette bibliothèque
+- Correspondance exacte : après normalisation `LOWER(unaccent())` du titre
+- `API : POST /reading-status/match { "library_id": "uuid" }`
 
-`anilist_series_links.synced_at` est mis à jour à `NOW()` pour cette série.
+Événements :
+| `event_type` | Niveau |
+|-------------|--------|
+| `anilist_linked` | `info` |
+| `anilist_already_linked` | `info` |
+| `anilist_no_results` | `info` |
+| `anilist_ambiguous` | `warning` |
+| `error` | `error` |
 
-**Rate limit et gestion des erreurs**
+**Push** (`reading_status_push`) :
+- Différentiel : série poussée si `synced_at IS NULL` ou progression modifiée depuis `synced_at`
+- `volume_type IN ('regular', 'integral')` uniquement pour le calcul du statut et du `progress`
+- Après push réussi : `anilist_series_links.synced_at = NOW()`
+- Prérequis : `local_user_id` configuré, `reading_status_provider = 'anilist'`, liens `anilist_series_links` existants
+- `API : POST /reading-status/push { "library_id": "uuid" }`
 
-- Attente fixe de **700 ms** entre chaque requête AniList
-- En cas de HTTP 429 : attente de **10 secondes** puis une tentative de reprise
-- Si la reprise échoue encore → le job s'arrête avec `failed`
-
-### Résultats par série
-
-| `event_type` | Niveau | Signification |
-|-------------|--------|---------------|
-| `status_pushed` | `info` | Progression synchronisée avec succès |
-| `status_no_books` | `info` | Série sans livres, ignorée |
-| `error` | `error` | Erreur réseau ou API AniList |
-
-### Rapport de job
-
-| Champ | Signification |
-|-------|--------------|
-| `pushed` | Séries synchronisées |
-| `no_books` | Séries ignorées (sans livres) |
-| `errors` | Erreurs techniques |
-
-### Ordonnancement automatique
-
-Si `reading_status_push_mode != 'manual'` et que :
-- Un provider AniList est configuré sur la bibliothèque
-- Des liens `anilist_series_links` existent pour la bibliothèque
-
-…l'ordonnanceur crée automatiquement un job selon l'intervalle défini. Aucun job `reading_status_push` ne doit être déjà actif pour la bibliothèque.
-
-### API
-
-```
-POST /reading-status/push
-{ "library_id": "uuid" }
-```
+Événements :
+| `event_type` | Niveau |
+|-------------|--------|
+| `status_pushed` | `info` |
+| `status_no_books` | `info` |
+| `error` | `error` |
+:::

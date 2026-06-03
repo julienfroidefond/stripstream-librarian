@@ -1,128 +1,68 @@
 ---
-title: Jobs d'indexation
-description: Scan de bibliothèque — rebuild, rescan, full_rebuild
+title: Tâches d'indexation
+description: Scan de bibliothèque — mise à jour, rescan, reconstruction complète
 ---
 
-Les jobs d'indexation scannent le système de fichiers pour maintenir la base de données des livres à jour. Ils fonctionnent en **deux phases** et sont exécutés par le service **Indexer**.
-
----
-
-## Pipeline en deux phases
-
-### Phase 1 — Discovery (scanner)
-
-- Parcourt les dossiers via WalkDir
-- Calcule un **fingerprint** par fichier : `SHA256(taille + mtime + nom de fichier)` — détecte les changements sans ouvrir les archives
-- Insère les nouveaux livres avec `page_count = NULL` pour les rendre visibles immédiatement
-- Détecte les fichiers supprimés du disque et les retire de la DB
-- **Protection contre suppression massive** : si tous les fichiers existants semblent avoir disparu (ex. disque démonté), la suppression est annulée pour éviter une perte de données
-
-### Phase 2 — Analysis (analyzer)
-
-Traite les livres avec `page_count IS NULL` :
-
-- Ouvre l'archive (CBZ, CBR, PDF, EPUB)
-- Extrait le nombre de pages
-- Lit la première image → génère une miniature WebP
-- Concurrence bornée par un Semaphore pour éviter de saturer le disque
-
-:::note
-Le statut du job passe à `extracting_pages` puis `generating_thumbnails` lors de la phase 2.
-:::
+Les tâches d'indexation maintiennent votre bibliothèque à jour en scannant le système de fichiers. Elles fonctionnent en deux phases (découverte rapide + analyse approfondie) et sont exécutées par le service Indexer.
 
 ---
 
-## `rebuild` — Scan incrémental
+## Mise à jour — Scan incrémental
 
-Le scan du quotidien. Visite uniquement les dossiers dont la date de modification a changé depuis le dernier scan.
+Le scan du quotidien. Stripstream se souvient de quels dossiers ont changé et ne revisite que ceux-là — le plus rapide.
 
-### Règles métier
+**Quand l'utiliser :** usage courant, après avoir ajouté ou supprimé des fichiers.
 
-- Charge la table `directory_mtimes` : si un dossier n'a pas changé depuis le dernier scan, son contenu est entièrement sauté (zéro I/O)
-- Met à jour `directory_mtimes` après chaque dossier traité
-- Les répertoires `HS/Specials/Bonus/Intégrales` remontent d'un cran pour nommer la série parente
-- Re-matche les `external_book_metadata` sans `book_id` par numéro de volume après le scan (corrige les métadonnées de livres nouvellement indexés)
-- Propage le `volume_type` lors des updates (livres dont le fingerprint n'a pas changé)
-
-### Déclenchement automatique
-
-Déclenché par l'ordonnanceur si `monitor_enabled = true` et `next_scan_at <= NOW()`. Le mode `scan_mode` détermine la fréquence.
-
-### API
-
-```
-POST /index/rebuild
-{ "library_id": "uuid" }   // optionnel — toutes les bibliothèques si absent
-```
+**Déclenchement automatique :** configurez la fréquence dans les paramètres de la bibliothèque → section Indexation.
 
 ---
 
-## `rescan` — Rescan profond
+## Rescan — Parcours complet
 
-Vide le cache des dates de modification pour forcer le re-parcours de tous les dossiers, sans supprimer les données existantes.
+Visite **tous** les dossiers de votre bibliothèque (même les inchangés), mais conserve tous vos livres, métadonnées et statuts de lecture. Plus lent qu'un scan incrémental, mais ne perd aucune donnée.
 
-### Règles métier
-
-- Vide la table `directory_mtimes` pour la bibliothèque avant de commencer
-- Toutes les données (livres, séries, métadonnées, statuts de lecture) sont **conservées**
-- Le comptage du total de fichiers se fait sur le filesystem (plus lent qu'un rebuild normal qui lit la DB)
-
-### Cas d'usage
-
-- Après l'ajout d'un format supporté (ex. EPUB) pour le découvrir sans tout reconstruire
-- Pour corriger des `volume_type` mal classés (HS déclarés comme regular) sans perdre les métadonnées
-
-### API
-
-```
-POST /index/rebuild
-{ "library_id": "uuid", "rescan": true }
-```
+**Quand l'utiliser :** si des fichiers semblent manquants alors qu'ils sont bien sur le disque, ou après avoir ajouté un nouveau format (ex. EPUB) que vous souhaitez découvrir sans tout reconstruire.
 
 ---
 
-## `full_rebuild` — Reconstruction complète ⚠️
-
-Supprime toute la base de données de la bibliothèque et rescanne depuis zéro.
-
-### Règles métier
-
-- **Supprime tous les livres et fichiers** (`books`, `book_files`) de la bibliothèque avant de commencer
-- Vide `directory_mtimes`
-- Le comptage se fait sur le filesystem (DB vide)
-- Après la phase 2, **nettoie les miniatures orphelines** : les fichiers WebP dont l'UUID n'est plus référencé en DB (générés pour d'anciens livres) sont supprimés du disque
+## Reconstruction complète — Repartir de zéro
 
 :::caution
-Toutes les **métadonnées approuvées**, **statuts de lecture** et **liens AniList** associés aux séries sont perdus car les séries sont supprimées et recréées avec de nouveaux UUIDs. À utiliser uniquement si la bibliothèque est corrompue ou si vous souhaitez repartir de zéro.
+Supprime **tous les livres** de la bibliothèque en base de données avant de rescanner. **Toutes les métadonnées approuvées, statuts de lecture et liens AniList sont perdus** car les séries sont supprimées et recréées avec de nouveaux identifiants. À utiliser uniquement si la bibliothèque est corrompue ou si vous souhaitez repartir de zéro.
 :::
 
-### Déclenchement automatique
+Après la reconstruction, les miniatures orphelines (liées à d'anciens livres) sont supprimées du disque.
 
-Possible si `scan_mode = "full"` dans les paramètres de la bibliothèque.
+**Quand l'utiliser :** après une réorganisation majeure de l'arborescence, ou si la base de données semble incohérente.
 
-### API
+---
 
+## Scan par surveillance (watcher)
+
+Quand la surveillance en temps réel est activée pour une bibliothèque, chaque ajout ou suppression de fichier détecté déclenche automatiquement un scan ciblé sur le dossier concerné.
+
+---
+
+## Protection contre les suppressions massives
+
+Si un scan détecte que la quasi-totalité de vos fichiers ont "disparu" (par exemple si le disque est démonté accidentellement), la suppression est annulée automatiquement pour éviter une perte de données.
+
+:::note[Détails techniques]
+**Phase 1 — Discovery** : WalkDir, fingerprint `SHA256(taille + mtime + nom)`, insertion avec `page_count = NULL`, skip des répertoires inchangés via `directory_mtimes`. Détecte les fichiers supprimés et les retire de la DB.
+
+**Phase 2 — Analysis** : traite les livres où `page_count IS NULL`, ouvre les archives, extrait le nombre de pages, génère une miniature WebP. Concurrence bornée par Semaphore.
+
+**Réscan** : vide la table `directory_mtimes` avant de commencer (force le re-parcours de tous les dossiers). Toutes les données conservées.
+
+**Reconstruction complète** : supprime `books` et `book_files`, vide `directory_mtimes`. Après la phase 2, nettoie les fichiers WebP orphelins dont l'UUID n'est plus en DB.
+
+**API** :
 ```
 POST /index/rebuild
-{ "library_id": "uuid", "full": true }
+{ "library_id": "uuid" }            // scan incrémental
+{ "library_id": "uuid", "rescan": true }  // rescan
+{ "library_id": "uuid", "full": true }    // reconstruction complète
 ```
 
----
-
-## `scan` — Scan par watcher
-
-Job créé automatiquement par le watcher de système de fichiers (inotify/kqueue) quand un changement est détecté dans un dossier surveillé.
-
-### Règles métier
-
-- Se comporte comme un `rebuild` standard
-- Exclusif : ne s'exécute pas si un autre job exclusif est déjà actif pour cette bibliothèque
-- Priorité 2 (même que rebuild)
-
----
-
-## Événements de job
-
-| `event_type` | Niveau | Signification |
-|-------------|--------|---------------|
-| `error` | `error` | Fichier non lisible ou archive corrompue |
+**Événement de job** : `event_type = 'error'` (niveau `error`) pour les fichiers non lisibles ou archives corrompues.
+:::

@@ -3,46 +3,66 @@ title: Batch & Refresh
 description: Traitement en masse et rafraîchissement des métadonnées
 ---
 
-## Batch (Auto-match)
+## Batch — Liaison automatique en lot
 
-Job `metadata_batch` — matcher automatiquement toutes les séries d'une bibliothèque.
+Le job **Batch metadata** recherche et lie automatiquement toutes les séries d'une bibliothèque qui n'ont pas encore de métadonnées approuvées. C'est le moyen le plus rapide d'enrichir une nouvelle bibliothèque.
 
-- Séries traitées par `updated_at ASC` (les moins récentes en premier)
-- Matching par édition pour SensCritique (mode détaillé)
-- Auto-match uniquement si confiance == 1.0
+### Résultats possibles pour chaque série
 
-### Statuts de résultat
+Après traitement, chaque série reçoit un statut dans le rapport du job :
 
-| Statut | Description |
-|--------|-------------|
-| `auto_matched` | Match automatique validé |
-| `no_results` | Aucun résultat trouvé |
-| `too_many_results` | Trop de résultats, pas de match clair |
-| `low_confidence` | Meilleur candidat sous le seuil |
-| `already_linked` | Série déjà liée à un provider |
+| Résultat | Signification |
+|----------|---------------|
+| **Lié automatiquement** | Un match certain a été trouvé et approuvé automatiquement |
+| **Confiance trop basse** | Un résultat a été trouvé, mais il n'est pas assez certain — à valider manuellement |
+| **Trop de résultats** | Plusieurs candidats plausibles, Stripstream ne peut pas choisir seul |
+| **Aucun résultat** | Aucun résultat trouvé sur le provider |
+| **Déjà lié** | La série avait déjà des métadonnées approuvées, ignorée |
 
-## Re-match
+Les séries "à confiance trop basse" ou "trop de résultats" apparaissent dans le rapport — vous pouvez les traiter une par une depuis la page de chaque série.
 
-Job `metadata_batch_rematch` — re-lier toutes les séries à un autre provider.
+---
 
-- Passe les séries déjà liées au provider cible
-- Supprime l'ancien lien uniquement après un nouveau match réussi
-- Utilise le mode détaillé pour SensCritique
+## Re-match — Changer de provider
 
-## Refresh
+Le job **Re-match** force un nouveau matching pour toutes les séries, même celles déjà liées. Il est utile pour migrer une bibliothèque d'un provider vers un autre (par exemple d'Open Library vers Google Books) sans repasser manuellement sur chaque série.
 
-Job `metadata_refresh` — mettre à jour les liens approuvés avec les dernières données des providers.
+Le job supprime les anciens liens uniquement après avoir trouvé un nouveau match avec succès — vos données ne sont jamais perdues si le nouveau matching échoue.
 
-### Fonctionnement
+---
 
-1. Re-recherche le provider, trouve le candidat correspondant
-2. Compare les anciennes et nouvelles valeurs (diff par champ)
-3. Met à jour les champs modifiés (même logique de sync partagée)
-4. Rapports de changement détaillés par série et par livre
+## Refresh — Mettre à jour les métadonnées
 
-### Caractéristiques
+Le job **Refresh** re-télécharge les données des providers pour les séries déjà liées. Il est utile pour récupérer les nouvelles sorties : quand un nouveau tome paraît, le provider l'ajoute à sa liste et le refresh met à jour votre nombre de tomes attendus.
 
-- **Non-destructif** : ne met à jour que si le provider a de nouvelles données
-- **Throttle** : 300ms entre les requêtes SensCritique
-- **Re-matching** : après le refresh, tente de réapparier les `external_book_metadata` non liés (livres importés après le fetch initial)
-- Utilise les mêmes fonctions partagées que approve et batch
+Par défaut, le refresh ne traite que les séries encore en cours de publication — les séries terminées sont considérées stables et ignorées.
+
+Le job **Refresh complet** force la mise à jour de toutes les séries liées, y compris les terminées.
+
+### Ce qui est préservé
+
+- Les champs **verrouillés** ne sont jamais modifiés par un refresh
+- Le refresh est **non-destructif** : il n'efface pas vos données, il ajoute ou met à jour seulement si le provider a de nouvelles informations
+
+:::note[Détails techniques]
+**Batch** : job `metadata_batch`. Séries triées par `updated_at ASC` (les moins récentes en premier). SensCritique : mode détaillé via `groupProducts`. Auto-match uniquement si confidence == 1.0. Circuit breaker SensCritique sur HTTP 429. Délai de 1s entre chaque appel provider.
+
+**Re-match** : job `metadata_batch_rematch`. Skip uniquement si déjà lié au provider **cible** (pas aux autres). Supprime les anciens liens uniquement après un nouveau match réussi.
+
+**Refresh** : job `metadata_refresh`. Traite uniquement les séries avec statut autre que `ended`/`cancelled`. Throttle 300ms entre les requêtes SensCritique. Après refresh, tente de réapparier les `external_book_metadata` non liés.
+
+**Refresh complet** : job `metadata_refresh_all`. Identique à `metadata_refresh` mais sans filtre de statut.
+
+API :
+```
+POST /metadata/batch
+{ "library_id": "uuid" }           // batch normal
+{ "library_id": "uuid", "force_rematch": true }  // re-match
+
+POST /metadata/refresh
+{ "library_id": "uuid" }
+
+POST /metadata/refresh-all
+{ "library_id": "uuid" }
+```
+:::

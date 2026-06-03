@@ -16,7 +16,7 @@ La page **Auteurs** liste tous les auteurs présents dans votre bibliothèque, a
 
 Cliquez sur un auteur pour accéder à sa fiche : liste de toutes ses séries et tous ses livres présents dans la bibliothèque.
 
-## Alimentation des données
+## D'où viennent les auteurs ?
 
 Les auteurs sont renseignés de deux façons :
 

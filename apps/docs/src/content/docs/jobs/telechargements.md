@@ -1,195 +1,77 @@
 ---
-title: Jobs de détection de téléchargements
-description: Détection automatique des releases disponibles via Prowlarr — détection classique et polling RSS
+title: Tâches de détection de téléchargements
+description: Détection automatique des releases disponibles via Prowlarr
 ---
 
-Deux jobs complémentaires permettent de détecter des releases disponibles via Prowlarr. Tous deux sont exécutés par le service **API** (job poller), sont **non-exclusifs**, et alimentent la même table `available_downloads`.
-
----
-
-## `download_detection` — Détection classique
-
-### Prérequis
-
-- **Prowlarr configuré** dans les paramètres de l'application (URL + clé API)
-- La vérification de configuration est faite **avant** de créer le job ; si Prowlarr n'est pas configuré, l'appel retourne une erreur immédiatement
-
-### Règles métier
-
-**Sélection des séries traitées**
-
-Pour chaque série de la bibliothèque avec un **lien metadata approuvé** :
-
-1. Récupère les **volumes manquants** depuis `external_book_metadata` où `book_id IS NULL` (volume connu du provider mais absent en local)
-2. Si aucun volume manquant → résultat `no_missing_volumes` (série complète ou non liée)
-3. Si pas de lien approuvé → résultat `no_metadata` (skip)
-
-**Recherche Prowlarr**
-
-Pour chaque série avec des volumes manquants :
-
-1. Envoie une requête de recherche à Prowlarr avec le nom de la série
-2. Filtre les releases présentes dans la **blacklist** (`release_blacklist`)
-3. Pour chaque release non blacklistée, tente de matcher les numéros de volumes dans le titre de la release
-4. Calcule `matched_missing_volumes` : liste des volumes manquants couverts par cette release
-5. Calcule `all_volumes` : tous les volumes détectés dans le titre de la release
-
-**Marquage `has_failed`**
-
-Si des volumes de la release ont déjà fait l'objet d'un téléchargement échoué pour cette série, la release est marquée `has_failed = true` dans l'affichage (mais reste disponible).
-
-**Fusion des résultats**
-
-Les résultats sont fusionnés avec ceux des runs précédents dans `available_downloads` :
-- Si une release existait déjà → son `detected_at` original est **préservé**
-- Si une release est nouvelle → `detected_at` = heure de début du job
-- `new_releases` = nombre de releases dont `detected_at >= job_started_at`
-
-**Nettoyage post-job**
-
-Après le job, les entrées `available_downloads` dont la liste de releases est vide sont supprimées.
-
-### Résultats par série
-
-| `event_type` | Signification |
-|-------------|---------------|
-| `downloads_found` | Des releases correspondantes ont été trouvées |
-| `downloads_not_found` | Prowlarr n'a retourné aucune release utilisable |
-| `no_missing_volumes` | Série complète, rien à chercher |
-| `no_metadata` | Pas de lien metadata approuvé |
-| `prowlarr_no_results` | Prowlarr n'a rien retourné (indexer ou réseau) |
-| `error` | Erreur technique |
-
-### Rapport de job
-
-| Champ | Signification |
-|-------|--------------|
-| `total_series` | Séries traitées |
-| `found` | Séries pour lesquelles des releases ont été trouvées |
-| `new_releases` | Nouvelles releases détectées lors de ce run |
-| `not_found` | Séries sans résultat Prowlarr |
-| `no_missing` | Séries complètes |
-| `no_metadata` | Séries sans lien approuvé |
-| `errors` | Erreurs techniques |
+Deux tâches complémentaires permettent de détecter des releases disponibles via Prowlarr. Elles alimentent toutes deux la même liste de volumes disponibles au téléchargement.
 
 ---
 
-### Ordonnancement automatique
+## Détection classique
 
-Si `download_detection_mode != 'manual'` et que Prowlarr est configuré, l'ordonnanceur crée automatiquement un job selon l'intervalle défini dans les paramètres de la bibliothèque.
+La tâche de détection classique interroge Prowlarr **une fois par série** pour trouver des releases correspondant aux volumes manquants. C'est la méthode la plus précise car Prowlarr filtre directement par nom de série.
 
-Condition supplémentaire : aucun job `download_detection` ne doit être déjà actif (`pending` ou `running`) pour cette bibliothèque.
+**Conditions pour qu'une série soit traitée** : la série doit avoir des métadonnées approuvées et des volumes manquants. Les séries complètes ou sans métadonnées sont ignorées.
+
+**Déclenchement** : configurez la fréquence dans les paramètres de la bibliothèque → section **Détection de téléchargements**.
 
 ---
 
-## `prowlarr_rss` — Polling RSS
+## Polling RSS
 
-### Principe
-
-Au lieu de faire **N requêtes Prowlarr** (une par série), le job `prowlarr_rss` récupère les releases récentes de **chaque indexer Prowlarr en parallèle** (query vide, RSS-style), déduplique les résultats par GUID, puis les rapproche en mémoire de **toutes les bibliothèques** ayant des séries avec des volumes manquants.
-
-Le job est **global** (`library_id = NULL`) : une seule instance couvre toutes les bibliothèques.
-
-| | `download_detection` | `prowlarr_rss` |
-|--|---------------------|----------------|
-| Requêtes Prowlarr | 1 par série | 1 par indexer (parallèle) |
-| Correspondance | Prowlarr filtre par nom | Matching local sur le titre |
-| Couverture | Toute l'histoire de l'indexer | Releases récentes uniquement |
-| Périmètre | Par bibliothèque | Toutes les bibliothèques |
-| Fréquence conseillée | Horaire / quotidien | 30 min à 1h |
+Le polling RSS récupère les releases récentes de **tous vos indexeurs en parallèle** (une requête par indexeur), puis les compare en mémoire à toutes vos séries avec des volumes manquants. Il est plus efficace sur un grand nombre de séries car il fait beaucoup moins de requêtes.
 
 :::caution
-**Tous les indexers ne supportent pas le mode RSS.** Certains trackers (notamment les trackers privés comme C411) n'acceptent que les requêtes avec un terme de recherche explicite et retournent une erreur pour les queries vides. Ces indexers sont ignorés silencieusement — leurs releases restent accessibles via `download_detection`. Le rapport du job liste le résultat par indexer dans `rss_indexer_stats`.
+Tous les indexeurs ne supportent pas le mode RSS — certains trackers privés n'acceptent que les recherches avec un terme explicite. Ces indexeurs sont ignorés silencieusement, mais leurs releases restent accessibles via la détection classique.
 :::
 
-### Prérequis
+Le polling RSS est **global** : une seule exécution couvre toutes vos bibliothèques.
 
-Identiques à `download_detection` : Prowlarr configuré, séries avec un **lien metadata approuvé** et des volumes manquants.
+**Configuration de l'intervalle** : **Settings → Download tools → Prowlarr → Polling RSS automatique**
 
-### Règles métier
+---
 
-**Fetch des releases**
+## Quand utiliser chacune ?
 
-La liste des indexers est d'abord récupérée via `/api/v1/indexer`. Une requête est ensuite envoyée **en parallèle** à chaque indexer (`/api/v1/search?query=&indexerIds=X&limit=100`) avec les catégories configurées. Les résultats sont agrégés et dédupliqués par GUID. Les indexers qui ne supportent pas les queries vides (trackers privés) retournent une erreur et sont simplement ignorés.
+| | Détection classique | Polling RSS |
+|--|---------------------|------------|
+| **Recherche** | Prowlarr filtre par nom de série | Matching local sur le titre |
+| **Couverture** | Toute l'histoire de l'indexeur | Releases récentes uniquement |
+| **Fréquence conseillée** | Horaire / quotidien | 30 min à 1h |
+| **Périmètre** | Par bibliothèque | Toutes les bibliothèques |
 
-**Matching titre / série**
-
-Pour chaque série (toutes bibliothèques confondues) avec des volumes manquants, le titre de chaque release est normalisé puis comparé au nom de la série :
-
-- Points, underscores, tirets, apostrophes, crochets → espaces
-- Accents courants supprimés (`é→e`, `à→a`, etc.)
-- Comparaison insensible à la casse
-
-Si le titre normalisé **contient** le nom normalisé de la série, `match_title_volumes` est appliqué pour identifier les volumes couverts.
-
-**Résultats et fusion**
-
-Identiques à `download_detection` : upsert dans `available_downloads` via `merge_releases()`, `detected_at` préservé pour les releases déjà connues.
-
-**Snapshot du flux RSS**
-
-Les releases brutes retournées par Prowlarr (max 200) sont stockées dans `stats_json.rss_releases` pour consultation dans le backoffice. Ce snapshot est **purgé automatiquement** : seuls les 5 derniers jobs `success` le conservent — les jobs plus anciens gardent uniquement les stats agrégées.
-
-**Notification Telegram**
-
-Une notification est envoyée uniquement si `new_releases > 0` (nouvelles releases détectées ce run), pour éviter le spam sur les polls sans résultat.
-
-### Résultats par série
-
-| `event_type` | Signification |
-|-------------|---------------|
-| `downloads_found` | Des releases correspondantes ont été trouvées dans le flux RSS |
-| `downloads_not_found` | Aucune release ne correspond à cette série dans le flux courant |
-
-### Rapport de job
-
-| Champ | Signification |
-|-------|--------------|
-| `total_series` | Séries avec volumes manquants vérifiées (toutes bibliothèques) |
-| `found` | Séries pour lesquelles des releases ont été trouvées |
-| `new_releases` | Nouvelles releases détectées lors de ce run |
-| `rss_releases_fetched` | Nombre total de releases agrégées depuis tous les indexers |
-| `rss_indexer_stats` | Détail par indexer : `id`, `name`, `count` (releases retournées), `error` si indisponible |
-
-### Ordonnancement automatique
-
-L'intervalle est configurable dans **Settings → Download tools → Prowlarr → Polling RSS automatique** :
-
-| Option | Valeur |
-|--------|--------|
-| Désactivé | Aucun job automatique |
-| Toutes les 30 minutes | (défaut) |
-| Toutes les heures | |
-| Toutes les 6 / 12 heures | |
-| Une fois par jour / semaine | |
-
-Conditions pour déclencher un job :
-- Prowlarr configuré
-- Intervalle ≠ 0 (non désactivé)
-- Aucun job `prowlarr_rss` global déjà actif (`pending` ou `running`)
-- Le dernier job `prowlarr_rss` global terminé date de plus de l'intervalle configuré
-
-### API
-
-```
-POST /prowlarr-rss/start
-{ "library_id": "uuid" }   // optionnel — job global si absent
-```
+En pratique, les deux tâches se complètent : le RSS pour les nouveautés en temps quasi-réel, la détection classique pour fouiller l'historique des indexeurs.
 
 ---
 
 ## Blacklist des releases
 
-Une release peut être blacklistée pour ne plus apparaître dans les résultats futurs.
+Une release peut être blacklistée pour ne plus apparaître dans les résultats futurs. Elle disparaît de la liste des volumes disponibles lors du prochain scan.
 
-### Règles
+Pour gérer la blacklist : page Téléchargements → icône œil à côté du titre "Volumes disponibles".
 
-- La blacklist est stockée dans `release_blacklist` (titre + indexer + nom de série)
-- Les releases blacklistées sont filtrées **avant** le matching volumes, dans chaque run
-- Blacklister une release **ne supprime pas** les entrées `available_downloads` existantes pour cette release (elles sont nettoyées au prochain run)
+:::note[Détails techniques]
+**Détection classique** (`download_detection`) :
+- Exécuté par l'API (job poller), non-exclusif
+- Récupère les volumes manquants depuis `external_book_metadata` où `book_id IS NULL`
+- Filtre la blacklist `release_blacklist` avant matching
+- Fusion dans `available_downloads` : `detected_at` préservé pour les releases déjà connues
+- Résultats par série : `downloads_found`, `downloads_not_found`, `no_missing_volumes`, `no_metadata`, `prowlarr_no_results`, `error`
+- `API : POST /download-detection/start { "library_id": "uuid" }`
 
-### API
+**Polling RSS** (`prowlarr_rss`) :
+- Global (`library_id = NULL`), non-exclusif
+- Fetch via `/api/v1/indexer` puis `/api/v1/search?query=&indexerIds=X&limit=100` en parallèle
+- Normalisation des titres : points, underscores, tirets, apostrophes → espaces, accents supprimés
+- Snapshot RSS (max 200 releases) stocké dans `stats_json.rss_releases`, purgé → 5 derniers jobs `success`
+- Notification Telegram uniquement si `new_releases > 0`
+- Résultats : `downloads_found`, `downloads_not_found`
+- Champs rapport : `total_series`, `found`, `new_releases`, `rss_releases_fetched`, `rss_indexer_stats`
+- `API : POST /prowlarr-rss/start { "library_id": "uuid" }`
 
+**Blacklist** : stockée dans `release_blacklist` (titre + indexer + nom de série). Filtrée avant matching. Ne supprime pas les `available_downloads` existants — nettoyage au prochain run.
+
+API blacklist :
 | Méthode | Endpoint | Description |
 |---------|----------|-------------|
 | `DELETE` | `/available-downloads/{id}?blacklist=true` | Supprimer et blacklister |
@@ -197,12 +79,4 @@ Une release peut être blacklistée pour ne plus apparaître dans les résultats
 | `POST` | `/release-blacklist` | Blacklister manuellement |
 | `DELETE` | `/release-blacklist/{id}` | Retirer de la blacklist |
 | `GET` | `/release-blacklist` | Lister les releases blacklistées |
-
----
-
-## API
-
-```
-POST /download-detection/start
-{ "library_id": "uuid" }   // optionnel — toutes les bibliothèques si absent
-```
+:::

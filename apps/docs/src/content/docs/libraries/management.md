@@ -25,7 +25,7 @@ Cliquez sur l'icône engrenage ⚙️ d'une bibliothèque pour ouvrir ses param�
 
 **Scan planifié**
 
-Active un scan automatique périodique. Le fréquence se choisit dans la liste déroulante à droite :
+Active un scan automatique périodique. Choisissez la fréquence dans la liste déroulante :
 
 | Valeur | Description |
 |--------|-------------|
@@ -50,15 +50,15 @@ Le watcher et le scan planifié sont indépendants — vous pouvez activer l'un,
 
 **Fournisseur principal**
 
-Source utilisée pour récupérer les métadonnées (titre, description, couverture…) lors du matching automatique. Options :
+Source utilisée pour récupérer automatiquement les informations de vos séries (titre officiel, description, couverture, liste des tomes…). Options :
 
-| Valeur | Description |
-|--------|-------------|
+| Valeur | Idéal pour |
+|--------|-----------|
 | Par défaut | Utilise le provider configuré globalement dans les Settings |
 | Aucun | Désactive la recherche automatique de métadonnées |
 | Google Books | Livres, romans, BD en français |
 | ComicVine | Comics anglophones |
-| Open Library | Catalogue mondial (livres anciens, public domain) |
+| Open Library | Catalogue mondial (livres anciens, domaine public) |
 | AniList | Manga, manhwa, manhua |
 | Bédéthèque | BD franco-belge |
 | SensCritique | BD et manga en français |
@@ -69,7 +69,7 @@ Utilisé si le fournisseur principal ne retourne aucun résultat pour une série
 
 **Rafraîchissement auto des métadonnées**
 
-Re-télécharge périodiquement les métadonnées des séries déjà matchées (nouvelles sorties, mises à jour). Même fréquences que le scan planifié. Désactivé (`Manuel`) par défaut.
+Re-télécharge périodiquement les métadonnées des séries déjà matchées (pour suivre les nouvelles sorties). Mêmes fréquences que le scan planifié. Désactivé par défaut.
 
 ---
 
@@ -104,7 +104,7 @@ Fréquence à laquelle la progression de lecture est poussée automatiquement ve
 
 **Détection automatique**
 
-Lance périodiquement la détection de volumes manquants via Prowlarr (si les téléchargements sont activés dans les Settings). La détection cherche dans Prowlarr les volumes absents de votre bibliothèque et les propose au téléchargement.
+Lance périodiquement la détection de volumes manquants via Prowlarr. La détection cherche les volumes absents de votre bibliothèque et les propose au téléchargement.
 
 | Valeur | Description |
 |--------|-------------|

@@ -5,7 +5,7 @@ description: Constituer une liste de séries à acquérir et les télécharger a
 
 La wishlist est un moyen de référencer des séries que vous souhaitez acquérir, sans avoir encore de fichiers locaux. Une série ajoutée à la wishlist :
 
-- existe dans votre bibliothèque avec ses métadonnées complètes (description, couverture, auteurs, tomes)
+- existe dans votre bibliothèque avec ses métadonnées complètes (description, couverture, auteurs, liste des tomes)
 - affiche **tous ses volumes comme manquants**
 - est **éligible à la détection automatique de téléchargements** dès qu'elle est configurée
 
@@ -24,7 +24,7 @@ La wishlist n'est pas une fonctionnalité séparée — c'est simplement ce que 
 3. Sur la carte d'une série qui vous intéresse, cliquez sur **Ajouter à la bibliothèque**
 4. Sélectionnez la bibliothèque cible
 
-La série est créée avec ses métadonnées synchronisées (description, couverture, auteurs, statut, liste des tomes) et un lien metadata approuvé — prête pour la détection.
+La série est créée avec ses métadonnées synchronisées (description, couverture, auteurs, statut, liste des tomes) et un lien metadata approuvé — prête pour la détection automatique.
 
 ### Manuellement
 
@@ -34,7 +34,7 @@ Sur la page **Séries**, le bouton **Nouvelle série** permet de créer une sér
 
 ## Consulter sa wishlist
 
-Sur la page **Séries**, utilisez le filtre **Wishlist** (sélecteur "Livres") pour n'afficher que les séries sans livres locaux. Vous pouvez cumuler ce filtre avec un filtre de bibliothèque ou de recherche par nom.
+Sur la page **Séries**, utilisez le filtre **Wishlist** pour n'afficher que les séries sans livres locaux. Vous pouvez cumuler ce filtre avec un filtre de bibliothèque ou une recherche par nom.
 
 ---
 
@@ -50,7 +50,7 @@ Sur la page **Séries**, utilisez le filtre **Wishlist** (sélecteur "Livres") p
         │
         ▼
 3. Détection automatique
-   Job "download_detection" interroge Prowlarr
+   Stripstream interroge Prowlarr
    pour chaque tome manquant de la série
         │
         ▼
@@ -67,7 +67,7 @@ Sur la page **Séries**, utilisez le filtre **Wishlist** (sélecteur "Livres") p
 :::caution[Prérequis pour la détection]
 Pour qu'une série wishlist soit cherchée dans Prowlarr, il faut :
 1. Un **lien metadata approuvé** (automatique si ajouté depuis la découverte)
-2. Des **volumes manquants** connus du provider (c'est le cas dès que `total_volumes > 0`)
+2. Des **volumes manquants** connus du provider (dès que `total_volumes > 0`)
 
 Et dans les paramètres de la bibliothèque, la **détection automatique** doit être activée (ou lancer le job manuellement depuis la page Tâches).
 :::

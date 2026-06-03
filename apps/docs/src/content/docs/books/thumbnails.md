@@ -3,46 +3,37 @@ title: Miniatures
 description: Génération et gestion des miniatures
 ---
 
-## Génération
+## Comment les miniatures sont générées
 
-Les miniatures sont générées à partir de la première page de chaque archive par le service **indexer** (phase 2 — analyse).
-
-| Paramètre | Défaut |
-|-----------|--------|
-| Format de sortie | WebP |
-| Dimensions | 300×400 |
-| Qualité | Configurable |
+Stripstream génère automatiquement une miniature pour chaque livre en extrayant la première page de l'archive. Cette opération est effectuée en arrière-plan lors de la phase d'analyse (phase 2 du scan).
 
 :::note
-L'API ne génère pas les miniatures — elle crée uniquement les jobs en base. C'est l'indexer qui effectue le rendu.
+Les miniatures sont générées par le service **Indexer**, pas par l'API. Si une miniature est manquante juste après un scan, attendez quelques instants que la phase d'analyse se termine.
 :::
 
-## Opérations en masse
+## Regénérer les miniatures
+
+Depuis la page **Tâches**, deux options sont disponibles :
 
 | Opération | Description |
 |-----------|-------------|
-| **Rebuild manquantes** | Génère les miniatures absentes uniquement |
-| **Régénérer tout** | Supprime et recrée toutes les miniatures |
+| **Générer les miniatures manquantes** | Génère uniquement les miniatures absentes — ne touche pas celles qui existent déjà |
+| **Regénérer toutes les miniatures** | Supprime et recrée toutes les miniatures |
 
-## Rendu de pages
+:::caution
+La regénération complète supprime temporairement toutes les miniatures pendant l'exécution. Sur une grande bibliothèque, cela peut prendre plusieurs minutes.
+:::
 
-L'API permet de rendre n'importe quelle page d'une archive :
+## Lecture de pages
 
-| Paramètre | Valeurs |
-|-----------|---------|
-| Format de sortie | Original, JPEG, PNG, WebP |
-| Qualité | 1–100 |
-| Largeur max | 1–2160 px |
-| Filtre de rééchantillonnage | lanczos3, nearest, triangle/bilinear |
-| Limite de concurrence | 8 (par défaut, via semaphore) |
+En dehors des miniatures, Stripstream peut rendre n'importe quelle page d'une archive à la demande pour les lecteurs externes. Les pages rendues sont mises en cache pour éviter de rouvrir les archives à chaque requête.
 
-## Cache
+:::note[Détails techniques]
+**Format de sortie des miniatures** : WebP, 300×400 px.
 
-Deux niveaux de cache pour les pages rendues :
+**Rendu de pages à la demande** : formats JPEG, PNG, WebP ou original ; qualité 1–100 ; largeur max 1–2160 px ; filtres lanczos3, nearest, triangle/bilinear. Concurrence limitée à 8 via Semaphore.
 
-| Niveau | Détails |
-|--------|---------|
-| **Mémoire LRU** | 512 entrées |
-| **Disque** | Clé SHA256, structure à deux niveaux |
-
-Clé de cache = `hash(chemin + page + format + qualité + largeur)`
+**Cache des pages rendues** :
+- Mémoire LRU : 512 entrées
+- Disque : clé `SHA256(chemin + page + format + qualité + largeur)`, structure à deux niveaux
+:::

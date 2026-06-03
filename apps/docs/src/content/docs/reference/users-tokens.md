@@ -13,7 +13,7 @@ Les utilisateurs servent à suivre la progression de lecture de façon indépend
 
 ### Compte administrateur
 
-Il existe toujours un compte admin défini par les variables d'environnement `ADMIN_USERNAME` et `ADMIN_PASSWORD`. Ce compte n'est pas modifiable depuis l'interface et a toujours le scope `admin`.
+Il existe toujours un compte admin défini lors de la configuration initiale. Ce compte n'est pas modifiable depuis l'interface et a toujours accès à toutes les fonctions.
 
 ### Créer un utilisateur lecteur
 
@@ -22,8 +22,8 @@ Dans Settings → Tokens → section **Lecteurs**, entrez un nom d'utilisateur e
 Les utilisateurs lecteurs :
 - Ont leur propre suivi de lecture (livres lus, en cours, non lus)
 - Apparaissent dans les filtres de la page série et sur le dashboard
-- Peuvent recevoir un ou plusieurs tokens API de scope `read`
-- Ne peuvent pas accéder aux fonctions admin
+- Peuvent recevoir un ou plusieurs tokens API d'accès lecture
+- Ne peuvent pas accéder aux fonctions d'administration
 
 ### Renommer un utilisateur
 
@@ -35,48 +35,36 @@ Le bouton supprimer retire l'utilisateur et ses données de lecture. Cette actio
 
 ### Restrictions par genre
 
-Il est possible de masquer certains genres pour un utilisateur spécifique. Les séries dont au moins un genre est bloqué n'apparaissent plus dans aucun listing (bibliothèque, recherche, recommandations, séries en cours, listes de lecture).
+Vous pouvez masquer certains genres pour un utilisateur spécifique. Les séries dont au moins un genre est bloqué n'apparaissent plus nulle part dans l'interface pour cet utilisateur (bibliothèque, recherche, recommandations, séries en cours, listes de lecture).
 
-Cliquez sur **Gérer les restrictions** dans la colonne Actions d'un utilisateur pour ouvrir la modale de configuration :
+Cliquez sur **Gérer les restrictions** dans la colonne Actions d'un utilisateur :
 
 ![Modale de restriction de genres — liste des genres avec cases à cocher, les genres bloqués sont barrés en rouge](/screenshots/genre-restrictions-modal.png)
 
-Cochez les genres à bloquer, puis **Enregistrer**. La colonne **Genres bloqués** du tableau affiche un résumé des restrictions actives pour chaque utilisateur.
-
-Par défaut, aucune restriction n'est active — les utilisateurs voient l'ensemble du catalogue.
+Cochez les genres à bloquer, puis **Enregistrer**. Par défaut, aucune restriction n'est active.
 
 ---
 
 ## Tokens API
 
-Les tokens permettent d'accéder à l'API sans passer par le backoffice. Ils sont utiles pour les applications tierces, l'automatisation, ou les lecteurs externes.
+Les tokens permettent d'accéder à l'API sans passer par le backoffice. Ils sont utiles pour les applications tierces, l'automatisation, ou les lecteurs externes (ex. KOReader).
 
-### Scopes
+### Niveaux d'accès
 
 | Scope | Accès |
 |-------|-------|
-| `read` | Lecture seule — bibliothèques, livres, séries, progression, pages |
-| `admin` | Accès complet — toutes les opérations d'administration |
+| **read** | Lecture seule — bibliothèques, livres, séries, progression, pages |
+| **admin** | Accès complet — toutes les opérations d'administration |
 
 ### Créer un token
 
 Dans Settings → Tokens → section **Tokens API** :
-1. Donnez un nom descriptif au token (ex. `Koreader`, `Script backup`)
-2. Choisissez le scope (`read` ou `admin`)
+1. Donnez un nom descriptif (ex. `KOReader`, `Script backup`)
+2. Choisissez le niveau d'accès (`read` ou `admin`)
 3. Associez optionnellement un utilisateur lecteur — le token portera son contexte de lecture
 4. Validez : **le token est affiché une seule fois**, copiez-le immédiatement
 
-### Format du token
-
-```
-stl_<prefix>_<secret>
-```
-
-Le `prefix` est visible dans la liste des tokens pour l'identifier sans exposer le secret. Le secret est stocké hashé en base (Argon2) — le backoffice ne peut plus le relire.
-
 ### Utiliser un token
-
-Passez le token dans le header `Authorization` :
 
 ```bash
 curl -H "Authorization: Bearer stl_abc_votre_token_complet" \
@@ -86,11 +74,11 @@ curl -H "Authorization: Bearer stl_abc_votre_token_complet" \
 ### Révoquer vs supprimer
 
 - **Révoquer** : invalide le token immédiatement mais le conserve dans l'historique
-- **Supprimer** : retire définitivement le token révoqué de la liste
+- **Supprimer** : retire définitivement un token révoqué
 
 Un token actif ne peut être que révoqué, pas directement supprimé.
 
-### Réassigner un token
+### Changer l'utilisateur associé
 
 Le sélecteur dans la colonne **Utilisateur** du tableau permet de changer l'utilisateur associé à un token sans le révoquer.
 
@@ -98,11 +86,16 @@ Le sélecteur dans la colonne **Utilisateur** du tableau permet de changer l'uti
 
 ## Multi-utilisateurs et lecture
 
-Le modèle multi-utilisateurs est pensé pour les foyers ou groupes qui partagent une même instance mais veulent une progression de lecture séparée.
+Le modèle multi-utilisateurs est conçu pour les foyers ou groupes qui partagent une même instance mais veulent une progression de lecture séparée.
 
 ![Sélecteur d'utilisateur dans le backoffice — bascule entre Admin et les utilisateurs lecteurs](/screenshots/user-selector.png)
 
-Concrètement :
 - Sur la page d'une série, un filtre par lecteur permet de voir les statuts de chaque utilisateur
 - Sur le dashboard, les graphiques de lecture peuvent être filtrés par lecteur
-- La synchronisation AniList et Komga est associée à un utilisateur spécifique (configurable dans les settings de ces intégrations)
+- La synchronisation AniList et Komga est associée à un utilisateur spécifique
+
+:::note[Détails techniques]
+Le compte administrateur est défini par les variables d'environnement `ADMIN_USERNAME` et `ADMIN_PASSWORD`. Il a toujours le scope `admin`.
+
+Format des tokens : `stl_{prefix}_{secret}`. Le `prefix` est visible dans la liste pour identifier le token sans exposer le secret. Le secret est stocké hashé en base (Argon2).
+:::

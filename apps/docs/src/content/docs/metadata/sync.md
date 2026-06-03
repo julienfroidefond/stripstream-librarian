@@ -1,6 +1,6 @@
 ---
 title: Synchronisation des métadonnées
-description: Enrichir les séries avec des métadonnées externes — workflow utilisateur et règles de mise à jour
+description: Enrichir les séries avec des métadonnées externes — workflow utilisateur
 ---
 
 La synchronisation des métadonnées permet d'enrichir chaque série avec des informations issues de providers externes : description, couverture, auteurs, statut de publication, liste des tomes, etc.
@@ -13,106 +13,105 @@ Sur la page d'une série, cliquez sur le bouton **Rechercher des métadonnées**
 
 ![Fenêtre de recherche de métadonnées avec résultats et scores de confiance](/screenshots/metadata-search.png)
 
-Chaque résultat affiche le titre, les auteurs, la couverture, le nombre de tomes et un score de confiance (0 à 1). Les boutons de provider en haut permettent de relancer la recherche sur un autre provider sans fermer la fenêtre.
+Chaque résultat affiche le titre, les auteurs, la couverture, le nombre de tomes et un score de confiance. Les boutons de provider en haut permettent de relancer la recherche sur une autre source sans fermer la fenêtre.
 
 ### 2 — Approuver ou rejeter
 
-- **Approuver** : valide le lien et synchronise immédiatement tous les champs (description, couverture, auteurs, statut, genres, tomes)
+- **Approuver** : valide le lien et synchronise immédiatement tous les champs (description, couverture, auteurs, statut, genres, liste des tomes)
 - **Rejeter** : écarte ce résultat sans synchroniser
 
 Un seul lien peut être approuvé à la fois par série.
 
 ### 3 — Verrouiller des champs
 
-Après synchronisation, vous pouvez modifier manuellement n'importe quel champ. Pour empêcher le prochain refresh de l'écraser, activez le **verrou** sur ce champ via l'icône cadenas à côté du champ éditable.
+Après synchronisation, vous pouvez modifier manuellement n'importe quel champ. Pour empêcher le prochain rafraîchissement de l'écraser, activez le **verrou** sur ce champ via l'icône cadenas.
 
 ![Modal d'édition d'une série — les cadenas oranges indiquent les champs verrouillés](/screenshots/series-edit-locked-fields.png)
 
 ### 4 — Rafraîchir
 
-Le bouton **Refresh** re-télécharge les données du provider et met à jour les champs non verrouillés. Utile quand un nouveau tome est sorti et que `total_volumes` doit être actualisé.
+Le bouton **Refresh** re-télécharge les données du provider et met à jour les champs non verrouillés. Utile quand un nouveau tome est sorti et que le nombre total de volumes doit être actualisé.
 
 ---
 
 ## Matching en masse
 
-Plutôt que de matcher série par série, utilisez le job **Batch metadata** depuis la page Jobs :
+Plutôt que de matcher série par série, utilisez le job **Batch metadata** depuis la page Tâches :
 
 - Traite toutes les séries sans lien approuvé
-- Valide automatiquement les matchs avec un score de confiance de 1.0
+- Valide automatiquement les matchs avec un score de confiance maximum
 - Les autres résultats sont listés dans le rapport du job pour traitement manuel
 
-Voir [Batch & Refresh](/metadata/batch-refresh/) pour le détail des statuts de résultat.
+Voir [Batch & Refresh](/metadata/batch-refresh/) pour le détail.
 
 ---
 
-## Champs synchronisés
+## Ce qui est synchronisé
 
-### Série
+### Sur la série
 
-| Champ | Règle de mise à jour |
-|-------|---------------------|
-| `description` | Remplace si non-vide |
-| `authors` | Remplace si le tableau est non-vide |
-| `publishers` | Remplace si le tableau est non-vide |
-| `start_year` | Remplace si absent en base |
-| `total_volumes` | Remplace si absent en base |
-| `status` | Remplace si absent en base (normalisé via les mappings de statut) |
-| `genres` | Remplace si le tableau est non-vide |
-| `cover_url` | Remplace si non-vide |
+Lors de l'approbation, Stripstream met à jour : description, auteurs, éditeurs, année de début, nombre total de tomes, statut de publication, genres, couverture.
 
-### Livres
+### Sur les livres de la série
 
-Pour chaque tome de la série, les champs suivants sont mis à jour :
+Pour chaque tome de la série, Stripstream met à jour : résumé, ISBN, date de publication, langue, auteurs.
+
+### Champs verrouillables
+
+Sur une **série** : description, auteurs, éditeurs, année de début, nombre total de tomes, statut, genres.
+
+Sur un **livre** : résumé, ISBN, date de publication, langue, auteurs.
+
+:::important
+Tous les champs verrouillés sont systématiquement ignorés par la synchronisation, quelle que soit la source. Le verrouillage est votre protection contre les mises à jour automatiques non souhaitées.
+:::
+
+---
+
+## Comment les livres sont appariés
+
+Quand Stripstream récupère la liste des tomes d'un provider, il les rapproche de vos livres locaux en deux étapes :
+
+1. **Par numéro de volume** — si le provider indique "tome 5", Stripstream cherche votre tome 5
+2. **Par titre** — si le numéro de volume ne suffit pas, il compare les titres (insensible à la casse)
+
+Seuls les tomes réguliers et les intégrales participent à ce matching.
+
+---
+
+## Score de confiance
+
+Le score (0.0 → 1.0) mesure la probabilité que le résultat trouvé corresponde bien à votre série. Il combine la similarité de nom avec un bonus si le nombre de tomes correspond.
+
+Seul un score de **1.0** déclenche la validation automatique dans le job batch. En dessous, le match vous est soumis pour validation manuelle.
+
+:::note[Détails techniques]
+**Règles de mise à jour par champ** :
+
+Série :
 
 | Champ | Règle |
 |-------|-------|
-| `summary` | Remplace si non-vide |
+| `description` | Remplace si non-vide |
+| `authors` | Remplace si tableau non-vide |
+| `publishers` | Remplace si tableau non-vide |
+| `start_year` | Remplace si absent en base |
+| `total_volumes` | Remplace si absent en base |
+| `status` | Remplace si absent en base (via mappings de statut) |
+| `genres` | Remplace si tableau non-vide |
+| `cover_url` | Remplace si non-vide |
+
+Livres :
+
+| Champ | Règle |
+|-------|-------|
+| `summary` | `COALESCE(NULLIF(new, ''), existing)` |
 | `isbn` | Remplace si non-vide |
 | `publish_date` | Remplace si non-vide |
 | `language` | Remplace si non-vide |
 | `authors` | Remplace si tableau non-vide |
 
-:::important
-Tous les champs respectent le **verrouillage** (`locked_fields`). Un champ verrouillé n'est jamais modifié par la synchronisation, quelle que soit la source.
+**Score de confiance** : boost +0.30 si nombre de tomes identique (local == provider), +0.15 si proche (±2 tomes).
+
+**Matching des livres** : volume 0 (HS chez certains providers) ignoré. Seuls `regular` et `integral` participent au matching.
 :::
-
-### Matching des livres
-
-Les livres externes sont appariés aux livres locaux en deux étapes :
-
-1. **Par numéro de volume** — correspondance exacte (le volume 0 = HS chez les providers est ignoré)
-2. **Par titre** — containment case-insensitive si le numéro de volume n'a pas suffi
-
-Seuls les livres `regular` et `integral` participent au matching.
-
----
-
-## Scoring de confiance
-
-Le score (0.0 → 1.0) combine la similarité de nom avec un boost selon le nombre de tomes :
-
-| Condition | Boost |
-|-----------|-------|
-| Nombre de tomes identique (local == provider) | +0.30 |
-| Proche (±2 tomes) | +0.15 |
-
-Seul un score de **1.0** déclenche la validation automatique dans le job batch. En dessous, le match est proposé pour validation manuelle.
-
----
-
-## Verrouillage de champs
-
-Champs verrouillables sur une **série** : `description`, `authors`, `publishers`, `start_year`, `total_volumes`, `status`, `genres`
-
-Champs verrouillables sur un **livre** : `summary`, `isbn`, `publish_date`, `language`, `authors`
-
-Les rapports de synchronisation distinguent les champs mis à jour de ceux ignorés (verrouillés).
-
----
-
-## Mappings de statut
-
-Le statut retourné par les providers (`ongoing`, `ended`, `completed`…) n'est pas toujours homogène. Les **status mappings** permettent de normaliser les valeurs des providers vers vos propres labels.
-
-Accès : **Settings → onglet Général → Status Mappings**.

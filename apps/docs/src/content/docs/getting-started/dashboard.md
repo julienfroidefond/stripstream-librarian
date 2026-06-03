@@ -9,23 +9,16 @@ Le dashboard est la page d'accueil du backoffice. Il donne une vue d'ensemble de
 
 ## Compteurs globaux
 
-Six indicateurs en haut de page :
+Six indicateurs en haut de page résument votre collection en un coup d'œil :
 
-| Indicateur | Description |
-|-----------|-------------|
-| **Livres** | Nombre total de fichiers indexés |
-| **Séries** | Nombre de séries distinctes |
-| **Bibliothèques** | Nombre de bibliothèques créées |
-| **Pages** | Cumul de toutes les pages de tous les livres |
-| **Auteurs** | Nombre d'auteurs distincts |
-| **Taille totale** | Volume occupé sur le disque |
+**Livres** · **Séries** · **Bibliothèques** · **Pages** (cumul total) · **Auteurs** · **Taille totale** (espace disque)
 
 ## Lectures en cours et récentes
 
 Si des livres ont un statut de lecture, deux listes s'affichent :
 
-- **En cours de lecture** — livres avec statut `reading`, avec la page courante
-- **Lus récemment** — derniers livres passés au statut `read`
+- **En cours de lecture** — les livres que vous avez commencés, avec la page où vous en êtes
+- **Lus récemment** — les derniers livres que vous avez terminés
 
 Avec plusieurs utilisateurs, un sélecteur permet de filtrer par lecteur ou de voir tout le monde.
 
@@ -33,27 +26,25 @@ Avec plusieurs utilisateurs, un sélecteur permet de filtrer par lecteur ou de v
 
 Trois graphiques avec sélecteur de période (jour / semaine / mois) :
 
-| Graphique | Description |
-|-----------|-------------|
-| **Activité de lecture** | Livres ou pages lus dans le temps, par utilisateur |
-| **Livres ajoutés** | Nouvelles entrées dans la bibliothèque au fil du temps |
-| **Jobs** | Activité des jobs d'indexation par type |
+- **Activité de lecture** — livres ou pages lus dans le temps, par utilisateur
+- **Livres ajoutés** — nouvelles entrées dans la bibliothèque au fil du temps
+- **Jobs** — activité des tâches d'indexation par type
 
 ## Répartition de la collection
 
-| Graphique | Description |
-|-----------|-------------|
-| **Statut de lecture** | Répartition lu / en cours / non lu (par utilisateur si multi-users) |
-| **Par format** | Proportion CBZ / CBR / PDF / EPUB |
-| **Par bibliothèque** | Répartition des livres entre bibliothèques |
+Trois graphiques qui montrent comment votre bibliothèque est composée :
+
+- **Statut de lecture** — répartition lu / en cours / non lu (par utilisateur si multi-utilisateurs)
+- **Par format** — proportion CBZ / CBR / PDF / EPUB
+- **Par bibliothèque** — répartition des livres entre bibliothèques
 
 ## Qualité des métadonnées
 
-| Graphique | Description |
-|-----------|-------------|
-| **Couverture metadata** | Séries avec lien metadata approuvé vs sans |
-| **Par provider** | Répartition des séries selon le provider utilisé |
-| **Métadonnées livres** | % de livres avec résumé, % avec ISBN |
+Des indicateurs pour savoir combien de vos séries sont enrichies :
+
+- **Couverture metadata** — séries avec métadonnées approuvées vs sans
+- **Par provider** — répartition des séries selon la source de métadonnées utilisée
+- **Métadonnées livres** — pourcentage de livres avec un résumé, pourcentage avec ISBN
 
 ## Bibliothèques — détail
 
