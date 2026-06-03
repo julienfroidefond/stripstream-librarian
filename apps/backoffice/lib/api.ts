@@ -1648,3 +1648,26 @@ export async function listArchivedSeries(): Promise<ArchivedSeriesItemDto[]> {
 export async function getArchivedSeries(id: string): Promise<ArchivedSeriesDetailDto> {
   return apiFetch<ArchivedSeriesDetailDto>(`/admin/series/archived/${id}`);
 }
+
+export type UserReadingOverviewItemDto = {
+  book_id: string;
+  title: string;
+  series: string | null;
+  series_id: string | null;
+  current_page: number;
+  page_count: number;
+};
+
+export type UserReadingOverviewDto = {
+  user_id: string;
+  username: string;
+  books_read: number;
+  books_reading: number;
+  series_in_progress: number;
+  last_read_at: string | null;
+  currently_reading: UserReadingOverviewItemDto[];
+};
+
+export async function getReadingOverview(): Promise<UserReadingOverviewDto[]> {
+  return apiFetch<UserReadingOverviewDto[]>("/admin/reading-overview");
+}

@@ -41,7 +41,8 @@ type IconName =
   | "download"
   | "lock"
   | "merge"
-  | "bookmark";
+  | "bookmark"
+  | "chart";
 
 type IconSize = "sm" | "md" | "lg" | "xl";
 
@@ -102,6 +103,7 @@ const icons: Record<IconName, string> = {
   lock: "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z",
   merge: "M17 20l-5-5m0 0l-5 5m5-5V4M4 4h16",
   bookmark: "M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z",
+  chart: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z",
 };
 
 const colorClasses: Partial<Record<IconName, string>> = {

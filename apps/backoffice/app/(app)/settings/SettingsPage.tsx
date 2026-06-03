@@ -14,6 +14,7 @@ import { TelegramCard } from "./components/TelegramCard";
 import { KomgaSyncCard } from "./components/KomgaSyncCard";
 import { AnilistTab } from "./components/AnilistTab";
 import { RenameFormatCard } from "./components/RenameFormatCard";
+import { ReadingOverviewTab } from "./components/ReadingOverviewTab";
 
 interface SettingsPageProps {
   initialSettings: Settings;
@@ -54,7 +55,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
   const [isSaving, setIsSaving] = useState(false);
   const [downloadsEnabled, setDownloadsEnabled] = useState(initialDownloadsEnabled);
 
-  const VALID_TABS = ["general", "media", "downloadTools", "metadata", "readingStatus", "notifications", "tokens"] as const;
+  const VALID_TABS = ["general", "media", "downloadTools", "metadata", "readingStatus", "readingOverview", "notifications", "tokens"] as const;
   type TabId = typeof VALID_TABS[number];
 
   function resolveTab(tab: string | null | undefined): TabId {
@@ -126,6 +127,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
     { id: "downloadTools" as const, label: t("settings.downloadTools"), icon: "play" as const, color: "text-sky-500" },
     { id: "metadata" as const, label: t("settings.metadata"), icon: "tag" as const, color: "text-violet-500" },
     { id: "readingStatus" as const, label: t("settings.readingStatus"), icon: "eye" as const, color: "text-amber-500" },
+    { id: "readingOverview" as const, label: t("settings.readingOverview"), icon: "chart" as const, color: "text-emerald-500" },
     { id: "notifications" as const, label: t("settings.notifications"), icon: "bell" as const, color: "text-orange-500" },
     { id: "tokens" as const, label: t("nav.tokens"), icon: "tokens" as const, color: "text-rose-500" },
   ];
@@ -677,6 +679,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         <AnilistTab handleUpdateSetting={handleUpdateSetting} users={users} initialData={initialAnilist} />
         <KomgaSyncCard users={users} initialData={initialKomga} />
       </>)}
+
+      {activeTab === "readingOverview" && <ReadingOverviewTab />}
 
       {activeTab === "tokens" && tokensContent}
 

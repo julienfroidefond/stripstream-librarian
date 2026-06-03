@@ -150,6 +150,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/anilist/series/:library_id/:series_name/unlink", delete(integrations::anilist::unlink_series))
         .route("/admin/series/archived", get(series::list_archived_series))
         .route("/admin/series/archived/:id", get(series::get_archived_series))
+        .route("/admin/reading-overview", get(stats::get_reading_overview))
         .route("/series/:series_id/anilist", get(integrations::anilist::get_series_link_by_id))
         .route("/series/:series_id/anilist/link", axum::routing::post(integrations::anilist::link_series_by_id))
         .route("/series/:series_id/anilist/unlink", delete(integrations::anilist::unlink_series_by_id))

@@ -952,3 +952,96 @@ pub async fn get_stats(
         downloads,
     }))
 }
+
+// ─── Reading Overview (per-user) ─────────────────────────────────────────────
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct UserReadingOverviewItem {
+    pub book_id: String,
+    pub title: String,
+    pub series: Option<String>,
+    pub series_id: Option<String>,
+    pub current_page: i32,
+    pub page_count: i32,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct UserReadingOverview {
+    #[schema(value_type = String)]
+    pub user_id: uuid::Uuid,
+    pub username: String,
+    pub books_read: i64,
+    pub books_reading: i64,
+    pub series_in_progress: i64,
+    pub last_read_at: Option<String>,
+    pub currently_reading: Vec<UserReadingOverviewItem>,
+}
+
+/// Get reading overview for all users (admin)
+#[utoipa::path(
+    get,
+    path = "/admin/reading-overview",
+    tag = "stats",
+    responses(
+        (status = 200, body = Vec<UserReadingOverview>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn get_reading_overview(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<UserReadingOverview>>, ApiError> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            u.id AS user_id,
+            u.username,
+            COUNT(*) FILTER (WHERE brp.status = 'read') AS books_read,
+            COUNT(*) FILTER (WHERE brp.status = 'reading') AS books_reading,
+            COUNT(DISTINCT CASE WHEN brp.status = 'reading' THEN b.series_id END) AS series_in_progress,
+            TO_CHAR(MAX(brp.last_read_at), 'YYYY-MM-DD') AS last_read_at,
+            COALESCE(
+                json_agg(
+                    json_build_object(
+                        'book_id', b.id::text,
+                        'title', b.title,
+                        'series', s.name,
+                        'series_id', b.series_id::text,
+                        'current_page', COALESCE(brp.current_page, 0),
+                        'page_count', COALESCE(b.page_count, 0)
+                    ) ORDER BY brp.updated_at DESC
+                ) FILTER (WHERE brp.status = 'reading'),
+                '[]'::json
+            ) AS currently_reading
+        FROM users u
+        LEFT JOIN book_reading_progress brp ON brp.user_id = u.id
+        LEFT JOIN books b ON b.id = brp.book_id
+        LEFT JOIN series s ON s.id = b.series_id
+        GROUP BY u.id, u.username
+        ORDER BY MAX(brp.last_read_at) DESC NULLS LAST, u.username ASC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let overview = rows
+        .into_iter()
+        .map(|r| {
+            let currently_json: serde_json::Value =
+                r.try_get("currently_reading").unwrap_or(serde_json::Value::Array(vec![]));
+            let currently_reading: Vec<UserReadingOverviewItem> =
+                serde_json::from_value(currently_json).unwrap_or_default();
+            UserReadingOverview {
+                user_id: r.get("user_id"),
+                username: r.get("username"),
+                books_read: r.get("books_read"),
+                books_reading: r.get("books_reading"),
+                series_in_progress: r.get("series_in_progress"),
+                last_read_at: r.get("last_read_at"),
+                currently_reading,
+            }
+        })
+        .collect();
+
+    Ok(Json(overview))
+}

@@ -150,6 +150,7 @@ pub struct ClientApiDoc;
         crate::search::search_books,
         crate::authors::list_authors,
         crate::stats::get_stats,
+        crate::stats::get_reading_overview,
         // Libraries
         crate::libraries::list_libraries,
         crate::libraries::create_library,
@@ -322,6 +323,8 @@ pub struct ClientApiDoc;
             crate::stats::JobTimePoint,
             crate::stats::DownloadStats,
             crate::stats::RecentDownloadItem,
+            crate::stats::UserReadingOverview,
+            crate::stats::UserReadingOverviewItem,
             // Libraries
             crate::libraries::LibraryResponse,
             crate::libraries::CreateLibraryRequest,
