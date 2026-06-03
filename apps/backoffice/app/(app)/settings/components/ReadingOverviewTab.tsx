@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Card, CardHeader, CardTitle, CardContent, Icon } from "@/app/components/ui";
 import { getBookCoverUrl } from "@/lib/api";
-import type { UserReadingOverviewDto } from "@/lib/api";
+import type { UserReadingOverviewDto, UserReadingOverviewItemDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 
 function StatPill({ value, label, color }: { value: number | string; label: string; color: string }) {
@@ -14,6 +14,51 @@ function StatPill({ value, label, color }: { value: number | string; label: stri
       <span className={`text-xl font-bold ${color}`}>{value}</span>
       <span className="text-[10px] text-muted-foreground mt-0.5">{label}</span>
     </div>
+  );
+}
+
+function BookRow({ book, showProgress }: { book: UserReadingOverviewItemDto; showProgress: boolean }) {
+  const { t } = useTranslation();
+  const pct = book.page_count > 0 ? Math.round((book.current_page / book.page_count) * 100) : 0;
+
+  return (
+    <Link
+      href={`/books/${book.book_id}` as any}
+      className="flex items-center gap-3 group rounded-md hover:bg-muted/40 p-1 -mx-1 transition-colors"
+    >
+      <Image
+        src={getBookCoverUrl(book.book_id)}
+        alt={book.title}
+        width={32}
+        height={44}
+        className="w-8 h-11 object-cover rounded shadow-sm shrink-0 bg-muted"
+      />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">
+          {book.title}
+        </p>
+        {book.series && (
+          <p className="text-xs text-muted-foreground truncate">{book.series}</p>
+        )}
+        {showProgress ? (
+          <div className="flex items-center gap-2 mt-1">
+            <div className="h-1 flex-1 bg-muted rounded-full overflow-hidden">
+              <div className="h-full bg-warning rounded-full" style={{ width: `${pct}%` }} />
+            </div>
+            <span className="text-[10px] text-muted-foreground shrink-0">
+              {t("settings.readingOverview.page")}{book.current_page}/{book.page_count}
+            </span>
+          </div>
+        ) : (
+          book.last_read_at && (
+            <p className="text-[10px] text-muted-foreground mt-0.5">{book.last_read_at}</p>
+          )
+        )}
+      </div>
+      {!showProgress && (
+        <Icon name="check" size="sm" className="text-success shrink-0" />
+      )}
+    </Link>
   );
 }
 
@@ -58,50 +103,35 @@ function UserCard({ user }: { user: UserReadingOverviewDto }) {
           </div>
         )}
 
-        {/* Currently reading list */}
-        {user.currently_reading.length > 0 && (
-          <div>
-            <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">
-              {t("settings.readingOverview.currentlyReading")}
-            </p>
-            <div className="space-y-2">
-              {user.currently_reading.map((book) => {
-                const bookPct = book.page_count > 0 ? Math.round((book.current_page / book.page_count) * 100) : 0;
-                return (
-                  <Link
-                    key={book.book_id}
-                    href={`/books/${book.book_id}` as any}
-                    className="flex items-center gap-3 group rounded-md hover:bg-muted/40 p-1 -mx-1 transition-colors"
-                  >
-                    <Image
-                      src={getBookCoverUrl(book.book_id)}
-                      alt={book.title}
-                      width={32}
-                      height={44}
-                      className="w-8 h-11 object-cover rounded shadow-sm shrink-0 bg-muted"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">
-                        {book.title}
-                      </p>
-                      {book.series && (
-                        <p className="text-xs text-muted-foreground truncate">{book.series}</p>
-                      )}
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="h-1 flex-1 bg-muted rounded-full overflow-hidden">
-                          <div className="h-full bg-warning rounded-full" style={{ width: `${bookPct}%` }} />
-                        </div>
-                        <span className="text-[10px] text-muted-foreground shrink-0">
-                          {t("settings.readingOverview.page")}{book.current_page}/{book.page_count}
-                        </span>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Currently reading */}
+          {user.currently_reading.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">
+                {t("settings.readingOverview.currentlyReading")}
+              </p>
+              <div className="space-y-1">
+                {user.currently_reading.map((book) => (
+                  <BookRow key={book.book_id} book={book} showProgress={true} />
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Recently read */}
+          {user.recently_read.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">
+                {t("settings.readingOverview.recentlyRead")}
+              </p>
+              <div className="space-y-1 max-h-80 overflow-y-auto pr-1">
+                {user.recently_read.map((book) => (
+                  <BookRow key={book.book_id} book={book} showProgress={false} />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

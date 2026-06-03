@@ -604,6 +604,7 @@ const en: Record<TranslationKey, string> = {
   "settings.readingOverview.seriesInProgress": "series in progress",
   "settings.readingOverview.lastReadAt": "Last read",
   "settings.readingOverview.currentlyReading": "Currently reading",
+  "settings.readingOverview.recentlyRead": "Recently read",
   "settings.readingOverview.noActivity": "No reading activity",
   "settings.readingOverview.page": "p.",
   "settings.savedSuccess": "Settings saved successfully",

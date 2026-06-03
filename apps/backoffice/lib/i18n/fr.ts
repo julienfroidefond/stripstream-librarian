@@ -602,6 +602,7 @@ const fr = {
   "settings.readingOverview.seriesInProgress": "séries en cours",
   "settings.readingOverview.lastReadAt": "Dernière lecture",
   "settings.readingOverview.currentlyReading": "En cours de lecture",
+  "settings.readingOverview.recentlyRead": "Lu récemment",
   "settings.readingOverview.noActivity": "Aucune activité de lecture",
   "settings.readingOverview.page": "p.",
   "settings.savedSuccess": "Paramètres enregistrés avec succès",

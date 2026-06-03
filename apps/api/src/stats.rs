@@ -963,6 +963,7 @@ pub struct UserReadingOverviewItem {
     pub series_id: Option<String>,
     pub current_page: i32,
     pub page_count: i32,
+    pub last_read_at: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -975,6 +976,7 @@ pub struct UserReadingOverview {
     pub series_in_progress: i64,
     pub last_read_at: Option<String>,
     pub currently_reading: Vec<UserReadingOverviewItem>,
+    pub recently_read: Vec<UserReadingOverviewItem>,
 }
 
 /// Get reading overview for all users (admin)
@@ -1008,11 +1010,32 @@ pub async fn get_reading_overview(
                         'series', s.name,
                         'series_id', b.series_id::text,
                         'current_page', COALESCE(brp.current_page, 0),
-                        'page_count', COALESCE(b.page_count, 0)
+                        'page_count', COALESCE(b.page_count, 0),
+                        'last_read_at', TO_CHAR(brp.last_read_at, 'YYYY-MM-DD')
                     ) ORDER BY brp.updated_at DESC
                 ) FILTER (WHERE brp.status = 'reading'),
                 '[]'::json
-            ) AS currently_reading
+            ) AS currently_reading,
+            (
+                SELECT COALESCE(json_agg(rr), '[]'::json)
+                FROM (
+                    SELECT json_build_object(
+                        'book_id', b2.id::text,
+                        'title', b2.title,
+                        'series', s2.name,
+                        'series_id', b2.series_id::text,
+                        'current_page', 0,
+                        'page_count', COALESCE(b2.page_count, 0),
+                        'last_read_at', TO_CHAR(brp2.last_read_at, 'YYYY-MM-DD')
+                    ) AS rr
+                    FROM book_reading_progress brp2
+                    JOIN books b2 ON b2.id = brp2.book_id
+                    LEFT JOIN series s2 ON s2.id = b2.series_id
+                    WHERE brp2.user_id = u.id AND brp2.status = 'read'
+                    ORDER BY brp2.last_read_at DESC NULLS LAST
+                    LIMIT 30
+                ) sub
+            ) AS recently_read
         FROM users u
         LEFT JOIN book_reading_progress brp ON brp.user_id = u.id
         LEFT JOIN books b ON b.id = brp.book_id
@@ -1031,6 +1054,10 @@ pub async fn get_reading_overview(
                 r.try_get("currently_reading").unwrap_or(serde_json::Value::Array(vec![]));
             let currently_reading: Vec<UserReadingOverviewItem> =
                 serde_json::from_value(currently_json).unwrap_or_default();
+            let recently_json: serde_json::Value =
+                r.try_get("recently_read").unwrap_or(serde_json::Value::Array(vec![]));
+            let recently_read: Vec<UserReadingOverviewItem> =
+                serde_json::from_value(recently_json).unwrap_or_default();
             UserReadingOverview {
                 user_id: r.get("user_id"),
                 username: r.get("username"),
@@ -1039,6 +1066,7 @@ pub async fn get_reading_overview(
                 series_in_progress: r.get("series_in_progress"),
                 last_read_at: r.get("last_read_at"),
                 currently_reading,
+                recently_read,
             }
         })
         .collect();

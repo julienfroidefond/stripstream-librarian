@@ -1656,6 +1656,7 @@ export type UserReadingOverviewItemDto = {
   series_id: string | null;
   current_page: number;
   page_count: number;
+  last_read_at: string | null;
 };
 
 export type UserReadingOverviewDto = {
@@ -1666,6 +1667,7 @@ export type UserReadingOverviewDto = {
   series_in_progress: number;
   last_read_at: string | null;
   currently_reading: UserReadingOverviewItemDto[];
+  recently_read: UserReadingOverviewItemDto[];
 };
 
 export async function getReadingOverview(): Promise<UserReadingOverviewDto[]> {
