@@ -255,7 +255,7 @@ pub(crate) async fn process_rss_poll(
         let matched_releases: Vec<AvailableReleaseDto> = rss_releases
             .iter()
             .filter(|r| !blacklisted_titles.contains(&r.title))
-            .filter(|r| title_matches_series(&r.title, series_name))
+            .filter(|r| prowlarr::title_matches_series(&r.title, series_name))
             .filter_map(|r| {
                 let (matched_vols, all_vols) =
                     prowlarr::match_title_volumes(&r.title, missing_volumes);
@@ -510,55 +510,4 @@ async fn fetch_rss_releases(
     resp.json::<Vec<prowlarr::ProwlarrRawRelease>>()
         .await
         .map_err(|e| format!("Failed to parse Prowlarr response: {e}"))
-}
-
-/// Normalize a string for fuzzy matching:
-/// - dots, underscores, hyphens → space
-/// - accented chars → ASCII equivalent (common French chars)
-/// - lowercase
-fn normalize_for_match(s: &str) -> String {
-    s.chars()
-        .map(|c| match c {
-            '.' | '_' => ' ',
-            'é' | 'è' | 'ê' | 'ë' => 'e',
-            'à' | 'â' | 'ä' => 'a',
-            'ù' | 'û' | 'ü' => 'u',
-            'î' | 'ï' => 'i',
-            'ô' | 'ö' => 'o',
-            'ç' => 'c',
-            'É' | 'È' | 'Ê' | 'Ë' => 'e',
-            'À' | 'Â' | 'Ä' => 'a',
-            'Ù' | 'Û' | 'Ü' => 'u',
-            'Î' | 'Ï' => 'i',
-            'Ô' | 'Ö' => 'o',
-            'Ç' => 'c',
-            other => other.to_ascii_lowercase(),
-        })
-        .collect()
-}
-
-fn title_matches_series(title: &str, series_name: &str) -> bool {
-    let norm_title = normalize_for_match(title);
-    let norm_name = normalize_for_match(series_name);
-    norm_title.contains(&norm_name)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn title_matches_basic() {
-        assert!(title_matches_series("Asterix et Obelix T01", "Asterix et Obelix"));
-        assert!(title_matches_series("ASTERIX T01", "asterix"));
-        assert!(!title_matches_series("One Piece T01", "Naruto"));
-    }
-
-    #[test]
-    fn title_matches_dots_and_accents() {
-        assert!(title_matches_series("Asterix.et.Obelix.T01.FRENCH.CBZ", "Astérix et Obélix"));
-        assert!(title_matches_series("Les.Legendaires.T05.FRENCH", "Les Légendaires"));
-        assert!(title_matches_series("One.Piece.Tome.25.FRENCH", "One Piece"));
-        assert!(!title_matches_series("One.Piece.T01", "Dragon Ball"));
-    }
 }

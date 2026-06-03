@@ -400,6 +400,33 @@ pub async fn test_prowlarr(
     Ok(Json(response))
 }
 
+// ─── Title matching ──────────────────────────────────────────────────────────
+
+/// Normalize a string for fuzzy title matching:
+/// - dots, underscores, hyphens, apostrophes, brackets → space
+/// - accented chars → ASCII equivalent
+/// - lowercase
+pub(crate) fn normalize_for_match(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            '.' | '_' | '-' | '\'' | '\u{2019}' | '[' | ']' | '(' | ')' => ' ',
+            'é' | 'è' | 'ê' | 'ë' | 'É' | 'È' | 'Ê' | 'Ë' => 'e',
+            'à' | 'â' | 'ä' | 'À' | 'Â' | 'Ä' => 'a',
+            'ù' | 'û' | 'ü' | 'Ù' | 'Û' | 'Ü' => 'u',
+            'î' | 'ï' | 'Î' | 'Ï' => 'i',
+            'ô' | 'ö' | 'Ô' | 'Ö' => 'o',
+            'ç' | 'Ç' => 'c',
+            other => other.to_ascii_lowercase(),
+        })
+        .collect()
+}
+
+pub(crate) fn title_matches_series(title: &str, series_name: &str) -> bool {
+    let norm_title = normalize_for_match(title);
+    let norm_name = normalize_for_match(series_name);
+    norm_title.contains(&norm_name)
+}
+
 #[cfg(test)]
 #[path = "tests/prowlarr.rs"]
 mod tests;

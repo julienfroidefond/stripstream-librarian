@@ -1,5 +1,34 @@
 use super::*;
 
+// ── title_matches_series ────────────────────────────────────────────────────
+
+#[test]
+fn title_matches_basic() {
+    assert!(title_matches_series("Asterix et Obelix T01", "Asterix et Obelix"));
+    assert!(title_matches_series("ASTERIX T01", "asterix"));
+    assert!(!title_matches_series("One Piece T01", "Naruto"));
+}
+
+#[test]
+fn title_matches_dots_and_accents() {
+    assert!(title_matches_series("Asterix.et.Obelix.T01.FRENCH.CBZ", "Astérix et Obélix"));
+    assert!(title_matches_series("Les.Legendaires.T05.FRENCH", "Les Légendaires"));
+    assert!(title_matches_series("One.Piece.Tome.25.FRENCH", "One Piece"));
+    assert!(!title_matches_series("One.Piece.T01", "Dragon Ball"));
+}
+
+#[test]
+fn title_matches_apostrophe() {
+    assert!(title_matches_series("L.Incal.T01.FRENCH.CBZ", "L'Incal"));
+    assert!(title_matches_series("L.Incal.T01.FRENCH.CBZ", "L\u{2019}Incal")); // curly apostrophe
+}
+
+#[test]
+fn title_matches_hyphen() {
+    assert!(title_matches_series("Spider.Man.T01.FRENCH.CBZ", "Spider-Man"));
+    assert!(title_matches_series("Dead.Hunter.Tome.3.FR.PDF", "Dead Hunter"));
+}
+
 fn sorted(mut v: Vec<i32>) -> Vec<i32> {
     v.sort_unstable();
     v
