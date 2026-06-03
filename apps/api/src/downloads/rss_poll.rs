@@ -487,6 +487,7 @@ async fn fetch_rss_releases(
     let mut params: Vec<(&str, String)> = vec![
         ("query", String::new()),
         ("type", "search".to_string()),
+        ("limit", "1000".to_string()),
     ];
     for cat in categories {
         params.push(("categories", cat.to_string()));
