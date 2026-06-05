@@ -83,6 +83,7 @@ export default defineConfig({
 						{ label: 'Métadonnées', slug: 'jobs/metadonnees' },
 						{ label: 'Téléchargements', slug: 'jobs/telechargements' },
 						{ label: 'AniList', slug: 'jobs/anilist' },
+						{ label: 'Telegram Monitor', slug: 'jobs/telegram' },
 					],
 				},
 				{
