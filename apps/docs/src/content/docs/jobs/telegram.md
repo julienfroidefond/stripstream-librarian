@@ -31,9 +31,7 @@ Le job `telegram_sync_incremental` n'applique **pas** ce filtre : il parcourt to
 
 ### Déclenchement
 
-**Automatique** : l'indexer crée un job selon l'intervalle `sync_interval_minutes` dans **Settings → Telegram Monitor**. Mettre `0` désactive la planification automatique.
-
-**Manuel** : bouton *Sync complet* dans la page Tâches, ou via **Settings → Telegram Monitor**.
+**Manuel uniquement** — bouton *Sync complet* dans la page Tâches ou via **Settings → Telegram Monitor**. Il n'y a pas de planification automatique pour ce job.
 
 ### Ce que fait le job
 
@@ -74,7 +72,7 @@ Sauvegarder la session Telegram mise à jour
 
 ### Déclenchement
 
-**Automatique** : l'indexer crée un job selon l'intervalle `sync_incremental_interval_minutes` dans `app_settings` (clé `telegram_monitor`). Défaut : **30 minutes**. Mettre `0` désactive.
+**Automatique** : toutes les **30 minutes** dès que vous êtes authentifié. Aucune configuration nécessaire.
 
 **Manuel** : bouton *Synchro incrémentale* dans la page Tâches.
 
@@ -123,11 +121,10 @@ Voir [Telegram Monitor](/integrations/telegram-monitor/#livres-disponibles).
 
 **Exécutés par** : le poller de l'API.
 
-**Planifiés par** : le scheduler de l'indexer. Conditions communes :
+**Planifié par** : le scheduler de l'indexer (pour `telegram_sync_incremental` uniquement). Conditions :
 1. `session_data` présent dans `app_settings` (compte authentifié)
-2. `sync_interval_minutes > 0` (ou `sync_incremental_interval_minutes > 0`)
-3. Aucun job du même type en `pending` ou `running`
-4. Aucun job du même type `finished_at > NOW() - INTERVAL '{interval} minutes'`
+2. Aucun job du même type en `pending` ou `running`
+3. Aucun job du même type `finished_at > NOW() - INTERVAL '30 minutes'`
 
 **Champs `stats_json` — `telegram_sync`** : `synced`, `new_books`, `series_searched`, `all_series` (tableau : `series_name`, `book_count`, `extracted_names`), `matched_series` (tableau : `telegram_name`, `series_id`, `series_name`, `book_count`).
 

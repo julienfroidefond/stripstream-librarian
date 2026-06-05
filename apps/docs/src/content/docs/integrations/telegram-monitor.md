@@ -25,7 +25,6 @@ Dans **Settings → Telegram Monitor** :
 1. **API ID** — le numéro fourni par my.telegram.org
 2. **API Hash** — la chaîne hexadécimale associée
 3. **Numéro de téléphone** — votre numéro au format international (`+33612345678`)
-4. **Intervalle de sync** — fréquence de synchronisation automatique en minutes (`0` = désactivé)
 
 Enregistrez, puis procédez à l'authentification.
 
@@ -61,27 +60,34 @@ Vous devez être **membre** du channel Telegram pour que la synchronisation fonc
 
 ## Synchronisation
 
-La synchronisation parcourt chaque channel configuré et y recherche, pour chaque série de la bibliothèque associée, les fichiers correspondants.
+Deux modes de synchronisation coexistent :
 
-### Comment ça marche
+### Sync incrémentale (automatique, toutes les 30 min)
 
-```
-Pour chaque channel activé :
-    Pour chaque série de la bibliothèque associée :
-        → Recherche Telegram : query = nom de la série
-        → Filtre sur les fichiers (documents CBZ/CBR/PDF/EPUB/ZIP)
-        → Extraction du numéro de volume depuis le nom de fichier
-        → Insertion en base (ON CONFLICT → ignoré si déjà présent)
-```
+La sync incrémentale parcourt les **nouveaux messages** depuis la dernière exécution pour chaque channel. Elle traite tous les fichiers trouvés sans filtre sur les séries.
 
-Les fichiers trouvés reçoivent le statut `disponible`. Ils apparaissent ensuite dans la page Téléchargements pour les séries qui existent dans votre bibliothèque.
+Elle tourne en arrière-plan toutes les 30 minutes dès que vous êtes authentifié — aucune configuration nécessaire.
 
-### Déclenchement
+### Sync complète (manuelle)
 
-- **Automatique** : configurer l'intervalle dans Settings → Telegram Monitor → *Intervalle de sync*
-- **Manuel** : bouton *Synchroniser* dans Settings → Telegram Monitor (déclenche un job immédiat)
+La sync complète effectue une **recherche active par série** sur chaque channel : elle interroge l'API Telegram avec le nom de chaque série éligible comme requête de recherche.
 
-### Extraction du nom de série et du numéro de volume
+:::note[Quelles séries sont recherchées ?]
+La sync complète ne recherche **pas** toutes les séries de votre bibliothèque. Pour être incluse, une série doit remplir deux conditions :
+
+1. **Lien metadata approuvé** — un lien vers un provider externe (Anilist, Bedetheque…) avec statut *approuvé*
+2. **Volumes manquants** — au moins un tome référencé dans les metadata mais absent de votre bibliothèque
+
+C'est intentionnel : seules les séries que vous cherchez activement à compléter sont scrutées, ce qui limite le nombre de requêtes Telegram.
+
+Si une série n'a pas de metadata liée, utilisez la [recherche depuis la fiche série](#recherche-depuis-une-série) pour la trouver manuellement.
+:::
+
+Elle se déclenche via le bouton **Sync complet** dans Settings → Telegram Monitor ou dans la page Tâches.
+
+---
+
+## Extraction du nom de série et du numéro de volume
 
 Stripstream analyse le nom de fichier pour en extraire le nom de la série et le numéro de tome. Les formats reconnus incluent :
 
@@ -91,7 +97,8 @@ Stripstream analyse le nom de fichier pour en extraire le nom de la série et le
 | `Berserk - 32@BD_fr.cbz` | Berserk | 32 |
 | `Naruto - Vol. 3.cbz` | Naruto | 3 |
 | `Toriko T12.cbz` | Toriko | 12 |
-| `Dandadan #Ch05.cbz` | Dandadan | — |
+| `Black_Clover_29_Titre@BD_fr.cbz` | Black Clover | 29 |
+| `Détective Conan 02 (Auteur)@channel.cbz` | Détective Conan | 2 |
 
 Le suffixe `@channel` ajouté par certains channels Telegram (`@BD_fr`, `@manga_fr`...) est ignoré lors de l'extraction.
 
@@ -124,12 +131,13 @@ Seuls les livres dont la série existe dans votre bibliothèque sont affichés i
 
 Sur la fiche d'une série, le menu *Actions* → section *Téléchargement* expose le bouton **Rechercher sur Telegram**.
 
-Cette recherche est **live** : elle interroge directement l'API Telegram en temps réel sur tous vos channels configurés, puis affiche les résultats. Elle complète la synchronisation périodique et permet de trouver des fichiers pour n'importe quelle requête, même si la série n'est pas encore dans votre bibliothèque.
+Cette recherche est **live** : elle interroge directement l'API Telegram en temps réel sur tous vos channels configurés, puis affiche les résultats. Elle fonctionne pour **n'importe quelle série**, qu'elle ait ou non un lien metadata approuvé.
 
 Dans la fenêtre de recherche :
 
-- **Champ de recherche** — modifiable pour affiner la requête (le nom de la série est pré-rempli)
-- **Badge de la série** — relance la recherche avec le nom exact de la série
+- **Champ de recherche** — modifiable pour affiner la requête (le nom de la série est pré-rempli, sans l'article initial si présent)
+- **Badge de la série** — relance la recherche avec le nom court ou complet
+- **Badges des tomes manquants** — raccourcis pour chercher un tome précis
 - **Résultats** — liste des fichiers trouvés avec : numéro de tome, channel source, taille, statut
 
 Pour chaque résultat au statut *Disponible* :
@@ -145,11 +153,11 @@ Les résultats déjà en cours de téléchargement ou déjà importés affichent
 Lorsque vous cliquez sur **Télécharger** (depuis la page Téléchargements ou depuis la recherche série) :
 
 1. Stripstream se connecte à Telegram et récupère le message contenant le fichier
-2. Le fichier est téléchargé dans le répertoire de la série (détecté depuis la bibliothèque ou créé si inexistant)
+2. Le fichier est téléchargé en streaming dans le répertoire de la série (détecté depuis la bibliothèque ou créé si inexistant)
 3. Un job de scan est déclenché automatiquement pour intégrer le nouveau fichier
-4. Le statut passe à `importing` pendant le téléchargement, puis `imported`
+4. Le statut passe à `En cours` pendant le téléchargement (avec barre de progression), puis `Importé`
 
-Le téléchargement s'effectue en arrière-plan — vous pouvez continuer à utiliser Stripstream pendant ce temps.
+Le téléchargement s'effectue en arrière-plan — vous pouvez continuer à utiliser Stripstream pendant ce temps. Un timeout de 30 minutes s'applique par fichier.
 
 ---
 
@@ -159,7 +167,7 @@ Les téléchargements Telegram apparaissent dans l'historique en haut de la page
 
 | Statut | Description |
 |--------|-------------|
-| **En cours** | Téléchargement depuis Telegram en progression |
+| **En cours** | Téléchargement depuis Telegram en progression (barre de progression visible) |
 | **Importé** | Fichier téléchargé et copié dans la bibliothèque |
 | **Erreur** | Échec du téléchargement ou de la copie |
 
@@ -178,7 +186,7 @@ Les téléchargements Telegram apparaissent dans l'historique en haut de la page
 
 **Recherche** : `client.search_messages(&chat).query(series_name).filter(InputMessagesFilterDocument)` — utilise la recherche full-text native de Telegram, côté serveur. Retourne uniquement les messages contenant des documents (pas les photos ni les messages texte).
 
-**Déduplication** : `INSERT ... ON CONFLICT (source_id, message_id) DO NOTHING` — un fichier déjà connu n'est jamais réinséré.
+**Déduplication** : `INSERT ... ON CONFLICT (source_id, message_id) DO UPDATE SET volume_number = EXCLUDED.volume_number WHERE volume_number IS NULL` — un fichier déjà connu n'est jamais réinséré, sauf pour corriger un `volume_number` manquant.
 
 **Attribution `@channel`** : certains channels ajoutent automatiquement un suffixe `@username` au nom des fichiers (ex. `Berserk - 32@BD_fr.cbz`). Ce suffixe est ignoré lors de l'extraction du nom de série et du numéro de volume.
 
@@ -187,4 +195,6 @@ Les téléchargements Telegram apparaissent dans l'historique en haut de la page
 **Répertoire de destination** : résolu dans cet ordre — (1) fichier existant de la série en DB, (2) répertoire existant dans la bibliothèque dont le nom correspond, (3) nouveau répertoire `bibliothèque/nom-de-série`.
 
 **Job de sync** : type `telegram_sync`, `library_id = NULL`. Un seul job actif à la fois — les doublons sont ignorés.
+
+**Reset au démarrage** : les téléchargements bloqués en statut `downloading` au redémarrage de l'API sont automatiquement réinitialisés à `available`.
 :::

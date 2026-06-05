@@ -457,7 +457,7 @@ pub async fn save_settings(
         .and_then(|(_, _, _, bytes)| bytes)
         .map(|b| B64.encode(b));
 
-    let sync_interval = body.sync_interval_minutes.unwrap_or(60).max(0);
+    let sync_interval = body.sync_interval_minutes.unwrap_or(0).max(0);
     let value = serde_json::json!({
         "api_id": body.api_id,
         "api_hash": api_hash,
