@@ -756,33 +756,26 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
                   size="sm"
                   className="text-muted-foreground shrink-0 !w-3.5 !h-3.5"
                 />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Link
-                      href={`/series/${r.series_id}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-sm font-semibold text-primary hover:underline truncate"
-                    >
-                      {r.series_name}
-                    </Link>
-                    {libraries.length > 1 && (
-                      <span className="text-[10px] text-muted-foreground hidden sm:inline shrink-0">{r.library_name}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
-                    <span>{releaseCount} release{releaseCount > 1 ? "s" : ""}</span>
-                    {(() => {
-                      const newest = newestDetectedAt(r);
-                      return newest ? (
-                        <span>{formatDate(newest)}</span>
-                      ) : null;
-                    })()}
-                    {r.available_releases && r.available_releases.length > 0 && (
-                      <span className="hidden sm:inline truncate max-w-xs" title={r.available_releases[0].title}>
-                        {r.available_releases[0].title}
-                      </span>
-                    )}
-                  </div>
+                <div className="flex-1 min-w-0 flex items-center gap-2 overflow-hidden">
+                  <Link
+                    href={`/series/${r.series_id}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-sm font-semibold text-primary hover:underline truncate shrink"
+                  >
+                    {r.series_name}
+                  </Link>
+                  {libraries.length > 1 && (
+                    <span className="text-[10px] text-muted-foreground hidden sm:inline shrink-0">{r.library_name}</span>
+                  )}
+                  <span className="text-[10px] text-muted-foreground shrink-0">
+                    {releaseCount} release{releaseCount > 1 ? "s" : ""}
+                  </span>
+                  {(() => {
+                    const newest = newestDetectedAt(r);
+                    return newest ? (
+                      <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{formatDate(newest)}</span>
+                    ) : null;
+                  })()}
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
@@ -804,61 +797,64 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
                 </div>
               </button>
 
-              {/* Expanded: one flat line per release */}
+              {/* Expanded: one compact line per release */}
               {isExpanded && r.available_releases && r.available_releases.length > 0 && (
                 <div className="border-b border-border/40">
                   {r.available_releases.map((release, idx) => (
-                    <div key={idx} className={`px-2 sm:px-3 py-0.5 pl-7 sm:pl-9 text-[10px] hover:bg-muted/20 border-b border-border/10 last:border-b-0 ${release.has_failed ? "bg-destructive/5" : ""}`}>
-                      <div className="flex items-center gap-1.5 sm:gap-2">
-                        {release.has_failed && (
-                          <span className="px-1 py-px rounded bg-destructive/20 text-destructive font-medium shrink-0" title={t("downloads.failedBefore", { count: 1 })}>!</span>
-                        )}
-                        <div className="flex items-center gap-1 shrink-0">
-                          {compressVolumes(release.matched_missing_volumes).map(range => (
-                            <span key={range} className="px-1 py-px rounded bg-success/20 text-success font-medium">{range}</span>
-                          ))}
-                        </div>
-                        {release.indexer && <span className="text-muted-foreground shrink-0">{release.indexer}</span>}
-                        {release.seeders != null && (
-                          <span className={`font-medium shrink-0 ${
-                            release.seeders >= 10 ? "text-green-600" : release.seeders >= 3 ? "text-amber-600" : "text-red-500"
-                          }`}>{release.seeders}S</span>
-                        )}
-                        <span className="text-muted-foreground shrink-0">{(release.size / 1024 / 1024).toFixed(0)}MB</span>
-                        <div className="flex items-center gap-0.5 ml-auto shrink-0">
-                          {release.download_url && (
-                            <QbittorrentDownloadButton
-                              downloadUrl={release.download_url}
-                              releaseId={`${r.id}-${idx}`}
-                              libraryId={r.library_id}
-                              seriesName={r.series_name}
-                              expectedVolumes={release.matched_missing_volumes}
-                              allVolumes={release.all_volumes}
-                            />
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteRelease(r.id, idx, true)}
-                            disabled={deletingKey === `${r.id}-${idx}`}
-                            title={t("downloads.blacklist")}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 shrink-0"
-                          >
-                            <Icon name="x" size="sm" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteRelease(r.id, idx)}
-                            disabled={deletingKey === `${r.id}-${idx}`}
-                            title={t("downloads.delete")}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30 shrink-0"
-                          >
-                            {deletingKey === `${r.id}-${idx}`
-                              ? <Icon name="spinner" size="sm" className="animate-spin" />
-                              : <Icon name="trash" size="sm" />}
-                          </button>
-                        </div>
+                    <div
+                      key={idx}
+                      className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 pl-7 sm:pl-9 text-[11px] hover:bg-muted/20 border-b border-border/10 last:border-b-0 transition-colors ${release.has_failed ? "bg-destructive/5 hover:bg-destructive/10" : ""}`}
+                    >
+                      {release.has_failed && (
+                        <span className="px-1.5 py-px rounded bg-destructive/20 text-destructive font-medium shrink-0" title={t("downloads.failedBefore", { count: 1 })}>!</span>
+                      )}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {compressVolumes(release.matched_missing_volumes).map(range => (
+                          <span key={range} className="px-1.5 py-px rounded bg-success/20 text-success font-medium tabular-nums">{range}</span>
+                        ))}
                       </div>
-                      <p className="text-[9px] text-muted-foreground/60 truncate pl-0.5" title={release.title}>{release.title}</p>
+                      <span className={`flex-1 min-w-0 truncate font-mono ${release.has_failed ? "text-destructive/80" : "text-muted-foreground"}`} title={release.title}>
+                        {release.title}
+                      </span>
+                      {release.indexer && <span className="text-muted-foreground shrink-0 hidden sm:inline">{release.indexer}</span>}
+                      {release.seeders != null && (
+                        <span className={`font-medium shrink-0 tabular-nums ${
+                          release.seeders >= 10 ? "text-green-600" : release.seeders >= 3 ? "text-amber-600" : "text-red-500"
+                        }`}>{release.seeders}S</span>
+                      )}
+                      <span className="text-muted-foreground shrink-0 tabular-nums">{(release.size / 1024 / 1024).toFixed(0)}MB</span>
+                      <div className="flex items-center gap-0.5 ml-auto shrink-0">
+                        {release.download_url && (
+                          <QbittorrentDownloadButton
+                            downloadUrl={release.download_url}
+                            releaseId={`${r.id}-${idx}`}
+                            libraryId={r.library_id}
+                            seriesName={r.series_name}
+                            expectedVolumes={release.matched_missing_volumes}
+                            allVolumes={release.all_volumes}
+                          />
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRelease(r.id, idx, true)}
+                          disabled={deletingKey === `${r.id}-${idx}`}
+                          title={t("downloads.blacklist")}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 shrink-0"
+                        >
+                          <Icon name="x" size="sm" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRelease(r.id, idx)}
+                          disabled={deletingKey === `${r.id}-${idx}`}
+                          title={t("downloads.delete")}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30 shrink-0"
+                        >
+                          {deletingKey === `${r.id}-${idx}`
+                            ? <Icon name="spinner" size="sm" className="animate-spin" />
+                            : <Icon name="trash" size="sm" />}
+                        </button>
+                      </div>
                     </div>
                   ))}
                   <div className="flex justify-end px-2 sm:px-3 py-0.5 pl-7 sm:pl-9">
