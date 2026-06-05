@@ -4,7 +4,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::Row;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -1909,7 +1909,28 @@ async fn do_download(
 
     info!("Downloading {} → {}", filename, dest_path.display());
     let downloadable = Downloadable::Media(media);
-    client.download_media(&downloadable, &tmp_path).await?;
+
+    // Retry up to 3 times on FLOOD_WAIT
+    const MAX_RETRIES: u32 = 3;
+    let mut retries = 0u32;
+    loop {
+        match client.download_media(&downloadable, &tmp_path).await {
+            Ok(_) => break,
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("FLOOD_WAIT") && retries < MAX_RETRIES {
+                    let wait_secs = parse_flood_wait_secs(&msg).unwrap_or(5);
+                    warn!("FLOOD_WAIT {wait_secs}s for {filename}, retry {}/{MAX_RETRIES}", retries + 1);
+                    let _ = std::fs::remove_file(&tmp_path);
+                    tokio::time::sleep(std::time::Duration::from_secs(wait_secs + 1)).await;
+                    retries += 1;
+                } else {
+                    let _ = std::fs::remove_file(&tmp_path);
+                    return Err(e.into());
+                }
+            }
+        }
+    }
 
     std::fs::rename(&tmp_path, &dest_path)?;
 
@@ -1939,6 +1960,13 @@ async fn do_download(
 
     info!("Telegram download complete: {filename}, scan job {scan_job_id} queued");
     Ok(())
+}
+
+fn parse_flood_wait_secs(err: &str) -> Option<u64> {
+    // Error format: "rpc error 420: FLOOD_WAIT ... (value: 2)"
+    err.split("value:").nth(1)
+        .and_then(|s| s.trim().split(|c: char| !c.is_ascii_digit()).next())
+        .and_then(|s| s.parse().ok())
 }
 
 fn sanitize_filename(name: &str) -> String {
