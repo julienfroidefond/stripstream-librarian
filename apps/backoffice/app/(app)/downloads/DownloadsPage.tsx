@@ -892,11 +892,16 @@ function TelegramAvailableSection({ groups, onRefresh }: { groups: TelegramAvail
   ).map(([id, name]) => ({ id, name }));
 
   const filtered = groups.filter(g => filterLib === "all" || g.library_id === filterLib);
-  const sorted = [...filtered].sort((a, b) => {
-    if (sort === "name") return a.series_name.localeCompare(b.series_name);
-    if (sort === "missing") return b.series_missing_count - a.series_missing_count;
-    return b.books[0]?.created_at.localeCompare(a.books[0]?.created_at ?? "") ?? 0;
-  });
+  const sorted = [...filtered]
+    .filter(g => {
+      const ownedSet = new Set(g.owned_volumes);
+      return g.books.some(b => !(b.volume_number != null && ownedSet.has(b.volume_number)));
+    })
+    .sort((a, b) => {
+      if (sort === "name") return a.series_name.localeCompare(b.series_name);
+      if (sort === "missing") return b.series_missing_count - a.series_missing_count;
+      return b.books[0]?.created_at.localeCompare(a.books[0]?.created_at ?? "") ?? 0;
+    });
 
   async function handleDownload(bookId: string) {
     setDownloadingIds(prev => new Set(prev).add(bookId));
@@ -963,13 +968,9 @@ function TelegramAvailableSection({ groups, onRefresh }: { groups: TelegramAvail
           const isExpanded = expandedKey === key;
           const owned = new Set(group.owned_volumes);
           const missing = group.series_missing_count;
-          // Sort books: missing/unknown first, then already owned
-          const sortedBooks = [...group.books].sort((a, b) => {
-            const aOwned = a.volume_number != null && owned.has(a.volume_number) ? 1 : 0;
-            const bOwned = b.volume_number != null && owned.has(b.volume_number) ? 1 : 0;
-            if (aOwned !== bOwned) return aOwned - bOwned;
-            return (a.volume_number ?? 9999) - (b.volume_number ?? 9999);
-          });
+          const sortedBooks = group.books
+            .filter(b => !(b.volume_number != null && owned.has(b.volume_number)))
+            .sort((a, b) => (a.volume_number ?? 9999) - (b.volume_number ?? 9999));
 
           return (
             <div key={key} className="border-b border-border/40 last:border-b-0">
@@ -1002,7 +1003,7 @@ function TelegramAvailableSection({ groups, onRefresh }: { groups: TelegramAvail
                     </span>
                   )}
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-sky-500/20 text-sky-600">
-                    {group.books.length} {t("downloads.telegramFiles")}
+                    {sortedBooks.length} {t("downloads.telegramFiles")}
                   </span>
                 </div>
               </button>
@@ -1011,11 +1012,10 @@ function TelegramAvailableSection({ groups, onRefresh }: { groups: TelegramAvail
               {isExpanded && (
                 <div className="border-t border-border/20">
                   {sortedBooks.map(book => {
-                    const isOwned = book.volume_number != null && owned.has(book.volume_number);
                     return (
-                      <div key={book.id} className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 pl-7 sm:pl-9 text-[11px] hover:bg-muted/20 border-b border-border/10 last:border-b-0 ${isOwned ? "opacity-50" : ""}`}>
+                      <div key={book.id} className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 pl-7 sm:pl-9 text-[11px] hover:bg-muted/20 border-b border-border/10 last:border-b-0">
                         {book.volume_number != null ? (
-                          <span className={`px-1.5 py-px rounded font-medium shrink-0 tabular-nums ${isOwned ? "bg-muted/50 text-muted-foreground" : "bg-success/20 text-success"}`}>
+                          <span className="px-1.5 py-px rounded font-medium shrink-0 tabular-nums bg-success/20 text-success">
                             T{String(book.volume_number).padStart(2, "0")}
                           </span>
                         ) : (
@@ -1024,9 +1024,6 @@ function TelegramAvailableSection({ groups, onRefresh }: { groups: TelegramAvail
                         <span className="flex-1 truncate text-muted-foreground" title={book.filename}>{book.filename}</span>
                         <span className="text-muted-foreground shrink-0">@{book.channel_username}</span>
                         {book.file_size && <span className="text-muted-foreground shrink-0">{formatSize(book.file_size)}</span>}
-                        {isOwned && (
-                          <span className="text-[10px] text-muted-foreground shrink-0 hidden sm:inline">{t("downloads.alreadyExisted")}</span>
-                        )}
                         <div className="flex items-center gap-0.5 ml-auto shrink-0">
                           <button
                             type="button"
