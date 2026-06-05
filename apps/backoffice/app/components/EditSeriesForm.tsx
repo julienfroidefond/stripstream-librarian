@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { FormField, FormLabel, FormInput } from "./ui/Form";
 import { Icon } from "./ui";
 import { useTranslation } from "../../lib/i18n/context";
-import { fetchAllGenres } from "@/lib/api";
 
 function LockButton({
   locked,
@@ -206,7 +205,7 @@ export function EditSeriesForm({
 
   useEffect(() => {
     if (isOpen && allGenres.length === 0) {
-      fetchAllGenres().then(setAllGenres);
+      fetch("/api/series/genres").then(r => r.json()).then(setAllGenres).catch(() => {});
     }
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
