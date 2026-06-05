@@ -161,6 +161,7 @@ export function SeriesActionsToolbar(props: Props) {
           {props.telegramEnabled && (
             <TelegramSearchModal
               seriesName={props.seriesName}
+              missingBooks={props.missingData?.missing_books ?? null}
               initialEnabled={props.telegramEnabled}
             >
               {(open) => (

@@ -29,8 +29,14 @@ function tgStatusLabel(status: string, t: TFunction): string {
   return t(map[status] ?? status);
 }
 
+interface MissingBookItem {
+  title: string | null;
+  volume_number: number | null;
+}
+
 interface TelegramSearchModalProps {
   seriesName: string;
+  missingBooks?: MissingBookItem[] | null;
   initialEnabled?: boolean;
   children?: (open: () => void) => React.ReactNode;
 }
@@ -43,7 +49,7 @@ function formatSize(bytes: number | null): string {
   return bytes + " B";
 }
 
-export function TelegramSearchModal({ seriesName, initialEnabled, children }: TelegramSearchModalProps) {
+export function TelegramSearchModal({ seriesName, missingBooks, initialEnabled, children }: TelegramSearchModalProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [searchInput, setSearchInput] = useState(seriesName);
@@ -52,6 +58,8 @@ export function TelegramSearchModal({ seriesName, initialEnabled, children }: Te
   const [searched, setSearched] = useState(false);
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
   const [dismissingIds, setDismissingIds] = useState<Set<string>>(new Set());
+
+  const missingVolumeSet = new Set((missingBooks ?? []).map(b => b.volume_number).filter((v): v is number => v != null));
 
   const doSearch = useCallback(async (query: string) => {
     if (!query.trim()) return;
@@ -151,8 +159,8 @@ export function TelegramSearchModal({ seriesName, initialEnabled, children }: Te
               </button>
             </form>
 
-            {/* Quick badge: re-run search with series name */}
-            <div className="flex flex-wrap items-center gap-2">
+            {/* Quick badges: series name + missing volumes */}
+            <div className="flex flex-wrap items-center gap-2 max-h-24 overflow-y-auto">
               <button
                 type="button"
                 onClick={() => { setSearchInput(seriesName); doSearch(seriesName); }}
@@ -161,6 +169,22 @@ export function TelegramSearchModal({ seriesName, initialEnabled, children }: Te
               >
                 {seriesName}
               </button>
+              {(missingBooks ?? []).map((book, i) => {
+                const label = book.title || (book.volume_number != null ? `T${book.volume_number}` : null);
+                if (!label) return null;
+                const q = book.volume_number != null ? `${seriesName} T${book.volume_number}` : `${seriesName} ${label}`;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => { setSearchInput(q); doSearch(q); }}
+                    disabled={isSearching}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border disabled:opacity-50 transition-colors border-green-500/50 bg-green-500/10 text-green-600 hover:bg-green-500/20"
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Searching */}
@@ -178,13 +202,15 @@ export function TelegramSearchModal({ seriesName, initialEnabled, children }: Te
                   {t("telegramMonitor.availableCount", { count: results.length, plural: results.length > 1 ? "s" : "" })}
                 </p>
                 <div className="rounded-lg border border-border overflow-hidden">
-                  {results.map(book => (
+                  {results.map(book => {
+                    const isMissing = book.volume_number != null && missingVolumeSet.has(book.volume_number);
+                    return (
                     <div
                       key={book.id}
-                      className="flex items-center gap-2 sm:gap-3 px-3 py-2.5 border-b border-border/40 last:border-b-0 hover:bg-muted/20 transition-colors"
+                      className={`flex items-center gap-2 sm:gap-3 px-3 py-2.5 border-b border-border/40 last:border-b-0 transition-colors ${isMissing ? "bg-green-500/10 hover:bg-green-500/20 border-l-2 border-l-green-500" : "hover:bg-muted/20"}`}
                     >
                       {book.volume_number != null ? (
-                        <span className="px-1.5 py-0.5 rounded bg-success/20 text-success text-xs font-medium shrink-0 tabular-nums">
+                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium shrink-0 tabular-nums ${isMissing ? "bg-green-500/20 text-green-600" : "bg-success/20 text-success"}`}>
                           T{String(book.volume_number).padStart(2, "0")}
                         </span>
                       ) : (
@@ -240,7 +266,7 @@ export function TelegramSearchModal({ seriesName, initialEnabled, children }: Te
                         )}
                       </div>
                     </div>
-                  ))}
+                  ); })}
                 </div>
               </div>
             )}
