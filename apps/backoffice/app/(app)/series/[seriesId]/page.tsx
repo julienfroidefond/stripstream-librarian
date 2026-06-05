@@ -89,6 +89,7 @@ export default async function SeriesDetailPage({
 
   const totalPages = Math.ceil(booksPage.total / limit);
   const booksReadCount = booksPage.items.filter((b) => b.reading_status === "read").length;
+  const ownedVolumes = booksPage.items.filter(b => b.volume != null && b.volume_type === "regular").map(b => b.volume as number);
   const displayName = seriesName === "unclassified" ? t("books.unclassified") : seriesName;
 
   // Use first_book_id from series DTO (already prioritizes regular volumes over HS),
@@ -292,6 +293,7 @@ export default async function SeriesDetailPage({
             prowlarrConfigured={prowlarrConfigured}
             qbConfigured={qbConfigured}
             telegramEnabled={telegramEnabled}
+            ownedVolumes={ownedVolumes}
             renameFormat={typeof renameFormat === "string" ? renameFormat : null}
             renameFormatHs={typeof renameFormatHs === "string" ? renameFormatHs : null}
             hasActiveUser={hasActiveUser}

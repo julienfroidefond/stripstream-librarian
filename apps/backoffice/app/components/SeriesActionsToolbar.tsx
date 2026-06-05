@@ -62,6 +62,7 @@ interface Props {
   prowlarrConfigured: boolean;
   qbConfigured: boolean;
   telegramEnabled: boolean;
+  ownedVolumes?: number[];
   // Rename
   renameFormat: string | null;
   renameFormatHs: string | null;
@@ -162,6 +163,7 @@ export function SeriesActionsToolbar(props: Props) {
             <TelegramSearchModal
               seriesName={props.seriesName}
               missingBooks={props.missingData?.missing_books ?? null}
+              ownedVolumes={props.ownedVolumes}
               initialEnabled={props.telegramEnabled}
             >
               {(open) => (

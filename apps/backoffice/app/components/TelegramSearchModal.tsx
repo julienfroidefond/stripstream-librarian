@@ -37,6 +37,7 @@ interface MissingBookItem {
 interface TelegramSearchModalProps {
   seriesName: string;
   missingBooks?: MissingBookItem[] | null;
+  ownedVolumes?: number[];
   initialEnabled?: boolean;
   children?: (open: () => void) => React.ReactNode;
 }
@@ -49,7 +50,7 @@ function formatSize(bytes: number | null): string {
   return bytes + " B";
 }
 
-export function TelegramSearchModal({ seriesName, missingBooks, initialEnabled, children }: TelegramSearchModalProps) {
+export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, initialEnabled, children }: TelegramSearchModalProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [searchInput, setSearchInput] = useState(seriesName);
@@ -59,7 +60,7 @@ export function TelegramSearchModal({ seriesName, missingBooks, initialEnabled, 
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
   const [dismissingIds, setDismissingIds] = useState<Set<string>>(new Set());
 
-  const missingVolumeSet = new Set((missingBooks ?? []).map(b => b.volume_number).filter((v): v is number => v != null));
+  const ownedVolumeSet = new Set(ownedVolumes ?? []);
 
   const doSearch = useCallback(async (query: string) => {
     if (!query.trim()) return;
@@ -203,7 +204,7 @@ export function TelegramSearchModal({ seriesName, missingBooks, initialEnabled, 
                 </p>
                 <div className="rounded-lg border border-border overflow-hidden">
                   {results.map(book => {
-                    const isMissing = book.volume_number != null && missingVolumeSet.has(book.volume_number);
+                    const isMissing = book.volume_number != null && ownedVolumes != null && !ownedVolumeSet.has(book.volume_number);
                     return (
                     <div
                       key={book.id}
