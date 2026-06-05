@@ -1733,6 +1733,8 @@ export type TelegramAvailableGroupDto = {
   series_id: string | null;
   library_id: string;
   library_name: string;
+  owned_volumes: number[];
+  series_missing_count: number;
   books: TelegramAvailableBookDto[];
 };
 

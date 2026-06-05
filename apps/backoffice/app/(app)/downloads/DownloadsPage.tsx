@@ -884,7 +884,7 @@ function TelegramAvailableSection({ groups, onRefresh }: { groups: TelegramAvail
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
   const [dismissingIds, setDismissingIds] = useState<Set<string>>(new Set());
 
-  const [sort, setSort] = useState<"name" | "recent" | "count">("recent");
+  const [sort, setSort] = useState<"name" | "recent" | "missing">("missing");
   const [filterLib, setFilterLib] = useState<string>("all");
 
   const libraries = Array.from(
@@ -894,7 +894,7 @@ function TelegramAvailableSection({ groups, onRefresh }: { groups: TelegramAvail
   const filtered = groups.filter(g => filterLib === "all" || g.library_id === filterLib);
   const sorted = [...filtered].sort((a, b) => {
     if (sort === "name") return a.series_name.localeCompare(b.series_name);
-    if (sort === "count") return b.books.length - a.books.length;
+    if (sort === "missing") return b.series_missing_count - a.series_missing_count;
     return b.books[0]?.created_at.localeCompare(a.books[0]?.created_at ?? "") ?? 0;
   });
 
@@ -918,10 +918,10 @@ function TelegramAvailableSection({ groups, onRefresh }: { groups: TelegramAvail
     }
   }
 
-  const sortOptions: { id: "name" | "recent" | "count"; label: string }[] = [
-    { id: "recent", label: t("downloads.sortRecent") },
-    { id: "count",  label: t("downloads.sortMissing") },
-    { id: "name",   label: t("downloads.sortName") },
+  const sortOptions: { id: "name" | "recent" | "missing"; label: string }[] = [
+    { id: "missing", label: t("downloads.sortMissing") },
+    { id: "recent",  label: t("downloads.sortRecent") },
+    { id: "name",    label: t("downloads.sortName") },
   ];
 
   return (
@@ -930,7 +930,7 @@ function TelegramAvailableSection({ groups, onRefresh }: { groups: TelegramAvail
         <h2 className="text-base font-semibold flex items-center gap-2">
           <Icon name="download" size="sm" className="text-sky-500" />
           {t("downloads.telegramAvailable")}
-          <span className="text-xs font-normal text-muted-foreground">({sorted.reduce((n, g) => n + g.books.length, 0)})</span>
+          <span className="text-xs font-normal text-muted-foreground">({sorted.length})</span>
         </h2>
         <div className="flex items-center gap-2">
           {libraries.length > 1 && (
@@ -961,6 +961,16 @@ function TelegramAvailableSection({ groups, onRefresh }: { groups: TelegramAvail
         {sorted.map(group => {
           const key = `${group.series_name}|${group.library_id}`;
           const isExpanded = expandedKey === key;
+          const owned = new Set(group.owned_volumes);
+          const missing = group.series_missing_count;
+          // Sort books: missing/unknown first, then already owned
+          const sortedBooks = [...group.books].sort((a, b) => {
+            const aOwned = a.volume_number != null && owned.has(a.volume_number) ? 1 : 0;
+            const bOwned = b.volume_number != null && owned.has(b.volume_number) ? 1 : 0;
+            if (aOwned !== bOwned) return aOwned - bOwned;
+            return (a.volume_number ?? 9999) - (b.volume_number ?? 9999);
+          });
+
           return (
             <div key={key} className="border-b border-border/40 last:border-b-0">
               {/* Series header */}
@@ -985,50 +995,65 @@ function TelegramAvailableSection({ groups, onRefresh }: { groups: TelegramAvail
                     </span>
                   )}
                 </div>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-sky-500/20 text-sky-600 shrink-0">
-                  {group.books.length} {t("downloads.telegramFiles")}
-                </span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {missing > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-warning/20 text-warning">
+                      {missing} {t("downloads.missing")}
+                    </span>
+                  )}
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-sky-500/20 text-sky-600">
+                    {group.books.length} {t("downloads.telegramFiles")}
+                  </span>
+                </div>
               </button>
 
               {/* Books list */}
               {isExpanded && (
                 <div className="border-t border-border/20">
-                  {group.books.map(book => (
-                    <div key={book.id} className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 pl-7 sm:pl-9 text-[11px] hover:bg-muted/20 border-b border-border/10 last:border-b-0">
-                      {book.volume_number != null && (
-                        <span className="px-1.5 py-px rounded bg-success/20 text-success font-medium shrink-0">
-                          T{book.volume_number}
-                        </span>
-                      )}
-                      <span className="flex-1 truncate text-muted-foreground" title={book.filename}>{book.filename}</span>
-                      <span className="text-muted-foreground shrink-0">@{book.channel_username}</span>
-                      {book.file_size && <span className="text-muted-foreground shrink-0">{formatSize(book.file_size)}</span>}
-                      <div className="flex items-center gap-0.5 ml-auto shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleDownload(book.id)}
-                          disabled={downloadingIds.has(book.id)}
-                          title={t("telegramMonitor.download")}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-success hover:bg-success/10 transition-colors disabled:opacity-30"
-                        >
-                          {downloadingIds.has(book.id)
-                            ? <Icon name="spinner" size="sm" className="animate-spin" />
-                            : <Icon name="download" size="sm" />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDismiss(book.id)}
-                          disabled={dismissingIds.has(book.id)}
-                          title={t("downloads.delete")}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
-                        >
-                          {dismissingIds.has(book.id)
-                            ? <Icon name="spinner" size="sm" className="animate-spin" />
-                            : <Icon name="trash" size="sm" />}
-                        </button>
+                  {sortedBooks.map(book => {
+                    const isOwned = book.volume_number != null && owned.has(book.volume_number);
+                    return (
+                      <div key={book.id} className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 pl-7 sm:pl-9 text-[11px] hover:bg-muted/20 border-b border-border/10 last:border-b-0 ${isOwned ? "opacity-50" : ""}`}>
+                        {book.volume_number != null ? (
+                          <span className={`px-1.5 py-px rounded font-medium shrink-0 tabular-nums ${isOwned ? "bg-muted/50 text-muted-foreground" : "bg-success/20 text-success"}`}>
+                            T{String(book.volume_number).padStart(2, "0")}
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-px rounded bg-muted/50 text-muted-foreground text-xs shrink-0">—</span>
+                        )}
+                        <span className="flex-1 truncate text-muted-foreground" title={book.filename}>{book.filename}</span>
+                        <span className="text-muted-foreground shrink-0">@{book.channel_username}</span>
+                        {book.file_size && <span className="text-muted-foreground shrink-0">{formatSize(book.file_size)}</span>}
+                        {isOwned && (
+                          <span className="text-[10px] text-muted-foreground shrink-0 hidden sm:inline">{t("downloads.alreadyExisted")}</span>
+                        )}
+                        <div className="flex items-center gap-0.5 ml-auto shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleDownload(book.id)}
+                            disabled={downloadingIds.has(book.id)}
+                            title={t("telegramMonitor.download")}
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-success hover:bg-success/10 transition-colors disabled:opacity-30"
+                          >
+                            {downloadingIds.has(book.id)
+                              ? <Icon name="spinner" size="sm" className="animate-spin" />
+                              : <Icon name="download" size="sm" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDismiss(book.id)}
+                            disabled={dismissingIds.has(book.id)}
+                            title={t("downloads.delete")}
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
+                          >
+                            {dismissingIds.has(book.id)
+                              ? <Icon name="spinner" size="sm" className="animate-spin" />
+                              : <Icon name="trash" size="sm" />}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

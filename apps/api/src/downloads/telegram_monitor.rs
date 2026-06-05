@@ -95,6 +95,8 @@ pub struct TelegramAvailableGroupDto {
     pub series_id: Option<String>,
     pub library_id: String,
     pub library_name: String,
+    pub owned_volumes: Vec<i32>,
+    pub series_missing_count: i32,
     pub books: Vec<TelegramAvailableBookDto>,
 }
 
@@ -1245,14 +1247,20 @@ pub async fn list_available_by_series(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TelegramAvailableGroupDto>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT b.id, b.source_id, s.channel_username, b.message_id, b.filename, \
-                b.file_size, b.status, b.series_name, b.volume_number, b.created_at, \
-                COALESCE(b.library_id, s.library_id) AS resolved_library_id \
-         FROM telegram_book_links b \
-         JOIN telegram_sources s ON s.id = b.source_id \
-         WHERE b.status = 'available' \
-           AND b.series_name IS NOT NULL \
-         ORDER BY b.series_name, b.volume_number NULLS LAST, b.created_at DESC",
+        "WITH dedup AS ( \
+           SELECT DISTINCT ON (b.source_id, b.series_name, COALESCE(b.volume_number::text, b.filename)) \
+                  b.id, b.source_id, b.message_id, b.filename, b.file_size, b.status, \
+                  b.series_name, b.volume_number, b.created_at, b.library_id \
+           FROM telegram_book_links b \
+           WHERE b.status = 'available' AND b.series_name IS NOT NULL \
+           ORDER BY b.source_id, b.series_name, COALESCE(b.volume_number::text, b.filename), b.created_at DESC \
+         ) \
+         SELECT d.id, d.source_id, s.channel_username, d.message_id, d.filename, \
+                d.file_size, d.status, d.series_name, d.volume_number, d.created_at, \
+                COALESCE(d.library_id, s.library_id) AS resolved_library_id \
+         FROM dedup d \
+         JOIN telegram_sources s ON s.id = d.source_id \
+         ORDER BY d.series_name, d.volume_number NULLS LAST, d.created_at DESC",
     )
     .fetch_all(&state.pool)
     .await?;
@@ -1305,6 +1313,36 @@ pub async fn list_available_by_series(
         series_ids.insert((sn.clone(), *lib_id), sid);
     }
 
+    // Batch-fetch owned volumes + series total for computing missing count
+    let matched_series_ids: Vec<Uuid> = series_ids.values()
+        .filter_map(|o| *o)
+        .collect();
+    let mut owned_by_series: std::collections::HashMap<Uuid, Vec<i32>> = std::collections::HashMap::new();
+    let mut missing_by_series: std::collections::HashMap<Uuid, i32> = std::collections::HashMap::new();
+    if !matched_series_ids.is_empty() {
+        let owned_rows = sqlx::query(
+            "SELECT s.id AS series_id, s.total_volumes, \
+                    COALESCE(ARRAY_AGG(b.volume_number) FILTER (WHERE b.volume_type = 'regular' AND b.volume_number IS NOT NULL), '{}') AS volume_numbers, \
+                    COUNT(b.id) FILTER (WHERE b.volume_type = 'regular') AS owned_count \
+             FROM series s \
+             LEFT JOIN books b ON b.series_id = s.id \
+             WHERE s.id = ANY($1) \
+             GROUP BY s.id, s.total_volumes",
+        )
+        .bind(&matched_series_ids)
+        .fetch_all(&state.pool)
+        .await?;
+        for r in &owned_rows {
+            let sid: Uuid = r.get("series_id");
+            let total_volumes: Option<i32> = r.get("total_volumes");
+            let owned_count: i64 = r.get("owned_count");
+            let volume_numbers: Vec<i32> = r.get("volume_numbers");
+            owned_by_series.insert(sid, volume_numbers);
+            let missing = ((total_volumes.unwrap_or(0) as i64) - owned_count).max(0) as i32;
+            missing_by_series.insert(sid, missing);
+        }
+    }
+
     // Group books preserving insertion order (SQL ORDER BY series_name)
     let mut group_keys: Vec<(String, Uuid)> = Vec::new();
     let mut groups: std::collections::HashMap<(String, Uuid), Vec<TelegramAvailableBookDto>> = std::collections::HashMap::new();
@@ -1334,14 +1372,24 @@ pub async fn list_available_by_series(
     let result: Vec<TelegramAvailableGroupDto> = group_keys
         .into_iter()
         .filter_map(|(series_name, lib_id)| {
-            let series_id = series_ids.get(&(series_name.clone(), lib_id))
-                .and_then(|o| o.as_ref().map(|u| u.to_string()));
+            let sid_uuid = series_ids.get(&(series_name.clone(), lib_id)).and_then(|o| *o);
+            let series_id = sid_uuid.map(|u| u.to_string());
             series_id.as_ref()?; // skip unmatched groups
+            let owned_volumes = sid_uuid
+                .and_then(|sid| owned_by_series.get(&sid))
+                .cloned()
+                .unwrap_or_default();
+            let series_missing_count = sid_uuid
+                .and_then(|sid| missing_by_series.get(&sid))
+                .copied()
+                .unwrap_or(0);
             let books = groups.remove(&(series_name.clone(), lib_id))?;
             Some(TelegramAvailableGroupDto {
                 series_id,
                 library_name: lib_names.get(&lib_id).cloned().unwrap_or_default(),
                 library_id: lib_id.to_string(),
+                owned_volumes,
+                series_missing_count,
                 series_name,
                 books,
             })
