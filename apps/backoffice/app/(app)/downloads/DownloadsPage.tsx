@@ -891,17 +891,34 @@ function TelegramAvailableSection({ groups, onRefresh }: { groups: TelegramAvail
     new Map(groups.map(g => [g.library_id, g.library_name])).entries()
   ).map(([id, name]) => ({ id, name }));
 
-  const filtered = groups.filter(g => filterLib === "all" || g.library_id === filterLib);
-  const sorted = [...filtered]
-    .filter(g => {
-      const ownedSet = new Set(g.owned_volumes);
-      return g.books.some(b => !(b.volume_number != null && ownedSet.has(b.volume_number)));
-    })
-    .sort((a, b) => {
-      if (sort === "name") return a.series_name.localeCompare(b.series_name);
-      if (sort === "missing") return b.series_missing_count - a.series_missing_count;
-      return b.books[0]?.created_at.localeCompare(a.books[0]?.created_at ?? "") ?? 0;
-    });
+  // Merge groups pointing to the same series_id (different capitalizations/accents in Telegram)
+  const deduped = groups.reduce<TelegramAvailableGroupDto[]>((acc, g) => {
+    if (!g.series_id) { acc.push(g); return acc; }
+    const existing = acc.find(x => x.series_id === g.series_id && x.library_id === g.library_id);
+    if (existing) {
+      const existingIds = new Set(existing.books.map(b => b.id));
+      existing.books = [...existing.books, ...g.books.filter(b => !existingIds.has(b.id))];
+      existing.series_missing_count = Math.max(existing.series_missing_count, g.series_missing_count);
+    } else {
+      acc.push({ ...g, books: [...g.books] });
+    }
+    return acc;
+  }, []);
+
+  const filtered = deduped.filter(g => {
+    if (filterLib !== "all" && g.library_id !== filterLib) return false;
+    // Hide series we already fully own (series_missing_count=0 and we have some volumes)
+    if (g.series_missing_count === 0 && g.owned_volumes.length > 0) return false;
+    // Keep only if there are non-owned books remaining
+    const ownedSet = new Set(g.owned_volumes);
+    return g.books.some(b => !(b.volume_number != null && ownedSet.has(b.volume_number)));
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (sort === "name") return a.series_name.localeCompare(b.series_name);
+    if (sort === "missing") return b.series_missing_count - a.series_missing_count;
+    return b.books[0]?.created_at.localeCompare(a.books[0]?.created_at ?? "") ?? 0;
+  });
 
   async function handleDownload(bookId: string) {
     setDownloadingIds(prev => new Set(prev).add(bookId));
