@@ -2208,6 +2208,7 @@ mod tests {
         assert_eq!(extract_volume("Black_Clover_29_Une_Nuit_Sans_Matin_Yûki_Tabata_2021@BD_fr.cbz"), Some(29));
         assert_eq!(extract_volume("Black_Clover_30_Bonne_Nouvelle_Yûki_Tabata_2022@BD_fr.cbz"), Some(30));
         assert_eq!(extract_volume("One_Piece_1_Romance_Dawn@ch.cbz"), Some(1));
+        assert_eq!(extract_volume("My_Hero_Academia_42_La_Cavalerie_Est_Là_Kōhei_Horikoshi_2025@BD.cbz"), Some(42));
         // 4-digit numbers (years) must not match as volume
         assert_eq!(extract_volume("Series_2021@channel.cbz"), None);
     }

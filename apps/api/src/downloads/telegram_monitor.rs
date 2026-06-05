@@ -1346,7 +1346,7 @@ async fn insert_document_message(
             "INSERT INTO telegram_book_links \
              (source_id, message_id, filename, file_size, mime_type, message_text, library_id, series_name, volume_number) \
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
-             ON CONFLICT (source_id, message_id) DO NOTHING",
+             ON CONFLICT (source_id, message_id) DO UPDATE SET volume_number = EXCLUDED.volume_number WHERE telegram_book_links.volume_number IS NULL",
         )
         .bind(source_id)
         .bind(msg_id)
