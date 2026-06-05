@@ -1029,16 +1029,17 @@ function TelegramAvailableSection({ groups, onRefresh }: { groups: TelegramAvail
               {isExpanded && (
                 <div className="border-t border-border/20">
                   {sortedBooks.map(book => {
+                    const isFailed = book.status === "failed";
                     return (
-                      <div key={book.id} className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 pl-7 sm:pl-9 text-[11px] hover:bg-muted/20 border-b border-border/10 last:border-b-0">
+                      <div key={book.id} className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 pl-7 sm:pl-9 text-[11px] border-b border-border/10 last:border-b-0 transition-colors ${isFailed ? "bg-destructive/5 hover:bg-destructive/10" : "hover:bg-muted/20"}`}>
                         {book.volume_number != null ? (
-                          <span className="px-1.5 py-px rounded font-medium shrink-0 tabular-nums bg-success/20 text-success">
+                          <span className={`px-1.5 py-px rounded font-medium shrink-0 tabular-nums ${isFailed ? "bg-destructive/20 text-destructive" : "bg-success/20 text-success"}`}>
                             T{String(book.volume_number).padStart(2, "0")}
                           </span>
                         ) : (
                           <span className="px-1.5 py-px rounded bg-muted/50 text-muted-foreground text-xs shrink-0">—</span>
                         )}
-                        <span className="flex-1 truncate text-muted-foreground" title={book.filename}>{book.filename}</span>
+                        <span className={`flex-1 truncate ${isFailed ? "text-destructive/80" : "text-muted-foreground"}`} title={book.filename}>{book.filename}</span>
                         <span className="text-muted-foreground shrink-0">@{book.channel_username}</span>
                         {book.file_size && <span className="text-muted-foreground shrink-0">{formatSize(book.file_size)}</span>}
                         <div className="flex items-center gap-0.5 ml-auto shrink-0">
@@ -1046,12 +1047,12 @@ function TelegramAvailableSection({ groups, onRefresh }: { groups: TelegramAvail
                             type="button"
                             onClick={() => handleDownload(book.id)}
                             disabled={downloadingIds.has(book.id)}
-                            title={t("telegramMonitor.download")}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-success hover:bg-success/10 transition-colors disabled:opacity-30"
+                            title={isFailed ? t("downloads.retry") : t("telegramMonitor.download")}
+                            className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors disabled:opacity-30 ${isFailed ? "text-destructive hover:text-foreground hover:bg-muted" : "text-muted-foreground hover:text-success hover:bg-success/10"}`}
                           >
                             {downloadingIds.has(book.id)
                               ? <Icon name="spinner" size="sm" className="animate-spin" />
-                              : <Icon name="download" size="sm" />}
+                              : isFailed ? <Icon name="refresh" size="sm" /> : <Icon name="download" size="sm" />}
                           </button>
                           <button
                             type="button"

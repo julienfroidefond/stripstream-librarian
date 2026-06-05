@@ -1525,7 +1525,7 @@ pub async fn list_available_by_series(
                     ORDER BY b.created_at DESC \
                   ) AS rn \
            FROM telegram_book_links b \
-           WHERE b.status = 'available' AND b.series_name IS NOT NULL \
+           WHERE b.status IN ('available', 'failed') AND b.series_name IS NOT NULL \
          ) \
          SELECT r.id, r.source_id, s.channel_username, r.message_id, r.filename, \
                 r.file_size, r.status, r.series_name, r.volume_number, r.created_at, \
