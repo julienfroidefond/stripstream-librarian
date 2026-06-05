@@ -28,6 +28,7 @@ fn test_state(pool: sqlx::PgPool) -> AppState {
         })),
         settings: Arc::new(RwLock::new(DynamicSettings::default())),
         prowlarr_fetch_lock: Arc::new(Mutex::new(())),
+        pending_tg_auth: Arc::new(Mutex::new(None)),
     }
 }
 

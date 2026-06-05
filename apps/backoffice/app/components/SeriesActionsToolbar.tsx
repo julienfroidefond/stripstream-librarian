@@ -2,7 +2,7 @@
 
 import nextDynamic from "next/dynamic";
 import type { ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto } from "@/lib/api";
-import { ActionsMenu, ActionsMenuItem, ActionsMenuSection } from "./ui";
+import { ActionsMenu, ActionsMenuItem, ActionsMenuSection, Icon } from "./ui";
 import { MarkSeriesReadButton } from "./MarkSeriesReadButton";
 import { RefreshButton } from "./RefreshButton";
 import { useTranslation } from "../../lib/i18n/context";
@@ -19,6 +19,9 @@ const ReadingStatusModal = nextDynamic(
 );
 const ProwlarrSearchModal = nextDynamic(
   () => import("./ProwlarrSearchModal").then(m => m.ProwlarrSearchModal)
+);
+const TelegramSearchModal = nextDynamic(
+  () => import("./TelegramSearchModal").then(m => m.TelegramSearchModal)
 );
 const DeleteSeriesButton = nextDynamic(
   () => import("./DeleteSeriesButton").then(m => m.DeleteSeriesButton)
@@ -58,6 +61,7 @@ interface Props {
   // Prowlarr/qb
   prowlarrConfigured: boolean;
   qbConfigured: boolean;
+  telegramEnabled: boolean;
   // Rename
   renameFormat: string | null;
   renameFormatHs: string | null;
@@ -154,6 +158,18 @@ export function SeriesActionsToolbar(props: Props) {
               </ActionsMenuItem>
             )}
           </ProwlarrSearchModal>
+          {props.telegramEnabled && (
+            <TelegramSearchModal
+              seriesName={props.seriesName}
+              initialEnabled={props.telegramEnabled}
+            >
+              {(open) => (
+                <ActionsMenuItem icon={<Icon name="send" size="sm" className="text-sky-500" />} onClick={open}>
+                  {t("telegramMonitor.searchButton")}
+                </ActionsMenuItem>
+              )}
+            </TelegramSearchModal>
+          )}
         </ActionsMenuSection>
 
         <ActionsMenuSection label={t("actionsMenu.files")}>

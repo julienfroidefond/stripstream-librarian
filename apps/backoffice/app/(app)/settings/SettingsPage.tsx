@@ -16,6 +16,7 @@ import { AnilistTab } from "./components/AnilistTab";
 import { RenameFormatCard } from "./components/RenameFormatCard";
 import { ReadingOverviewTab } from "./components/ReadingOverviewTab";
 import { ArchivesTab } from "./components/ArchivesTab";
+import { TelegramMonitorCard } from "./components/TelegramMonitorCard";
 
 interface SettingsPageProps {
   initialSettings: Settings;
@@ -36,11 +37,12 @@ interface SettingsPageProps {
   initialRenameFormat: string | null;
   initialRenameFormatHs: string | null;
   initialDownloadsEnabled: boolean;
+  initialLibraries: import("@/lib/api").LibraryDto[];
   versions?: { api: string; indexer: string; backoffice: string };
   tokensContent?: ReactNode;
 }
 
-export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, initialRenameFormatHs, initialDownloadsEnabled, versions, tokensContent }: SettingsPageProps) {
+export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, initialRenameFormatHs, initialDownloadsEnabled, initialLibraries, versions, tokensContent }: SettingsPageProps) {
   const { t, locale, setLocale } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -663,6 +665,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
 
       {/* qBittorrent */}
       <QBittorrentCard handleUpdateSetting={handleUpdateSetting} initialQbittorrent={initialQbittorrent} initialTorrentImport={initialTorrentImport} />
+
+      {/* Telegram Monitor */}
+      <TelegramMonitorCard initialLibraries={initialLibraries} />
       </>)}
 
       {activeTab === "notifications" && (<>

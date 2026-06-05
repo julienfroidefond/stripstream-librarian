@@ -43,3 +43,8 @@ webp = "0.3"
 utoipa = "4.0"
 utoipa-swagger-ui = "6.0"
 scraper = "0.21"
+grammers-client = "0.7"
+grammers-session = "0.7"
+
+[patch.crates-io]
+core2 = { path = "crates/core2-shim" }

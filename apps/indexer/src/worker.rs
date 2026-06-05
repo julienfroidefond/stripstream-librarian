@@ -41,6 +41,9 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
             if let Err(err) = scheduler::check_and_schedule_prowlarr_rss(&scheduler_state.pool).await {
                 error!("[SCHEDULER] Prowlarr RSS error: {}", err);
             }
+            if let Err(err) = scheduler::check_and_schedule_telegram_sync(&scheduler_state.pool).await {
+                error!("[SCHEDULER] Telegram sync error: {}", err);
+            }
             tokio::time::sleep(scheduler_wait).await;
         }
     });

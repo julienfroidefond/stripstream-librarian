@@ -91,6 +91,7 @@ async fn main() -> anyhow::Result<()> {
         })),
         settings: Arc::new(RwLock::new(dynamic_settings)),
         prowlarr_fetch_lock: Arc::new(Mutex::new(())),
+        pending_tg_auth: Arc::new(Mutex::new(None)),
     };
 
     let admin_routes = Router::new()
@@ -134,6 +135,23 @@ async fn main() -> anyhow::Result<()> {
         .route("/torrent-downloads/:id", axum::routing::delete(downloads::delete_torrent_download))
         .route("/torrent-downloads/:id/retry", axum::routing::post(downloads::retry_torrent_import))
         .route("/telegram/test", get(integrations::telegram::test_telegram))
+        .route("/telegram-monitor/status", get(downloads::tg_monitor_status))
+        .route("/telegram-monitor/settings", axum::routing::post(downloads::tg_monitor_save_settings))
+        .route("/telegram-monitor/auth/start", axum::routing::post(downloads::tg_monitor_start_auth))
+        .route("/telegram-monitor/auth/verify", axum::routing::post(downloads::tg_monitor_verify_auth))
+        .route("/telegram-monitor/auth", axum::routing::delete(downloads::tg_monitor_disconnect))
+        .route("/telegram-monitor/sources", get(downloads::tg_monitor_list_sources).post(downloads::tg_monitor_add_source))
+        .route("/telegram-monitor/sources/:id", axum::routing::delete(downloads::tg_monitor_delete_source))
+        .route("/telegram-monitor/sync", axum::routing::post(downloads::tg_monitor_sync))
+        .route("/telegram-monitor/books", get(downloads::tg_monitor_list_books))
+        .route("/telegram-monitor/books/:id/download", axum::routing::post(downloads::tg_monitor_download_book))
+        .route("/telegram-monitor/books/:id", axum::routing::delete(downloads::tg_monitor_dismiss_book))
+        .route("/telegram-monitor/channels", get(downloads::tg_monitor_search_channels))
+        .route("/telegram-monitor/available", get(downloads::tg_monitor_list_available))
+        .route("/telegram-monitor/downloads", get(downloads::tg_monitor_list_downloads))
+        .route("/telegram-monitor/search", get(downloads::tg_monitor_search))
+        .route("/telegram-monitor/live-search", axum::routing::post(downloads::tg_monitor_live_search))
+        .route("/telegram-monitor/start", axum::routing::post(downloads::tg_monitor_start_sync_job))
         .route("/komga/sync", axum::routing::post(integrations::komga::sync_komga_read_books))
         .route("/komga/reports", get(integrations::komga::list_sync_reports))
         .route("/komga/reports/:id", get(integrations::komga::get_sync_report))

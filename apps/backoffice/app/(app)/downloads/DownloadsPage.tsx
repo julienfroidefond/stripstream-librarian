@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { TorrentDownloadDto, LatestFoundPerLibraryDto } from "@/lib/api";
+import { TorrentDownloadDto, LatestFoundPerLibraryDto, TelegramAvailableGroupDto, TelegramDownloadItemDto } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, Button, Icon } from "@/app/components/ui";
 import { QbittorrentProvider, QbittorrentDownloadButton } from "@/app/components/QbittorrentDownloadButton";
 import { useTranslation } from "@/lib/i18n/context";
@@ -12,19 +12,6 @@ import type { TranslationKey } from "@/lib/i18n/fr";
 
 type TFunction = (key: TranslationKey, vars?: Record<string, string | number>) => string;
 
-function formatRelativeDate(iso: string): string {
-  const date = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return "à l'instant";
-  if (diffMin < 60) return `il y a ${diffMin}min`;
-  const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `il y a ${diffH}h`;
-  const diffD = Math.floor(diffH / 24);
-  if (diffD < 30) return `il y a ${diffD}j`;
-  return date.toLocaleDateString();
-}
 
 const STATUS_ACTIVE = new Set(["downloading", "completed", "importing"]);
 
@@ -100,14 +87,45 @@ interface DownloadsPageProps {
   initialDownloads: TorrentDownloadDto[];
   initialLatestFound: LatestFoundPerLibraryDto[];
   qbConfigured?: boolean;
+  initialTelegramAvailable?: TelegramAvailableGroupDto[];
+  initialTelegramDownloads?: TelegramDownloadItemDto[];
 }
 
 const PAGE_SIZE = 10;
 
-export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigured }: DownloadsPageProps) {
+type DownloadItem =
+  | { kind: "torrent"; data: TorrentDownloadDto }
+  | { kind: "telegram"; data: TelegramDownloadItemDto };
+
+function mergeDownloads(torrents: TorrentDownloadDto[], tg: TelegramDownloadItemDto[]): DownloadItem[] {
+  const items: DownloadItem[] = [
+    ...torrents.map(d => ({ kind: "torrent" as const, data: d })),
+    ...tg.map(d => ({ kind: "telegram" as const, data: d })),
+  ];
+  return items.sort((a, b) =>
+    new Date(b.data.updated_at).getTime() - new Date(a.data.updated_at).getTime()
+  );
+}
+
+function itemMatchesFilter(item: DownloadItem, filter: string): boolean {
+  if (filter === "all") return true;
+  if (item.kind === "torrent") {
+    if (filter === "active") return STATUS_ACTIVE.has(item.data.status);
+    return item.data.status === filter;
+  } else {
+    if (filter === "active") return item.data.status === "downloading";
+    if (filter === "imported") return item.data.status === "imported";
+    if (filter === "error") return item.data.status === "failed";
+    return false;
+  }
+}
+
+export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigured, initialTelegramAvailable = [], initialTelegramDownloads = [] }: DownloadsPageProps) {
   const { t } = useTranslation();
   const [downloads, setDownloads] = useState<TorrentDownloadDto[]>(initialDownloads);
+  const [telegramDownloads, setTelegramDownloads] = useState<TelegramDownloadItemDto[]>(initialTelegramDownloads);
   const [latestFound, setLatestFound] = useState<LatestFoundPerLibraryDto[]>(initialLatestFound);
+  const [telegramAvailable, setTelegramAvailable] = useState<TelegramAvailableGroupDto[]>(initialTelegramAvailable);
   const [filter, setFilter] = useState<string>("all");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [page, setPage] = useState(1);
@@ -115,19 +133,27 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
   const refresh = useCallback(async (showSpinner = true) => {
     if (showSpinner) setIsRefreshing(true);
     try {
-      const [dlResp, lfResp] = await Promise.all([
+      const [dlResp, lfResp, tgResp, tgDlResp] = await Promise.all([
         fetch("/api/torrent-downloads"),
         fetch("/api/download-detection/latest-found"),
+        fetch("/api/telegram-monitor/available"),
+        fetch("/api/telegram-monitor/downloads"),
       ]);
       if (dlResp.ok) setDownloads(await dlResp.json());
       if (lfResp.ok) setLatestFound(await lfResp.json());
+      if (tgResp.ok) setTelegramAvailable(await tgResp.json());
+      if (tgDlResp.ok) setTelegramDownloads(await tgDlResp.json());
     } finally {
       if (showSpinner) setIsRefreshing(false);
     }
   }, []);
 
-  // Auto-refresh every 5s while there are active downloads
-  const hasActive = downloads.some(d => STATUS_ACTIVE.has(d.status));
+  const merged = mergeDownloads(downloads, telegramDownloads);
+
+  // Auto-refresh every 2s while there are active downloads or telegram downloads in progress
+  const hasActive = merged.some(item =>
+    item.kind === "torrent" ? STATUS_ACTIVE.has(item.data.status) : item.data.status === "downloading"
+  );
   useEffect(() => {
     if (!hasActive) return;
     const id = setInterval(() => refresh(false), 2000);
@@ -141,12 +167,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
     { id: "error",  label: t("downloads.status.error") },
   ];
 
-  const visible = downloads.filter(d => {
-    if (filter === "all") return true;
-    if (filter === "active") return STATUS_ACTIVE.has(d.status);
-    return d.status === filter;
-  });
-
+  const visible = merged.filter(item => itemMatchesFilter(item, filter));
   const totalPages = Math.ceil(visible.length / PAGE_SIZE);
   const paged = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -182,7 +203,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
             {f.label}
             {f.id !== "all" && (
               <span className="ml-1 sm:ml-1.5 text-[10px] sm:text-xs opacity-60">
-                {downloads.filter(d => f.id === "active" ? STATUS_ACTIVE.has(d.status) : d.status === f.id).length}
+                {merged.filter(item => itemMatchesFilter(item, f.id)).length}
               </span>
             )}
           </button>
@@ -199,9 +220,10 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
       ) : (
         <>
           <div className="space-y-1.5">
-            {paged.map(dl => (
-              <DownloadRow key={dl.id} dl={dl} onDeleted={() => refresh(false)} onRetried={() => refresh(false)} />
-            ))}
+            {paged.map(item => item.kind === "torrent"
+              ? <DownloadRow key={`t-${item.data.id}`} dl={item.data} onDeleted={() => refresh(false)} onRetried={() => refresh(false)} />
+              : <TelegramDownloadRow key={`tg-${item.data.id}`} item={item.data} onRefresh={() => refresh(false)} />
+            )}
           </div>
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-2 mt-4">
@@ -224,6 +246,11 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
         <QbittorrentProvider initialConfigured={qbConfigured} onDownloadStarted={() => refresh(false)}>
           <AvailableDownloadsSection latestFound={latestFound} onDeleted={() => refresh(false)} />
         </QbittorrentProvider>
+      )}
+
+      {/* Telegram available books */}
+      {telegramAvailable.length > 0 && (
+        <TelegramAvailableSection groups={telegramAvailable} onRefresh={() => refresh(false)} />
       )}
     </>
   );
@@ -391,6 +418,138 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
                 </Button>
                 <Button variant="destructive" size="sm" onClick={handleDelete}>
                   {dl.status === "downloading" ? t("downloads.cancel") : t("downloads.delete")}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
+    </>
+  );
+}
+
+function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDto; onRefresh: () => void }) {
+  const { t } = useTranslation();
+  const [retrying, setRetrying] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  async function handleRetry() {
+    setRetrying(true);
+    try {
+      await fetch(`/api/telegram-monitor/books/${item.id}/download`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      onRefresh();
+    } finally {
+      setRetrying(false);
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    setShowConfirm(false);
+    try {
+      const resp = await fetch(`/api/telegram-monitor/books/${item.id}`, { method: "DELETE" });
+      if (resp.ok) onRefresh();
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  // Map telegram statuses to qBit status classes/labels
+  const tgStatus = item.status === "failed" ? "error" : item.status;
+  const volLabel = item.volume_number != null ? `T${String(item.volume_number).padStart(2, "0")}` : null;
+
+  const statusIcon = item.status === "imported"
+    ? <Icon name="check" size="sm" className="text-success" />
+    : item.status === "downloading"
+    ? <Icon name="download" size="sm" className="text-primary" />
+    : <Icon name="warning" size="sm" className="text-destructive" />;
+
+  return (
+    <>
+      <div className="flex items-start sm:items-center gap-2 sm:gap-3 px-3 py-2 rounded-lg border border-border/40 bg-card hover:bg-accent/30 transition-colors">
+        <div className="mt-0.5 sm:mt-0">{statusIcon}</div>
+
+        <div className="flex-1 min-w-0">
+          {/* Desktop */}
+          <div className="hidden sm:flex items-center gap-2">
+            {item.series_id
+              ? <Link href={`/series/${item.series_id}`} className="text-sm font-medium text-primary hover:underline truncate">{item.series_name ?? item.filename}</Link>
+              : <span className="text-sm font-medium text-foreground truncate">{item.series_name ?? item.filename}</span>
+            }
+            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${statusClass(tgStatus)}`}>
+              {statusLabel(tgStatus, t)}
+            </span>
+            {volLabel && <span className="text-[11px] text-muted-foreground">{volLabel}</span>}
+            <span className="text-[11px] text-muted-foreground truncate">@{item.channel_username}</span>
+          </div>
+          {/* Mobile */}
+          <div className="sm:hidden">
+            <div className="flex items-center gap-1.5">
+              {item.series_id
+                ? <Link href={`/series/${item.series_id}`} className="text-sm font-medium text-primary hover:underline truncate">{item.series_name ?? item.filename}</Link>
+                : <span className="text-sm font-medium text-foreground truncate">{item.series_name ?? item.filename}</span>
+              }
+              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${statusClass(tgStatus)}`}>
+                {statusLabel(tgStatus, t)}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
+              {volLabel && <span>{volLabel}</span>}
+              <span className="tabular-nums">{formatDate(item.updated_at)}</span>
+            </div>
+          </div>
+          {/* Filename secondary */}
+          <p className="hidden sm:block text-[11px] text-muted-foreground truncate mt-0.5">{item.filename}</p>
+          {item.error_message && (
+            <p className="text-[11px] text-destructive truncate mt-0.5" title={item.error_message}>{item.error_message}</p>
+          )}
+        </div>
+
+        <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums hidden sm:block">{formatDate(item.updated_at)}</span>
+
+        {item.status === "failed" && (
+          <button
+            type="button"
+            onClick={handleRetry}
+            disabled={retrying}
+            className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-30 shrink-0"
+            title={t("downloads.retry")}
+          >
+            {retrying ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="refresh" size="sm" />}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setShowConfirm(true)}
+          disabled={deleting}
+          className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30 shrink-0"
+          title={item.status === "downloading" ? t("downloads.cancel") : t("downloads.delete")}
+        >
+          {deleting ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="trash" size="sm" />}
+        </button>
+      </div>
+
+      {showConfirm && createPortal(
+        <>
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50" onClick={() => setShowConfirm(false)} />
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-foreground mb-2">
+                  {item.status === "downloading" ? t("downloads.cancel") : t("downloads.delete")}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {item.status === "downloading" ? t("downloads.confirmCancel") : t("downloads.confirmDelete")}
+                </p>
+              </div>
+              <div className="flex justify-end gap-2 px-6 pb-6">
+                <Button variant="outline" size="sm" onClick={() => setShowConfirm(false)}>
+                  {t("common.cancel")}
+                </Button>
+                <Button variant="destructive" size="sm" onClick={handleDelete}>
+                  {item.status === "downloading" ? t("downloads.cancel") : t("downloads.delete")}
                 </Button>
               </div>
             </div>
@@ -600,9 +759,7 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
                     {(() => {
                       const newest = newestDetectedAt(r);
                       return newest ? (
-                        <span title={new Date(newest).toLocaleString()}>
-                          {formatRelativeDate(newest)}
-                        </span>
+                        <span>{formatDate(newest)}</span>
                       ) : null;
                     })()}
                     {r.available_releases && r.available_releases.length > 0 && (
@@ -701,6 +858,177 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
                         : t("downloads.dismissAll")}
                     </button>
                   </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Telegram Available Section
+// ---------------------------------------------------------------------------
+
+function formatSize(bytes: number | null) {
+  if (!bytes) return "";
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function TelegramAvailableSection({ groups, onRefresh }: { groups: TelegramAvailableGroupDto[]; onRefresh: () => void }) {
+  const { t } = useTranslation();
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
+  const [dismissingIds, setDismissingIds] = useState<Set<string>>(new Set());
+
+  const [sort, setSort] = useState<"name" | "recent" | "count">("recent");
+  const [filterLib, setFilterLib] = useState<string>("all");
+
+  const libraries = Array.from(
+    new Map(groups.map(g => [g.library_id, g.library_name])).entries()
+  ).map(([id, name]) => ({ id, name }));
+
+  const filtered = groups.filter(g => filterLib === "all" || g.library_id === filterLib);
+  const sorted = [...filtered].sort((a, b) => {
+    if (sort === "name") return a.series_name.localeCompare(b.series_name);
+    if (sort === "count") return b.books.length - a.books.length;
+    return b.books[0]?.created_at.localeCompare(a.books[0]?.created_at ?? "") ?? 0;
+  });
+
+  async function handleDownload(bookId: string) {
+    setDownloadingIds(prev => new Set(prev).add(bookId));
+    try {
+      const resp = await fetch(`/api/telegram-monitor/books/${bookId}/download`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      if (resp.ok) onRefresh();
+    } finally {
+      setDownloadingIds(prev => { const s = new Set(prev); s.delete(bookId); return s; });
+    }
+  }
+
+  async function handleDismiss(bookId: string) {
+    setDismissingIds(prev => new Set(prev).add(bookId));
+    try {
+      const resp = await fetch(`/api/telegram-monitor/books/${bookId}`, { method: "DELETE" });
+      if (resp.ok) onRefresh();
+    } finally {
+      setDismissingIds(prev => { const s = new Set(prev); s.delete(bookId); return s; });
+    }
+  }
+
+  const sortOptions: { id: "name" | "recent" | "count"; label: string }[] = [
+    { id: "recent", label: t("downloads.sortRecent") },
+    { id: "count",  label: t("downloads.sortMissing") },
+    { id: "name",   label: t("downloads.sortName") },
+  ];
+
+  return (
+    <div className="mt-6">
+      <div className="flex items-center justify-between mb-3 gap-3">
+        <h2 className="text-base font-semibold flex items-center gap-2">
+          <Icon name="download" size="sm" className="text-sky-500" />
+          {t("downloads.telegramAvailable")}
+          <span className="text-xs font-normal text-muted-foreground">({sorted.reduce((n, g) => n + g.books.length, 0)})</span>
+        </h2>
+        <div className="flex items-center gap-2">
+          {libraries.length > 1 && (
+            <select
+              value={filterLib}
+              onChange={e => setFilterLib(e.target.value)}
+              className="text-xs border border-border rounded-md px-2 py-1 bg-background text-foreground"
+            >
+              <option value="all">{t("common.all")}</option>
+              {libraries.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          )}
+          <div className="flex gap-0.5">
+            {sortOptions.map(o => (
+              <button
+                key={o.id}
+                onClick={() => setSort(o.id)}
+                className={`px-2 py-1 text-xs rounded-md transition-colors ${sort === o.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"}`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border overflow-hidden">
+        {sorted.map(group => {
+          const key = `${group.series_name}|${group.library_id}`;
+          const isExpanded = expandedKey === key;
+          return (
+            <div key={key} className="border-b border-border/40 last:border-b-0">
+              {/* Series header */}
+              <button
+                type="button"
+                onClick={() => setExpandedKey(isExpanded ? null : key)}
+                className="w-full flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-2 hover:bg-muted/30 transition-colors text-left"
+              >
+                <Icon name={isExpanded ? "chevronDown" : "chevronRight"} size="sm" className="text-muted-foreground shrink-0" />
+                <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                  {group.series_id ? (
+                    <Link href={`/series/${group.series_id}`} onClick={e => e.stopPropagation()} className="text-sm font-medium text-primary hover:underline truncate">
+                      {group.series_name}
+                    </Link>
+                  ) : (
+                    <span className="text-sm font-medium truncate">{group.series_name}</span>
+                  )}
+                  <span className="text-[10px] text-muted-foreground">{group.library_name}</span>
+                  {group.books[0]?.created_at && (
+                    <span className="text-[10px] text-muted-foreground hidden sm:inline">
+                      {formatDate(group.books[0].created_at)}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-sky-500/20 text-sky-600 shrink-0">
+                  {group.books.length} {t("downloads.telegramFiles")}
+                </span>
+              </button>
+
+              {/* Books list */}
+              {isExpanded && (
+                <div className="border-t border-border/20">
+                  {group.books.map(book => (
+                    <div key={book.id} className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 pl-7 sm:pl-9 text-[11px] hover:bg-muted/20 border-b border-border/10 last:border-b-0">
+                      {book.volume_number != null && (
+                        <span className="px-1.5 py-px rounded bg-success/20 text-success font-medium shrink-0">
+                          T{book.volume_number}
+                        </span>
+                      )}
+                      <span className="flex-1 truncate text-muted-foreground" title={book.filename}>{book.filename}</span>
+                      <span className="text-muted-foreground shrink-0">@{book.channel_username}</span>
+                      {book.file_size && <span className="text-muted-foreground shrink-0">{formatSize(book.file_size)}</span>}
+                      <div className="flex items-center gap-0.5 ml-auto shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleDownload(book.id)}
+                          disabled={downloadingIds.has(book.id)}
+                          title={t("telegramMonitor.download")}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-success hover:bg-success/10 transition-colors disabled:opacity-30"
+                        >
+                          {downloadingIds.has(book.id)
+                            ? <Icon name="spinner" size="sm" className="animate-spin" />
+                            : <Icon name="download" size="sm" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDismiss(book.id)}
+                          disabled={dismissingIds.has(book.id)}
+                          title={t("downloads.delete")}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
+                        >
+                          {dismissingIds.has(book.id)
+                            ? <Icon name="spinner" size="sm" className="animate-spin" />
+                            : <Icon name="trash" size="sm" />}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

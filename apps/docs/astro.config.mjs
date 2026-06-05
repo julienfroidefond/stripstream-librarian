@@ -92,7 +92,8 @@ export default defineConfig({
 						{ label: 'Prowlarr', slug: 'integrations/prowlarr' },
 						{ label: 'qBittorrent', slug: 'integrations/qbittorrent' },
 						{ label: 'Komga', slug: 'integrations/komga' },
-						{ label: 'Telegram', slug: 'integrations/telegram' },
+						{ label: 'Telegram — Notifications', slug: 'integrations/telegram' },
+					{ label: 'Telegram Monitor', slug: 'integrations/telegram-monitor' },
 					],
 				},
 				{

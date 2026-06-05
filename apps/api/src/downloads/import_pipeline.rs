@@ -311,7 +311,7 @@ pub(super) async fn do_import(
 
 /// Find an existing directory in `root` whose name matches `series_name`
 /// case-insensitively and accent-insensitively (e.g. "les géants" matches "les geants").
-fn find_existing_series_dir(root: &str, series_name: &str) -> Option<String> {
+pub(super) fn find_existing_series_dir(root: &str, series_name: &str) -> Option<String> {
     let target_norm = strip_accents(&series_name.to_lowercase());
     let entries = std::fs::read_dir(root).ok()?;
     let mut best: Option<(String, bool)> = None; // (path, is_exact_case_match)

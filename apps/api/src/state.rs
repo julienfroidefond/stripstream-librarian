@@ -8,6 +8,8 @@ use lru::LruCache;
 use sqlx::{Pool, Postgres, Row};
 use tokio::sync::{Mutex, RwLock, Semaphore};
 
+use crate::downloads::telegram_monitor::PendingAuth;
+
 #[derive(Clone)]
 pub struct AppState {
     pub pool: sqlx::PgPool,
@@ -19,6 +21,8 @@ pub struct AppState {
     pub settings: Arc<RwLock<DynamicSettings>>,
     /// Prevents concurrent Prowlarr discovery fetches from hammering indexers simultaneously
     pub prowlarr_fetch_lock: Arc<Mutex<()>>,
+    /// Holds the in-progress Telegram MTProto auth state between send-code and verify-code calls
+    pub pending_tg_auth: Arc<Mutex<Option<PendingAuth>>>,
 }
 
 #[derive(Clone)]

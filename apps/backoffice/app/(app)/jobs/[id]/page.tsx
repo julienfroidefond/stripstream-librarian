@@ -14,6 +14,7 @@ import { MetadataBatchQuickMatch } from "./components/MetadataBatchQuickMatch";
 import { ReadingStatusMatchReportCard, ReadingStatusMatchResultsCard, ReadingStatusPushReportCard, ReadingStatusPushResultsCard } from "./components/ReadingStatusReportCards";
 import { DownloadDetectionReportCard, DownloadDetectionErrorsCard, RssSnapshotCard } from "./components/DownloadDetectionCards";
 import { DownloadDetectionAvailableResults } from "./components/DownloadDetectionAvailableResults";
+import { TelegramSyncResultsCard } from "./components/TelegramSyncResultsCard";
 import { JobErrorsCard } from "./components/JobErrorsCard";
 import { JobEventsCard, type JobEvent } from "./components/JobEventsCard";
 
@@ -44,6 +45,11 @@ interface JobDetails {
     errors?: number;
     warnings?: number;
     rss_releases?: Array<{ title: string; indexer?: string | null; size: number; seeders?: number | null; leechers?: number | null; publish_date?: string | null; categories?: string[] | null }>;
+    synced?: number;
+    new_books?: number;
+    series_searched?: number;
+    all_series?: Array<{ series_name: string; book_count: number; extracted_names?: string[] }>;
+    matched_series?: Array<{ telegram_name: string; series_id: string; series_name: string; book_count: number }>;
   } | null;
   error_opt: string | null;
 }
@@ -115,6 +121,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     reading_status_push: { label: t("jobType.reading_status_pushLabel"), description: t("jobType.reading_status_pushDesc"), isThumbnailOnly: false },
     download_detection: { label: t("jobType.download_detectionLabel"), description: t("jobType.download_detectionDesc"), isThumbnailOnly: false },
     prowlarr_rss: { label: t("jobType.prowlarr_rssLabel"), description: t("jobType.prowlarr_rssDesc"), isThumbnailOnly: false },
+    telegram_sync: { label: t("jobType.telegram_syncLabel"), description: t("jobType.telegram_syncDesc"), isThumbnailOnly: false },
   };
 
   const isMetadataBatch = job.type === "metadata_batch" || job.type === "metadata_batch_rematch";
@@ -123,6 +130,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
   const isReadingStatusPush = job.type === "reading_status_push";
   const isDownloadDetection = job.type === "download_detection";
   const isRssPoll = job.type === "prowlarr_rss";
+  const isTelegramSync = job.type === "telegram_sync";
 
   let batchReport: MetadataBatchReportDto | null = null;
   let batchResults: MetadataBatchResultDto[] = [];
@@ -198,6 +206,8 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     ? t("jobDetail.downloadDetection")
     : isRssPoll
     ? t("jobType.prowlarr_rss")
+    : isTelegramSync
+    ? t("jobType.telegram_sync")
     : isThumbnailOnly
       ? t("jobType.thumbnail_rebuild")
       : isExtractingPages
@@ -257,18 +267,20 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
         <JobOverviewCard job={job} typeInfo={typeInfo} t={t} formatDuration={formatDuration} />
         <JobTimelineCard job={job} isThumbnailOnly={isThumbnailOnly} t={t} locale={locale} formatDuration={formatDuration} />
 
-        <JobProgressCard
-          job={job}
-          isThumbnailOnly={isThumbnailOnly}
-          progressTitle={progressTitle}
-          progressDescription={progressDescription}
-          t={t}
-          formatDuration={formatDuration}
-          formatSpeed={formatSpeed}
-        />
+        {!isTelegramSync && (
+          <JobProgressCard
+            job={job}
+            isThumbnailOnly={isThumbnailOnly}
+            progressTitle={progressTitle}
+            progressDescription={progressDescription}
+            t={t}
+            formatDuration={formatDuration}
+            formatSpeed={formatSpeed}
+          />
+        )}
 
         {/* Index Statistics */}
-        {job.stats_json && !isThumbnailOnly && !isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && !isDownloadDetection && !isRssPoll && (
+        {job.stats_json && !isThumbnailOnly && !isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && !isDownloadDetection && !isRssPoll && !isTelegramSync && (
           <IndexStatsCard job={job} t={t} formatDuration={formatDuration} formatSpeed={formatSpeed} durationMs={durationMs} />
         )}
 
@@ -303,6 +315,17 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
 
         {/* Metadata batch results */}
         {isMetadataBatch && <MetadataBatchQuickMatch results={batchResults} libraryId={job.library_id} />}
+
+        {/* Telegram sync results */}
+        {isTelegramSync && job.stats_json && (
+          <TelegramSyncResultsCard
+            new_books={job.stats_json.new_books ?? 0}
+            series_searched={job.stats_json.series_searched ?? 0}
+            all_series={job.stats_json.all_series ?? []}
+            matched_series={job.stats_json.matched_series ?? []}
+            t={t}
+          />
+        )}
 
         {/* Job events */}
         <JobEventsCard events={events} t={t} locale={locale} />

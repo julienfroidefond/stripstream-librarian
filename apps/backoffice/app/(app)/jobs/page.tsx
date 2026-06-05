@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startMetadataRefreshAll, startReadingStatusMatch, startReadingStatusPush, startDownloadDetection, startRssPoll, fetchDownloadsEnabled, IndexJobDto, LibraryDto } from "@/lib/api";
+import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startMetadataRefreshAll, startReadingStatusMatch, startReadingStatusPush, startDownloadDetection, startRssPoll, fetchDownloadsEnabled, startTelegramSync, fetchTelegramAuthorized, IndexJobDto, LibraryDto } from "@/lib/api";
 import { JobsList } from "@/app/components/JobsList";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/app/components/ui";
 import { LibraryBadgeSelector } from "./components/LibraryBadgeSelector";
@@ -27,10 +27,11 @@ function errorRedirect(error: unknown): never {
 export default async function JobsPage({ searchParams }: { searchParams: Promise<{ highlight?: string; library?: string; error?: string }> }) {
   const { highlight, library, error: errorMsg } = await searchParams;
   const { t } = await getServerTranslations();
-  const [jobs, libraries, prowlarrConfigured] = await Promise.all([
+  const [jobs, libraries, prowlarrConfigured, telegramAuthorized] = await Promise.all([
     listJobs().catch(() => [] as IndexJobDto[]),
     fetchLibraries().catch(() => [] as LibraryDto[]),
     fetchDownloadsEnabled(),
+    fetchTelegramAuthorized(),
   ]);
 
   const libraryMap = new Map(libraries.map(l => [l.id, l.name]));
@@ -125,6 +126,12 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     "use server";
     const libraryId = formData.get("library_id") as string;
     try { const result = await startRssPoll(libraryId || undefined); revalidatePath("/jobs"); jobRedirect(result.id ?? undefined, libraryId); }
+    catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
+  }
+
+  async function triggerTelegramSync() {
+    "use server";
+    try { const result = await startTelegramSync(); revalidatePath("/jobs"); jobRedirect(result.id ?? undefined, ""); }
     catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
   }
 
@@ -342,6 +349,28 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                       <span className="font-medium text-sm text-foreground">{t("jobs.rssPoll")}</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1 ml-6">{t("jobs.rssPollShort")}</p>
+                  </button>
+                </div>
+              </div>}
+
+              {/* Telegram group — only shown if Telegram is authorized */}
+              {telegramAuthorized && <div className="space-y-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
+                  {t("jobs.groupTelegram")}
+                </div>
+                <div className="space-y-2">
+                  <button type="submit" formAction={triggerTelegramSync}
+                    className="w-full text-left rounded-lg border border-input bg-background p-3 hover:bg-accent/50 transition-colors group cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      <span className="font-medium text-sm text-foreground">{t("jobs.telegramSync")}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 ml-6">{t("jobs.telegramSyncShort")}</p>
                   </button>
                 </div>
               </div>}

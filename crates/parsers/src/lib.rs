@@ -237,7 +237,7 @@ pub fn extract_volumes(title: &str) -> Vec<i32> {
                         j += 1;
                     }
                     if j > digit_start {
-                        // Ensure followed by "- ", " - ", ".", or end-ish
+                        // Ensure followed by "- ", " - ", ".", "@" (Telegram channel tag), or end-ish
                         let valid_end = j >= chars.len()
                             || (j + 2 < chars.len()
                                 && chars[j] == ' '
@@ -245,6 +245,7 @@ pub fn extract_volumes(title: &str) -> Vec<i32> {
                                 && chars[j + 2] == ' ')
                             || (j + 1 < chars.len() && chars[j] == '-' && chars[j + 1] == ' ')
                             || chars[j] == '.'
+                            || chars[j] == '@'
                             || (chars[j] == ' '
                                 && (j + 1 >= chars.len() || !chars[j + 1].is_ascii_digit()));
                         if valid_end {

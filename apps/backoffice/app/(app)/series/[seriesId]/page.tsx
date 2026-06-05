@@ -1,4 +1,4 @@
-import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, fetchDownloadsEnabled, fetchSeriesReadingLists, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto, ReadingListDto } from "@/lib/api";
+import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, fetchDownloadsEnabled, fetchSeriesReadingLists, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto, ReadingListDto, TelegramMonitorStatus } from "@/lib/api";
 import { cookies } from "next/headers";
 import { BooksGrid, EmptyState } from "@/app/components/BookCard";
 import { SeriesRelatedCarousel } from "@/app/components/SeriesRelatedCarousel";
@@ -38,7 +38,7 @@ export default async function SeriesDetailPage({
   }
   const libraryId = seriesDto.library_id;
 
-  const [library, seriesMeta, metadataLinks, readingStatusLink, prowlarrConfigured, qbConfigured, metadataProviders, renameFormat, renameFormatHs] = await Promise.all([
+  const [library, seriesMeta, metadataLinks, readingStatusLink, prowlarrConfigured, qbConfigured, metadataProviders, renameFormat, renameFormatHs, telegramStatus] = await Promise.all([
     fetchLibraries().then((libs) => libs.find((l) => l.id === libraryId)),
     fetchSeriesMetadata(seriesId).catch(() => null as SeriesMetadataDto | null),
     getMetadataLink(seriesId).catch(() => [] as ExternalMetadataLinkDto[]),
@@ -50,7 +50,9 @@ export default async function SeriesDetailPage({
     apiFetch<{ comicvine?: { api_key?: string } }>("/settings/metadata_providers").catch(() => null),
     apiFetch<string>("/settings/rename_format").catch(() => null),
     apiFetch<string>("/settings/rename_format_hs").catch(() => null),
+    apiFetch<TelegramMonitorStatus>("/telegram-monitor/status").catch(() => null),
   ]);
+  const telegramEnabled = !!(telegramStatus?.configured && telegramStatus?.authorized);
 
   // Get series name from metadata for display
   const seriesName = seriesMeta?.series_name ?? "";
@@ -289,6 +291,7 @@ export default async function SeriesDetailPage({
             readingStatusLink={readingStatusLink}
             prowlarrConfigured={prowlarrConfigured}
             qbConfigured={qbConfigured}
+            telegramEnabled={telegramEnabled}
             renameFormat={typeof renameFormat === "string" ? renameFormat : null}
             renameFormatHs={typeof renameFormatHs === "string" ? renameFormatHs : null}
             hasActiveUser={hasActiveUser}
