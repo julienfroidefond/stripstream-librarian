@@ -59,6 +59,8 @@ pub struct EventToggles {
     pub torrent_import_completed: bool,
     #[serde(default = "default_true")]
     pub torrent_import_failed: bool,
+    #[serde(default = "default_true")]
+    pub telegram_sync_incremental_completed: bool,
 }
 
 fn default_true() -> bool {
@@ -87,6 +89,7 @@ fn default_events() -> EventToggles {
         download_detection_failed: true,
         torrent_import_completed: true,
         torrent_import_failed: true,
+        telegram_sync_incremental_completed: true,
     }
 }
 
@@ -341,6 +344,15 @@ pub enum NotificationEvent {
         library_name: Option<String>,
         series_name: String,
         error: String,
+    },
+    // Telegram incremental sync completed
+    TelegramSyncIncrementalCompleted {
+        new_books: usize,
+        sources_scanned: usize,
+        /// Per-source breakdown: (channel_username, new_books_count)
+        per_source: Vec<(String, usize)>,
+        /// New books detected: (series_name_or_filename, volume_number), capped at 15
+        new_items: Vec<(String, Option<i32>)>,
     },
 }
 
@@ -799,6 +811,41 @@ fn format_event(event: &NotificationEvent) -> String {
             ]
             .join("\n")
         }
+        NotificationEvent::TelegramSyncIncrementalCompleted {
+            new_books,
+            sources_scanned,
+            per_source,
+            new_items,
+        } => {
+            let mut lines = vec![
+                "📡 <b>Telegram — nouveaux livres détectés</b>".to_string(),
+                String::new(),
+                format!("📥 <b>{new_books}</b> nouveau{} livre{} sur <b>{sources_scanned}</b> channel{}",
+                    if *new_books > 1 { "x" } else { "" },
+                    if *new_books > 1 { "s" } else { "" },
+                    if *sources_scanned > 1 { "s" } else { "" },
+                ),
+            ];
+            let active_sources: Vec<_> = per_source.iter().filter(|(_, c)| *c > 0).collect();
+            if active_sources.len() > 1 {
+                lines.push(String::new());
+                for (username, count) in &active_sources {
+                    lines.push(format!("  • @{username}: <b>{count}</b>"));
+                }
+            }
+            if !new_items.is_empty() {
+                lines.push(String::new());
+                lines.push("📦 <b>Nouveaux livres :</b>".to_string());
+                for (label, vol) in new_items.iter().take(15) {
+                    let vol_str = vol.map(|v| format!(" T{v:02}")).unwrap_or_default();
+                    lines.push(format!("  • <b>{}</b>{}", truncate(label, 50), vol_str));
+                }
+                if new_items.len() > 15 {
+                    lines.push(format!("  … et {} de plus", new_items.len() - 15));
+                }
+            }
+            lines.join("\n")
+        }
     }
 }
 
@@ -847,6 +894,7 @@ fn is_event_enabled(config: &TelegramConfig, event: &NotificationEvent) -> bool 
         NotificationEvent::DownloadDetectionFailed { .. } => config.events.download_detection_failed,
         NotificationEvent::TorrentImportCompleted { .. } => config.events.torrent_import_completed,
         NotificationEvent::TorrentImportFailed { .. } => config.events.torrent_import_failed,
+        NotificationEvent::TelegramSyncIncrementalCompleted { .. } => config.events.telegram_sync_incremental_completed,
     }
 }
 
@@ -875,6 +923,8 @@ fn is_noteworthy(event: &NotificationEvent) -> bool {
         NotificationEvent::ReadingStatusPushCompleted { pushed, .. } => *pushed > 0,
         // Download detection: only if releases were found
         NotificationEvent::DownloadDetectionCompleted { found, .. } => *found > 0,
+        // Telegram incremental: only if new books were found
+        NotificationEvent::TelegramSyncIncrementalCompleted { new_books, .. } => *new_books > 0,
         // All failures, conversions, imports, manual actions → always noteworthy
         _ => true,
     }

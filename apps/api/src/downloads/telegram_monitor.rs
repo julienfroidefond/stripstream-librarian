@@ -864,7 +864,7 @@ pub async fn process_telegram_sync_incremental(pool: &sqlx::PgPool, job_id: Uuid
     info!("[TG_SYNC_INC] Job {job_id} complete: {new_books} new books across {sources_scanned} sources");
 
     // Fetch the books actually added during this run (by creation timestamp)
-    let recent_books: Vec<serde_json::Value> = sqlx::query(
+    let recent_rows = sqlx::query(
         "SELECT b.filename, b.series_name, b.volume_number, s.channel_username \
          FROM telegram_book_links b \
          JOIN telegram_sources s ON s.id = b.source_id \
@@ -875,15 +875,22 @@ pub async fn process_telegram_sync_incremental(pool: &sqlx::PgPool, job_id: Uuid
     .bind(started_at)
     .fetch_all(pool)
     .await
-    .unwrap_or_default()
-    .iter()
-    .map(|r| serde_json::json!({
+    .unwrap_or_default();
+
+    let recent_books: Vec<serde_json::Value> = recent_rows.iter().map(|r| serde_json::json!({
         "filename":       r.get::<String, _>("filename"),
         "series_name":    r.get::<Option<String>, _>("series_name"),
         "volume_number":  r.get::<Option<i32>, _>("volume_number"),
         "channel":        r.get::<String, _>("channel_username"),
-    }))
-    .collect();
+    })).collect();
+
+    // Build notification items: prefer series_name, fall back to filename
+    let notif_items: Vec<(String, Option<i32>)> = recent_rows.iter().map(|r| {
+        let label = r.get::<Option<String>, _>("series_name")
+            .unwrap_or_else(|| r.get::<String, _>("filename"));
+        let vol = r.get::<Option<i32>, _>("volume_number");
+        (label, vol)
+    }).collect();
 
     let sources_json: Vec<serde_json::Value> = per_source.iter()
         .map(|(username, count)| serde_json::json!({ "username": username, "new_books": count }))
@@ -903,6 +910,16 @@ pub async fn process_telegram_sync_incremental(pool: &sqlx::PgPool, job_id: Uuid
     .execute(pool)
     .await
     .map_err(|e| e.to_string())?;
+
+    notifications::notify(
+        pool.clone(),
+        notifications::NotificationEvent::TelegramSyncIncrementalCompleted {
+            new_books,
+            sources_scanned,
+            per_source,
+            new_items: notif_items,
+        },
+    );
 
     Ok(())
 }
