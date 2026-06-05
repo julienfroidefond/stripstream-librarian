@@ -708,7 +708,7 @@ pub async fn process_telegram_sync(pool: &sqlx::PgPool, job_id: Uuid) -> Result<
         return Ok(());
     }
 
-    let r = do_sync(pool.clone(), api_id as i32, api_hash, session_bytes, sources)
+    let r = do_sync(pool.clone(), api_id as i32, api_hash, session_bytes, sources, Some(job_id))
         .await
         .map_err(|e| format!("{e:?}"))?;
 
@@ -986,7 +986,7 @@ pub async fn sync_sources(
         return Ok(Json(SyncResult { synced: 0, new_books: 0, series_searched: 0, series_results: vec![] }));
     }
 
-    let result = do_sync(state.pool.clone(), api_id as i32, api_hash, session_bytes, sources).await?;
+    let result = do_sync(state.pool.clone(), api_id as i32, api_hash, session_bytes, sources, None).await?;
 
     Ok(Json(result))
 }
@@ -997,11 +997,52 @@ async fn do_sync(
     api_hash: String,
     session_bytes: Vec<u8>,
     sources: Vec<(Uuid, String, Option<Uuid>)>,
+    job_id: Option<Uuid>,
 ) -> Result<SyncResult, ApiError> {
     use grammers_client::{Client, Config};
     use grammers_session::Session;
 
     const BOOK_EXTENSIONS: &[&str] = &["cbz", "cbr", "pdf", "epub", "zip"];
+
+    // Pre-load filtered series per source before opening Telegram connection.
+    // Only series with an approved metadata link AND at least one missing volume
+    // (same rule as download detection / Prowlarr).
+    let mut source_work: Vec<(Uuid, String, Option<Uuid>, Vec<String>)> = Vec::new();
+    for (source_id, username, library_id) in sources {
+        let series_names: Vec<String> = if let Some(lib_id) = library_id {
+            sqlx::query_scalar::<_, String>(
+                "SELECT DISTINCT s.name \
+                 FROM series s \
+                 JOIN external_metadata_links eml \
+                   ON eml.series_id = s.id AND eml.status = 'approved' AND eml.library_id = $1 \
+                 WHERE s.library_id = $1 \
+                   AND EXISTS ( \
+                       SELECT 1 FROM external_book_metadata ebm \
+                       WHERE ebm.link_id = eml.id AND ebm.book_id IS NULL \
+                   ) \
+                 ORDER BY s.name",
+            )
+            .bind(lib_id)
+            .fetch_all(&pool)
+            .await
+            .unwrap_or_default()
+        } else {
+            vec![]
+        };
+
+        if series_names.is_empty() {
+            info!("Telegram sync @{username}: no eligible series (need metadata link + missing volumes), skipping");
+        } else {
+            source_work.push((source_id, username, library_id, series_names));
+        }
+    }
+
+    let total_series = source_work.iter().map(|(_, _, _, sn)| sn.len()).sum::<usize>() as i32;
+
+    if let Some(jid) = job_id {
+        let _ = sqlx::query("UPDATE index_jobs SET total_files = $2 WHERE id = $1")
+            .bind(jid).bind(total_series).execute(&pool).await;
+    }
 
     let session = Session::load(&session_bytes)
         .map_err(|e| ApiError::internal(format!("Session load: {e}")))?;
@@ -1019,29 +1060,16 @@ async fn do_sync(
     let mut total_new = 0usize;
     let mut total_series_searched = 0usize;
     let mut all_series_results: Vec<(String, usize, Vec<String>)> = Vec::new();
+    let mut processed = 0i32;
 
-    for (source_id, username, library_id) in sources {
-        // Load series names for this source's library
-        let series_names: Vec<String> = if let Some(lib_id) = library_id {
-            sqlx::query_scalar::<_, String>(
-                "SELECT name FROM series WHERE library_id = $1 ORDER BY name",
-            )
-            .bind(lib_id)
-            .fetch_all(&pool)
-            .await
-            .unwrap_or_default()
-        } else {
-            vec![]
-        };
-
-        if series_names.is_empty() {
-            info!("Telegram sync @{username}: no series in library, skipping");
-            continue;
-        }
-
+    for (source_id, username, library_id, series_names) in source_work {
         total_series_searched += series_names.len();
 
-        match sync_one_source(&client, &pool, source_id, &username, library_id, BOOK_EXTENSIONS, &series_names).await {
+        match sync_one_source(
+            &client, &pool, source_id, &username, library_id,
+            BOOK_EXTENSIONS, &series_names,
+            job_id, &mut processed, total_series,
+        ).await {
             Ok((synced, new_books, series_results)) => {
                 total_synced += synced;
                 total_new += new_books;
@@ -1124,6 +1152,9 @@ async fn sync_one_source(
     library_id: Option<Uuid>,
     extensions: &[&str],
     series_names: &[String],
+    job_id: Option<Uuid>,
+    processed: &mut i32,
+    total: i32,
 ) -> anyhow::Result<(usize, usize, Vec<(String, usize, Vec<String>)>)> {
     use grammers_client::grammers_tl_types::enums::MessagesFilter;
 
@@ -1140,6 +1171,18 @@ async fn sync_one_source(
     let mut series_results: Vec<(String, usize, Vec<String>)> = Vec::new();
 
     for series_name in series_names {
+        if let Some(jid) = job_id {
+            let pct = (*processed * 100 / total.max(1)) as i16;
+            let label = format!("@{username}: {series_name}");
+            let _ = sqlx::query(
+                "UPDATE index_jobs \
+                 SET processed_files = $2, progress_percent = $3, current_file = $4 \
+                 WHERE id = $1",
+            )
+            .bind(jid).bind(*processed).bind(pct).bind(&label)
+            .execute(pool).await;
+        }
+
         let mut iter = client
             .search_messages(&chat)
             .query(series_name)
@@ -1161,6 +1204,7 @@ async fn sync_one_source(
         if series_count > 0 {
             series_results.push((series_name.clone(), series_count, extracted_names.into_iter().collect()));
         }
+        *processed += 1;
     }
 
     // Update channel title
