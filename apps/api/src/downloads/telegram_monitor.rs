@@ -1325,17 +1325,17 @@ pub async fn list_available_by_series(
     if !matched_series_ids.is_empty() {
         // Owned regular volumes per series
         let vol_rows = sqlx::query(
-            "SELECT series_id, volume_number FROM books \
+            "SELECT series_id, volume FROM books \
              WHERE series_id = ANY($1) \
-               AND volume_number IS NOT NULL \
+               AND volume IS NOT NULL \
                AND volume_type = 'regular' \
-             ORDER BY series_id, volume_number",
+             ORDER BY series_id, volume",
         )
         .bind(&matched_series_ids)
         .fetch_all(&state.pool)
         .await?;
         for r in &vol_rows {
-            owned_by_series.entry(r.get("series_id")).or_default().push(r.get("volume_number"));
+            owned_by_series.entry(r.get("series_id")).or_default().push(r.get("volume"));
         }
 
         // Total volumes per series for missing count
