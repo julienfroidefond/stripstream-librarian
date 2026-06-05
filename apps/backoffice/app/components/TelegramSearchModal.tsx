@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "./ui";
 import { useTranslation } from "../../lib/i18n/context";
+import { stripLeadingArticle } from "../../lib/volumeRanges";
 import type { TelegramSearchResultDto } from "../../lib/api";
 import type { TranslationKey } from "../../lib/i18n/fr";
 
@@ -79,12 +80,14 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
     }
   }, []);
 
+  const strippedName = stripLeadingArticle(seriesName);
+
   function handleOpen() {
     setIsOpen(true);
-    setSearchInput(seriesName);
+    setSearchInput(strippedName);
     setResults([]);
     setSearched(false);
-    doSearch(seriesName);
+    doSearch(strippedName);
   }
 
   function handleClose() {
@@ -160,20 +163,30 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
               </button>
             </form>
 
-            {/* Quick badges: series name + missing volumes */}
+            {/* Quick badges: series name (original + stripped if different) + missing volumes */}
             <div className="flex flex-wrap items-center gap-2 max-h-24 overflow-y-auto">
               <button
                 type="button"
-                onClick={() => { setSearchInput(seriesName); doSearch(seriesName); }}
+                onClick={() => { setSearchInput(strippedName); doSearch(strippedName); }}
                 disabled={isSearching}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border disabled:opacity-50 transition-colors border-primary/50 bg-primary/10 text-primary hover:bg-primary/20"
               >
-                {seriesName}
+                {strippedName}
               </button>
+              {strippedName !== seriesName && (
+                <button
+                  type="button"
+                  onClick={() => { setSearchInput(seriesName); doSearch(seriesName); }}
+                  disabled={isSearching}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border disabled:opacity-50 transition-colors border-primary/30 bg-primary/5 text-primary/70 hover:bg-primary/15"
+                >
+                  {seriesName}
+                </button>
+              )}
               {(missingBooks ?? []).map((book, i) => {
                 const label = book.title || (book.volume_number != null ? `T${book.volume_number}` : null);
                 if (!label) return null;
-                const q = book.volume_number != null ? `${seriesName} T${book.volume_number}` : `${seriesName} ${label}`;
+                const q = book.volume_number != null ? `${strippedName} T${book.volume_number}` : `${strippedName} ${label}`;
                 return (
                   <button
                     key={i}

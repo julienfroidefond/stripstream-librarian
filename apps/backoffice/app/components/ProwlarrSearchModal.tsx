@@ -6,7 +6,7 @@ import { Icon } from "./ui";
 import type { ProwlarrRelease, ProwlarrSearchResponse } from "../../lib/api";
 import { useTranslation } from "../../lib/i18n/context";
 import { QbittorrentProvider, QbittorrentDownloadButton } from "./QbittorrentDownloadButton";
-import { compressVolumes } from "@/lib/volumeRanges";
+import { compressVolumes, stripLeadingArticle } from "@/lib/volumeRanges";
 
 interface MissingBookItem {
   title: string | null;
@@ -91,7 +91,8 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
     }
   }, [initialProwlarrConfigured, initialQbConfigured]);
 
-  const defaultQuery = initialQuery ?? `"${seriesName}"`;
+  const strippedName = stripLeadingArticle(seriesName);
+  const defaultQuery = initialQuery ?? `"${strippedName}"`;
   const [searchInput, setSearchInput] = useState(defaultQuery);
 
   const doSearch = useCallback(async (queryOverride?: string) => {
@@ -193,16 +194,18 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
 
               {/* Quick search badges */}
               {(() => {
-                const badges: QuickSearch[] = quickSearches ?? [
-                  { label: seriesName, query: defaultQuery },
+                const baseBadges: QuickSearch[] = quickSearches ?? [
+                  { label: strippedName, query: defaultQuery },
+                  ...(strippedName !== seriesName ? [{ label: seriesName, query: `"${seriesName}"` }] : []),
                   ...((missingBooks ?? []).map((book) => {
                     const label = book.title || `Vol. ${book.volume_number}`;
                     const q = book.volume_number != null
-                      ? `"${seriesName}" T${book.volume_number}`
-                      : `"${seriesName}" ${label}`;
+                      ? `"${strippedName}" T${book.volume_number}`
+                      : `"${strippedName}" ${label}`;
                     return { label, query: q };
                   })),
                 ];
+                const badges = baseBadges;
                 if (badges.length === 0) return null;
                 return (
                   <div className="flex flex-wrap items-center gap-2 max-h-24 overflow-y-auto">
