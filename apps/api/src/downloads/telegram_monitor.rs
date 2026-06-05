@@ -1247,20 +1247,23 @@ pub async fn list_available_by_series(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TelegramAvailableGroupDto>>, ApiError> {
     let rows = sqlx::query(
-        "WITH dedup AS ( \
-           SELECT DISTINCT ON (b.source_id, b.series_name, COALESCE(b.volume_number::text, b.filename)) \
-                  b.id, b.source_id, b.message_id, b.filename, b.file_size, b.status, \
-                  b.series_name, b.volume_number, b.created_at, b.library_id \
-           FROM telegram_book_links b \
-           WHERE b.status = 'available' AND b.series_name IS NOT NULL \
-           ORDER BY b.source_id, b.series_name, COALESCE(b.volume_number::text, b.filename), b.created_at DESC \
-         ) \
-         SELECT d.id, d.source_id, s.channel_username, d.message_id, d.filename, \
-                d.file_size, d.status, d.series_name, d.volume_number, d.created_at, \
-                COALESCE(d.library_id, s.library_id) AS resolved_library_id \
-         FROM dedup d \
-         JOIN telegram_sources s ON s.id = d.source_id \
-         ORDER BY d.series_name, d.volume_number NULLS LAST, d.created_at DESC",
+        "SELECT b.id, b.source_id, s.channel_username, b.message_id, b.filename, \
+                b.file_size, b.status, b.series_name, b.volume_number, b.created_at, \
+                COALESCE(b.library_id, s.library_id) AS resolved_library_id \
+         FROM telegram_book_links b \
+         JOIN telegram_sources s ON s.id = b.source_id \
+         WHERE b.status = 'available' \
+           AND b.series_name IS NOT NULL \
+           AND (b.volume_number IS NULL \
+                OR b.id = ( \
+                    SELECT b2.id FROM telegram_book_links b2 \
+                    WHERE b2.source_id = b.source_id \
+                      AND b2.series_name = b.series_name \
+                      AND b2.volume_number = b.volume_number \
+                      AND b2.status = 'available' \
+                    ORDER BY b2.created_at DESC LIMIT 1 \
+                )) \
+         ORDER BY b.series_name, b.volume_number NULLS LAST, b.created_at DESC",
     )
     .fetch_all(&state.pool)
     .await?;
@@ -1313,32 +1316,40 @@ pub async fn list_available_by_series(
         series_ids.insert((sn.clone(), *lib_id), sid);
     }
 
-    // Batch-fetch owned volumes + series total for computing missing count
+    // Batch-fetch owned volumes and series total_volumes for computing missing count
     let matched_series_ids: Vec<Uuid> = series_ids.values()
         .filter_map(|o| *o)
         .collect();
     let mut owned_by_series: std::collections::HashMap<Uuid, Vec<i32>> = std::collections::HashMap::new();
     let mut missing_by_series: std::collections::HashMap<Uuid, i32> = std::collections::HashMap::new();
     if !matched_series_ids.is_empty() {
-        let owned_rows = sqlx::query(
-            "SELECT s.id AS series_id, s.total_volumes, \
-                    COALESCE(ARRAY_AGG(b.volume_number) FILTER (WHERE b.volume_type = 'regular' AND b.volume_number IS NOT NULL), '{}') AS volume_numbers, \
-                    COUNT(b.id) FILTER (WHERE b.volume_type = 'regular') AS owned_count \
-             FROM series s \
-             LEFT JOIN books b ON b.series_id = s.id \
-             WHERE s.id = ANY($1) \
-             GROUP BY s.id, s.total_volumes",
+        // Owned regular volumes per series
+        let vol_rows = sqlx::query(
+            "SELECT series_id, volume_number FROM books \
+             WHERE series_id = ANY($1) \
+               AND volume_number IS NOT NULL \
+               AND volume_type = 'regular' \
+             ORDER BY series_id, volume_number",
         )
         .bind(&matched_series_ids)
         .fetch_all(&state.pool)
         .await?;
-        for r in &owned_rows {
-            let sid: Uuid = r.get("series_id");
-            let total_volumes: Option<i32> = r.get("total_volumes");
-            let owned_count: i64 = r.get("owned_count");
-            let volume_numbers: Vec<i32> = r.get("volume_numbers");
-            owned_by_series.insert(sid, volume_numbers);
-            let missing = ((total_volumes.unwrap_or(0) as i64) - owned_count).max(0) as i32;
+        for r in &vol_rows {
+            owned_by_series.entry(r.get("series_id")).or_default().push(r.get("volume_number"));
+        }
+
+        // Total volumes per series for missing count
+        let total_rows = sqlx::query(
+            "SELECT id, total_volumes FROM series WHERE id = ANY($1)",
+        )
+        .bind(&matched_series_ids)
+        .fetch_all(&state.pool)
+        .await?;
+        for r in &total_rows {
+            let sid: Uuid = r.get("id");
+            let total: Option<i32> = r.get("total_volumes");
+            let owned = owned_by_series.get(&sid).map(|v| v.len()).unwrap_or(0);
+            let missing = ((total.unwrap_or(0) as i64) - owned as i64).max(0) as i32;
             missing_by_series.insert(sid, missing);
         }
     }
