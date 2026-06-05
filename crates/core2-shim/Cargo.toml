@@ -1,0 +1,6 @@
+[package]
+name = "core2"
+version = "0.4.0"
+edition = "2021"
+license = "MIT"
+description = "Compatibility shim for core2 — re-exports std::io in std environments"
