@@ -320,6 +320,69 @@ pub fn extract_volumes(title: &str) -> Vec<i32> {
                 }
             }
         }
+
+        // Pattern D: _NN_ or _NN@ (underscore-delimited volume, Telegram channel filenames)
+        // Example: "Black_Clover_29_Une_Nuit_Sans_Matin_...@BD_fr.cbz" → 29
+        if volumes.is_empty() {
+            let mut i = 0;
+            while i < chars.len() {
+                if chars[i] == '_' {
+                    let digit_start = i + 1;
+                    let mut j = digit_start;
+                    while j < chars.len() && chars[j].is_ascii_digit() {
+                        j += 1;
+                    }
+                    let digit_count = j - digit_start;
+                    if digit_count >= 1
+                        && digit_count <= 3
+                        && j < chars.len()
+                        && (chars[j] == '_' || chars[j] == '@')
+                    {
+                        let num_str: String = chars[digit_start..j].iter().collect();
+                        if let Ok(num) = num_str.parse::<i32>() {
+                            if num > 0 {
+                                volumes.push(num);
+                                break;
+                            }
+                        }
+                    }
+                }
+                i += 1;
+            }
+        }
+
+        // Pattern E: " NN (" / " NN [" / " NN@" — volume before author info or Telegram channel
+        // Example: "Détective Conan 02 (Gosho AOYAMA)@BD_fr.cbz" → 2
+        if volumes.is_empty() {
+            let mut i = 0;
+            while i + 1 < chars.len() {
+                if chars[i] == ' ' {
+                    let digit_start = i + 1;
+                    let mut j = digit_start;
+                    while j < chars.len() && chars[j].is_ascii_digit() {
+                        j += 1;
+                    }
+                    let digit_count = j - digit_start;
+                    if digit_count >= 1 && digit_count <= 3 && j < chars.len() {
+                        let after_nn = chars[j];
+                        let valid = after_nn == '@'
+                            || (after_nn == ' '
+                                && j + 1 < chars.len()
+                                && (chars[j + 1] == '(' || chars[j + 1] == '['));
+                        if valid {
+                            let num_str: String = chars[digit_start..j].iter().collect();
+                            if let Ok(num) = num_str.parse::<i32>() {
+                                if num > 0 && num <= 999 {
+                                    volumes.push(num);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                i += 1;
+            }
+        }
     }
 
     volumes
@@ -2137,6 +2200,26 @@ mod tests {
         assert_eq!(extract_volume("Shangri-La Frontier 18"), Some(18));
         assert_eq!(extract_volume("Shangri-la Frontier 01"), Some(1));
         assert_eq!(extract_volume("Shangri-La Frontier 24"), Some(24));
+    }
+
+    #[test]
+    fn extract_volume_underscore_delimited() {
+        // Pattern D: _NN_ or _NN@ (Telegram channel filenames)
+        assert_eq!(extract_volume("Black_Clover_29_Une_Nuit_Sans_Matin_Yûki_Tabata_2021@BD_fr.cbz"), Some(29));
+        assert_eq!(extract_volume("Black_Clover_30_Bonne_Nouvelle_Yûki_Tabata_2022@BD_fr.cbz"), Some(30));
+        assert_eq!(extract_volume("One_Piece_1_Romance_Dawn@ch.cbz"), Some(1));
+        // 4-digit numbers (years) must not match as volume
+        assert_eq!(extract_volume("Series_2021@channel.cbz"), None);
+    }
+
+    #[test]
+    fn extract_volume_before_author_paren() {
+        // Pattern E: " NN (" or " NN@" (author-in-parentheses format)
+        assert_eq!(extract_volume("Détective Conan 02 (Gosho AOYAMA)@BD_fr.cbz"), Some(2));
+        assert_eq!(extract_volume("Hunter x Hunter 36 (Yoshihiro Togashi)@ch.cbz"), Some(36));
+        assert_eq!(extract_volume("Blacksad 1 (Juan Díaz Canales)@ch.cbz"), Some(1));
+        // Should not false-positive on series numbers that are not volumes
+        assert_eq!(extract_volume("Les 7 Secrets (Author)@ch.cbz"), None);
     }
 
     #[test]
