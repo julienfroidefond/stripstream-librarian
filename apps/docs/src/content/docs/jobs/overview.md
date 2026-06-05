@@ -18,6 +18,7 @@ Vous pouvez suivre leur progression en temps réel sur la page **Tâches**.
 | [Métadonnées](../metadonnees/) | Rechercher et mettre à jour les métadonnées des séries |
 | [Téléchargements](../telechargements/) | Détecter les volumes manquants via Prowlarr |
 | [AniList](../anilist/) | Synchroniser la progression de lecture avec AniList |
+| [Telegram Monitor](../telegram/) | Surveiller des channels Telegram pour détecter de nouveaux livres |
 
 ---
 
@@ -54,6 +55,7 @@ Plusieurs tâches peuvent être déclenchées automatiquement selon la configura
 | Polling RSS Prowlarr | Selon l'intervalle configuré dans Settings → Download tools |
 | Push AniList | Selon la fréquence configurée par bibliothèque |
 | Refresh métadonnées | Selon la fréquence configurée par bibliothèque |
+| Telegram Monitor | Selon l'intervalle configuré dans Settings → Telegram Monitor |
 
 La valeur **Manuel** désactive l'automatisation pour une tâche donnée.
 
@@ -87,7 +89,7 @@ Le rapport final de chaque tâche est consultable après son exécution, avec le
 | 2 | `rebuild`, `rescan`, `scan` |
 | 3 | `thumbnail_rebuild`, `thumbnail_regenerate`, `cbr_to_cbz` |
 
-Les jobs API (`metadata_*`, `reading_status_*`, `download_detection`, `prowlarr_rss`) sont traités en FIFO.
+Les jobs API (`metadata_*`, `reading_status_*`, `download_detection`, `prowlarr_rss`, `telegram_sync`) sont traités en FIFO.
 
 **Suivi temps réel** : flux SSE via `GET /index/jobs/{id}/stream`. Chaque événement contient `job_id`, `status`, `current_file`, `progress_percent`, `processed_files`, `total_files`, `stats_json`.
 
