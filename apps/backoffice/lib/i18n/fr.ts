@@ -329,6 +329,8 @@ const fr = {
   "jobs.groupTelegram": "Telegram",
   "jobs.telegramSync": "Synchronisation Telegram",
   "jobs.telegramSyncShort": "Recherche chaque série de la bibliothèque dans les channels Telegram surveillés et importe les nouveautés",
+  "jobs.telegramSyncIncremental": "Synchro Telegram incrémentale",
+  "jobs.telegramSyncIncrementalShort": "Analyse uniquement les nouveaux messages depuis la dernière synchro (rapide)",
 
   // Jobs list
   "jobsList.id": "ID",
@@ -360,6 +362,7 @@ const fr = {
   "jobRow.downloadNew": "{{count}} nouveautés",
   "jobRow.telegramBooks": "{{count}} livres récupérés",
   "jobRow.telegramMatched": "{{count}} séries matchées",
+  "jobRow.telegramSourcesScanned": "{{count}} sources analysées",
   "jobRow.errors": "{{count}} erreurs",
   "jobRow.view": "Voir",
   "jobRow.replay": "Rejouer",
@@ -524,6 +527,9 @@ const fr = {
   "jobType.telegram_sync": "Telegram",
   "jobType.telegram_syncLabel": "Synchronisation Telegram",
   "jobType.telegram_syncDesc": "Recherche dans les channels Telegram surveillés chaque série de votre bibliothèque et importe les fichiers correspondants.",
+  "jobType.telegram_sync_incremental": "Telegram (incrémental)",
+  "jobType.telegram_sync_incrementalLabel": "Synchro Telegram incrémentale",
+  "jobType.telegram_sync_incrementalDesc": "Analyse uniquement les nouveaux messages depuis la dernière synchro dans tous les channels surveillés.",
   "jobDetail.telegramSyncMatched": "Résultats Telegram",
   "jobDetail.telegramSyncMatchedDesc": "Séries trouvées dans les channels surveillés",
   "jobDetail.telegramSyncBooks": "{{count}} livre(s) disponible(s)",
@@ -535,6 +541,13 @@ const fr = {
   "jobDetail.telegramExtractedNames": "Nom dans les fichiers :",
   "jobDetail.telegramSyncSeriesMatched": "Matchings locaux ({{count}})",
   "jobDetail.telegramSyncMatchedNone": "Aucun match avec les séries locales",
+  "jobDetail.telegramIncrementalTitle": "Résultats de la synchro incrémentale",
+  "jobDetail.telegramIncrementalDesc": "{{new}} nouveau(x) fichier(s) trouvé(s) sur {{sources}} source(s)",
+  "jobDetail.telegramIncrementalNewBooks": "Nouveaux fichiers",
+  "jobDetail.telegramIncrementalSources": "Sources analysées",
+  "jobDetail.telegramIncrementalPerSource": "Détail par channel",
+  "jobDetail.telegramIncrementalRecentBooks": "Fichiers trouvés ({{count}})",
+  "jobDetail.telegramIncrementalNone": "Aucun nouveau fichier depuis la dernière synchro",
 
   // Status badges
   "statusBadge.extracting_pages": "Extraction des pages",

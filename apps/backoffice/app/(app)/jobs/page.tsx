@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startMetadataRefreshAll, startReadingStatusMatch, startReadingStatusPush, startDownloadDetection, startRssPoll, fetchDownloadsEnabled, startTelegramSync, fetchTelegramAuthorized, IndexJobDto, LibraryDto } from "@/lib/api";
+import { listJobs, fetchLibraries, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startMetadataRefreshAll, startReadingStatusMatch, startReadingStatusPush, startDownloadDetection, startRssPoll, fetchDownloadsEnabled, startTelegramSync, startTelegramSyncIncremental, fetchTelegramAuthorized, IndexJobDto, LibraryDto } from "@/lib/api";
 import { JobsList } from "@/app/components/JobsList";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/app/components/ui";
 import { LibraryBadgeSelector } from "./components/LibraryBadgeSelector";
@@ -132,6 +132,12 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   async function triggerTelegramSync() {
     "use server";
     try { const result = await startTelegramSync(); revalidatePath("/jobs"); jobRedirect(result.id ?? undefined, ""); }
+    catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
+  }
+
+  async function triggerTelegramSyncIncremental() {
+    "use server";
+    try { const result = await startTelegramSyncIncremental(); revalidatePath("/jobs"); jobRedirect(result.id ?? undefined, ""); }
     catch (e) { if (e && typeof e === "object" && "digest" in e) throw e; errorRedirect(e); }
   }
 
@@ -371,6 +377,16 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                       <span className="font-medium text-sm text-foreground">{t("jobs.telegramSync")}</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1 ml-6">{t("jobs.telegramSyncShort")}</p>
+                  </button>
+                  <button type="submit" formAction={triggerTelegramSyncIncremental}
+                    className="w-full text-left rounded-lg border border-input bg-background p-3 hover:bg-accent/50 transition-colors group cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      <span className="font-medium text-sm text-foreground">{t("jobs.telegramSyncIncremental")}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 ml-6">{t("jobs.telegramSyncIncrementalShort")}</p>
                   </button>
                 </div>
               </div>}

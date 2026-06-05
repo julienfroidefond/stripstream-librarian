@@ -331,6 +331,8 @@ const en: Record<TranslationKey, string> = {
   "jobs.groupTelegram": "Telegram",
   "jobs.telegramSync": "Telegram sync",
   "jobs.telegramSyncShort": "Search each library series in monitored Telegram channels and import new files",
+  "jobs.telegramSyncIncremental": "Telegram incremental sync",
+  "jobs.telegramSyncIncrementalShort": "Scan only new messages since the last sync (fast)",
 
   // Jobs list
   "jobsList.id": "ID",
@@ -362,6 +364,7 @@ const en: Record<TranslationKey, string> = {
   "jobRow.downloadNew": "{{count}} new",
   "jobRow.telegramBooks": "{{count}} books retrieved",
   "jobRow.telegramMatched": "{{count}} series matched",
+  "jobRow.telegramSourcesScanned": "{{count}} sources scanned",
   "jobRow.errors": "{{count}} errors",
   "jobRow.view": "View",
   "jobRow.replay": "Replay",
@@ -526,6 +529,9 @@ const en: Record<TranslationKey, string> = {
   "jobType.telegram_sync": "Telegram",
   "jobType.telegram_syncLabel": "Telegram sync",
   "jobType.telegram_syncDesc": "Searches monitored Telegram channels for each series in your library and imports matching files.",
+  "jobType.telegram_sync_incremental": "Telegram (incremental)",
+  "jobType.telegram_sync_incrementalLabel": "Telegram incremental sync",
+  "jobType.telegram_sync_incrementalDesc": "Scans only new messages since the last sync across all monitored channels.",
   "jobDetail.telegramSyncMatched": "Telegram sync results",
   "jobDetail.telegramSyncMatchedDesc": "Series matched against local library",
   "jobDetail.telegramSyncBooks": "{{count}} file(s) available",
@@ -537,6 +543,13 @@ const en: Record<TranslationKey, string> = {
   "jobDetail.telegramExtractedNames": "Name in files:",
   "jobDetail.telegramSyncSeriesMatched": "Local matches ({{count}})",
   "jobDetail.telegramSyncMatchedNone": "No match with local series",
+  "jobDetail.telegramIncrementalTitle": "Incremental sync results",
+  "jobDetail.telegramIncrementalDesc": "{{new}} new file(s) found across {{sources}} source(s)",
+  "jobDetail.telegramIncrementalNewBooks": "New files",
+  "jobDetail.telegramIncrementalSources": "Sources scanned",
+  "jobDetail.telegramIncrementalPerSource": "Breakdown by channel",
+  "jobDetail.telegramIncrementalRecentBooks": "Files found ({{count}})",
+  "jobDetail.telegramIncrementalNone": "No new files since last sync",
 
   // Status badges
   "statusBadge.extracting_pages": "Extracting pages",

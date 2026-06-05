@@ -106,6 +106,9 @@ const jobTypeStyles: Record<string, string> = {
   reading_status_push: "bg-yellow-500/80 text-white",
   scan: "bg-cyan-500/80 text-white",
   download_detection: "bg-indigo-500/80 text-white",
+  prowlarr_rss: "bg-indigo-400/80 text-white",
+  telegram_sync: "bg-sky-600/80 text-white",
+  telegram_sync_incremental: "bg-sky-500/80 text-white",
 };
 
 interface JobTypeBadgeProps {
@@ -132,6 +135,9 @@ export function JobTypeBadge({ type, className = "" }: JobTypeBadgeProps) {
     reading_status_push: t("jobType.reading_status_push"),
     scan: t("jobType.scan"),
     download_detection: t("jobType.download_detection"),
+    prowlarr_rss: t("jobType.prowlarr_rss"),
+    telegram_sync: t("jobType.telegram_sync"),
+    telegram_sync_incremental: t("jobType.telegram_sync_incremental"),
   };
   const label = jobTypeLabels[key] ?? type;
   return (

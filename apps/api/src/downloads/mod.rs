@@ -35,6 +35,7 @@ pub use telegram_monitor::{
     list_available_by_series as tg_monitor_list_available,
     list_downloads as tg_monitor_list_downloads,
     start_sync_job as tg_monitor_start_sync_job,
+    start_incremental_sync_job as tg_monitor_start_incremental_sync_job,
     search_available_books as tg_monitor_search,
     live_search as tg_monitor_live_search,
 };

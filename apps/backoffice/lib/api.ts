@@ -46,12 +46,14 @@ export type IndexJobDto = {
     pushed?: number;
     new_books?: number;
     series_searched?: number;
+    sources_scanned?: number;
     all_series?: Array<{ series_name: string; book_count: number; extracted_names?: string[] }>;
     matched_series?: Array<unknown>;
   } | null;
   progress_percent: number | null;
   processed_files: number | null;
   total_files: number | null;
+  current_file: string | null;
 };
 
 export type TokenDto = {
@@ -1810,6 +1812,12 @@ export async function syncTelegramSources(): Promise<{ synced: number; new_books
 
 export async function startTelegramSync(): Promise<{ id: string | null; status: string }> {
   return apiFetch<{ id: string | null; status: string }>("/telegram-monitor/start", {
+    method: "POST",
+  });
+}
+
+export async function startTelegramSyncIncremental(): Promise<{ id: string | null; status: string }> {
+  return apiFetch<{ id: string | null; status: string }>("/telegram-monitor/start-incremental", {
     method: "POST",
   });
 }

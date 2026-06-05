@@ -77,6 +77,9 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                         "telegram_sync" => {
                             telegram_monitor::process_telegram_sync(&pool_clone, job_id).await
                         }
+                        "telegram_sync_incremental" => {
+                            telegram_monitor::process_telegram_sync_incremental(&pool_clone, job_id).await
+                        }
                         _ => Err(format!("Unknown API job type: {job_type}")),
                     };
 
@@ -144,7 +147,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
     }
 }
 
-const API_JOB_TYPES: &[&str] = &["metadata_batch", "metadata_batch_rematch", "metadata_refresh", "metadata_refresh_all", "reading_status_push", "download_detection", "prowlarr_rss", "telegram_sync"];
+const API_JOB_TYPES: &[&str] = &["metadata_batch", "metadata_batch_rematch", "metadata_refresh", "metadata_refresh_all", "reading_status_push", "download_detection", "prowlarr_rss", "telegram_sync", "telegram_sync_incremental"];
 
 async fn claim_next_api_job(pool: &PgPool) -> Result<Option<(Uuid, String, Option<Uuid>)>, sqlx::Error> {
     let mut tx = pool.begin().await?;
@@ -155,7 +158,7 @@ async fn claim_next_api_job(pool: &PgPool) -> Result<Option<(Uuid, String, Optio
         FROM index_jobs
         WHERE status = 'pending'
           AND type = ANY($1)
-          AND (library_id IS NOT NULL OR type IN ('prowlarr_rss', 'telegram_sync'))
+          AND (library_id IS NOT NULL OR type IN ('prowlarr_rss', 'telegram_sync', 'telegram_sync_incremental'))
         ORDER BY created_at ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1

@@ -21,10 +21,19 @@ interface Job {
     removed_files: number;
     errors: number;
     refreshed?: number;
+    linked?: number;
+    pushed?: number;
+    found?: number;
+    new_releases?: number;
+    new_books?: number;
+    series_searched?: number;
+    sources_scanned?: number;
+    matched_series?: Array<unknown>;
   } | null;
   progress_percent: number | null;
   processed_files: number | null;
   total_files: number | null;
+  current_file: string | null;
 }
 
 interface JobsListProps {

@@ -1,82 +1,141 @@
 ---
-title: Tâche Telegram Monitor
-description: Synchronisation périodique des channels Telegram pour détecter les nouvelles disponibilités
+title: Tâches Telegram Monitor
+description: Synchronisation complète et incrémentale des channels Telegram pour détecter les nouvelles disponibilités
 ---
 
-La tâche `telegram_sync` parcourt chaque channel Telegram configuré et y recherche les fichiers correspondant aux séries de votre bibliothèque. Elle alimente la liste **Livres disponibles Telegram** sur la page Téléchargements.
+Deux tâches gèrent la surveillance Telegram, selon la profondeur de recherche souhaitée :
 
----
+| Type | Ce qu'il fait |
+|------|--------------|
+| `telegram_sync` | Recherche active par série — requête Telegram par série de la bibliothèque |
+| `telegram_sync_incremental` | Parcours chronologique — uniquement les nouveaux messages depuis la dernière synchro |
 
-## Déclenchement
-
-**Automatique** : l'indexer crée un job `telegram_sync` selon l'intervalle configuré dans **Settings → Telegram Monitor → Intervalle de sync**. Mettre `0` désactive la planification automatique.
-
-**Manuel** : bouton *Synchroniser* dans **Settings → Telegram Monitor** — déclenche un job immédiatement.
-
-Un seul job `telegram_sync` est actif à la fois. Si un job est déjà en cours (`pending` ou `running`), un nouveau déclenchement est ignoré silencieusement.
+Les deux alimentent la liste **Livres disponibles Telegram** sur la page Téléchargements.
 
 ---
 
-## Ce que fait le job
+## Règle métier : quelles séries sont recherchées ?
+
+Le job `telegram_sync` ne recherche **pas** toutes les séries de la bibliothèque. Pour être incluse, une série doit satisfaire deux conditions simultanément :
+
+1. **Lien metadata approuvé** — un `external_metadata_links` avec `status = 'approved'` existe pour cette série
+2. **Volumes manquants** — au moins un `external_book_metadata` avec `book_id IS NULL` (tome attendu mais non possédé)
+
+C'est exactement la même règle que la détection de téléchargements Prowlarr : seules les séries qu'on cherche activement à compléter sont scrutées.
+
+Le job `telegram_sync_incremental` n'applique **pas** ce filtre : il parcourt tous les messages récents sans distinction, car il s'agit d'un scan chronologique et non d'une recherche ciblée.
+
+---
+
+## telegram_sync — synchronisation complète
+
+### Déclenchement
+
+**Automatique** : l'indexer crée un job selon l'intervalle `sync_interval_minutes` dans **Settings → Telegram Monitor**. Mettre `0` désactive la planification automatique.
+
+**Manuel** : bouton *Sync complet* dans la page Tâches, ou via **Settings → Telegram Monitor**.
+
+### Ce que fait le job
 
 ```
-Pour chaque channel activé :
+Pour chaque channel activé avec bibliothèque configurée :
+    Filtrer les séries éligibles (metadata approuvée + volumes manquants)
+    Si aucune série éligible → passer au channel suivant
     Résoudre le username → chat Telegram
-    Pour chaque série de la bibliothèque associée :
+    Pour chaque série éligible :
         → search_messages(query = nom de la série, filtre = documents)
-        → Pour chaque fichier CBZ/CBR/PDF/EPUB/ZIP trouvé :
+        → Pour chaque CBZ/CBR/PDF/EPUB/ZIP trouvé :
             Extraire le nom de série et le numéro de volume
             INSERT INTO telegram_book_links … ON CONFLICT DO NOTHING
     Mettre à jour le channel_title
 Sauvegarder la session Telegram mise à jour
 ```
 
-Les fichiers déjà connus (même `source_id` + `message_id`) ne sont pas réinsérés.
+### Progression
 
----
+| Champ | Valeur |
+|-------|--------|
+| `total_files` | Nombre total de séries à rechercher (toutes sources) |
+| `processed_files` | Séries traitées |
+| `current_file` | Label `@channel: nom de la série` en cours |
 
-## Rapport
-
-Le détail du job affiche :
+### Rapport final
 
 | Champ | Description |
 |-------|-------------|
-| **Messages scannés** | Total de documents parcourus sur tous les channels |
-| **Nouveaux livres** | Fichiers insérés pour la première fois |
 | **Séries recherchées** | Nombre de requêtes effectuées sur Telegram |
+| **Nouveaux livres** | Fichiers insérés pour la première fois |
 | **Séries avec résultats** | Séries ayant retourné au moins un fichier, avec le nombre de documents et les noms extraits |
 | **Séries liées** | Parmi les résultats, celles qui correspondent à une série existante dans la bibliothèque |
 
 ---
 
-## Conditions pour qu'un channel soit traité
+## telegram_sync_incremental — synchronisation incrémentale
 
-- Le channel doit être **activé** dans Settings → Telegram Monitor
-- Une **bibliothèque cible** doit être associée au channel — sans elle, aucune série à chercher
-- Vous devez être **membre** du channel Telegram
+### Déclenchement
+
+**Automatique** : l'indexer crée un job selon l'intervalle `sync_incremental_interval_minutes` dans `app_settings` (clé `telegram_monitor`). Défaut : **30 minutes**. Mettre `0` désactive.
+
+**Manuel** : bouton *Synchro incrémentale* dans la page Tâches.
+
+### Ce que fait le job
+
+```
+Pour chaque channel activé :
+    Récupérer MAX(message_id) déjà connu pour ce channel dans telegram_book_links
+    Résoudre le username → chat Telegram
+    Parcourir iter_messages (du plus récent vers le plus ancien)
+    Dès qu'un message_id ≤ MAX connu → arrêter (déjà traité)
+    Pour chaque CBZ/CBR/PDF/EPUB/ZIP trouvé :
+        INSERT INTO telegram_book_links … ON CONFLICT DO NOTHING
+Sauvegarder la session Telegram mise à jour
+```
+
+Lors du **premier run** (aucun message en base pour un channel), le job parcourt l'intégralité de l'historique du channel.
+
+### Progression
+
+| Champ | Valeur |
+|-------|--------|
+| `total_files` | Nombre de channels (sources) à traiter |
+| `processed_files` | Channels traités |
+| `current_file` | Label `@channel (incremental)` en cours |
+
+### Rapport final
+
+| Champ | Description |
+|-------|-------------|
+| **Sources analysées** | Nombre de channels parcourus |
+| **Nouveaux livres** | Fichiers insérés pour la première fois |
 
 ---
 
-## Livres disponibles après le job
+## Livres disponibles après les jobs
 
-À l'issue du job, les fichiers détectés dont la série existe dans la bibliothèque associée apparaissent dans la section **Livres disponibles Telegram** de la page Téléchargements. Voir [Telegram Monitor](/integrations/telegram-monitor/#livres-disponibles).
+À l'issue d'un sync (complet ou incrémental), les fichiers dont la série existe dans la bibliothèque apparaissent dans **Livres disponibles Telegram** sur la page Téléchargements. L'affichage est filtré dynamiquement : seules les séries avec un lien metadata approuvé et des volumes manquants sont présentées.
+
+Voir [Telegram Monitor](/integrations/telegram-monitor/#livres-disponibles).
 
 ---
 
 :::note[Détails techniques]
-**Type de job** : `telegram_sync`, `library_id = NULL` (global).
+**Types de job** : `telegram_sync` et `telegram_sync_incremental`, tous deux avec `library_id = NULL` (globaux).
 
-**Exécuté par** : le poller de l'API (non-exclusif avec les autres types de jobs globaux comme `prowlarr_rss`).
+**Exécutés par** : le poller de l'API.
 
-**Planifié par** : le scheduler de l'indexer. Conditions pour créer un job :
+**Planifiés par** : le scheduler de l'indexer. Conditions communes :
 1. `session_data` présent dans `app_settings` (compte authentifié)
-2. `sync_interval_minutes > 0`
-3. Aucun job `pending` ou `running` du même type
-4. Aucun job `finished_at > NOW() - INTERVAL '{interval} minutes'`
+2. `sync_interval_minutes > 0` (ou `sync_incremental_interval_minutes > 0`)
+3. Aucun job du même type en `pending` ou `running`
+4. Aucun job du même type `finished_at > NOW() - INTERVAL '{interval} minutes'`
 
-**Champs `stats_json`** : `synced` (messages), `new_books`, `series_searched`, `all_series` (tableau par série : `series_name`, `book_count`, `extracted_names`), `matched_series` (tableau : `telegram_name`, `series_id`, `series_name`, `book_count`).
+**Champs `stats_json` — `telegram_sync`** : `synced`, `new_books`, `series_searched`, `all_series` (tableau : `series_name`, `book_count`, `extracted_names`), `matched_series` (tableau : `telegram_name`, `series_id`, `series_name`, `book_count`).
 
-**Session** : sauvegardée en base après chaque sync (clé `session_data` dans `app_settings`). La session MTProto évolue à chaque connexion — ne pas sauter ce save.
+**Champs `stats_json` — `telegram_sync_incremental`** : `new_books`, `sources_scanned`.
 
-**Stale jobs** : les jobs `pending` depuis > 30 min sont marqués `failed` par le cleanup du scheduler, libérant la place pour un prochain job planifié.
+**Session** : sauvegardée en base après chaque sync (clé `session_data` dans `app_settings`). La session MTProto évolue à chaque connexion.
+
+**Stale jobs** : les jobs `pending` depuis > 30 min sont marqués `failed` par le cleanup du scheduler.
+
+**Contrainte DB** : le type `telegram_sync_incremental` est autorisé par la migration `0099_add_telegram_sync_incremental_job_type.sql`.
 :::

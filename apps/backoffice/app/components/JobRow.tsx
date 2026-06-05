@@ -28,11 +28,13 @@ interface JobRowProps {
       new_releases?: number;
       new_books?: number;
       series_searched?: number;
+      sources_scanned?: number;
       matched_series?: Array<unknown>;
     } | null;
     progress_percent: number | null;
     processed_files: number | null;
     total_files: number | null;
+    current_file: string | null;
   };
   libraryName: string | undefined;
   highlighted?: boolean;
@@ -74,7 +76,9 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
   const isReadingStatusMatch = job.type === "reading_status_match";
   const isReadingStatusPush = job.type === "reading_status_push";
   const isDownloadDetection = job.type === "download_detection" || job.type === "prowlarr_rss";
-  const isTelegramSync = job.type === "telegram_sync";
+  const isTelegramFullSync = job.type === "telegram_sync";
+  const isTelegramIncremental = job.type === "telegram_sync_incremental";
+  const isTelegramSync = isTelegramFullSync || isTelegramIncremental;
 
   // Thumbnails progress (Phase 2: extracting_pages + generating_thumbnails)
   const thumbInProgress = hasThumbnailPhase && (job.status === "running" || isPhase2);
@@ -107,7 +111,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
                 !
               </span>
             )}
-            {isActive && job.type !== "telegram_sync" && (
+            {isActive && (
               <button
                 className="text-xs text-primary hover:text-primary/80 hover:underline"
                 onClick={() => setShowProgress(!showProgress)}
@@ -120,10 +124,13 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
         <td className="px-4 py-3">
           <div className="flex flex-col gap-1">
             {/* Running progress */}
-            {isActive && job.type !== "telegram_sync" && job.total_files != null && (
+            {isActive && job.total_files != null && (
               <div className="flex flex-col gap-1">
                 <span className="text-sm text-foreground">{job.processed_files ?? 0}/{job.total_files}</span>
                 <MiniProgressBar value={job.processed_files ?? 0} max={job.total_files} className="w-24" />
+                {isTelegramSync && job.current_file && (
+                  <span className="text-xs text-muted-foreground truncate max-w-[14rem]" title={job.current_file}>{job.current_file}</span>
+                )}
               </div>
             )}
             {/* Completed stats with icons */}
@@ -241,8 +248,8 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
                     </span>
                   </Tooltip>
                 )}
-                {/* Telegram sync */}
-                {isTelegramSync && (job.stats_json?.series_searched ?? 0) > 0 && (
+                {/* Telegram full sync */}
+                {isTelegramFullSync && (job.stats_json?.series_searched ?? 0) > 0 && (
                   <Tooltip label={t("jobRow.seriesTotal", { count: job.stats_json!.series_searched! })}>
                     <span className="inline-flex items-center gap-1 text-info">
                       <Icon name="series" size="sm" />
@@ -258,11 +265,20 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
                     </span>
                   </Tooltip>
                 )}
-                {isTelegramSync && (job.stats_json?.matched_series?.length ?? 0) > 0 && (
+                {isTelegramFullSync && (job.stats_json?.matched_series?.length ?? 0) > 0 && (
                   <Tooltip label={t("jobRow.telegramMatched", { count: job.stats_json!.matched_series!.length })}>
                     <span className="inline-flex items-center gap-1 text-primary">
                       <Icon name="link" size="sm" />
                       {job.stats_json!.matched_series!.length}
+                    </span>
+                  </Tooltip>
+                )}
+                {/* Telegram incremental */}
+                {isTelegramIncremental && (job.stats_json?.sources_scanned ?? 0) > 0 && (
+                  <Tooltip label={t("jobRow.telegramSourcesScanned", { count: job.stats_json!.sources_scanned! })}>
+                    <span className="inline-flex items-center gap-1 text-info">
+                      <Icon name="series" size="sm" />
+                      {job.stats_json!.sources_scanned}
                     </span>
                   </Tooltip>
                 )}
@@ -335,7 +351,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
           </div>
         </td>
       </tr>
-      {showProgress && isActive && job.type !== "telegram_sync" && (
+      {showProgress && isActive && (
         <tr>
           <td colSpan={8} className="px-4 py-3 bg-muted/50">
             <JobProgress 

@@ -152,6 +152,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/telegram-monitor/search", get(downloads::tg_monitor_search))
         .route("/telegram-monitor/live-search", axum::routing::post(downloads::tg_monitor_live_search))
         .route("/telegram-monitor/start", axum::routing::post(downloads::tg_monitor_start_sync_job))
+        .route("/telegram-monitor/start-incremental", axum::routing::post(downloads::tg_monitor_start_incremental_sync_job))
         .route("/komga/sync", axum::routing::post(integrations::komga::sync_komga_read_books))
         .route("/komga/reports", get(integrations::komga::list_sync_reports))
         .route("/komga/reports/:id", get(integrations::komga::get_sync_report))

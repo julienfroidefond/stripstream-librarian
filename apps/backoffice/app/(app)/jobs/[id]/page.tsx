@@ -15,6 +15,7 @@ import { ReadingStatusMatchReportCard, ReadingStatusMatchResultsCard, ReadingSta
 import { DownloadDetectionReportCard, DownloadDetectionErrorsCard, RssSnapshotCard } from "./components/DownloadDetectionCards";
 import { DownloadDetectionAvailableResults } from "./components/DownloadDetectionAvailableResults";
 import { TelegramSyncResultsCard } from "./components/TelegramSyncResultsCard";
+import { TelegramIncrementalResultsCard } from "./components/TelegramIncrementalResultsCard";
 import { JobErrorsCard } from "./components/JobErrorsCard";
 import { JobEventsCard, type JobEvent } from "./components/JobEventsCard";
 
@@ -50,6 +51,9 @@ interface JobDetails {
     series_searched?: number;
     all_series?: Array<{ series_name: string; book_count: number; extracted_names?: string[] }>;
     matched_series?: Array<{ telegram_name: string; series_id: string; series_name: string; book_count: number }>;
+    sources_scanned?: number;
+    sources?: Array<{ username: string; new_books: number }>;
+    recent_books?: Array<{ filename: string; series_name: string | null; volume_number: number | null; channel: string }>;
   } | null;
   error_opt: string | null;
 }
@@ -122,6 +126,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     download_detection: { label: t("jobType.download_detectionLabel"), description: t("jobType.download_detectionDesc"), isThumbnailOnly: false },
     prowlarr_rss: { label: t("jobType.prowlarr_rssLabel"), description: t("jobType.prowlarr_rssDesc"), isThumbnailOnly: false },
     telegram_sync: { label: t("jobType.telegram_syncLabel"), description: t("jobType.telegram_syncDesc"), isThumbnailOnly: false },
+    telegram_sync_incremental: { label: t("jobType.telegram_sync_incrementalLabel"), description: t("jobType.telegram_sync_incrementalDesc"), isThumbnailOnly: false },
   };
 
   const isMetadataBatch = job.type === "metadata_batch" || job.type === "metadata_batch_rematch";
@@ -130,7 +135,9 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
   const isReadingStatusPush = job.type === "reading_status_push";
   const isDownloadDetection = job.type === "download_detection";
   const isRssPoll = job.type === "prowlarr_rss";
-  const isTelegramSync = job.type === "telegram_sync";
+  const isTelegramFullSync = job.type === "telegram_sync";
+  const isTelegramIncremental = job.type === "telegram_sync_incremental";
+  const isTelegramSync = isTelegramFullSync || isTelegramIncremental;
 
   let batchReport: MetadataBatchReportDto | null = null;
   let batchResults: MetadataBatchResultDto[] = [];
@@ -206,8 +213,10 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     ? t("jobDetail.downloadDetection")
     : isRssPoll
     ? t("jobType.prowlarr_rss")
-    : isTelegramSync
+    : isTelegramFullSync
     ? t("jobType.telegram_sync")
+    : isTelegramIncremental
+    ? t("jobType.telegram_sync_incremental")
     : isThumbnailOnly
       ? t("jobType.thumbnail_rebuild")
       : isExtractingPages
@@ -267,7 +276,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
         <JobOverviewCard job={job} typeInfo={typeInfo} t={t} formatDuration={formatDuration} />
         <JobTimelineCard job={job} isThumbnailOnly={isThumbnailOnly} t={t} locale={locale} formatDuration={formatDuration} />
 
-        {!isTelegramSync && (
+        {!isTelegramFullSync && (
           <JobProgressCard
             job={job}
             isThumbnailOnly={isThumbnailOnly}
@@ -316,13 +325,24 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
         {/* Metadata batch results */}
         {isMetadataBatch && <MetadataBatchQuickMatch results={batchResults} libraryId={job.library_id} />}
 
-        {/* Telegram sync results */}
-        {isTelegramSync && job.stats_json && (
+        {/* Telegram full sync results */}
+        {isTelegramFullSync && job.stats_json && (
           <TelegramSyncResultsCard
             new_books={job.stats_json.new_books ?? 0}
             series_searched={job.stats_json.series_searched ?? 0}
             all_series={job.stats_json.all_series ?? []}
             matched_series={job.stats_json.matched_series ?? []}
+            t={t}
+          />
+        )}
+
+        {/* Telegram incremental sync results */}
+        {isTelegramIncremental && job.stats_json && (
+          <TelegramIncrementalResultsCard
+            new_books={job.stats_json.new_books ?? 0}
+            sources_scanned={job.stats_json.sources_scanned ?? 0}
+            sources={job.stats_json.sources ?? []}
+            recent_books={job.stats_json.recent_books ?? []}
             t={t}
           />
         )}
