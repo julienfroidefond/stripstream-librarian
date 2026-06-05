@@ -1749,6 +1749,7 @@ export type TelegramDownloadItemDto = {
   channel_username: string;
   filename: string;
   file_size: number | null;
+  bytes_downloaded: number;
   volume_number: number | null;
   status: "downloading" | "imported" | "failed";
   error_message: string | null;

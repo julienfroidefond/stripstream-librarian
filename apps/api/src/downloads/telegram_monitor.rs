@@ -110,6 +110,7 @@ pub struct TelegramDownloadItemDto {
     pub channel_username: String,
     pub filename: String,
     pub file_size: Option<i64>,
+    pub bytes_downloaded: i64,
     pub volume_number: Option<i32>,
     pub status: String,
     pub error_message: Option<String>,
@@ -1701,7 +1702,7 @@ pub async fn list_downloads(
 ) -> Result<Json<Vec<TelegramDownloadItemDto>>, ApiError> {
     let rows = sqlx::query(
         "SELECT b.id, b.series_name, src.channel_username, b.filename, b.file_size,
-                b.volume_number, b.status, b.error_message, b.created_at, b.updated_at,
+                b.bytes_downloaded, b.volume_number, b.status, b.error_message, b.created_at, b.updated_at,
                 COALESCE(b.library_id, src.library_id) AS resolved_library_id,
                 l.name AS library_name,
                 sr.id AS series_id
@@ -1726,6 +1727,7 @@ pub async fn list_downloads(
         channel_username: r.get("channel_username"),
         filename: r.get("filename"),
         file_size: r.get("file_size"),
+        bytes_downloaded: r.get::<i64, _>("bytes_downloaded"),
         volume_number: r.get("volume_number"),
         status: r.get("status"),
         error_message: r.get("error_message"),
@@ -1805,7 +1807,7 @@ pub async fn download_book(
 
     // Mark as downloading
     sqlx::query(
-        "UPDATE telegram_book_links SET status = 'downloading', updated_at = NOW() WHERE id = $1",
+        "UPDATE telegram_book_links SET status = 'downloading', bytes_downloaded = 0, updated_at = NOW() WHERE id = $1",
     )
     .bind(id)
     .execute(&state.pool)
@@ -1910,29 +1912,58 @@ async fn do_download(
     info!("Downloading {} → {}", filename, dest_path.display());
     let downloadable = Downloadable::Media(media);
 
-    // Retry up to 3 times on FLOOD_WAIT
+    // Stream download with progress tracking and FLOOD_WAIT retry
     const MAX_RETRIES: u32 = 3;
+    const PROGRESS_UPDATE_BYTES: i64 = 1_048_576; // update DB every 1 MB
+    const DOWNLOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30 * 60);
     let mut retries = 0u32;
     loop {
-        match client.download_media(&downloadable, &tmp_path).await {
-            Ok(_) => break,
-            Err(e) => {
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+        let result = tokio::time::timeout(DOWNLOAD_TIMEOUT, async {
+            use tokio::io::AsyncWriteExt;
+            let mut file = tokio::fs::File::create(&tmp_path).await?;
+            let mut iter = client.iter_download(&downloadable);
+            let mut bytes_written: i64 = 0;
+            let mut last_db_update: i64 = 0;
+            while let Some(chunk) = iter.next().await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))? {
+                file.write_all(&chunk).await?;
+                bytes_written += chunk.len() as i64;
+                if bytes_written - last_db_update >= PROGRESS_UPDATE_BYTES {
+                    last_db_update = bytes_written;
+                    let _ = sqlx::query(
+                        "UPDATE telegram_book_links SET bytes_downloaded = $1, updated_at = NOW() WHERE id = $2",
+                    )
+                    .bind(bytes_written)
+                    .bind(link_id)
+                    .execute(&pool)
+                    .await;
+                }
+            }
+            file.flush().await?;
+            Ok::<(), std::io::Error>(())
+        }).await;
+        match result {
+            Ok(Ok(())) => break,
+            Ok(Err(e)) => {
                 let msg = e.to_string();
                 if msg.contains("FLOOD_WAIT") && retries < MAX_RETRIES {
                     let wait_secs = parse_flood_wait_secs(&msg).unwrap_or(5);
                     warn!("FLOOD_WAIT {wait_secs}s for {filename}, retry {}/{MAX_RETRIES}", retries + 1);
-                    let _ = std::fs::remove_file(&tmp_path);
                     tokio::time::sleep(std::time::Duration::from_secs(wait_secs + 1)).await;
                     retries += 1;
                 } else {
-                    let _ = std::fs::remove_file(&tmp_path);
-                    return Err(e.into());
+                    let _ = tokio::fs::remove_file(&tmp_path).await;
+                    return Err(anyhow::anyhow!("{e}"));
                 }
+            }
+            Err(_) => {
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+                return Err(anyhow::anyhow!("Download timeout after 30 minutes: {filename}"));
             }
         }
     }
 
-    std::fs::rename(&tmp_path, &dest_path)?;
+    tokio::fs::rename(&tmp_path, &dest_path).await?;
 
     let updated_bytes = client.session().save();
     save_session_to_db(&pool, updated_bytes).await

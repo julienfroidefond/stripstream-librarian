@@ -502,6 +502,21 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
           </div>
           {/* Filename secondary */}
           <p className="hidden sm:block text-[11px] text-muted-foreground truncate mt-0.5">{item.filename}</p>
+          {/* Progress bar for active downloads */}
+          {item.status === "downloading" && item.file_size && item.file_size > 0 && (
+            <div className="mt-1.5 space-y-0.5">
+              <div className="w-full bg-muted/50 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className="bg-primary h-1.5 rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(100, Math.round((item.bytes_downloaded / item.file_size) * 100))}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-muted-foreground tabular-nums">
+                {formatSize(item.bytes_downloaded)} / {formatSize(item.file_size)}
+                {" · "}{Math.min(100, Math.round((item.bytes_downloaded / item.file_size) * 100))}%
+              </p>
+            </div>
+          )}
           {item.error_message && (
             <p className="text-[11px] text-destructive truncate mt-0.5" title={item.error_message}>{item.error_message}</p>
           )}
