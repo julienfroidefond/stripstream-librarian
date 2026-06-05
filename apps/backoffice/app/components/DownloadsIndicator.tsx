@@ -8,6 +8,7 @@ import { ProgressBar } from "./ui/ProgressBar";
 
 interface Download {
   id: string;
+  source: "prowlarr" | "telegram";
   library_id: string;
   series_id?: string;
   series_name: string;
@@ -19,7 +20,48 @@ interface Download {
   error_message: string | null;
 }
 
+interface TelegramDownload {
+  id: string;
+  series_name: string | null;
+  series_id: string | null;
+  library_id: string | null;
+  filename: string;
+  file_size: number | null;
+  bytes_downloaded: number;
+  volume_number: number | null;
+  status: "downloading" | "imported" | "failed";
+  error_message: string | null;
+}
+
 const STATUS_ACTIVE = new Set(["downloading", "completed", "importing"]);
+
+function normalizeTorrentDownload(download: Omit<Download, "source">): Download {
+  return {
+    ...download,
+    id: `torrent-${download.id}`,
+    source: "prowlarr",
+  };
+}
+
+function normalizeTelegramDownload(download: TelegramDownload): Download {
+  const progress = download.file_size && download.file_size > 0
+    ? Math.min(1, download.bytes_downloaded / download.file_size)
+    : 0;
+
+  return {
+    id: `telegram-${download.id}`,
+    source: "telegram",
+    library_id: download.library_id ?? "",
+    series_id: download.series_id ?? undefined,
+    series_name: download.series_name ?? download.filename,
+    expected_volumes: download.volume_number != null ? [download.volume_number] : [],
+    status: download.status === "failed" ? "error" : download.status,
+    progress,
+    download_speed: 0,
+    eta: 0,
+    error_message: download.error_message,
+  };
+}
 
 // Icons
 const DownloadIcon = ({ className }: { className?: string }) => (
@@ -61,7 +103,8 @@ function formatEta(seconds: number): string {
 
 export function DownloadsIndicator() {
   const { t } = useTranslation();
-  const [activeDownloads, setActiveDownloads] = useState<Download[]>([]);
+  const [activeTorrentDownloads, setActiveTorrentDownloads] = useState<Download[]>([]);
+  const [activeTelegramDownloads, setActiveTelegramDownloads] = useState<Download[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popinRef = useRef<HTMLDivElement>(null);
@@ -91,9 +134,11 @@ export function DownloadsIndicator() {
       eventSource.onmessage = (event) => {
         resetStaleTimer();
         try {
-          const allDownloads: Download[] = JSON.parse(event.data);
-          const active = allDownloads.filter(d => STATUS_ACTIVE.has(d.status));
-          setActiveDownloads(active);
+          const allDownloads: Omit<Download, "source">[] = JSON.parse(event.data);
+          const active = allDownloads
+            .filter(d => STATUS_ACTIVE.has(d.status))
+            .map(normalizeTorrentDownload);
+          setActiveTorrentDownloads(active);
         } catch {
           // ignore malformed data
         }
@@ -125,6 +170,60 @@ export function DownloadsIndicator() {
 
     return () => {
       disconnect();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    let abortController: AbortController | null = null;
+
+    const fetchTelegramDownloads = async () => {
+      abortController?.abort();
+      abortController = new AbortController();
+
+      try {
+        const resp = await fetch("/api/telegram-monitor/downloads", {
+          signal: abortController.signal,
+        });
+        if (!resp.ok) return;
+        const allDownloads: TelegramDownload[] = await resp.json();
+        setActiveTelegramDownloads(
+          allDownloads
+            .filter(download => download.status === "downloading")
+            .map(normalizeTelegramDownload)
+        );
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") {
+          // Keep the last known state on transient failures.
+        }
+      }
+    };
+
+    const start = () => {
+      fetchTelegramDownloads();
+      interval = setInterval(fetchTelegramDownloads, 5000);
+    };
+
+    const stop = () => {
+      if (interval) { clearInterval(interval); interval = null; }
+      abortController?.abort();
+      abortController = null;
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        start();
+      }
+    };
+
+    start();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      stop();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
@@ -190,6 +289,7 @@ export function DownloadsIndicator() {
     return () => document.removeEventListener("keydown", handleEsc);
   }, [isOpen]);
 
+  const activeDownloads = [...activeTorrentDownloads, ...activeTelegramDownloads];
   const downloadingItems = activeDownloads.filter(d => d.status === "downloading");
   const importingItems = activeDownloads.filter(d => d.status === "importing" || d.status === "completed");
   const totalCount = activeDownloads.length;
@@ -297,6 +397,11 @@ export function DownloadsIndicator() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-sm font-medium text-foreground truncate">{dl.series_name}</span>
+                        {dl.source === "telegram" && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-600">
+                            Telegram
+                          </span>
+                        )}
                         <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${statusClass(dl.status)}`}>
                           {statusLabel(dl.status, t)}
                         </span>
