@@ -1246,36 +1246,44 @@ pub async fn list_books(
 pub async fn list_available_by_series(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TelegramAvailableGroupDto>>, ApiError> {
+    // ROW_NUMBER CTE deduplicates per (source, series, volume): for non-null volumes keeps
+    // most recent only; null-volume books each get their own partition via id so all survive.
     let rows = sqlx::query(
-        "SELECT b.id, b.source_id, s.channel_username, b.message_id, b.filename, \
-                b.file_size, b.status, b.series_name, b.volume_number, b.created_at, \
-                COALESCE(b.library_id, s.library_id) AS resolved_library_id \
-         FROM telegram_book_links b \
-         JOIN telegram_sources s ON s.id = b.source_id \
-         WHERE b.status = 'available' \
-           AND b.series_name IS NOT NULL \
-           AND (b.volume_number IS NULL \
-                OR b.id = ( \
-                    SELECT b2.id FROM telegram_book_links b2 \
-                    WHERE b2.source_id = b.source_id \
-                      AND b2.series_name = b.series_name \
-                      AND b2.volume_number = b.volume_number \
-                      AND b2.status = 'available' \
-                    ORDER BY b2.created_at DESC LIMIT 1 \
-                )) \
-         ORDER BY b.series_name, b.volume_number NULLS LAST, b.created_at DESC",
+        "WITH ranked AS ( \
+           SELECT b.id, b.source_id, b.message_id, b.filename, b.file_size, b.status, \
+                  b.series_name, b.volume_number, b.created_at, b.library_id, \
+                  ROW_NUMBER() OVER ( \
+                    PARTITION BY b.source_id, b.series_name, \
+                                 COALESCE(b.volume_number::text, b.id::text) \
+                    ORDER BY b.created_at DESC \
+                  ) AS rn \
+           FROM telegram_book_links b \
+           WHERE b.status = 'available' AND b.series_name IS NOT NULL \
+         ) \
+         SELECT r.id, r.source_id, s.channel_username, r.message_id, r.filename, \
+                r.file_size, r.status, r.series_name, r.volume_number, r.created_at, \
+                COALESCE(r.library_id, s.library_id) AS resolved_library_id \
+         FROM ranked r \
+         JOIN telegram_sources s ON s.id = r.source_id \
+         WHERE r.rn = 1 \
+         ORDER BY r.series_name, r.volume_number NULLS LAST, r.created_at DESC",
     )
     .fetch_all(&state.pool)
     .await?;
 
-    // Collect unique library IDs
-    let lib_ids: Vec<Uuid> = {
-        let mut seen = std::collections::HashSet::new();
-        rows.iter()
-            .filter_map(|r| r.get::<Option<Uuid>, _>("resolved_library_id"))
-            .filter(|id| seen.insert(*id))
-            .collect()
-    };
+    // Collect unique library IDs and (series_name, library_id) pairs in one pass
+    let mut lib_id_set: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+    let mut series_key_set: std::collections::HashSet<(String, Uuid)> = std::collections::HashSet::new();
+    for r in &rows {
+        if let Some(lid) = r.get::<Option<Uuid>, _>("resolved_library_id") {
+            lib_id_set.insert(lid);
+            if let Some(sn) = r.get::<Option<String>, _>("series_name") {
+                series_key_set.insert((sn, lid));
+            }
+        }
+    }
+    let lib_ids: Vec<Uuid> = lib_id_set.into_iter().collect();
+    let series_keys: Vec<(String, Uuid)> = series_key_set.into_iter().collect();
 
     // Fetch library names in one query
     let mut lib_names: std::collections::HashMap<Uuid, String> = std::collections::HashMap::new();
@@ -1289,31 +1297,32 @@ pub async fn list_available_by_series(
         }
     }
 
-    // Collect unique (series_name, library_id) pairs and resolve series_id
-    let series_keys: Vec<(String, Uuid)> = {
-        let mut seen = std::collections::HashSet::new();
-        rows.iter()
-            .filter_map(|r| {
-                let sn: Option<String> = r.get("series_name");
-                let lib: Option<Uuid> = r.get("resolved_library_id");
-                sn.zip(lib).filter(|k| seen.insert(k.clone()))
-            })
-            .collect()
-    };
-
+    // Batch-resolve all (series_name, library_id) → series_id in a single UNNEST query
     let mut series_ids: std::collections::HashMap<(String, Uuid), Option<Uuid>> = std::collections::HashMap::new();
-    for (sn, lib_id) in &series_keys {
-        let sid = sqlx::query_scalar::<_, Option<Uuid>>(
-            "SELECT id FROM series \
-             WHERE library_id = $1 AND LOWER(unaccent(name)) = LOWER(unaccent($2)) \
-             LIMIT 1",
+    if !series_keys.is_empty() {
+        let (names, libs): (Vec<String>, Vec<Uuid>) = series_keys.iter()
+            .map(|(sn, lid)| (sn.clone(), *lid))
+            .unzip();
+        let batch = sqlx::query(
+            "SELECT q.sn AS series_name, q.lid AS library_id, s.id AS series_id \
+             FROM UNNEST($1::text[], $2::uuid[]) AS q(sn, lid) \
+             LEFT JOIN series s ON s.library_id = q.lid \
+               AND LOWER(unaccent(s.name)) = LOWER(unaccent(q.sn))",
         )
-        .bind(lib_id)
-        .bind(sn)
-        .fetch_optional(&state.pool)
-        .await?
-        .flatten();
-        series_ids.insert((sn.clone(), *lib_id), sid);
+        .bind(&names)
+        .bind(&libs)
+        .fetch_all(&state.pool)
+        .await?;
+        for r in &batch {
+            let sn: String = r.get("series_name");
+            let lid: Uuid = r.get("library_id");
+            let sid: Option<Uuid> = r.get("series_id");
+            series_ids.entry((sn, lid)).or_insert(sid);
+        }
+        // Ensure every key is present (unmatched series get None)
+        for (sn, lid) in &series_keys {
+            series_ids.entry((sn.clone(), *lid)).or_insert(None);
+        }
     }
 
     // Batch-fetch owned volumes and series total_volumes for computing missing count
