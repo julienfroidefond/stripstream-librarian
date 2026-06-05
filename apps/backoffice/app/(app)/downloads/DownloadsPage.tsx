@@ -3,7 +3,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { TorrentDownloadDto, LatestFoundPerLibraryDto, TelegramAvailableGroupDto, TelegramDownloadItemDto } from "@/lib/api";
+import {
+  AvailableReleaseDto,
+  TorrentDownloadDto,
+  LatestFoundPerLibraryDto,
+  TelegramAvailableBookDto,
+  TelegramAvailableGroupDto,
+  TelegramDownloadItemDto,
+} from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, Button, Icon } from "@/app/components/ui";
 import { QbittorrentProvider, QbittorrentDownloadButton } from "@/app/components/QbittorrentDownloadButton";
 import { useTranslation } from "@/lib/i18n/context";
@@ -97,6 +104,31 @@ type DownloadItem =
   | { kind: "torrent"; data: TorrentDownloadDto }
   | { kind: "telegram"; data: TelegramDownloadItemDto };
 
+type UnifiedAvailableSource =
+  | {
+      kind: "prowlarr";
+      entryId: string;
+      releaseIndex: number;
+      release: AvailableReleaseDto;
+      detectedAt: string;
+    }
+  | {
+      kind: "telegram";
+      book: TelegramAvailableBookDto;
+    };
+
+type UnifiedAvailableGroup = {
+  key: string;
+  series_id: string | null;
+  series_name: string;
+  library_id: string;
+  library_name: string;
+  missing_count: number;
+  owned_volumes: number[];
+  updated_at: string;
+  sources: UnifiedAvailableSource[];
+};
+
 function mergeDownloads(torrents: TorrentDownloadDto[], tg: TelegramDownloadItemDto[]): DownloadItem[] {
   const items: DownloadItem[] = [
     ...torrents.map(d => ({ kind: "torrent" as const, data: d })),
@@ -118,6 +150,111 @@ function itemMatchesFilter(item: DownloadItem, filter: string): boolean {
     if (filter === "error") return item.data.status === "failed";
     return false;
   }
+}
+
+function newestDate(a: string, b: string): string {
+  return a.localeCompare(b) >= 0 ? a : b;
+}
+
+function unifiedGroupKey(libraryId: string, seriesId: string | null, seriesName: string): string {
+  return `${libraryId}|${seriesId ?? seriesName.toLocaleLowerCase()}`;
+}
+
+function getSourceVolumes(source: UnifiedAvailableSource): number[] {
+  if (source.kind === "prowlarr") return source.release.matched_missing_volumes;
+  return source.book.volume_number == null ? [] : [source.book.volume_number];
+}
+
+function buildUnifiedAvailableGroups(
+  latestFound: LatestFoundPerLibraryDto[],
+  telegramAvailable: TelegramAvailableGroupDto[],
+): UnifiedAvailableGroup[] {
+  const groups = new Map<string, UnifiedAvailableGroup>();
+
+  const ensureGroup = (
+    libraryId: string,
+    libraryName: string,
+    seriesId: string | null,
+    seriesName: string,
+    missingCount: number,
+    ownedVolumes: number[],
+    updatedAt: string,
+  ) => {
+    const key = unifiedGroupKey(libraryId, seriesId, seriesName);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.missing_count = Math.max(existing.missing_count, missingCount);
+      existing.updated_at = newestDate(existing.updated_at, updatedAt);
+      existing.owned_volumes = Array.from(new Set([...existing.owned_volumes, ...ownedVolumes]));
+      return existing;
+    }
+
+    const group: UnifiedAvailableGroup = {
+      key,
+      series_id: seriesId,
+      series_name: seriesName,
+      library_id: libraryId,
+      library_name: libraryName,
+      missing_count: missingCount,
+      owned_volumes: ownedVolumes,
+      updated_at: updatedAt,
+      sources: [],
+    };
+    groups.set(key, group);
+    return group;
+  };
+
+  latestFound.forEach(lib => {
+    lib.results.forEach(result => {
+      const releases = result.available_releases ?? [];
+      if (releases.length === 0) return;
+      const group = ensureGroup(
+        lib.library_id,
+        lib.library_name,
+        result.series_id,
+        result.series_name,
+        result.missing_count,
+        [],
+        result.updated_at,
+      );
+      releases.forEach((release, releaseIndex) => {
+        const detectedAt = release.detected_at ?? result.updated_at;
+        group.sources.push({ kind: "prowlarr", entryId: result.id, releaseIndex, release, detectedAt });
+        group.updated_at = newestDate(group.updated_at, detectedAt);
+      });
+    });
+  });
+
+  telegramAvailable.forEach(tgGroup => {
+    const owned = new Set(tgGroup.owned_volumes);
+    const books = tgGroup.books.filter(book => !(book.volume_number != null && owned.has(book.volume_number)));
+    if (books.length === 0) return;
+    if (tgGroup.series_missing_count === 0 && tgGroup.owned_volumes.length > 0) return;
+
+    const newestBookDate = books.reduce((latest, book) => newestDate(latest, book.created_at), books[0]?.created_at ?? "");
+    const group = ensureGroup(
+      tgGroup.library_id,
+      tgGroup.library_name,
+      tgGroup.series_id,
+      tgGroup.series_name,
+      tgGroup.series_missing_count,
+      tgGroup.owned_volumes,
+      newestBookDate,
+    );
+
+    const existingTelegramIds = new Set(
+      group.sources
+        .filter((source): source is Extract<UnifiedAvailableSource, { kind: "telegram" }> => source.kind === "telegram")
+        .map(source => source.book.id),
+    );
+    books.forEach(book => {
+      if (!existingTelegramIds.has(book.id)) {
+        group.sources.push({ kind: "telegram", book });
+      }
+    });
+  });
+
+  return Array.from(groups.values()).filter(group => group.sources.length > 0);
 }
 
 export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigured, initialTelegramAvailable = [], initialTelegramDownloads = [] }: DownloadsPageProps) {
@@ -241,16 +378,14 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
         </>
       )}
 
-      {/* Available downloads from latest detection */}
-      {latestFound.length > 0 && (
+      {(latestFound.length > 0 || telegramAvailable.length > 0) && (
         <QbittorrentProvider initialConfigured={qbConfigured} onDownloadStarted={() => refresh(false)}>
-          <AvailableDownloadsSection latestFound={latestFound} onDeleted={() => refresh(false)} />
+          <AvailableDownloadsSection
+            latestFound={latestFound}
+            telegramAvailable={telegramAvailable}
+            onRefresh={() => refresh(false)}
+          />
         </QbittorrentProvider>
-      )}
-
-      {/* Telegram available books */}
-      {telegramAvailable.length > 0 && (
-        <TelegramAvailableSection groups={telegramAvailable} onRefresh={() => refresh(false)} />
       )}
     </>
   );
@@ -578,26 +713,32 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
 
 type AvailableSortKey = "seeders" | "missing" | "name" | "recent";
 
-export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFound: LatestFoundPerLibraryDto[]; onDeleted: () => void }) {
+export function AvailableDownloadsSection({
+  latestFound,
+  telegramAvailable,
+  onRefresh,
+}: {
+  latestFound: LatestFoundPerLibraryDto[];
+  telegramAvailable: TelegramAvailableGroupDto[];
+  onRefresh: () => void;
+}) {
   const { t } = useTranslation();
   const [sort, setSort] = useState<AvailableSortKey>("recent");
   const [filterLib, setFilterLib] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [downloadingTelegramIds, setDownloadingTelegramIds] = useState<Set<string>>(new Set());
+  const [dismissingTelegramIds, setDismissingTelegramIds] = useState<Set<string>>(new Set());
 
-  // Flatten all results with library info
-  const allResults = latestFound.flatMap(lib =>
-    lib.results.map(r => ({ ...r, library_id: lib.library_id, library_name: lib.library_name }))
-  );
+  const allResults = buildUnifiedAvailableGroups(latestFound, telegramAvailable);
 
-  const bestSeeders = (r: typeof allResults[0]) =>
-    r.available_releases?.reduce((max, rel) => Math.max(max, rel.seeders ?? 0), 0) ?? 0;
+  const bestSeeders = (r: UnifiedAvailableGroup) =>
+    r.sources.reduce((max, source) => {
+      if (source.kind !== "prowlarr") return max;
+      return Math.max(max, source.release.seeders ?? 0);
+    }, 0);
 
-  const newestDetectedAt = (r: typeof allResults[0]) =>
-    r.available_releases?.reduce((newest, rel) => {
-      const d = rel.detected_at ?? "";
-      return d > newest ? d : newest;
-    }, "") ?? r.updated_at ?? "";
+  const newestDetectedAt = (r: UnifiedAvailableGroup) => r.updated_at;
 
   const filtered = allResults.filter(r => filterLib === "all" || r.library_id === filterLib);
 
@@ -611,7 +752,9 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
     }
   });
 
-  const libraries = latestFound.map(l => ({ id: l.library_id, name: l.library_name }));
+  const libraries = Array.from(
+    new Map(allResults.map(r => [r.library_id, r.library_name])).entries()
+  ).map(([id, name]) => ({ id, name }));
 
   async function handleDeleteRelease(seriesId: string, releaseIdx: number, blacklist = false) {
     const key = `${seriesId}-${releaseIdx}`;
@@ -620,7 +763,7 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
       const qs = blacklist ? `?release=${releaseIdx}&blacklist=true` : `?release=${releaseIdx}`;
       const resp = await fetch(`/api/available-downloads/${seriesId}${qs}`, { method: "DELETE" });
       if (resp.ok) {
-        onDeleted();
+        onRefresh();
         if (blacklist && showBlacklist) fetchBlacklist();
       }
     } finally {
@@ -628,13 +771,42 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
     }
   }
 
-  async function handleDeleteSeries(seriesId: string) {
-    setDeletingKey(seriesId);
+  async function handleDeleteProwlarrEntries(group: UnifiedAvailableGroup) {
+    const ids = Array.from(new Set(
+      group.sources
+        .filter((source): source is Extract<UnifiedAvailableSource, { kind: "prowlarr" }> => source.kind === "prowlarr")
+        .map(source => source.entryId),
+    ));
+    setDeletingKey(group.key);
     try {
-      const resp = await fetch(`/api/available-downloads/${seriesId}`, { method: "DELETE" });
-      if (resp.ok) onDeleted();
+      await Promise.all(ids.map(id => fetch(`/api/available-downloads/${id}`, { method: "DELETE" })));
+      onRefresh();
     } finally {
       setDeletingKey(null);
+    }
+  }
+
+  async function handleTelegramDownload(bookId: string) {
+    setDownloadingTelegramIds(prev => new Set(prev).add(bookId));
+    try {
+      const resp = await fetch(`/api/telegram-monitor/books/${bookId}/download`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (resp.ok) onRefresh();
+    } finally {
+      setDownloadingTelegramIds(prev => { const next = new Set(prev); next.delete(bookId); return next; });
+    }
+  }
+
+  async function handleTelegramDismiss(bookId: string) {
+    setDismissingTelegramIds(prev => new Set(prev).add(bookId));
+    try {
+      const resp = await fetch(`/api/telegram-monitor/books/${bookId}`, { method: "DELETE" });
+      if (resp.ok) onRefresh();
+    } finally {
+      setDismissingTelegramIds(prev => { const next = new Set(prev); next.delete(bookId); return next; });
     }
   }
 
@@ -738,17 +910,20 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
 
       <div className="border border-border rounded-xl overflow-hidden">
         {sorted.map((r) => {
-          const isExpanded = expandedId === r.id;
+          const isExpanded = expandedId === r.key;
           const topSeeders = bestSeeders(r);
-          const releaseCount = r.available_releases?.length ?? 0;
-          const failedReleaseCount = r.available_releases?.filter(rel => rel.has_failed).length ?? 0;
+          const prowlarrCount = r.sources.filter(source => source.kind === "prowlarr").length;
+          const telegramCount = r.sources.filter(source => source.kind === "telegram").length;
+          const failedReleaseCount = r.sources.filter(source =>
+            source.kind === "prowlarr" ? source.release.has_failed : source.book.status === "failed"
+          ).length;
 
           return (
-            <div key={r.id} className={`${isExpanded ? "bg-muted/20" : ""}`}>
+            <div key={r.key} className={`${isExpanded ? "bg-muted/20" : ""}`}>
               {/* Summary row */}
               <button
                 type="button"
-                onClick={() => setExpandedId(isExpanded ? null : r.id)}
+                onClick={() => setExpandedId(isExpanded ? null : r.key)}
                 className={`w-full flex items-center gap-2 sm:gap-3 px-2.5 sm:px-3 py-2 text-left hover:bg-muted/30 transition-colors border-b border-border/40 ${isExpanded ? "bg-muted/20" : ""}`}
               >
                 <Icon
@@ -767,9 +942,16 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
                   {libraries.length > 1 && (
                     <span className="text-[10px] text-muted-foreground hidden sm:inline shrink-0">{r.library_name}</span>
                   )}
-                  <span className="text-[10px] text-muted-foreground shrink-0">
-                    {releaseCount} release{releaseCount > 1 ? "s" : ""}
-                  </span>
+                  {prowlarrCount > 0 && (
+                    <span className="text-[10px] text-muted-foreground shrink-0">
+                      {prowlarrCount} Prowlarr
+                    </span>
+                  )}
+                  {telegramCount > 0 && (
+                    <span className="text-[10px] text-sky-600 shrink-0">
+                      {telegramCount} TG
+                    </span>
+                  )}
                   {(() => {
                     const newest = newestDetectedAt(r);
                     return newest ? (
@@ -798,46 +980,52 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
               </button>
 
               {/* Expanded: one compact line per release */}
-              {isExpanded && r.available_releases && r.available_releases.length > 0 && (
+              {isExpanded && r.sources.length > 0 && (
                 <div className="border-b border-border/40">
-                  {r.available_releases.map((release, idx) => (
+                  {[...r.sources].sort((a, b) => {
+                    const aVol = Math.min(...getSourceVolumes(a), 9999);
+                    const bVol = Math.min(...getSourceVolumes(b), 9999);
+                    if (aVol !== bVol) return aVol - bVol;
+                    return a.kind.localeCompare(b.kind);
+                  }).map((source) => source.kind === "prowlarr" ? (
                     <div
-                      key={idx}
-                      className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 pl-7 sm:pl-9 text-[11px] hover:bg-muted/20 border-b border-border/10 last:border-b-0 transition-colors ${release.has_failed ? "bg-destructive/5 hover:bg-destructive/10" : ""}`}
+                      key={`prowlarr-${source.entryId}-${source.releaseIndex}`}
+                      className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 pl-7 sm:pl-9 text-[11px] hover:bg-muted/20 border-b border-border/10 last:border-b-0 transition-colors ${source.release.has_failed ? "bg-destructive/5 hover:bg-destructive/10" : ""}`}
                     >
-                      {release.has_failed && (
+                      {source.release.has_failed && (
                         <span className="px-1.5 py-px rounded bg-destructive/20 text-destructive font-medium shrink-0" title={t("downloads.failedBefore", { count: 1 })}>!</span>
                       )}
+                      <span className="px-1.5 py-px rounded bg-primary/10 text-primary font-medium shrink-0">Prowlarr</span>
                       <div className="flex items-center gap-1 shrink-0">
-                        {compressVolumes(release.matched_missing_volumes).map(range => (
+                        {compressVolumes(source.release.matched_missing_volumes).map(range => (
                           <span key={range} className="px-1.5 py-px rounded bg-success/20 text-success font-medium tabular-nums">{range}</span>
                         ))}
                       </div>
-                      <span className={`flex-1 min-w-0 truncate font-mono ${release.has_failed ? "text-destructive/80" : "text-muted-foreground"}`} title={release.title}>
-                        {release.title}
+                      <span className={`flex-1 min-w-0 truncate font-mono ${source.release.has_failed ? "text-destructive/80" : "text-muted-foreground"}`} title={source.release.title}>
+                        {source.release.title}
                       </span>
-                      {release.indexer && <span className="text-muted-foreground shrink-0 hidden sm:inline">{release.indexer}</span>}
-                      {release.seeders != null && (
+                      {source.release.indexer && <span className="text-muted-foreground shrink-0 hidden sm:inline">{source.release.indexer}</span>}
+                      {source.release.seeders != null && (
                         <span className={`font-medium shrink-0 tabular-nums ${
-                          release.seeders >= 10 ? "text-green-600" : release.seeders >= 3 ? "text-amber-600" : "text-red-500"
-                        }`}>{release.seeders}S</span>
+                          source.release.seeders >= 10 ? "text-green-600" : source.release.seeders >= 3 ? "text-amber-600" : "text-red-500"
+                        }`}>{source.release.seeders}S</span>
                       )}
-                      <span className="text-muted-foreground shrink-0 tabular-nums">{(release.size / 1024 / 1024).toFixed(0)}MB</span>
+                      <span className="text-muted-foreground shrink-0 tabular-nums">{(source.release.size / 1024 / 1024).toFixed(0)}MB</span>
                       <div className="flex items-center gap-0.5 ml-auto shrink-0">
-                        {release.download_url && (
+                        {source.release.download_url && (
                           <QbittorrentDownloadButton
-                            downloadUrl={release.download_url}
-                            releaseId={`${r.id}-${idx}`}
+                            downloadUrl={source.release.download_url}
+                            releaseId={`${source.entryId}-${source.releaseIndex}`}
                             libraryId={r.library_id}
                             seriesName={r.series_name}
-                            expectedVolumes={release.matched_missing_volumes}
-                            allVolumes={release.all_volumes}
+                            expectedVolumes={source.release.matched_missing_volumes}
+                            allVolumes={source.release.all_volumes}
                           />
                         )}
                         <button
                           type="button"
-                          onClick={() => handleDeleteRelease(r.id, idx, true)}
-                          disabled={deletingKey === `${r.id}-${idx}`}
+                          onClick={() => handleDeleteRelease(source.entryId, source.releaseIndex, true)}
+                          disabled={deletingKey === `${source.entryId}-${source.releaseIndex}`}
                           title={t("downloads.blacklist")}
                           className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 shrink-0"
                         >
@@ -845,30 +1033,75 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteRelease(r.id, idx)}
-                          disabled={deletingKey === `${r.id}-${idx}`}
+                          onClick={() => handleDeleteRelease(source.entryId, source.releaseIndex)}
+                          disabled={deletingKey === `${source.entryId}-${source.releaseIndex}`}
                           title={t("downloads.delete")}
                           className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30 shrink-0"
                         >
-                          {deletingKey === `${r.id}-${idx}`
+                          {deletingKey === `${source.entryId}-${source.releaseIndex}`
+                            ? <Icon name="spinner" size="sm" className="animate-spin" />
+                            : <Icon name="trash" size="sm" />}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      key={`telegram-${source.book.id}`}
+                      className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 pl-7 sm:pl-9 text-[11px] border-b border-border/10 last:border-b-0 transition-colors ${source.book.status === "failed" ? "bg-destructive/5 hover:bg-destructive/10" : "hover:bg-muted/20"}`}
+                    >
+                      <span className="px-1.5 py-px rounded bg-sky-500/15 text-sky-600 font-medium shrink-0">TG</span>
+                      {source.book.volume_number != null ? (
+                        <span className={`px-1.5 py-px rounded font-medium shrink-0 tabular-nums ${source.book.status === "failed" ? "bg-destructive/20 text-destructive" : "bg-success/20 text-success"}`}>
+                          T{String(source.book.volume_number).padStart(2, "0")}
+                        </span>
+                      ) : (
+                        <span className="px-1.5 py-px rounded bg-muted/50 text-muted-foreground text-xs shrink-0">?</span>
+                      )}
+                      <span className={`flex-1 min-w-0 truncate ${source.book.status === "failed" ? "text-destructive/80" : "text-muted-foreground"}`} title={source.book.filename}>
+                        {source.book.filename}
+                      </span>
+                      <span className="text-muted-foreground shrink-0 hidden sm:inline">@{source.book.channel_username}</span>
+                      {source.book.file_size && <span className="text-muted-foreground shrink-0">{formatSize(source.book.file_size)}</span>}
+                      <div className="flex items-center gap-0.5 ml-auto shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleTelegramDownload(source.book.id)}
+                          disabled={downloadingTelegramIds.has(source.book.id)}
+                          title={source.book.status === "failed" ? t("downloads.retry") : t("telegramMonitor.download")}
+                          className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors disabled:opacity-30 ${source.book.status === "failed" ? "text-destructive hover:text-foreground hover:bg-muted" : "text-muted-foreground hover:text-success hover:bg-success/10"}`}
+                        >
+                          {downloadingTelegramIds.has(source.book.id)
+                            ? <Icon name="spinner" size="sm" className="animate-spin" />
+                            : source.book.status === "failed" ? <Icon name="refresh" size="sm" /> : <Icon name="download" size="sm" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleTelegramDismiss(source.book.id)}
+                          disabled={dismissingTelegramIds.has(source.book.id)}
+                          title={t("downloads.delete")}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
+                        >
+                          {dismissingTelegramIds.has(source.book.id)
                             ? <Icon name="spinner" size="sm" className="animate-spin" />
                             : <Icon name="trash" size="sm" />}
                         </button>
                       </div>
                     </div>
                   ))}
+                  {prowlarrCount > 0 && (
                   <div className="flex justify-end px-2 sm:px-3 py-0.5 pl-7 sm:pl-9">
                     <button
                       type="button"
-                      onClick={() => handleDeleteSeries(r.id)}
-                      disabled={deletingKey === r.id}
+                      onClick={() => handleDeleteProwlarrEntries(r)}
+                      disabled={deletingKey === r.key}
                       className="text-[10px] text-muted-foreground hover:text-destructive transition-colors disabled:opacity-30"
                     >
-                      {deletingKey === r.id
+                      {deletingKey === r.key
                         ? <Icon name="spinner" size="sm" className="animate-spin !w-3 !h-3" />
                         : t("downloads.dismissAll")}
                     </button>
                   </div>
+                  )}
                 </div>
               )}
             </div>
@@ -878,214 +1111,9 @@ export function AvailableDownloadsSection({ latestFound, onDeleted }: { latestFo
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Telegram Available Section
-// ---------------------------------------------------------------------------
 
 function formatSize(bytes: number | null) {
   if (!bytes) return "";
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function TelegramAvailableSection({ groups, onRefresh }: { groups: TelegramAvailableGroupDto[]; onRefresh: () => void }) {
-  const { t } = useTranslation();
-  const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
-  const [dismissingIds, setDismissingIds] = useState<Set<string>>(new Set());
-
-  const [sort, setSort] = useState<"name" | "recent" | "missing">("missing");
-  const [filterLib, setFilterLib] = useState<string>("all");
-
-  const libraries = Array.from(
-    new Map(groups.map(g => [g.library_id, g.library_name])).entries()
-  ).map(([id, name]) => ({ id, name }));
-
-  // Merge groups pointing to the same series_id (different capitalizations/accents in Telegram)
-  const deduped = groups.reduce<TelegramAvailableGroupDto[]>((acc, g) => {
-    if (!g.series_id) { acc.push(g); return acc; }
-    const existing = acc.find(x => x.series_id === g.series_id && x.library_id === g.library_id);
-    if (existing) {
-      const existingIds = new Set(existing.books.map(b => b.id));
-      existing.books = [...existing.books, ...g.books.filter(b => !existingIds.has(b.id))];
-      existing.series_missing_count = Math.max(existing.series_missing_count, g.series_missing_count);
-    } else {
-      acc.push({ ...g, books: [...g.books] });
-    }
-    return acc;
-  }, []);
-
-  const filtered = deduped.filter(g => {
-    if (filterLib !== "all" && g.library_id !== filterLib) return false;
-    // Hide series we already fully own (series_missing_count=0 and we have some volumes)
-    if (g.series_missing_count === 0 && g.owned_volumes.length > 0) return false;
-    // Keep only if there are non-owned books remaining
-    const ownedSet = new Set(g.owned_volumes);
-    return g.books.some(b => !(b.volume_number != null && ownedSet.has(b.volume_number)));
-  });
-
-  const sorted = [...filtered].sort((a, b) => {
-    if (sort === "name") return a.series_name.localeCompare(b.series_name);
-    if (sort === "missing") return b.series_missing_count - a.series_missing_count;
-    return b.books[0]?.created_at.localeCompare(a.books[0]?.created_at ?? "") ?? 0;
-  });
-
-  async function handleDownload(bookId: string) {
-    setDownloadingIds(prev => new Set(prev).add(bookId));
-    try {
-      const resp = await fetch(`/api/telegram-monitor/books/${bookId}/download`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
-      if (resp.ok) onRefresh();
-    } finally {
-      setDownloadingIds(prev => { const s = new Set(prev); s.delete(bookId); return s; });
-    }
-  }
-
-  async function handleDismiss(bookId: string) {
-    setDismissingIds(prev => new Set(prev).add(bookId));
-    try {
-      const resp = await fetch(`/api/telegram-monitor/books/${bookId}`, { method: "DELETE" });
-      if (resp.ok) onRefresh();
-    } finally {
-      setDismissingIds(prev => { const s = new Set(prev); s.delete(bookId); return s; });
-    }
-  }
-
-  const sortOptions: { id: "name" | "recent" | "missing"; label: string }[] = [
-    { id: "missing", label: t("downloads.sortMissing") },
-    { id: "recent",  label: t("downloads.sortRecent") },
-    { id: "name",    label: t("downloads.sortName") },
-  ];
-
-  return (
-    <div className="mt-6">
-      <div className="flex items-center justify-between mb-3 gap-3">
-        <h2 className="text-base font-semibold flex items-center gap-2">
-          <Icon name="download" size="sm" className="text-sky-500" />
-          {t("downloads.telegramAvailable")}
-          <span className="text-xs font-normal text-muted-foreground">({sorted.length})</span>
-        </h2>
-        <div className="flex items-center gap-2">
-          {libraries.length > 1 && (
-            <select
-              value={filterLib}
-              onChange={e => setFilterLib(e.target.value)}
-              className="text-xs border border-border rounded-md px-2 py-1 bg-background text-foreground"
-            >
-              <option value="all">{t("common.all")}</option>
-              {libraries.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-          )}
-          <div className="flex gap-0.5">
-            {sortOptions.map(o => (
-              <button
-                key={o.id}
-                onClick={() => setSort(o.id)}
-                className={`px-2 py-1 text-xs rounded-md transition-colors ${sort === o.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"}`}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-lg border border-border overflow-hidden">
-        {sorted.map(group => {
-          const key = `${group.series_name}|${group.library_id}`;
-          const isExpanded = expandedKey === key;
-          const owned = new Set(group.owned_volumes);
-          const missing = group.series_missing_count;
-          const sortedBooks = group.books
-            .filter(b => !(b.volume_number != null && owned.has(b.volume_number)))
-            .sort((a, b) => (a.volume_number ?? 9999) - (b.volume_number ?? 9999));
-
-          return (
-            <div key={key} className="border-b border-border/40 last:border-b-0">
-              {/* Series header */}
-              <button
-                type="button"
-                onClick={() => setExpandedKey(isExpanded ? null : key)}
-                className="w-full flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-2 hover:bg-muted/30 transition-colors text-left"
-              >
-                <Icon name={isExpanded ? "chevronDown" : "chevronRight"} size="sm" className="text-muted-foreground shrink-0" />
-                <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
-                  {group.series_id ? (
-                    <Link href={`/series/${group.series_id}`} onClick={e => e.stopPropagation()} className="text-sm font-medium text-primary hover:underline truncate">
-                      {group.series_name}
-                    </Link>
-                  ) : (
-                    <span className="text-sm font-medium truncate">{group.series_name}</span>
-                  )}
-                  <span className="text-[10px] text-muted-foreground">{group.library_name}</span>
-                  {group.books[0]?.created_at && (
-                    <span className="text-[10px] text-muted-foreground hidden sm:inline">
-                      {formatDate(group.books[0].created_at)}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {missing > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-warning/20 text-warning">
-                      {missing} {t("downloads.missing")}
-                    </span>
-                  )}
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-sky-500/20 text-sky-600">
-                    {sortedBooks.length} {t("downloads.telegramFiles")}
-                  </span>
-                </div>
-              </button>
-
-              {/* Books list */}
-              {isExpanded && (
-                <div className="border-t border-border/20">
-                  {sortedBooks.map(book => {
-                    const isFailed = book.status === "failed";
-                    return (
-                      <div key={book.id} className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 pl-7 sm:pl-9 text-[11px] border-b border-border/10 last:border-b-0 transition-colors ${isFailed ? "bg-destructive/5 hover:bg-destructive/10" : "hover:bg-muted/20"}`}>
-                        {book.volume_number != null ? (
-                          <span className={`px-1.5 py-px rounded font-medium shrink-0 tabular-nums ${isFailed ? "bg-destructive/20 text-destructive" : "bg-success/20 text-success"}`}>
-                            T{String(book.volume_number).padStart(2, "0")}
-                          </span>
-                        ) : (
-                          <span className="px-1.5 py-px rounded bg-muted/50 text-muted-foreground text-xs shrink-0">—</span>
-                        )}
-                        <span className={`flex-1 truncate ${isFailed ? "text-destructive/80" : "text-muted-foreground"}`} title={book.filename}>{book.filename}</span>
-                        <span className="text-muted-foreground shrink-0">@{book.channel_username}</span>
-                        {book.file_size && <span className="text-muted-foreground shrink-0">{formatSize(book.file_size)}</span>}
-                        <div className="flex items-center gap-0.5 ml-auto shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleDownload(book.id)}
-                            disabled={downloadingIds.has(book.id)}
-                            title={isFailed ? t("downloads.retry") : t("telegramMonitor.download")}
-                            className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors disabled:opacity-30 ${isFailed ? "text-destructive hover:text-foreground hover:bg-muted" : "text-muted-foreground hover:text-success hover:bg-success/10"}`}
-                          >
-                            {downloadingIds.has(book.id)
-                              ? <Icon name="spinner" size="sm" className="animate-spin" />
-                              : isFailed ? <Icon name="refresh" size="sm" /> : <Icon name="download" size="sm" />}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDismiss(book.id)}
-                            disabled={dismissingIds.has(book.id)}
-                            title={t("downloads.delete")}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
-                          >
-                            {dismissingIds.has(book.id)
-                              ? <Icon name="spinner" size="sm" className="animate-spin" />
-                              : <Icon name="trash" size="sm" />}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
 }

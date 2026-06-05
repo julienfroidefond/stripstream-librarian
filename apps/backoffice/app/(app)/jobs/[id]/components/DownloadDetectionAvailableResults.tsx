@@ -27,7 +27,8 @@ export function DownloadDetectionAvailableResults({
           failed_download_count: 0,
         })),
       }]}
-      onDeleted={() => {}}
+      telegramAvailable={[]}
+      onRefresh={() => {}}
     />
   );
 }
