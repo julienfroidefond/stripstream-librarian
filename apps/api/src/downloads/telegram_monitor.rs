@@ -1952,7 +1952,7 @@ async fn do_download(
 
     // Mark imported
     sqlx::query(
-        "UPDATE telegram_book_links SET status = 'imported', updated_at = NOW() WHERE id = $1",
+        "UPDATE telegram_book_links SET status = 'imported', error_message = NULL, updated_at = NOW() WHERE id = $1",
     )
     .bind(link_id)
     .execute(&pool)
