@@ -5,7 +5,7 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::{error::ApiError, state::AppState};
-use super::{detection::{insert_event, AvailableReleaseDto}, prowlarr};
+use super::{detection::{insert_event, AvailableReleaseDto}, missing, prowlarr};
 
 // ---------------------------------------------------------------------------
 // POST /prowlarr-rss/start
@@ -160,6 +160,10 @@ pub(crate) async fn process_rss_poll(
                 SELECT 1 FROM external_book_metadata ebm
                 WHERE ebm.link_id = eml.id AND ebm.book_id IS NULL
             )
+              AND NOT EXISTS (
+                  SELECT 1 FROM books b
+                  WHERE b.series_id = s.id AND b.volume_type = 'integral'
+              )
             ORDER BY s.name
             "#,
         )
@@ -177,6 +181,10 @@ pub(crate) async fn process_rss_poll(
                 SELECT 1 FROM external_book_metadata ebm
                 WHERE ebm.link_id = eml.id AND ebm.book_id IS NULL
             )
+              AND NOT EXISTS (
+                  SELECT 1 FROM books b
+                  WHERE b.series_id = s.id AND b.volume_type = 'integral'
+              )
             ORDER BY s.name
             "#,
         )
@@ -213,13 +221,10 @@ pub(crate) async fn process_rss_poll(
         let link_id: Uuid = row.get("link_id");
         let lib_id: Uuid = row.get("library_id");
 
-        let missing_vols: Vec<i32> = sqlx::query_scalar(
-            "SELECT volume_number FROM external_book_metadata WHERE link_id = $1 AND book_id IS NULL AND volume_number IS NOT NULL AND volume_number > 0 ORDER BY volume_number",
-        )
-        .bind(link_id)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default();
+        let missing_vols = missing::load_link_missing_volumes(pool, link_id)
+            .await
+            .map(|missing| missing.missing_volumes)
+            .unwrap_or_default();
 
         series_info.push((series_id, series_name, missing_vols, lib_id));
     }

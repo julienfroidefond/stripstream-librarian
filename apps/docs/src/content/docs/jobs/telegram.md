@@ -21,6 +21,8 @@ Le job `telegram_sync` ne recherche **pas** toutes les séries de la bibliothèq
 1. **Lien metadata approuvé** — un `external_metadata_links` avec `status = 'approved'` existe pour cette série
 2. **Volumes manquants** — au moins un `external_book_metadata` avec `book_id IS NULL` (tome attendu mais non possédé)
 
+Les séries qui possèdent une intégrale (`volume_type = 'integral'`) sont considérées complètes et exclues de cette recherche active.
+
 C'est exactement la même règle que la détection de téléchargements Prowlarr : seules les séries qu'on cherche activement à compléter sont scrutées.
 
 Le job `telegram_sync_incremental` n'applique **pas** ce filtre : il parcourt tous les messages récents sans distinction, car il s'agit d'un scan chronologique et non d'une recherche ciblée.

@@ -1,5 +1,6 @@
 pub mod detection;
 mod import_pipeline;
+mod missing;
 pub mod prowlarr;
 pub mod qbittorrent;
 pub mod rss_poll;

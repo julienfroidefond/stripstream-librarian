@@ -78,6 +78,8 @@ La sync complète ne recherche **pas** toutes les séries de votre bibliothèque
 1. **Lien metadata approuvé** — un lien vers un provider externe (Anilist, Bedetheque…) avec statut *approuvé*
 2. **Volumes manquants** — au moins un tome référencé dans les metadata mais absent de votre bibliothèque
 
+Une série qui possède une **intégrale** est considérée complète et n'est pas recherchée automatiquement.
+
 C'est intentionnel : seules les séries que vous cherchez activement à compléter sont scrutées, ce qui limite le nombre de requêtes Telegram.
 
 Si une série n'a pas de metadata liée, utilisez la [recherche depuis la fiche série](#recherche-depuis-une-série) pour la trouver manuellement.

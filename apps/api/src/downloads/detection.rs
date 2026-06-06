@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{error::ApiError, state::AppState};
-use super::prowlarr;
+use super::{missing, prowlarr};
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -834,16 +834,11 @@ pub(crate) async fn process_download_detection(
             }
         };
 
-        // Fetch missing books for this series
-        let missing_rows = sqlx::query(
-            "SELECT volume_number FROM external_book_metadata WHERE link_id = $1 AND book_id IS NULL ORDER BY volume_number NULLS LAST",
-        )
-        .bind(link_id)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| e.to_string())?;
+        let missing = missing::load_link_missing_volumes(pool, link_id)
+            .await
+            .map_err(|e| e.to_string())?;
 
-        if missing_rows.is_empty() {
+        if missing.missing_count == 0 {
             insert_event(pool, job_id, "no_missing_volumes", "info", Some(series_name), None, None).await;
             // Series is complete, remove from available_downloads
             if let Some(&sid) = series_id_map.get(series_name) {
@@ -853,12 +848,8 @@ pub(crate) async fn process_download_detection(
             continue;
         }
 
-        let missing_volumes: Vec<i32> = missing_rows
-            .iter()
-            .filter_map(|row| row.get::<Option<i32>, _>("volume_number"))
-            .filter(|&v| v > 0)
-            .collect();
-        let missing_count = missing_rows.len() as i32;
+        let missing_volumes = missing.missing_volumes;
+        let missing_count = missing.missing_count;
 
         // Search Prowlarr
         match search_prowlarr_for_series(

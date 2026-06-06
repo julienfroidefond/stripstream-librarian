@@ -54,6 +54,7 @@ Pour gérer la blacklist : page Téléchargements → icône œil à côté du t
 **Détection classique** (`download_detection`) :
 - Exécuté par l'API (job poller), non-exclusif
 - Récupère les volumes manquants depuis `external_book_metadata` où `book_id IS NULL`
+- Ignore les séries qui possèdent une intégrale (`volume_type = 'integral'`), considérées comme complètes
 - Filtre la blacklist `release_blacklist` avant matching
 - Fusion dans `available_downloads` : `detected_at` préservé pour les releases déjà connues
 - Résultats par série : `downloads_found`, `downloads_not_found`, `no_missing_volumes`, `no_metadata`, `prowlarr_no_results`, `error`

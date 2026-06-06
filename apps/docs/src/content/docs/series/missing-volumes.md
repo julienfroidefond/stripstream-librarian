@@ -22,7 +22,8 @@ Un bouton **toggle** permet d'afficher ou masquer les volumes manquants.
 Stripstream compare le nombre de tomes que vous possédez avec le nombre total de tomes annoncé par le provider de métadonnées.
 
 - Le nombre total de tomes est affiché sur la page de la série et peut être modifié manuellement
-- Seuls les **tomes réguliers** sont comptés — les hors-séries, oneshots et intégrales sont exclus
+- Les **tomes réguliers** sont comptés ; les hors-séries et oneshots sont exclus
+- Une **intégrale** présente dans la série la marque comme complète : aucun volume manquant n'est affiché
 - Si le nombre total de tomes n'est pas renseigné (provider qui ne donne pas l'information), aucun manquant n'est calculé
 
 ## Volumes disponibles au téléchargement
@@ -32,9 +33,9 @@ Si les téléchargements sont configurés et qu'un volume manquant a été trouv
 Voir [Téléchargements](/downloads/overview/) pour le workflow complet.
 
 :::note[Détails techniques]
-Calcul des manquants : `max(total_volumes - nombre_de_livres_regular, 0)`.
+Calcul des manquants : `0` si la série contient au moins un livre `volume_type = 'integral'`, sinon `max(total_volumes - nombre_de_livres_regular, 0)`.
 
-Seuls les livres avec `volume_type = 'regular'` sont comptés. `total_volumes` vient du champ éponyme du provider, stocké dans `metadata_json`. Si `total_volumes IS NULL`, le calcul retourne 0.
+Seuls les livres avec `volume_type = 'regular'` sont comptés dans le total local. `total_volumes` vient du champ éponyme du provider, stocké dans `metadata_json`. Si `total_volumes IS NULL`, le calcul retourne 0.
 
 Les couvertures et titres des volumes manquants viennent de la table `external_book_metadata`, peuplée lors de la synchronisation des métadonnées.
 :::

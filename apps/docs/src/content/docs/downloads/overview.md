@@ -62,7 +62,7 @@ Une série n'est cherchée dans Prowlarr que si elle remplit **les deux conditio
 1. **Métadonnées approuvées** — la série doit avoir été matchée à un provider de métadonnées. Sans cela, Stripstream ne sait pas quels volumes existent.
 2. **Volumes manquants** — le provider doit connaître des volumes que vous n'avez pas encore dans votre bibliothèque.
 
-Une série sans métadonnées, ou dont vous possédez tous les volumes connus, est silencieusement ignorée.
+Une série sans métadonnées, dont vous possédez tous les volumes connus, ou couverte par un livre de type **intégrale**, est silencieusement ignorée.
 :::
 
 **Déclenchement** :

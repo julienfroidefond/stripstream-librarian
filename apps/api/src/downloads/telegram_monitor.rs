@@ -14,7 +14,7 @@ use parsers::extract_volume;
 use crate::{error::ApiError, state::AppState};
 use stripstream_core::paths::remap_libraries_path;
 
-use super::import_pipeline::find_existing_series_dir;
+use super::{import_pipeline::find_existing_series_dir, missing};
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -1261,6 +1261,10 @@ async fn do_sync(
                        SELECT 1 FROM external_book_metadata ebm \
                        WHERE ebm.link_id = eml.id AND ebm.book_id IS NULL \
                    ) \
+                   AND NOT EXISTS ( \
+                       SELECT 1 FROM books b \
+                       WHERE b.series_id = s.id AND b.volume_type = 'integral' \
+                   ) \
                  ORDER BY s.name",
             )
             .bind(lib_id)
@@ -1614,39 +1618,7 @@ pub async fn list_available_by_series(
     let matched_series_ids: Vec<Uuid> = series_ids.values()
         .filter_map(|o| *o)
         .collect();
-    let mut owned_by_series: std::collections::HashMap<Uuid, Vec<i32>> = std::collections::HashMap::new();
-    let mut missing_by_series: std::collections::HashMap<Uuid, i32> = std::collections::HashMap::new();
-    if !matched_series_ids.is_empty() {
-        // Owned regular volumes per series
-        let vol_rows = sqlx::query(
-            "SELECT series_id, volume FROM books \
-             WHERE series_id = ANY($1) \
-               AND volume IS NOT NULL \
-               AND volume_type = 'regular' \
-             ORDER BY series_id, volume",
-        )
-        .bind(&matched_series_ids)
-        .fetch_all(&state.pool)
-        .await?;
-        for r in &vol_rows {
-            owned_by_series.entry(r.get("series_id")).or_default().push(r.get("volume"));
-        }
-
-        // Total volumes per series for missing count
-        let total_rows = sqlx::query(
-            "SELECT id, total_volumes FROM series WHERE id = ANY($1)",
-        )
-        .bind(&matched_series_ids)
-        .fetch_all(&state.pool)
-        .await?;
-        for r in &total_rows {
-            let sid: Uuid = r.get("id");
-            let total: Option<i32> = r.get("total_volumes");
-            let owned = owned_by_series.get(&sid).map(|v| v.len()).unwrap_or(0);
-            let missing = ((total.unwrap_or(0) as i64) - owned as i64).max(0) as i32;
-            missing_by_series.insert(sid, missing);
-        }
-    }
+    let availability_by_series = missing::load_series_availability(&state.pool, &matched_series_ids).await?;
 
     // Group books preserving insertion order (SQL ORDER BY series_name)
     let mut group_keys: Vec<(String, Uuid)> = Vec::new();
@@ -1681,13 +1653,20 @@ pub async fn list_available_by_series(
             let series_id = sid_uuid.map(|u| u.to_string());
             series_id.as_ref()?; // skip unmatched groups
             let owned_volumes = sid_uuid
-                .and_then(|sid| owned_by_series.get(&sid))
-                .cloned()
+                .and_then(|sid| availability_by_series.get(&sid))
+                .map(|availability| availability.owned_volumes.clone())
                 .unwrap_or_default();
             let series_missing_count = sid_uuid
-                .and_then(|sid| missing_by_series.get(&sid))
-                .copied()
+                .and_then(|sid| availability_by_series.get(&sid))
+                .map(|availability| availability.missing_count)
                 .unwrap_or(0);
+            let has_integral = sid_uuid
+                .and_then(|sid| availability_by_series.get(&sid))
+                .map(|availability| availability.has_integral)
+                .unwrap_or(false);
+            if has_integral {
+                return None;
+            }
             let books = groups.remove(&(series_name.clone(), lib_id))?;
             Some(TelegramAvailableGroupDto {
                 series_id,
