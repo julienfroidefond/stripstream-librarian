@@ -31,9 +31,9 @@ pub struct TelegramMonitorStatus {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SaveTelegramMonitorSettingsRequest {
-    pub api_id: i64,
-    pub api_hash: String,
-    pub phone: String,
+    pub api_id: Option<i64>,
+    pub api_hash: Option<String>,
+    pub phone: Option<String>,
     pub sync_interval_minutes: Option<i32>,
 }
 
@@ -447,19 +447,37 @@ pub async fn save_settings(
     State(state): State<AppState>,
     Json(body): Json<SaveTelegramMonitorSettingsRequest>,
 ) -> Result<Json<Value>, ApiError> {
-    let phone = body.phone.trim().to_string();
-    let api_hash = body.api_hash.trim().to_string();
+    let existing = load_tg_settings(&state.pool).await;
+    let api_id = body
+        .api_id
+        .or_else(|| existing.as_ref().map(|(id, _, _, _)| *id))
+        .ok_or_else(|| ApiError::bad_request("api_id is required"))?;
+    let api_hash = body
+        .api_hash
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| existing.as_ref().map(|(_, hash, _, _)| hash.clone()))
+        .ok_or_else(|| ApiError::bad_request("api_hash is required"))?;
+    let phone = body
+        .phone
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| existing.as_ref().map(|(_, _, phone, _)| phone.clone()))
+        .ok_or_else(|| ApiError::bad_request("phone is required"))?;
 
     // Preserve existing session (as base64) if api_id/hash unchanged
-    let existing = load_tg_settings(&state.pool).await;
     let session_b64 = existing
-        .filter(|(id, hash, _, _)| *id == body.api_id && hash == &api_hash)
+        .filter(|(id, hash, _, _)| *id == api_id && hash == &api_hash)
         .and_then(|(_, _, _, bytes)| bytes)
         .map(|b| B64.encode(b));
 
     let sync_interval = body.sync_interval_minutes.unwrap_or(0).max(0);
     let value = serde_json::json!({
-        "api_id": body.api_id,
+        "api_id": api_id,
         "api_hash": api_hash,
         "phone": phone,
         "session_data": session_b64,

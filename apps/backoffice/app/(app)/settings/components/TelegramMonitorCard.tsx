@@ -14,6 +14,8 @@ interface ChannelSuggestion {
   kind: string;
 }
 
+const SYNC_INTERVAL_VALUES = new Set(["30", "60", "1440", "43200"]);
+
 async function tgFetch<T = unknown>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api/telegram-monitor/${path}`, {
     ...init,
@@ -34,6 +36,7 @@ export function TelegramMonitorCard({ initialLibraries = [] }: { initialLibrarie
   const [apiId, setApiId] = useState("");
   const [apiHash, setApiHash] = useState("");
   const [phone, setPhone] = useState("");
+  const [syncInterval, setSyncInterval] = useState("30");
   const [savingSettings, setSavingSettings] = useState(false);
 
   // Auth
@@ -60,6 +63,12 @@ export function TelegramMonitorCard({ initialLibraries = [] }: { initialLibrarie
 
   // Sync result (shown after manual trigger from Jobs page or last scheduler run)
   const [syncResult] = useState<{ synced: number; new_books: number } | null>(null);
+  const SYNC_INTERVAL_OPTIONS = [
+    { value: "30", label: t("telegramMonitor.syncInterval30m") },
+    { value: "60", label: t("telegramMonitor.syncInterval1h") },
+    { value: "1440", label: t("telegramMonitor.syncInterval1d") },
+    { value: "43200", label: t("telegramMonitor.syncInterval1mo") },
+  ];
 
   useEffect(() => {
     loadAll();
@@ -118,6 +127,8 @@ export function TelegramMonitorCard({ initialLibraries = [] }: { initialLibrarie
         setStatus(s);
         if (s.phone) setPhone(s.phone);
         if (s.api_id) setApiId(String(s.api_id));
+        const interval = String(s.sync_interval_minutes || 30);
+        setSyncInterval(SYNC_INTERVAL_VALUES.has(interval) ? interval : "30");
       }
       setSources(srcs);
     } catch { /* ignore */ }
@@ -129,7 +140,7 @@ export function TelegramMonitorCard({ initialLibraries = [] }: { initialLibrarie
     try {
       await tgFetch("settings", {
         method: "POST",
-        body: JSON.stringify({ api_id: parseInt(apiId), api_hash: apiHash, phone }),
+        body: JSON.stringify({ api_id: parseInt(apiId), api_hash: apiHash, phone, sync_interval_minutes: parseInt(syncInterval) }),
       });
       toast(t("settings.savedSuccess"), "success");
       const s = await tgFetch<TelegramMonitorStatus>("status");
@@ -210,7 +221,22 @@ export function TelegramMonitorCard({ initialLibraries = [] }: { initialLibrarie
     }
   }
 
-const authorized = status?.authorized ?? false;
+  async function handleSaveSyncInterval(next: string) {
+    setSyncInterval(next);
+    try {
+      await tgFetch("settings", {
+        method: "POST",
+        body: JSON.stringify({ sync_interval_minutes: parseInt(next) }),
+      });
+      const s = await tgFetch<TelegramMonitorStatus>("status");
+      setStatus(s);
+      toast(t("settings.savedSuccess"), "success");
+    } catch {
+      toast(t("settings.savedError"), "error");
+    }
+  }
+
+  const authorized = status?.authorized ?? false;
 
   return (
     <Card className="mb-6">
@@ -312,7 +338,21 @@ const authorized = status?.authorized ?? false;
           {/* Sources */}
           {authorized && (
             <div className="border-t pt-4 space-y-3">
-              <h4 className="text-sm font-semibold">{t("telegramMonitor.sourcesTitle")}</h4>
+              <div className="flex items-end justify-between gap-3">
+                <h4 className="text-sm font-semibold">{t("telegramMonitor.sourcesTitle")}</h4>
+                <FormField className="ml-auto w-44">
+                  <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("telegramMonitor.syncInterval")}</label>
+                  <FormSelect
+                    value={syncInterval}
+                    onChange={e => handleSaveSyncInterval(e.target.value)}
+                  >
+                    {SYNC_INTERVAL_OPTIONS.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </FormSelect>
+                  <p className="text-xs text-muted-foreground mt-1">{t("telegramMonitor.syncIntervalHelp")}</p>
+                </FormField>
+              </div>
 
               {sources.length === 0 && (
                 <p className="text-sm text-muted-foreground">{t("telegramMonitor.noSources")}</p>

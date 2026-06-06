@@ -6,5 +6,6 @@ tmp/
 /libraries/
 node_modules/
 .next/
+apps/backoffice/next-env.d.ts
 data/thumbnails
 *.pem
