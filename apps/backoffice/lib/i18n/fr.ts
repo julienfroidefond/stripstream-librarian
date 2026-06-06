@@ -1072,7 +1072,10 @@ const fr = {
   // Downloads page
   "downloads.title": "Téléchargements",
   "downloads.refresh": "Actualiser",
+  "downloads.filterSource": "Source",
   "downloads.filterActive": "En cours",
+  "downloads.sourceProwlarr": "Prowlarr",
+  "downloads.sourceTelegram": "Telegram",
   "downloads.empty": "Aucun téléchargement",
   "downloads.volumes": "Volumes",
   "downloads.filesImported": "fichiers importés",

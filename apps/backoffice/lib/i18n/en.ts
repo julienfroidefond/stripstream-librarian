@@ -1074,7 +1074,10 @@ const en: Record<TranslationKey, string> = {
   // Downloads page
   "downloads.title": "Downloads",
   "downloads.refresh": "Refresh",
+  "downloads.filterSource": "Source",
   "downloads.filterActive": "In progress",
+  "downloads.sourceProwlarr": "Prowlarr",
+  "downloads.sourceTelegram": "Telegram",
   "downloads.empty": "No downloads",
   "downloads.volumes": "Volumes",
   "downloads.filesImported": "files imported",

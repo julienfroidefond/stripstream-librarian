@@ -99,6 +99,7 @@ interface DownloadsPageProps {
 }
 
 const PAGE_SIZE = 10;
+type StatusFilter = "all" | "active" | "imported" | "error";
 
 type DownloadItem =
   | { kind: "torrent"; data: TorrentDownloadDto }
@@ -263,7 +264,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
   const [telegramDownloads, setTelegramDownloads] = useState<TelegramDownloadItemDto[]>(initialTelegramDownloads);
   const [latestFound, setLatestFound] = useState<LatestFoundPerLibraryDto[]>(initialLatestFound);
   const [telegramAvailable, setTelegramAvailable] = useState<TelegramAvailableGroupDto[]>(initialTelegramAvailable);
-  const [filter, setFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [page, setPage] = useState(1);
 
@@ -297,19 +298,19 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
     return () => clearInterval(id);
   }, [hasActive, refresh]);
 
-  const filters = [
-    { id: "all",    label: t("common.all") },
+  const statusFilters: Array<{ id: StatusFilter; label: string }> = [
+    { id: "all", label: t("common.all") },
     { id: "active", label: t("downloads.filterActive") },
     { id: "imported", label: t("downloads.status.imported") },
-    { id: "error",  label: t("downloads.status.error") },
+    { id: "error", label: t("downloads.status.error") },
   ];
 
-  const visible = merged.filter(item => itemMatchesFilter(item, filter));
+  const visible = merged.filter(item => itemMatchesFilter(item, statusFilter));
   const totalPages = Math.ceil(visible.length / PAGE_SIZE);
   const paged = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  // Reset to page 1 when filter changes
-  const handleFilterChange = (id: string) => { setFilter(id); setPage(1); };
+  // Reset to page 1 when filters change
+  const handleStatusFilterChange = (id: StatusFilter) => { setStatusFilter(id); setPage(1); };
 
   return (
     <>
@@ -327,12 +328,12 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
 
       {/* Filter bar */}
       <div className="flex gap-1 mb-4 border-b border-border overflow-x-auto scrollbar-none">
-        {filters.map(f => (
+        {statusFilters.map(f => (
           <button
             key={f.id}
-            onClick={() => handleFilterChange(f.id)}
+            onClick={() => handleStatusFilterChange(f.id)}
             className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${
-              filter === f.id
+              statusFilter === f.id
                 ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
             }`}
@@ -712,6 +713,12 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
 }
 
 type AvailableSortKey = "seeders" | "missing" | "name" | "recent";
+type AvailableSourceFilter = "all" | "prowlarr" | "telegram";
+
+function groupMatchesSourceFilter(group: UnifiedAvailableGroup, sourceFilter: AvailableSourceFilter): boolean {
+  if (sourceFilter === "all") return true;
+  return group.sources.some(source => source.kind === sourceFilter);
+}
 
 export function AvailableDownloadsSection({
   latestFound,
@@ -725,6 +732,7 @@ export function AvailableDownloadsSection({
   const { t } = useTranslation();
   const [sort, setSort] = useState<AvailableSortKey>("recent");
   const [filterLib, setFilterLib] = useState<string>("all");
+  const [sourceFilter, setSourceFilter] = useState<AvailableSourceFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [downloadingTelegramIds, setDownloadingTelegramIds] = useState<Set<string>>(new Set());
@@ -740,7 +748,10 @@ export function AvailableDownloadsSection({
 
   const newestDetectedAt = (r: UnifiedAvailableGroup) => r.updated_at;
 
-  const filtered = allResults.filter(r => filterLib === "all" || r.library_id === filterLib);
+  const filtered = allResults.filter(r =>
+    (filterLib === "all" || r.library_id === filterLib) &&
+    groupMatchesSourceFilter(r, sourceFilter)
+  );
 
   const sorted = [...filtered].sort((a, b) => {
     switch (sort) {
@@ -851,7 +862,7 @@ export function AvailableDownloadsSection({
             <Icon name="eye" size="sm" />
           </button>
         </h2>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           {libraries.length > 1 && (
             <select
               value={filterLib}
@@ -862,6 +873,16 @@ export function AvailableDownloadsSection({
               {libraries.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           )}
+          <select
+            value={sourceFilter}
+            onChange={(e) => setSourceFilter(e.target.value as AvailableSourceFilter)}
+            aria-label={t("downloads.filterSource")}
+            className="text-xs border border-border rounded-lg px-2 py-1.5 bg-background"
+          >
+            <option value="all">{t("common.all")}</option>
+            <option value="prowlarr">{t("downloads.sourceProwlarr")}</option>
+            <option value="telegram">{t("downloads.sourceTelegram")}</option>
+          </select>
           <div className="flex gap-0.5">
             {sortOptions.map(s => (
               <button
@@ -911,10 +932,13 @@ export function AvailableDownloadsSection({
       <div className="border border-border rounded-xl overflow-hidden">
         {sorted.map((r) => {
           const isExpanded = expandedId === r.key;
-          const topSeeders = bestSeeders(r);
-          const prowlarrCount = r.sources.filter(source => source.kind === "prowlarr").length;
-          const telegramCount = r.sources.filter(source => source.kind === "telegram").length;
-          const failedReleaseCount = r.sources.filter(source =>
+          const visibleSources = sourceFilter === "all"
+            ? r.sources
+            : r.sources.filter(source => source.kind === sourceFilter);
+          const topSeeders = bestSeeders({ ...r, sources: visibleSources });
+          const prowlarrCount = visibleSources.filter(source => source.kind === "prowlarr").length;
+          const telegramCount = visibleSources.filter(source => source.kind === "telegram").length;
+          const failedReleaseCount = visibleSources.filter(source =>
             source.kind === "prowlarr" ? source.release.has_failed : source.book.status === "failed"
           ).length;
 
@@ -980,9 +1004,9 @@ export function AvailableDownloadsSection({
               </button>
 
               {/* Expanded: one compact line per release */}
-              {isExpanded && r.sources.length > 0 && (
+              {isExpanded && visibleSources.length > 0 && (
                 <div className="border-b border-border/40">
-                  {[...r.sources].sort((a, b) => {
+                  {[...visibleSources].sort((a, b) => {
                     const aVol = Math.min(...getSourceVolumes(a), 9999);
                     const bVol = Math.min(...getSourceVolumes(b), 9999);
                     if (aVol !== bVol) return aVol - bVol;
