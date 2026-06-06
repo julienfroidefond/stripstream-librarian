@@ -61,7 +61,7 @@ export function TelegramMonitorCard({ initialLibraries = [] }: { initialLibrarie
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autocompleteRef = useRef<HTMLDivElement>(null);
 
-  // Sync result (shown after manual trigger from Jobs page or last scheduler run)
+  // Sync result (shown after manual trigger from Jobs page or incremental scheduler)
   const [syncResult] = useState<{ synced: number; new_books: number } | null>(null);
   const SYNC_INTERVAL_OPTIONS = [
     { value: "30", label: t("telegramMonitor.syncInterval30m") },
@@ -194,6 +194,21 @@ export function TelegramMonitorCard({ initialLibraries = [] }: { initialLibrarie
     }
   }
 
+  async function handleSaveSyncInterval(next: string) {
+    setSyncInterval(next);
+    try {
+      await tgFetch("settings", {
+        method: "POST",
+        body: JSON.stringify({ sync_interval_minutes: parseInt(next) }),
+      });
+      const s = await tgFetch<TelegramMonitorStatus>("status");
+      setStatus(s);
+      toast(t("settings.savedSuccess"), "success");
+    } catch {
+      toast(t("settings.savedError"), "error");
+    }
+  }
+
   async function handleAddSource() {
     if (!newChannel) return;
     setAddingSource(true);
@@ -218,21 +233,6 @@ export function TelegramMonitorCard({ initialLibraries = [] }: { initialLibrarie
       setSources(prev => prev.filter(s => s.id !== id));
     } catch (e) {
       toast(String(e), "error");
-    }
-  }
-
-  async function handleSaveSyncInterval(next: string) {
-    setSyncInterval(next);
-    try {
-      await tgFetch("settings", {
-        method: "POST",
-        body: JSON.stringify({ sync_interval_minutes: parseInt(next) }),
-      });
-      const s = await tgFetch<TelegramMonitorStatus>("status");
-      setStatus(s);
-      toast(t("settings.savedSuccess"), "success");
-    } catch {
-      toast(t("settings.savedError"), "error");
     }
   }
 

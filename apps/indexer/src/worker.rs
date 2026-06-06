@@ -51,11 +51,6 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
                 error!("[SCHEDULER] Prowlarr RSS error: {}", err);
             }
             if let Err(err) =
-                scheduler::check_and_schedule_telegram_sync(&scheduler_state.pool).await
-            {
-                error!("[SCHEDULER] Telegram sync error: {}", err);
-            }
-            if let Err(err) =
                 scheduler::check_and_schedule_telegram_sync_incremental(&scheduler_state.pool).await
             {
                 error!("[SCHEDULER] Telegram sync incremental error: {}", err);

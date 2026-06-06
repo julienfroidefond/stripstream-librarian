@@ -264,68 +264,6 @@ pub async fn check_and_schedule_prowlarr_rss(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
-pub async fn check_and_schedule_telegram_sync(pool: &PgPool) -> Result<()> {
-    // Only schedule if authorized (session_data present)
-    let authorized: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM app_settings WHERE key = 'telegram_monitor' AND value->>'session_data' IS NOT NULL)"
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap_or(false);
-
-    if !authorized {
-        return Ok(());
-    }
-
-    let interval_minutes: i32 = sqlx::query_scalar(
-        "SELECT COALESCE((value->>'sync_interval_minutes')::int, 0) FROM app_settings WHERE key = 'telegram_monitor'"
-    )
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten()
-    .unwrap_or(0);
-
-    if interval_minutes == 0 {
-        return Ok(());
-    }
-
-    let already_active: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'telegram_sync' AND status IN ('pending', 'running'))"
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap_or(false);
-
-    if already_active {
-        return Ok(());
-    }
-
-    let recent_run: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'telegram_sync' AND finished_at > NOW() - INTERVAL '1 minute' * $1)"
-    )
-    .bind(interval_minutes)
-    .fetch_one(pool)
-    .await
-    .unwrap_or(false);
-
-    if recent_run {
-        return Ok(());
-    }
-
-    let job_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO index_jobs (id, type, status) VALUES ($1, 'telegram_sync', 'pending')",
-    )
-    .bind(job_id)
-    .execute(pool)
-    .await?;
-
-    info!("[SCHEDULER] Created global telegram_sync job {}", job_id);
-
-    Ok(())
-}
-
 pub async fn check_and_schedule_telegram_sync_incremental(pool: &PgPool) -> Result<()> {
     let authorized: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM app_settings WHERE key = 'telegram_monitor' AND value->>'session_data' IS NOT NULL)"
@@ -338,9 +276,9 @@ pub async fn check_and_schedule_telegram_sync_incremental(pool: &PgPool) -> Resu
         return Ok(());
     }
 
-    // Uses a separate key; 0 means disabled, default 30 minutes
+    // Uses the Telegram Monitor sync interval; 0 means disabled, default 30 minutes.
     let interval_minutes: i32 = sqlx::query_scalar(
-        "SELECT COALESCE((value->>'sync_incremental_interval_minutes')::int, 30) FROM app_settings WHERE key = 'telegram_monitor'"
+        "SELECT COALESCE((value->>'sync_interval_minutes')::int, 30) FROM app_settings WHERE key = 'telegram_monitor'"
     )
     .fetch_optional(pool)
     .await

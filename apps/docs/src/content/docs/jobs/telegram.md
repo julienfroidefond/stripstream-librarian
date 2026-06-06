@@ -74,7 +74,7 @@ Sauvegarder la session Telegram mise à jour
 
 ### Déclenchement
 
-**Automatique** : toutes les **30 minutes** dès que vous êtes authentifié. Aucune configuration nécessaire.
+**Automatique** : selon la période configurée dans **Settings → Telegram Monitor**. Par défaut, toutes les **30 minutes** dès que vous êtes authentifié.
 
 **Manuel** : bouton *Synchro incrémentale* dans la page Tâches.
 
@@ -126,7 +126,7 @@ Voir [Telegram Monitor](/integrations/telegram-monitor/#livres-disponibles).
 **Planifié par** : le scheduler de l'indexer (pour `telegram_sync_incremental` uniquement). Conditions :
 1. `session_data` présent dans `app_settings` (compte authentifié)
 2. Aucun job du même type en `pending` ou `running`
-3. Aucun job du même type `finished_at > NOW() - INTERVAL '30 minutes'`
+3. Aucun job du même type terminé récemment, selon l'intervalle configuré
 
 **Champs `stats_json` — `telegram_sync`** : `synced`, `new_books`, `series_searched`, `all_series` (tableau : `series_name`, `book_count`, `extracted_names`), `matched_series` (tableau : `telegram_name`, `series_id`, `series_name`, `book_count`).
 

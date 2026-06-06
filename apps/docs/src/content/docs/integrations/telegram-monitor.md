@@ -196,7 +196,7 @@ Les téléchargements Telegram apparaissent dans l'historique en haut de la page
 
 **Répertoire de destination** : résolu dans cet ordre — (1) fichier existant de la série en DB, (2) répertoire existant dans la bibliothèque dont le nom correspond, (3) nouveau répertoire `bibliothèque/nom-de-série`.
 
-**Job de sync** : type `telegram_sync`, `library_id = NULL`. Un seul job actif à la fois — les doublons sont ignorés.
+**Job de sync** : type `telegram_sync`, `library_id = NULL`. Déclenchement manuel depuis la page Tâches. Un seul job actif à la fois — les doublons sont ignorés.
 
 **Reset au démarrage** : les téléchargements bloqués en statut `downloading` au redémarrage de l'API sont automatiquement réinitialisés à `available`.
 :::

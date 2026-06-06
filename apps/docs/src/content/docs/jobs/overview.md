@@ -55,8 +55,8 @@ Plusieurs tâches peuvent être déclenchées automatiquement selon la configura
 | Polling RSS Prowlarr | Selon l'intervalle configuré dans Settings → Download tools |
 | Push AniList | Selon la fréquence configurée par bibliothèque |
 | Refresh métadonnées | Selon la fréquence configurée par bibliothèque |
-| Telegram Monitor (complet) | Selon `sync_interval_minutes` dans Settings → Telegram Monitor |
-| Telegram Monitor (incrémental) | Selon `sync_incremental_interval_minutes` (défaut : 30 min) |
+| Telegram Monitor (complet) | Manuel, via la page Tâches |
+| Telegram Monitor (incrémental) | Selon la période configurée dans Settings → Telegram Monitor |
 
 La valeur **Manuel** désactive l'automatisation pour une tâche donnée.
 
