@@ -20,6 +20,7 @@ use super::{helpers, ListSeriesQuery, ListAllSeriesQuery, SeriesItem, SeriesPage
         ("metadata_provider" = Option<String>, Query, description = "Filter by metadata provider: a provider name (e.g. 'google_books'), 'linked' (any provider), or 'unlinked' (no provider)"),
         ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
         ("limit" = Option<i64>, Query, description = "Items per page (max 200, default 50)"),
+        ("sort" = Option<String>, Query, description = "Sort order: 'title' (default), 'latest' (most recently added first), or 'release_date' (series start year descending; undated series last by title)"),
     ),
     responses(
         (status = 200, body = SeriesPage),
@@ -92,6 +93,12 @@ pub async fn list_series(
     let missing_cte = helpers::build_missing_counts_cte(Some("$1"));
     let metadata_links_cte = helpers::METADATA_LINKS_CTE;
 
+    let title_order_clause = "REGEXP_REPLACE(LOWER(sc.name), '[0-9].*$', ''), COALESCE((REGEXP_MATCH(LOWER(sc.name), '\\d+'))[1]::int, 0), sc.name ASC";
+    let series_order_clause = match query.sort.as_deref() {
+        Some("release_date") => format!("s.start_year DESC NULLS LAST, {title_order_clause}"),
+        _ => title_order_clause.to_string(),
+    };
+
     let count_sql = format!(
         r#"
         WITH series_counts AS (
@@ -159,7 +166,7 @@ pub async fn list_series(
             ml.provider as metadata_provider,
             asl.anilist_id,
             asl.anilist_url,
-            s.cover_url, s.genres, s.authors, s.description
+            s.cover_url, s.start_year, s.genres, s.authors, s.description
         FROM series_counts sc
         LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id AND sb.rn = 1
         LEFT JOIN series s ON s.id = sc.series_id
@@ -174,13 +181,7 @@ pub async fn list_series(
           {metadata_provider_cond}
           {has_books_cond}
           {genre_restriction_cond}
-        ORDER BY
-            REGEXP_REPLACE(LOWER(sc.name), '[0-9].*$', ''),
-            COALESCE(
-                (REGEXP_MATCH(LOWER(sc.name), '\d+'))[1]::int,
-                0
-            ),
-            sc.name ASC
+        ORDER BY {series_order_clause}
         LIMIT ${limit_p} OFFSET ${offset_p}
         "#
     );
@@ -234,6 +235,7 @@ pub async fn list_series(
             anilist_id: row.get("anilist_id"),
             anilist_url: row.get("anilist_url"),
             cover_url: row.get("cover_url"),
+            start_year: row.get("start_year"),
             genres: row.get::<Vec<String>, _>("genres"),
             authors: row.get::<Vec<String>, _>("authors"),
             description: row.get("description"),
@@ -263,7 +265,7 @@ pub async fn list_series(
         ("author" = Option<String>, Query, description = "Filter by author name (matches in series.authors or book-level authors)"),
         ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
         ("limit" = Option<i64>, Query, description = "Items per page (max 200, default 50)"),
-        ("sort" = Option<String>, Query, description = "Sort order: 'title' (default) or 'latest' (most recently added first)"),
+        ("sort" = Option<String>, Query, description = "Sort order: 'title' (default), 'latest' (most recently added first), or 'release_date' (series start year descending; undated series last by title)"),
     ),
     responses(
         (status = 200, body = SeriesPage),
@@ -388,12 +390,15 @@ pub async fn list_all_series(
         "#
     );
 
-    let series_order_clause = if query.sort.as_deref() == Some("latest") {
-        // For series without books, latest_created_at falls back to s.created_at
-        // (see series_counts CTE), so the value is never NULL.
-        "sc.latest_created_at DESC".to_string()
-    } else {
-        "REGEXP_REPLACE(LOWER(sc.name), '[0-9].*$', ''), COALESCE((REGEXP_MATCH(LOWER(sc.name), '\\d+'))[1]::int, 0), sc.name ASC".to_string()
+    let title_order_clause = "REGEXP_REPLACE(LOWER(sc.name), '[0-9].*$', ''), COALESCE((REGEXP_MATCH(LOWER(sc.name), '\\d+'))[1]::int, 0), sc.name ASC";
+    let series_order_clause = match query.sort.as_deref() {
+        Some("latest") => {
+            // For series without books, latest_created_at falls back to s.created_at
+            // (see series_counts CTE), so the value is never NULL.
+            "sc.latest_created_at DESC".to_string()
+        }
+        Some("release_date") => format!("s.start_year DESC NULLS LAST, {title_order_clause}"),
+        _ => title_order_clause.to_string(),
     };
 
     let data_sql = format!(
@@ -447,7 +452,7 @@ pub async fn list_all_series(
             ml.provider as metadata_provider,
             asl.anilist_id,
             asl.anilist_url,
-            s.cover_url, s.genres, s.authors, s.description
+            s.cover_url, s.start_year, s.genres, s.authors, s.description
         FROM series_counts sc
         LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id AND sb.rn = 1
         LEFT JOIN series s ON s.id = sc.series_id
@@ -532,6 +537,7 @@ pub async fn list_all_series(
             anilist_id: row.get("anilist_id"),
             anilist_url: row.get("anilist_url"),
             cover_url: row.get("cover_url"),
+            start_year: row.get("start_year"),
             genres: row.get::<Vec<String>, _>("genres"),
             authors: row.get::<Vec<String>, _>("authors"),
             description: row.get("description"),

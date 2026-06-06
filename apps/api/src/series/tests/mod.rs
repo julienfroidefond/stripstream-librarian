@@ -21,6 +21,7 @@ fn series_item_has_series_id() {
         anilist_id: None,
         anilist_url: None,
         cover_url: None,
+        start_year: Some(1984),
         genres: vec![],
         authors: vec![],
         description: None,
@@ -29,6 +30,7 @@ fn series_item_has_series_id() {
     assert!(json["series_id"].is_string());
     assert_eq!(json["name"], "Dragon Ball");
     assert_eq!(json["book_count"], 42);
+    assert_eq!(json["start_year"], 1984);
 }
 
 #[test]
@@ -76,6 +78,7 @@ fn series_item_includes_library_id() {
         anilist_id: Some(12345),
         anilist_url: Some("https://anilist.co/manga/12345".to_string()),
         cover_url: None,
+        start_year: Some(1997),
         genres: vec![],
         authors: vec![],
         description: None,

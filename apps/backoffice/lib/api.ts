@@ -167,6 +167,7 @@ export type SeriesDto = {
   anilist_id: number | null;
   anilist_url: string | null;
   cover_url: string | null;
+  start_year: number | null;
 };
 
 export type RelatedSeriesDto = {

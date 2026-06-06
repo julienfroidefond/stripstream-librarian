@@ -59,6 +59,7 @@ pub struct SeriesItem {
     pub anilist_id: Option<i32>,
     pub anilist_url: Option<String>,
     pub cover_url: Option<String>,
+    pub start_year: Option<i32>,
     pub genres: Vec<String>,
     pub authors: Vec<String>,
     pub description: Option<String>,
@@ -94,6 +95,9 @@ pub struct ListSeriesQuery {
     pub page: Option<i64>,
     #[schema(value_type = Option<i64>, example = 50)]
     pub limit: Option<i64>,
+    /// Sort order: "title" (default), "latest" (most recently added first), or "release_date" (series start year descending)
+    #[schema(value_type = Option<String>, example = "release_date")]
+    pub sort: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -126,8 +130,8 @@ pub struct ListAllSeriesQuery {
     /// Only return series with no books (wishlist): "true" to show only empty series
     #[schema(value_type = Option<String>, example = "true")]
     pub no_books: Option<String>,
-    /// Sort order: "title" (default) or "latest" (most recently added first)
-    #[schema(value_type = Option<String>, example = "latest")]
+    /// Sort order: "title" (default), "latest" (most recently added first), or "release_date" (series start year descending)
+    #[schema(value_type = Option<String>, example = "release_date")]
     pub sort: Option<String>,
     /// Filter by genre (exact match, case-sensitive)
     #[schema(value_type = Option<String>, example = "Fantasy")]

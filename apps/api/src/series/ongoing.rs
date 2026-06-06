@@ -99,6 +99,7 @@ pub async fn ongoing_series(
             anilist_id: None,
             anilist_url: None,
             cover_url: None,
+            start_year: None,
             genres: row.get::<Vec<String>, _>("genres"),
             authors: row.get::<Vec<String>, _>("authors"),
             description: row.get("description"),
@@ -319,7 +320,7 @@ pub async fn get_series_by_id(
                mc.missing_count,
                ml.provider as metadata_provider,
                asl.anilist_id, asl.anilist_url,
-               s.cover_url, s.genres, s.authors, s.description
+               s.cover_url, s.start_year, s.genres, s.authors, s.description
         FROM series_counts sc
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN first_book fb ON fb.series_id = sc.series_id
@@ -367,6 +368,7 @@ pub async fn get_series_by_id(
         anilist_id: row.get("anilist_id"),
         anilist_url: row.get("anilist_url"),
         cover_url: row.get("cover_url"),
+        start_year: row.get("start_year"),
         genres: row.get::<Vec<String>, _>("genres"),
         authors: row.get::<Vec<String>, _>("authors"),
         description: row.get("description"),

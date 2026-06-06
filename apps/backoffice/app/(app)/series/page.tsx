@@ -9,6 +9,7 @@ import { RefreshButton } from "@/app/components/RefreshButton";
 import { Card, CardContent, OffsetPagination } from "@/app/components/ui";
 import Image from "next/image";
 import Link from "next/link";
+import { Fragment } from "react";
 import { ProviderIcon } from "@/app/components/ProviderIcon";
 import { ExternalLinkBadge } from "@/app/components/ExternalLinkBadge";
 import nextDynamic from "next/dynamic";
@@ -59,6 +60,7 @@ export default async function SeriesPage({
   const sortOptions = [
     { value: "", label: t("books.sortTitle") },
     { value: "latest", label: t("books.sortLatest") },
+    { value: "release_date", label: t("series.sortReleaseDate") },
   ];
 
   const hasFilters = searchQuery || libraryId || readingStatus || sort || seriesStatus || hasMissing || booksFilter || volumeTypeFilter || metadataProvider;
@@ -208,9 +210,23 @@ export default async function SeriesPage({
       {series.length > 0 ? (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
-            {series.map((s) => (
-              <div key={s.series_id} className="group">
-                <div className="bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden group-hover:shadow-md group-hover:-translate-y-1 transition-all duration-200">
+            {series.map((s, index) => {
+              const year = s.start_year;
+              const previousYear = index > 0 ? series[index - 1].start_year : undefined;
+              const showYearGroup = sort === "release_date" && year !== previousYear;
+
+              return (
+                <Fragment key={s.series_id}>
+                  {showYearGroup && (
+                    <div className="col-span-full flex items-center gap-3 pt-2 first:pt-0">
+                      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        {year ?? t("series.noReleaseDate")}
+                      </span>
+                      <span className="h-px flex-1 bg-border/60" />
+                    </div>
+                  )}
+                  <div className="group">
+                    <div className="bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden group-hover:shadow-md group-hover:-translate-y-1 transition-all duration-200">
                   <Link href={`/series/${s.series_id}`} className="block">
                     <div className="aspect-[2/3] relative bg-muted/50">
                       {(s.first_book_id || s.cover_url) ? (
@@ -272,9 +288,11 @@ export default async function SeriesPage({
                       )}
                     </div>
                   </div>
-                </div>
-              </div>
-            ))}
+                    </div>
+                  </div>
+                </Fragment>
+              );
+            })}
           </div>
 
           <OffsetPagination

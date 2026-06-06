@@ -178,6 +178,8 @@ const fr = {
   "series.relatedSameGenre": "Même genre",
   "series.relatedSamePublisher": "Même éditeur",
   "series.groupByReadingList": "Listes de lecture",
+  "series.sortReleaseDate": "Date de sortie",
+  "series.noReleaseDate": "Sans date",
   "series.groupByReadingListOff": "Toutes les séries",
 
   // Authors page

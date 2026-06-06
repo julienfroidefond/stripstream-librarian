@@ -180,6 +180,8 @@ const en: Record<TranslationKey, string> = {
   "series.relatedSameGenre": "Same genre",
   "series.relatedSamePublisher": "Same publisher",
   "series.groupByReadingList": "Reading lists",
+  "series.sortReleaseDate": "Release date",
+  "series.noReleaseDate": "No date",
   "series.groupByReadingListOff": "All series",
 
   // Authors page
