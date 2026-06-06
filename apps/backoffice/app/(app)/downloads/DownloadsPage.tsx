@@ -924,7 +924,7 @@ export function AvailableDownloadsSection({
               <button
                 type="button"
                 onClick={() => setExpandedId(isExpanded ? null : r.key)}
-                className={`w-full flex items-center gap-2 sm:gap-3 px-2.5 sm:px-3 py-2 text-left hover:bg-muted/30 transition-colors border-b border-border/40 ${isExpanded ? "bg-muted/20" : ""}`}
+                className={`w-full flex flex-wrap sm:flex-nowrap items-center gap-x-2 gap-y-1 sm:gap-3 px-2.5 sm:px-3 py-2 text-left hover:bg-muted/30 transition-colors border-b border-border/40 ${isExpanded ? "bg-muted/20" : ""}`}
               >
                 <Icon
                   name={isExpanded ? "chevronDown" : "chevronRight"}
@@ -942,6 +942,9 @@ export function AvailableDownloadsSection({
                   {libraries.length > 1 && (
                     <span className="text-[10px] text-muted-foreground hidden sm:inline shrink-0">{r.library_name}</span>
                   )}
+                </div>
+
+                <div className="flex w-full sm:w-auto items-center justify-end gap-2 shrink-0 pl-5 sm:pl-0">
                   {prowlarrCount > 0 && (
                     <span className="text-[10px] text-muted-foreground shrink-0">
                       {prowlarrCount} Prowlarr
@@ -958,9 +961,6 @@ export function AvailableDownloadsSection({
                       <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{formatDate(newest)}</span>
                     ) : null;
                   })()}
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
                   {failedReleaseCount > 0 && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-destructive/20 text-destructive" title={`${failedReleaseCount} failed`}>
                       {failedReleaseCount}!
