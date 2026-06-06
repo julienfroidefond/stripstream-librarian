@@ -29,7 +29,7 @@ export default async function SeriesDetailPage({
   const hasActiveUser = !!cookieStore.get("as_user_id")?.value;
   const searchParamsAwaited = await searchParams;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
-  const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 50;
+  const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 24;
 
   // Resolve library_id from the series
   const seriesDto = await fetchSeriesById(seriesId).catch(() => null);

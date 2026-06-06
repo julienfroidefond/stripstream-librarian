@@ -19,7 +19,7 @@ export default async function AuthorDetailPage({
   const authorName = decodeURIComponent(encodedName);
   const searchParamsAwaited = await searchParams;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
-  const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 20;
+  const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 24;
 
   // Fetch books by this author (server-side filtering via API) and series by this author
   const [booksPage, seriesPage] = await Promise.all([
@@ -74,7 +74,7 @@ export default async function AuthorDetailPage({
           <h2 className="text-xl font-semibold text-foreground mb-4">
             {t("authors.seriesBy", { name: authorName })}
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
             {authorSeries.map((s) => (
               <Link
                 key={`${s.library_id}-${s.series_id}`}

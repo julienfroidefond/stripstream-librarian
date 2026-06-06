@@ -23,100 +23,6 @@ function useNavigate() {
   };
 }
 
-interface CursorPaginationProps {
-  hasNextPage: boolean;
-  hasPrevPage: boolean;
-  pageSize: number;
-  currentCount: number;
-  pageSizeOptions?: number[];
-  nextCursor?: string | null;
-}
-
-export function CursorPagination({
-  hasNextPage,
-  hasPrevPage,
-  pageSize,
-  currentCount,
-  pageSizeOptions = [20, 50, 100],
-  nextCursor,
-}: CursorPaginationProps) {
-  const navigate = useNavigate();
-  const { t } = useTranslation();
-
-  const goToNext = () => {
-    if (!nextCursor) return;
-    const params = getCurrentParams();
-    params.set("cursor", nextCursor);
-    navigate(`?${params.toString()}`);
-  };
-
-  const goToFirst = () => {
-    const params = getCurrentParams();
-    params.delete("cursor");
-    navigate(`?${params.toString()}`);
-  };
-
-  const changePageSize = (size: number) => {
-    const params = getCurrentParams();
-    params.set("limit", size.toString());
-    params.delete("cursor");
-    navigate(`?${params.toString()}`);
-  };
-
-  return (
-    <div className="flex flex-col sm:flex-row items-center justify-between gap-6 mt-8 pt-8 border-t border-border/60">
-      {/* Page size selector */}
-      <div className="flex items-center gap-3">
-        <span className="text-sm text-muted-foreground">{t("pagination.show")}</span>
-        <select
-          value={pageSize.toString()}
-          onChange={(e) => changePageSize(Number(e.target.value))}
-          className="w-20 px-3 py-2 text-sm rounded-md border border-input bg-background text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-colors"
-        >
-          {pageSizeOptions.map((size) => (
-            <option key={size} value={size}>
-              {size}
-            </option>
-          ))}
-        </select>
-        <span className="text-sm text-muted-foreground">{t("common.perPage")}</span>
-      </div>
-
-      {/* Count info */}
-      <div className="text-sm text-muted-foreground">
-        {t("pagination.displaying", { count: currentCount.toString() })}
-      </div>
-
-      {/* Navigation */}
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={goToFirst}
-          disabled={!hasPrevPage}
-        >
-          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-          </svg>
-          {t("common.first")}
-        </Button>
-
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={goToNext}
-          disabled={!hasNextPage}
-        >
-          {t("common.next")}
-          <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 interface OffsetPaginationProps {
   currentPage: number;
   totalPages: number;
@@ -130,7 +36,7 @@ export function OffsetPagination({
   totalPages,
   pageSize,
   totalItems,
-  pageSizeOptions = [20, 50, 100],
+  pageSizeOptions = [24, 48, 96],
 }: OffsetPaginationProps) {
   const navigate = useNavigate();
   const { t } = useTranslation();

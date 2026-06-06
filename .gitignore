@@ -7,5 +7,6 @@ tmp/
 node_modules/
 .next/
 apps/backoffice/next-env.d.ts
+apps/backoffice/tsconfig.tsbuildinfo
 data/thumbnails
 *.pem

@@ -19,7 +19,7 @@ export default async function LibraryBooksPage({
   const searchParamsAwaited = await searchParams;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const series = typeof searchParamsAwaited.series === "string" ? searchParamsAwaited.series : undefined;
-  const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 20;
+  const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 24;
 
   const [library, booksPage] = await Promise.all([
     fetchLibraries().then(libs => libs.find(l => l.id === id)),

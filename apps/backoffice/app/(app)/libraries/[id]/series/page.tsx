@@ -30,7 +30,7 @@ export default async function LibrarySeriesPage({
   const hasMissing = paramBool(sp, "has_missing");
   const metadataProvider = paramString(sp, "metadata_provider");
   const page = paramInt(sp, "page", 1);
-  const limit = paramInt(sp, "limit", 20);
+  const limit = paramInt(sp, "limit", 24);
 
   const [library, seriesPage, dbStatuses] = await Promise.all([
     fetchLibraries().then(libs => libs.find(l => l.id === id)),
@@ -130,7 +130,7 @@ export default async function LibrarySeriesPage({
       {/* Series Grid */}
       {series.length > 0 ? (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
             {series.map((s) => (
               <div key={s.series_id} className="group">
                 <div className="bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden group-hover:shadow-md group-hover:-translate-y-1 transition-all duration-200">

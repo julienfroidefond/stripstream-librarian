@@ -39,7 +39,7 @@ export default async function SeriesPage({
   const metadataProvider = paramString(sp, "metadata_provider");
   const groupBy = paramString(sp, "group_by"); // "reading_list" | ""
   const page = paramInt(sp, "page", 1);
-  const limit = paramInt(sp, "limit", 20);
+  const limit = paramInt(sp, "limit", 24);
 
   const isGroupedByList = groupBy === "reading_list";
 
@@ -177,7 +177,7 @@ export default async function SeriesPage({
             <Link href="/reading-lists" className="text-sm text-primary hover:underline">{t("readingLists.title")}</Link>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
             {readingLists.map((list) => {
               const covers = list.preview_covers;
               return (
@@ -207,7 +207,7 @@ export default async function SeriesPage({
 
       {series.length > 0 ? (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
             {series.map((s) => (
               <div key={s.series_id} className="group">
                 <div className="bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden group-hover:shadow-md group-hover:-translate-y-1 transition-all duration-200">

@@ -24,7 +24,7 @@ export default async function BooksPage({
   const metadataProvider = paramString(sp, "metadata");
   const sort = paramString(sp, "sort");
   const page = paramInt(sp, "page", 1);
-  const limit = paramInt(sp, "limit", 20);
+  const limit = paramInt(sp, "limit", 24);
 
   const [libraries] = await Promise.all([
     fetchLibraries().catch(() => [] as LibraryDto[])

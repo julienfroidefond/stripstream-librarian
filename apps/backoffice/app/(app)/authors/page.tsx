@@ -17,7 +17,7 @@ export default async function AuthorsPage({
   const searchQuery = paramStringOr(sp, "q", "");
   const sort = paramString(sp, "sort");
   const page = paramInt(sp, "page", 1);
-  const limit = paramInt(sp, "limit", 20);
+  const limit = paramInt(sp, "limit", 24);
 
   const authorsPage = await fetchAuthors(
     searchQuery || undefined,
