@@ -243,10 +243,18 @@ pub async fn get_recommendations(
             let has_same_genre: bool = row.get("has_same_genre");
             let has_same_publisher: bool = row.get("has_same_publisher");
             let mut match_reasons = Vec::new();
-            if has_same_reading_list { match_reasons.push("same_reading_list".to_string()); }
-            if has_same_author { match_reasons.push("same_author".to_string()); }
-            if has_same_genre { match_reasons.push("same_genre".to_string()); }
-            if has_same_publisher { match_reasons.push("same_publisher".to_string()); }
+            if has_same_reading_list {
+                match_reasons.push("same_reading_list".to_string());
+            }
+            if has_same_author {
+                match_reasons.push("same_author".to_string());
+            }
+            if has_same_genre {
+                match_reasons.push("same_genre".to_string());
+            }
+            if has_same_publisher {
+                match_reasons.push("same_publisher".to_string());
+            }
 
             let because_of: Vec<String> = row
                 .try_get::<Vec<String>, _>("source_names")

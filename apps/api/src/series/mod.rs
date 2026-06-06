@@ -1,18 +1,18 @@
-pub(crate) mod helpers;
 pub mod archive;
 pub mod create;
+pub(crate) mod helpers;
 pub mod list;
 pub mod merge;
 pub mod ongoing;
 pub mod recommendations;
 pub mod related;
-pub mod update;
 #[cfg(test)]
 mod tests;
+pub mod update;
 
-pub(crate) use helpers::{get_or_create_series, resolve_library_id};
 pub use archive::*;
 pub use create::*;
+pub(crate) use helpers::{get_or_create_series, resolve_library_id};
 pub use list::*;
 pub use merge::*;
 pub use ongoing::*;
@@ -20,12 +20,15 @@ pub use recommendations::*;
 pub use related::*;
 pub use update::*;
 
-use axum::{extract::{Path, State}, Json};
+use axum::{
+    extract::{Path, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::{error::ApiError, state::AppState};
 
@@ -190,7 +193,7 @@ pub async fn get_series_by_name(
     Path((library_id, name)): Path<(Uuid, String)>,
 ) -> Result<Json<SeriesLookup>, ApiError> {
     let row = sqlx::query(
-        "SELECT id, library_id, name FROM series WHERE library_id = $1 AND LOWER(name) = LOWER($2)"
+        "SELECT id, library_id, name FROM series WHERE library_id = $1 AND LOWER(name) = LOWER($2)",
     )
     .bind(library_id)
     .bind(&name)
@@ -218,11 +221,9 @@ pub async fn get_series_by_name(
     ),
     security(("Bearer" = []))
 )]
-pub async fn series_genres(
-    State(state): State<AppState>,
-) -> Result<Json<Vec<String>>, ApiError> {
+pub async fn series_genres(State(state): State<AppState>) -> Result<Json<Vec<String>>, ApiError> {
     let rows: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT unnest(genres) AS g FROM series WHERE cardinality(genres) > 0 ORDER BY g"
+        "SELECT DISTINCT unnest(genres) AS g FROM series WHERE cardinality(genres) > 0 ORDER BY g",
     )
     .fetch_all(&state.pool)
     .await?;
@@ -240,9 +241,7 @@ pub async fn series_genres(
     ),
     security(("Bearer" = []))
 )]
-pub async fn series_statuses(
-    State(state): State<AppState>,
-) -> Result<Json<Vec<String>>, ApiError> {
+pub async fn series_statuses(State(state): State<AppState>) -> Result<Json<Vec<String>>, ApiError> {
     let rows: Vec<String> = sqlx::query_scalar(
         r#"SELECT DISTINCT s FROM (
             SELECT LOWER(status) AS s FROM series WHERE status IS NOT NULL

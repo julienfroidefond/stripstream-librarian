@@ -1,4 +1,7 @@
-use axum::{extract::{Query, State}, Json};
+use axum::{
+    extract::{Query, State},
+    Json,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use uuid::Uuid;
@@ -139,10 +142,14 @@ pub async fn trending(
     let offset = params.offset.unwrap_or(0).max(0) as usize;
 
     let supported = [
-        "anilist", "bedetheque",
-        "senscritique", "senscritique_bd",
-        "sc_trending_bd", "sc_trending_manga",
-        "sc_best_bd", "sc_best_manga",
+        "anilist",
+        "bedetheque",
+        "senscritique",
+        "senscritique_bd",
+        "sc_trending_bd",
+        "sc_trending_manga",
+        "sc_best_bd",
+        "sc_best_manga",
     ];
     if !supported.contains(&provider) {
         return Err(ApiError::bad_request(format!(
@@ -159,7 +166,11 @@ pub async fn trending(
         "all" => "ALL_TIME",
         _ => "OUTOFMONTH",
     };
-    let gql_sort = if provider.starts_with("sc_best") { "RATING" } else { "POPULARITY" };
+    let gql_sort = if provider.starts_with("sc_best") {
+        "RATING"
+    } else {
+        "POPULARITY"
+    };
 
     // Include period in cache key for providers with period sub-filter
     let cache_key = if provider.starts_with("sc_trending") || provider.starts_with("sc_best") {
@@ -174,7 +185,8 @@ pub async fn trending(
         if let Some(cached) = get_cached(&state.pool, &cache_key).await {
             cached
         } else {
-            fetch_and_cache_trending(&state.pool, provider, &cache_key, gql_period, gql_sort).await?
+            fetch_and_cache_trending(&state.pool, provider, &cache_key, gql_period, gql_sort)
+                .await?
         }
     } else {
         fetch_and_cache_trending(&state.pool, provider, &cache_key, gql_period, gql_sort).await?
@@ -201,7 +213,8 @@ async fn fetch_and_cache_trending(
     // Fetch maximum from provider
     let fetch_limit = match provider {
         "bedetheque" => 100,
-        "senscritique" | "senscritique_bd" | "sc_trending_bd" | "sc_trending_manga" | "sc_best_bd" | "sc_best_manga" => 100,
+        "senscritique" | "senscritique_bd" | "sc_trending_bd" | "sc_trending_manga"
+        | "sc_best_bd" | "sc_best_manga" => 100,
         _ => 50,
     };
     let candidates = match provider {
@@ -217,18 +230,42 @@ async fn fetch_and_cache_trending(
         "senscritique_bd" => senscritique::fetch_top_bd(fetch_limit as usize)
             .await
             .map_err(|e| ApiError::internal(format!("senscritique_bd fetch failed: {e}")))?,
-        "sc_trending_bd" => senscritique::fetch_trending("comicBook", gql_period, gql_sort, Some("BD franco-belge"), fetch_limit as usize)
-            .await
-            .map_err(|e| ApiError::internal(format!("sc_trending_bd fetch failed: {e}")))?,
-        "sc_trending_manga" => senscritique::fetch_trending("comicBook", gql_period, gql_sort, Some("Manga"), fetch_limit as usize)
-            .await
-            .map_err(|e| ApiError::internal(format!("sc_trending_manga fetch failed: {e}")))?,
-        "sc_best_bd" => senscritique::fetch_trending("comicBook", gql_period, "RATING", Some("BD franco-belge"), fetch_limit as usize)
-            .await
-            .map_err(|e| ApiError::internal(format!("sc_best_bd fetch failed: {e}")))?,
-        "sc_best_manga" => senscritique::fetch_trending("comicBook", gql_period, "RATING", Some("Manga"), fetch_limit as usize)
-            .await
-            .map_err(|e| ApiError::internal(format!("sc_best_manga fetch failed: {e}")))?,
+        "sc_trending_bd" => senscritique::fetch_trending(
+            "comicBook",
+            gql_period,
+            gql_sort,
+            Some("BD franco-belge"),
+            fetch_limit as usize,
+        )
+        .await
+        .map_err(|e| ApiError::internal(format!("sc_trending_bd fetch failed: {e}")))?,
+        "sc_trending_manga" => senscritique::fetch_trending(
+            "comicBook",
+            gql_period,
+            gql_sort,
+            Some("Manga"),
+            fetch_limit as usize,
+        )
+        .await
+        .map_err(|e| ApiError::internal(format!("sc_trending_manga fetch failed: {e}")))?,
+        "sc_best_bd" => senscritique::fetch_trending(
+            "comicBook",
+            gql_period,
+            "RATING",
+            Some("BD franco-belge"),
+            fetch_limit as usize,
+        )
+        .await
+        .map_err(|e| ApiError::internal(format!("sc_best_bd fetch failed: {e}")))?,
+        "sc_best_manga" => senscritique::fetch_trending(
+            "comicBook",
+            gql_period,
+            "RATING",
+            Some("Manga"),
+            fetch_limit as usize,
+        )
+        .await
+        .map_err(|e| ApiError::internal(format!("sc_best_manga fetch failed: {e}")))?,
         _ => unreachable!(),
     };
 
@@ -239,7 +276,11 @@ async fn fetch_and_cache_trending(
                 .metadata_json
                 .get("genres")
                 .and_then(|g| g.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             let status = c
                 .metadata_json
@@ -263,8 +304,20 @@ async fn fetch_and_cache_trending(
         .collect();
 
     // Trending/best providers get 24h TTL; top/poll lists get infinite cache
-    let ttl_hours = if provider.starts_with("sc_trending") || provider.starts_with("sc_best") { 24 } else { 87600 };
-    set_cached(pool, cache_key, provider, "trending", &suggestions, ttl_hours).await;
+    let ttl_hours = if provider.starts_with("sc_trending") || provider.starts_with("sc_best") {
+        24
+    } else {
+        87600
+    };
+    set_cached(
+        pool,
+        cache_key,
+        provider,
+        "trending",
+        &suggestions,
+        ttl_hours,
+    )
+    .await;
     Ok(suggestions)
 }
 
@@ -320,7 +373,10 @@ pub async fn prowlarr_discovery(
 ) -> Result<Json<ProwlarrDiscoveryResponse>, ApiError> {
     let sort_by_date = params.sort.as_deref() == Some("date");
     let indexer_filter = params.indexer.as_deref().filter(|s| !s.is_empty());
-    let category_filter = params.category.as_deref().and_then(|s| s.parse::<i32>().ok());
+    let category_filter = params
+        .category
+        .as_deref()
+        .and_then(|s| s.parse::<i32>().ok());
 
     // Cache key includes the category filter so single-category fetches don't pollute
     // the "all categories" cache and vice versa.
@@ -332,7 +388,8 @@ pub async fn prowlarr_discovery(
 
     // Helper: collect unique sorted indexers from a slice
     fn all_indexers_from(items: &[ProwlarrDiscoveryItem]) -> Vec<String> {
-        let set: std::collections::BTreeSet<String> = items.iter()
+        let set: std::collections::BTreeSet<String> = items
+            .iter()
             .flat_map(|i| i.indexers.iter().cloned())
             .collect();
         set.into_iter().collect()
@@ -342,7 +399,9 @@ pub async fn prowlarr_discovery(
     fn apply_sort(items: &mut Vec<ProwlarrDiscoveryItem>, by_date: bool) {
         if by_date {
             items.sort_by(|a, b| {
-                b.best_publish_date.as_deref().unwrap_or("")
+                b.best_publish_date
+                    .as_deref()
+                    .unwrap_or("")
                     .cmp(a.best_publish_date.as_deref().unwrap_or(""))
             });
         } else {
@@ -352,18 +411,26 @@ pub async fn prowlarr_discovery(
 
     // Check cache (unless nocache requested)
     if !skip_cache {
-        if let Some(mut cached) = get_cached_raw::<Vec<ProwlarrDiscoveryItem>>(&state.pool, &cache_key).await {
+        if let Some(mut cached) =
+            get_cached_raw::<Vec<ProwlarrDiscoveryItem>>(&state.pool, &cache_key).await
+        {
             apply_sort(&mut cached, sort_by_date);
             let all_indexers = all_indexers_from(&cached);
             // Filter by indexer first to reduce the ownership-check workload
             let pre_filtered: Vec<ProwlarrDiscoveryItem> = if let Some(idx) = indexer_filter {
-                cached.into_iter().filter(|i| i.indexers.iter().any(|x| x == idx)).collect()
+                cached
+                    .into_iter()
+                    .filter(|i| i.indexers.iter().any(|x| x == idx))
+                    .collect()
             } else {
                 cached
             };
             let annotated = annotate_local_matches(&state.pool, pre_filtered).await;
             let items: Vec<ProwlarrDiscoveryItem> = annotated;
-            return Ok(Json(ProwlarrDiscoveryResponse { items, all_indexers }));
+            return Ok(Json(ProwlarrDiscoveryResponse {
+                items,
+                all_indexers,
+            }));
         }
     }
 
@@ -372,17 +439,25 @@ pub async fn prowlarr_discovery(
 
     // Re-check cache after acquiring lock — a concurrent request may have populated it
     if !skip_cache {
-        if let Some(mut cached) = get_cached_raw::<Vec<ProwlarrDiscoveryItem>>(&state.pool, &cache_key).await {
+        if let Some(mut cached) =
+            get_cached_raw::<Vec<ProwlarrDiscoveryItem>>(&state.pool, &cache_key).await
+        {
             apply_sort(&mut cached, sort_by_date);
             let all_indexers = all_indexers_from(&cached);
             let pre_filtered: Vec<ProwlarrDiscoveryItem> = if let Some(idx) = indexer_filter {
-                cached.into_iter().filter(|i| i.indexers.iter().any(|x| x == idx)).collect()
+                cached
+                    .into_iter()
+                    .filter(|i| i.indexers.iter().any(|x| x == idx))
+                    .collect()
             } else {
                 cached
             };
             let annotated = annotate_local_matches(&state.pool, pre_filtered).await;
             let items: Vec<ProwlarrDiscoveryItem> = annotated;
-            return Ok(Json(ProwlarrDiscoveryResponse { items, all_indexers }));
+            return Ok(Json(ProwlarrDiscoveryResponse {
+                items,
+                all_indexers,
+            }));
         }
     }
 
@@ -392,11 +467,25 @@ pub async fn prowlarr_discovery(
         .await?
         .ok_or_else(|| ApiError::bad_request("Prowlarr is not configured"))?;
     let value: serde_json::Value = row.get("value");
-    let prowlarr_url = value.get("url").and_then(|u| u.as_str()).unwrap_or("").trim_end_matches('/').to_string();
-    let api_key = value.get("api_key").and_then(|k| k.as_str()).unwrap_or("").to_string();
-    let configured_categories: Vec<i32> = value.get("categories")
+    let prowlarr_url = value
+        .get("url")
+        .and_then(|u| u.as_str())
+        .unwrap_or("")
+        .trim_end_matches('/')
+        .to_string();
+    let api_key = value
+        .get("api_key")
+        .and_then(|k| k.as_str())
+        .unwrap_or("")
+        .to_string();
+    let configured_categories: Vec<i32> = value
+        .get("categories")
         .and_then(|c| c.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_i64().map(|n| n as i32)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_i64().map(|n| n as i32))
+                .collect()
+        })
         .unwrap_or_else(|| vec![7030, 7020]);
     // When a specific category is requested, restrict the Prowlarr query to that one
     // so all 100 results per pass are focused on that category.
@@ -406,7 +495,9 @@ pub async fn prowlarr_discovery(
     };
 
     if prowlarr_url.is_empty() || api_key.is_empty() {
-        return Err(ApiError::bad_request("Prowlarr URL and API key must be configured"));
+        return Err(ApiError::bad_request(
+            "Prowlarr URL and API key must be configured",
+        ));
     }
 
     let client = reqwest::Client::builder()
@@ -424,7 +515,9 @@ pub async fn prowlarr_discovery(
     }
     let passes: Vec<ProwlarrPass> = vec![
         ProwlarrPass { sort_key: None },
-        ProwlarrPass { sort_key: Some("publishDate") },
+        ProwlarrPass {
+            sort_key: Some("publishDate"),
+        },
     ];
 
     let mut raw: Vec<serde_json::Value> = Vec::new();
@@ -457,16 +550,27 @@ pub async fn prowlarr_discovery(
                 return Err(ApiError::internal(format!("Prowlarr unreachable: {e}")));
             }
             Err(e) => {
-                tracing::warn!("[DISCOVERY] Prowlarr request error sort={:?}: {e}", pass.sort_key);
+                tracing::warn!(
+                    "[DISCOVERY] Prowlarr request error sort={:?}: {e}",
+                    pass.sort_key
+                );
             }
             Ok(resp) if resp.status().is_success() => {
                 let results: Vec<serde_json::Value> = resp.json().await.unwrap_or_default();
                 let got = results.len();
                 raw.extend(results);
-                tracing::info!("[DISCOVERY] sort={:?} → {got} results (total raw: {})", pass.sort_key, raw.len());
+                tracing::info!(
+                    "[DISCOVERY] sort={:?} → {got} results (total raw: {})",
+                    pass.sort_key,
+                    raw.len()
+                );
             }
             Ok(resp) => {
-                tracing::warn!("[DISCOVERY] Prowlarr non-success status={} sort={:?}", resp.status(), pass.sort_key);
+                tracing::warn!(
+                    "[DISCOVERY] Prowlarr non-success status={} sort={:?}",
+                    resp.status(),
+                    pass.sort_key
+                );
             }
         }
 
@@ -475,7 +579,10 @@ pub async fn prowlarr_discovery(
     }
 
     if raw.is_empty() {
-        return Ok(Json(ProwlarrDiscoveryResponse { items: vec![], all_indexers: vec![] }));
+        return Ok(Json(ProwlarrDiscoveryResponse {
+            items: vec![],
+            all_indexers: vec![],
+        }));
     }
 
     // One item per release — no aggregation by series.
@@ -484,26 +591,54 @@ pub async fn prowlarr_discovery(
     let mut items: Vec<ProwlarrDiscoveryItem> = Vec::new();
 
     for release in &raw {
-        let guid = release.get("guid").and_then(|g| g.as_str()).unwrap_or("").to_string();
+        let guid = release
+            .get("guid")
+            .and_then(|g| g.as_str())
+            .unwrap_or("")
+            .to_string();
         if !guid.is_empty() && !seen_guids.insert(guid) {
             continue;
         }
 
-        let title = release.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string();
-        if title.is_empty() { continue; }
+        let title = release
+            .get("title")
+            .and_then(|t| t.as_str())
+            .unwrap_or("")
+            .to_string();
+        if title.is_empty() {
+            continue;
+        }
         let seeders = release.get("seeders").and_then(|s| s.as_i64()).unwrap_or(0) as i32;
         let size = release.get("size").and_then(|s| s.as_i64()).unwrap_or(0);
-        let download_url = release.get("downloadUrl").and_then(|u| u.as_str()).map(String::from);
-        let indexer = release.get("indexer").and_then(|i| i.as_str()).unwrap_or("").to_string();
-        let publish_date = release.get("publishDate").and_then(|d| d.as_str()).map(String::from);
-        let info_url = release.get("infoUrl").and_then(|u| u.as_str()).map(String::from);
-        let cats: Vec<String> = release.get("categories")
+        let download_url = release
+            .get("downloadUrl")
+            .and_then(|u| u.as_str())
+            .map(String::from);
+        let indexer = release
+            .get("indexer")
+            .and_then(|i| i.as_str())
+            .unwrap_or("")
+            .to_string();
+        let publish_date = release
+            .get("publishDate")
+            .and_then(|d| d.as_str())
+            .map(String::from);
+        let info_url = release
+            .get("infoUrl")
+            .and_then(|u| u.as_str())
+            .map(String::from);
+        let cats: Vec<String> = release
+            .get("categories")
             .and_then(|c| c.as_array())
-            .map(|arr| arr.iter().filter_map(|v| {
-                let name = v.get("name").and_then(|n| n.as_str())?;
-                let id = v.get("id").and_then(|i| i.as_i64())?;
-                Some(format!("{name} ({id})"))
-            }).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| {
+                        let name = v.get("name").and_then(|n| n.as_str())?;
+                        let id = v.get("id").and_then(|i| i.as_i64())?;
+                        Some(format!("{name} ({id})"))
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
 
         // Extract series name for local-library annotation only
@@ -516,13 +651,21 @@ pub async fn prowlarr_discovery(
             best_seeders: seeders,
             total_seeders: seeders,
             categories: cats,
-            indexers: if indexer.is_empty() { vec![] } else { vec![indexer.clone()] },
+            indexers: if indexer.is_empty() {
+                vec![]
+            } else {
+                vec![indexer.clone()]
+            },
             best_release_title: title,
             best_download_url: download_url,
             best_size: size,
             best_publish_date: publish_date,
             best_info_url: info_url,
-            best_indexer: if indexer.is_empty() { None } else { Some(indexer) },
+            best_indexer: if indexer.is_empty() {
+                None
+            } else {
+                Some(indexer)
+            },
             volumes_found: volumes,
             local_series_id: None,
             local_series_name: None,
@@ -533,24 +676,41 @@ pub async fn prowlarr_discovery(
     // Sort by seeders by default; apply_sort will re-order per-request
     items.sort_by(|a, b| b.best_seeders.cmp(&a.best_seeders));
 
-    tracing::info!("[DISCOVERY] Prowlarr: {} releases (deduplicated from {} raw)", items.len(), raw.len());
+    tracing::info!(
+        "[DISCOVERY] Prowlarr: {} releases (deduplicated from {} raw)",
+        items.len(),
+        raw.len()
+    );
 
     // Cache full result set (7 days)
-    set_cached_raw(&state.pool, &cache_key, "prowlarr", "discovery", &items, 168).await;
+    set_cached_raw(
+        &state.pool,
+        &cache_key,
+        "prowlarr",
+        "discovery",
+        &items,
+        168,
+    )
+    .await;
 
     apply_sort(&mut items, sort_by_date);
     let all_indexers = all_indexers_from(&items);
 
     // Filter by indexer then annotate with local library matches
     let pre_filtered: Vec<ProwlarrDiscoveryItem> = if let Some(idx) = indexer_filter {
-        items.into_iter().filter(|i| i.indexers.iter().any(|x| x == idx)).collect()
+        items
+            .into_iter()
+            .filter(|i| i.indexers.iter().any(|x| x == idx))
+            .collect()
     } else {
         items
     };
     let annotated = annotate_local_matches(&state.pool, pre_filtered).await;
-    Ok(Json(ProwlarrDiscoveryResponse { items: annotated, all_indexers }))
+    Ok(Json(ProwlarrDiscoveryResponse {
+        items: annotated,
+        all_indexers,
+    }))
 }
-
 
 pub fn extract_series_name_from_torrent(title: &str) -> String {
     // Dot-separated NRC-style: "Series.Name.T31.Author.Year.FR.[CBZ]-NRC"
@@ -561,19 +721,30 @@ pub fn extract_series_name_from_torrent(title: &str) -> String {
         let parts: Vec<&str> = title.split('.').collect();
         let mut end_idx = parts.len();
         for (i, part) in parts.iter().enumerate() {
-            if i == 0 { continue; }
+            if i == 0 {
+                continue;
+            }
             let pu = part.to_uppercase();
             // T31, T06, Vol01, Tome31 — prefix + all-digit suffix
-            let is_combined_volume = (pu.starts_with('T') && pu.len() >= 2 && pu[1..].chars().all(|c| c.is_ascii_digit()))
+            let is_combined_volume = (pu.starts_with('T')
+                && pu.len() >= 2
+                && pu[1..].chars().all(|c| c.is_ascii_digit()))
                 || ["VOL", "TOME", "VOLUME"].iter().any(|pfx| {
-                    pu.starts_with(pfx) && pu.len() > pfx.len() && pu[pfx.len()..].chars().all(|c| c.is_ascii_digit())
+                    pu.starts_with(pfx)
+                        && pu.len() > pfx.len()
+                        && pu[pfx.len()..].chars().all(|c| c.is_ascii_digit())
                 });
             // Standalone "Tome"/"Vol" always indicate volume in release names
-            let is_standalone_volume_word = matches!(pu.as_str(), "TOME" | "TOMES" | "VOL" | "VOLS" | "VOLUME");
+            let is_standalone_volume_word =
+                matches!(pu.as_str(), "TOME" | "TOMES" | "VOL" | "VOLS" | "VOLUME");
             let is_volume = is_combined_volume || is_standalone_volume_word;
-            let is_year = pu.len() == 4 && (pu.starts_with("19") || pu.starts_with("20")) && pu.chars().all(|c| c.is_ascii_digit());
-            let is_tag = matches!(pu.as_str(), "FR" | "EN" | "JP" | "VF" | "VO" | "FRENCH" | "CBZ" | "CBR" | "PDF" | "EPUB")
-                || pu.starts_with('[');
+            let is_year = pu.len() == 4
+                && (pu.starts_with("19") || pu.starts_with("20"))
+                && pu.chars().all(|c| c.is_ascii_digit());
+            let is_tag = matches!(
+                pu.as_str(),
+                "FR" | "EN" | "JP" | "VF" | "VO" | "FRENCH" | "CBZ" | "CBR" | "PDF" | "EPUB"
+            ) || pu.starts_with('[');
             if is_volume || is_year || is_tag {
                 end_idx = i;
                 break;
@@ -584,8 +755,29 @@ pub fn extract_series_name_from_torrent(title: &str) -> String {
 
     // Space-separated titles
     let lower = title.to_lowercase();
-    let separators = [" - bd ", " - tome ", " - t0", " - t1", " - t2", " - t3", " - t4", " - t5", " - t6", " - t7", " - t8", " - t9",
-        " -bd ", " tome ", " vol.", " vol ", " [", " (", " intégrale", " integrale", " complet"];
+    let separators = [
+        " - bd ",
+        " - tome ",
+        " - t0",
+        " - t1",
+        " - t2",
+        " - t3",
+        " - t4",
+        " - t5",
+        " - t6",
+        " - t7",
+        " - t8",
+        " - t9",
+        " -bd ",
+        " tome ",
+        " vol.",
+        " vol ",
+        " [",
+        " (",
+        " intégrale",
+        " integrale",
+        " complet",
+    ];
     let mut best_pos = title.len();
     for sep in &separators {
         if let Some(pos) = lower.find(sep) {
@@ -604,39 +796,95 @@ mod extract_tests {
     #[test]
     fn dot_t_volume() {
         // T31 → stop
-        assert_eq!(extract_series_name_from_torrent("Orcs.&.Gobelins.T31.Tren'gar.Peru.Sentenac.2025.FR.[CBZ]-NRC"), "Orcs & Gobelins");
-        assert_eq!(extract_series_name_from_torrent("Orcs.&.Gobelins.T32.Ogoor.Jarry.Scalisi.2025.FR.[CBZ]-NRC"), "Orcs & Gobelins");
-        assert_eq!(extract_series_name_from_torrent("Elric.T06.La.Sorciere.dormante.Blondel.Cano.2025.fr.[PDF].[CBZ]-notag"), "Elric");
+        assert_eq!(
+            extract_series_name_from_torrent(
+                "Orcs.&.Gobelins.T31.Tren'gar.Peru.Sentenac.2025.FR.[CBZ]-NRC"
+            ),
+            "Orcs & Gobelins"
+        );
+        assert_eq!(
+            extract_series_name_from_torrent(
+                "Orcs.&.Gobelins.T32.Ogoor.Jarry.Scalisi.2025.FR.[CBZ]-NRC"
+            ),
+            "Orcs & Gobelins"
+        );
+        assert_eq!(
+            extract_series_name_from_torrent(
+                "Elric.T06.La.Sorciere.dormante.Blondel.Cano.2025.fr.[PDF].[CBZ]-notag"
+            ),
+            "Elric"
+        );
     }
 
     #[test]
     fn dot_tome_split_volume() {
         // Tome/Vol standalone always a stop word
-        assert_eq!(extract_series_name_from_torrent("Monstress.Tome.01.L'Éveil.LIU.FR.[PDF]-Notag"), "Monstress");
+        assert_eq!(
+            extract_series_name_from_torrent("Monstress.Tome.01.L'Éveil.LIU.FR.[PDF]-Notag"),
+            "Monstress"
+        );
         // Title with spaces inside brackets — dot heuristic still applies
-        assert_eq!(extract_series_name_from_torrent("One.Piece.Tome.[1 à 100].3.HS.Eichiro.Oda.FR.[CBZ]-GRP"), "One Piece");
+        assert_eq!(
+            extract_series_name_from_torrent(
+                "One.Piece.Tome.[1 à 100].3.HS.Eichiro.Oda.FR.[CBZ]-GRP"
+            ),
+            "One Piece"
+        );
     }
 
     #[test]
     fn dot_integrale_bracket() {
         // [INTEGRALE] and [COLLECTION] stop via bracket detection
-        assert_eq!(extract_series_name_from_torrent("Gunnm.[INTEGRALE].FR.[CBZ]-PRiNTER-PapriKa"), "Gunnm");
-        assert_eq!(extract_series_name_from_torrent("Meteors.[INTEGRALE].FR.[PDF]-NOTAG"), "Meteors");
-        assert_eq!(extract_series_name_from_torrent("Hot.Cousine.Nils.[COLLECTION].FR.[CBR]-NOTAG"), "Hot Cousine Nils");
-        assert_eq!(extract_series_name_from_torrent("Planètes.[INTEGRALE].FR.[CBZ]-PapriKa"), "Planètes");
-        assert_eq!(extract_series_name_from_torrent("Sherlock.Holmes.[COLLECTION].29.Albums.Par.Editeur.FR.[PDF]-NOTAG"), "Sherlock Holmes");
+        assert_eq!(
+            extract_series_name_from_torrent("Gunnm.[INTEGRALE].FR.[CBZ]-PRiNTER-PapriKa"),
+            "Gunnm"
+        );
+        assert_eq!(
+            extract_series_name_from_torrent("Meteors.[INTEGRALE].FR.[PDF]-NOTAG"),
+            "Meteors"
+        );
+        assert_eq!(
+            extract_series_name_from_torrent("Hot.Cousine.Nils.[COLLECTION].FR.[CBR]-NOTAG"),
+            "Hot Cousine Nils"
+        );
+        assert_eq!(
+            extract_series_name_from_torrent("Planètes.[INTEGRALE].FR.[CBZ]-PapriKa"),
+            "Planètes"
+        );
+        assert_eq!(
+            extract_series_name_from_torrent(
+                "Sherlock.Holmes.[COLLECTION].29.Albums.Par.Editeur.FR.[PDF]-NOTAG"
+            ),
+            "Sherlock Holmes"
+        );
     }
 
     #[test]
     fn dot_year_stop() {
-        assert_eq!(extract_series_name_from_torrent("Neon.Genesis.Evangelion.1998.[INTEGRALE].FR.[CBZ]-MangaFR"), "Neon Genesis Evangelion");
-        assert_eq!(extract_series_name_from_torrent("Naruto.2024.FR.[CBZ]-GRP"), "Naruto");
+        assert_eq!(
+            extract_series_name_from_torrent(
+                "Neon.Genesis.Evangelion.1998.[INTEGRALE].FR.[CBZ]-MangaFR"
+            ),
+            "Neon Genesis Evangelion"
+        );
+        assert_eq!(
+            extract_series_name_from_torrent("Naruto.2024.FR.[CBZ]-GRP"),
+            "Naruto"
+        );
     }
 
     #[test]
     fn dot_lang_stop() {
-        assert_eq!(extract_series_name_from_torrent("Akira.Edition.Originale.Katsuhiro.Otomo.FR.CBZ-Manga.Fr"), "Akira Edition Originale Katsuhiro Otomo");
-        assert_eq!(extract_series_name_from_torrent("Star.Wars.Mega.Pack.Comics.FRENCH.[PDF]-Moorea81"), "Star Wars Mega Pack Comics");
+        assert_eq!(
+            extract_series_name_from_torrent(
+                "Akira.Edition.Originale.Katsuhiro.Otomo.FR.CBZ-Manga.Fr"
+            ),
+            "Akira Edition Originale Katsuhiro Otomo"
+        );
+        assert_eq!(
+            extract_series_name_from_torrent("Star.Wars.Mega.Pack.Comics.FRENCH.[PDF]-Moorea81"),
+            "Star Wars Mega Pack Comics"
+        );
     }
 
     #[test]
@@ -646,7 +894,10 @@ mod extract_tests {
 
     #[test]
     fn space_separated_bracket() {
-        assert_eq!(extract_series_name_from_torrent("Dragon Ball [CBZ]"), "Dragon Ball");
+        assert_eq!(
+            extract_series_name_from_torrent("Dragon Ball [CBZ]"),
+            "Dragon Ball"
+        );
     }
 
     #[test]
@@ -684,7 +935,8 @@ async fn annotate_local_matches(
     }
 
     // Build raw_item_name → (series_id, series_name) map
-    let match_map: std::collections::HashMap<String, (String, String)> = matched_rows.iter()
+    let match_map: std::collections::HashMap<String, (String, String)> = matched_rows
+        .iter()
         .map(|r| {
             let raw: String = r.get("raw_name");
             let id: String = r.get("id");
@@ -707,7 +959,8 @@ async fn annotate_local_matches(
     .unwrap_or_default();
 
     // series_id → Vec<volume_number>
-    let mut owned_volumes: std::collections::HashMap<String, Vec<i32>> = std::collections::HashMap::new();
+    let mut owned_volumes: std::collections::HashMap<String, Vec<i32>> =
+        std::collections::HashMap::new();
     for row in &volume_rows {
         let sid: String = row.get("series_id");
         let vol: i32 = row.get("volume_number");
@@ -718,7 +971,9 @@ async fn annotate_local_matches(
     for item in &mut items {
         if let Some((sid, sname)) = match_map.get(&item.series_name) {
             let owned = owned_volumes.get(sid).cloned().unwrap_or_default();
-            item.volumes_already_owned = item.volumes_found.iter()
+            item.volumes_already_owned = item
+                .volumes_found
+                .iter()
                 .filter(|v| owned.contains(v))
                 .copied()
                 .collect();
@@ -730,10 +985,12 @@ async fn annotate_local_matches(
     items
 }
 
-
 // ─── Generic cache helpers for typed data ───────────────────────────────────
 
-async fn get_cached_raw<T: serde::de::DeserializeOwned>(pool: &sqlx::PgPool, cache_key: &str) -> Option<T> {
+async fn get_cached_raw<T: serde::de::DeserializeOwned>(
+    pool: &sqlx::PgPool,
+    cache_key: &str,
+) -> Option<T> {
     let row = sqlx::query(
         "SELECT results FROM discovery_cache WHERE cache_key = $1 AND expires_at > NOW()",
     )
@@ -777,7 +1034,7 @@ pub async fn add_to_library(
     State(state): State<AppState>,
     Json(req): Json<AddToLibraryRequest>,
 ) -> Result<Json<AddToLibraryResponse>, ApiError> {
-    use crate::series::helpers::{CreateSeriesParams, create_series_with_metadata};
+    use crate::series::helpers::{create_series_with_metadata, CreateSeriesParams};
 
     // Normalize provider: sc_trending_bd, sc_best_manga, etc. → senscritique
     let metadata_provider = if req.provider.starts_with("sc_") {
@@ -800,16 +1057,27 @@ pub async fn add_to_library(
         "cover_url": req.cover_url,
     });
 
-    let result = create_series_with_metadata(&state, CreateSeriesParams {
-        library_id: req.library_id,
-        name: req.title.clone(),
-        provider: if is_linkable { Some(metadata_provider.clone()) } else { None },
-        external_id: if is_linkable { Some(req.external_id.clone()) } else { None },
-        external_url: req.external_url.clone(),
-        confidence: Some(1.0),
-        total_volumes: req.total_volumes,
-        metadata_json: Some(metadata_json),
-    })
+    let result = create_series_with_metadata(
+        &state,
+        CreateSeriesParams {
+            library_id: req.library_id,
+            name: req.title.clone(),
+            provider: if is_linkable {
+                Some(metadata_provider.clone())
+            } else {
+                None
+            },
+            external_id: if is_linkable {
+                Some(req.external_id.clone())
+            } else {
+                None
+            },
+            external_url: req.external_url.clone(),
+            confidence: Some(1.0),
+            total_volumes: req.total_volumes,
+            metadata_json: Some(metadata_json),
+        },
+    )
     .await?;
 
     tracing::info!(
@@ -817,7 +1085,11 @@ pub async fn add_to_library(
         req.title,
         req.library_id,
         req.provider,
-        if result.metadata_link_id.is_some() { " (metadata link created)" } else { "" }
+        if result.metadata_link_id.is_some() {
+            " (metadata link created)"
+        } else {
+            ""
+        }
     );
 
     Ok(Json(AddToLibraryResponse {
@@ -852,22 +1124,20 @@ async fn filter_already_owned(
 
     // 2. Filter by series name (case-insensitive match)
     let titles: Vec<String> = suggestions.iter().map(|s| s.title.to_lowercase()).collect();
-    let owned_by_name: Vec<String> = sqlx::query_scalar(
-        "SELECT LOWER(name) FROM series WHERE LOWER(name) = ANY($1)",
-    )
-    .bind(&titles)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    let owned_by_name: Vec<String> =
+        sqlx::query_scalar("SELECT LOWER(name) FROM series WHERE LOWER(name) = ANY($1)")
+            .bind(&titles)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
 
     // 3. Filter by hidden items
-    let hidden_ids: Vec<String> = sqlx::query_scalar(
-        "SELECT external_id FROM discovery_hidden WHERE external_id = ANY($1)",
-    )
-    .bind(&external_ids)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    let hidden_ids: Vec<String> =
+        sqlx::query_scalar("SELECT external_id FROM discovery_hidden WHERE external_id = ANY($1)")
+            .bind(&external_ids)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
 
     suggestions
         .into_iter()
@@ -906,13 +1176,11 @@ pub async fn unhide_suggestion(
     State(state): State<AppState>,
     Json(body): Json<HideRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    sqlx::query(
-        "DELETE FROM discovery_hidden WHERE provider = $1 AND external_id = $2",
-    )
-    .bind(&body.provider)
-    .bind(&body.external_id)
-    .execute(&state.pool)
-    .await?;
+    sqlx::query("DELETE FROM discovery_hidden WHERE provider = $1 AND external_id = $2")
+        .bind(&body.provider)
+        .bind(&body.external_id)
+        .execute(&state.pool)
+        .await?;
 
     Ok(Json(serde_json::json!({"hidden": false})))
 }
@@ -936,7 +1204,9 @@ pub async fn list_hidden(
             external_id: r.get("external_id"),
             title: r.get("title"),
             cover_url: r.get("cover_url"),
-            hidden_at: r.get::<chrono::DateTime<chrono::Utc>, _>("hidden_at").to_rfc3339(),
+            hidden_at: r
+                .get::<chrono::DateTime<chrono::Utc>, _>("hidden_at")
+                .to_rfc3339(),
         })
         .collect();
 

@@ -110,13 +110,19 @@ pub async fn flush_all_batches(
     errors_insert: &mut Vec<ErrorInsert>,
     events_insert: &mut Vec<EventInsert>,
 ) -> Result<()> {
-    if books_update.is_empty() && files_update.is_empty() && books_insert.is_empty() && files_insert.is_empty() && errors_insert.is_empty() && events_insert.is_empty() {
+    if books_update.is_empty()
+        && files_update.is_empty()
+        && books_insert.is_empty()
+        && files_insert.is_empty()
+        && errors_insert.is_empty()
+        && events_insert.is_empty()
+    {
         return Ok(());
     }
-    
+
     let start = std::time::Instant::now();
     let mut tx = pool.begin().await?;
-    
+
     // Batch update books using UNNEST
     if !books_update.is_empty() {
         let book_ids: Vec<Uuid> = books_update.iter().map(|b| b.book_id).collect();
@@ -125,7 +131,8 @@ pub async fn flush_all_batches(
         let formats: Vec<String> = books_update.iter().map(|b| b.format.clone()).collect();
         let series_ids: Vec<Option<Uuid>> = books_update.iter().map(|b| b.series_id).collect();
         let volumes: Vec<Option<i32>> = books_update.iter().map(|b| b.volume).collect();
-        let volume_types: Vec<String> = books_update.iter().map(|b| b.volume_type.clone()).collect();
+        let volume_types: Vec<String> =
+            books_update.iter().map(|b| b.volume_type.clone()).collect();
         let page_counts: Vec<Option<i32>> = books_update.iter().map(|b| b.page_count).collect();
 
         sqlx::query(
@@ -156,18 +163,19 @@ pub async fn flush_all_batches(
         .bind(&page_counts)
         .execute(&mut *tx)
         .await?;
-        
+
         books_update.clear();
     }
-    
+
     // Batch update files using UNNEST
     if !files_update.is_empty() {
         let file_ids: Vec<Uuid> = files_update.iter().map(|f| f.file_id).collect();
         let formats: Vec<String> = files_update.iter().map(|f| f.format.clone()).collect();
         let sizes: Vec<i64> = files_update.iter().map(|f| f.size_bytes).collect();
         let mtimes: Vec<DateTime<Utc>> = files_update.iter().map(|f| f.mtime).collect();
-        let fingerprints: Vec<String> = files_update.iter().map(|f| f.fingerprint.clone()).collect();
-        
+        let fingerprints: Vec<String> =
+            files_update.iter().map(|f| f.fingerprint.clone()).collect();
+
         sqlx::query(
             r#"
             UPDATE book_files SET 
@@ -192,10 +200,10 @@ pub async fn flush_all_batches(
         .bind(&fingerprints)
         .execute(&mut *tx)
         .await?;
-        
+
         files_update.clear();
     }
-    
+
     // Batch insert books using UNNEST
     if !books_insert.is_empty() {
         let book_ids: Vec<Uuid> = books_insert.iter().map(|b| b.book_id).collect();
@@ -206,8 +214,12 @@ pub async fn flush_all_batches(
         let series_ids: Vec<Option<Uuid>> = books_insert.iter().map(|b| b.series_id).collect();
         let volumes: Vec<Option<i32>> = books_insert.iter().map(|b| b.volume).collect();
         let page_counts: Vec<Option<i32>> = books_insert.iter().map(|b| b.page_count).collect();
-        let volume_types: Vec<String> = books_insert.iter().map(|b| b.volume_type.clone()).collect();
-        let thumbnail_paths: Vec<Option<String>> = books_insert.iter().map(|b| b.thumbnail_path.clone()).collect();
+        let volume_types: Vec<String> =
+            books_insert.iter().map(|b| b.volume_type.clone()).collect();
+        let thumbnail_paths: Vec<Option<String>> = books_insert
+            .iter()
+            .map(|b| b.thumbnail_path.clone())
+            .collect();
 
         sqlx::query(
             r#"
@@ -228,10 +240,10 @@ pub async fn flush_all_batches(
         .bind(&thumbnail_paths)
         .execute(&mut *tx)
         .await?;
-        
+
         books_insert.clear();
     }
-    
+
     // Batch insert files using UNNEST
     if !files_insert.is_empty() {
         let file_ids: Vec<Uuid> = files_insert.iter().map(|f| f.file_id).collect();
@@ -240,10 +252,15 @@ pub async fn flush_all_batches(
         let abs_paths: Vec<String> = files_insert.iter().map(|f| f.abs_path.clone()).collect();
         let sizes: Vec<i64> = files_insert.iter().map(|f| f.size_bytes).collect();
         let mtimes: Vec<DateTime<Utc>> = files_insert.iter().map(|f| f.mtime).collect();
-        let fingerprints: Vec<String> = files_insert.iter().map(|f| f.fingerprint.clone()).collect();
-        let statuses: Vec<String> = files_insert.iter().map(|f| f.parse_status.clone()).collect();
-        let errors: Vec<Option<String>> = files_insert.iter().map(|f| f.parse_error.clone()).collect();
-        
+        let fingerprints: Vec<String> =
+            files_insert.iter().map(|f| f.fingerprint.clone()).collect();
+        let statuses: Vec<String> = files_insert
+            .iter()
+            .map(|f| f.parse_status.clone())
+            .collect();
+        let errors: Vec<Option<String>> =
+            files_insert.iter().map(|f| f.parse_error.clone()).collect();
+
         sqlx::query(
             r#"
             INSERT INTO book_files (id, book_id, format, abs_path, size_bytes, mtime, fingerprint, parse_status, parse_error_opt)
@@ -262,23 +279,31 @@ pub async fn flush_all_batches(
         .bind(&errors)
         .execute(&mut *tx)
         .await?;
-        
+
         files_insert.clear();
     }
-    
+
     // Errors are now tracked via index_job_events (no longer written to index_job_errors)
     errors_insert.clear();
-    
+
     // Batch insert events using UNNEST
     if !events_insert.is_empty() {
         let job_ids: Vec<Uuid> = events_insert.iter().map(|e| e.job_id).collect();
         let event_types: Vec<String> = events_insert.iter().map(|e| e.event_type.clone()).collect();
         let levels: Vec<String> = events_insert.iter().map(|e| e.level.clone()).collect();
-        let entity_types: Vec<Option<String>> = events_insert.iter().map(|e| e.entity_type.clone()).collect();
+        let entity_types: Vec<Option<String>> = events_insert
+            .iter()
+            .map(|e| e.entity_type.clone())
+            .collect();
         let entity_ids: Vec<Option<Uuid>> = events_insert.iter().map(|e| e.entity_id).collect();
-        let entity_names: Vec<Option<String>> = events_insert.iter().map(|e| e.entity_name.clone()).collect();
-        let messages: Vec<Option<String>> = events_insert.iter().map(|e| e.message.clone()).collect();
-        let details: Vec<Option<serde_json::Value>> = events_insert.iter().map(|e| e.detail.clone()).collect();
+        let entity_names: Vec<Option<String>> = events_insert
+            .iter()
+            .map(|e| e.entity_name.clone())
+            .collect();
+        let messages: Vec<Option<String>> =
+            events_insert.iter().map(|e| e.message.clone()).collect();
+        let details: Vec<Option<serde_json::Value>> =
+            events_insert.iter().map(|e| e.detail.clone()).collect();
 
         sqlx::query(
             r#"

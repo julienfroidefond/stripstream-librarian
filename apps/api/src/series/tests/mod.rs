@@ -1,9 +1,9 @@
 mod create;
 mod related;
 
-use super::*;
 use super::helpers::get_or_create_series;
 use super::update::UpdateSeriesResponse;
+use super::*;
 
 #[test]
 fn series_item_has_series_id() {
@@ -109,31 +109,48 @@ async fn create_test_library(pool: &sqlx::PgPool, name: &str) -> Uuid {
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn get_or_create_series_new(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "test").await;
-    let id = get_or_create_series(&pool, lib_id, "Dragon Ball").await.unwrap();
+    let id = get_or_create_series(&pool, lib_id, "Dragon Ball")
+        .await
+        .unwrap();
     assert_ne!(id, Uuid::nil());
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn get_or_create_series_idempotent(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "test").await;
-    let id1 = get_or_create_series(&pool, lib_id, "Dragon Ball").await.unwrap();
-    let id2 = get_or_create_series(&pool, lib_id, "Dragon Ball").await.unwrap();
+    let id1 = get_or_create_series(&pool, lib_id, "Dragon Ball")
+        .await
+        .unwrap();
+    let id2 = get_or_create_series(&pool, lib_id, "Dragon Ball")
+        .await
+        .unwrap();
     assert_eq!(id1, id2);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn get_or_create_series_case_insensitive(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "test").await;
-    let id1 = get_or_create_series(&pool, lib_id, "Dragon Ball").await.unwrap();
-    let id2 = get_or_create_series(&pool, lib_id, "dragon ball").await.unwrap();
-    assert_eq!(id1, id2, "same series with different casing should return same id");
+    let id1 = get_or_create_series(&pool, lib_id, "Dragon Ball")
+        .await
+        .unwrap();
+    let id2 = get_or_create_series(&pool, lib_id, "dragon ball")
+        .await
+        .unwrap();
+    assert_eq!(
+        id1, id2,
+        "same series with different casing should return same id"
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn get_or_create_series_accent_insensitive(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "test").await;
-    let id1 = get_or_create_series(&pool, lib_id, "Astérix").await.unwrap();
-    let id2 = get_or_create_series(&pool, lib_id, "Asterix").await.unwrap();
+    let id1 = get_or_create_series(&pool, lib_id, "Astérix")
+        .await
+        .unwrap();
+    let id2 = get_or_create_series(&pool, lib_id, "Asterix")
+        .await
+        .unwrap();
     assert_eq!(id1, id2, "accented and unaccented names should match");
 }
 
@@ -143,14 +160,19 @@ async fn get_or_create_series_different_libraries(pool: sqlx::PgPool) {
     let lib2 = create_test_library(&pool, "lib2").await;
     let id1 = get_or_create_series(&pool, lib1, "Naruto").await.unwrap();
     let id2 = get_or_create_series(&pool, lib2, "Naruto").await.unwrap();
-    assert_ne!(id1, id2, "same name in different libraries should be different series");
+    assert_ne!(
+        id1, id2,
+        "same name in different libraries should be different series"
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn get_or_create_series_finds_by_original_name(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "rename_test").await;
 
-    let id1 = get_or_create_series(&pool, lib_id, "Dragon Ball").await.unwrap();
+    let id1 = get_or_create_series(&pool, lib_id, "Dragon Ball")
+        .await
+        .unwrap();
     sqlx::query("UPDATE series SET name = $1, original_name = $2 WHERE id = $3")
         .bind("Dragon Ball Z")
         .bind("Dragon Ball")
@@ -159,15 +181,22 @@ async fn get_or_create_series_finds_by_original_name(pool: sqlx::PgPool) {
         .await
         .unwrap();
 
-    let id2 = get_or_create_series(&pool, lib_id, "Dragon Ball").await.unwrap();
-    assert_eq!(id1, id2, "lookup by original_name should return the renamed series");
+    let id2 = get_or_create_series(&pool, lib_id, "Dragon Ball")
+        .await
+        .unwrap();
+    assert_eq!(
+        id1, id2,
+        "lookup by original_name should return the renamed series"
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn get_or_create_series_original_name_case_insensitive(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "rename_case_test").await;
 
-    let id1 = get_or_create_series(&pool, lib_id, "LES MYTHICS").await.unwrap();
+    let id1 = get_or_create_series(&pool, lib_id, "LES MYTHICS")
+        .await
+        .unwrap();
     sqlx::query("UPDATE series SET name = $1, original_name = $2 WHERE id = $3")
         .bind("Mythics")
         .bind("LES MYTHICS")
@@ -176,7 +205,9 @@ async fn get_or_create_series_original_name_case_insensitive(pool: sqlx::PgPool)
         .await
         .unwrap();
 
-    let id2 = get_or_create_series(&pool, lib_id, "les mythics").await.unwrap();
+    let id2 = get_or_create_series(&pool, lib_id, "les mythics")
+        .await
+        .unwrap();
     assert_eq!(id1, id2, "original_name lookup should be case-insensitive");
 }
 
@@ -184,7 +215,9 @@ async fn get_or_create_series_original_name_case_insensitive(pool: sqlx::PgPool)
 async fn get_or_create_series_chained_rename(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "chained_rename").await;
 
-    let id1 = get_or_create_series(&pool, lib_id, "Series A").await.unwrap();
+    let id1 = get_or_create_series(&pool, lib_id, "Series A")
+        .await
+        .unwrap();
     sqlx::query("UPDATE series SET name = $1, original_name = $2 WHERE id = $3")
         .bind("Series C")
         .bind("Series A")
@@ -193,10 +226,14 @@ async fn get_or_create_series_chained_rename(pool: sqlx::PgPool) {
         .await
         .unwrap();
 
-    let id2 = get_or_create_series(&pool, lib_id, "Series A").await.unwrap();
+    let id2 = get_or_create_series(&pool, lib_id, "Series A")
+        .await
+        .unwrap();
     assert_eq!(id1, id2, "chained rename: original_name should still match");
 
-    let id3 = get_or_create_series(&pool, lib_id, "Series C").await.unwrap();
+    let id3 = get_or_create_series(&pool, lib_id, "Series C")
+        .await
+        .unwrap();
     assert_eq!(id1, id3, "current name should also match");
 }
 
@@ -259,11 +296,19 @@ async fn merge_moves_books_to_target(pool: sqlx::PgPool) {
     create_book(&pool, lib_id, source, "Book C").await;
 
     let moved = sqlx::query("UPDATE books SET series_id = $1 WHERE series_id = $2")
-        .bind(target).bind(source).execute(&pool).await.unwrap().rows_affected();
+        .bind(target)
+        .bind(source)
+        .execute(&pool)
+        .await
+        .unwrap()
+        .rows_affected();
     assert_eq!(moved, 2);
 
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM books WHERE series_id = $1")
-        .bind(target).fetch_one(&pool).await.unwrap();
+        .bind(target)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(count, 3);
 }
 
@@ -277,20 +322,31 @@ async fn merge_moves_metadata_links(pool: sqlx::PgPool) {
         "INSERT INTO external_metadata_links (library_id, series_id, provider, external_id) \
          VALUES ($1, $2, 'senscritique', '123')",
     )
-    .bind(lib_id).bind(source).execute(&pool).await.unwrap();
+    .bind(lib_id)
+    .bind(source)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let moved = sqlx::query(
         "UPDATE external_metadata_links SET series_id = $1 \
          WHERE series_id = $2 \
          AND provider NOT IN (SELECT provider FROM external_metadata_links WHERE series_id = $1)",
     )
-    .bind(target).bind(source).execute(&pool).await.unwrap().rows_affected();
+    .bind(target)
+    .bind(source)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .rows_affected();
     assert_eq!(moved, 1);
 
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1",
-    )
-    .bind(target).fetch_one(&pool).await.unwrap();
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1")
+            .bind(target)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(count, 1);
 }
 
@@ -305,7 +361,12 @@ async fn merge_keeps_target_metadata_on_conflict(pool: sqlx::PgPool) {
             "INSERT INTO external_metadata_links (library_id, series_id, provider, external_id) \
              VALUES ($1, $2, 'senscritique', $3)",
         )
-        .bind(lib_id).bind(sid).bind(ext_id).execute(&pool).await.unwrap();
+        .bind(lib_id)
+        .bind(sid)
+        .bind(ext_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     }
 
     let moved = sqlx::query(
@@ -313,17 +374,31 @@ async fn merge_keeps_target_metadata_on_conflict(pool: sqlx::PgPool) {
          WHERE series_id = $2 \
          AND provider NOT IN (SELECT provider FROM external_metadata_links WHERE series_id = $1)",
     )
-    .bind(target).bind(source).execute(&pool).await.unwrap().rows_affected();
-    assert_eq!(moved, 0, "source link should NOT be moved (target already has senscritique)");
+    .bind(target)
+    .bind(source)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .rows_affected();
+    assert_eq!(
+        moved, 0,
+        "source link should NOT be moved (target already has senscritique)"
+    );
 
     sqlx::query("DELETE FROM external_metadata_links WHERE series_id = $1")
-        .bind(source).execute(&pool).await.unwrap();
+        .bind(source)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let ext_id: String = sqlx::query_scalar(
         "SELECT external_id FROM external_metadata_links WHERE series_id = $1 AND provider = 'senscritique'",
     )
     .bind(target).fetch_one(&pool).await.unwrap();
-    assert_eq!(ext_id, "target_123", "target's original link should be preserved");
+    assert_eq!(
+        ext_id, "target_123",
+        "target's original link should be preserved"
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -333,17 +408,31 @@ async fn merge_deletes_source_series(pool: sqlx::PgPool) {
     let source = create_series(&pool, lib_id, "Source").await;
 
     sqlx::query("UPDATE books SET series_id = $1 WHERE series_id = $2")
-        .bind(target).bind(source).execute(&pool).await.unwrap();
+        .bind(target)
+        .bind(source)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     sqlx::query("DELETE FROM series WHERE id = $1")
-        .bind(source).execute(&pool).await.unwrap();
+        .bind(source)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM series WHERE id = $1)")
-        .bind(source).fetch_one(&pool).await.unwrap();
+        .bind(source)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert!(!exists, "source series should be deleted");
 
-    let target_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM series WHERE id = $1)")
-        .bind(target).fetch_one(&pool).await.unwrap();
+    let target_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM series WHERE id = $1)")
+            .bind(target)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert!(target_exists, "target series should still exist");
 }
 
@@ -369,7 +458,10 @@ async fn missing_count_with_total_volumes_and_books(pool: sqlx::PgPool) {
     let sid = create_series(&pool, lib_id, "Naruto").await;
 
     sqlx::query("UPDATE series SET total_volumes = 10 WHERE id = $1")
-        .bind(sid).execute(&pool).await.unwrap();
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     for i in 1..=7 {
         create_book(&pool, lib_id, sid, &format!("Vol {i}")).await;
@@ -398,7 +490,10 @@ async fn missing_count_zero_when_complete(pool: sqlx::PgPool) {
     let sid = create_series(&pool, lib_id, "Complete").await;
 
     sqlx::query("UPDATE series SET total_volumes = 3 WHERE id = $1")
-        .bind(sid).execute(&pool).await.unwrap();
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     for i in 1..=3 {
         create_book(&pool, lib_id, sid, &format!("Vol {i}")).await;
@@ -414,7 +509,10 @@ async fn missing_count_zero_when_more_books_than_total(pool: sqlx::PgPool) {
     let sid = create_series(&pool, lib_id, "Overflow").await;
 
     sqlx::query("UPDATE series SET total_volumes = 2 WHERE id = $1")
-        .bind(sid).execute(&pool).await.unwrap();
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     for i in 1..=5 {
         create_book(&pool, lib_id, sid, &format!("Vol {i}")).await;
@@ -430,17 +528,31 @@ async fn missing_count_updates_after_manual_edit(pool: sqlx::PgPool) {
     let sid = create_series(&pool, lib_id, "Edited").await;
 
     sqlx::query("UPDATE series SET total_volumes = 5 WHERE id = $1")
-        .bind(sid).execute(&pool).await.unwrap();
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     create_book(&pool, lib_id, sid, "Vol 1").await;
     create_book(&pool, lib_id, sid, "Vol 2").await;
 
-    assert_eq!(query_missing_count(&pool, lib_id, sid).await, 3, "5 - 2 = 3");
+    assert_eq!(
+        query_missing_count(&pool, lib_id, sid).await,
+        3,
+        "5 - 2 = 3"
+    );
 
     sqlx::query("UPDATE series SET total_volumes = 10 WHERE id = $1")
-        .bind(sid).execute(&pool).await.unwrap();
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .unwrap();
 
-    assert_eq!(query_missing_count(&pool, lib_id, sid).await, 8, "10 - 2 = 8");
+    assert_eq!(
+        query_missing_count(&pool, lib_id, sid).await,
+        8,
+        "10 - 2 = 8"
+    );
 }
 
 /// Regression: series with zero books should appear in list (LEFT JOIN, not INNER JOIN).
@@ -473,10 +585,16 @@ async fn list_includes_series_with_zero_books(pool: sqlx::PgPool) {
     .await
     .unwrap();
 
-    assert!(row.is_some(), "series with zero books should appear in series_counts CTE");
+    assert!(
+        row.is_some(),
+        "series with zero books should appear in series_counts CTE"
+    );
     let row = row.unwrap();
     let book_count: i64 = row.get("book_count");
-    assert_eq!(book_count, 0, "book_count should be 0 for a series with no books");
+    assert_eq!(
+        book_count, 0,
+        "book_count should be 0 for a series with no books"
+    );
     let name: String = row.get("name");
     assert_eq!(name, "Empty Series");
 }
@@ -489,7 +607,10 @@ async fn missing_count_excludes_hs_books(pool: sqlx::PgPool) {
     let sid = create_series(&pool, lib_id, "Boruto").await;
 
     sqlx::query("UPDATE series SET total_volumes = 5 WHERE id = $1")
-        .bind(sid).execute(&pool).await.unwrap();
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     // 3 regular + 1 HS = 4 books total, but only 3 count toward missing
     create_book_with_type(&pool, lib_id, sid, "Vol 1", Some(1), "regular").await;
@@ -507,14 +628,20 @@ async fn missing_count_excludes_oneshot_books(pool: sqlx::PgPool) {
     let sid = create_series(&pool, lib_id, "Mixed").await;
 
     sqlx::query("UPDATE series SET total_volumes = 3 WHERE id = $1")
-        .bind(sid).execute(&pool).await.unwrap();
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     create_book_with_type(&pool, lib_id, sid, "Vol 1", Some(1), "regular").await;
     create_book_with_type(&pool, lib_id, sid, "Vol 2", Some(2), "regular").await;
     create_book_with_type(&pool, lib_id, sid, "One-shot", None, "oneshot").await;
 
     let missing = query_missing_count(&pool, lib_id, sid).await;
-    assert_eq!(missing, 1, "3 total - 2 regular = 1 missing (oneshot excluded)");
+    assert_eq!(
+        missing, 1,
+        "3 total - 2 regular = 1 missing (oneshot excluded)"
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -523,7 +650,10 @@ async fn missing_count_zero_with_hs_when_complete(pool: sqlx::PgPool) {
     let sid = create_series(&pool, lib_id, "Complete+HS").await;
 
     sqlx::query("UPDATE series SET total_volumes = 3 WHERE id = $1")
-        .bind(sid).execute(&pool).await.unwrap();
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     // 3 regular (complete) + 2 HS (bonus)
     for i in 1..=3 {
@@ -533,7 +663,10 @@ async fn missing_count_zero_with_hs_when_complete(pool: sqlx::PgPool) {
     create_book_with_type(&pool, lib_id, sid, "HS 2", Some(2), "hs").await;
 
     let missing = query_missing_count(&pool, lib_id, sid).await;
-    assert_eq!(missing, 0, "3 total - 3 regular = 0 missing (HS don't inflate)");
+    assert_eq!(
+        missing, 0,
+        "3 total - 3 regular = 0 missing (HS don't inflate)"
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -542,7 +675,10 @@ async fn missing_count_zero_when_integral_present(pool: sqlx::PgPool) {
     let sid = create_series(&pool, lib_id, "La Rivière").await;
 
     sqlx::query("UPDATE series SET total_volumes = 2 WHERE id = $1")
-        .bind(sid).execute(&pool).await.unwrap();
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     // Only an intégrale — covers the whole series
     create_book_with_type(&pool, lib_id, sid, "La Rivière INT", None, "integral").await;
@@ -557,7 +693,10 @@ async fn missing_count_zero_when_integral_plus_regular(pool: sqlx::PgPool) {
     let sid = create_series(&pool, lib_id, "Mixed INT").await;
 
     sqlx::query("UPDATE series SET total_volumes = 10 WHERE id = $1")
-        .bind(sid).execute(&pool).await.unwrap();
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     // 2 regular + 1 integral → integral makes it complete
     create_book_with_type(&pool, lib_id, sid, "Vol 1", Some(1), "regular").await;
@@ -565,7 +704,10 @@ async fn missing_count_zero_when_integral_plus_regular(pool: sqlx::PgPool) {
     create_book_with_type(&pool, lib_id, sid, "INT 1", Some(1), "integral").await;
 
     let missing = query_missing_count(&pool, lib_id, sid).await;
-    assert_eq!(missing, 0, "integral present → 0 missing regardless of total_volumes");
+    assert_eq!(
+        missing, 0,
+        "integral present → 0 missing regardless of total_volumes"
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -574,7 +716,10 @@ async fn missing_count_normal_without_integral(pool: sqlx::PgPool) {
     let sid = create_series(&pool, lib_id, "No INT").await;
 
     sqlx::query("UPDATE series SET total_volumes = 5 WHERE id = $1")
-        .bind(sid).execute(&pool).await.unwrap();
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     // 3 regular, no integral → normal missing count
     for i in 1..=3 {

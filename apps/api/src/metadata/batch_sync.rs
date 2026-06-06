@@ -1,8 +1,8 @@
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use crate::metadata_providers;
 use super::shared_sync;
+use crate::metadata_providers;
 
 // ---------------------------------------------------------------------------
 // Search evaluation
@@ -83,15 +83,14 @@ pub(super) async fn auto_apply(
     candidate: &metadata_providers::SeriesCandidate,
 ) -> Result<Uuid, String> {
     // Resolve series_id from series name
-    let series_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM series WHERE library_id = $1 AND name = $2",
-    )
-    .bind(library_id)
-    .bind(series_name)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| e.to_string())?
-    .ok_or_else(|| format!("Series '{}' not found in library", series_name))?;
+    let series_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM series WHERE library_id = $1 AND name = $2")
+            .bind(library_id)
+            .bind(series_name)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Series '{}' not found in library", series_name))?;
 
     // Create the external_metadata_link
     let metadata_json = &candidate.metadata_json;
@@ -132,7 +131,15 @@ pub(super) async fn auto_apply(
     sync_series_from_candidate(pool, library_id, series_name, candidate).await?;
 
     // Sync books
-    sync_books_from_provider(pool, link_id, library_id, series_name, provider_name, &candidate.external_id).await?;
+    sync_books_from_provider(
+        pool,
+        link_id,
+        library_id,
+        series_name,
+        provider_name,
+        &candidate.external_id,
+    )
+    .await?;
 
     Ok(link_id)
 }
@@ -144,9 +151,9 @@ async fn sync_series_from_candidate(
     series_name: &str,
     candidate: &metadata_providers::SeriesCandidate,
 ) -> Result<(), String> {
-    let fields = shared_sync::extract_series_fields(
-        pool, &candidate.metadata_json, Some(candidate), None,
-    ).await;
+    let fields =
+        shared_sync::extract_series_fields(pool, &candidate.metadata_json, Some(candidate), None)
+            .await;
 
     shared_sync::upsert_series_metadata(pool, library_id, series_name, &fields)
         .await

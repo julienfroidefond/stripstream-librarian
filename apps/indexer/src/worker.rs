@@ -1,8 +1,8 @@
-use std::time::Duration;
+use crate::{job, scheduler, watcher, AppState};
 use sqlx::Row;
+use std::time::Duration;
 use tracing::{error, info, trace};
 use uuid::Uuid;
-use crate::{job, scheduler, watcher, AppState};
 
 pub async fn run_worker(state: AppState, interval_seconds: u64) {
     let wait = Duration::from_secs(interval_seconds.max(1));
@@ -26,25 +26,38 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
     let _scheduler_handle = tokio::spawn(async move {
         let scheduler_wait = Duration::from_secs(60); // Check every minute
         loop {
-            if let Err(err) = scheduler::check_and_schedule_auto_scans(&scheduler_state.pool).await {
+            if let Err(err) = scheduler::check_and_schedule_auto_scans(&scheduler_state.pool).await
+            {
                 error!("[SCHEDULER] Error: {}", err);
             }
-            if let Err(err) = scheduler::check_and_schedule_metadata_refreshes(&scheduler_state.pool).await {
+            if let Err(err) =
+                scheduler::check_and_schedule_metadata_refreshes(&scheduler_state.pool).await
+            {
                 error!("[SCHEDULER] Metadata refresh error: {}", err);
             }
-            if let Err(err) = scheduler::check_and_schedule_reading_status_push(&scheduler_state.pool).await {
+            if let Err(err) =
+                scheduler::check_and_schedule_reading_status_push(&scheduler_state.pool).await
+            {
                 error!("[SCHEDULER] Reading status push error: {}", err);
             }
-            if let Err(err) = scheduler::check_and_schedule_download_detection(&scheduler_state.pool).await {
+            if let Err(err) =
+                scheduler::check_and_schedule_download_detection(&scheduler_state.pool).await
+            {
                 error!("[SCHEDULER] Download detection error: {}", err);
             }
-            if let Err(err) = scheduler::check_and_schedule_prowlarr_rss(&scheduler_state.pool).await {
+            if let Err(err) =
+                scheduler::check_and_schedule_prowlarr_rss(&scheduler_state.pool).await
+            {
                 error!("[SCHEDULER] Prowlarr RSS error: {}", err);
             }
-            if let Err(err) = scheduler::check_and_schedule_telegram_sync(&scheduler_state.pool).await {
+            if let Err(err) =
+                scheduler::check_and_schedule_telegram_sync(&scheduler_state.pool).await
+            {
                 error!("[SCHEDULER] Telegram sync error: {}", err);
             }
-            if let Err(err) = scheduler::check_and_schedule_telegram_sync_incremental(&scheduler_state.pool).await {
+            if let Err(err) =
+                scheduler::check_and_schedule_telegram_sync_incremental(&scheduler_state.pool).await
+            {
                 error!("[SCHEDULER] Telegram sync incremental error: {}", err);
             }
             tokio::time::sleep(scheduler_wait).await;
@@ -58,11 +71,7 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
         thumbnail_path: Option<String>,
     }
 
-    async fn load_job_info(
-        pool: &sqlx::PgPool,
-        job_id: Uuid,
-        library_id: Option<Uuid>,
-    ) -> JobInfo {
+    async fn load_job_info(pool: &sqlx::PgPool, job_id: Uuid, library_id: Option<Uuid>) -> JobInfo {
         let row = sqlx::query("SELECT type, book_id FROM index_jobs WHERE id = $1")
             .bind(job_id)
             .fetch_optional(pool)
@@ -86,22 +95,28 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
             None
         };
 
-        let (book_title, thumbnail_path): (Option<String>, Option<String>) = if let Some(bid) = book_id {
-            let row = sqlx::query("SELECT title, thumbnail_path FROM books WHERE id = $1")
-                .bind(bid)
-                .fetch_optional(pool)
-                .await
-                .ok()
-                .flatten();
-            match row {
-                Some(r) => (r.get("title"), r.get("thumbnail_path")),
-                None => (None, None),
-            }
-        } else {
-            (None, None)
-        };
+        let (book_title, thumbnail_path): (Option<String>, Option<String>) =
+            if let Some(bid) = book_id {
+                let row = sqlx::query("SELECT title, thumbnail_path FROM books WHERE id = $1")
+                    .bind(bid)
+                    .fetch_optional(pool)
+                    .await
+                    .ok()
+                    .flatten();
+                match row {
+                    Some(r) => (r.get("title"), r.get("thumbnail_path")),
+                    None => (None, None),
+                }
+            } else {
+                (None, None)
+            };
 
-        JobInfo { job_type, library_name, book_title, thumbnail_path }
+        JobInfo {
+            job_type,
+            library_name,
+            book_title,
+            thumbnail_path,
+        }
     }
 
     async fn load_scan_stats(pool: &sqlx::PgPool, job_id: Uuid) -> notifications::ScanStats {
@@ -115,10 +130,20 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
         if let Some(row) = row {
             if let Ok(val) = row.try_get::<serde_json::Value, _>("stats_json") {
                 return notifications::ScanStats {
-                    scanned_files: val.get("scanned_files").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
-                    indexed_files: val.get("indexed_files").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
-                    removed_files: val.get("removed_files").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
-                    new_series: val.get("new_series").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+                    scanned_files: val
+                        .get("scanned_files")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as usize,
+                    indexed_files: val
+                        .get("indexed_files")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as usize,
+                    removed_files: val
+                        .get("removed_files")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as usize,
+                    new_series: val.get("new_series").and_then(|v| v.as_u64()).unwrap_or(0)
+                        as usize,
                     errors: val.get("errors").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
                 };
             }
@@ -211,7 +236,13 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
                         let _ = job::fail_job(&state.pool, job_id, &err_str).await;
                         notifications::notify(
                             state.pool.clone(),
-                            build_failed_event(&info.job_type, info.library_name.clone(), info.book_title.clone(), info.thumbnail_path.clone(), err_str),
+                            build_failed_event(
+                                &info.job_type,
+                                info.library_name.clone(),
+                                info.book_title.clone(),
+                                info.thumbnail_path.clone(),
+                                err_str,
+                            ),
                         );
                     }
                 } else {

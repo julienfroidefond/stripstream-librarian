@@ -4,15 +4,24 @@ use uuid::Uuid;
 async fn create_lib(pool: &sqlx::PgPool, name: &str) -> Uuid {
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
-        .bind(id).bind(name).bind(format!("/libraries/{name}"))
-        .execute(pool).await.unwrap();
+        .bind(id)
+        .bind(name)
+        .bind(format!("/libraries/{name}"))
+        .execute(pool)
+        .await
+        .unwrap();
     id
 }
 
 async fn create_series(pool: &sqlx::PgPool, lib_id: Uuid, name: &str) -> Uuid {
     sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO series (id, library_id, name) VALUES (gen_random_uuid(), $1, $2) RETURNING id",
-    ).bind(lib_id).bind(name).fetch_one(pool).await.unwrap()
+    )
+    .bind(lib_id)
+    .bind(name)
+    .fetch_one(pool)
+    .await
+    .unwrap()
 }
 
 async fn create_link(pool: &sqlx::PgPool, lib_id: Uuid, series_id: Uuid, provider: &str) -> Uuid {
@@ -38,11 +47,23 @@ async fn auto_apply_upserts_same_provider(pool: sqlx::PgPool) {
             external_id = EXCLUDED.external_id, confidence = EXCLUDED.confidence,
             status = 'approved', updated_at = NOW()
         RETURNING id"#,
-    ).bind(lib_id).bind(series_id).fetch_one(&pool).await.unwrap();
+    )
+    .bind(lib_id)
+    .bind(series_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
 
-    assert_eq!(new_link_id, old_link, "upsert should return the same link id");
-    let ext_id: String = sqlx::query_scalar("SELECT external_id FROM external_metadata_links WHERE id = $1")
-        .bind(old_link).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        new_link_id, old_link,
+        "upsert should return the same link id"
+    );
+    let ext_id: String =
+        sqlx::query_scalar("SELECT external_id FROM external_metadata_links WHERE id = $1")
+            .bind(old_link)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(ext_id, "new_ext_456", "external_id should be updated");
 }
 
@@ -63,17 +84,28 @@ async fn rematch_deletes_old_provider_link(pool: sqlx::PgPool) {
     sqlx::query(
         "DELETE FROM external_metadata_links WHERE library_id = $1 AND id != $2 AND series_id = (\
          SELECT series_id FROM external_metadata_links WHERE id = $2)",
-    ).bind(lib_id).bind(new_link).execute(&pool).await.unwrap();
+    )
+    .bind(lib_id)
+    .bind(new_link)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     // Should have only the new senscritique link
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1",
-    ).bind(series_id).fetch_one(&pool).await.unwrap();
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1")
+            .bind(series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(count, 1, "old bedetheque link should be deleted");
 
-    let provider: String = sqlx::query_scalar(
-        "SELECT provider FROM external_metadata_links WHERE series_id = $1",
-    ).bind(series_id).fetch_one(&pool).await.unwrap();
+    let provider: String =
+        sqlx::query_scalar("SELECT provider FROM external_metadata_links WHERE series_id = $1")
+            .bind(series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(provider, "senscritique");
 }
 
@@ -87,13 +119,22 @@ async fn normal_mode_skips_any_linked_series(pool: sqlx::PgPool) {
     let linked_rows = sqlx::query(
         "SELECT s.name, eml.provider FROM external_metadata_links eml JOIN series s ON s.id = eml.series_id WHERE eml.library_id = $1 AND eml.status = 'approved'",
     ).bind(lib_id).fetch_all(&pool).await.unwrap();
-    let already_linked: std::collections::HashMap<String, String> = linked_rows.into_iter()
-        .map(|row| (row.get::<String, _>("name"), row.get::<String, _>("provider"))).collect();
+    let already_linked: std::collections::HashMap<String, String> = linked_rows
+        .into_iter()
+        .map(|row| {
+            (
+                row.get::<String, _>("name"),
+                row.get::<String, _>("provider"),
+            )
+        })
+        .collect();
 
     let force_rematch = false;
     let linked_provider = already_linked.get("Asterix");
     let should_skip = if force_rematch {
-        linked_provider.map(|p| p == "senscritique").unwrap_or(false) // target provider
+        linked_provider
+            .map(|p| p == "senscritique")
+            .unwrap_or(false) // target provider
     } else {
         linked_provider.is_some()
     };
@@ -110,8 +151,15 @@ async fn rematch_skips_if_already_on_target_provider(pool: sqlx::PgPool) {
     let linked_rows = sqlx::query(
         "SELECT s.name, eml.provider FROM external_metadata_links eml JOIN series s ON s.id = eml.series_id WHERE eml.library_id = $1 AND eml.status = 'approved'",
     ).bind(lib_id).fetch_all(&pool).await.unwrap();
-    let already_linked: std::collections::HashMap<String, String> = linked_rows.into_iter()
-        .map(|row| (row.get::<String, _>("name"), row.get::<String, _>("provider"))).collect();
+    let already_linked: std::collections::HashMap<String, String> = linked_rows
+        .into_iter()
+        .map(|row| {
+            (
+                row.get::<String, _>("name"),
+                row.get::<String, _>("provider"),
+            )
+        })
+        .collect();
 
     let primary_name = "senscritique";
     let force_rematch = true;
@@ -121,7 +169,10 @@ async fn rematch_skips_if_already_on_target_provider(pool: sqlx::PgPool) {
     } else {
         linked_provider.is_some()
     };
-    assert!(should_skip, "rematch should skip if already linked to the target provider");
+    assert!(
+        should_skip,
+        "rematch should skip if already linked to the target provider"
+    );
 }
 
 /// Test that rematch does NOT skip series linked to a DIFFERENT provider.
@@ -134,8 +185,15 @@ async fn rematch_does_not_skip_if_linked_to_different_provider(pool: sqlx::PgPoo
     let linked_rows = sqlx::query(
         "SELECT s.name, eml.provider FROM external_metadata_links eml JOIN series s ON s.id = eml.series_id WHERE eml.library_id = $1 AND eml.status = 'approved'",
     ).bind(lib_id).fetch_all(&pool).await.unwrap();
-    let already_linked: std::collections::HashMap<String, String> = linked_rows.into_iter()
-        .map(|row| (row.get::<String, _>("name"), row.get::<String, _>("provider"))).collect();
+    let already_linked: std::collections::HashMap<String, String> = linked_rows
+        .into_iter()
+        .map(|row| {
+            (
+                row.get::<String, _>("name"),
+                row.get::<String, _>("provider"),
+            )
+        })
+        .collect();
 
     let primary_name = "senscritique"; // target is senscritique, linked is anilist
     let force_rematch = true;
@@ -145,7 +203,10 @@ async fn rematch_does_not_skip_if_linked_to_different_provider(pool: sqlx::PgPoo
     } else {
         linked_provider.is_some()
     };
-    assert!(!should_skip, "rematch should NOT skip if linked to a different provider");
+    assert!(
+        !should_skip,
+        "rematch should NOT skip if linked to a different provider"
+    );
 }
 
 /// Regression test: metadata_batch_rematch must be an allowed job type in DB.
@@ -217,7 +278,11 @@ async fn series_id_returned_when_series_exists(pool: sqlx::PgPool) {
 
     assert_eq!(rows.len(), 1);
     let returned_series_id: Option<Uuid> = rows[0].get("series_id");
-    assert_eq!(returned_series_id, Some(series_id), "series_id should match the created series");
+    assert_eq!(
+        returned_series_id,
+        Some(series_id),
+        "series_id should match the created series"
+    );
 }
 
 /// Regression: series_id should be None when no matching series exists.
@@ -269,7 +334,10 @@ async fn series_id_none_when_series_missing(pool: sqlx::PgPool) {
 
     assert_eq!(rows.len(), 1);
     let returned_series_id: Option<Uuid> = rows[0].get("series_id");
-    assert!(returned_series_id.is_none(), "series_id should be None when series does not exist");
+    assert!(
+        returned_series_id.is_none(),
+        "series_id should be None when series does not exist"
+    );
 }
 
 // -----------------------------------------------------------------------
@@ -297,9 +365,16 @@ async fn event_metadata_matched_written(pool: sqlx::PgPool) {
 
     let detail = serde_json::json!({"provider": "bedetheque", "confidence": 0.92});
     crate::job_helpers::insert_event(
-        &pool, job_id, "metadata_matched", "info",
-        Some("series"), Some("Blacksad"), None, Some(detail.clone()),
-    ).await;
+        &pool,
+        job_id,
+        "metadata_matched",
+        "info",
+        Some("series"),
+        Some("Blacksad"),
+        None,
+        Some(detail.clone()),
+    )
+    .await;
 
     let row = sqlx::query(
         "SELECT event_type, level, entity_type, entity_name, message, detail FROM index_job_events WHERE job_id = $1",
@@ -311,8 +386,14 @@ async fn event_metadata_matched_written(pool: sqlx::PgPool) {
 
     assert_eq!(row.get::<String, _>("event_type"), "metadata_matched");
     assert_eq!(row.get::<String, _>("level"), "info");
-    assert_eq!(row.get::<Option<String>, _>("entity_type"), Some("series".to_string()));
-    assert_eq!(row.get::<Option<String>, _>("entity_name"), Some("Blacksad".to_string()));
+    assert_eq!(
+        row.get::<Option<String>, _>("entity_type"),
+        Some("series".to_string())
+    );
+    assert_eq!(
+        row.get::<Option<String>, _>("entity_name"),
+        Some("Blacksad".to_string())
+    );
     assert!(row.get::<Option<String>, _>("message").is_none());
     let stored_detail: serde_json::Value = row.get("detail");
     assert_eq!(stored_detail["provider"], "bedetheque");
@@ -325,9 +406,16 @@ async fn event_error_has_error_level(pool: sqlx::PgPool) {
     let job_id = create_job(&pool, lib_id, "metadata_batch").await;
 
     crate::job_helpers::insert_event(
-        &pool, job_id, "error", "error",
-        Some("series"), Some("Broken"), Some("provider timeout"), None,
-    ).await;
+        &pool,
+        job_id,
+        "error",
+        "error",
+        Some("series"),
+        Some("Broken"),
+        Some("provider timeout"),
+        None,
+    )
+    .await;
 
     let row = sqlx::query(
         "SELECT event_type, level, entity_name, message FROM index_job_events WHERE job_id = $1",
@@ -339,8 +427,14 @@ async fn event_error_has_error_level(pool: sqlx::PgPool) {
 
     assert_eq!(row.get::<String, _>("event_type"), "error");
     assert_eq!(row.get::<String, _>("level"), "error");
-    assert_eq!(row.get::<Option<String>, _>("entity_name"), Some("Broken".to_string()));
-    assert_eq!(row.get::<Option<String>, _>("message"), Some("provider timeout".to_string()));
+    assert_eq!(
+        row.get::<Option<String>, _>("entity_name"),
+        Some("Broken".to_string())
+    );
+    assert_eq!(
+        row.get::<Option<String>, _>("message"),
+        Some("provider timeout".to_string())
+    );
 }
 
 /// Verify that best_candidate in event detail contains enriched fields for quick match.
@@ -468,14 +562,94 @@ async fn report_counts_from_events(pool: sqlx::PgPool) {
         .unwrap();
 
     // Insert events with different event_types
-    crate::job_helpers::insert_event(&pool, job_id, "metadata_matched", "info", Some("series"), Some("S1"), None, Some(serde_json::json!({"provider": "google_books"}))).await;
-    crate::job_helpers::insert_event(&pool, job_id, "metadata_matched", "info", Some("series"), Some("S2"), None, Some(serde_json::json!({"provider": "google_books"}))).await;
-    crate::job_helpers::insert_event(&pool, job_id, "metadata_no_results", "info", Some("series"), Some("S3"), Some("No results"), None).await;
-    crate::job_helpers::insert_event(&pool, job_id, "metadata_too_many", "warning", Some("series"), Some("S4"), Some("5 results"), None).await;
-    crate::job_helpers::insert_event(&pool, job_id, "metadata_low_confidence", "warning", Some("series"), Some("S5"), Some("Best: 40%"), None).await;
-    crate::job_helpers::insert_event(&pool, job_id, "metadata_already_linked", "info", Some("series"), Some("S6"), None, None).await;
-    crate::job_helpers::insert_event(&pool, job_id, "metadata_already_linked", "info", Some("series"), Some("S7"), None, None).await;
-    crate::job_helpers::insert_event(&pool, job_id, "error", "error", Some("series"), Some("S8"), Some("timeout"), None).await;
+    crate::job_helpers::insert_event(
+        &pool,
+        job_id,
+        "metadata_matched",
+        "info",
+        Some("series"),
+        Some("S1"),
+        None,
+        Some(serde_json::json!({"provider": "google_books"})),
+    )
+    .await;
+    crate::job_helpers::insert_event(
+        &pool,
+        job_id,
+        "metadata_matched",
+        "info",
+        Some("series"),
+        Some("S2"),
+        None,
+        Some(serde_json::json!({"provider": "google_books"})),
+    )
+    .await;
+    crate::job_helpers::insert_event(
+        &pool,
+        job_id,
+        "metadata_no_results",
+        "info",
+        Some("series"),
+        Some("S3"),
+        Some("No results"),
+        None,
+    )
+    .await;
+    crate::job_helpers::insert_event(
+        &pool,
+        job_id,
+        "metadata_too_many",
+        "warning",
+        Some("series"),
+        Some("S4"),
+        Some("5 results"),
+        None,
+    )
+    .await;
+    crate::job_helpers::insert_event(
+        &pool,
+        job_id,
+        "metadata_low_confidence",
+        "warning",
+        Some("series"),
+        Some("S5"),
+        Some("Best: 40%"),
+        None,
+    )
+    .await;
+    crate::job_helpers::insert_event(
+        &pool,
+        job_id,
+        "metadata_already_linked",
+        "info",
+        Some("series"),
+        Some("S6"),
+        None,
+        None,
+    )
+    .await;
+    crate::job_helpers::insert_event(
+        &pool,
+        job_id,
+        "metadata_already_linked",
+        "info",
+        Some("series"),
+        Some("S7"),
+        None,
+        None,
+    )
+    .await;
+    crate::job_helpers::insert_event(
+        &pool,
+        job_id,
+        "error",
+        "error",
+        Some("series"),
+        Some("S8"),
+        Some("timeout"),
+        None,
+    )
+    .await;
 
     // Run the same report query used in get_batch_report
     let counts = sqlx::query(
@@ -510,8 +684,14 @@ async fn report_counts_from_events(pool: sqlx::PgPool) {
     assert_eq!(auto_matched, 2, "metadata_matched -> auto_matched");
     assert_eq!(no_results, 1, "metadata_no_results -> no_results");
     assert_eq!(too_many_results, 1, "metadata_too_many -> too_many_results");
-    assert_eq!(low_confidence, 1, "metadata_low_confidence -> low_confidence");
-    assert_eq!(already_linked, 2, "metadata_already_linked -> already_linked");
+    assert_eq!(
+        low_confidence, 1,
+        "metadata_low_confidence -> low_confidence"
+    );
+    assert_eq!(
+        already_linked, 2,
+        "metadata_already_linked -> already_linked"
+    );
     assert_eq!(errors, 1, "error -> errors");
 }
 
@@ -545,9 +725,16 @@ async fn results_mapped_from_event_detail(pool: sqlx::PgPool) {
     });
 
     crate::job_helpers::insert_event(
-        &pool, job_id, "metadata_matched", "info",
-        Some("series"), Some("TestSeries"), None, Some(detail.clone()),
-    ).await;
+        &pool,
+        job_id,
+        "metadata_matched",
+        "info",
+        Some("series"),
+        Some("TestSeries"),
+        None,
+        Some(detail.clone()),
+    )
+    .await;
 
     // Run the actual results query used by get_batch_results
     let rows = sqlx::query(
@@ -610,7 +797,10 @@ async fn results_mapped_from_event_detail(pool: sqlx::PgPool) {
 
     // series_id should be resolved via LEFT JOIN
     let returned_series_id: Option<Uuid> = row.get("series_id");
-    assert!(returned_series_id.is_some(), "series_id should be resolved via LEFT JOIN");
+    assert!(
+        returned_series_id.is_some(),
+        "series_id should be resolved via LEFT JOIN"
+    );
 }
 
 // boost_confidence_by_book_count tests moved to super::config::tests

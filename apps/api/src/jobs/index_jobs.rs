@@ -1,12 +1,16 @@
-use axum::{extract::State, response::sse::{Event, Sse}, Json};
+use axum::{
+    extract::State,
+    response::sse::{Event, Sse},
+    Json,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use std::convert::Infallible;
 use std::time::Duration;
 use tokio_stream::Stream;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::{error::ApiError, state::AppState};
 
@@ -123,7 +127,13 @@ pub async fn enqueue_rebuild(
     let library_id = payload.as_ref().and_then(|p| p.0.library_id);
     let is_full = payload.as_ref().and_then(|p| p.0.full).unwrap_or(false);
     let is_rescan = payload.as_ref().and_then(|p| p.0.rescan).unwrap_or(false);
-    let job_type = if is_full { "full_rebuild" } else if is_rescan { "rescan" } else { "rebuild" };
+    let job_type = if is_full {
+        "full_rebuild"
+    } else if is_rescan {
+        "rescan"
+    } else {
+        "rebuild"
+    };
 
     // When no library specified, create one job per library
     if library_id.is_none() {
@@ -185,7 +195,9 @@ pub async fn enqueue_rebuild(
     ),
     security(("Bearer" = []))
 )]
-pub async fn list_index_jobs(State(state): State<AppState>) -> Result<Json<Vec<IndexJobResponse>>, ApiError> {
+pub async fn list_index_jobs(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<IndexJobResponse>>, ApiError> {
     let rows = sqlx::query(
         "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at, j.progress_percent, j.processed_files, j.total_files FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id ORDER BY j.created_at DESC LIMIT 100",
     )
@@ -270,7 +282,9 @@ pub async fn list_folders(
             return Err(ApiError::bad_request("Invalid path"));
         }
         // Remove /libraries/ prefix if present since base_path is already /libraries
-        let cleaned_path = sub_path.trim_start_matches("/libraries/").trim_start_matches('/');
+        let cleaned_path = sub_path
+            .trim_start_matches("/libraries/")
+            .trim_start_matches('/');
         if cleaned_path.is_empty() {
             base_path.to_path_buf()
         } else {
@@ -290,21 +304,31 @@ pub async fn list_folders(
 
     let mut folders = Vec::new();
     let depth = if params.contains_key("path") {
-        canonical_target.strip_prefix(&canonical_base)
+        canonical_target
+            .strip_prefix(&canonical_base)
             .map(|p| p.components().count())
             .unwrap_or(0)
     } else {
         0
     };
 
-    let entries = std::fs::read_dir(&canonical_target)
-        .map_err(|e| ApiError::internal(format!("cannot read directory {}: {}", canonical_target.display(), e)))?;
+    let entries = std::fs::read_dir(&canonical_target).map_err(|e| {
+        ApiError::internal(format!(
+            "cannot read directory {}: {}",
+            canonical_target.display(),
+            e
+        ))
+    })?;
 
     for entry in entries {
         let entry = match entry {
             Ok(e) => e,
             Err(e) => {
-                tracing::warn!("[FOLDERS] entry error in {}: {}", canonical_target.display(), e);
+                tracing::warn!(
+                    "[FOLDERS] entry error in {}: {}",
+                    canonical_target.display(),
+                    e
+                );
                 continue;
             }
         };
@@ -316,26 +340,29 @@ pub async fn list_folders(
             }
         };
         if is_dir {
-                let name = entry.file_name().to_string_lossy().to_string();
+            let name = entry.file_name().to_string_lossy().to_string();
 
-                // Check if this folder has children (best-effort, default to true on error)
-                let has_children = std::fs::read_dir(entry.path())
-                    .map(|sub| sub.flatten().any(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false)))
-                    .unwrap_or(true);
+            // Check if this folder has children (best-effort, default to true on error)
+            let has_children = std::fs::read_dir(entry.path())
+                .map(|sub| {
+                    sub.flatten()
+                        .any(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+                })
+                .unwrap_or(true);
 
-                // Calculate the full path relative to libraries root
-                let full_path = if let Ok(relative) = entry.path().strip_prefix(&canonical_base) {
-                    format!("/libraries/{}", relative.to_string_lossy())
-                } else {
-                    format!("/libraries/{}", name)
-                };
+            // Calculate the full path relative to libraries root
+            let full_path = if let Ok(relative) = entry.path().strip_prefix(&canonical_base) {
+                format!("/libraries/{}", relative.to_string_lossy())
+            } else {
+                format!("/libraries/{}", name)
+            };
 
-                folders.push(FolderItem {
-                    name,
-                    path: full_path,
-                    depth,
-                    has_children,
-                });
+            folders.push(FolderItem {
+                name,
+                path: full_path,
+                depth,
+                has_children,
+            });
         }
     }
 
@@ -372,7 +399,10 @@ fn map_row_detail(row: sqlx::postgres::PgRow) -> IndexJobDetailResponse {
         started_at: row.get("started_at"),
         finished_at: row.get("finished_at"),
         phase2_started_at: row.try_get("phase2_started_at").ok().flatten(),
-        generating_thumbnails_started_at: row.try_get("generating_thumbnails_started_at").ok().flatten(),
+        generating_thumbnails_started_at: row
+            .try_get("generating_thumbnails_started_at")
+            .ok()
+            .flatten(),
         stats_json: row.get("stats_json"),
         error_opt: row.get("error_opt"),
         created_at: row.get("created_at"),
@@ -395,7 +425,9 @@ fn map_row_detail(row: sqlx::postgres::PgRow) -> IndexJobDetailResponse {
     ),
     security(("Bearer" = []))
 )]
-pub async fn get_active_jobs(State(state): State<AppState>) -> Result<Json<Vec<IndexJobResponse>>, ApiError> {
+pub async fn get_active_jobs(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<IndexJobResponse>>, ApiError> {
     let rows = sqlx::query(
         "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at, j.progress_percent, j.processed_files, j.total_files
          FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id
@@ -466,7 +498,7 @@ pub async fn get_job_errors(
         "SELECT id, entity_name, message, created_at
          FROM index_job_events
          WHERE job_id = $1 AND level = 'error'
-         ORDER BY created_at ASC"
+         ORDER BY created_at ASC",
     )
     .bind(id.0)
     .fetch_all(&state.pool)
@@ -476,7 +508,9 @@ pub async fn get_job_errors(
         .into_iter()
         .map(|row| JobErrorResponse {
             id: row.get("id"),
-            file_path: row.get::<Option<String>, _>("entity_name").unwrap_or_default(),
+            file_path: row
+                .get::<Option<String>, _>("entity_name")
+                .unwrap_or_default(),
             error_message: row.get::<Option<String>, _>("message").unwrap_or_default(),
             created_at: row.get("created_at"),
         })
@@ -505,13 +539,12 @@ pub async fn get_indexed_books(
     State(state): State<AppState>,
     id: axum::extract::Path<Uuid>,
 ) -> Result<Json<Vec<IndexedBookDto>>, ApiError> {
-    let job = sqlx::query(
-        "SELECT library_id, started_at, finished_at FROM index_jobs WHERE id = $1",
-    )
-    .bind(id.0)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or_else(|| ApiError::not_found("job not found"))?;
+    let job =
+        sqlx::query("SELECT library_id, started_at, finished_at FROM index_jobs WHERE id = $1")
+            .bind(id.0)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| ApiError::not_found("job not found"))?;
 
     let library_id: Option<Uuid> = job.get("library_id");
     let started_at: Option<DateTime<Utc>> = job.get("started_at");

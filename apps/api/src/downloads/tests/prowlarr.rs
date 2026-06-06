@@ -4,29 +4,50 @@ use super::*;
 
 #[test]
 fn title_matches_basic() {
-    assert!(title_matches_series("Asterix et Obelix T01", "Asterix et Obelix"));
+    assert!(title_matches_series(
+        "Asterix et Obelix T01",
+        "Asterix et Obelix"
+    ));
     assert!(title_matches_series("ASTERIX T01", "asterix"));
     assert!(!title_matches_series("One Piece T01", "Naruto"));
 }
 
 #[test]
 fn title_matches_dots_and_accents() {
-    assert!(title_matches_series("Asterix.et.Obelix.T01.FRENCH.CBZ", "Astérix et Obélix"));
-    assert!(title_matches_series("Les.Legendaires.T05.FRENCH", "Les Légendaires"));
-    assert!(title_matches_series("One.Piece.Tome.25.FRENCH", "One Piece"));
+    assert!(title_matches_series(
+        "Asterix.et.Obelix.T01.FRENCH.CBZ",
+        "Astérix et Obélix"
+    ));
+    assert!(title_matches_series(
+        "Les.Legendaires.T05.FRENCH",
+        "Les Légendaires"
+    ));
+    assert!(title_matches_series(
+        "One.Piece.Tome.25.FRENCH",
+        "One Piece"
+    ));
     assert!(!title_matches_series("One.Piece.T01", "Dragon Ball"));
 }
 
 #[test]
 fn title_matches_apostrophe() {
     assert!(title_matches_series("L.Incal.T01.FRENCH.CBZ", "L'Incal"));
-    assert!(title_matches_series("L.Incal.T01.FRENCH.CBZ", "L\u{2019}Incal")); // curly apostrophe
+    assert!(title_matches_series(
+        "L.Incal.T01.FRENCH.CBZ",
+        "L\u{2019}Incal"
+    )); // curly apostrophe
 }
 
 #[test]
 fn title_matches_hyphen() {
-    assert!(title_matches_series("Spider.Man.T01.FRENCH.CBZ", "Spider-Man"));
-    assert!(title_matches_series("Dead.Hunter.Tome.3.FR.PDF", "Dead Hunter"));
+    assert!(title_matches_series(
+        "Spider.Man.T01.FRENCH.CBZ",
+        "Spider-Man"
+    ));
+    assert!(title_matches_series(
+        "Dead.Hunter.Tome.3.FR.PDF",
+        "Dead Hunter"
+    ));
 }
 
 fn sorted(mut v: Vec<i32>) -> Vec<i32> {
@@ -147,8 +168,14 @@ fn match_missing_volumes_maps_correctly() {
         },
     ];
     let missing = vec![
-        MissingVolumeInput { volume_number: Some(5), title: None },
-        MissingVolumeInput { volume_number: Some(10), title: None },
+        MissingVolumeInput {
+            volume_number: Some(5),
+            title: None,
+        },
+        MissingVolumeInput {
+            volume_number: Some(10),
+            title: None,
+        },
     ];
     let result = match_missing_volumes(releases, &missing);
     assert_eq!(result.len(), 2);
@@ -160,24 +187,23 @@ fn match_missing_volumes_maps_correctly() {
 
 #[test]
 fn match_missing_volumes_with_none_volume() {
-    let missing = vec![
-        MissingVolumeInput { volume_number: None, title: Some("test".into()) },
-    ];
-    let releases = vec![
-        ProwlarrRawRelease {
-            guid: "a".into(),
-            title: "Naruto T05".into(),
-            size: 100,
-            download_url: None,
-            indexer: None,
-            seeders: None,
-            leechers: None,
-            publish_date: None,
-            protocol: None,
-            info_url: None,
-            categories: None,
-        },
-    ];
+    let missing = vec![MissingVolumeInput {
+        volume_number: None,
+        title: Some("test".into()),
+    }];
+    let releases = vec![ProwlarrRawRelease {
+        guid: "a".into(),
+        title: "Naruto T05".into(),
+        size: 100,
+        download_url: None,
+        indexer: None,
+        seeders: None,
+        leechers: None,
+        publish_date: None,
+        protocol: None,
+        info_url: None,
+        categories: None,
+    }];
     let result = match_missing_volumes(releases, &missing);
     // No missing_numbers to match against, so matched should be None
     assert!(result[0].matched_missing_volumes.is_none());
@@ -190,7 +216,7 @@ fn is_integral_with_grave_accent_e() {
 
 // ── Wiremock integration tests ──────────────────────────────────────────
 
-use wiremock::matchers::{method, path, header};
+use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn make_raw_release(guid: &str, title: &str, size: i64) -> serde_json::Value {
@@ -225,15 +251,9 @@ async fn wiremock_search_returns_releases_with_correct_parsing() {
         .mount(&server)
         .await;
 
-    let result = do_prowlarr_search(
-        &server.uri(),
-        "test-key",
-        "One Piece",
-        &[7030],
-        None,
-    )
-    .await
-    .expect("search should succeed");
+    let result = do_prowlarr_search(&server.uri(), "test-key", "One Piece", &[7030], None)
+        .await
+        .expect("search should succeed");
 
     assert_eq!(result.results.len(), 2);
     assert_eq!(result.query, "One Piece");
@@ -242,7 +262,10 @@ async fn wiremock_search_returns_releases_with_correct_parsing() {
     assert_eq!(r0.guid, "guid-1");
     assert_eq!(r0.title, "One Piece T05 [FR]");
     assert_eq!(r0.size, 500_000_000);
-    assert_eq!(r0.download_url.as_deref(), Some("https://example.com/download/123"));
+    assert_eq!(
+        r0.download_url.as_deref(),
+        Some("https://example.com/download/123")
+    );
     assert_eq!(r0.indexer.as_deref(), Some("TestIndexer"));
     assert_eq!(r0.seeders, Some(42));
     assert_eq!(r0.leechers, Some(5));
@@ -272,9 +295,18 @@ async fn wiremock_search_with_missing_volumes_matching() {
         .await;
 
     let missing = vec![
-        MissingVolumeInput { volume_number: Some(5), title: None },
-        MissingVolumeInput { volume_number: Some(8), title: None },
-        MissingVolumeInput { volume_number: Some(15), title: None },
+        MissingVolumeInput {
+            volume_number: Some(5),
+            title: None,
+        },
+        MissingVolumeInput {
+            volume_number: Some(8),
+            title: None,
+        },
+        MissingVolumeInput {
+            volume_number: Some(15),
+            title: None,
+        },
     ];
 
     let result = do_prowlarr_search(
@@ -381,19 +413,14 @@ async fn wiremock_search_http_500_error() {
         .mount(&server)
         .await;
 
-    let err = do_prowlarr_search(
-        &server.uri(),
-        "test-key",
-        "query",
-        &[7030],
-        None,
-    )
-    .await
-    .unwrap_err();
+    let err = do_prowlarr_search(&server.uri(), "test-key", "query", &[7030], None)
+        .await
+        .unwrap_err();
 
     assert!(
         err.message.contains("500") || err.message.contains("Internal Server Error"),
-        "error should mention 500, got: {}", err.message
+        "error should mention 500, got: {}",
+        err.message
     );
 }
 
@@ -407,19 +434,14 @@ async fn wiremock_search_invalid_json_response() {
         .mount(&server)
         .await;
 
-    let err = do_prowlarr_search(
-        &server.uri(),
-        "test-key",
-        "query",
-        &[7030],
-        None,
-    )
-    .await
-    .unwrap_err();
+    let err = do_prowlarr_search(&server.uri(), "test-key", "query", &[7030], None)
+        .await
+        .unwrap_err();
 
     assert!(
         err.message.contains("parse") || err.message.contains("Parse"),
-        "error should mention parse failure, got: {}", err.message
+        "error should mention parse failure, got: {}",
+        err.message
     );
 }
 
@@ -427,9 +449,11 @@ async fn wiremock_search_invalid_json_response() {
 async fn wiremock_search_with_integral_release_matching() {
     let server = MockServer::start().await;
 
-    let body = serde_json::json!([
-        make_raw_release("guid-int", "One Piece Intégrale [CBZ]", 5_000_000_000_i64),
-    ]);
+    let body = serde_json::json!([make_raw_release(
+        "guid-int",
+        "One Piece Intégrale [CBZ]",
+        5_000_000_000_i64
+    ),]);
 
     Mock::given(method("GET"))
         .and(path("/api/v1/search"))
@@ -438,9 +462,18 @@ async fn wiremock_search_with_integral_release_matching() {
         .await;
 
     let missing = vec![
-        MissingVolumeInput { volume_number: Some(1), title: None },
-        MissingVolumeInput { volume_number: Some(50), title: None },
-        MissingVolumeInput { volume_number: Some(100), title: None },
+        MissingVolumeInput {
+            volume_number: Some(1),
+            title: None,
+        },
+        MissingVolumeInput {
+            volume_number: Some(50),
+            title: None,
+        },
+        MissingVolumeInput {
+            volume_number: Some(100),
+            title: None,
+        },
     ];
 
     let result = do_prowlarr_search(

@@ -21,21 +21,18 @@ pub use handlers::{
 };
 
 // Re-export batch (used by main.rs routes, openapi.rs paths/schemas, job_poller.rs)
-pub use batch::{
-    get_batch_report, get_batch_results, start_batch,
-    MetadataBatchReportDto, MetadataBatchRequest, MetadataBatchResultDto,
-};
 pub(crate) use batch::process_metadata_batch;
+pub use batch::{
+    get_batch_report, get_batch_results, start_batch, MetadataBatchReportDto, MetadataBatchRequest,
+    MetadataBatchResultDto,
+};
 
 // Re-export refresh (used by main.rs routes, openapi.rs paths/schemas, job_poller.rs, torrent_import.rs)
 pub use refresh::{
     get_refresh_report, refresh_single_link, start_refresh, start_refresh_all,
     MetadataRefreshReportDto, MetadataRefreshRequest,
 };
-pub(crate) use refresh::{
-    process_metadata_refresh, process_metadata_refresh_all, refresh_link,
-};
+pub(crate) use refresh::{process_metadata_refresh, process_metadata_refresh_all, refresh_link};
 
 // Re-export sync functions (used by series::create)
-pub(crate) use sync::{sync_series_metadata, sync_books_metadata};
-
+pub(crate) use sync::{sync_books_metadata, sync_series_metadata};

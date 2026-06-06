@@ -163,12 +163,11 @@ pub async fn update_reading_list(
     .await?
     .ok_or_else(|| ApiError::not_found("reading list not found"))?;
 
-    let series_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM reading_list_items WHERE list_id = $1",
-    )
-    .bind(id)
-    .fetch_one(&state.pool)
-    .await?;
+    let series_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM reading_list_items WHERE list_id = $1")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?;
 
     Ok(Json(ReadingListDto {
         id: row.get("id"),
@@ -230,21 +229,21 @@ pub async fn add_series(
     Path(id): Path<Uuid>,
     Json(body): Json<AddSeriesRequest>,
 ) -> Result<axum::http::StatusCode, ApiError> {
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM reading_lists WHERE id = $1)")
-        .bind(id)
-        .fetch_one(&state.pool)
-        .await?;
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM reading_lists WHERE id = $1)")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?;
 
     if !exists {
         return Err(ApiError::not_found("reading list not found"));
     }
 
-    let max_pos: Option<i32> = sqlx::query_scalar(
-        "SELECT MAX(position) FROM reading_list_items WHERE list_id = $1",
-    )
-    .bind(id)
-    .fetch_one(&state.pool)
-    .await?;
+    let max_pos: Option<i32> =
+        sqlx::query_scalar("SELECT MAX(position) FROM reading_list_items WHERE list_id = $1")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?;
 
     let next_pos = max_pos.map(|p| p + 1).unwrap_or(0);
 
@@ -284,13 +283,12 @@ pub async fn remove_series(
     State(state): State<AppState>,
     Path((id, series_id)): Path<(Uuid, Uuid)>,
 ) -> Result<axum::http::StatusCode, ApiError> {
-    let result = sqlx::query(
-        "DELETE FROM reading_list_items WHERE list_id = $1 AND series_id = $2",
-    )
-    .bind(id)
-    .bind(series_id)
-    .execute(&state.pool)
-    .await?;
+    let result =
+        sqlx::query("DELETE FROM reading_list_items WHERE list_id = $1 AND series_id = $2")
+            .bind(id)
+            .bind(series_id)
+            .execute(&state.pool)
+            .await?;
 
     if result.rows_affected() == 0 {
         return Err(ApiError::not_found("series not found in reading list"));

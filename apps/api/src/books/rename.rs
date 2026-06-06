@@ -1,4 +1,7 @@
-use axum::{extract::{Path, State}, Json};
+use axum::{
+    extract::{Path, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -102,23 +105,23 @@ fn apply_template(
         parsers::extract_volume(filename)
     });
 
+    vars.insert("volume", effective_volume.map(|v| v.to_string()));
     vars.insert(
-        "volume",
-        effective_volume.map(|v| v.to_string()),
+        "volume_padded",
+        effective_volume.map(|v| {
+            // Auto-pad to match the digit count of the largest volume in the series
+            let width = if max_volume >= 1000 {
+                4
+            } else if max_volume >= 100 {
+                3
+            } else if max_volume >= 10 {
+                2
+            } else {
+                1
+            };
+            format!("{:0>width$}", v, width = width)
+        }),
     );
-    vars.insert("volume_padded", effective_volume.map(|v| {
-        // Auto-pad to match the digit count of the largest volume in the series
-        let width = if max_volume >= 1000 {
-            4
-        } else if max_volume >= 100 {
-            3
-        } else if max_volume >= 10 {
-            2
-        } else {
-            1
-        };
-        format!("{:0>width$}", v, width = width)
-    }));
     vars.insert("publish_date", book.publish_date.clone());
     vars.insert("isbn", book.isbn.clone());
 
@@ -133,7 +136,10 @@ fn apply_template(
 
     // Clean up separator segments containing null placeholders.
     // Handles patterns like " - T\0", " - \0", "\0 - ", and lone "\0".
-    let cleanup = Regex::new(r"\s*-\s*[^\x00\s]*\x00[^\x00\s]*|\s*[^\x00\s]*\x00[^\x00\s]*\s*-\s*|\s*\x00\s*|\x00").expect("valid regex");
+    let cleanup = Regex::new(
+        r"\s*-\s*[^\x00\s]*\x00[^\x00\s]*|\s*[^\x00\s]*\x00[^\x00\s]*\s*-\s*|\s*\x00\s*|\x00",
+    )
+    .expect("valid regex");
     cleanup.replace_all(&result, "").trim().to_string()
 }
 
@@ -402,10 +408,7 @@ pub async fn rename_books(
     }
 
     // Build a lookup from book_id to file_id
-    let file_id_map: HashMap<Uuid, Uuid> = books
-        .iter()
-        .map(|b| (b.book_id, b.file_id))
-        .collect();
+    let file_id_map: HashMap<Uuid, Uuid> = books.iter().map(|b| (b.book_id, b.file_id)).collect();
 
     // Perform renames in a transaction
     let mut tx = state.pool.begin().await?;
@@ -428,12 +431,11 @@ pub async fn rename_books(
 
                 // Recompute fingerprint
                 let new_path = std::path::Path::new(&physical_new);
-                let meta_result =
-                    tokio::task::spawn_blocking({
-                        let new_physical = physical_new.clone();
-                        move || std::fs::metadata(&new_physical)
-                    })
-                    .await;
+                let meta_result = tokio::task::spawn_blocking({
+                    let new_physical = physical_new.clone();
+                    move || std::fs::metadata(&new_physical)
+                })
+                .await;
 
                 let (new_fingerprint, new_mtime) = match meta_result {
                     Ok(Ok(meta)) => {
@@ -441,8 +443,8 @@ pub async fn rename_books(
                             .modified()
                             .map(DateTime::<Utc>::from)
                             .unwrap_or_else(|_| Utc::now());
-                        let fp = compute_fingerprint(new_path, meta.len(), &mtime)
-                            .unwrap_or_default();
+                        let fp =
+                            compute_fingerprint(new_path, meta.len(), &mtime).unwrap_or_default();
                         (fp, mtime)
                     }
                     _ => (String::new(), Utc::now()),
@@ -478,7 +480,11 @@ pub async fn rename_books(
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| {
-                    tracing::error!("[RENAME] Book update failed for {}: {}", entry.new_filename, e);
+                    tracing::error!(
+                        "[RENAME] Book update failed for {}: {}",
+                        entry.new_filename,
+                        e
+                    );
                     e
                 })?;
             }

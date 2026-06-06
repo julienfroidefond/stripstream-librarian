@@ -1,6 +1,10 @@
 use super::*;
 
-fn make_candidate(title: &str, total_volumes: Option<i32>, confidence: f32) -> metadata_providers::SeriesCandidate {
+fn make_candidate(
+    title: &str,
+    total_volumes: Option<i32>,
+    confidence: f32,
+) -> metadata_providers::SeriesCandidate {
     metadata_providers::SeriesCandidate {
         external_id: format!("test:{title}"),
         title: title.to_string(),

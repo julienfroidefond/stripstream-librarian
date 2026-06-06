@@ -1,7 +1,4 @@
-use std::sync::{
-    atomic::AtomicU64,
-    Arc,
-};
+use std::sync::{atomic::AtomicU64, Arc};
 use std::time::Instant;
 
 use lru::LruCache;
@@ -107,9 +104,10 @@ pub async fn load_dynamic_settings(pool: &Pool<Postgres>) -> DynamicSettings {
         }
     }
 
-    if let Ok(Some(row)) = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'image_processing'"#)
-        .fetch_optional(pool)
-        .await
+    if let Ok(Some(row)) =
+        sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'image_processing'"#)
+            .fetch_optional(pool)
+            .await
     {
         let v: serde_json::Value = row.get("value");
         if let Some(s2) = v.get("format").and_then(|x| x.as_str()) {

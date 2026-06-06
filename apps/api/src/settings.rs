@@ -6,10 +6,13 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::Row;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
-use crate::{error::ApiError, state::{AppState, load_dynamic_settings}};
+use crate::{
+    error::ApiError,
+    state::{load_dynamic_settings, AppState},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UpdateSettingRequest {
@@ -164,7 +167,9 @@ pub async fn update_setting(
     ),
     security(("Bearer" = []))
 )]
-pub async fn clear_cache(State(state): State<AppState>) -> Result<Json<ClearCacheResponse>, ApiError> {
+pub async fn clear_cache(
+    State(state): State<AppState>,
+) -> Result<Json<ClearCacheResponse>, ApiError> {
     let cache_dir = state.settings.read().await.cache_directory.clone();
 
     let result = tokio::task::spawn_blocking(move || {
@@ -182,7 +187,10 @@ pub async fn clear_cache(State(state): State<AppState>) -> Result<Json<ClearCach
         } else {
             ClearCacheResponse {
                 success: true,
-                message: format!("Cache directory '{}' does not exist, nothing to clear", cache_dir),
+                message: format!(
+                    "Cache directory '{}' does not exist, nothing to clear",
+                    cache_dir
+                ),
             }
         }
     })
@@ -293,7 +301,9 @@ fn compute_dir_stats(path: &std::path::Path) -> (u64, u64) {
     ),
     security(("Bearer" = []))
 )]
-pub async fn get_thumbnail_stats(State(_state): State<AppState>) -> Result<Json<ThumbnailStats>, ApiError> {
+pub async fn get_thumbnail_stats(
+    State(_state): State<AppState>,
+) -> Result<Json<ThumbnailStats>, ApiError> {
     let settings = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'thumbnail'"#)
         .fetch_optional(&_state.pool)
         .await?;
@@ -301,7 +311,8 @@ pub async fn get_thumbnail_stats(State(_state): State<AppState>) -> Result<Json<
     let directory = match settings {
         Some(row) => {
             let value: serde_json::Value = row.get("value");
-            value.get("directory")
+            value
+                .get("directory")
                 .and_then(|v| v.as_str())
                 .unwrap_or("/data/thumbnails")
                 .to_string()

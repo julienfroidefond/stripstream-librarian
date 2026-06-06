@@ -1,10 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use axum::{extract::{Path as AxumPath, State}, Json};
+use axum::{
+    extract::{Path as AxumPath, State},
+    Json,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::{error::ApiError, state::AppState};
 
@@ -59,7 +62,9 @@ pub struct CreateLibraryRequest {
     ),
     security(("Bearer" = []))
 )]
-pub async fn list_libraries(State(state): State<AppState>) -> Result<Json<Vec<LibraryResponse>>, ApiError> {
+pub async fn list_libraries(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<LibraryResponse>>, ApiError> {
     let rows = sqlx::query(
         "SELECT l.id, l.name, l.root_path, l.enabled, l.monitor_enabled, l.scan_mode, l.next_scan_at, l.watcher_enabled, l.metadata_provider, l.fallback_metadata_provider, l.metadata_refresh_mode, l.next_metadata_refresh_at, l.reading_status_provider, l.reading_status_push_mode, l.next_reading_status_push_at, l.download_detection_mode, l.next_download_detection_at, l.tags,
                 (SELECT COUNT(*) FROM books b WHERE b.library_id = l.id) as book_count,
@@ -139,14 +144,12 @@ pub async fn create_library(
     let id = Uuid::new_v4();
     let root_path = canonical.to_string_lossy().to_string();
 
-    sqlx::query(
-        "INSERT INTO libraries (id, name, root_path, enabled) VALUES ($1, $2, $3, TRUE)",
-    )
-    .bind(id)
-    .bind(input.name.trim())
-    .bind(&root_path)
-    .execute(&state.pool)
-    .await?;
+    sqlx::query("INSERT INTO libraries (id, name, root_path, enabled) VALUES ($1, $2, $3, TRUE)")
+        .bind(id)
+        .bind(input.name.trim())
+        .bind(&root_path)
+        .execute(&state.pool)
+        .await?;
 
     Ok(Json(LibraryResponse {
         id,
@@ -261,7 +264,13 @@ pub async fn scan_library(
 
     let is_full = payload.as_ref().and_then(|p| p.full).unwrap_or(false);
     let is_rescan = payload.as_ref().and_then(|p| p.rescan).unwrap_or(false);
-    let job_type = if is_full { "full_rebuild" } else if is_rescan { "rescan" } else { "rebuild" };
+    let job_type = if is_full {
+        "full_rebuild"
+    } else if is_rescan {
+        "rescan"
+    } else {
+        "rebuild"
+    };
 
     // Create indexing job for this library
     let job_id = Uuid::new_v4();
@@ -318,7 +327,7 @@ pub async fn update_monitoring(
     AxumPath(library_id): AxumPath<Uuid>,
     Json(input): Json<UpdateMonitoringRequest>,
 ) -> Result<Json<LibraryResponse>, ApiError> {
-    use stripstream_core::schedule::{validate_schedule_mode, mode_to_interval_minutes};
+    use stripstream_core::schedule::{mode_to_interval_minutes, validate_schedule_mode};
 
     // Validate scan_mode
     validate_schedule_mode(&input.scan_mode)
@@ -336,21 +345,30 @@ pub async fn update_monitoring(
 
     // Calculate next_scan_at if monitoring is enabled
     let next_scan_at = if input.monitor_enabled {
-        Some(chrono::Utc::now() + chrono::Duration::minutes(mode_to_interval_minutes(&input.scan_mode)))
+        Some(
+            chrono::Utc::now()
+                + chrono::Duration::minutes(mode_to_interval_minutes(&input.scan_mode)),
+        )
     } else {
         None
     };
 
     // Calculate next_metadata_refresh_at
     let next_metadata_refresh_at = if metadata_refresh_mode != "manual" {
-        Some(chrono::Utc::now() + chrono::Duration::minutes(mode_to_interval_minutes(metadata_refresh_mode)))
+        Some(
+            chrono::Utc::now()
+                + chrono::Duration::minutes(mode_to_interval_minutes(metadata_refresh_mode)),
+        )
     } else {
         None
     };
 
     // Calculate next_download_detection_at
     let next_download_detection_at = if download_detection_mode != "manual" {
-        Some(chrono::Utc::now() + chrono::Duration::minutes(mode_to_interval_minutes(download_detection_mode)))
+        Some(
+            chrono::Utc::now()
+                + chrono::Duration::minutes(mode_to_interval_minutes(download_detection_mode)),
+        )
     } else {
         None
     };
@@ -391,7 +409,7 @@ pub async fn update_monitoring(
          LEFT JOIN series s ON s.id = b.series_id
          WHERE b.library_id = $1
          ORDER BY COALESCE(s.name, 'unclassified'), b.volume NULLS LAST, b.title ASC
-         LIMIT 5"
+         LIMIT 5",
     )
     .bind(library_id)
     .fetch_all(&state.pool)
@@ -452,7 +470,10 @@ pub async fn update_metadata_provider(
     Json(input): Json<UpdateMetadataProviderRequest>,
 ) -> Result<Json<LibraryResponse>, ApiError> {
     let provider = input.metadata_provider.as_deref().filter(|s| !s.is_empty());
-    let fallback = input.fallback_metadata_provider.as_deref().filter(|s| !s.is_empty());
+    let fallback = input
+        .fallback_metadata_provider
+        .as_deref()
+        .filter(|s| !s.is_empty());
 
     let result = sqlx::query(
         "UPDATE libraries SET metadata_provider = $2, fallback_metadata_provider = $3 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at, reading_status_provider, reading_status_push_mode, next_reading_status_push_at, download_detection_mode, next_download_detection_at, tags"
@@ -482,7 +503,7 @@ pub async fn update_metadata_provider(
          LEFT JOIN series s ON s.id = b.series_id
          WHERE b.library_id = $1
          ORDER BY COALESCE(s.name, 'unclassified'), b.volume NULLS LAST, b.title ASC
-         LIMIT 5"
+         LIMIT 5",
     )
     .bind(library_id)
     .fetch_all(&state.pool)
@@ -539,11 +560,17 @@ pub async fn update_reading_status_provider(
     AxumPath(library_id): AxumPath<Uuid>,
     Json(input): Json<UpdateReadingStatusProviderRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let provider = input.reading_status_provider.as_deref().filter(|s| !s.is_empty());
+    let provider = input
+        .reading_status_provider
+        .as_deref()
+        .filter(|s| !s.is_empty());
 
-    use stripstream_core::schedule::{validate_schedule_mode, mode_to_interval_minutes};
+    use stripstream_core::schedule::{mode_to_interval_minutes, validate_schedule_mode};
 
-    let push_mode = input.reading_status_push_mode.as_deref().unwrap_or("manual");
+    let push_mode = input
+        .reading_status_push_mode
+        .as_deref()
+        .unwrap_or("manual");
     validate_schedule_mode(push_mode)
         .map_err(|e| ApiError::bad_request(format!("reading_status_push_mode {e}")))?;
 
@@ -585,13 +612,11 @@ pub async fn update_tags(
     AxumPath(library_id): AxumPath<Uuid>,
     Json(input): Json<UpdateTagsRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let result = sqlx::query(
-        "UPDATE libraries SET tags = $2 WHERE id = $1",
-    )
-    .bind(library_id)
-    .bind(&input.tags)
-    .execute(&state.pool)
-    .await?;
+    let result = sqlx::query("UPDATE libraries SET tags = $2 WHERE id = $1")
+        .bind(library_id)
+        .bind(&input.tags)
+        .execute(&state.pool)
+        .await?;
 
     if result.rows_affected() == 0 {
         return Err(ApiError::not_found("library not found"));

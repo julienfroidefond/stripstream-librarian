@@ -1,9 +1,12 @@
-use axum::{extract::{Extension, Path, State}, Json};
+use axum::{
+    extract::{Extension, Path, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
@@ -45,7 +48,9 @@ pub async fn get_reading_progress(
     user: Option<Extension<AuthUser>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ReadingProgressResponse>, ApiError> {
-    let auth_user = user.ok_or_else(|| ApiError::bad_request("admin tokens cannot track reading progress"))?.0;
+    let auth_user = user
+        .ok_or_else(|| ApiError::bad_request("admin tokens cannot track reading progress"))?
+        .0;
     // Verify book exists
     let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM books WHERE id = $1)")
         .bind(id)
@@ -103,7 +108,9 @@ pub async fn update_reading_progress(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateReadingProgressRequest>,
 ) -> Result<Json<ReadingProgressResponse>, ApiError> {
-    let auth_user = user.ok_or_else(|| ApiError::bad_request("admin tokens cannot track reading progress"))?.0;
+    let auth_user = user
+        .ok_or_else(|| ApiError::bad_request("admin tokens cannot track reading progress"))?
+        .0;
     // Validate status value
     if !["unread", "reading", "read"].contains(&body.status.as_str()) {
         return Err(ApiError::bad_request(format!(
@@ -203,11 +210,11 @@ pub async fn mark_series_read(
     user: Option<Extension<AuthUser>>,
     Json(body): Json<MarkSeriesReadRequest>,
 ) -> Result<Json<MarkSeriesReadResponse>, ApiError> {
-    let auth_user = user.ok_or_else(|| ApiError::bad_request("admin tokens cannot track reading progress"))?.0;
+    let auth_user = user
+        .ok_or_else(|| ApiError::bad_request("admin tokens cannot track reading progress"))?
+        .0;
     if !["read", "unread"].contains(&body.status.as_str()) {
-        return Err(ApiError::bad_request(
-            "status must be 'read' or 'unread'",
-        ));
+        return Err(ApiError::bad_request("status must be 'read' or 'unread'"));
     }
 
     let series_filter = if body.series == "unclassified" {
@@ -277,7 +284,10 @@ pub async fn mark_series_read(
             .await?
     } else {
         // $1 = series_id (UUID), $2 = user_id
-        let series_uuid: Uuid = body.series.parse().map_err(|_| ApiError::bad_request("invalid series id"))?;
+        let series_uuid: Uuid = body
+            .series
+            .parse()
+            .map_err(|_| ApiError::bad_request("invalid series id"))?;
         sqlx::query(&sql)
             .bind(series_uuid)
             .bind(auth_user.user_id)

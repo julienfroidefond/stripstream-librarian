@@ -30,7 +30,9 @@ impl MetadataProvider for ComicVineProvider {
     > {
         let external_id = external_id.to_string();
         let config = config.clone();
-        Box::pin(async move { get_series_books_impl(&external_id, &config, DEFAULT_BASE_URL).await })
+        Box::pin(
+            async move { get_series_books_impl(&external_id, &config, DEFAULT_BASE_URL).await },
+        )
     }
 }
 
@@ -51,7 +53,9 @@ async fn search_series_impl(
         .api_key
         .as_deref()
         .filter(|k| !k.is_empty())
-        .ok_or_else(|| "ComicVine requires an API key. Configure it in Settings > Integrations.".to_string())?;
+        .ok_or_else(|| {
+            "ComicVine requires an API key. Configure it in Settings > Integrations.".to_string()
+        })?;
 
     let client = build_client()?;
 
@@ -140,7 +144,11 @@ async fn search_series_impl(
         })
         .collect();
 
-    candidates.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     candidates.truncate(10);
     Ok(candidates)
 }

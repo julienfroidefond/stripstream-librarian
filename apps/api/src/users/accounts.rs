@@ -1,9 +1,12 @@
-use axum::{extract::{Path, State}, Json};
+use axum::{
+    extract::{Path, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::{error::ApiError, state::AppState};
 
@@ -36,7 +39,9 @@ pub struct CreateUserRequest {
     ),
     security(("Bearer" = []))
 )]
-pub async fn list_users(State(state): State<AppState>) -> Result<Json<Vec<UserResponse>>, ApiError> {
+pub async fn list_users(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<UserResponse>>, ApiError> {
     let rows = sqlx::query(
         r#"
         SELECT u.id, u.username, u.created_at,

@@ -5,11 +5,13 @@ use sqlx::Row;
 async fn failed_download_count_query(pool: sqlx::PgPool) {
     // Setup: library + series
     let library_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Test Lib', '/libraries/test')")
-        .bind(library_id)
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Test Lib', '/libraries/test')",
+    )
+    .bind(library_id)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let series_id = Uuid::new_v4();
     sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Naruto')")
@@ -89,7 +91,10 @@ async fn failed_download_count_query(pool: sqlx::PgPool) {
     assert_eq!(rows.len(), 1, "should return one available_download row");
     let row = &rows[0];
     let failed_count: i64 = row.get("failed_download_count");
-    assert_eq!(failed_count, 2, "should count only the 2 error torrent_downloads, not the imported one");
+    assert_eq!(
+        failed_count, 2,
+        "should count only the 2 error torrent_downloads, not the imported one"
+    );
     let series_name: String = row.get("series_name");
     assert_eq!(series_name, "Naruto");
 }
@@ -98,12 +103,21 @@ async fn failed_download_count_query(pool: sqlx::PgPool) {
 async fn has_failed_flag_on_releases(pool: sqlx::PgPool) {
     // Setup: library + series
     let library_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Test', '/libraries/test')")
-        .bind(library_id).execute(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Test', '/libraries/test')",
+    )
+    .bind(library_id)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let series_id = Uuid::new_v4();
     sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Blacksad')")
-        .bind(series_id).bind(library_id).execute(&pool).await.unwrap();
+        .bind(series_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     // Two releases: one matching failed volumes, one not
     let releases = serde_json::json!([
@@ -149,28 +163,42 @@ async fn has_failed_flag_on_releases(pool: sqlx::PgPool) {
     let failed_volumes: Vec<i32> = rows.get("failed_volumes");
     assert!(failed_volumes.contains(&2));
     assert!(failed_volumes.contains(&3));
-    assert!(!failed_volumes.contains(&5), "volume 5 was not in a failed torrent");
+    assert!(
+        !failed_volumes.contains(&5),
+        "volume 5 was not in a failed torrent"
+    );
 
     // Simulate the Rust-side enrichment
     let releases_json: serde_json::Value = rows.get("available_releases");
     let mut releases: Vec<AvailableReleaseDto> = serde_json::from_value(releases_json).unwrap();
     for r in &mut releases {
-        r.has_failed = r.matched_missing_volumes.iter().any(|v| failed_volumes.contains(v));
+        r.has_failed = r
+            .matched_missing_volumes
+            .iter()
+            .any(|v| failed_volumes.contains(v));
     }
 
-    assert!(releases[0].has_failed, "release T01-T03 should be flagged (volumes 2,3 overlap)");
-    assert!(!releases[1].has_failed, "release T05 should NOT be flagged (volume 5 not failed)");
+    assert!(
+        releases[0].has_failed,
+        "release T01-T03 should be flagged (volumes 2,3 overlap)"
+    );
+    assert!(
+        !releases[1].has_failed,
+        "release T05 should NOT be flagged (volume 5 not failed)"
+    );
 }
 
 /// Regression: series_id must be returned from the detection results query.
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn series_id_returned_when_series_exists(pool: sqlx::PgPool) {
     let library_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'TestLib', '/libraries/test')")
-        .bind(library_id)
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT INTO libraries (id, name, root_path) VALUES ($1, 'TestLib', '/libraries/test')",
+    )
+    .bind(library_id)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let series_id = Uuid::new_v4();
     sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'OnePiece')")
@@ -216,7 +244,11 @@ async fn series_id_returned_when_series_exists(pool: sqlx::PgPool) {
 
     assert_eq!(rows.len(), 1);
     let returned_series_id: Option<Uuid> = rows[0].get("series_id");
-    assert_eq!(returned_series_id, Some(series_id), "series_id should match the created series");
+    assert_eq!(
+        returned_series_id,
+        Some(series_id),
+        "series_id should match the created series"
+    );
 }
 
 /// Regression: LEFT JOIN with LOWER(unaccent()) resolves series_id even when
@@ -289,11 +321,13 @@ async fn series_id_resolved_with_unaccent_in_results(pool: sqlx::PgPool) {
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn event_downloads_found_written(pool: sqlx::PgPool) {
     let library_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'DlEvtLib', '/libraries/dl_evt')")
-        .bind(library_id)
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT INTO libraries (id, name, root_path) VALUES ($1, 'DlEvtLib', '/libraries/dl_evt')",
+    )
+    .bind(library_id)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let job_id = Uuid::new_v4();
     sqlx::query(
@@ -306,7 +340,16 @@ async fn event_downloads_found_written(pool: sqlx::PgPool) {
     .unwrap();
 
     let detail = serde_json::json!({"release_count": 3, "missing_count": 5});
-    super::insert_event(&pool, job_id, "downloads_found", "info", Some("Naruto"), None, Some(detail.clone())).await;
+    super::insert_event(
+        &pool,
+        job_id,
+        "downloads_found",
+        "info",
+        Some("Naruto"),
+        None,
+        Some(detail.clone()),
+    )
+    .await;
 
     let row = sqlx::query(
         "SELECT event_type, level, entity_name, message, detail FROM index_job_events WHERE job_id = $1",
@@ -318,7 +361,10 @@ async fn event_downloads_found_written(pool: sqlx::PgPool) {
 
     assert_eq!(row.get::<String, _>("event_type"), "downloads_found");
     assert_eq!(row.get::<String, _>("level"), "info");
-    assert_eq!(row.get::<Option<String>, _>("entity_name"), Some("Naruto".to_string()));
+    assert_eq!(
+        row.get::<Option<String>, _>("entity_name"),
+        Some("Naruto".to_string())
+    );
     let stored_detail: serde_json::Value = row.get("detail");
     assert_eq!(stored_detail["release_count"], 3);
     assert_eq!(stored_detail["missing_count"], 5);
@@ -343,7 +389,16 @@ async fn event_error_has_error_level(pool: sqlx::PgPool) {
     .await
     .unwrap();
 
-    super::insert_event(&pool, job_id, "error", "error", Some("FailedSeries"), Some("search timeout"), None).await;
+    super::insert_event(
+        &pool,
+        job_id,
+        "error",
+        "error",
+        Some("FailedSeries"),
+        Some("search timeout"),
+        None,
+    )
+    .await;
 
     let row = sqlx::query(
         "SELECT event_type, level, entity_name, message FROM index_job_events WHERE job_id = $1",
@@ -355,19 +410,27 @@ async fn event_error_has_error_level(pool: sqlx::PgPool) {
 
     assert_eq!(row.get::<String, _>("event_type"), "error");
     assert_eq!(row.get::<String, _>("level"), "error");
-    assert_eq!(row.get::<Option<String>, _>("entity_name"), Some("FailedSeries".to_string()));
-    assert_eq!(row.get::<Option<String>, _>("message"), Some("search timeout".to_string()));
+    assert_eq!(
+        row.get::<Option<String>, _>("entity_name"),
+        Some("FailedSeries".to_string())
+    );
+    assert_eq!(
+        row.get::<Option<String>, _>("message"),
+        Some("search timeout".to_string())
+    );
 }
 
 /// Regression: series_id should be None when no matching series exists.
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn series_id_none_when_series_missing(pool: sqlx::PgPool) {
     let library_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'TestLib', '/libraries/test')")
-        .bind(library_id)
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT INTO libraries (id, name, root_path) VALUES ($1, 'TestLib', '/libraries/test')",
+    )
+    .bind(library_id)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let job_id = Uuid::new_v4();
     sqlx::query(
@@ -404,7 +467,10 @@ async fn series_id_none_when_series_missing(pool: sqlx::PgPool) {
 
     assert_eq!(rows.len(), 1);
     let returned_series_id: Option<Uuid> = rows[0].get("series_id");
-    assert!(returned_series_id.is_none(), "series_id should be None when no series is linked");
+    assert!(
+        returned_series_id.is_none(),
+        "series_id should be None when no series is linked"
+    );
 }
 
 // -----------------------------------------------------------------------
@@ -431,14 +497,86 @@ async fn report_counts_from_events(pool: sqlx::PgPool) {
     .unwrap();
 
     // Insert events with different event_types
-    super::insert_event(&pool, job_id, "downloads_found", "info", Some("Naruto"), None, Some(serde_json::json!({"missing_count": 3}))).await;
-    super::insert_event(&pool, job_id, "downloads_found", "info", Some("Bleach"), None, Some(serde_json::json!({"missing_count": 1}))).await;
-    super::insert_event(&pool, job_id, "downloads_not_found", "info", Some("Obscure"), None, None).await;
-    super::insert_event(&pool, job_id, "no_missing_volumes", "info", Some("Complete"), None, None).await;
-    super::insert_event(&pool, job_id, "no_missing_volumes", "info", Some("Complete2"), None, None).await;
-    super::insert_event(&pool, job_id, "no_missing_volumes", "info", Some("Complete3"), None, None).await;
-    super::insert_event(&pool, job_id, "no_metadata_link", "info", Some("Unlinked"), None, None).await;
-    super::insert_event(&pool, job_id, "error", "error", Some("BrokenSeries"), Some("search timeout"), None).await;
+    super::insert_event(
+        &pool,
+        job_id,
+        "downloads_found",
+        "info",
+        Some("Naruto"),
+        None,
+        Some(serde_json::json!({"missing_count": 3})),
+    )
+    .await;
+    super::insert_event(
+        &pool,
+        job_id,
+        "downloads_found",
+        "info",
+        Some("Bleach"),
+        None,
+        Some(serde_json::json!({"missing_count": 1})),
+    )
+    .await;
+    super::insert_event(
+        &pool,
+        job_id,
+        "downloads_not_found",
+        "info",
+        Some("Obscure"),
+        None,
+        None,
+    )
+    .await;
+    super::insert_event(
+        &pool,
+        job_id,
+        "no_missing_volumes",
+        "info",
+        Some("Complete"),
+        None,
+        None,
+    )
+    .await;
+    super::insert_event(
+        &pool,
+        job_id,
+        "no_missing_volumes",
+        "info",
+        Some("Complete2"),
+        None,
+        None,
+    )
+    .await;
+    super::insert_event(
+        &pool,
+        job_id,
+        "no_missing_volumes",
+        "info",
+        Some("Complete3"),
+        None,
+        None,
+    )
+    .await;
+    super::insert_event(
+        &pool,
+        job_id,
+        "no_metadata_link",
+        "info",
+        Some("Unlinked"),
+        None,
+        None,
+    )
+    .await;
+    super::insert_event(
+        &pool,
+        job_id,
+        "error",
+        "error",
+        Some("BrokenSeries"),
+        Some("search timeout"),
+        None,
+    )
+    .await;
 
     // Run the same report query used in get_detection_report
     let counts = sqlx::query(
@@ -483,7 +621,11 @@ fn filter_volume_zero_from_missing() {
         .filter_map(|v| *v)
         .filter(|&v| v > 0)
         .collect();
-    assert_eq!(missing, vec![1, 2, 3], "volume 0 and NULL should be excluded");
+    assert_eq!(
+        missing,
+        vec![1, 2, 3],
+        "volume 0 and NULL should be excluded"
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -577,7 +719,11 @@ async fn volume_zero_cleanup_removes_zero_from_releases(pool: sqlx::PgPool) {
         .iter()
         .map(|v| v.as_i64().unwrap())
         .collect();
-    assert_eq!(matched, vec![1, 2], "volume 0 should be removed, 1 and 2 should remain");
+    assert_eq!(
+        matched,
+        vec![1, 2],
+        "volume 0 should be removed, 1 and 2 should remain"
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -656,23 +802,29 @@ async fn volume_zero_cleanup_deletes_entry_with_only_zero(pool: sqlx::PgPool) {
     .unwrap();
 
     // The entry should be deleted since all volumes were [0]
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM available_downloads WHERE id = $1)")
-        .bind(ad_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert!(!exists, "entry with only volume 0 should be deleted after cleanup");
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM available_downloads WHERE id = $1)")
+            .bind(ad_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        !exists,
+        "entry with only volume 0 should be deleted after cleanup"
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn detection_includes_series_without_books(pool: sqlx::PgPool) {
     // Library setup
     let library_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Test Lib', '/libraries/test')")
-        .bind(library_id)
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Test Lib', '/libraries/test')",
+    )
+    .bind(library_id)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     // Series WITHOUT books (discovery-only series)
     let empty_series_id = Uuid::new_v4();

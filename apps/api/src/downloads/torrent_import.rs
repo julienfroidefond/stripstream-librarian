@@ -1,4 +1,7 @@
-use axum::{extract::{Path, State}, Json};
+use axum::{
+    extract::{Path, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
@@ -6,8 +9,8 @@ use std::time::Duration;
 use tracing::{info, trace, warn};
 use uuid::Uuid;
 
-use crate::{error::ApiError, metadata, state::AppState};
 use super::qbittorrent::{load_qbittorrent_config, qbittorrent_login, resolve_hash_by_category};
+use crate::{error::ApiError, metadata, state::AppState};
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -79,7 +82,10 @@ pub async fn notify_torrent_done(
     }
 
     if !is_torrent_import_enabled(&state.pool).await {
-        info!("Torrent import disabled, ignoring notification for hash {}", body.hash);
+        info!(
+            "Torrent import disabled, ignoring notification for hash {}",
+            body.hash
+        );
         return Ok(Json(crate::responses::OkResponse::new()));
     }
 
@@ -91,7 +97,10 @@ pub async fn notify_torrent_done(
     .await?;
 
     let Some(row) = row else {
-        info!("Torrent notification for unknown hash {}, ignoring", body.hash);
+        info!(
+            "Torrent notification for unknown hash {}, ignoring",
+            body.hash
+        );
         return Ok(Json(crate::responses::OkResponse::new()));
     };
 
@@ -105,7 +114,10 @@ pub async fn notify_torrent_done(
     .execute(&state.pool)
     .await?;
 
-    info!("Torrent {} completed, content at {}", body.hash, body.save_path);
+    info!(
+        "Torrent {} completed, content at {}",
+        body.hash, body.save_path
+    );
 
     let pool = state.pool.clone();
     tokio::spawn(async move {
@@ -190,7 +202,9 @@ pub async fn delete_torrent_download(
                     .build()
                     .ok();
                 if let Some(client) = client {
-                    if let Ok(sid) = qbittorrent_login(&client, &base_url, &username, &password).await {
+                    if let Ok(sid) =
+                        qbittorrent_login(&client, &base_url, &username, &password).await
+                    {
                         let _ = client
                             .post(format!("{base_url}/api/v2/torrents/delete"))
                             .header("Cookie", format!("SID={sid}"))
@@ -278,13 +292,16 @@ struct QbTorrentInfo {
 
 /// Completed states in qBittorrent: torrent is fully downloaded and seeding.
 pub(super) const QB_COMPLETED_STATES: &[&str] = &[
-    "uploading", "stalledUP", "pausedUP", "queuedUP", "checkingUP", "forcedUP",
+    "uploading",
+    "stalledUP",
+    "pausedUP",
+    "queuedUP",
+    "checkingUP",
+    "forcedUP",
 ];
 
 /// Failed/stalled states: torrent cannot make progress (no seeds, stalled download).
-const QB_FAILED_STATES: &[&str] = &[
-    "stalledDL", "pausedDL", "error", "missingFiles",
-];
+const QB_FAILED_STATES: &[&str] = &["stalledDL", "pausedDL", "error", "missingFiles"];
 
 pub async fn run_torrent_poller(pool: PgPool, interval_seconds: u64) {
     let idle_wait = Duration::from_secs(interval_seconds.max(5));
@@ -298,12 +315,16 @@ pub async fn run_torrent_poller(pool: PgPool, interval_seconds: u64) {
                 warn!("[TORRENT_POLLER] {:#}", e);
                 // Check if there are active downloads — if so, retry faster
                 let has_rows = sqlx::query_scalar::<_, i64>(
-                    "SELECT COUNT(*) FROM torrent_downloads WHERE status = 'downloading'"
+                    "SELECT COUNT(*) FROM torrent_downloads WHERE status = 'downloading'",
                 )
                 .fetch_one(&pool)
                 .await
                 .unwrap_or(0);
-                if has_rows > 0 { error_wait } else { idle_wait }
+                if has_rows > 0 {
+                    error_wait
+                } else {
+                    idle_wait
+                }
             }
         };
         tokio::time::sleep(wait).await;
@@ -351,7 +372,9 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
         let age = chrono::Utc::now() - created_at;
 
         if age.num_minutes() > 5 {
-            warn!("[TORRENT_POLLER] Torrent {tid} has no qb_hash after 5 minutes, marking as error");
+            warn!(
+                "[TORRENT_POLLER] Torrent {tid} has no qb_hash after 5 minutes, marking as error"
+            );
             let _ = sqlx::query(
                 "UPDATE torrent_downloads SET status = 'error', error_message = 'Torrent not found in qBittorrent after 5 minutes', updated_at = NOW() WHERE id = $1",
             )
@@ -382,10 +405,13 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
     .await?;
 
     // Filter to rows that have a resolved hash
-    let rows: Vec<_> = rows.into_iter().filter(|r| {
-        let qb_hash: Option<String> = r.get("qb_hash");
-        qb_hash.is_some()
-    }).collect();
+    let rows: Vec<_> = rows
+        .into_iter()
+        .filter(|r| {
+            let qb_hash: Option<String> = r.get("qb_hash");
+            qb_hash.is_some()
+        })
+        .collect();
 
     if rows.is_empty() {
         return Ok(true);
@@ -393,7 +419,10 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
 
     let hashes: Vec<String> = rows
         .iter()
-        .map(|r| { let h: String = r.get("qb_hash"); h })
+        .map(|r| {
+            let h: String = r.get("qb_hash");
+            h
+        })
         .collect();
     let hashes_param = hashes.join("|");
 
@@ -405,13 +434,19 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
         .await?;
 
     if !resp.status().is_success() {
-        return Err(anyhow::anyhow!("qBittorrent API returned {}", resp.status()));
+        return Err(anyhow::anyhow!(
+            "qBittorrent API returned {}",
+            resp.status()
+        ));
     }
 
     let infos: Vec<QbTorrentInfo> = resp.json().await?;
 
     for info in &infos {
-        info!("[TORRENT_POLLER] Torrent {} state='{}' progress={:.2} name={:?}", info.hash, info.state, info.progress, info.name);
+        info!(
+            "[TORRENT_POLLER] Torrent {} state='{}' progress={:.2} name={:?}",
+            info.hash, info.state, info.progress, info.name
+        );
 
         // Update progress for all active torrents
         let row = rows.iter().find(|r| {
@@ -437,7 +472,9 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
             let Some(row) = rows.iter().find(|r| {
                 let h: String = r.get("qb_hash");
                 h == info.hash
-            }) else { continue; };
+            }) else {
+                continue;
+            };
             let tid: Uuid = row.get("id");
             let msg = format!("Torrent stalled in qBittorrent (state: {})", info.state);
             warn!("[TORRENT_POLLER] Torrent {} failed: {}", info.hash, msg);
@@ -458,7 +495,10 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
                 .form(&[("hashes", info.hash.as_str()), ("deleteFiles", "true")])
                 .send()
                 .await;
-            info!("[TORRENT_POLLER] Removed failed torrent {} from qBittorrent", info.hash);
+            info!(
+                "[TORRENT_POLLER] Removed failed torrent {} from qBittorrent",
+                info.hash
+            );
             continue;
         }
 
@@ -471,14 +511,19 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
         // point to the new category's save_path while files are still in the original location.
         // Try content_path first, then save_path + name, and verify the path exists.
         let mut content_path: Option<String> = None;
-        let candidates = [
-            info.content_path.clone(),
-            {
-                let save = info.save_path.as_deref().unwrap_or("").trim_end_matches('/');
-                let name = info.name.as_deref().unwrap_or("");
-                if name.is_empty() { None } else { Some(format!("{save}/{name}")) }
-            },
-        ];
+        let candidates = [info.content_path.clone(), {
+            let save = info
+                .save_path
+                .as_deref()
+                .unwrap_or("")
+                .trim_end_matches('/');
+            let name = info.name.as_deref().unwrap_or("");
+            if name.is_empty() {
+                None
+            } else {
+                Some(format!("{save}/{name}"))
+            }
+        }];
         for candidate in candidates.into_iter().flatten() {
             if !candidate.is_empty() && std::path::Path::new(&candidate).exists() {
                 content_path = Some(candidate);
@@ -491,14 +536,19 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
         }
 
         let Some(content_path) = content_path else {
-            warn!("[TORRENT_POLLER] Torrent {} completed but content_path unknown", info.hash);
+            warn!(
+                "[TORRENT_POLLER] Torrent {} completed but content_path unknown",
+                info.hash
+            );
             continue;
         };
 
         let Some(row) = rows.iter().find(|r| {
             let h: String = r.get("qb_hash");
             h == info.hash
-        }) else { continue; };
+        }) else {
+            continue;
+        };
         let torrent_id: Uuid = row.get("id");
 
         let updated = sqlx::query(
@@ -512,7 +562,10 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
         .await?;
 
         if updated.rows_affected() > 0 {
-            info!("[TORRENT_POLLER] Torrent {} completed, content at {}, starting import", info.hash, content_path);
+            info!(
+                "[TORRENT_POLLER] Torrent {} completed, content at {}, starting import",
+                info.hash, content_path
+            );
             let pool_clone = pool.clone();
             tokio::spawn(async move {
                 if let Err(e) = process_torrent_import(pool_clone, torrent_id).await {
@@ -574,7 +627,16 @@ pub(super) async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> an
     .execute(&pool)
     .await?;
 
-    match do_import(&pool, library_id, &series_name, &expected_volumes, &content_path, replace_existing).await {
+    match do_import(
+        &pool,
+        library_id,
+        &series_name,
+        &expected_volumes,
+        &content_path,
+        replace_existing,
+    )
+    .await
+    {
         Ok(result) => {
             let imported = &result.imported;
             let skipped = &result.skipped;
@@ -666,7 +728,15 @@ pub(super) async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> an
                 let pool2 = pool.clone();
                 let sn = series_name.clone();
                 tokio::spawn(async move {
-                    let result = metadata::refresh_link(&pool2, link_id, library_id, &sn, &provider, &external_id).await;
+                    let result = metadata::refresh_link(
+                        &pool2,
+                        link_id,
+                        library_id,
+                        &sn,
+                        &provider,
+                        &external_id,
+                    )
+                    .await;
                     if let Err(e) = result {
                         warn!("[IMPORT] Metadata refresh for '{}' failed: {}", sn, e);
                     } else {
@@ -693,27 +763,37 @@ pub(super) async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> an
                     let ad_id: Uuid = ad_row.get("id");
                     let releases_json: Option<serde_json::Value> = ad_row.get("available_releases");
                     if let Some(serde_json::Value::Array(releases)) = releases_json {
-                        let updated: Vec<serde_json::Value> = releases.into_iter().filter_map(|mut release| {
-                            if let Some(matched) = release.get_mut("matched_missing_volumes") {
-                                if let Some(arr) = matched.as_array() {
-                                    let filtered: Vec<serde_json::Value> = arr.iter()
-                                        .filter(|v| !imported_vols.contains(&(v.as_i64().unwrap_or(-1) as i32)))
-                                        .cloned()
-                                        .collect();
-                                    if filtered.is_empty() {
-                                        return None;
+                        let updated: Vec<serde_json::Value> = releases
+                            .into_iter()
+                            .filter_map(|mut release| {
+                                if let Some(matched) = release.get_mut("matched_missing_volumes") {
+                                    if let Some(arr) = matched.as_array() {
+                                        let filtered: Vec<serde_json::Value> = arr
+                                            .iter()
+                                            .filter(|v| {
+                                                !imported_vols
+                                                    .contains(&(v.as_i64().unwrap_or(-1) as i32))
+                                            })
+                                            .cloned()
+                                            .collect();
+                                        if filtered.is_empty() {
+                                            return None;
+                                        }
+                                        *matched = serde_json::Value::Array(filtered);
                                     }
-                                    *matched = serde_json::Value::Array(filtered);
                                 }
-                            }
-                            Some(release)
-                        }).collect();
+                                Some(release)
+                            })
+                            .collect();
 
                         if updated.is_empty() {
                             let _ = sqlx::query("DELETE FROM available_downloads WHERE id = $1")
-                                .bind(ad_id).execute(&pool).await;
+                                .bind(ad_id)
+                                .execute(&pool)
+                                .await;
                         } else {
-                            let new_missing = ad_row.get::<i32, _>("missing_count") - imported_vols.len() as i32;
+                            let new_missing =
+                                ad_row.get::<i32, _>("missing_count") - imported_vols.len() as i32;
                             let _ = sqlx::query(
                                 "UPDATE available_downloads SET available_releases = $1, missing_count = GREATEST($2, 0), updated_at = NOW() WHERE id = $3",
                             )
@@ -732,7 +812,10 @@ pub(super) async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> an
             let category_dir = remap_downloads_path(&format!("/downloads/sl-{torrent_id}"));
             let category_p = std::path::Path::new(&category_dir);
             let downloads_p = std::path::Path::new(&downloads_root);
-            if category_p.is_dir() && category_p != downloads_p && category_p.starts_with(downloads_p) {
+            if category_p.is_dir()
+                && category_p != downloads_p
+                && category_p.starts_with(downloads_p)
+            {
                 match std::fs::remove_dir_all(category_p) {
                     Ok(()) => info!("[IMPORT] Cleaned up category directory: {}", category_dir),
                     Err(e) => warn!("[IMPORT] Failed to clean up {}: {}", category_dir, e),
@@ -742,8 +825,13 @@ pub(super) async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> an
             // Remove torrent and category from qBittorrent
             if let Some(ref hash) = qb_hash {
                 if let Ok((base_url, username, password)) = load_qbittorrent_config(&pool).await {
-                    if let Ok(client) = reqwest::Client::builder().timeout(Duration::from_secs(10)).build() {
-                        if let Ok(sid) = qbittorrent_login(&client, &base_url, &username, &password).await {
+                    if let Ok(client) = reqwest::Client::builder()
+                        .timeout(Duration::from_secs(10))
+                        .build()
+                    {
+                        if let Ok(sid) =
+                            qbittorrent_login(&client, &base_url, &username, &password).await
+                        {
                             let _ = client
                                 .post(format!("{base_url}/api/v2/torrents/delete"))
                                 .header("Cookie", format!("SID={sid}"))
@@ -767,7 +855,11 @@ pub(super) async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> an
 
             let new_count = imported.iter().filter(|f| !f.already_existed).count();
             let existing_count = imported.iter().filter(|f| f.already_existed).count();
-            let volumes: Vec<i32> = imported.iter().filter(|f| !f.already_existed).map(|f| f.volume).collect();
+            let volumes: Vec<i32> = imported
+                .iter()
+                .filter(|f| !f.already_existed)
+                .map(|f| f.volume)
+                .collect();
             notifications::notify(
                 pool.clone(),
                 notifications::NotificationEvent::TorrentImportCompleted {

@@ -137,7 +137,8 @@ fn validate_scope_is_case_sensitive() {
 
 #[test]
 fn create_token_request_deserializes_with_all_fields() {
-    let json = r#"{"name": "test", "scope": "admin", "user_id": "550e8400-e29b-41d4-a716-446655440000"}"#;
+    let json =
+        r#"{"name": "test", "scope": "admin", "user_id": "550e8400-e29b-41d4-a716-446655440000"}"#;
     let req: CreateTokenRequest = serde_json::from_str(json).unwrap();
     assert_eq!(req.name, "test");
     assert_eq!(req.scope.as_deref(), Some("admin"));

@@ -36,8 +36,13 @@ async fn create_series(
     id
 }
 
-async fn fetch_related(pool: &sqlx::PgPool, series_id: Uuid, limit: i64) -> Vec<(Uuid, i64, Vec<String>)> {
-    let rows = sqlx::query(r#"
+async fn fetch_related(
+    pool: &sqlx::PgPool,
+    series_id: Uuid,
+    limit: i64,
+) -> Vec<(Uuid, i64, Vec<String>)> {
+    let rows = sqlx::query(
+        r#"
         WITH ref AS (
             SELECT authors, genres, publishers FROM series WHERE id = $1
         ),
@@ -71,7 +76,8 @@ async fn fetch_related(pool: &sqlx::PgPool, series_id: Uuid, limit: i64) -> Vec<
           AND (s.authors && ref.authors OR s.genres && ref.genres OR s.publishers && ref.publishers)
         ORDER BY score DESC
         LIMIT $2
-    "#)
+    "#,
+    )
     .bind(series_id)
     .bind(limit)
     .fetch_all(pool)
@@ -79,13 +85,21 @@ async fn fetch_related(pool: &sqlx::PgPool, series_id: Uuid, limit: i64) -> Vec<
     .unwrap();
 
     use sqlx::Row;
-    rows.into_iter().map(|row| {
-        let mut reasons = Vec::new();
-        if row.get::<bool, _>("has_same_author") { reasons.push("same_author".to_string()); }
-        if row.get::<bool, _>("has_same_genre")  { reasons.push("same_genre".to_string()); }
-        if row.get::<bool, _>("has_same_publisher") { reasons.push("same_publisher".to_string()); }
-        (row.get("series_id"), row.get::<i64, _>("score"), reasons)
-    }).collect()
+    rows.into_iter()
+        .map(|row| {
+            let mut reasons = Vec::new();
+            if row.get::<bool, _>("has_same_author") {
+                reasons.push("same_author".to_string());
+            }
+            if row.get::<bool, _>("has_same_genre") {
+                reasons.push("same_genre".to_string());
+            }
+            if row.get::<bool, _>("has_same_publisher") {
+                reasons.push("same_publisher".to_string());
+            }
+            (row.get("series_id"), row.get::<i64, _>("score"), reasons)
+        })
+        .collect()
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -93,7 +107,7 @@ async fn related_same_author(pool: sqlx::PgPool) {
     let lib = create_library(&pool).await;
     let s1 = create_series(&pool, lib, "Naruto", &["Kishimoto"], &[], &[]).await;
     let s2 = create_series(&pool, lib, "Boruto", &["Kishimoto"], &[], &[]).await;
-    let _  = create_series(&pool, lib, "One Piece", &["Oda"], &[], &[]).await;
+    let _ = create_series(&pool, lib, "One Piece", &["Oda"], &[], &[]).await;
 
     let results = fetch_related(&pool, s1, 10).await;
     assert_eq!(results.len(), 1);
@@ -107,8 +121,24 @@ async fn related_same_author(pool: sqlx::PgPool) {
 async fn related_same_genre(pool: sqlx::PgPool) {
     let lib = create_library(&pool).await;
     let s1 = create_series(&pool, lib, "Akira", &["Otomo"], &["Manga", "Sci-Fi"], &[]).await;
-    let s2 = create_series(&pool, lib, "Ghost in the Shell", &["Shirow"], &["Manga", "Cyberpunk"], &[]).await;
-    let _  = create_series(&pool, lib, "Dragon Ball", &["Toriyama"], &["Adventure"], &[]).await;
+    let s2 = create_series(
+        &pool,
+        lib,
+        "Ghost in the Shell",
+        &["Shirow"],
+        &["Manga", "Cyberpunk"],
+        &[],
+    )
+    .await;
+    let _ = create_series(
+        &pool,
+        lib,
+        "Dragon Ball",
+        &["Toriyama"],
+        &["Adventure"],
+        &[],
+    )
+    .await;
 
     let results = fetch_related(&pool, s1, 10).await;
     assert_eq!(results.len(), 1);
@@ -122,8 +152,16 @@ async fn related_same_genre(pool: sqlx::PgPool) {
 async fn related_same_publisher(pool: sqlx::PgPool) {
     let lib = create_library(&pool).await;
     let s1 = create_series(&pool, lib, "Bleach", &["Kubo"], &[], &["Shueisha"]).await;
-    let s2 = create_series(&pool, lib, "Hunter x Hunter", &["Togashi"], &[], &["Shueisha"]).await;
-    let _  = create_series(&pool, lib, "Berserk", &["Miura"], &[], &["Dark Horse"]).await;
+    let s2 = create_series(
+        &pool,
+        lib,
+        "Hunter x Hunter",
+        &["Togashi"],
+        &[],
+        &["Shueisha"],
+    )
+    .await;
+    let _ = create_series(&pool, lib, "Berserk", &["Miura"], &[], &["Dark Horse"]).await;
 
     let results = fetch_related(&pool, s1, 10).await;
     assert_eq!(results.len(), 1);
@@ -139,30 +177,38 @@ async fn related_scoring_order(pool: sqlx::PgPool) {
     // Score 3: same author only
     let by_author = create_series(&pool, lib, "ByAuthor", &["Author A"], &[], &[]).await;
     // Score 2: same genre only
-    let by_genre  = create_series(&pool, lib, "ByGenre",  &[], &["Genre X"], &[]).await;
+    let by_genre = create_series(&pool, lib, "ByGenre", &[], &["Genre X"], &[]).await;
     // Score 1: same publisher only
-    let by_pub    = create_series(&pool, lib, "ByPub",    &[], &[], &["Pub Z"]).await;
+    let by_pub = create_series(&pool, lib, "ByPub", &[], &[], &["Pub Z"]).await;
     // Score 5: same author + genre (3+2)
-    let by_both   = create_series(&pool, lib, "ByBoth",   &["Author A"], &["Genre X"], &[]).await;
+    let by_both = create_series(&pool, lib, "ByBoth", &["Author A"], &["Genre X"], &[]).await;
 
     let results = fetch_related(&pool, base, 10).await;
     let ids: Vec<Uuid> = results.iter().map(|r| r.0).collect();
     let scores: Vec<i64> = results.iter().map(|r| r.1).collect();
 
-    assert_eq!(ids[0], by_both);   // score 5
+    assert_eq!(ids[0], by_both); // score 5
     assert_eq!(scores[0], 5);
     assert_eq!(ids[1], by_author); // score 3
     assert_eq!(scores[1], 3);
-    assert_eq!(ids[2], by_genre);  // score 2
+    assert_eq!(ids[2], by_genre); // score 2
     assert_eq!(scores[2], 2);
-    assert_eq!(ids[3], by_pub);    // score 1
+    assert_eq!(ids[3], by_pub); // score 1
     assert_eq!(scores[3], 1);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn related_excludes_self(pool: sqlx::PgPool) {
     let lib = create_library(&pool).await;
-    let s1 = create_series(&pool, lib, "Solo Series", &["Author A"], &["Genre X"], &["Pub Z"]).await;
+    let s1 = create_series(
+        &pool,
+        lib,
+        "Solo Series",
+        &["Author A"],
+        &["Genre X"],
+        &["Pub Z"],
+    )
+    .await;
 
     let results = fetch_related(&pool, s1, 10).await;
     assert!(results.is_empty());
@@ -172,7 +218,7 @@ async fn related_excludes_self(pool: sqlx::PgPool) {
 async fn related_empty_when_no_match(pool: sqlx::PgPool) {
     let lib = create_library(&pool).await;
     let s1 = create_series(&pool, lib, "Series A", &["Author A"], &["Genre X"], &[]).await;
-    let _  = create_series(&pool, lib, "Series B", &["Author B"], &["Genre Y"], &[]).await;
+    let _ = create_series(&pool, lib, "Series B", &["Author B"], &["Genre Y"], &[]).await;
 
     let results = fetch_related(&pool, s1, 10).await;
     assert!(results.is_empty());
@@ -193,17 +239,16 @@ async fn related_limit_respected(pool: sqlx::PgPool) {
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn related_multiple_shared_authors_multiply_score(pool: sqlx::PgPool) {
     let lib = create_library(&pool).await;
-    let base  = create_series(&pool, lib, "Base", &["A1", "A2", "A3"], &[], &[]).await;
-    let two   = create_series(&pool, lib, "TwoAuthors",   &["A1", "A2"], &[], &[]).await;
-    let one   = create_series(&pool, lib, "OneAuthor",    &["A1"], &[], &[]).await;
+    let base = create_series(&pool, lib, "Base", &["A1", "A2", "A3"], &[], &[]).await;
+    let two = create_series(&pool, lib, "TwoAuthors", &["A1", "A2"], &[], &[]).await;
+    let one = create_series(&pool, lib, "OneAuthor", &["A1"], &[], &[]).await;
 
     let results = fetch_related(&pool, base, 10).await;
-    let scores: std::collections::HashMap<Uuid, i64> =
-        results.iter().map(|r| (r.0, r.1)).collect();
+    let scores: std::collections::HashMap<Uuid, i64> = results.iter().map(|r| (r.0, r.1)).collect();
 
     assert_eq!(scores[&two], 6); // 2 shared authors × 3
     assert_eq!(scores[&one], 3); // 1 shared author × 3
-    // two comes before one
+                                 // two comes before one
     assert_eq!(results[0].0, two);
     assert_eq!(results[1].0, one);
 }

@@ -1,11 +1,14 @@
 use axum::extract::Extension;
-use axum::{extract::{Path, State}, Json};
+use axum::{
+    extract::{Path, State},
+    Json,
+};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
-use crate::{auth::AuthUser, error::ApiError, state::AppState};
 use super::helpers::resolve_library_id;
+use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
 #[derive(Deserialize, ToSchema)]
 pub struct MergeSeriesRequest {
@@ -56,7 +59,9 @@ pub async fn merge_series(
     let target_lib: Uuid = resolve_library_id(&state.pool, target_id).await?;
     let source_lib: Uuid = resolve_library_id(&state.pool, source_id).await?;
     if target_lib != source_lib {
-        return Err(ApiError::bad_request("Cannot merge series from different libraries"));
+        return Err(ApiError::bad_request(
+            "Cannot merge series from different libraries",
+        ));
     }
 
     let mut tx = state.pool.begin().await?;

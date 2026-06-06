@@ -1,12 +1,15 @@
 use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
-use axum::{extract::{Path, State}, Json};
+use axum::{
+    extract::{Path, State},
+    Json,
+};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::{error::ApiError, state::AppState};
 
@@ -77,7 +80,9 @@ pub async fn create_token(
     };
 
     if scope == "read" && input.user_id.is_none() {
-        return Err(ApiError::bad_request("user_id is required for read-scoped tokens"));
+        return Err(ApiError::bad_request(
+            "user_id is required for read-scoped tokens",
+        ));
     }
 
     let mut random = [0u8; 24];
@@ -126,7 +131,9 @@ pub async fn create_token(
     ),
     security(("Bearer" = []))
 )]
-pub async fn list_tokens(State(state): State<AppState>) -> Result<Json<Vec<TokenResponse>>, ApiError> {
+pub async fn list_tokens(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<TokenResponse>>, ApiError> {
     let rows = sqlx::query(
         r#"
         SELECT t.id, t.name, t.scope, t.prefix, t.user_id, u.username,
@@ -177,10 +184,12 @@ pub async fn revoke_token(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<crate::responses::RevokedResponse>, ApiError> {
-    let result = sqlx::query("UPDATE api_tokens SET revoked_at = NOW() WHERE id = $1 AND revoked_at IS NULL")
-        .bind(id)
-        .execute(&state.pool)
-        .await?;
+    let result = sqlx::query(
+        "UPDATE api_tokens SET revoked_at = NOW() WHERE id = $1 AND revoked_at IS NULL",
+    )
+    .bind(id)
+    .execute(&state.pool)
+    .await?;
 
     if result.rows_affected() == 0 {
         return Err(ApiError::not_found("token not found"));

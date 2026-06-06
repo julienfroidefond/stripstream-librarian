@@ -4,13 +4,13 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
-use uuid::Uuid;
-use utoipa::ToSchema;
 use tracing::{info, warn};
+use utoipa::ToSchema;
+use uuid::Uuid;
 
-use crate::{error::ApiError, state::AppState};
 use crate::job_helpers::{is_job_cancelled, update_progress};
 use crate::metadata_providers::senscritique::RATE_LIMITED_ERROR;
+use crate::{error::ApiError, state::AppState};
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -21,8 +21,8 @@ pub struct MetadataRefreshRequest {
     pub library_id: Option<String>,
 }
 
-use super::refresh_sync::{FieldDiff, BookDiff};
 pub(crate) use super::refresh_sync::refresh_link;
+use super::refresh_sync::{BookDiff, FieldDiff};
 
 /// Per-series change report
 #[derive(Serialize, Clone)]
@@ -91,14 +91,18 @@ pub async fn start_refresh(
             .fetch_one(&state.pool)
             .await
             .unwrap_or(0);
-            if link_count == 0 { continue; }
+            if link_count == 0 {
+                continue;
+            }
             let existing: Option<Uuid> = sqlx::query_scalar(
                 "SELECT id FROM index_jobs WHERE library_id = $1 AND type = 'metadata_refresh' AND status IN ('pending', 'running') LIMIT 1",
             )
             .bind(library_id)
             .fetch_optional(&state.pool)
             .await?;
-            if existing.is_some() { continue; }
+            if existing.is_some() {
+                continue;
+            }
             let job_id = Uuid::new_v4();
             sqlx::query(
                 "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'metadata_refresh', 'running', NOW())",
@@ -108,12 +112,13 @@ pub async fn start_refresh(
             .execute(&state.pool)
             .await?;
             let pool = state.pool.clone();
-            let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-                .bind(library_id)
-                .fetch_optional(&state.pool)
-                .await
-                .ok()
-                .flatten();
+            let library_name: Option<String> =
+                sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+                    .bind(library_id)
+                    .fetch_optional(&state.pool)
+                    .await
+                    .ok()
+                    .flatten();
             tokio::spawn(async move {
                 if let Err(e) = process_metadata_refresh(&pool, job_id, library_id).await {
                     warn!("[METADATA_REFRESH] job {job_id} failed: {e}");
@@ -185,7 +190,9 @@ pub async fn start_refresh(
     .await?;
 
     if link_count == 0 {
-        return Err(ApiError::bad_request("No approved metadata links to refresh for this library"));
+        return Err(ApiError::bad_request(
+            "No approved metadata links to refresh for this library",
+        ));
     }
 
     let job_id = Uuid::new_v4();
@@ -199,12 +206,13 @@ pub async fn start_refresh(
 
     // Spawn the background processing task (status already 'running' to avoid poller race)
     let pool = state.pool.clone();
-    let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-        .bind(library_id)
-        .fetch_optional(&state.pool)
-        .await
-        .ok()
-        .flatten();
+    let library_name: Option<String> =
+        sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+            .bind(library_id)
+            .fetch_optional(&state.pool)
+            .await
+            .ok()
+            .flatten();
     tokio::spawn(async move {
         if let Err(e) = process_metadata_refresh(&pool, job_id, library_id).await {
             warn!("[METADATA_REFRESH] job {job_id} failed: {e}");
@@ -270,14 +278,18 @@ pub async fn start_refresh_all(
             .fetch_one(&state.pool)
             .await
             .unwrap_or(0);
-            if link_count == 0 { continue; }
+            if link_count == 0 {
+                continue;
+            }
             let existing: Option<Uuid> = sqlx::query_scalar(
                 "SELECT id FROM index_jobs WHERE library_id = $1 AND type = 'metadata_refresh_all' AND status IN ('pending', 'running') LIMIT 1",
             )
             .bind(library_id)
             .fetch_optional(&state.pool)
             .await?;
-            if existing.is_some() { continue; }
+            if existing.is_some() {
+                continue;
+            }
             let job_id = Uuid::new_v4();
             sqlx::query(
                 "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'metadata_refresh_all', 'running', NOW())",
@@ -287,12 +299,13 @@ pub async fn start_refresh_all(
             .execute(&state.pool)
             .await?;
             let pool = state.pool.clone();
-            let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-                .bind(library_id)
-                .fetch_optional(&state.pool)
-                .await
-                .ok()
-                .flatten();
+            let library_name: Option<String> =
+                sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+                    .bind(library_id)
+                    .fetch_optional(&state.pool)
+                    .await
+                    .ok()
+                    .flatten();
             tokio::spawn(async move {
                 if let Err(e) = process_metadata_refresh_all(&pool, job_id, library_id).await {
                     warn!("[METADATA_REFRESH_ALL] job {job_id} failed: {e}");
@@ -361,7 +374,9 @@ pub async fn start_refresh_all(
     .await?;
 
     if link_count == 0 {
-        return Err(ApiError::bad_request("No approved metadata links to refresh for this library"));
+        return Err(ApiError::bad_request(
+            "No approved metadata links to refresh for this library",
+        ));
     }
 
     let job_id = Uuid::new_v4();
@@ -374,12 +389,13 @@ pub async fn start_refresh_all(
     .await?;
 
     let pool = state.pool.clone();
-    let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-        .bind(library_id)
-        .fetch_optional(&state.pool)
-        .await
-        .ok()
-        .flatten();
+    let library_name: Option<String> =
+        sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+            .bind(library_id)
+            .fetch_optional(&state.pool)
+            .await
+            .ok()
+            .flatten();
     tokio::spawn(async move {
         if let Err(e) = process_metadata_refresh_all(&pool, job_id, library_id).await {
             warn!("[METADATA_REFRESH_ALL] job {job_id} failed: {e}");
@@ -481,7 +497,9 @@ pub async fn refresh_single_link(
 
     let status: String = row.get("status");
     if status != "approved" {
-        return Err(ApiError::bad_request("only approved links can be refreshed"));
+        return Err(ApiError::bad_request(
+            "only approved links can be refreshed",
+        ));
     }
 
     let library_id: Uuid = row.get("library_id");
@@ -489,13 +507,20 @@ pub async fn refresh_single_link(
     let provider: String = row.get("provider");
     let external_id: String = row.get("external_id");
 
-    match refresh_link(&state.pool, link_id, library_id, &series_name, &provider, &external_id).await {
-        Ok(result) => {
-            Ok(Json(serde_json::json!({
-                "ok": true,
-                "status": result.status,
-            })))
-        }
+    match refresh_link(
+        &state.pool,
+        link_id,
+        library_id,
+        &series_name,
+        &provider,
+        &external_id,
+    )
+    .await
+    {
+        Ok(result) => Ok(Json(serde_json::json!({
+            "ok": true,
+            "status": result.status,
+        }))),
         Err(e) => Err(ApiError::internal(format!("refresh failed: {e}"))),
     }
 }
@@ -559,10 +584,10 @@ async fn process_metadata_refresh_inner(
         "#
     };
     let links: Vec<(Uuid, String, String, String)> = sqlx::query_as(query)
-    .bind(library_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+        .bind(library_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let total = links.len() as i32;
     sqlx::query("UPDATE index_jobs SET total_files = $2 WHERE id = $1")
@@ -609,7 +634,16 @@ async fn process_metadata_refresh_inner(
             continue;
         }
 
-        match refresh_link(pool, *link_id, library_id, series_name, provider_name, external_id).await {
+        match refresh_link(
+            pool,
+            *link_id,
+            library_id,
+            series_name,
+            provider_name,
+            external_id,
+        )
+        .await
+        {
             Ok(result) => {
                 if result.status == "updated" {
                     refreshed += 1;
@@ -671,20 +705,29 @@ async fn process_metadata_refresh_inner(
 
     info!("[METADATA_REFRESH] job={job_id} completed: {refreshed} updated, {unchanged} unchanged, {errors} errors");
 
-    let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-        .bind(library_id)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
+    let library_name: Option<String> =
+        sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+            .bind(library_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
     // Compute detailed stats for notification
     let mut series_fields_count = 0usize;
     let mut books_fields_count = 0usize;
     let mut detail_lines: Vec<String> = Vec::new();
     for result in &all_results {
         if result.status == "updated" {
-            let series_field_names: Vec<&str> = result.series_changes.iter().map(|c| c.field.as_str()).collect();
-            let book_field_count = result.book_changes.iter().map(|b| b.changes.len()).sum::<usize>();
+            let series_field_names: Vec<&str> = result
+                .series_changes
+                .iter()
+                .map(|c| c.field.as_str())
+                .collect();
+            let book_field_count = result
+                .book_changes
+                .iter()
+                .map(|b| b.changes.len())
+                .sum::<usize>();
             series_fields_count += series_field_names.len();
             books_fields_count += book_field_count;
             if !series_field_names.is_empty() || book_field_count > 0 {

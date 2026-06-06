@@ -36,7 +36,12 @@ fn dedup_empty_set_for_replace_mode_keeps_all_volumes() {
         .collect();
     let expected: HashSet<i32> = HashSet::new(); // replace mode passes empty set
     let result = deduplicate_by_format(&files, &expected);
-    assert_eq!(result.len(), 8, "replace mode should keep all 8 volumes, got {}", result.len());
+    assert_eq!(
+        result.len(),
+        8,
+        "replace mode should keep all 8 volumes, got {}",
+        result.len()
+    );
 }
 
 #[test]
@@ -66,57 +71,33 @@ fn dedup_partial_expected_only_keeps_matching() {
 #[test]
 fn simple_t_prefix() {
     // "One Piece - T104.cbz" → replace 104 → 105
-    let result = build_target_filename(
-        "/libraries/One Piece/One Piece - T104.cbz",
-        104,
-        105,
-        "cbz",
-    );
+    let result =
+        build_target_filename("/libraries/One Piece/One Piece - T104.cbz", 104, 105, "cbz");
     assert_eq!(result, Some("One Piece - T105.cbz".to_string()));
 }
 
 #[test]
 fn preserves_leading_zeros() {
-    let result = build_target_filename(
-        "/libraries/Asterix/Asterix - T01.cbz",
-        1,
-        2,
-        "cbz",
-    );
+    let result = build_target_filename("/libraries/Asterix/Asterix - T01.cbz", 1, 2, "cbz");
     assert_eq!(result, Some("Asterix - T02.cbz".to_string()));
 }
 
 #[test]
 fn three_digit_zero_padded() {
-    let result = build_target_filename(
-        "/libraries/Naruto/Naruto T001.cbz",
-        1,
-        72,
-        "cbz",
-    );
+    let result = build_target_filename("/libraries/Naruto/Naruto T001.cbz", 1, 72, "cbz");
     assert_eq!(result, Some("Naruto T072.cbz".to_string()));
 }
 
 #[test]
 fn different_source_ext() {
     // Source file is cbr, reference is cbz
-    let result = build_target_filename(
-        "/libraries/DBZ/Dragon Ball - T01.cbz",
-        1,
-        5,
-        "cbr",
-    );
+    let result = build_target_filename("/libraries/DBZ/Dragon Ball - T01.cbz", 1, 5, "cbr");
     assert_eq!(result, Some("Dragon Ball - T05.cbr".to_string()));
 }
 
 #[test]
 fn accented_series_name() {
-    let result = build_target_filename(
-        "/libraries/bd/Astérix - T01.cbz",
-        1,
-        3,
-        "cbz",
-    );
+    let result = build_target_filename("/libraries/bd/Astérix - T01.cbz", 1, 3, "cbz");
     assert_eq!(result, Some("Astérix - T03.cbz".to_string()));
 }
 
@@ -148,24 +129,14 @@ fn build_target_from_tome_with_subtitle_reference() {
 #[test]
 fn no_match_returns_none() {
     // Volume 5 not present in "Series - T01.cbz" whose reference_volume is 99
-    let result = build_target_filename(
-        "/libraries/Series/Series - T01.cbz",
-        99,
-        100,
-        "cbz",
-    );
+    let result = build_target_filename("/libraries/Series/Series - T01.cbz", 99, 100, "cbz");
     assert_eq!(result, None);
 }
 
 #[test]
 fn uses_last_occurrence() {
     // "Code 451 - T04.cbz" with reference_volume=4 should replace the "04" not the "4" in 451
-    let result = build_target_filename(
-        "/libraries/Code 451/Code 451 - T04.cbz",
-        4,
-        5,
-        "cbz",
-    );
+    let result = build_target_filename("/libraries/Code 451/Code 451 - T04.cbz", 4, 5, "cbz");
     assert_eq!(result, Some("Code 451 - T05.cbz".to_string()));
 }
 
@@ -385,11 +356,13 @@ fn find_reference_from_disk_ignores_non_book_files() {
 async fn series_matching_unaccent_query(pool: sqlx::PgPool) {
     // Setup: create a library and a series with accented name "Astérix"
     let library_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Test Lib', '/libraries/test')")
-        .bind(library_id)
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Test Lib', '/libraries/test')",
+    )
+    .bind(library_id)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let series_id = Uuid::new_v4();
     sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Astérix')")
@@ -442,7 +415,10 @@ async fn series_matching_unaccent_query(pool: sqlx::PgPool) {
     .unwrap();
 
     // Assert: it finds the series
-    assert!(row.is_some(), "unaccent query should match 'Astérix' when searching 'Asterix'");
+    assert!(
+        row.is_some(),
+        "unaccent query should match 'Astérix' when searching 'Asterix'"
+    );
     let row = row.unwrap();
     let abs_path: String = row.get("abs_path");
     let volume: i32 = row.get("volume");
@@ -528,12 +504,21 @@ async fn db_reference_query_returns_correct_data(pool: sqlx::PgPool) {
 async fn expand_expected_volumes_with_missing(pool: sqlx::PgPool) {
     // Setup: library + series with volumes 1, 2, 5 (missing 3, 4, 6, 7, 8)
     let lib_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'test', '/libraries/test')")
-        .bind(lib_id).execute(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO libraries (id, name, root_path) VALUES ($1, 'test', '/libraries/test')",
+    )
+    .bind(lib_id)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let series_id = Uuid::new_v4();
     sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Tom-Tom et Nana')")
-        .bind(series_id).bind(lib_id).execute(&pool).await.unwrap();
+        .bind(series_id)
+        .bind(lib_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     // Insert existing books: volumes 1, 2, 5
     for vol in [1, 2, 5] {
@@ -561,23 +546,53 @@ async fn expand_expected_volumes_with_missing(pool: sqlx::PgPool) {
     .unwrap();
 
     let existing_set: std::collections::HashSet<i32> = existing_volumes.into_iter().collect();
-    assert_eq!(existing_set, [1, 2, 5].into_iter().collect::<std::collections::HashSet<i32>>());
+    assert_eq!(
+        existing_set,
+        [1, 2, 5]
+            .into_iter()
+            .collect::<std::collections::HashSet<i32>>()
+    );
 
     // Expand expected_set with missing volumes from library
-    let missing_in_library: Vec<i32> = torrent_volumes.iter()
+    let missing_in_library: Vec<i32> = torrent_volumes
+        .iter()
         .filter(|v| !existing_set.contains(v))
         .copied()
         .collect();
     expected_set.extend(missing_in_library);
 
     // Should now contain 3, 4, 6, 7, 8 (all missing from library that torrent has)
-    assert!(expected_set.contains(&3), "volume 3 missing from library, should be in expected_set");
-    assert!(expected_set.contains(&4), "volume 4 missing from library, should be in expected_set");
-    assert!(expected_set.contains(&6), "volume 6 missing from library, should be in expected_set");
-    assert!(expected_set.contains(&7), "volume 7 was originally expected");
-    assert!(expected_set.contains(&8), "volume 8 missing from library, should be in expected_set");
+    assert!(
+        expected_set.contains(&3),
+        "volume 3 missing from library, should be in expected_set"
+    );
+    assert!(
+        expected_set.contains(&4),
+        "volume 4 missing from library, should be in expected_set"
+    );
+    assert!(
+        expected_set.contains(&6),
+        "volume 6 missing from library, should be in expected_set"
+    );
+    assert!(
+        expected_set.contains(&7),
+        "volume 7 was originally expected"
+    );
+    assert!(
+        expected_set.contains(&8),
+        "volume 8 missing from library, should be in expected_set"
+    );
     // Should NOT contain existing volumes
-    assert!(!expected_set.contains(&1), "volume 1 exists in library, should NOT be imported");
-    assert!(!expected_set.contains(&2), "volume 2 exists in library, should NOT be imported");
-    assert!(!expected_set.contains(&5), "volume 5 exists in library, should NOT be imported");
+    assert!(
+        !expected_set.contains(&1),
+        "volume 1 exists in library, should NOT be imported"
+    );
+    assert!(
+        !expected_set.contains(&2),
+        "volume 2 exists in library, should NOT be imported"
+    );
+    assert!(
+        !expected_set.contains(&5),
+        "volume 5 exists in library, should NOT be imported"
+    );
 }

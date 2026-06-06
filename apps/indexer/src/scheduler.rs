@@ -19,7 +19,7 @@ pub async fn check_and_schedule_auto_scans(pool: &PgPool) -> Result<()> {
             WHERE library_id = libraries.id
               AND status IN ('pending', 'running')
           )
-        "#
+        "#,
     )
     .fetch_all(pool)
     .await?;
@@ -28,7 +28,10 @@ pub async fn check_and_schedule_auto_scans(pool: &PgPool) -> Result<()> {
         let library_id: Uuid = row.get("id");
         let scan_mode: String = row.get("scan_mode");
 
-        info!("[SCHEDULER] Auto-scanning library {} (mode: {})", library_id, scan_mode);
+        info!(
+            "[SCHEDULER] Auto-scanning library {} (mode: {})",
+            library_id, scan_mode
+        );
 
         let job_id = Uuid::new_v4();
         let job_type = match scan_mode.as_str() {
@@ -37,7 +40,7 @@ pub async fn check_and_schedule_auto_scans(pool: &PgPool) -> Result<()> {
         };
 
         sqlx::query(
-            "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, $3, 'pending')"
+            "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, $3, 'pending')",
         )
         .bind(job_id)
         .bind(library_id)
@@ -56,7 +59,10 @@ pub async fn check_and_schedule_auto_scans(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
 
-        info!("[SCHEDULER] Created job {} for library {}", job_id, library_id);
+        info!(
+            "[SCHEDULER] Created job {} for library {}",
+            job_id, library_id
+        );
     }
 
     Ok(())
@@ -83,7 +89,7 @@ pub async fn check_and_schedule_reading_status_push(pool: &PgPool) -> Result<()>
             SELECT 1 FROM anilist_series_links
             WHERE library_id = libraries.id
           )
-        "#
+        "#,
     )
     .fetch_all(pool)
     .await?;
@@ -92,7 +98,10 @@ pub async fn check_and_schedule_reading_status_push(pool: &PgPool) -> Result<()>
         let library_id: Uuid = row.get("id");
         let push_mode: String = row.get("reading_status_push_mode");
 
-        info!("[SCHEDULER] Auto-pushing reading status for library {} (mode: {})", library_id, push_mode);
+        info!(
+            "[SCHEDULER] Auto-pushing reading status for library {} (mode: {})",
+            library_id, push_mode
+        );
 
         let job_id = Uuid::new_v4();
         sqlx::query(
@@ -113,7 +122,10 @@ pub async fn check_and_schedule_reading_status_push(pool: &PgPool) -> Result<()>
         .execute(pool)
         .await?;
 
-        info!("[SCHEDULER] Created reading_status_push job {} for library {}", job_id, library_id);
+        info!(
+            "[SCHEDULER] Created reading_status_push job {} for library {}",
+            job_id, library_id
+        );
     }
 
     Ok(())
@@ -148,7 +160,7 @@ pub async fn check_and_schedule_download_detection(pool: &PgPool) -> Result<()> 
               AND type = 'download_detection'
               AND status IN ('pending', 'running')
           )
-        "#
+        "#,
     )
     .fetch_all(pool)
     .await?;
@@ -157,7 +169,10 @@ pub async fn check_and_schedule_download_detection(pool: &PgPool) -> Result<()> 
         let library_id: Uuid = row.get("id");
         let detection_mode: String = row.get("download_detection_mode");
 
-        info!("[SCHEDULER] Auto-running download detection for library {} (mode: {})", library_id, detection_mode);
+        info!(
+            "[SCHEDULER] Auto-running download detection for library {} (mode: {})",
+            library_id, detection_mode
+        );
 
         let job_id = Uuid::new_v4();
         sqlx::query(
@@ -178,7 +193,10 @@ pub async fn check_and_schedule_download_detection(pool: &PgPool) -> Result<()> 
         .execute(pool)
         .await?;
 
-        info!("[SCHEDULER] Created download_detection job {} for library {}", job_id, library_id);
+        info!(
+            "[SCHEDULER] Created download_detection job {} for library {}",
+            job_id, library_id
+        );
     }
 
     Ok(())
@@ -236,12 +254,10 @@ pub async fn check_and_schedule_prowlarr_rss(pool: &PgPool) -> Result<()> {
     }
 
     let job_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO index_jobs (id, type, status) VALUES ($1, 'prowlarr_rss', 'pending')"
-    )
-    .bind(job_id)
-    .execute(pool)
-    .await?;
+    sqlx::query("INSERT INTO index_jobs (id, type, status) VALUES ($1, 'prowlarr_rss', 'pending')")
+        .bind(job_id)
+        .execute(pool)
+        .await?;
 
     info!("[SCHEDULER] Created global prowlarr_rss job {}", job_id);
 
@@ -299,7 +315,7 @@ pub async fn check_and_schedule_telegram_sync(pool: &PgPool) -> Result<()> {
 
     let job_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO index_jobs (id, type, status) VALUES ($1, 'telegram_sync', 'pending')"
+        "INSERT INTO index_jobs (id, type, status) VALUES ($1, 'telegram_sync', 'pending')",
     )
     .bind(job_id)
     .execute(pool)
@@ -367,7 +383,10 @@ pub async fn check_and_schedule_telegram_sync_incremental(pool: &PgPool) -> Resu
     .execute(pool)
     .await?;
 
-    info!("[SCHEDULER] Created global telegram_sync_incremental job {}", job_id);
+    info!(
+        "[SCHEDULER] Created global telegram_sync_incremental job {}",
+        job_id
+    );
 
     Ok(())
 }
@@ -393,7 +412,7 @@ pub async fn check_and_schedule_metadata_refreshes(pool: &PgPool) -> Result<()> 
             WHERE library_id = libraries.id
               AND status = 'approved'
           )
-        "#
+        "#,
     )
     .fetch_all(pool)
     .await?;
@@ -402,7 +421,10 @@ pub async fn check_and_schedule_metadata_refreshes(pool: &PgPool) -> Result<()> 
         let library_id: Uuid = row.get("id");
         let refresh_mode: String = row.get("metadata_refresh_mode");
 
-        info!("[SCHEDULER] Auto-refreshing metadata for library {} (mode: {})", library_id, refresh_mode);
+        info!(
+            "[SCHEDULER] Auto-refreshing metadata for library {} (mode: {})",
+            library_id, refresh_mode
+        );
 
         let job_id = Uuid::new_v4();
         sqlx::query(
@@ -423,7 +445,10 @@ pub async fn check_and_schedule_metadata_refreshes(pool: &PgPool) -> Result<()> 
         .execute(pool)
         .await?;
 
-        info!("[SCHEDULER] Created metadata_refresh job {} for library {}", job_id, library_id);
+        info!(
+            "[SCHEDULER] Created metadata_refresh job {} for library {}",
+            job_id, library_id
+        );
     }
 
     Ok(())

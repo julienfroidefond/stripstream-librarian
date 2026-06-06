@@ -167,14 +167,9 @@ async fn wiremock_graphql_request_url_success() {
         .await;
 
     let client = build_client();
-    let result = graphql_request_url(
-        &client,
-        &server.uri(),
-        "{ test }",
-        serde_json::json!({}),
-    )
-    .await
-    .unwrap();
+    let result = graphql_request_url(&client, &server.uri(), "{ test }", serde_json::json!({}))
+        .await
+        .unwrap();
     assert_eq!(result["data"]["test"], true);
 }
 
@@ -187,16 +182,14 @@ async fn wiremock_graphql_request_url_http_error() {
         .await;
 
     let client = build_client();
-    let result = graphql_request_url(
-        &client,
-        &server.uri(),
-        "{ test }",
-        serde_json::json!({}),
-    )
-    .await;
+    let result =
+        graphql_request_url(&client, &server.uri(), "{ test }", serde_json::json!({})).await;
     assert!(result.is_err());
     let err = result.unwrap_err();
-    assert!(err.contains("500"), "error should mention status code: {err}");
+    assert!(
+        err.contains("500"),
+        "error should mention status code: {err}"
+    );
 }
 
 #[tokio::test]
@@ -208,13 +201,8 @@ async fn wiremock_graphql_request_url_invalid_json() {
         .await;
 
     let client = build_client();
-    let result = graphql_request_url(
-        &client,
-        &server.uri(),
-        "{ test }",
-        serde_json::json!({}),
-    )
-    .await;
+    let result =
+        graphql_request_url(&client, &server.uri(), "{ test }", serde_json::json!({})).await;
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Failed to parse"));
 }
@@ -225,13 +213,13 @@ async fn wiremock_graphql_request_url_invalid_json() {
 async fn wiremock_search_series_parses_candidates() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(mock_search_response()),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(mock_search_response()))
         .mount(&server)
         .await;
 
-    let results = search_series_impl_url("naruto", &server.uri()).await.unwrap();
+    let results = search_series_impl_url("naruto", &server.uri())
+        .await
+        .unwrap();
 
     assert_eq!(results.len(), 2);
 
@@ -242,8 +230,14 @@ async fn wiremock_search_series_parses_candidates() {
     assert_eq!(naruto.authors, vec!["Masashi Kishimoto"]);
     assert_eq!(naruto.total_volumes, Some(72));
     assert_eq!(naruto.start_year, Some(1999));
-    assert_eq!(naruto.cover_url.as_deref(), Some("https://example.com/naruto.jpg"));
-    assert_eq!(naruto.external_url.as_deref(), Some("https://anilist.co/manga/20/Naruto"));
+    assert_eq!(
+        naruto.cover_url.as_deref(),
+        Some("https://example.com/naruto.jpg")
+    );
+    assert_eq!(
+        naruto.external_url.as_deref(),
+        Some("https://anilist.co/manga/20/Naruto")
+    );
     assert_eq!(naruto.metadata_json["status"], "FINISHED");
     assert_eq!(naruto.metadata_json["volumes"], 72);
     assert_eq!(naruto.metadata_json["chapters"], 700);
@@ -262,11 +256,9 @@ async fn wiremock_search_series_parses_candidates() {
 async fn wiremock_search_series_empty_response() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": { "Page": { "media": [] } }
-            })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "Page": { "media": [] } }
+        })))
         .mount(&server)
         .await;
 
@@ -280,11 +272,9 @@ async fn wiremock_search_series_empty_response() {
 async fn wiremock_search_series_null_media() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": { "Page": { "media": null } }
-            })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "Page": { "media": null } }
+        })))
         .mount(&server)
         .await;
 
@@ -298,9 +288,7 @@ async fn wiremock_search_series_null_media() {
 async fn wiremock_fetch_trending_parses_results() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(mock_trending_response()),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(mock_trending_response()))
         .mount(&server)
         .await;
 
@@ -329,11 +317,9 @@ async fn wiremock_fetch_trending_parses_results() {
 async fn wiremock_fetch_trending_empty() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": { "Page": { "media": [] } }
-            })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": { "Page": { "media": [] } }
+        })))
         .mount(&server)
         .await;
 
@@ -347,13 +333,13 @@ async fn wiremock_fetch_trending_empty() {
 async fn wiremock_get_series_books_finished() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(mock_detail_response_finished()),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(mock_detail_response_finished()))
         .mount(&server)
         .await;
 
-    let books = get_series_books_impl_url("20", &server.uri()).await.unwrap();
+    let books = get_series_books_impl_url("20", &server.uri())
+        .await
+        .unwrap();
 
     assert_eq!(books.len(), 72);
     assert_eq!(books[0].title, "Naruto Vol. 1");
@@ -374,13 +360,13 @@ async fn wiremock_get_series_books_finished() {
 async fn wiremock_get_series_books_ongoing_no_volumes() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(mock_detail_response_ongoing()),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(mock_detail_response_ongoing()))
         .mount(&server)
         .await;
 
-    let books = get_series_books_impl_url("30013", &server.uri()).await.unwrap();
+    let books = get_series_books_impl_url("30013", &server.uri())
+        .await
+        .unwrap();
 
     // Both volumes and chapters are null, so no book entries generated
     assert!(books.is_empty());
@@ -398,29 +384,29 @@ async fn wiremock_get_series_books_chapters_fallback() {
     let server = MockServer::start().await;
     // Media with no volumes but has chapters
     Mock::given(method("POST"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": {
-                    "Media": {
-                        "id": 999,
-                        "title": { "romaji": "Web Comic", "english": null },
-                        "description": null,
-                        "coverImage": { "medium": "https://example.com/wc.jpg" },
-                        "startDate": { "year": 2020 },
-                        "status": "RELEASING",
-                        "volumes": null,
-                        "chapters": 5,
-                        "staff": { "edges": [] },
-                        "siteUrl": null,
-                        "genres": []
-                    }
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": {
+                "Media": {
+                    "id": 999,
+                    "title": { "romaji": "Web Comic", "english": null },
+                    "description": null,
+                    "coverImage": { "medium": "https://example.com/wc.jpg" },
+                    "startDate": { "year": 2020 },
+                    "status": "RELEASING",
+                    "volumes": null,
+                    "chapters": 5,
+                    "staff": { "edges": [] },
+                    "siteUrl": null,
+                    "genres": []
                 }
-            })),
-        )
+            }
+        })))
         .mount(&server)
         .await;
 
-    let books = get_series_books_impl_url("999", &server.uri()).await.unwrap();
+    let books = get_series_books_impl_url("999", &server.uri())
+        .await
+        .unwrap();
     assert_eq!(books.len(), 5, "should fall back to chapters count");
     assert_eq!(books[0].title, "Web Comic Vol. 1");
     assert_eq!(books[4].title, "Web Comic Vol. 5");

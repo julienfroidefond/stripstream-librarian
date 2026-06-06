@@ -19,7 +19,8 @@ pub async fn docs_redirect() -> impl axum::response::IntoResponse {
 
 pub async fn api_home() -> impl axum::response::IntoResponse {
     let version = env!("CARGO_PKG_VERSION");
-    axum::response::Html(format!(r#"<!DOCTYPE html>
+    axum::response::Html(format!(
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
@@ -61,10 +62,13 @@ pub async fn api_home() -> impl axum::response::IntoResponse {
         </div>
     </div>
 </body>
-</html>"#))
+</html>"#
+    ))
 }
 
-pub async fn ready(State(state): State<AppState>) -> Result<Json<crate::responses::StatusResponse>, ApiError> {
+pub async fn ready(
+    State(state): State<AppState>,
+) -> Result<Json<crate::responses::StatusResponse>, ApiError> {
     sqlx::query("SELECT 1").execute(&state.pool).await?;
     Ok(Json(crate::responses::StatusResponse::new("ready")))
 }

@@ -3,8 +3,8 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use std::time::Duration;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 use tracing::{debug, info};
 
 use crate::state::AppState;
@@ -23,7 +23,8 @@ pub async fn request_counter(
     let elapsed = start.elapsed();
     let path = uri.path();
     // High-frequency polling routes logged at debug to avoid log noise
-    let noisy = matches!(path,
+    let noisy = matches!(
+        path,
         "/health" | "/index/status" | "/torrent-downloads" | "/settings/downloads_enabled"
     );
     if noisy {

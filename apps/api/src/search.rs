@@ -1,4 +1,7 @@
-use axum::{extract::{Extension, Query, State}, Json};
+use axum::{
+    extract::{Extension, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
@@ -74,8 +77,7 @@ pub async fn search_books(
 
     let limit_val = query.limit.unwrap_or(20).clamp(1, 100) as i64;
     let q_pattern = format!("%{}%", query.q);
-    let library_id_uuid: Option<Uuid> = query.library_id.as_deref()
-        .and_then(|s| s.parse().ok());
+    let library_id_uuid: Option<Uuid> = query.library_id.as_deref().and_then(|s| s.parse().ok());
     let kind_filter: Option<&str> = query.r#type.as_deref().or(query.kind.as_deref());
 
     let start = std::time::Instant::now();
@@ -172,7 +174,8 @@ pub async fn search_books(
     let elapsed_ms = start.elapsed().as_millis() as u64;
 
     // Build book hits as JSON array (same shape as before)
-    let books_rows = books_rows.map_err(|e| ApiError::internal(format!("book search failed: {e}")))?;
+    let books_rows =
+        books_rows.map_err(|e| ApiError::internal(format!("book search failed: {e}")))?;
     let hits: Vec<serde_json::Value> = books_rows
         .iter()
         .map(|row| {

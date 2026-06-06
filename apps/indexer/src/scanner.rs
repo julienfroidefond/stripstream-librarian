@@ -9,10 +9,11 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 
 use crate::{
-    batch::{flush_all_batches, BookInsert, BookUpdate, ErrorInsert, EventInsert, FileInsert, FileUpdate},
+    batch::{
+        flush_all_batches, BookInsert, BookUpdate, ErrorInsert, EventInsert, FileInsert, FileUpdate,
+    },
     job::is_job_cancelled,
-    utils,
-    AppState,
+    utils, AppState,
 };
 use std::collections::HashSet;
 
@@ -71,13 +72,11 @@ async fn get_or_create_series_id(
     .execute(pool)
     .await?;
 
-    let id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM series WHERE library_id = $1 AND name = $2",
-    )
-    .bind(library_id)
-    .bind(name)
-    .fetch_one(pool)
-    .await?;
+    let id: Uuid = sqlx::query_scalar("SELECT id FROM series WHERE library_id = $1 AND name = $2")
+        .bind(library_id)
+        .bind(name)
+        .fetch_one(pool)
+        .await?;
 
     cache.insert(name.to_string(), id);
     Ok(id)
@@ -124,7 +123,11 @@ pub async fn scan_library_discovery(
             let remapped_path = utils::remap_libraries_path(&abs_path);
             existing.insert(
                 remapped_path,
-                (row.get("file_id"), row.get("book_id"), row.get("fingerprint")),
+                (
+                    row.get("file_id"),
+                    row.get("book_id"),
+                    row.get("fingerprint"),
+                ),
             );
         }
         info!(
@@ -143,13 +146,12 @@ pub async fn scan_library_discovery(
 
     // Load stored directory mtimes for incremental skip
     let dir_mtimes: HashMap<String, DateTime<Utc>> = if !is_full_rebuild {
-        let rows = sqlx::query(
-            "SELECT dir_path, mtime FROM directory_mtimes WHERE library_id = $1",
-        )
-        .bind(library_id)
-        .fetch_all(&state.pool)
-        .await
-        .unwrap_or_default();
+        let rows =
+            sqlx::query("SELECT dir_path, mtime FROM directory_mtimes WHERE library_id = $1")
+                .bind(library_id)
+                .fetch_all(&state.pool)
+                .await
+                .unwrap_or_default();
 
         rows.into_iter()
             .map(|row| {
@@ -164,13 +166,11 @@ pub async fn scan_library_discovery(
     };
 
     // Load existing series for this library: name → id
-    let series_rows = sqlx::query(
-        "SELECT id, name FROM series WHERE library_id = $1",
-    )
-    .bind(library_id)
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_default();
+    let series_rows = sqlx::query("SELECT id, name FROM series WHERE library_id = $1")
+        .bind(library_id)
+        .fetch_all(&state.pool)
+        .await
+        .unwrap_or_default();
     let mut series_map: HashMap<String, Uuid> = series_rows
         .into_iter()
         .map(|row| {
@@ -320,12 +320,17 @@ pub async fn scan_library_discovery(
             seen.insert(lookup_path.clone(), true);
 
             if let Some((file_id, book_id, old_fingerprint)) = existing.get(&lookup_path).cloned() {
-                let Some(format) = detect_format(&path) else { continue; };
+                let Some(format) = detect_format(&path) else {
+                    continue;
+                };
                 let mut parsed = parse_metadata_fast(&path, format, root);
                 // Apply series rename mapping (same as normal scan branch)
                 if let Some(ref fs_series) = parsed.series {
                     if let Some(renamed) = series_rename_map.get(fs_series) {
-                        debug!("[SCAN] Mapping renamed series (skipped dir): '{}' → '{}'", fs_series, renamed);
+                        debug!(
+                            "[SCAN] Mapping renamed series (skipped dir): '{}' → '{}'",
+                            fs_series, renamed
+                        );
                         parsed.series = Some(renamed.clone());
                     }
                 }
@@ -338,7 +343,9 @@ pub async fn scan_library_discovery(
                         .modified()
                         .map(DateTime::<Utc>::from)
                         .unwrap_or_else(|_| Utc::now());
-                    if let Ok(fingerprint) = utils::compute_fingerprint(&path, metadata.len(), &mtime) {
+                    if let Ok(fingerprint) =
+                        utils::compute_fingerprint(&path, metadata.len(), &mtime)
+                    {
                         if fingerprint != old_fingerprint {
                             debug!(
                                 target: "scan",
@@ -346,7 +353,15 @@ pub async fn scan_library_discovery(
                                 path.display()
                             );
                             let update_series_id = if let Some(ref series_name) = parsed.series {
-                                Some(get_or_create_series_id(&state.pool, library_id, series_name, &mut series_map).await?)
+                                Some(
+                                    get_or_create_series_id(
+                                        &state.pool,
+                                        library_id,
+                                        series_name,
+                                        &mut series_map,
+                                    )
+                                    .await?,
+                                )
                             } else {
                                 None
                             };
@@ -377,23 +392,30 @@ pub async fn scan_library_discovery(
                                 entity_type: Some("book".to_string()),
                                 entity_id: Some(book_id),
                                 entity_name: Some(abs_path.clone()),
-                                message: Some(format!("Book updated (fingerprint changed in skipped dir): {}", path.display())),
+                                message: Some(format!(
+                                    "Book updated (fingerprint changed in skipped dir): {}",
+                                    path.display()
+                                )),
                                 detail: None,
                             });
 
-                            if let Err(e) = sqlx::query(
-                                "UPDATE books SET thumbnail_path = NULL WHERE id = $1",
-                            )
-                            .bind(book_id)
-                            .execute(&state.pool)
-                            .await
+                            if let Err(e) =
+                                sqlx::query("UPDATE books SET thumbnail_path = NULL WHERE id = $1")
+                                    .bind(book_id)
+                                    .execute(&state.pool)
+                                    .await
                             {
-                                warn!("[BDD] Failed to clear thumbnail for book {}: {}", book_id, e);
+                                warn!(
+                                    "[BDD] Failed to clear thumbnail for book {}: {}",
+                                    book_id, e
+                                );
                             }
 
                             stats.indexed_files += 1;
 
-                            if books_to_update.len() >= BATCH_SIZE || files_to_update.len() >= BATCH_SIZE {
+                            if books_to_update.len() >= BATCH_SIZE
+                                || files_to_update.len() >= BATCH_SIZE
+                            {
                                 flush_all_batches(
                                     &state.pool,
                                     &mut books_to_update,
@@ -413,19 +435,29 @@ pub async fn scan_library_discovery(
 
                 // Fingerprint unchanged — still check if title/volume need updating
                 // (e.g., file renamed, or volume not extracted on a previous scan)
-                let row: Option<(String, Option<i32>, String)> = sqlx::query_as(
-                    "SELECT title, volume, volume_type FROM books WHERE id = $1",
-                )
-                .bind(book_id)
-                .fetch_optional(&state.pool)
-                .await?;
+                let row: Option<(String, Option<i32>, String)> =
+                    sqlx::query_as("SELECT title, volume, volume_type FROM books WHERE id = $1")
+                        .bind(book_id)
+                        .fetch_optional(&state.pool)
+                        .await?;
                 if let Some((ref db_title, db_volume, ref db_volume_type)) = row {
                     let parsed_vt = parsed.volume_type.as_str();
-                    if db_title != &parsed.title || db_volume != parsed.volume || db_volume_type != parsed_vt {
+                    if db_title != &parsed.title
+                        || db_volume != parsed.volume
+                        || db_volume_type != parsed_vt
+                    {
                         debug!("[SCAN] Title/volume/type mismatch (skipped dir) for {:?}: DB=('{}', {:?}, '{}') vs parsed=('{}', {:?}, '{}'), updating",
                             path.file_name().unwrap_or_default(), db_title, db_volume, db_volume_type, parsed.title, parsed.volume, parsed_vt);
                         let update_series_id = if let Some(ref series_name) = parsed.series {
-                            Some(get_or_create_series_id(&state.pool, library_id, series_name, &mut series_map).await?)
+                            Some(
+                                get_or_create_series_id(
+                                    &state.pool,
+                                    library_id,
+                                    series_name,
+                                    &mut series_map,
+                                )
+                                .await?,
+                            )
                         } else {
                             None
                         };
@@ -550,28 +582,33 @@ pub async fn scan_library_discovery(
             }
         }
 
-        if let Some((file_id, book_id, old_fingerprint)) =
-            existing.get(&lookup_path).cloned()
-        {
+        if let Some((file_id, book_id, old_fingerprint)) = existing.get(&lookup_path).cloned() {
             if !is_full_rebuild && old_fingerprint == fingerprint {
                 // Even if fingerprint hasn't changed, check if title/volume need updating
                 // (e.g., after a rename, the file was renamed but title in books table is stale,
                 // or volume was not extracted on a previous scan)
-                let row: Option<(String, Option<i32>, String)> = sqlx::query_as(
-                    "SELECT title, volume, volume_type FROM books WHERE id = $1",
-                )
-                .bind(book_id)
-                .fetch_optional(&state.pool)
-                .await?;
+                let row: Option<(String, Option<i32>, String)> =
+                    sqlx::query_as("SELECT title, volume, volume_type FROM books WHERE id = $1")
+                        .bind(book_id)
+                        .fetch_optional(&state.pool)
+                        .await?;
                 if let Some((ref db_title, db_volume, ref db_volume_type)) = row {
                     let parsed_vt = parsed.volume_type.as_str();
-                    if db_title != &parsed.title || db_volume != parsed.volume || db_volume_type != parsed_vt {
+                    if db_title != &parsed.title
+                        || db_volume != parsed.volume
+                        || db_volume_type != parsed_vt
+                    {
                         debug!("[SCAN] Title/volume/type mismatch for {}: DB=('{}', {:?}, '{}') vs parsed=('{}', {:?}, '{}'), updating",
                             file_name, db_title, db_volume, db_volume_type, parsed.title, parsed.volume, parsed_vt);
                         let update_series_id = if let Some(ref series_name) = parsed.series {
                             Some(
-                                get_or_create_series_id(&state.pool, library_id, series_name, &mut series_map)
-                                    .await?,
+                                get_or_create_series_id(
+                                    &state.pool,
+                                    library_id,
+                                    series_name,
+                                    &mut series_map,
+                                )
+                                .await?,
                             )
                         } else {
                             None
@@ -592,7 +629,10 @@ pub async fn scan_library_discovery(
                             entity_type: Some("book".to_string()),
                             entity_id: Some(book_id),
                             entity_name: Some(abs_path.clone()),
-                            message: Some(format!("Title/volume updated: ('{}', {:?}) → ('{}', {:?})", db_title, db_volume, parsed.title, parsed.volume)),
+                            message: Some(format!(
+                                "Title/volume updated: ('{}', {:?}) → ('{}', {:?})",
+                                db_title, db_volume, parsed.title, parsed.volume
+                            )),
                             detail: None,
                         });
                     }
@@ -649,12 +689,10 @@ pub async fn scan_library_discovery(
             });
 
             // Also clear thumbnail so it gets regenerated
-            if let Err(e) = sqlx::query(
-                "UPDATE books SET thumbnail_path = NULL WHERE id = $1",
-            )
-            .bind(book_id)
-            .execute(&state.pool)
-            .await
+            if let Err(e) = sqlx::query("UPDATE books SET thumbnail_path = NULL WHERE id = $1")
+                .bind(book_id)
+                .execute(&state.pool)
+                .await
             {
                 warn!(
                     "[BDD] Failed to clear thumbnail for book {}: {}",
@@ -686,7 +724,11 @@ pub async fn scan_library_discovery(
         let file_id = Uuid::new_v4();
 
         // Track new series
-        let series_key = parsed.series.as_deref().unwrap_or("unclassified").to_string();
+        let series_key = parsed
+            .series
+            .as_deref()
+            .unwrap_or("unclassified")
+            .to_string();
         if !existing_series.contains(&series_key) && seen_new_series.insert(series_key) {
             stats.new_series += 1;
         }
@@ -781,7 +823,10 @@ pub async fn scan_library_discovery(
     upsert_directory_mtimes(state, library_id, &new_dir_mtimes).await;
 
     if let Err(e) = restore_archived_data(&state.pool, library_id).await {
-        warn!("[SCAN] Failed to restore archived data for library {}: {}", library_id, e);
+        warn!(
+            "[SCAN] Failed to restore archived data for library {}: {}",
+            library_id, e
+        );
     }
 
     Ok(())
@@ -910,7 +955,10 @@ pub async fn restore_archived_data(pool: &sqlx::PgPool, library_id: Uuid) -> Res
     .unwrap_or(0);
 
     if restored > 0 {
-        info!("[SCAN] Restored reading progress for {} books in library {}", restored, library_id);
+        info!(
+            "[SCAN] Restored reading progress for {} books in library {}",
+            restored, library_id
+        );
     }
 
     // Restore series metadata for re-created series (only fill empty fields)
@@ -972,7 +1020,12 @@ pub async fn restore_archived_data(pool: &sqlx::PgPool, library_id: Uuid) -> Res
 
 /// Determine whether file deletions should be skipped based on safety heuristics.
 /// Returns true if deletions should be skipped (e.g., volume not mounted).
-fn should_skip_deletions(root_accessible: bool, seen_count: usize, existing_count: usize, stale_count: usize) -> bool {
+fn should_skip_deletions(
+    root_accessible: bool,
+    seen_count: usize,
+    existing_count: usize,
+    stale_count: usize,
+) -> bool {
     !root_accessible
         || (seen_count == 0 && existing_count > 0)
         || (stale_count > 0 && stale_count == existing_count)
@@ -991,7 +1044,10 @@ async fn handle_stale_deletions(
 ) -> Result<()> {
     let existing_count = existing.len();
     let seen_count = seen.len();
-    let stale_count = existing.iter().filter(|(p, _)| !seen.contains_key(p.as_str())).count();
+    let stale_count = existing
+        .iter()
+        .filter(|(p, _)| !seen.contains_key(p.as_str()))
+        .count();
 
     let root_accessible = root.is_dir() && std::fs::read_dir(root).is_ok();
 
@@ -1018,17 +1074,19 @@ async fn handle_stale_deletions(
             continue;
         }
         // Fetch series_id before deleting the book
-        let series_id: Option<Uuid> = sqlx::query_scalar(
-            "SELECT series_id FROM books WHERE id = $1",
-        )
-        .bind(book_id)
-        .fetch_optional(&state.pool)
-        .await?
-        .flatten();
+        let series_id: Option<Uuid> =
+            sqlx::query_scalar("SELECT series_id FROM books WHERE id = $1")
+                .bind(book_id)
+                .fetch_optional(&state.pool)
+                .await?
+                .flatten();
 
         // Archive book + file + reading progress before deletion
         if let Err(e) = archive_book(&state.pool, *book_id, *file_id).await {
-            warn!("[SCAN] Failed to archive book {} before deletion: {}", book_id, e);
+            warn!(
+                "[SCAN] Failed to archive book {} before deletion: {}",
+                book_id, e
+            );
         }
 
         sqlx::query("DELETE FROM book_files WHERE id = $1")
@@ -1116,7 +1174,10 @@ async fn handle_stale_deletions(
 
     let orphan_count = orphan_result.len();
     if orphan_count > 0 {
-        info!("[SCAN] Removed {} orphan series (no remaining books)", orphan_count);
+        info!(
+            "[SCAN] Removed {} orphan series (no remaining books)",
+            orphan_count
+        );
     }
 
     Ok(())
@@ -1245,7 +1306,9 @@ mod tests {
     async fn get_or_create_series_id_new(pool: sqlx::PgPool) {
         let lib_id = create_test_library(&pool, "test").await;
         let mut cache = HashMap::new();
-        let id = get_or_create_series_id(&pool, lib_id, "One Piece", &mut cache).await.unwrap();
+        let id = get_or_create_series_id(&pool, lib_id, "One Piece", &mut cache)
+            .await
+            .unwrap();
         assert_ne!(id, Uuid::nil());
         assert_eq!(cache.len(), 1);
     }
@@ -1254,8 +1317,12 @@ mod tests {
     async fn get_or_create_series_id_cache_hit(pool: sqlx::PgPool) {
         let lib_id = create_test_library(&pool, "test").await;
         let mut cache = HashMap::new();
-        let id1 = get_or_create_series_id(&pool, lib_id, "One Piece", &mut cache).await.unwrap();
-        let id2 = get_or_create_series_id(&pool, lib_id, "One Piece", &mut cache).await.unwrap();
+        let id1 = get_or_create_series_id(&pool, lib_id, "One Piece", &mut cache)
+            .await
+            .unwrap();
+        let id2 = get_or_create_series_id(&pool, lib_id, "One Piece", &mut cache)
+            .await
+            .unwrap();
         assert_eq!(id1, id2);
     }
 
@@ -1263,9 +1330,13 @@ mod tests {
     async fn get_or_create_series_id_cache_case_insensitive(pool: sqlx::PgPool) {
         let lib_id = create_test_library(&pool, "test").await;
         let mut cache = HashMap::new();
-        let id1 = get_or_create_series_id(&pool, lib_id, "One Piece", &mut cache).await.unwrap();
+        let id1 = get_or_create_series_id(&pool, lib_id, "One Piece", &mut cache)
+            .await
+            .unwrap();
         // Different casing should hit cache
-        let id2 = get_or_create_series_id(&pool, lib_id, "one piece", &mut cache).await.unwrap();
+        let id2 = get_or_create_series_id(&pool, lib_id, "one piece", &mut cache)
+            .await
+            .unwrap();
         assert_eq!(id1, id2);
     }
 
@@ -1275,8 +1346,12 @@ mod tests {
         // Use two separate caches to bypass cache and test DB lookup
         let mut cache1 = HashMap::new();
         let mut cache2 = HashMap::new();
-        let id1 = get_or_create_series_id(&pool, lib_id, "Dragon Ball", &mut cache1).await.unwrap();
-        let id2 = get_or_create_series_id(&pool, lib_id, "dragon ball", &mut cache2).await.unwrap();
+        let id1 = get_or_create_series_id(&pool, lib_id, "Dragon Ball", &mut cache1)
+            .await
+            .unwrap();
+        let id2 = get_or_create_series_id(&pool, lib_id, "dragon ball", &mut cache2)
+            .await
+            .unwrap();
         assert_eq!(id1, id2, "DB lookup should be case-insensitive");
     }
 
@@ -1285,8 +1360,12 @@ mod tests {
         let lib_id = create_test_library(&pool, "test").await;
         let mut cache1 = HashMap::new();
         let mut cache2 = HashMap::new();
-        let id1 = get_or_create_series_id(&pool, lib_id, "Astérix", &mut cache1).await.unwrap();
-        let id2 = get_or_create_series_id(&pool, lib_id, "Asterix", &mut cache2).await.unwrap();
+        let id1 = get_or_create_series_id(&pool, lib_id, "Astérix", &mut cache1)
+            .await
+            .unwrap();
+        let id2 = get_or_create_series_id(&pool, lib_id, "Asterix", &mut cache2)
+            .await
+            .unwrap();
         assert_eq!(id1, id2, "DB lookup should be accent-insensitive");
     }
 
@@ -1296,7 +1375,9 @@ mod tests {
         let mut cache = HashMap::new();
 
         // Create series then simulate user rename
-        let id1 = get_or_create_series_id(&pool, lib_id, "Dragon Ball", &mut cache).await.unwrap();
+        let id1 = get_or_create_series_id(&pool, lib_id, "Dragon Ball", &mut cache)
+            .await
+            .unwrap();
         sqlx::query("UPDATE series SET name = $1, original_name = $2 WHERE id = $3")
             .bind("Dragon Ball Z")
             .bind("Dragon Ball")
@@ -1307,8 +1388,13 @@ mod tests {
 
         // Clear cache to force DB lookup
         let mut cache2 = HashMap::new();
-        let id2 = get_or_create_series_id(&pool, lib_id, "Dragon Ball", &mut cache2).await.unwrap();
-        assert_eq!(id1, id2, "lookup by original_name should return the renamed series");
+        let id2 = get_or_create_series_id(&pool, lib_id, "Dragon Ball", &mut cache2)
+            .await
+            .unwrap();
+        assert_eq!(
+            id1, id2,
+            "lookup by original_name should return the renamed series"
+        );
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]
@@ -1316,7 +1402,9 @@ mod tests {
         let lib_id = create_test_library(&pool, "rename_case").await;
         let mut cache = HashMap::new();
 
-        let id1 = get_or_create_series_id(&pool, lib_id, "LES MYTHICS", &mut cache).await.unwrap();
+        let id1 = get_or_create_series_id(&pool, lib_id, "LES MYTHICS", &mut cache)
+            .await
+            .unwrap();
         sqlx::query("UPDATE series SET name = $1, original_name = $2 WHERE id = $3")
             .bind("Mythics")
             .bind("LES MYTHICS")
@@ -1326,7 +1414,9 @@ mod tests {
             .unwrap();
 
         let mut cache2 = HashMap::new();
-        let id2 = get_or_create_series_id(&pool, lib_id, "les mythics", &mut cache2).await.unwrap();
+        let id2 = get_or_create_series_id(&pool, lib_id, "les mythics", &mut cache2)
+            .await
+            .unwrap();
         assert_eq!(id1, id2, "original_name lookup should be case-insensitive");
     }
 
@@ -1394,15 +1484,13 @@ mod tests {
         assert_ne!(db_title, parsed_title);
 
         // Update like the scanner does
-        sqlx::query(
-            "UPDATE books SET title = $1, volume = $2, updated_at = NOW() WHERE id = $3",
-        )
-        .bind(parsed_title)
-        .bind(parsed_volume)
-        .bind(book_id)
-        .execute(&pool)
-        .await
-        .unwrap();
+        sqlx::query("UPDATE books SET title = $1, volume = $2, updated_at = NOW() WHERE id = $3")
+            .bind(parsed_title)
+            .bind(parsed_volume)
+            .bind(book_id)
+            .execute(&pool)
+            .await
+            .unwrap();
 
         // 7. Verify the book now has the new title and volume
         let new_title: String = sqlx::query_scalar("SELECT title FROM books WHERE id = $1")
@@ -1412,12 +1500,11 @@ mod tests {
             .unwrap();
         assert_eq!(new_title, "Series - T05");
 
-        let new_volume: Option<i32> =
-            sqlx::query_scalar("SELECT volume FROM books WHERE id = $1")
-                .bind(book_id)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let new_volume: Option<i32> = sqlx::query_scalar("SELECT volume FROM books WHERE id = $1")
+            .bind(book_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(new_volume, Some(5));
     }
 
@@ -1493,28 +1580,25 @@ mod tests {
         let parsed_title = "Series - T05";
         let parsed_volume = parsers::extract_volume(parsed_title);
 
-        let row: (String, Option<i32>) = sqlx::query_as(
-            "SELECT title, volume FROM books WHERE id = $1",
-        )
-        .bind(book_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+        let row: (String, Option<i32>) =
+            sqlx::query_as("SELECT title, volume FROM books WHERE id = $1")
+                .bind(book_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         let (db_title, db_volume) = row;
 
         // Title mismatch triggers update
         assert_ne!(db_title, parsed_title);
         assert!(db_title != parsed_title || db_volume != parsed_volume);
 
-        sqlx::query(
-            "UPDATE books SET title = $1, volume = $2, updated_at = NOW() WHERE id = $3",
-        )
-        .bind(parsed_title)
-        .bind(parsed_volume)
-        .bind(book_id)
-        .execute(&pool)
-        .await
-        .unwrap();
+        sqlx::query("UPDATE books SET title = $1, volume = $2, updated_at = NOW() WHERE id = $3")
+            .bind(parsed_title)
+            .bind(parsed_volume)
+            .bind(book_id)
+            .execute(&pool)
+            .await
+            .unwrap();
 
         let new_title: String = sqlx::query_scalar("SELECT title FROM books WHERE id = $1")
             .bind(book_id)
@@ -1562,13 +1646,12 @@ mod tests {
         let parsed_volume = parsers::extract_volume(parsed_title);
         assert_eq!(parsed_volume, Some(1), "extract_volume should parse Tome 1");
 
-        let row: (String, Option<i32>) = sqlx::query_as(
-            "SELECT title, volume FROM books WHERE id = $1",
-        )
-        .bind(book_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+        let row: (String, Option<i32>) =
+            sqlx::query_as("SELECT title, volume FROM books WHERE id = $1")
+                .bind(book_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         let (db_title, db_volume) = row;
 
         // Title matches but volume differs (None vs Some(1))
@@ -1634,13 +1717,12 @@ mod tests {
         let parsed_volume = parsers::extract_volume(parsed_title);
         assert_eq!(parsed_volume, Some(5));
 
-        let row: (String, Option<i32>) = sqlx::query_as(
-            "SELECT title, volume FROM books WHERE id = $1",
-        )
-        .bind(book_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+        let row: (String, Option<i32>) =
+            sqlx::query_as("SELECT title, volume FROM books WHERE id = $1")
+                .bind(book_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         let (db_title, db_volume) = row;
 
         // Both match — no update should happen
@@ -1648,7 +1730,10 @@ mod tests {
         assert_eq!(db_volume, parsed_volume);
 
         let needs_update = db_title != parsed_title || db_volume != parsed_volume;
-        assert!(!needs_update, "no update should be needed when title and volume match");
+        assert!(
+            !needs_update,
+            "no update should be needed when title and volume match"
+        );
 
         // Verify updated_at is unchanged
         let after_updated_at: DateTime<Utc> =
@@ -1657,7 +1742,10 @@ mod tests {
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        assert_eq!(before_updated_at, after_updated_at, "updated_at should not have changed");
+        assert_eq!(
+            before_updated_at, after_updated_at,
+            "updated_at should not have changed"
+        );
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]
@@ -1724,14 +1812,19 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(deleted.len(), 1, "should delete only the truly orphan series");
+        assert_eq!(
+            deleted.len(),
+            1,
+            "should delete only the truly orphan series"
+        );
 
         // Verify: series_with_books and series_empty_with_metadata still exist
-        let remaining: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM series WHERE library_id = $1 ORDER BY name")
-            .bind(library_id)
-            .fetch_all(&pool)
-            .await
-            .unwrap();
+        let remaining: Vec<Uuid> =
+            sqlx::query_scalar("SELECT id FROM series WHERE library_id = $1 ORDER BY name")
+                .bind(library_id)
+                .fetch_all(&pool)
+                .await
+                .unwrap();
         assert_eq!(remaining.len(), 2);
         assert!(remaining.contains(&series_with_books));
         assert!(remaining.contains(&series_empty_with_metadata));
@@ -1758,7 +1851,12 @@ mod tests {
             (series_kept, "Kept Series"),
         ] {
             sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, $3)")
-                .bind(id).bind(library_id).bind(name).execute(&pool).await.unwrap();
+                .bind(id)
+                .bind(library_id)
+                .bind(name)
+                .execute(&pool)
+                .await
+                .unwrap();
         }
 
         // Both series_deleted_dir and series_discovery have metadata links
@@ -1783,7 +1881,10 @@ mod tests {
 
         // Simulate stale deletion: delete the book from series_deleted_dir
         sqlx::query("DELETE FROM books WHERE id = $1")
-            .bind(stale_book_id).execute(&pool).await.unwrap();
+            .bind(stale_book_id)
+            .execute(&pool)
+            .await
+            .unwrap();
 
         // Now the stale series cleanup: series that just lost all books
         let affected_series_ids = vec![series_deleted_dir];
@@ -1797,17 +1898,32 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(deleted_series.len(), 1, "series that lost all books should be deleted");
+        assert_eq!(
+            deleted_series.len(),
+            1,
+            "series that lost all books should be deleted"
+        );
         assert_eq!(deleted_series[0], series_deleted_dir);
 
         // Verify discovery series is NOT affected (not in affected_series_ids)
-        let discovery_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM series WHERE id = $1)")
-            .bind(series_discovery).fetch_one(&pool).await.unwrap();
+        let discovery_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM series WHERE id = $1)")
+                .bind(series_discovery)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert!(discovery_exists, "discovery series should be preserved");
 
         // Verify kept series still exists
-        let kept_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM series WHERE id = $1)")
-            .bind(series_kept).fetch_one(&pool).await.unwrap();
-        assert!(kept_exists, "series with remaining books should be preserved");
+        let kept_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM series WHERE id = $1)")
+                .bind(series_kept)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(
+            kept_exists,
+            "series with remaining books should be preserved"
+        );
     }
 }

@@ -50,12 +50,11 @@ pub async fn get_genre_restrictions(
         return Err(ApiError::not_found("user not found"));
     }
 
-    let rows = sqlx::query(
-        "SELECT genre FROM user_genre_restrictions WHERE user_id = $1 ORDER BY genre",
-    )
-    .bind(id)
-    .fetch_all(&state.pool)
-    .await?;
+    let rows =
+        sqlx::query("SELECT genre FROM user_genre_restrictions WHERE user_id = $1 ORDER BY genre")
+            .bind(id)
+            .fetch_all(&state.pool)
+            .await?;
 
     let blocked_genres = rows.into_iter().map(|r| r.get("genre")).collect();
     Ok(Json(UserGenreRestrictionsResponse { blocked_genres }))
@@ -101,12 +100,11 @@ pub async fn add_genre_restriction(
     .execute(&state.pool)
     .await?;
 
-    let rows = sqlx::query(
-        "SELECT genre FROM user_genre_restrictions WHERE user_id = $1 ORDER BY genre",
-    )
-    .bind(id)
-    .fetch_all(&state.pool)
-    .await?;
+    let rows =
+        sqlx::query("SELECT genre FROM user_genre_restrictions WHERE user_id = $1 ORDER BY genre")
+            .bind(id)
+            .fetch_all(&state.pool)
+            .await?;
 
     let blocked_genres = rows.into_iter().map(|r| r.get("genre")).collect();
     Ok(Json(UserGenreRestrictionsResponse { blocked_genres }))
@@ -147,12 +145,11 @@ pub async fn remove_genre_restriction(
         .execute(&state.pool)
         .await?;
 
-    let rows = sqlx::query(
-        "SELECT genre FROM user_genre_restrictions WHERE user_id = $1 ORDER BY genre",
-    )
-    .bind(id)
-    .fetch_all(&state.pool)
-    .await?;
+    let rows =
+        sqlx::query("SELECT genre FROM user_genre_restrictions WHERE user_id = $1 ORDER BY genre")
+            .bind(id)
+            .fetch_all(&state.pool)
+            .await?;
 
     let blocked_genres = rows.into_iter().map(|r| r.get("genre")).collect();
     Ok(Json(UserGenreRestrictionsResponse { blocked_genres }))
@@ -212,12 +209,11 @@ pub async fn set_genre_restrictions(
 
     tx.commit().await?;
 
-    let rows = sqlx::query(
-        "SELECT genre FROM user_genre_restrictions WHERE user_id = $1 ORDER BY genre",
-    )
-    .bind(id)
-    .fetch_all(&state.pool)
-    .await?;
+    let rows =
+        sqlx::query("SELECT genre FROM user_genre_restrictions WHERE user_id = $1 ORDER BY genre")
+            .bind(id)
+            .fetch_all(&state.pool)
+            .await?;
 
     let blocked_genres = rows.into_iter().map(|r| r.get("genre")).collect();
     Ok(Json(UserGenreRestrictionsResponse { blocked_genres }))

@@ -43,12 +43,14 @@ async fn search_series_parses_candidates() {
         .await;
 
     let config = test_config();
-    let candidates =
-        search_series_impl("Sandman", &config, &mock_server.uri())
-            .await
-            .unwrap();
+    let candidates = search_series_impl("Sandman", &config, &mock_server.uri())
+        .await
+        .unwrap();
 
-    assert!(!candidates.is_empty(), "should return at least one candidate");
+    assert!(
+        !candidates.is_empty(),
+        "should return at least one candidate"
+    );
     let best = &candidates[0];
     assert_eq!(best.title, "Sandman");
     assert!(best.authors.contains(&"Neil Gaiman".to_string()));
@@ -56,9 +58,17 @@ async fn search_series_parses_candidates() {
     assert_eq!(best.start_year, Some(1989));
     assert_eq!(best.total_volumes, Some(2));
     assert!(best.cover_url.is_some());
-    assert!(best.cover_url.as_ref().unwrap().contains("covers.openlibrary.org"));
+    assert!(best
+        .cover_url
+        .as_ref()
+        .unwrap()
+        .contains("covers.openlibrary.org"));
     assert!(best.external_url.is_some());
-    assert!(best.external_url.as_ref().unwrap().contains("openlibrary.org"));
+    assert!(best
+        .external_url
+        .as_ref()
+        .unwrap()
+        .contains("openlibrary.org"));
 }
 
 #[tokio::test]
@@ -74,12 +84,14 @@ async fn search_series_empty_results() {
         .await;
 
     let config = test_config();
-    let candidates =
-        search_series_impl("nonexistent_xyz_123", &config, &mock_server.uri())
-            .await
-            .unwrap();
+    let candidates = search_series_impl("nonexistent_xyz_123", &config, &mock_server.uri())
+        .await
+        .unwrap();
 
-    assert!(candidates.is_empty(), "should return empty vec for no results");
+    assert!(
+        candidates.is_empty(),
+        "should return empty vec for no results"
+    );
 }
 
 #[tokio::test]
@@ -138,10 +150,9 @@ async fn get_series_books_parses_books() {
         .await;
 
     let config = test_config();
-    let books =
-        get_series_books_impl("/works/OL123W", &config, &mock_server.uri())
-            .await
-            .unwrap();
+    let books = get_series_books_impl("/works/OL123W", &config, &mock_server.uri())
+        .await
+        .unwrap();
 
     assert_eq!(books.len(), 3);
 
@@ -190,10 +201,12 @@ async fn get_series_books_empty_results() {
         .await;
 
     let config = test_config();
-    let books =
-        get_series_books_impl("/works/OL999W", &config, &mock_server.uri())
-            .await
-            .unwrap();
+    let books = get_series_books_impl("/works/OL999W", &config, &mock_server.uri())
+        .await
+        .unwrap();
 
-    assert!(books.is_empty(), "should return empty vec when no editions found");
+    assert!(
+        books.is_empty(),
+        "should return empty vec when no editions found"
+    );
 }

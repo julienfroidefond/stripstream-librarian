@@ -1,10 +1,13 @@
 use axum::extract::Extension;
-use axum::{extract::{Path, Query, State}, Json};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use sqlx::Row;
 use uuid::Uuid;
 
+use super::{helpers, ListAllSeriesQuery, ListSeriesQuery, SeriesItem, SeriesPage};
 use crate::{auth::AuthUser, error::ApiError, state::AppState};
-use super::{helpers, ListSeriesQuery, ListAllSeriesQuery, SeriesItem, SeriesPage};
 
 // ─── List series (per library) ───────────────────────────────────────────────
 
@@ -40,7 +43,10 @@ pub async fn list_series(
     let offset = (page - 1) * limit;
 
     let reading_statuses: Option<Vec<String>> = query.reading_status.as_deref().map(|s| {
-        s.split(',').map(|v| v.trim().to_string()).filter(|v| !v.is_empty()).collect()
+        s.split(',')
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .collect()
     });
 
     let series_status_expr = r#"CASE
@@ -55,32 +61,48 @@ pub async fn list_series(
     let mut p: usize = 1;
 
     let q_cond = if query.q.is_some() {
-        p += 1; format!("AND s.name ILIKE ${p}")
-    } else { String::new() };
+        p += 1;
+        format!("AND s.name ILIKE ${p}")
+    } else {
+        String::new()
+    };
 
     let count_rs_cond = if reading_statuses.is_some() {
-        p += 1; format!("AND {series_status_expr} = ANY(${p})")
-    } else { String::new() };
+        p += 1;
+        format!("AND {series_status_expr} = ANY(${p})")
+    } else {
+        String::new()
+    };
 
     let ss_cond = if query.series_status.is_some() {
-        p += 1; format!("AND LOWER(s.status) = ${p}")
-    } else { String::new() };
+        p += 1;
+        format!("AND LOWER(s.status) = ${p}")
+    } else {
+        String::new()
+    };
 
     let missing_cond = if has_missing {
         "AND mc.missing_count > 0".to_string()
-    } else { String::new() };
+    } else {
+        String::new()
+    };
 
     let metadata_provider_cond = match query.metadata_provider.as_deref() {
         Some("unlinked") => "AND ml.provider IS NULL".to_string(),
         Some("linked") => "AND ml.provider IS NOT NULL".to_string(),
-        Some(_) => { p += 1; format!("AND ml.provider = ${p}") },
+        Some(_) => {
+            p += 1;
+            format!("AND ml.provider = ${p}")
+        }
         None => String::new(),
     };
 
     let has_books = query.has_books.as_deref() == Some("true");
     let has_books_cond = if has_books {
         "AND sc.book_count > 0".to_string()
-    } else { String::new() };
+    } else {
+        String::new()
+    };
 
     let user_id_p = p + 1;
     let limit_p = p + 2;
@@ -284,7 +306,10 @@ pub async fn list_all_series(
     let offset = (page - 1) * limit;
 
     let reading_statuses: Option<Vec<String>> = query.reading_status.as_deref().map(|s| {
-        s.split(',').map(|v| v.trim().to_string()).filter(|v| !v.is_empty()).collect()
+        s.split(',')
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .collect()
     });
 
     let series_status_expr = r#"CASE
@@ -299,57 +324,90 @@ pub async fn list_all_series(
     let mut p: usize = 0;
 
     let lib_cond = if query.library_id.is_some() {
-        p += 1; format!("WHERE s.library_id = ${p}")
+        p += 1;
+        format!("WHERE s.library_id = ${p}")
     } else {
         "WHERE TRUE".to_string()
     };
 
     let q_cond = if query.q.is_some() {
-        p += 1; format!("AND s.name ILIKE ${p}")
-    } else { String::new() };
+        p += 1;
+        format!("AND s.name ILIKE ${p}")
+    } else {
+        String::new()
+    };
 
     let rs_cond = if reading_statuses.is_some() {
-        p += 1; format!("AND {series_status_expr} = ANY(${p})")
-    } else { String::new() };
+        p += 1;
+        format!("AND {series_status_expr} = ANY(${p})")
+    } else {
+        String::new()
+    };
 
     let ss_cond = if query.series_status.is_some() {
-        p += 1; format!("AND LOWER(s.status) = ${p}")
-    } else { String::new() };
+        p += 1;
+        format!("AND LOWER(s.status) = ${p}")
+    } else {
+        String::new()
+    };
 
     let missing_cond = if has_missing {
         "AND mc.missing_count > 0".to_string()
-    } else { String::new() };
+    } else {
+        String::new()
+    };
 
     let metadata_provider_cond = match query.metadata_provider.as_deref() {
         Some("unlinked") => "AND ml.provider IS NULL".to_string(),
         Some("linked") => "AND ml.provider IS NOT NULL".to_string(),
-        Some(_) => { p += 1; format!("AND ml.provider = ${p}") },
+        Some(_) => {
+            p += 1;
+            format!("AND ml.provider = ${p}")
+        }
         None => String::new(),
     };
 
     let author_cond = if query.author.is_some() {
-        p += 1; format!("AND (${p} = ANY(s.authors) OR EXISTS (SELECT 1 FROM books bk WHERE bk.series_id = s.id AND ${p} = ANY(COALESCE(NULLIF(bk.authors, '{{}}'), CASE WHEN bk.author IS NOT NULL AND bk.author != '' THEN ARRAY[bk.author] ELSE ARRAY[]::text[] END))))")
-    } else { String::new() };
+        p += 1;
+        format!("AND (${p} = ANY(s.authors) OR EXISTS (SELECT 1 FROM books bk WHERE bk.series_id = s.id AND ${p} = ANY(COALESCE(NULLIF(bk.authors, '{{}}'), CASE WHEN bk.author IS NOT NULL AND bk.author != '' THEN ARRAY[bk.author] ELSE ARRAY[]::text[] END))))")
+    } else {
+        String::new()
+    };
 
     let has_books = query.has_books.as_deref() == Some("true");
     let has_books_cond = if has_books {
         "AND sc.book_count > 0".to_string()
-    } else { String::new() };
+    } else {
+        String::new()
+    };
 
     let no_books = query.no_books.as_deref() == Some("true");
     let no_books_cond = if no_books {
         "AND sc.book_count = 0".to_string()
-    } else { String::new() };
+    } else {
+        String::new()
+    };
 
     let genre_cond = if query.genre.is_some() {
-        p += 1; format!("AND ${p} = ANY(s.genres)")
-    } else { String::new() };
+        p += 1;
+        format!("AND ${p} = ANY(s.genres)")
+    } else {
+        String::new()
+    };
 
     let oneshot_cond = if let Some(vt) = query.volume_type.as_deref() {
-        let safe_vt = match vt { "regular" | "oneshot" | "hs" | "integral" => vt, _ => "" };
-        if safe_vt.is_empty() { String::new() }
-        else { format!("AND EXISTS (SELECT 1 FROM books bvt WHERE bvt.series_id = s.id AND bvt.volume_type = '{safe_vt}')") }
-    } else { String::new() };
+        let safe_vt = match vt {
+            "regular" | "oneshot" | "hs" | "integral" => vt,
+            _ => "",
+        };
+        if safe_vt.is_empty() {
+            String::new()
+        } else {
+            format!("AND EXISTS (SELECT 1 FROM books bvt WHERE bvt.series_id = s.id AND bvt.volume_type = '{safe_vt}')")
+        }
+    } else {
+        String::new()
+    };
 
     // Missing counts CTE
     let missing_cte = if query.library_id.is_some() {

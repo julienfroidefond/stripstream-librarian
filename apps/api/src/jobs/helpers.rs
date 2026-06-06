@@ -6,13 +6,11 @@ use uuid::Uuid;
 
 /// Check if a job has been cancelled.
 pub(crate) async fn is_job_cancelled(pool: &PgPool, job_id: Uuid) -> bool {
-    sqlx::query_scalar::<_, bool>(
-        "SELECT status = 'cancelled' FROM index_jobs WHERE id = $1",
-    )
-    .bind(job_id)
-    .fetch_one(pool)
-    .await
-    .unwrap_or(false)
+    sqlx::query_scalar::<_, bool>("SELECT status = 'cancelled' FROM index_jobs WHERE id = $1")
+        .bind(job_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(false)
 }
 
 /// Update job progress (processed count, percentage, current item name).

@@ -1,10 +1,13 @@
 use axum::extract::Extension;
-use axum::{extract::{Path, Query, State}, Json};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{auth::AuthUser, books::BookItem, error::ApiError, state::AppState};
 use super::{helpers, OngoingQuery, SeriesItem, SeriesMetadata};
+use crate::{auth::AuthUser, books::BookItem, error::ApiError, state::AppState};
 
 // ─── Ongoing series / books ──────────────────────────────────────────────────
 
@@ -199,7 +202,8 @@ pub async fn ongoing_books(
                 volume_type: row.get("volume_type"),
                 language: row.get("language"),
                 page_count: row.get("page_count"),
-                thumbnail_url: thumbnail_path.map(|_| format!("/books/{}/thumbnail", row.get::<Uuid, _>("id"))),
+                thumbnail_url: thumbnail_path
+                    .map(|_| format!("/books/{}/thumbnail", row.get::<Uuid, _>("id"))),
                 updated_at: row.get("updated_at"),
                 reading_status: row.get("reading_status"),
                 reading_current_page: row.get("reading_current_page"),
@@ -251,19 +255,38 @@ pub async fn get_series_metadata(
         .await?;
 
     Ok(Json(SeriesMetadata {
-        series_name: series_row.as_ref().map(|r| r.get::<String, _>("name")).unwrap_or_default(),
-        authors: series_row.as_ref().map(|r| r.get::<Vec<String>, _>("authors")).unwrap_or_default(),
-        genres: series_row.as_ref().map(|r| r.get::<Vec<String>, _>("genres")).unwrap_or_default(),
+        series_name: series_row
+            .as_ref()
+            .map(|r| r.get::<String, _>("name"))
+            .unwrap_or_default(),
+        authors: series_row
+            .as_ref()
+            .map(|r| r.get::<Vec<String>, _>("authors"))
+            .unwrap_or_default(),
+        genres: series_row
+            .as_ref()
+            .map(|r| r.get::<Vec<String>, _>("genres"))
+            .unwrap_or_default(),
         description: series_row.as_ref().and_then(|r| r.get("description")),
-        publishers: series_row.as_ref().map(|r| r.get::<Vec<String>, _>("publishers")).unwrap_or_default(),
+        publishers: series_row
+            .as_ref()
+            .map(|r| r.get::<Vec<String>, _>("publishers"))
+            .unwrap_or_default(),
         start_year: series_row.as_ref().and_then(|r| r.get("start_year")),
         total_volumes: series_row.as_ref().and_then(|r| r.get("total_volumes")),
         status: series_row.as_ref().and_then(|r| r.get("status")),
-        book_author: series_row.as_ref().and_then(|r| r.get::<Option<String>, _>("book_author"))
+        book_author: series_row
+            .as_ref()
+            .and_then(|r| r.get::<Option<String>, _>("book_author"))
             .or_else(|| books_row.as_ref().and_then(|r| r.get("author"))),
-        book_language: series_row.as_ref().and_then(|r| r.get::<Option<String>, _>("book_language"))
+        book_language: series_row
+            .as_ref()
+            .and_then(|r| r.get::<Option<String>, _>("book_language"))
             .or_else(|| books_row.as_ref().and_then(|r| r.get("language"))),
-        locked_fields: series_row.as_ref().map(|r| r.get::<serde_json::Value, _>("locked_fields")).unwrap_or(serde_json::json!({})),
+        locked_fields: series_row
+            .as_ref()
+            .map(|r| r.get::<serde_json::Value, _>("locked_fields"))
+            .unwrap_or(serde_json::json!({})),
     }))
 }
 

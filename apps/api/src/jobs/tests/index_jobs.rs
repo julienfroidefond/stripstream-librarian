@@ -63,7 +63,10 @@ async fn job_without_library_has_null_library_name(pool: sqlx::PgPool) {
     let resp = crate::jobs::index_jobs::map_row(row);
     assert_eq!(resp.id, job_id);
     assert!(resp.library_id.is_none());
-    assert!(resp.library_name.is_none(), "library_name should be null when no library_id");
+    assert!(
+        resp.library_name.is_none(),
+        "library_name should be null when no library_id"
+    );
 }
 
 // -- Helper to create a job and insert events --
@@ -137,9 +140,36 @@ fn map_event_rows(rows: Vec<sqlx::postgres::PgRow>) -> Vec<crate::jobs::index_jo
 async fn get_job_events_returns_all_events_ordered(pool: sqlx::PgPool) {
     let job_id = create_test_job(&pool).await;
 
-    insert_event(&pool, job_id, "book_added", "info", Some("book"), Some("Book A"), None).await;
-    insert_event(&pool, job_id, "book_updated", "warning", Some("book"), Some("Book B"), Some("cover missing")).await;
-    insert_event(&pool, job_id, "parse_error", "error", Some("book"), Some("Book C"), Some("corrupt archive")).await;
+    insert_event(
+        &pool,
+        job_id,
+        "book_added",
+        "info",
+        Some("book"),
+        Some("Book A"),
+        None,
+    )
+    .await;
+    insert_event(
+        &pool,
+        job_id,
+        "book_updated",
+        "warning",
+        Some("book"),
+        Some("Book B"),
+        Some("cover missing"),
+    )
+    .await;
+    insert_event(
+        &pool,
+        job_id,
+        "parse_error",
+        "error",
+        Some("book"),
+        Some("Book C"),
+        Some("corrupt archive"),
+    )
+    .await;
 
     let rows = sqlx::query(EVENTS_SQL)
         .bind(job_id)
@@ -163,8 +193,26 @@ async fn get_job_events_filter_by_level(pool: sqlx::PgPool) {
 
     insert_event(&pool, job_id, "book_added", "info", None, None, None).await;
     insert_event(&pool, job_id, "book_updated", "warning", None, None, None).await;
-    insert_event(&pool, job_id, "parse_error", "error", None, None, Some("bad file")).await;
-    insert_event(&pool, job_id, "thumbnail_error", "error", None, None, Some("bad image")).await;
+    insert_event(
+        &pool,
+        job_id,
+        "parse_error",
+        "error",
+        None,
+        None,
+        Some("bad file"),
+    )
+    .await;
+    insert_event(
+        &pool,
+        job_id,
+        "thumbnail_error",
+        "error",
+        None,
+        None,
+        Some("bad image"),
+    )
+    .await;
 
     let rows = sqlx::query(EVENTS_SQL)
         .bind(job_id)
@@ -184,9 +232,36 @@ async fn get_job_events_filter_by_level(pool: sqlx::PgPool) {
 async fn get_job_events_filter_by_event_type(pool: sqlx::PgPool) {
     let job_id = create_test_job(&pool).await;
 
-    insert_event(&pool, job_id, "book_added", "info", Some("book"), Some("A"), None).await;
-    insert_event(&pool, job_id, "book_added", "info", Some("book"), Some("B"), None).await;
-    insert_event(&pool, job_id, "book_updated", "info", Some("book"), Some("C"), None).await;
+    insert_event(
+        &pool,
+        job_id,
+        "book_added",
+        "info",
+        Some("book"),
+        Some("A"),
+        None,
+    )
+    .await;
+    insert_event(
+        &pool,
+        job_id,
+        "book_added",
+        "info",
+        Some("book"),
+        Some("B"),
+        None,
+    )
+    .await;
+    insert_event(
+        &pool,
+        job_id,
+        "book_updated",
+        "info",
+        Some("book"),
+        Some("C"),
+        None,
+    )
+    .await;
 
     let rows = sqlx::query(EVENTS_SQL)
         .bind(job_id)
@@ -207,7 +282,16 @@ async fn get_job_events_with_limit(pool: sqlx::PgPool) {
     let job_id = create_test_job(&pool).await;
 
     for i in 0..10 {
-        insert_event(&pool, job_id, "book_added", "info", None, Some(&format!("Book {i}")), None).await;
+        insert_event(
+            &pool,
+            job_id,
+            "book_added",
+            "info",
+            None,
+            Some(&format!("Book {i}")),
+            None,
+        )
+        .await;
     }
 
     let rows = sqlx::query(EVENTS_SQL)
@@ -251,17 +335,53 @@ async fn get_job_errors_reads_error_events(pool: sqlx::PgPool) {
     let job_id = create_test_job(&pool).await;
 
     // Insert mix of error and non-error events
-    insert_event(&pool, job_id, "book_added", "info", Some("book"), Some("good_file.cbz"), None).await;
-    insert_event(&pool, job_id, "parse_error", "error", None, Some("/path/to/bad_file.cbz"), Some("corrupt archive")).await;
-    insert_event(&pool, job_id, "thumbnail_error", "error", None, Some("/path/to/another.cbr"), Some("image decode failed")).await;
-    insert_event(&pool, job_id, "book_updated", "warning", Some("book"), Some("warn_file.pdf"), Some("cover missing")).await;
+    insert_event(
+        &pool,
+        job_id,
+        "book_added",
+        "info",
+        Some("book"),
+        Some("good_file.cbz"),
+        None,
+    )
+    .await;
+    insert_event(
+        &pool,
+        job_id,
+        "parse_error",
+        "error",
+        None,
+        Some("/path/to/bad_file.cbz"),
+        Some("corrupt archive"),
+    )
+    .await;
+    insert_event(
+        &pool,
+        job_id,
+        "thumbnail_error",
+        "error",
+        None,
+        Some("/path/to/another.cbr"),
+        Some("image decode failed"),
+    )
+    .await;
+    insert_event(
+        &pool,
+        job_id,
+        "book_updated",
+        "warning",
+        Some("book"),
+        Some("warn_file.pdf"),
+        Some("cover missing"),
+    )
+    .await;
 
     // Run the actual query used by get_job_errors
     let rows = sqlx::query(
         "SELECT id, entity_name, message, created_at
          FROM index_job_events
          WHERE job_id = $1 AND level = 'error'
-         ORDER BY created_at ASC"
+         ORDER BY created_at ASC",
     )
     .bind(job_id)
     .fetch_all(&pool)
@@ -275,7 +395,9 @@ async fn get_job_errors_reads_error_events(pool: sqlx::PgPool) {
         .into_iter()
         .map(|row| crate::jobs::index_jobs::JobErrorResponse {
             id: row.get("id"),
-            file_path: row.get::<Option<String>, _>("entity_name").unwrap_or_default(),
+            file_path: row
+                .get::<Option<String>, _>("entity_name")
+                .unwrap_or_default(),
             error_message: row.get::<Option<String>, _>("message").unwrap_or_default(),
             created_at: row.get("created_at"),
         })
@@ -292,19 +414,40 @@ async fn get_job_errors_empty_when_no_errors(pool: sqlx::PgPool) {
     let job_id = create_test_job(&pool).await;
 
     // Insert only non-error events
-    insert_event(&pool, job_id, "book_added", "info", Some("book"), Some("file.cbz"), None).await;
-    insert_event(&pool, job_id, "book_updated", "warning", Some("book"), Some("file2.pdf"), Some("cover missing")).await;
+    insert_event(
+        &pool,
+        job_id,
+        "book_added",
+        "info",
+        Some("book"),
+        Some("file.cbz"),
+        None,
+    )
+    .await;
+    insert_event(
+        &pool,
+        job_id,
+        "book_updated",
+        "warning",
+        Some("book"),
+        Some("file2.pdf"),
+        Some("cover missing"),
+    )
+    .await;
 
     let rows = sqlx::query(
         "SELECT id, entity_name, message, created_at
          FROM index_job_events
          WHERE job_id = $1 AND level = 'error'
-         ORDER BY created_at ASC"
+         ORDER BY created_at ASC",
     )
     .bind(job_id)
     .fetch_all(&pool)
     .await
     .unwrap();
 
-    assert!(rows.is_empty(), "should return no rows when there are no error-level events");
+    assert!(
+        rows.is_empty(),
+        "should return no rows when there are no error-level events"
+    );
 }

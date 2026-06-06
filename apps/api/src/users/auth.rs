@@ -55,7 +55,9 @@ pub async fn require_read(
             .and_then(|v| v.to_str().ok())
             .and_then(|v| uuid::Uuid::parse_str(v).ok())
         {
-            req.extensions_mut().insert(AuthUser { user_id: as_user_id });
+            req.extensions_mut().insert(AuthUser {
+                user_id: as_user_id,
+            });
         }
     }
 
@@ -75,7 +77,8 @@ async fn authenticate(state: &AppState, token: &str) -> Result<Scope, ApiError> 
         return Ok(Scope::Admin);
     }
 
-    let prefix = parse_prefix(token).ok_or_else(|| ApiError::unauthorized("invalid token format"))?;
+    let prefix =
+        parse_prefix(token).ok_or_else(|| ApiError::unauthorized("invalid token format"))?;
 
     let maybe_row = sqlx::query(
         r#"
@@ -89,21 +92,28 @@ async fn authenticate(state: &AppState, token: &str) -> Result<Scope, ApiError> 
 
     let row = maybe_row.ok_or_else(|| ApiError::unauthorized("invalid token"))?;
 
-    let token_hash: String = row.try_get("token_hash").map_err(|_| ApiError::unauthorized("invalid token"))?;
-    let parsed_hash = PasswordHash::new(&token_hash).map_err(|_| ApiError::unauthorized("invalid token"))?;
+    let token_hash: String = row
+        .try_get("token_hash")
+        .map_err(|_| ApiError::unauthorized("invalid token"))?;
+    let parsed_hash =
+        PasswordHash::new(&token_hash).map_err(|_| ApiError::unauthorized("invalid token"))?;
 
     Argon2::default()
         .verify_password(token.as_bytes(), &parsed_hash)
         .map_err(|_| ApiError::unauthorized("invalid token"))?;
 
-    let token_id: uuid::Uuid = row.try_get("id").map_err(|_| ApiError::unauthorized("invalid token"))?;
+    let token_id: uuid::Uuid = row
+        .try_get("id")
+        .map_err(|_| ApiError::unauthorized("invalid token"))?;
     sqlx::query("UPDATE api_tokens SET last_used_at = $1 WHERE id = $2")
         .bind(Utc::now())
         .bind(token_id)
         .execute(&state.pool)
         .await?;
 
-    let scope: String = row.try_get("scope").map_err(|_| ApiError::unauthorized("invalid token"))?;
+    let scope: String = row
+        .try_get("scope")
+        .map_err(|_| ApiError::unauthorized("invalid token"))?;
     match scope.as_str() {
         "admin" => Ok(Scope::Admin),
         "read" => {

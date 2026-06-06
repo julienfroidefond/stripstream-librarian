@@ -5,7 +5,7 @@ use uuid::Uuid;
 use parsers::extract_volumes;
 use stripstream_core::paths::{remap_libraries_path, unmap_libraries_path};
 
-use super::torrent_import::{ImportedFile, ImportResult, SkippedFile};
+use super::torrent_import::{ImportResult, ImportedFile, SkippedFile};
 
 pub(super) async fn do_import(
     pool: &PgPool,
@@ -43,12 +43,18 @@ pub(super) async fn do_import(
             .parent()
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or(physical);
-        info!("[IMPORT] DB reference found: {} (volume {}), target_dir={}", abs_path, volume, parent);
+        info!(
+            "[IMPORT] DB reference found: {} (volume {}), target_dir={}",
+            abs_path, volume, parent
+        );
         (parent, Some((abs_path, volume)))
     } else {
         // No existing files in DB: look for an existing directory (case-insensitive)
         // inside the library root, then fall back to creating one.
-        info!("[IMPORT] No DB reference for series '{}' in library {}", series_name, library_id);
+        info!(
+            "[IMPORT] No DB reference for series '{}' in library {}",
+            series_name, library_id
+        );
         let lib_row = sqlx::query("SELECT root_path FROM libraries WHERE id = $1")
             .bind(library_id)
             .fetch_one(pool)
@@ -63,7 +69,8 @@ pub(super) async fn do_import(
 
     std::fs::create_dir_all(&target_dir)?;
 
-    let mut expected_set: std::collections::HashSet<i32> = expected_volumes.iter().copied().collect();
+    let mut expected_set: std::collections::HashSet<i32> =
+        expected_volumes.iter().copied().collect();
 
     // If DB didn't give us a reference, try to find one from existing files on disk
     let reference = if reference.is_some() {
@@ -78,25 +85,42 @@ pub(super) async fn do_import(
     };
 
     info!("[IMPORT] Final reference: {:?}", reference);
-    info!("[IMPORT] Expected volumes (from download): {:?}", expected_set);
+    info!(
+        "[IMPORT] Expected volumes (from download): {:?}",
+        expected_set
+    );
     info!("[IMPORT] Physical content path: {}", physical_content);
 
     // Collect all candidate files, then deduplicate by volume keeping the best format.
     // Priority: cbz > cbr > pdf > epub
     let all_source_files = collect_book_files(&physical_content)?;
-    info!("[IMPORT] Found {} source files: {:?}", all_source_files.len(), all_source_files);
+    info!(
+        "[IMPORT] Found {} source files: {:?}",
+        all_source_files.len(),
+        all_source_files
+    );
     for f in &all_source_files {
-        let fname = std::path::Path::new(f).file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let fname = std::path::Path::new(f)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
         let extracted = extract_volumes(fname);
-        info!("[IMPORT]   '{}' => extracted volumes: {:?}", fname, extracted);
+        info!(
+            "[IMPORT]   '{}' => extracted volumes: {:?}",
+            fname, extracted
+        );
     }
 
     // Expand expected_set: also import volumes found in the torrent that are missing
     // from the library (not just the volumes originally expected by the download detection)
     if !replace_existing && !expected_set.is_empty() {
-        let all_torrent_volumes: std::collections::HashSet<i32> = all_source_files.iter()
+        let all_torrent_volumes: std::collections::HashSet<i32> = all_source_files
+            .iter()
             .flat_map(|f| {
-                let fname = std::path::Path::new(f).file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let fname = std::path::Path::new(f)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
                 extract_volumes(fname)
             })
             .collect();
@@ -113,14 +137,20 @@ pub(super) async fn do_import(
             .await
             .unwrap_or_default();
 
-            let existing_set: std::collections::HashSet<i32> = existing_volumes.into_iter().collect();
-            let missing_in_library: Vec<i32> = all_torrent_volumes.iter()
+            let existing_set: std::collections::HashSet<i32> =
+                existing_volumes.into_iter().collect();
+            let missing_in_library: Vec<i32> = all_torrent_volumes
+                .iter()
                 .filter(|v| !existing_set.contains(v))
                 .copied()
                 .collect();
 
             if !missing_in_library.is_empty() {
-                info!("[IMPORT] Expanding expected_set with {} additional missing volumes: {:?}", missing_in_library.len(), missing_in_library);
+                info!(
+                    "[IMPORT] Expanding expected_set with {} additional missing volumes: {:?}",
+                    missing_in_library.len(),
+                    missing_in_library
+                );
                 expected_set.extend(missing_in_library);
             }
         }
@@ -128,7 +158,11 @@ pub(super) async fn do_import(
     info!("[IMPORT] Final expected volumes: {:?}", expected_set);
 
     // In replace mode, don't filter by expected volumes — import all files
-    let dedup_set = if replace_existing { std::collections::HashSet::new() } else { expected_set.clone() };
+    let dedup_set = if replace_existing {
+        std::collections::HashSet::new()
+    } else {
+        expected_set.clone()
+    };
     let source_files = deduplicate_by_format(&all_source_files, &dedup_set);
     info!("[IMPORT] After dedup: {} files kept", source_files.len());
 
@@ -151,11 +185,18 @@ pub(super) async fn do_import(
         let matched: Vec<i32> = if expected_set.is_empty() || replace_existing {
             all_extracted.clone()
         } else {
-            all_extracted.iter().copied().filter(|v| expected_set.contains(v)).collect()
+            all_extracted
+                .iter()
+                .copied()
+                .filter(|v| expected_set.contains(v))
+                .collect()
         };
 
         if matched.is_empty() && !expected_set.is_empty() && !replace_existing {
-            info!("[IMPORT] Skipping '{}' (extracted volumes {:?}, none in expected set)", filename, all_extracted);
+            info!(
+                "[IMPORT] Skipping '{}' (extracted volumes {:?}, none in expected set)",
+                filename, all_extracted
+            );
             skipped.push(SkippedFile {
                 filename: filename.to_string(),
                 reason: "no matching expected volume".to_string(),
@@ -166,7 +207,10 @@ pub(super) async fn do_import(
         if matched.is_empty() && expected_set.is_empty() && all_extracted.is_empty() {
             // One-shot / standalone book (no volume number, no expected volumes)
             // Import it as-is without renaming — keep original filename
-            info!("[IMPORT] No volume detected for '{}', importing as one-shot", filename);
+            info!(
+                "[IMPORT] No volume detected for '{}', importing as one-shot",
+                filename
+            );
         }
 
         let target_filename = if matched.is_empty() {
@@ -181,7 +225,10 @@ pub(super) async fn do_import(
                     ref_path, ref_vol, vol, ext, built, filename);
                 built.unwrap_or_else(|| filename.to_string())
             } else {
-                info!("[IMPORT] No reference, keeping original filename '{}' for vol {}", filename, vol);
+                info!(
+                    "[IMPORT] No reference, keeping original filename '{}' for vol {}",
+                    filename, vol
+                );
                 filename.to_string()
             };
 
@@ -200,7 +247,10 @@ pub(super) async fn do_import(
         let dest = format!("{}/{}", target_dir, target_filename);
 
         if std::path::Path::new(&dest).exists() && !replace_existing {
-            info!("[IMPORT] Already exists '{}' → '{}', counting as imported", filename, dest);
+            info!(
+                "[IMPORT] Already exists '{}' → '{}', counting as imported",
+                filename, dest
+            );
             imported.push(ImportedFile {
                 volume: matched.iter().min().copied().unwrap_or(0),
                 source: source_path.clone(),
@@ -212,7 +262,10 @@ pub(super) async fn do_import(
 
         move_file(source_path, &dest)?;
         used_destinations.insert(target_filename);
-        info!("[IMPORT] Imported '{}' [{:?}] → {}", filename, matched, dest);
+        info!(
+            "[IMPORT] Imported '{}' [{:?}] → {}",
+            filename, matched, dest
+        );
 
         imported.push(ImportedFile {
             volume: matched.iter().min().copied().unwrap_or(0),
@@ -224,13 +277,17 @@ pub(super) async fn do_import(
 
     // Sanity check: warn if many source files collapsed into few volumes
     // (symptom of a volume extraction bug)
-    let source_count = collect_book_files(&physical_content).map(|f| f.len()).unwrap_or(0);
-    let unique_volumes: std::collections::HashSet<i32> = imported.iter().map(|f| f.volume).collect();
+    let source_count = collect_book_files(&physical_content)
+        .map(|f| f.len())
+        .unwrap_or(0);
+    let unique_volumes: std::collections::HashSet<i32> =
+        imported.iter().map(|f| f.volume).collect();
     if source_count > 5 && !unique_volumes.is_empty() && source_count > unique_volumes.len() * 3 {
         warn!(
             "[IMPORT] Suspicious: {} source files mapped to only {} unique volumes ({:?}). \
              Possible volume extraction issue for series '{}'",
-            source_count, unique_volumes.len(),
+            source_count,
+            unique_volumes.len(),
             {
                 let mut v: Vec<i32> = unique_volumes.into_iter().collect();
                 v.sort();
@@ -244,7 +301,10 @@ pub(super) async fn do_import(
     let source_set: std::collections::HashSet<&String> = source_files.iter().collect();
     for f in &all_source_files {
         if !source_set.contains(f) {
-            let fname = std::path::Path::new(f).file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let fname = std::path::Path::new(f)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
             let vols = extract_volumes(fname);
             skipped.push(SkippedFile {
                 filename: fname.to_string(),
@@ -288,9 +348,15 @@ pub(super) async fn do_import(
                         let vol = vols[0];
                         if let Some(new_fname) = imported_volume_map.get(&vol) {
                             if &fname != new_fname {
-                                info!("[IMPORT] Removing old file for volume {}: {:?}", vol, entry_path);
+                                info!(
+                                    "[IMPORT] Removing old file for volume {}: {:?}",
+                                    vol, entry_path
+                                );
                                 if let Err(e) = std::fs::remove_file(&entry_path) {
-                                    warn!("[IMPORT] Failed to remove old file {:?}: {}", entry_path, e);
+                                    warn!(
+                                        "[IMPORT] Failed to remove old file {:?}: {}",
+                                        entry_path, e
+                                    );
                                 }
                             }
                         }
@@ -326,7 +392,10 @@ pub(super) fn find_existing_series_dir(root: &str, series_name: &str) -> Option<
         if name_norm == target_norm {
             let path = entry.path().to_string_lossy().into_owned();
             let exact = name_lower == series_name.to_lowercase();
-            info!("[IMPORT] Found existing directory (normalized match): {} (exact={})", path, exact);
+            info!(
+                "[IMPORT] Found existing directory (normalized match): {} (exact={})",
+                path, exact
+            );
             // Prefer exact case match over accent-stripped match
             if exact || best.is_none() {
                 best = Some((path, exact));
@@ -379,7 +448,8 @@ pub(super) fn deduplicate_by_format(
     expected_set: &std::collections::HashSet<i32>,
 ) -> Vec<String> {
     // Map: volume -> (priority, file_path)
-    let mut best_per_vol: std::collections::HashMap<i32, (u8, &str)> = std::collections::HashMap::new();
+    let mut best_per_vol: std::collections::HashMap<i32, (u8, &str)> =
+        std::collections::HashMap::new();
     let mut multi_volume_files: Vec<&str> = Vec::new();
 
     for path in files {
@@ -396,7 +466,10 @@ pub(super) fn deduplicate_by_format(
         let volumes: Vec<i32> = if expected_set.is_empty() {
             all_volumes
         } else {
-            all_volumes.into_iter().filter(|v| expected_set.contains(v)).collect()
+            all_volumes
+                .into_iter()
+                .filter(|v| expected_set.contains(v))
+                .collect()
         };
 
         if volumes.is_empty() && !expected_set.is_empty() {
@@ -433,7 +506,10 @@ pub(super) fn deduplicate_by_format(
 
 /// Scan a directory for book files and pick the one with the highest extracted volume
 /// as a naming reference, excluding certain volumes. Returns (abs_path, volume).
-fn find_reference_from_disk(dir: &str, exclude_volumes: &std::collections::HashSet<i32>) -> Option<(String, i32)> {
+fn find_reference_from_disk(
+    dir: &str,
+    exclude_volumes: &std::collections::HashSet<i32>,
+) -> Option<(String, i32)> {
     let extensions = ["cbz", "cbr", "pdf", "epub"];
     let entries = std::fs::read_dir(dir).ok()?;
     let mut best: Option<(String, i32)> = None;
@@ -539,7 +615,11 @@ pub(super) fn build_target_filename(
     let path = std::path::Path::new(reference_abs_path);
     let stem = path.file_stem()?.to_str()?;
     let ref_ext = path.extension().and_then(|e| e.to_str()).unwrap_or("cbz");
-    let target_ext = if source_ext.is_empty() { ref_ext } else { source_ext };
+    let target_ext = if source_ext.is_empty() {
+        ref_ext
+    } else {
+        source_ext
+    };
 
     // Iterate over raw bytes to find ASCII digit runs (safe: continuation bytes of
     // multi-byte UTF-8 sequences are never in the ASCII digit range 0x30–0x39).

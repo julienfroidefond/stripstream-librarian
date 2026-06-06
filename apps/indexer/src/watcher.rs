@@ -108,7 +108,10 @@ pub async fn run_file_watcher(state: AppState) -> Result<()> {
         // Poll each library sequentially to limit concurrent file descriptor usage
         for (library_id, root_path) in &current_libraries {
             if !Path::new(root_path).is_dir() {
-                warn!("[WATCHER] Library {} path not accessible: {}", library_id, root_path);
+                warn!(
+                    "[WATCHER] Library {} path not accessible: {}",
+                    library_id, root_path
+                );
                 continue;
             }
 

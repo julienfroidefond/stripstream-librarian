@@ -1,12 +1,15 @@
-use axum::{extract::{Path, State}, Json};
+use axum::{
+    extract::{Path, State},
+    Json,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 use tracing::{info, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{error::ApiError, state::AppState};
 use super::{missing, prowlarr};
+use crate::{error::ApiError, state::AppState};
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -87,11 +90,9 @@ pub async fn start_detection(
     // All libraries case
     if body.library_id.is_none() {
         prowlarr::check_prowlarr_configured(&state.pool).await?;
-        let library_ids: Vec<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM libraries ORDER BY name"
-        )
-        .fetch_all(&state.pool)
-        .await?;
+        let library_ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM libraries ORDER BY name")
+            .fetch_all(&state.pool)
+            .await?;
         let mut last_job_id: Option<Uuid> = None;
         for library_id in library_ids {
             let existing: Option<Uuid> = sqlx::query_scalar(
@@ -100,7 +101,9 @@ pub async fn start_detection(
             .bind(library_id)
             .fetch_optional(&state.pool)
             .await?;
-            if existing.is_some() { continue; }
+            if existing.is_some() {
+                continue;
+            }
             let job_id = Uuid::new_v4();
             sqlx::query(
                 "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'download_detection', 'running', NOW())",
@@ -110,12 +113,13 @@ pub async fn start_detection(
             .execute(&state.pool)
             .await?;
             let pool = state.pool.clone();
-            let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-                .bind(library_id)
-                .fetch_optional(&state.pool)
-                .await
-                .ok()
-                .flatten();
+            let library_name: Option<String> =
+                sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+                    .bind(library_id)
+                    .fetch_optional(&state.pool)
+                    .await
+                    .ok()
+                    .flatten();
             tokio::spawn(async move {
                 if let Err(e) = process_download_detection(&pool, job_id, library_id).await {
                     warn!("[DOWNLOAD_DETECTION] job {job_id} failed: {e}");
@@ -330,8 +334,12 @@ pub async fn get_detection_results(
         other => other,
     });
 
-    let job_library_id: Option<Uuid> = sqlx::query_scalar("SELECT library_id FROM index_jobs WHERE id = $1")
-        .bind(job_id).fetch_optional(&state.pool).await?.flatten();
+    let job_library_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT library_id FROM index_jobs WHERE id = $1")
+            .bind(job_id)
+            .fetch_optional(&state.pool)
+            .await?
+            .flatten();
 
     let rows = if let Some(et_filter) = event_type_filter {
         sqlx::query(
@@ -373,16 +381,20 @@ pub async fn get_detection_results(
                 "error" => "error",
                 other => other,
             };
-            let missing_count = detail.as_ref()
+            let missing_count = detail
+                .as_ref()
                 .and_then(|d| d["missing_count"].as_i64())
                 .unwrap_or(0) as i32;
-            let available_releases = detail.as_ref()
+            let available_releases = detail
+                .as_ref()
                 .and_then(|d| d.get("available_releases"))
                 .and_then(|v| serde_json::from_value::<Vec<AvailableReleaseDto>>(v.clone()).ok());
             DownloadDetectionResultDto {
                 id: row.get("id"),
                 series_id: row.get("series_id"),
-                series_name: row.get::<Option<String>, _>("entity_name").unwrap_or_else(|| "unknown".to_string()),
+                series_name: row
+                    .get::<Option<String>, _>("entity_name")
+                    .unwrap_or_else(|| "unknown".to_string()),
                 status: status.to_string(),
                 missing_count,
                 available_releases,
@@ -453,30 +465,39 @@ pub async fn get_latest_found(
     .fetch_all(&state.pool)
     .await?;
 
-    let mut libs: std::collections::BTreeMap<Uuid, LatestFoundPerLibraryDto> = std::collections::BTreeMap::new();
+    let mut libs: std::collections::BTreeMap<Uuid, LatestFoundPerLibraryDto> =
+        std::collections::BTreeMap::new();
 
     for row in &rows {
         let library_id: Uuid = row.get("library_id");
         let updated_at: chrono::DateTime<chrono::Utc> = row.get("updated_at");
         let releases_json: Option<serde_json::Value> = row.get("available_releases");
         let failed_volumes: Vec<i32> = row.get("failed_volumes");
-        let available_releases = releases_json.and_then(|v| {
-            serde_json::from_value::<Vec<AvailableReleaseDto>>(v).ok()
-        }).map(|releases| {
-            releases.into_iter().map(|mut r| {
-                // Mark release as previously failed if any of its matched volumes overlap with failed volumes
-                if !failed_volumes.is_empty() {
-                    r.has_failed = r.matched_missing_volumes.iter().any(|v| failed_volumes.contains(v));
-                }
-                r
-            }).collect()
-        });
+        let available_releases = releases_json
+            .and_then(|v| serde_json::from_value::<Vec<AvailableReleaseDto>>(v).ok())
+            .map(|releases| {
+                releases
+                    .into_iter()
+                    .map(|mut r| {
+                        // Mark release as previously failed if any of its matched volumes overlap with failed volumes
+                        if !failed_volumes.is_empty() {
+                            r.has_failed = r
+                                .matched_missing_volumes
+                                .iter()
+                                .any(|v| failed_volumes.contains(v));
+                        }
+                        r
+                    })
+                    .collect()
+            });
 
-        let entry = libs.entry(library_id).or_insert_with(|| LatestFoundPerLibraryDto {
-            library_id,
-            library_name: row.get("library_name"),
-            results: Vec::new(),
-        });
+        let entry = libs
+            .entry(library_id)
+            .or_insert_with(|| LatestFoundPerLibraryDto {
+                library_id,
+                library_name: row.get("library_name"),
+                results: Vec::new(),
+            });
 
         entry.results.push(AvailableDownloadDto {
             id: row.get("id"),
@@ -518,11 +539,13 @@ pub async fn delete_available_download(
 ) -> Result<Json<crate::responses::OkResponse>, ApiError> {
     if let Some(release_idx) = query.release {
         // Remove a single release from the JSON array
-        let row = sqlx::query("SELECT available_releases, series_id FROM available_downloads WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&state.pool)
-            .await?
-            .ok_or_else(|| ApiError::not_found("available download not found"))?;
+        let row = sqlx::query(
+            "SELECT available_releases, series_id FROM available_downloads WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| ApiError::not_found("available download not found"))?;
 
         let series_id: Option<Uuid> = row.get("series_id");
         let series_name: Option<String> = if let Some(sid) = series_id {
@@ -676,7 +699,9 @@ pub async fn list_blacklisted_releases(
             title: r.get("title"),
             indexer: r.get("indexer"),
             series_name: r.get("series_name"),
-            blacklisted_at: r.get::<chrono::DateTime<chrono::Utc>, _>("blacklisted_at").to_rfc3339(),
+            blacklisted_at: r
+                .get::<chrono::DateTime<chrono::Utc>, _>("blacklisted_at")
+                .to_rfc3339(),
         })
         .collect();
 
@@ -694,13 +719,12 @@ pub(crate) async fn process_download_detection(
 ) -> Result<(i32, i64), String> {
     // Capture the job start time so we can later count releases that were
     // first discovered during this run (detected_at >= job_started_at).
-    let job_started_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
-        "SELECT COALESCE(started_at, created_at) FROM index_jobs WHERE id = $1",
-    )
-    .bind(job_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let job_started_at: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT COALESCE(started_at, created_at) FROM index_jobs WHERE id = $1")
+            .bind(job_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
 
     let (prowlarr_url, prowlarr_api_key, categories) =
         prowlarr::load_prowlarr_config_internal(pool)
@@ -744,8 +768,12 @@ pub(crate) async fn process_download_detection(
     .await
     .map_err(|e| e.to_string())?;
 
-    let all_series: Vec<String> = all_series_rows.iter().map(|(name, _)| name.clone()).collect();
-    let series_id_map: std::collections::HashMap<String, Uuid> = all_series_rows.iter()
+    let all_series: Vec<String> = all_series_rows
+        .iter()
+        .map(|(name, _)| name.clone())
+        .collect();
+    let series_id_map: std::collections::HashMap<String, Uuid> = all_series_rows
+        .iter()
         .filter_map(|(name, id)| id.map(|id| (name.clone(), id)))
         .collect();
     let total = all_series.len() as i32;
@@ -783,14 +811,13 @@ pub(crate) async fn process_download_detection(
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
     // Load blacklisted release titles to filter them out
-    let blacklisted_titles: std::collections::HashSet<String> = sqlx::query_scalar(
-        "SELECT title FROM release_blacklist",
-    )
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default()
-    .into_iter()
-    .collect();
+    let blacklisted_titles: std::collections::HashSet<String> =
+        sqlx::query_scalar("SELECT title FROM release_blacklist")
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
 
     let mut processed = 0i32;
 
@@ -821,7 +848,16 @@ pub(crate) async fn process_download_detection(
 
         // Skip unclassified
         if series_name == "unclassified" {
-            insert_event(pool, job_id, "no_metadata_link", "info", Some(series_name), None, None).await;
+            insert_event(
+                pool,
+                job_id,
+                "no_metadata_link",
+                "info",
+                Some(series_name),
+                None,
+                None,
+            )
+            .await;
             continue;
         }
 
@@ -829,7 +865,16 @@ pub(crate) async fn process_download_detection(
         let link_id = match link_map.get(series_name) {
             Some(id) => *id,
             None => {
-                insert_event(pool, job_id, "no_metadata_link", "info", Some(series_name), None, None).await;
+                insert_event(
+                    pool,
+                    job_id,
+                    "no_metadata_link",
+                    "info",
+                    Some(series_name),
+                    None,
+                    None,
+                )
+                .await;
                 continue;
             }
         };
@@ -839,11 +884,22 @@ pub(crate) async fn process_download_detection(
             .map_err(|e| e.to_string())?;
 
         if missing.missing_count == 0 {
-            insert_event(pool, job_id, "no_missing_volumes", "info", Some(series_name), None, None).await;
+            insert_event(
+                pool,
+                job_id,
+                "no_missing_volumes",
+                "info",
+                Some(series_name),
+                None,
+                None,
+            )
+            .await;
             // Series is complete, remove from available_downloads
             if let Some(&sid) = series_id_map.get(series_name) {
                 let _ = sqlx::query("DELETE FROM available_downloads WHERE series_id = $1")
-                    .bind(sid).execute(pool).await;
+                    .bind(sid)
+                    .execute(pool)
+                    .await;
             }
             continue;
         }
@@ -881,7 +937,8 @@ pub(crate) async fn process_download_detection(
                 let releases_json = serde_json::to_value(&matched_releases).ok();
                 insert_event(pool, job_id, "downloads_found", "info", Some(series_name), None, Some(serde_json::json!({"release_count": matched_releases.len(), "missing_count": missing_count, "available_releases": releases_json}))).await;
                 // UPSERT into available_downloads — merge new releases with existing ones
-                if let (Some(ref rj), Some(&sid)) = (&releases_json, series_id_map.get(series_name)) {
+                if let (Some(ref rj), Some(&sid)) = (&releases_json, series_id_map.get(series_name))
+                {
                     let _ = sqlx::query(
                         "INSERT INTO available_downloads (library_id, series_id, missing_count, available_releases, updated_at) \
                          VALUES ($1, $2, $3, $4, NOW()) \
@@ -921,7 +978,16 @@ pub(crate) async fn process_download_detection(
             }
             Err(e) => {
                 warn!("[DOWNLOAD_DETECTION] series '{series_name}': {e}");
-                insert_event(pool, job_id, "error", "error", Some(series_name), Some(&e), Some(serde_json::json!({"missing_count": missing_count}))).await;
+                insert_event(
+                    pool,
+                    job_id,
+                    "error",
+                    "error",
+                    Some(series_name),
+                    Some(&e),
+                    Some(serde_json::json!({"missing_count": missing_count})),
+                )
+                .await;
             }
         }
     }
@@ -1027,12 +1093,13 @@ pub(crate) async fn process_download_detection(
         "[DOWNLOAD_DETECTION] job={job_id} completed: {total} series, found={count_found}, new_releases={new_releases}, not_found={count_not_found}, no_missing={count_no_missing}, no_metadata={count_no_metadata}, errors={count_errors}"
     );
 
-    let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-        .bind(library_id)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
+    let library_name: Option<String> =
+        sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+            .bind(library_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
 
     let new_items: Vec<(String, String)> = sqlx::query(
         r#"
@@ -1052,7 +1119,12 @@ pub(crate) async fn process_download_detection(
     .await
     .unwrap_or_default()
     .into_iter()
-    .map(|r| (r.get::<String, _>("series_name"), r.get::<String, _>("release_title")))
+    .map(|r| {
+        (
+            r.get::<String, _>("series_name"),
+            r.get::<String, _>("release_title"),
+        )
+    })
     .collect();
 
     notifications::notify(
@@ -1087,10 +1159,7 @@ async fn search_prowlarr_for_series(
 ) -> Result<(Vec<AvailableReleaseDto>, usize), String> {
     let query = format!("\"{}\"", series_name);
 
-    let mut params: Vec<(&str, String)> = vec![
-        ("query", query),
-        ("type", "search".to_string()),
-    ];
+    let mut params: Vec<(&str, String)> = vec![("query", query), ("type", "search".to_string())];
     for cat in categories {
         params.push(("categories", cat.to_string()));
     }
@@ -1119,7 +1188,8 @@ async fn search_prowlarr_for_series(
     let matched: Vec<AvailableReleaseDto> = raw_releases
         .into_iter()
         .filter_map(|r| {
-            let (matched_vols, all_volumes) = prowlarr::match_title_volumes(&r.title, missing_volumes);
+            let (matched_vols, all_volumes) =
+                prowlarr::match_title_volumes(&r.title, missing_volumes);
 
             if matched_vols.is_empty() {
                 None

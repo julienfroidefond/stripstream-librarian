@@ -1,11 +1,11 @@
 use axum::extract::Extension;
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
+use super::helpers::{create_series_with_metadata, CreateSeriesParams};
 use crate::{auth::AuthUser, error::ApiError, state::AppState};
-use super::helpers::{CreateSeriesParams, create_series_with_metadata};
 
 #[derive(Deserialize, ToSchema)]
 pub struct CreateSeriesRequest {
@@ -64,16 +64,19 @@ pub async fn create_series(
         return Err(ApiError::bad_request("name is required"));
     }
 
-    let result = create_series_with_metadata(&state, CreateSeriesParams {
-        library_id,
-        name: name.clone(),
-        provider: body.provider,
-        external_id: body.external_id,
-        external_url: body.external_url,
-        confidence: body.confidence,
-        total_volumes: body.total_volumes,
-        metadata_json: body.metadata_json,
-    })
+    let result = create_series_with_metadata(
+        &state,
+        CreateSeriesParams {
+            library_id,
+            name: name.clone(),
+            provider: body.provider,
+            external_id: body.external_id,
+            external_url: body.external_url,
+            confidence: body.confidence,
+            total_volumes: body.total_volumes,
+            metadata_json: body.metadata_json,
+        },
+    )
     .await?;
 
     Ok(Json(CreateSeriesResponse {

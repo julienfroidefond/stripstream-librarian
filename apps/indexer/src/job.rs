@@ -33,7 +33,11 @@ async fn rematch_unlinked_books(pool: &PgPool, library_id: Uuid) {
 
     match result {
         Ok(r) if r.rows_affected() > 0 => {
-            info!("[METADATA] Re-matched {} unlinked external books for library {}", r.rows_affected(), library_id);
+            info!(
+                "[METADATA] Re-matched {} unlinked external books for library {}",
+                r.rows_affected(),
+                library_id
+            );
         }
         Err(e) => {
             error!("[METADATA] Failed to rematch unlinked books: {e}");
@@ -104,7 +108,16 @@ pub async fn cleanup_stale_jobs(pool: &PgPool) -> Result<()> {
 
 /// Job types processed by the API, not the indexer.
 /// Must match API_JOB_TYPES in apps/api/src/jobs/poller.rs.
-const API_ONLY_JOB_TYPES: &[&str] = &["metadata_batch", "metadata_batch_rematch", "metadata_refresh", "metadata_refresh_all", "reading_status_push", "download_detection", "prowlarr_rss", "telegram_sync"];
+const API_ONLY_JOB_TYPES: &[&str] = &[
+    "metadata_batch",
+    "metadata_batch_rematch",
+    "metadata_refresh",
+    "metadata_refresh_all",
+    "reading_status_push",
+    "download_detection",
+    "prowlarr_rss",
+    "telegram_sync",
+];
 
 /// Job types that modify book/thumbnail data and must not run concurrently.
 const EXCLUSIVE_JOB_TYPES: &[&str] = &[
@@ -117,11 +130,7 @@ const EXCLUSIVE_JOB_TYPES: &[&str] = &[
 ];
 
 /// Active statuses (job is still in progress, not just queued).
-const ACTIVE_STATUSES: &[&str] = &[
-    "running",
-    "extracting_pages",
-    "generating_thumbnails",
-];
+const ACTIVE_STATUSES: &[&str] = &["running", "extracting_pages", "generating_thumbnails"];
 
 pub async fn claim_next_job(pool: &PgPool) -> Result<Option<(Uuid, Option<Uuid>)>> {
     let mut tx = pool.begin().await?;
@@ -203,11 +212,10 @@ pub async fn fail_job(pool: &PgPool, job_id: Uuid, error_message: &str) -> Resul
 }
 
 pub async fn is_job_cancelled(pool: &PgPool, job_id: Uuid) -> Result<bool> {
-    let status: Option<String> =
-        sqlx::query_scalar("SELECT status FROM index_jobs WHERE id = $1")
-            .bind(job_id)
-            .fetch_optional(pool)
-            .await?;
+    let status: Option<String> = sqlx::query_scalar("SELECT status FROM index_jobs WHERE id = $1")
+        .bind(job_id)
+        .fetch_optional(pool)
+        .await?;
 
     Ok(status.as_deref() == Some("cancelled"))
 }
@@ -217,7 +225,10 @@ pub async fn process_job(
     job_id: Uuid,
     target_library_id: Option<Uuid>,
 ) -> Result<()> {
-    info!("[JOB] Processing {} library={:?}", job_id, target_library_id);
+    info!(
+        "[JOB] Processing {} library={:?}",
+        job_id, target_library_id
+    );
 
     let (job_type, book_id): (String, Option<Uuid>) = {
         let row = sqlx::query("SELECT type, book_id FROM index_jobs WHERE id = $1")
@@ -229,9 +240,8 @@ pub async fn process_job(
 
     // CBR to CBZ conversion
     if job_type == "cbr_to_cbz" {
-        let book_id = book_id.ok_or_else(|| {
-            anyhow::anyhow!("cbr_to_cbz job {} has no book_id", job_id)
-        })?;
+        let book_id =
+            book_id.ok_or_else(|| anyhow::anyhow!("cbr_to_cbz job {} has no book_id", job_id))?;
         converter::convert_book(state, job_id, book_id).await?;
         return Ok(());
     }
@@ -293,7 +303,10 @@ pub async fn process_job(
                 .bind(library_id)
                 .execute(&state.pool)
                 .await;
-            info!("[JOB] Rescan: cleared directory mtimes for library {}", library_id);
+            info!(
+                "[JOB] Rescan: cleared directory mtimes for library {}",
+                library_id
+            );
         } else {
             let _ = sqlx::query("DELETE FROM directory_mtimes")
                 .execute(&state.pool)
@@ -322,7 +335,9 @@ pub async fn process_job(
             sqlx::query("DELETE FROM book_files")
                 .execute(&state.pool)
                 .await?;
-            sqlx::query("DELETE FROM books").execute(&state.pool).await?;
+            sqlx::query("DELETE FROM books")
+                .execute(&state.pool)
+                .await?;
             info!("[JOB] Deleted all existing data");
         }
     }

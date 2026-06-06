@@ -39,8 +39,7 @@ pub struct ProwlarrRawRelease {
     pub categories: Option<Vec<ProwlarrCategory>>,
 }
 
-#[derive(Serialize, ToSchema)]
-#[derive(Debug)]
+#[derive(Serialize, ToSchema, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ProwlarrRelease {
     pub guid: String,
@@ -126,19 +125,23 @@ pub(crate) fn match_title_volumes(title: &str, missing_volumes: &[i32]) -> (Vec<
 pub(crate) fn is_integral_release(title: &str) -> bool {
     let lower = title.to_lowercase();
     // Strip accents for matching: "intégrale" → "integrale"
-    let normalized = lower
-        .replace(['é', 'è'], "e");
-    let keywords = ["integrale", "integral", "complet", "complete", "l'integrale"];
+    let normalized = lower.replace(['é', 'è'], "e");
+    let keywords = [
+        "integrale",
+        "integral",
+        "complet",
+        "complete",
+        "l'integrale",
+    ];
     keywords.iter().any(|kw| {
         // Match as whole word: check boundaries
-        normalized.split(|c: char| !c.is_alphanumeric() && c != '\'')
+        normalized
+            .split(|c: char| !c.is_alphanumeric() && c != '\'')
             .any(|word| word == *kw)
     })
 }
 
-async fn load_prowlarr_config(
-    pool: &sqlx::PgPool,
-) -> Result<(String, String, Vec<i32>), ApiError> {
+async fn load_prowlarr_config(pool: &sqlx::PgPool) -> Result<(String, String, Vec<i32>), ApiError> {
     let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'prowlarr'")
         .fetch_optional(pool)
         .await?;
@@ -167,16 +170,17 @@ fn match_missing_volumes(
     releases: Vec<ProwlarrRawRelease>,
     missing: &[MissingVolumeInput],
 ) -> Vec<ProwlarrRelease> {
-    let missing_numbers: Vec<i32> = missing
-        .iter()
-        .filter_map(|m| m.volume_number)
-        .collect();
+    let missing_numbers: Vec<i32> = missing.iter().filter_map(|m| m.volume_number).collect();
 
     releases
         .into_iter()
         .map(|r| {
             let (matched_vols, all_volumes) = match_title_volumes(&r.title, &missing_numbers);
-            let matched = if matched_vols.is_empty() { None } else { Some(matched_vols) };
+            let matched = if matched_vols.is_empty() {
+                None
+            } else {
+                Some(matched_vols)
+            };
 
             ProwlarrRelease {
                 guid: r.guid,
@@ -215,10 +219,8 @@ async fn do_prowlarr_search(
         .build()
         .map_err(|e| ApiError::internal(format!("failed to build HTTP client: {e}")))?;
 
-    let mut params: Vec<(&str, String)> = vec![
-        ("query", query.to_string()),
-        ("type", "search".to_string()),
-    ];
+    let mut params: Vec<(&str, String)> =
+        vec![("query", query.to_string()), ("type", "search".to_string())];
     for cat in categories {
         params.push(("categories", cat.to_string()));
     }
@@ -247,21 +249,30 @@ async fn do_prowlarr_search(
             .await
             .map_err(|e| ApiError::internal(format!("Failed to read Prowlarr response: {e}")))?;
 
-        raw_releases = serde_json::from_str(&raw_text)
-            .map_err(|e| {
-                tracing::error!("Failed to parse Prowlarr response: {e}");
-                tracing::error!("Raw response (first 500 chars): {}", &raw_text[..raw_text.len().min(500)]);
-                ApiError::internal(format!("Failed to parse Prowlarr response: {e}"))
-            })?;
+        raw_releases = serde_json::from_str(&raw_text).map_err(|e| {
+            tracing::error!("Failed to parse Prowlarr response: {e}");
+            tracing::error!(
+                "Raw response (first 500 chars): {}",
+                &raw_text[..raw_text.len().min(500)]
+            );
+            ApiError::internal(format!("Failed to parse Prowlarr response: {e}"))
+        })?;
 
         if !raw_releases.is_empty() || attempt > 0 {
             break;
         }
-        tracing::warn!("[PROWLARR] Empty results for query '{}', retrying in 2s...", query);
+        tracing::warn!(
+            "[PROWLARR] Empty results for query '{}', retrying in 2s...",
+            query
+        );
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
 
-    tracing::info!("[PROWLARR] Search '{}' returned {} results", query, raw_releases.len());
+    tracing::info!(
+        "[PROWLARR] Search '{}' returned {} results",
+        query,
+        raw_releases.len()
+    );
 
     let results = if let Some(missing) = missing_volumes {
         match_missing_volumes(raw_releases, missing)
@@ -289,15 +300,15 @@ async fn do_prowlarr_search(
             .collect()
     };
 
-    Ok(ProwlarrSearchResponse { results, query: query.to_string() })
+    Ok(ProwlarrSearchResponse {
+        results,
+        query: query.to_string(),
+    })
 }
 
 /// Test the Prowlarr connection against the given base URL.
 /// Extracted so it can be called directly in tests (with a wiremock server URL).
-async fn do_prowlarr_test(
-    base_url: &str,
-    api_key: &str,
-) -> Result<ProwlarrTestResponse, ApiError> {
+async fn do_prowlarr_test(base_url: &str, api_key: &str) -> Result<ProwlarrTestResponse, ApiError> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .user_agent("Stripstream-Librarian")

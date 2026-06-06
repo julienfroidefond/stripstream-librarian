@@ -17,11 +17,10 @@ fn main() -> anyhow::Result<()> {
 
 async fn async_main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| {
-                "indexer=info,axum=info,scan=info,extraction=info,thumbnail=warn,watcher=info".to_string()
-            }),
-        )
+        .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| {
+            "indexer=info,axum=info,scan=info,extraction=info,thumbnail=warn,watcher=info"
+                .to_string()
+        }))
         .init();
 
     let config = IndexerConfig::from_env()?;
@@ -32,7 +31,10 @@ async fn async_main() -> anyhow::Result<()> {
 
     let state = AppState { pool };
 
-    tokio::spawn(indexer::worker::run_worker(state.clone(), config.scan_interval_seconds));
+    tokio::spawn(indexer::worker::run_worker(
+        state.clone(),
+        config.scan_interval_seconds,
+    ));
 
     let app = Router::new()
         .route("/health", get(api::health))

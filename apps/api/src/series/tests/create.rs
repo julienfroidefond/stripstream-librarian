@@ -22,22 +22,20 @@ async fn create_series_without_metadata(pool: sqlx::PgPool) {
         .unwrap();
 
     // Series exists
-    let name: String =
-        sqlx::query_scalar("SELECT name FROM series WHERE id = $1")
+    let name: String = sqlx::query_scalar("SELECT name FROM series WHERE id = $1")
+        .bind(series_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(name, "New Series");
+
+    // No metadata link
+    let link_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1")
             .bind(series_id)
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(name, "New Series");
-
-    // No metadata link
-    let link_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1",
-    )
-    .bind(series_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
     assert_eq!(link_count, 0);
 }
 
@@ -65,23 +63,21 @@ async fn create_series_with_metadata_link(pool: sqlx::PgPool) {
     .unwrap();
 
     // Verify link exists and is approved
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM external_metadata_links WHERE id = $1",
-    )
-    .bind(link_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM external_metadata_links WHERE id = $1")
+            .bind(link_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(status, "approved");
 
     // Verify link is attached to the series
-    let link_series_id: Uuid = sqlx::query_scalar(
-        "SELECT series_id FROM external_metadata_links WHERE id = $1",
-    )
-    .bind(link_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let link_series_id: Uuid =
+        sqlx::query_scalar("SELECT series_id FROM external_metadata_links WHERE id = $1")
+            .bind(link_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(link_series_id, series_id);
 }
 
@@ -104,12 +100,27 @@ async fn create_series_metadata_updates_series_fields(pool: sqlx::PgPool) {
         "cover_url": "https://example.com/cover.jpg"
     });
 
-    let description = metadata_json.get("description").and_then(|d| d.as_str()).map(String::from);
-    let authors: Vec<String> = metadata_json.get("authors").and_then(|a| a.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+    let description = metadata_json
+        .get("description")
+        .and_then(|d| d.as_str())
+        .map(String::from);
+    let authors: Vec<String> = metadata_json
+        .get("authors")
+        .and_then(|a| a.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
-    let publishers: Vec<String> = metadata_json.get("publishers").and_then(|a| a.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+    let publishers: Vec<String> = metadata_json
+        .get("publishers")
+        .and_then(|a| a.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     sqlx::query(
@@ -165,7 +176,10 @@ async fn create_series_idempotent(pool: sqlx::PgPool) {
         .await
         .unwrap();
 
-    assert_eq!(id1, id2, "creating the same series twice should return the same ID");
+    assert_eq!(
+        id1, id2,
+        "creating the same series twice should return the same ID"
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -213,13 +227,12 @@ async fn create_series_metadata_link_upsert(pool: sqlx::PgPool) {
     .unwrap();
     assert_eq!(ext_id, "new_id");
 
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1",
-    )
-    .bind(series_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1")
+            .bind(series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(count, 1, "upsert should not create duplicate links");
 }
 

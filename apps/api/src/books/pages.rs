@@ -11,12 +11,14 @@ use axum::{
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
 };
-use image::{codecs::jpeg::JpegEncoder, codecs::png::PngEncoder, ColorType, ImageEncoder, ImageFormat};
+use image::{
+    codecs::jpeg::JpegEncoder, codecs::png::PngEncoder, ColorType, ImageEncoder, ImageFormat,
+};
 use serde::Deserialize;
-use utoipa::ToSchema;
 use sha2::{Digest, Sha256};
 use sqlx::Row;
 use tracing::{error, info, instrument, warn};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{error::ApiError, state::AppState};
@@ -63,7 +65,9 @@ fn file_mtime_ns(path: &str) -> i128 {
 fn get_cache_path(cache_key: &str, format: &OutputFormat, cache_dir: &Path) -> PathBuf {
     let prefix = &cache_key[..2];
     let ext = format.extension();
-    cache_dir.join(prefix).join(format!("{}.{}", cache_key, ext))
+    cache_dir
+        .join(prefix)
+        .join(format!("{}.{}", cache_key, ext))
 }
 
 fn read_from_disk_cache(cache_path: &Path) -> Option<Vec<u8>> {
@@ -107,7 +111,9 @@ impl OutputFormat {
             Some("jpeg") | Some("jpg") => Ok(Self::Jpeg),
             Some("png") => Ok(Self::Png),
             Some("webp") => Ok(Self::Webp),
-            _ => Err(ApiError::bad_request("format must be original|webp|jpeg|png")),
+            _ => Err(ApiError::bad_request(
+                "format must be original|webp|jpeg|png",
+            )),
         }
     }
 
@@ -174,14 +180,23 @@ pub async fn get_page(
 
     let (default_quality, max_width, filter_str, timeout_secs, cache_dir) = {
         let s = state.settings.read().await;
-        (s.image_quality, s.image_max_width, s.image_filter.clone(), s.timeout_seconds, s.cache_directory.clone())
+        (
+            s.image_quality,
+            s.image_max_width,
+            s.image_filter.clone(),
+            s.timeout_seconds,
+            s.cache_directory.clone(),
+        )
     };
 
     let format = OutputFormat::parse(query.format.as_deref())?;
     let quality = query.quality.unwrap_or(default_quality).clamp(1, 100);
     let width = query.width.unwrap_or(0);
     if width > max_width {
-        return Err(ApiError::bad_request(format!("width must be <= {}", max_width)));
+        return Err(ApiError::bad_request(format!(
+            "width must be <= {}",
+            max_width
+        )));
     }
     let filter = parse_filter(&filter_str);
     let cache_dir_path = std::path::PathBuf::from(&cache_dir);
@@ -200,7 +215,10 @@ pub async fn get_page(
     .fetch_optional(&state.pool)
     .await
     .map_err(|e| {
-        error!("Database error fetching book file for book_id {}: {}", book_id, e);
+        error!(
+            "Database error fetching book file for book_id {}: {}",
+            book_id, e
+        );
         e
     })?;
 
@@ -225,11 +243,28 @@ pub async fn get_page(
     // Align memory cache key with disk cache key so it includes abs_path — file change → fresh render.
     let memory_cache_key = disk_cache_key.clone();
 
-    if let Some(cached) = state.page_cache.lock().await.get(&memory_cache_key).cloned() {
-        state.metrics.page_cache_hits.fetch_add(1, Ordering::Relaxed);
-        return Ok(image_response(cached, format, Some(&disk_cache_key), &headers));
+    if let Some(cached) = state
+        .page_cache
+        .lock()
+        .await
+        .get(&memory_cache_key)
+        .cloned()
+    {
+        state
+            .metrics
+            .page_cache_hits
+            .fetch_add(1, Ordering::Relaxed);
+        return Ok(image_response(
+            cached,
+            format,
+            Some(&disk_cache_key),
+            &headers,
+        ));
     }
-    state.metrics.page_cache_misses.fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .page_cache_misses
+        .fetch_add(1, Ordering::Relaxed);
 
     // If-None-Match: return 304 if the client already has this version
     if let Some(if_none_match) = headers.get(header::IF_NONE_MATCH) {
@@ -241,8 +276,17 @@ pub async fn get_page(
 
     if let Some(cached_bytes) = read_from_disk_cache(&cache_path) {
         let bytes = Arc::new(cached_bytes);
-        state.page_cache.lock().await.put(memory_cache_key, bytes.clone());
-        return Ok(image_response(bytes, format, Some(&disk_cache_key), &headers));
+        state
+            .page_cache
+            .lock()
+            .await
+            .put(memory_cache_key, bytes.clone());
+        return Ok(image_response(
+            bytes,
+            format,
+            Some(&disk_cache_key),
+            &headers,
+        ));
     }
 
     let _permit = state
@@ -262,7 +306,15 @@ pub async fn get_page(
     let bytes = tokio::time::timeout(
         Duration::from_secs(timeout_secs),
         tokio::task::spawn_blocking(move || {
-            render_page(&abs_path_clone, &input_format, n, &format_clone, quality, width, filter)
+            render_page(
+                &abs_path_clone,
+                &input_format,
+                n,
+                &format_clone,
+                quality,
+                width,
+                filter,
+            )
         }),
     )
     .await
@@ -286,7 +338,11 @@ pub async fn get_page(
             }
 
             let bytes = Arc::new(data);
-            state.page_cache.lock().await.put(memory_cache_key.clone(), bytes.clone());
+            state
+                .page_cache
+                .lock()
+                .await
+                .put(memory_cache_key.clone(), bytes.clone());
 
             // Prefetch next 2 pages in background (fire-and-forget)
             for next_page in [n + 1, n + 2] {
@@ -295,20 +351,29 @@ pub async fn get_page(
                 let cache_dir2 = cache_dir_path.clone();
                 let format2 = format;
                 tokio::spawn(async move {
-                    prefetch_page(state2, &PrefetchParams {
-                        abs_path: &abs_path2,
-                        page: next_page,
-                        format: format2,
-                        quality,
-                        width,
-                        filter,
-                        timeout_secs,
-                        cache_dir: &cache_dir2,
-                    }).await;
+                    prefetch_page(
+                        state2,
+                        &PrefetchParams {
+                            abs_path: &abs_path2,
+                            page: next_page,
+                            format: format2,
+                            quality,
+                            width,
+                            filter,
+                            timeout_secs,
+                            cache_dir: &cache_dir2,
+                        },
+                    )
+                    .await;
                 });
             }
 
-            Ok(image_response(bytes, format, Some(&disk_cache_key), &headers))
+            Ok(image_response(
+                bytes,
+                format,
+                Some(&disk_cache_key),
+                &headers,
+            ))
         }
         Err(e) => {
             error!("Failed to render page {} from {}: {:?}", n, abs_path, e);
@@ -376,7 +441,15 @@ async fn prefetch_page(state: AppState, params: &PrefetchParams<'_>) {
     let result = tokio::time::timeout(
         Duration::from_secs(timeout_secs),
         tokio::task::spawn_blocking(move || {
-            render_page(&abs_clone, &input_format, page, &fmt, quality, width, filter)
+            render_page(
+                &abs_clone,
+                &input_format,
+                page,
+                &fmt,
+                quality,
+                width,
+                filter,
+            )
         }),
     )
     .await;
@@ -388,7 +461,12 @@ async fn prefetch_page(state: AppState, params: &PrefetchParams<'_>) {
     }
 }
 
-fn image_response(bytes: Arc<Vec<u8>>, format: OutputFormat, etag_suffix: Option<&str>, req_headers: &HeaderMap) -> Response {
+fn image_response(
+    bytes: Arc<Vec<u8>>,
+    format: OutputFormat,
+    etag_suffix: Option<&str>,
+    req_headers: &HeaderMap,
+) -> Response {
     let content_type = match format {
         OutputFormat::Original => detect_content_type(&bytes),
         _ => format.content_type(),
@@ -405,7 +483,10 @@ fn image_response(bytes: Arc<Vec<u8>>, format: OutputFormat, etag_suffix: Option
     if let Some(if_none_match) = req_headers.get(header::IF_NONE_MATCH) {
         if if_none_match.as_bytes() == etag.as_bytes() {
             let mut headers = HeaderMap::new();
-            headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable"));
+            headers.insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("public, max-age=31536000, immutable"),
+            );
             if let Ok(v) = HeaderValue::from_str(&etag) {
                 headers.insert(header::ETAG, v);
             }
@@ -414,8 +495,15 @@ fn image_response(bytes: Arc<Vec<u8>>, format: OutputFormat, etag_suffix: Option
     }
 
     let mut headers = HeaderMap::new();
-    headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(content_type).unwrap_or(HeaderValue::from_static("application/octet-stream")));
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable"));
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_str(content_type)
+            .unwrap_or(HeaderValue::from_static("application/octet-stream")),
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=31536000, immutable"),
+    );
     if let Ok(v) = HeaderValue::from_str(&etag) {
         headers.insert(header::ETAG, v);
     }
@@ -511,7 +599,10 @@ fn render_page(
         pdf_render_width,
     )
     .map_err(|e| {
-        error!("Failed to extract page {} from {}: {}", page_number, abs_path, e);
+        error!(
+            "Failed to extract page {} from {}: {}",
+            page_number, abs_path, e
+        );
         ApiError::internal(format!("page extraction failed: {e}"))
     })?;
 
@@ -529,7 +620,6 @@ fn render_page(
 
     transcode_image(&page_bytes, out_format, quality, width, filter)
 }
-
 
 /// Fast JPEG decode with DCT scaling: decodes directly at reduced resolution.
 fn fast_jpeg_decode(input: &[u8], target_w: u32, target_h: u32) -> Option<image::DynamicImage> {
@@ -556,7 +646,13 @@ fn fast_jpeg_decode(input: &[u8], target_w: u32, target_h: u32) -> Option<image:
     }
 }
 
-fn transcode_image(input: &[u8], out_format: &OutputFormat, quality: u8, width: u32, filter: image::imageops::FilterType) -> Result<Vec<u8>, ApiError> {
+fn transcode_image(
+    input: &[u8],
+    out_format: &OutputFormat,
+    quality: u8,
+    width: u32,
+    filter: image::imageops::FilterType,
+) -> Result<Vec<u8>, ApiError> {
     let source_format = image::guess_format(input).ok();
 
     // Resolve "Original" to the actual source format for encoding
@@ -569,7 +665,9 @@ fn transcode_image(input: &[u8], out_format: &OutputFormat, quality: u8, width: 
         other => *other,
     };
 
-    let needs_transcode = source_format.map(|f| !format_matches(&f, &effective_format)).unwrap_or(true);
+    let needs_transcode = source_format
+        .map(|f| !format_matches(&f, &effective_format))
+        .unwrap_or(true);
 
     if width == 0 && !needs_transcode {
         return Ok(input.to_vec());
@@ -578,13 +676,10 @@ fn transcode_image(input: &[u8], out_format: &OutputFormat, quality: u8, width: 
     // For JPEG with resize: use DCT scaling to decode at ~target size (much faster)
     let mut image = if width > 0 {
         fast_jpeg_decode(input, width, u32::MAX)
-            .unwrap_or_else(|| {
-                image::load_from_memory(input).unwrap_or_default()
-            })
+            .unwrap_or_else(|| image::load_from_memory(input).unwrap_or_default())
     } else {
-        image::load_from_memory(input).map_err(|e| {
-            ApiError::internal(format!("invalid source image: {e}"))
-        })?
+        image::load_from_memory(input)
+            .map_err(|e| ApiError::internal(format!("invalid source image: {e}")))?
     };
 
     if width > 0 {
@@ -611,12 +706,9 @@ fn transcode_image(input: &[u8], out_format: &OutputFormat, quality: u8, width: 
                 .map_err(|e| ApiError::internal(format!("png encode failed: {e}")))?;
         }
         OutputFormat::Webp => {
-            let rgb_data: Vec<u8> = rgba
-                .pixels()
-                .flat_map(|p| [p[0], p[1], p[2]])
-                .collect();
-            let webp_data = webp::Encoder::new(&rgb_data, webp::PixelLayout::Rgb, w, h)
-                .encode(quality as f32);
+            let rgb_data: Vec<u8> = rgba.pixels().flat_map(|p| [p[0], p[1], p[2]]).collect();
+            let webp_data =
+                webp::Encoder::new(&rgb_data, webp::PixelLayout::Rgb, w, h).encode(quality as f32);
             out.extend_from_slice(&webp_data);
         }
     }
@@ -655,11 +747,25 @@ mod tests {
     #[test]
     fn cache_key_changes_with_path_and_render_params() {
         let base = get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 600);
-        assert_ne!(base, get_cache_key("/libraries/y.cbz", 1000, 1, "webp", 80, 600));
-        assert_ne!(base, get_cache_key("/libraries/x.cbz", 1000, 2, "webp", 80, 600));
-        assert_ne!(base, get_cache_key("/libraries/x.cbz", 1000, 1, "jpeg", 80, 600));
-        assert_ne!(base, get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 90, 600));
-        assert_ne!(base, get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 800));
+        assert_ne!(
+            base,
+            get_cache_key("/libraries/y.cbz", 1000, 1, "webp", 80, 600)
+        );
+        assert_ne!(
+            base,
+            get_cache_key("/libraries/x.cbz", 1000, 2, "webp", 80, 600)
+        );
+        assert_ne!(
+            base,
+            get_cache_key("/libraries/x.cbz", 1000, 1, "jpeg", 80, 600)
+        );
+        assert_ne!(
+            base,
+            get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 90, 600)
+        );
+        assert_ne!(
+            base,
+            get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 800)
+        );
     }
 }
-

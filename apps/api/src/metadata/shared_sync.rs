@@ -65,8 +65,7 @@ pub(crate) async fn extract_series_fields(
         .map(|y| y as i32)
         .or_else(|| candidate.and_then(|c| c.start_year));
 
-    let total_volumes = total_volumes_override
-        .or_else(|| candidate.and_then(|c| c.total_volumes));
+    let total_volumes = total_volumes_override.or_else(|| candidate.and_then(|c| c.total_volumes));
 
     let genres = extract_string_array(metadata_json, "genres").unwrap_or_default();
 
@@ -394,14 +393,13 @@ pub(crate) async fn delete_link_book_metadata(
 // Update synced_at on a link
 // ---------------------------------------------------------------------------
 
-pub(crate) async fn update_link_synced_at(
-    pool: &PgPool,
-    link_id: Uuid,
-) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE external_metadata_links SET synced_at = NOW(), updated_at = NOW() WHERE id = $1")
-        .bind(link_id)
-        .execute(pool)
-        .await?;
+pub(crate) async fn update_link_synced_at(pool: &PgPool, link_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE external_metadata_links SET synced_at = NOW(), updated_at = NOW() WHERE id = $1",
+    )
+    .bind(link_id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -420,10 +418,7 @@ pub(crate) fn diff_opt_str(
             Some(serde_json::Value::String(o.to_string())),
             Some(serde_json::Value::String(n.to_string())),
         )),
-        (None, Some(n)) => Some((
-            None,
-            Some(serde_json::Value::String(n.to_string())),
-        )),
+        (None, Some(n)) => Some((None, Some(serde_json::Value::String(n.to_string())))),
         _ => None,
     }
 }
@@ -434,14 +429,10 @@ pub(crate) fn diff_opt_i32(
     new: Option<i32>,
 ) -> Option<(Option<serde_json::Value>, Option<serde_json::Value>)> {
     match (old, new) {
-        (Some(o), Some(n)) if o != n => Some((
-            Some(serde_json::json!(o)),
-            Some(serde_json::json!(n)),
-        )),
-        (None, Some(n)) => Some((
-            None,
-            Some(serde_json::json!(n)),
-        )),
+        (Some(o), Some(n)) if o != n => {
+            Some((Some(serde_json::json!(o)), Some(serde_json::json!(n))))
+        }
+        (None, Some(n)) => Some((None, Some(serde_json::json!(n)))),
         _ => None,
     }
 }
@@ -455,10 +446,7 @@ pub(crate) fn diff_str_vec(
         return None;
     }
     if old != new {
-        Some((
-            Some(serde_json::json!(old)),
-            Some(serde_json::json!(new)),
-        ))
+        Some((Some(serde_json::json!(old)), Some(serde_json::json!(new))))
     } else {
         None
     }

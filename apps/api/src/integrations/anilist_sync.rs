@@ -5,8 +5,8 @@ use sqlx::Row;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{error::ApiError, state::AppState};
 use super::anilist::{anilist_graphql, load_anilist_settings};
+use crate::{error::ApiError, state::AppState};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -77,8 +77,11 @@ pub async fn preview_sync(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<AnilistSyncPreviewItem>>, ApiError> {
     let (_, _, local_user_id) = load_anilist_settings(&state.pool).await?;
-    let local_user_id = local_user_id
-        .ok_or_else(|| ApiError::bad_request("AniList local user not configured — please select a user in settings"))?;
+    let local_user_id = local_user_id.ok_or_else(|| {
+        ApiError::bad_request(
+            "AniList local user not configured — please select a user in settings",
+        )
+    })?;
 
     let links = sqlx::query(
         r#"
@@ -132,13 +135,14 @@ pub async fn preview_sync(
             continue;
         }
 
-        let (status, progress_volumes) = if books_read > 0 && total_volumes.is_some_and(|tv| books_read >= tv as i64) {
-            ("COMPLETED".to_string(), books_read as i32)
-        } else if books_read > 0 {
-            ("CURRENT".to_string(), books_read as i32)
-        } else {
-            ("PLANNING".to_string(), 0i32)
-        };
+        let (status, progress_volumes) =
+            if books_read > 0 && total_volumes.is_some_and(|tv| books_read >= tv as i64) {
+                ("COMPLETED".to_string(), books_read as i32)
+            } else if books_read > 0 {
+                ("CURRENT".to_string(), books_read as i32)
+            } else {
+                ("PLANNING".to_string(), 0i32)
+            };
 
         items.push(AnilistSyncPreviewItem {
             series_name,
@@ -171,8 +175,11 @@ pub async fn sync_to_anilist(
     State(state): State<AppState>,
 ) -> Result<Json<AnilistSyncReport>, ApiError> {
     let (token, _, local_user_id) = load_anilist_settings(&state.pool).await?;
-    let local_user_id = local_user_id
-        .ok_or_else(|| ApiError::bad_request("AniList local user not configured — please select a user in settings"))?;
+    let local_user_id = local_user_id.ok_or_else(|| {
+        ApiError::bad_request(
+            "AniList local user not configured — please select a user in settings",
+        )
+    })?;
 
     let links = sqlx::query(
         r#"
@@ -285,7 +292,12 @@ pub async fn sync_to_anilist(
         }
     }
 
-    Ok(Json(AnilistSyncReport { synced, skipped, errors, items }))
+    Ok(Json(AnilistSyncReport {
+        synced,
+        skipped,
+        errors,
+        items,
+    }))
 }
 
 /// Pull reading list from AniList and update local reading progress
@@ -304,10 +316,16 @@ pub async fn pull_from_anilist(
     State(state): State<AppState>,
 ) -> Result<Json<AnilistPullReport>, ApiError> {
     let (token, user_id, local_user_id) = load_anilist_settings(&state.pool).await?;
-    let user_id = user_id
-        .ok_or_else(|| ApiError::bad_request("AniList user_id not configured — please test the connection in settings"))?;
-    let local_user_id = local_user_id
-        .ok_or_else(|| ApiError::bad_request("AniList local user not configured — please select a user in settings"))?;
+    let user_id = user_id.ok_or_else(|| {
+        ApiError::bad_request(
+            "AniList user_id not configured — please test the connection in settings",
+        )
+    })?;
+    let local_user_id = local_user_id.ok_or_else(|| {
+        ApiError::bad_request(
+            "AniList local user not configured — please select a user in settings",
+        )
+    })?;
 
     let gql = r#"
         query GetUserMangaList($userId: Int) {
@@ -354,8 +372,10 @@ pub async fn pull_from_anilist(
     .fetch_all(&state.pool)
     .await?;
 
-    let mut link_map: std::collections::HashMap<i32, (Uuid, String, Option<String>, Option<String>)> =
-        std::collections::HashMap::new();
+    let mut link_map: std::collections::HashMap<
+        i32,
+        (Uuid, String, Option<String>, Option<String>),
+    > = std::collections::HashMap::new();
     for row in &link_rows {
         let aid: i32 = row.get("anilist_id");
         let sid: Uuid = row.get("series_id");
@@ -371,7 +391,8 @@ pub async fn pull_from_anilist(
     let mut items: Vec<AnilistPullItem> = Vec::new();
 
     for (anilist_id, anilist_status, progress_volumes) in &entries {
-        let Some((series_id, series_name, anilist_title, anilist_url)) = link_map.get(anilist_id) else {
+        let Some((series_id, series_name, anilist_title, anilist_url)) = link_map.get(anilist_id)
+        else {
             skipped += 1;
             continue;
         };
@@ -445,5 +466,10 @@ pub async fn pull_from_anilist(
         updated += 1;
     }
 
-    Ok(Json(AnilistPullReport { updated, skipped, errors, items }))
+    Ok(Json(AnilistPullReport {
+        updated,
+        skipped,
+        errors,
+        items,
+    }))
 }

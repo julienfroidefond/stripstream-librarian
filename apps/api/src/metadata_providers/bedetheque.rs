@@ -32,14 +32,18 @@ impl MetadataProvider for BedethequeProvider {
     > {
         let external_id = external_id.to_string();
         let config = config.clone();
-        Box::pin(async move { get_series_books_impl(&external_id, &config, BEDETHEQUE_BASE_URL).await })
+        Box::pin(
+            async move { get_series_books_impl(&external_id, &config, BEDETHEQUE_BASE_URL).await },
+        )
     }
 }
 
 fn build_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(20))
-        .user_agent("Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:108.0) Gecko/20100101 Firefox/108.0")
+        .user_agent(
+            "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:108.0) Gecko/20100101 Firefox/108.0",
+        )
         .default_headers({
             let mut h = reqwest::header::HeaderMap::new();
             h.insert(
@@ -52,7 +56,10 @@ fn build_client() -> Result<reqwest::Client, String> {
                 reqwest::header::ACCEPT_LANGUAGE,
                 "fr-FR,fr;q=0.9,en;q=0.5".parse().unwrap(),
             );
-            h.insert(reqwest::header::REFERER, "https://www.bedetheque.com/".parse().unwrap());
+            h.insert(
+                reqwest::header::REFERER,
+                "https://www.bedetheque.com/".parse().unwrap(),
+            );
             h
         })
         .build()
@@ -159,10 +166,7 @@ async fn search_series_impl(
             }
 
             let confidence = compute_confidence(&title, &query_lower);
-            let cover_url = format!(
-                "{}/cache/thb_series/PlancheS_{}.jpg",
-                base_url, series_id
-            );
+            let cover_url = format!("{}/cache/thb_series/PlancheS_{}.jpg", base_url, series_id);
 
             let absolute_href = if href.starts_with("http") {
                 href.clone()
@@ -199,7 +203,10 @@ async fn search_series_impl(
     let mut enriched = Vec::new();
     for mut c in candidates {
         if enriched.len() < 3 {
-            if let Ok(details) = fetch_series_details(&client, &c.external_id, c.external_url.as_deref(), base_url).await {
+            if let Ok(details) =
+                fetch_series_details(&client, &c.external_id, c.external_url.as_deref(), base_url)
+                    .await
+            {
                 if let Some(desc) = details.description {
                     c.description = Some(desc);
                 }
@@ -271,10 +278,7 @@ async fn fetch_series_details(
             // Replace .html with __10000.html
             u.replace(".html", "__10000.html")
         }
-        None => format!(
-            "{}/serie-{}-BD-Serie__10000.html",
-            base_url, series_id
-        ),
+        None => format!("{}/serie-{}-BD-Serie__10000.html", base_url, series_id),
     };
 
     let resp = client
@@ -311,7 +315,10 @@ async fn fetch_series_details(
         if let Some(el) = doc.select(&sel).next() {
             if let Some(src) = el.value().attr("src") {
                 // Replace thumbnail with full-size cover
-                details.cover_url = Some(src.replace("/cache/thb_couv/", "/media/Couvertures/").to_string());
+                details.cover_url = Some(
+                    src.replace("/cache/thb_couv/", "/media/Couvertures/")
+                        .to_string(),
+                );
             }
         }
     }
@@ -412,7 +419,6 @@ async fn fetch_series_details(
         }
     }
 
-
     // Album count from serie-info text (e.g. "Tomes : 8")
     if let Ok(re) = regex::Regex::new(r"Tomes?\s*:\s*(\d+)") {
         if let Some(caps) = re.captures(&page_text) {
@@ -472,10 +478,7 @@ async fn get_series_books_impl(
     // We need to find the series URL — try a direct fetch
     // external_id is the numeric series ID
     // We try to fetch the series page to get the album list
-    let url = format!(
-        "{}/serie-{}-BD-Serie__10000.html",
-        base_url, external_id
-    );
+    let url = format!("{}/serie-{}-BD-Serie__10000.html", base_url, external_id);
 
     let resp = client
         .get(&url)
@@ -485,13 +488,12 @@ async fn get_series_books_impl(
 
     // If the generic slug fails, try without the slug part (bedetheque redirects)
     let html = if resp.status().is_success() {
-        resp.text().await.map_err(|e| format!("Failed to read: {e}"))?
+        resp.text()
+            .await
+            .map_err(|e| format!("Failed to read: {e}"))?
     } else {
         // Try alternative URL pattern
-        let alt_url = format!(
-            "{}/serie-{}__10000.html",
-            base_url, external_id
-        );
+        let alt_url = format!("{}/serie-{}__10000.html", base_url, external_id);
         let resp2 = client
             .get(&alt_url)
             .send()
@@ -500,7 +502,10 @@ async fn get_series_books_impl(
         if !resp2.status().is_success() {
             return Err(format!("Series page not found for id {external_id}"));
         }
-        resp2.text().await.map_err(|e| format!("Failed to read: {e}"))?
+        resp2
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read: {e}"))?
     };
 
     if html.contains("<title></title>") {
@@ -518,11 +523,19 @@ async fn get_series_books_impl(
 
     // Pre-collect cover images — they appear in <img itemprop="image"> before each .album-main
     // and link to an album URL containing the book ID
-    let cover_sel = Selector::parse(r#"img[itemprop="image"]"#).map_err(|e| format!("selector: {e}"))?;
-    let covers: Vec<String> = doc.select(&cover_sel)
-        .filter_map(|el| el.value().attr("src").map(|s| {
-            if s.starts_with("http") { s.to_string() } else { format!("{}{}", base_url, s) }
-        }))
+    let cover_sel =
+        Selector::parse(r#"img[itemprop="image"]"#).map_err(|e| format!("selector: {e}"))?;
+    let covers: Vec<String> = doc
+        .select(&cover_sel)
+        .filter_map(|el| {
+            el.value().attr("src").map(|s| {
+                if s.starts_with("http") {
+                    s.to_string()
+                } else {
+                    format!("{}{}", base_url, s)
+                }
+            })
+        })
         .collect();
 
     static RE_TOME: std::sync::LazyLock<regex::Regex> =
@@ -547,7 +560,9 @@ async fn get_series_books_impl(
         }
 
         // External book ID from album URL (e.g. "...-1063.html")
-        let album_url = title_el.and_then(|el| el.value().attr("href")).unwrap_or("");
+        let album_url = title_el
+            .and_then(|el| el.value().attr("href"))
+            .unwrap_or("");
 
         // Only keep main tomes — their URLs contain "Tome-{N}-"
         // Skip hors-série (HS), intégrales (INT/INTFL), romans, coffrets, etc.
@@ -579,7 +594,10 @@ async fn get_series_books_impl(
                 } else {
                     name
                 };
-                if !normalized.is_empty() && is_real_author(&normalized) && !authors.contains(&normalized) {
+                if !normalized.is_empty()
+                    && is_real_author(&normalized)
+                    && !authors.contains(&normalized)
+                {
                     authors.push(normalized);
                 }
             }
@@ -680,12 +698,16 @@ fn compute_confidence(title: &str, query: &str) -> f32 {
         return 1.0;
     }
 
-    if title_lower.starts_with(&query_lower) || query_lower.starts_with(&title_lower)
-        || title_norm.starts_with(&query_norm) || query_norm.starts_with(&title_norm)
+    if title_lower.starts_with(&query_lower)
+        || query_lower.starts_with(&title_lower)
+        || title_norm.starts_with(&query_norm)
+        || query_norm.starts_with(&title_norm)
     {
         0.85
-    } else if title_lower.contains(&query_lower) || query_lower.contains(&title_lower)
-        || title_norm.contains(&query_norm) || query_norm.contains(&title_norm)
+    } else if title_lower.contains(&query_lower)
+        || query_lower.contains(&title_lower)
+        || title_norm.contains(&query_norm)
+        || query_norm.contains(&title_norm)
     {
         0.7
     } else {
@@ -717,10 +739,7 @@ async fn fetch_indispensables_with_base_url(
     let client = build_client()?;
 
     let url = match genre {
-        Some(g) => format!(
-            "{}/indispensables-style-{}.html",
-            base_url, urlencoded(g)
-        ),
+        Some(g) => format!("{}/indispensables-style-{}.html", base_url, urlencoded(g)),
         None => format!("{}/indispensables.html", base_url),
     };
 
@@ -747,117 +766,123 @@ async fn fetch_indispensables_with_base_url(
     // Parse in a block to drop non-Send types (Html, Selector) before async enrichment
     let mut candidates = Vec::new();
     {
-    let document = Html::parse_document(&html);
+        let document = Html::parse_document(&html);
 
-    let serie_sel = Selector::parse("span.serie a").unwrap();
-    let _numero_sel = Selector::parse("span.numero").unwrap();
-    let style_sel = Selector::parse("span.style").unwrap();
+        let serie_sel = Selector::parse("span.serie a").unwrap();
+        let _numero_sel = Selector::parse("span.numero").unwrap();
+        let style_sel = Selector::parse("span.style").unwrap();
 
-    // Also get cover images from the gallery
-    let gallery_sel = Selector::parse("ul.gallery-couv li a").unwrap();
-    let img_sel = Selector::parse("img").unwrap();
+        // Also get cover images from the gallery
+        let gallery_sel = Selector::parse("ul.gallery-couv li a").unwrap();
+        let img_sel = Selector::parse("img").unwrap();
 
-    // Collect cover URLs indexed by series URL
-    let mut cover_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    for a_el in document.select(&gallery_sel) {
-        if let Some(href) = a_el.value().attr("href") {
-            if let Some(img) = a_el.select(&img_sel).next() {
-                if let Some(src) = img.value().attr("src") {
-                    cover_map.insert(href.to_string(), src.to_string());
+        // Collect cover URLs indexed by series URL
+        let mut cover_map: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        for a_el in document.select(&gallery_sel) {
+            if let Some(href) = a_el.value().attr("href") {
+                if let Some(img) = a_el.select(&img_sel).next() {
+                    if let Some(src) = img.value().attr("src") {
+                        cover_map.insert(href.to_string(), src.to_string());
+                    }
                 }
             }
         }
-    }
 
-    // Parse the ranked list
-    // The ranking entries are inside the main content, structured as siblings
-    // We need to find all span.serie > a elements and their surrounding context
-    let mut seen_ids = std::collections::HashSet::new();
+        // Parse the ranked list
+        // The ranking entries are inside the main content, structured as siblings
+        // We need to find all span.serie > a elements and their surrounding context
+        let mut seen_ids = std::collections::HashSet::new();
 
-    // Walk through all serie links in the page
-    for serie_a in document.select(&serie_sel) {
-        let title = serie_a.text().collect::<String>().trim().to_string();
-        if title.is_empty() {
-            continue;
+        // Walk through all serie links in the page
+        for serie_a in document.select(&serie_sel) {
+            let title = serie_a.text().collect::<String>().trim().to_string();
+            if title.is_empty() {
+                continue;
+            }
+
+            let href = match serie_a.value().attr("href") {
+                Some(h) => h.to_string(),
+                None => continue,
+            };
+
+            // Extract series ID from URL
+            let series_id = SERIES_URL_RE
+                .captures(&href)
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str().to_string());
+
+            let Some(sid) = &series_id else { continue };
+            if !seen_ids.insert(sid.clone()) {
+                continue; // deduplicate
+            }
+
+            // Get cover from gallery, fallback to series thumbnail URL
+            let cover_url = cover_map.get(&href).cloned().or_else(|| {
+                Some(format!(
+                    "{}/cache/thb_series/PlancheS_{}.jpg",
+                    base_url, sid
+                ))
+            });
+
+            // Try to get genre from the sibling span.style
+            // Navigate to parent and find span.style
+            let genre_text = serie_a
+                .parent()
+                .and_then(|p| p.parent())
+                .and_then(|grandparent| {
+                    scraper::ElementRef::wrap(grandparent)
+                        .and_then(|el| el.select(&style_sel).next())
+                        .map(|s| s.text().collect::<String>().trim().to_string())
+                })
+                .filter(|g| !g.is_empty());
+
+            let genres = genre_text.map(|g| vec![g]).unwrap_or_default();
+
+            // Confidence based on rank position (first = 1.0, decreasing)
+            let rank = candidates.len();
+            let confidence = (1.0 - (rank as f32 / 100.0)).clamp(0.1, 1.0);
+
+            let absolute_href = if href.starts_with("http") {
+                href
+            } else {
+                format!("{}{}", base_url, href)
+            };
+
+            candidates.push(SeriesCandidate {
+                external_id: sid.clone(),
+                title,
+                authors: vec![],
+                description: None,
+                publishers: vec![],
+                start_year: None,
+                total_volumes: None,
+                cover_url,
+                external_url: Some(absolute_href),
+                confidence,
+                metadata_json: serde_json::json!({
+                    "genres": genres,
+                    "source": "indispensables",
+                }),
+            });
+
+            if candidates.len() >= limit {
+                break;
+            }
         }
-
-        let href = match serie_a.value().attr("href") {
-            Some(h) => h.to_string(),
-            None => continue,
-        };
-
-        // Extract series ID from URL
-        let series_id = SERIES_URL_RE
-            .captures(&href)
-            .and_then(|c| c.get(1))
-            .map(|m| m.as_str().to_string());
-
-        let Some(sid) = &series_id else { continue };
-        if !seen_ids.insert(sid.clone()) {
-            continue; // deduplicate
-        }
-
-        // Get cover from gallery, fallback to series thumbnail URL
-        let cover_url = cover_map.get(&href).cloned().or_else(|| {
-            Some(format!(
-                "{}/cache/thb_series/PlancheS_{}.jpg",
-                base_url, sid
-            ))
-        });
-
-        // Try to get genre from the sibling span.style
-        // Navigate to parent and find span.style
-        let genre_text = serie_a
-            .parent()
-            .and_then(|p| p.parent())
-            .and_then(|grandparent| {
-                scraper::ElementRef::wrap(grandparent)
-                    .and_then(|el| el.select(&style_sel).next())
-                    .map(|s| s.text().collect::<String>().trim().to_string())
-            })
-            .filter(|g| !g.is_empty());
-
-        let genres = genre_text.map(|g| vec![g]).unwrap_or_default();
-
-        // Confidence based on rank position (first = 1.0, decreasing)
-        let rank = candidates.len();
-        let confidence = (1.0 - (rank as f32 / 100.0)).clamp(0.1, 1.0);
-
-        let absolute_href = if href.starts_with("http") {
-            href
-        } else {
-            format!("{}{}", base_url, href)
-        };
-
-        candidates.push(SeriesCandidate {
-            external_id: sid.clone(),
-            title,
-            authors: vec![],
-            description: None,
-            publishers: vec![],
-            start_year: None,
-            total_volumes: None,
-            cover_url,
-            external_url: Some(absolute_href),
-            confidence,
-            metadata_json: serde_json::json!({
-                "genres": genres,
-                "source": "indispensables",
-            }),
-        });
-
-        if candidates.len() >= limit {
-            break;
-        }
-    }
     } // drop document, selectors (non-Send) before async enrichment
 
     // Enrich covers for candidates that only have the PlancheS_ fallback (top 20)
     for c in candidates.iter_mut() {
-        if c.cover_url.as_ref().is_some_and(|u| u.contains("/Couvertures/") || u.contains("/thb_couv/")) {
+        if c.cover_url
+            .as_ref()
+            .is_some_and(|u| u.contains("/Couvertures/") || u.contains("/thb_couv/"))
+        {
             continue;
         }
-        let Some(ref url) = c.external_url else { continue };
+        let Some(ref url) = c.external_url else {
+            continue;
+        };
         let page_url = url.replace(".html", "__10000.html");
         let cover = fetch_series_cover(&client, &page_url).await;
         if let Some(cover) = cover {
@@ -873,14 +898,20 @@ async fn fetch_indispensables_with_base_url(
 async fn fetch_series_cover(client: &reqwest::Client, page_url: &str) -> Option<String> {
     let resp = client.get(page_url).send().await.ok()?;
     let html = resp.text().await.ok()?;
-    if html.contains("<title></title>") { return None; }
+    if html.contains("<title></title>") {
+        return None;
+    }
     // Parse in a block to drop non-Send types before any .await
     let cover = {
         let doc = Html::parse_document(&html);
         let sel = Selector::parse(r#"img[itemprop="image"]"#).ok()?;
-        doc.select(&sel).next()
+        doc.select(&sel)
+            .next()
             .and_then(|el| el.value().attr("src"))
-            .map(|src| src.replace("/cache/thb_couv/", "/media/Couvertures/").to_string())
+            .map(|src| {
+                src.replace("/cache/thb_couv/", "/media/Couvertures/")
+                    .to_string()
+            })
     };
     cover
 }

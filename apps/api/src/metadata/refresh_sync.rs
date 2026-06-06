@@ -3,8 +3,8 @@ use sqlx::{PgPool, Row};
 use tracing::info;
 use uuid::Uuid;
 
+use super::shared_sync::{self, diff_opt_i32, diff_opt_str, diff_str_vec, is_field_locked};
 use crate::metadata_providers;
-use super::shared_sync::{self, is_field_locked, diff_opt_str, diff_opt_i32, diff_str_vec};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -134,7 +134,11 @@ pub(crate) async fn refresh_link(
     Ok(super::refresh::SeriesRefreshResult {
         series_name: series_name.to_string(),
         provider: provider_name.to_string(),
-        status: if has_changes { "updated".to_string() } else { "unchanged".to_string() },
+        status: if has_changes {
+            "updated".to_string()
+        } else {
+            "unchanged".to_string()
+        },
         series_changes,
         book_changes,
         error: None,
@@ -151,9 +155,9 @@ async fn sync_series_with_diff(
     series_name: &str,
     candidate: &metadata_providers::SeriesCandidate,
 ) -> Result<Vec<FieldDiff>, String> {
-    let fields = shared_sync::extract_series_fields(
-        pool, &candidate.metadata_json, Some(candidate), None,
-    ).await;
+    let fields =
+        shared_sync::extract_series_fields(pool, &candidate.metadata_json, Some(candidate), None)
+            .await;
 
     let existing = shared_sync::upsert_series_metadata(pool, library_id, series_name, &fields)
         .await
@@ -170,37 +174,67 @@ async fn sync_series_with_diff(
     if !is_field_locked(&locked, "description") {
         let old: Option<String> = existing.as_ref().and_then(|r| r.get("description"));
         if let Some((old_v, new_v)) = diff_opt_str(old.as_deref(), fields.description.as_deref()) {
-            diffs.push(FieldDiff { field: "description".into(), old: old_v, new: new_v });
+            diffs.push(FieldDiff {
+                field: "description".into(),
+                old: old_v,
+                new: new_v,
+            });
         }
     }
     if !is_field_locked(&locked, "authors") {
-        let old: Vec<String> = existing.as_ref().map(|r| r.get("authors")).unwrap_or_default();
+        let old: Vec<String> = existing
+            .as_ref()
+            .map(|r| r.get("authors"))
+            .unwrap_or_default();
         if let Some((old_v, new_v)) = diff_str_vec(&old, &fields.authors) {
-            diffs.push(FieldDiff { field: "authors".into(), old: old_v, new: new_v });
+            diffs.push(FieldDiff {
+                field: "authors".into(),
+                old: old_v,
+                new: new_v,
+            });
         }
     }
     if !is_field_locked(&locked, "publishers") {
-        let old: Vec<String> = existing.as_ref().map(|r| r.get("publishers")).unwrap_or_default();
+        let old: Vec<String> = existing
+            .as_ref()
+            .map(|r| r.get("publishers"))
+            .unwrap_or_default();
         if let Some((old_v, new_v)) = diff_str_vec(&old, &fields.publishers) {
-            diffs.push(FieldDiff { field: "publishers".into(), old: old_v, new: new_v });
+            diffs.push(FieldDiff {
+                field: "publishers".into(),
+                old: old_v,
+                new: new_v,
+            });
         }
     }
     if !is_field_locked(&locked, "start_year") {
         let old: Option<i32> = existing.as_ref().and_then(|r| r.get("start_year"));
         if let Some((old_v, new_v)) = diff_opt_i32(old, fields.start_year) {
-            diffs.push(FieldDiff { field: "start_year".into(), old: old_v, new: new_v });
+            diffs.push(FieldDiff {
+                field: "start_year".into(),
+                old: old_v,
+                new: new_v,
+            });
         }
     }
     if !is_field_locked(&locked, "total_volumes") {
         let old: Option<i32> = existing.as_ref().and_then(|r| r.get("total_volumes"));
         if let Some((old_v, new_v)) = diff_opt_i32(old, fields.total_volumes) {
-            diffs.push(FieldDiff { field: "total_volumes".into(), old: old_v, new: new_v });
+            diffs.push(FieldDiff {
+                field: "total_volumes".into(),
+                old: old_v,
+                new: new_v,
+            });
         }
     }
     if !is_field_locked(&locked, "status") {
         let old: Option<String> = existing.as_ref().and_then(|r| r.get("status"));
         if let Some((old_v, new_v)) = diff_opt_str(old.as_deref(), fields.status.as_deref()) {
-            diffs.push(FieldDiff { field: "status".into(), old: old_v, new: new_v });
+            diffs.push(FieldDiff {
+                field: "status".into(),
+                old: old_v,
+                new: new_v,
+            });
         }
     }
 
@@ -226,31 +260,52 @@ async fn sync_book_with_diff(
     if !is_field_locked(&locked, "summary") {
         let old: Option<String> = current.get("summary");
         if let Some((old_v, new_v)) = diff_opt_str(old.as_deref(), ext_book.summary.as_deref()) {
-            diffs.push(FieldDiff { field: "summary".into(), old: old_v, new: new_v });
+            diffs.push(FieldDiff {
+                field: "summary".into(),
+                old: old_v,
+                new: new_v,
+            });
         }
     }
     if !is_field_locked(&locked, "isbn") {
         let old: Option<String> = current.get("isbn");
         if let Some((old_v, new_v)) = diff_opt_str(old.as_deref(), ext_book.isbn.as_deref()) {
-            diffs.push(FieldDiff { field: "isbn".into(), old: old_v, new: new_v });
+            diffs.push(FieldDiff {
+                field: "isbn".into(),
+                old: old_v,
+                new: new_v,
+            });
         }
     }
     if !is_field_locked(&locked, "publish_date") {
         let old: Option<String> = current.get("publish_date");
-        if let Some((old_v, new_v)) = diff_opt_str(old.as_deref(), ext_book.publish_date.as_deref()) {
-            diffs.push(FieldDiff { field: "publish_date".into(), old: old_v, new: new_v });
+        if let Some((old_v, new_v)) = diff_opt_str(old.as_deref(), ext_book.publish_date.as_deref())
+        {
+            diffs.push(FieldDiff {
+                field: "publish_date".into(),
+                old: old_v,
+                new: new_v,
+            });
         }
     }
     if !is_field_locked(&locked, "language") {
         let old: Option<String> = current.get("language");
         if let Some((old_v, new_v)) = diff_opt_str(old.as_deref(), ext_book.language.as_deref()) {
-            diffs.push(FieldDiff { field: "language".into(), old: old_v, new: new_v });
+            diffs.push(FieldDiff {
+                field: "language".into(),
+                old: old_v,
+                new: new_v,
+            });
         }
     }
     if !is_field_locked(&locked, "authors") {
         let old: Vec<String> = current.get("authors");
         if let Some((old_v, new_v)) = diff_str_vec(&old, &ext_book.authors) {
-            diffs.push(FieldDiff { field: "authors".into(), old: old_v, new: new_v });
+            diffs.push(FieldDiff {
+                field: "authors".into(),
+                old: old_v,
+                new: new_v,
+            });
         }
     }
 

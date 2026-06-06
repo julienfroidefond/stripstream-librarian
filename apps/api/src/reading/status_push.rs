@@ -6,7 +6,7 @@ use tracing::{info, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{integrations::anilist, error::ApiError, state::AppState};
+use crate::{error::ApiError, integrations::anilist, state::AppState};
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -75,7 +75,7 @@ pub async fn start_push(
             ));
         }
         let library_ids: Vec<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM libraries WHERE reading_status_provider = 'anilist' ORDER BY name"
+            "SELECT id FROM libraries WHERE reading_status_provider = 'anilist' ORDER BY name",
         )
         .fetch_all(&state.pool)
         .await?;
@@ -87,7 +87,9 @@ pub async fn start_push(
             .bind(library_id)
             .fetch_optional(&state.pool)
             .await?;
-            if existing.is_some() { continue; }
+            if existing.is_some() {
+                continue;
+            }
             let job_id = Uuid::new_v4();
             sqlx::query(
                 "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'reading_status_push', 'running', NOW())",
@@ -97,12 +99,13 @@ pub async fn start_push(
             .execute(&state.pool)
             .await?;
             let pool = state.pool.clone();
-            let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-                .bind(library_id)
-                .fetch_optional(&state.pool)
-                .await
-                .ok()
-                .flatten();
+            let library_name: Option<String> =
+                sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+                    .bind(library_id)
+                    .fetch_optional(&state.pool)
+                    .await
+                    .ok()
+                    .flatten();
             tokio::spawn(async move {
                 if let Err(e) = process_reading_status_push(&pool, job_id, library_id).await {
                     warn!("[READING_STATUS_PUSH] job {job_id} failed: {e}");
@@ -313,8 +316,12 @@ pub async fn get_push_results(
     axum::extract::Path(job_id): axum::extract::Path<Uuid>,
     axum::extract::Query(query): axum::extract::Query<PushResultsQuery>,
 ) -> Result<Json<Vec<ReadingStatusPushResultDto>>, ApiError> {
-    let job_library_id: Option<Uuid> = sqlx::query_scalar("SELECT library_id FROM index_jobs WHERE id = $1")
-        .bind(job_id).fetch_optional(&state.pool).await?.flatten();
+    let job_library_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT library_id FROM index_jobs WHERE id = $1")
+            .bind(job_id)
+            .fetch_optional(&state.pool)
+            .await?
+            .flatten();
 
     // Map frontend status values to event_type values
     let event_type_filter = query.status.as_deref().map(|s| match s {
@@ -367,13 +374,27 @@ pub async fn get_push_results(
             ReadingStatusPushResultDto {
                 id: row.get("id"),
                 series_id: row.get("series_id"),
-                series_name: row.get::<Option<String>, _>("entity_name").unwrap_or_default(),
+                series_name: row
+                    .get::<Option<String>, _>("entity_name")
+                    .unwrap_or_default(),
                 status: status.to_string(),
-                anilist_id: detail.as_ref().and_then(|d| d["anilist_id"].as_i64()).map(|v| v as i32),
-                anilist_title: detail.as_ref().and_then(|d| d["anilist_title"].as_str().map(String::from)),
-                anilist_url: detail.as_ref().and_then(|d| d["anilist_url"].as_str().map(String::from)),
-                anilist_status: detail.as_ref().and_then(|d| d["anilist_status"].as_str().map(String::from)),
-                progress_volumes: detail.as_ref().and_then(|d| d["progress"].as_i64()).map(|v| v as i32),
+                anilist_id: detail
+                    .as_ref()
+                    .and_then(|d| d["anilist_id"].as_i64())
+                    .map(|v| v as i32),
+                anilist_title: detail
+                    .as_ref()
+                    .and_then(|d| d["anilist_title"].as_str().map(String::from)),
+                anilist_url: detail
+                    .as_ref()
+                    .and_then(|d| d["anilist_url"].as_str().map(String::from)),
+                anilist_status: detail
+                    .as_ref()
+                    .and_then(|d| d["anilist_status"].as_str().map(String::from)),
+                progress_volumes: detail
+                    .as_ref()
+                    .and_then(|d| d["progress"].as_i64())
+                    .map(|v| v as i32),
                 error_message: row.get("message"),
             }
         })
@@ -403,8 +424,8 @@ pub async fn process_reading_status_push(
         .await
         .map_err(|e| e.message)?;
 
-    let local_user_id = local_user_id_opt
-        .ok_or_else(|| "AniList local_user_id not configured".to_string())?;
+    let local_user_id =
+        local_user_id_opt.ok_or_else(|| "AniList local_user_id not configured".to_string())?;
 
     // Find all linked series that need a push (differential)
     let series_to_push: Vec<SeriesInfo> = sqlx::query(
@@ -526,14 +547,7 @@ pub async fn process_reading_status_push(
         };
         let progress_volumes = books_read as i32;
 
-        match push_to_anilist(
-            &token,
-            series.anilist_id,
-            anilist_status,
-            progress_volumes,
-        )
-        .await
-        {
+        match push_to_anilist(&token, series.anilist_id, anilist_status, progress_volumes).await {
             Ok(()) => {
                 // Update synced_at
                 let _ = sqlx::query(
@@ -546,9 +560,14 @@ pub async fn process_reading_status_push(
                 insert_event(pool, job_id, "status_pushed", "info", Some(&series.series_name), None, Some(serde_json::json!({"anilist_id": series.anilist_id, "anilist_title": series.anilist_title, "anilist_url": series.anilist_url, "anilist_status": anilist_status, "progress": progress_volumes}))).await;
             }
             Err(e) if e.contains("429") || e.contains("Too Many Requests") => {
-                warn!("[READING_STATUS_PUSH] rate limit hit for '{}', waiting 10s before retry", series.series_name);
+                warn!(
+                    "[READING_STATUS_PUSH] rate limit hit for '{}', waiting 10s before retry",
+                    series.series_name
+                );
                 tokio::time::sleep(Duration::from_secs(10)).await;
-                match push_to_anilist(&token, series.anilist_id, anilist_status, progress_volumes).await {
+                match push_to_anilist(&token, series.anilist_id, anilist_status, progress_volumes)
+                    .await
+                {
                     Ok(()) => {
                         let _ = sqlx::query(
                             "UPDATE anilist_series_links SET synced_at = NOW() WHERE series_id = $1",
@@ -623,12 +642,13 @@ pub async fn process_reading_status_push(
         processed, total
     );
 
-    let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-        .bind(library_id)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
+    let library_name: Option<String> =
+        sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+            .bind(library_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
 
     notifications::notify(
         pool.clone(),

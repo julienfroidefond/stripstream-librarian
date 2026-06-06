@@ -130,16 +130,21 @@ pub(crate) async fn create_series_with_metadata(
     restore_series_from_archive(pool, params.library_id, &params.name).await;
 
     // 2. Create the physical directory on disk
-    if let Ok(root_path) = sqlx::query_scalar::<_, String>("SELECT root_path FROM libraries WHERE id = $1")
-        .bind(params.library_id)
-        .fetch_one(pool)
-        .await
+    if let Ok(root_path) =
+        sqlx::query_scalar::<_, String>("SELECT root_path FROM libraries WHERE id = $1")
+            .bind(params.library_id)
+            .fetch_one(pool)
+            .await
     {
         let physical_root = stripstream_core::paths::remap_libraries_path(&root_path);
         let series_dir = std::path::Path::new(&physical_root).join(&params.name);
         if !series_dir.exists() {
             if let Err(e) = std::fs::create_dir_all(&series_dir) {
-                tracing::warn!("[SERIES] Failed to create directory {}: {}", series_dir.display(), e);
+                tracing::warn!(
+                    "[SERIES] Failed to create directory {}: {}",
+                    series_dir.display(),
+                    e
+                );
             }
         }
     }
@@ -147,7 +152,10 @@ pub(crate) async fn create_series_with_metadata(
     // 3. If metadata info provided, create approved link + sync
     let mut metadata_link_id = None;
     if let (Some(ref provider), Some(ref external_id)) = (&params.provider, &params.external_id) {
-        let metadata_json = params.metadata_json.clone().unwrap_or(serde_json::json!({}));
+        let metadata_json = params
+            .metadata_json
+            .clone()
+            .unwrap_or(serde_json::json!({}));
 
         let link_id: Uuid = sqlx::query_scalar(
             r#"
@@ -183,13 +191,22 @@ pub(crate) async fn create_series_with_metadata(
 
         // Sync series metadata
         let _ = crate::metadata::sync_series_metadata(
-            state, params.library_id, &params.name, &metadata_json, params.total_volumes,
+            state,
+            params.library_id,
+            &params.name,
+            &metadata_json,
+            params.total_volumes,
         )
         .await;
 
         // Sync book metadata
         let _ = crate::metadata::sync_books_metadata(
-            state, link_id, params.library_id, &params.name, provider, external_id,
+            state,
+            link_id,
+            params.library_id,
+            &params.name,
+            provider,
+            external_id,
         )
         .await;
 

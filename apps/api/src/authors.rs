@@ -1,4 +1,7 @@
-use axum::{extract::{Query, State}, Json};
+use axum::{
+    extract::{Query, State},
+    Json,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use utoipa::ToSchema;
@@ -64,7 +67,9 @@ pub async fn list_authors(
         _ => "name ASC",
     };
 
-    let q_pattern = query.q.as_deref()
+    let q_pattern = query
+        .q
+        .as_deref()
         .filter(|s| !s.trim().is_empty())
         .map(|s| format!("%{s}%"));
 

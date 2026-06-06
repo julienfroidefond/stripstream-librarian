@@ -4,12 +4,16 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
-use uuid::Uuid;
-use utoipa::ToSchema;
 use tracing::{info, warn};
+use utoipa::ToSchema;
+use uuid::Uuid;
 
-use crate::{error::ApiError, job_helpers::{is_job_cancelled, update_progress, insert_event}, state::AppState};
 use crate::metadata_providers::senscritique::RATE_LIMITED_ERROR;
+use crate::{
+    error::ApiError,
+    job_helpers::{insert_event, is_job_cancelled, update_progress},
+    state::AppState,
+};
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -97,7 +101,9 @@ pub async fn start_batch(
             .bind(library_id)
             .fetch_optional(&state.pool)
             .await?;
-            if existing.is_some() { continue; }
+            if existing.is_some() {
+                continue;
+            }
             let job_id = Uuid::new_v4();
             sqlx::query(
                 "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'metadata_batch', 'running', NOW())",
@@ -107,12 +113,13 @@ pub async fn start_batch(
             .execute(&state.pool)
             .await?;
             let pool = state.pool.clone();
-            let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-                .bind(library_id)
-                .fetch_optional(&state.pool)
-                .await
-                .ok()
-                .flatten();
+            let library_name: Option<String> =
+                sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+                    .bind(library_id)
+                    .fetch_optional(&state.pool)
+                    .await
+                    .ok()
+                    .flatten();
             tokio::spawn(async move {
                 if let Err(e) = process_metadata_batch(&pool, job_id, library_id).await {
                     warn!("[METADATA_BATCH] job {job_id} failed: {e}");
@@ -160,7 +167,9 @@ pub async fn start_batch(
         .await?;
     let lib_provider: Option<String> = lib_row.get("metadata_provider");
     if lib_provider.as_deref() == Some("none") {
-        return Err(ApiError::bad_request("This library has metadata disabled (provider set to 'none')"));
+        return Err(ApiError::bad_request(
+            "This library has metadata disabled (provider set to 'none')",
+        ));
     }
 
     // Check no existing running metadata_batch job for this library
@@ -178,7 +187,11 @@ pub async fn start_batch(
         })));
     }
 
-    let job_type = if body.force_rematch { "metadata_batch_rematch" } else { "metadata_batch" };
+    let job_type = if body.force_rematch {
+        "metadata_batch_rematch"
+    } else {
+        "metadata_batch"
+    };
     let job_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, $3, 'running', NOW())",
@@ -191,12 +204,13 @@ pub async fn start_batch(
 
     // Spawn the background processing task (status already 'running' to avoid poller race)
     let pool = state.pool.clone();
-    let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-        .bind(library_id)
-        .fetch_optional(&state.pool)
-        .await
-        .ok()
-        .flatten();
+    let library_name: Option<String> =
+        sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+            .bind(library_id)
+            .fetch_optional(&state.pool)
+            .await
+            .ok()
+            .flatten();
     tokio::spawn(async move {
         if let Err(e) = process_metadata_batch(&pool, job_id, library_id).await {
             warn!("[METADATA_BATCH] job {job_id} failed: {e}");
@@ -342,11 +356,12 @@ pub async fn get_batch_results(
     });
 
     // Get library_id from the job to resolve series_id
-    let job_library_id: Option<Uuid> = sqlx::query_scalar("SELECT library_id FROM index_jobs WHERE id = $1")
-        .bind(job_id)
-        .fetch_optional(&state.pool)
-        .await?
-        .flatten();
+    let job_library_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT library_id FROM index_jobs WHERE id = $1")
+            .bind(job_id)
+            .fetch_optional(&state.pool)
+            .await?
+            .flatten();
 
     let rows = sqlx::query(
         r#"
@@ -396,26 +411,32 @@ pub async fn get_batch_results(
                 other => other,
             };
 
-            let provider_used = detail.as_ref()
+            let provider_used = detail
+                .as_ref()
                 .and_then(|d| d.get("provider"))
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
-            let fallback_used = detail.as_ref()
+            let fallback_used = detail
+                .as_ref()
                 .and_then(|d| d.get("fallback_used"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-            let candidates_count = detail.as_ref()
+            let candidates_count = detail
+                .as_ref()
                 .and_then(|d| d.get("candidates_count"))
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0) as i32;
-            let best_confidence = detail.as_ref()
+            let best_confidence = detail
+                .as_ref()
                 .and_then(|d| d.get("confidence"))
                 .and_then(|v| v.as_f64())
                 .map(|f| f as f32);
-            let best_candidate_json = detail.as_ref()
+            let best_candidate_json = detail
+                .as_ref()
                 .and_then(|d| d.get("best_candidate"))
                 .cloned();
-            let link_id = detail.as_ref()
+            let link_id = detail
+                .as_ref()
                 .and_then(|d| d.get("link_id"))
                 .and_then(|v| v.as_str())
                 .and_then(|s| s.parse::<Uuid>().ok());
@@ -424,7 +445,9 @@ pub async fn get_batch_results(
             MetadataBatchResultDto {
                 id: row.get("id"),
                 series_id: row.get("series_id"),
-                series_name: row.get::<Option<String>, _>("entity_name").unwrap_or_default(),
+                series_name: row
+                    .get::<Option<String>, _>("entity_name")
+                    .unwrap_or_default(),
                 status: status.to_string(),
                 provider_used,
                 fallback_used,
@@ -477,7 +500,8 @@ pub(crate) async fn process_metadata_batch(
     let fallback_provider_name: Option<String> = lib_row.get("fallback_metadata_provider");
 
     // Resolve primary provider: library -> global setting -> google_books
-    let primary_name = super::config::resolve_provider_name(pool, primary_provider_name.as_deref()).await;
+    let primary_name =
+        super::config::resolve_provider_name(pool, primary_provider_name.as_deref()).await;
     let fallback_name = fallback_provider_name
         .as_deref()
         .filter(|s| !s.is_empty() && *s != primary_name)
@@ -522,7 +546,12 @@ pub(crate) async fn process_metadata_batch(
 
     let already_linked: std::collections::HashMap<String, String> = linked_rows
         .into_iter()
-        .map(|row| (row.get::<String, _>("name"), row.get::<String, _>("provider")))
+        .map(|row| {
+            (
+                row.get::<String, _>("name"),
+                row.get::<String, _>("provider"),
+            )
+        })
         .collect();
 
     let mut processed = 0i32;
@@ -545,7 +574,17 @@ pub(crate) async fn process_metadata_batch(
         if series_name == "unclassified" {
             processed += 1;
             update_progress(pool, job_id, processed, total, series_name).await;
-            insert_event(pool, job_id, "metadata_already_linked", "info", Some("series"), Some(series_name), Some("Unclassified series skipped"), None).await;
+            insert_event(
+                pool,
+                job_id,
+                "metadata_already_linked",
+                "info",
+                Some("series"),
+                Some(series_name),
+                Some("Unclassified series skipped"),
+                None,
+            )
+            .await;
             continue;
         }
 
@@ -561,7 +600,17 @@ pub(crate) async fn process_metadata_batch(
         if should_skip {
             processed += 1;
             update_progress(pool, job_id, processed, total, series_name).await;
-            insert_event(pool, job_id, "metadata_already_linked", "info", Some("series"), Some(series_name), None, None).await;
+            insert_event(
+                pool,
+                job_id,
+                "metadata_already_linked",
+                "info",
+                Some("series"),
+                Some(series_name),
+                None,
+                None,
+            )
+            .await;
             continue;
         }
 
@@ -570,206 +619,241 @@ pub(crate) async fn process_metadata_batch(
         let fallback_is_sc = fallback_name.as_deref() == Some("senscritique");
         if sc_rate_limited && (primary_is_sc || fallback_is_sc) {
             warn!("[METADATA_BATCH] job={job_id} skipping '{series_name}' (SensCritique rate-limited)");
-            insert_event(pool, job_id, "metadata_error", "error", Some("series"), Some(series_name),
-                Some("Skipped: SensCritique rate-limited earlier in this job"), None).await;
+            insert_event(
+                pool,
+                job_id,
+                "metadata_error",
+                "error",
+                Some("series"),
+                Some(series_name),
+                Some("Skipped: SensCritique rate-limited earlier in this job"),
+                None,
+            )
+            .await;
             processed += 1;
             update_progress(pool, job_id, processed, total, series_name).await;
             continue;
         }
 
         // Search with primary provider
-        let (result_status, provider_used, fallback_used, candidates_count, best_confidence, best_candidate, link_id, error_msg) =
-            match search_and_evaluate(pool, library_id, series_name, &primary_name, true).await {
-                SearchOutcome::AutoMatch(candidate) => {
-                    // Create link + approve + sync
-                    match auto_apply(pool, library_id, series_name, &primary_name, &candidate).await {
-                        Ok(lid) => (
-                            "auto_matched",
-                            Some(primary_name.clone()),
-                            false,
+        let (
+            result_status,
+            provider_used,
+            fallback_used,
+            candidates_count,
+            best_confidence,
+            best_candidate,
+            link_id,
+            error_msg,
+        ) = match search_and_evaluate(pool, library_id, series_name, &primary_name, true).await {
+            SearchOutcome::AutoMatch(candidate) => {
+                // Create link + approve + sync
+                match auto_apply(pool, library_id, series_name, &primary_name, &candidate).await {
+                    Ok(lid) => (
+                        "auto_matched",
+                        Some(primary_name.clone()),
+                        false,
+                        1,
+                        Some(candidate.confidence),
+                        Some(serde_json::json!({
+                            "title": candidate.title,
+                            "external_id": candidate.external_id,
+                        })),
+                        Some(lid),
+                        None,
+                    ),
+                    Err(e) => (
+                        "error",
+                        Some(primary_name.clone()),
+                        false,
+                        1,
+                        Some(candidate.confidence),
+                        None,
+                        None,
+                        Some(format!("Auto-apply failed: {e}")),
+                    ),
+                }
+            }
+            SearchOutcome::NoResults => {
+                // Try fallback
+                if let Some(ref fb_name) = fallback_name {
+                    match search_and_evaluate(pool, library_id, series_name, fb_name, true).await {
+                        SearchOutcome::AutoMatch(candidate) => {
+                            match auto_apply(pool, library_id, series_name, fb_name, &candidate)
+                                .await
+                            {
+                                Ok(lid) => (
+                                    "auto_matched",
+                                    Some(fb_name.clone()),
+                                    true,
+                                    1,
+                                    Some(candidate.confidence),
+                                    Some(serde_json::json!({
+                                        "title": candidate.title,
+                                        "external_id": candidate.external_id,
+                                    })),
+                                    Some(lid),
+                                    None,
+                                ),
+                                Err(e) => (
+                                    "error",
+                                    Some(fb_name.clone()),
+                                    true,
+                                    1,
+                                    Some(candidate.confidence),
+                                    None,
+                                    None,
+                                    Some(format!("Auto-apply failed: {e}")),
+                                ),
+                            }
+                        }
+                        SearchOutcome::NoResults => (
+                            "no_results",
+                            Some(fb_name.clone()),
+                            true,
+                            0,
+                            None,
+                            None,
+                            None,
+                            Some("No results from primary or fallback provider".to_string()),
+                        ),
+                        SearchOutcome::TooManyResults(count, best) => (
+                            "too_many_results",
+                            Some(fb_name.clone()),
+                            true,
+                            count,
+                            best.as_ref().map(|c| c.confidence),
+                            best.map(|c| {
+                                serde_json::json!({
+                                    "title": c.title,
+                                    "external_id": c.external_id,
+                                    "external_url": c.external_url,
+                                    "authors": c.authors,
+                                    "description": c.description,
+                                    "cover_url": c.cover_url,
+                                    "total_volumes": c.total_volumes,
+                                    "start_year": c.start_year,
+                                    "confidence": c.confidence,
+                                })
+                            }),
+                            None,
+                            Some(format!("{count} results, manual review needed")),
+                        ),
+                        SearchOutcome::LowConfidence(candidate) => (
+                            "low_confidence",
+                            Some(fb_name.clone()),
+                            true,
                             1,
                             Some(candidate.confidence),
                             Some(serde_json::json!({
                                 "title": candidate.title,
                                 "external_id": candidate.external_id,
+                                "external_url": candidate.external_url,
+                                "authors": candidate.authors,
+                                "description": candidate.description,
+                                "cover_url": candidate.cover_url,
+                                "total_volumes": candidate.total_volumes,
+                                "start_year": candidate.start_year,
+                                "confidence": candidate.confidence,
                             })),
-                            Some(lid),
                             None,
+                            Some(format!(
+                                "Best confidence: {:.0}%",
+                                candidate.confidence * 100.0
+                            )),
                         ),
-                        Err(e) => (
+                        SearchOutcome::Error(e) => (
                             "error",
-                            Some(primary_name.clone()),
-                            false,
-                            1,
-                            Some(candidate.confidence),
-                            None,
-                            None,
-                            Some(format!("Auto-apply failed: {e}")),
-                        ),
-                    }
-                }
-                SearchOutcome::NoResults => {
-                    // Try fallback
-                    if let Some(ref fb_name) = fallback_name {
-                        match search_and_evaluate(pool, library_id, series_name, fb_name, true).await {
-                            SearchOutcome::AutoMatch(candidate) => {
-                                match auto_apply(pool, library_id, series_name, fb_name, &candidate).await {
-                                    Ok(lid) => (
-                                        "auto_matched",
-                                        Some(fb_name.clone()),
-                                        true,
-                                        1,
-                                        Some(candidate.confidence),
-                                        Some(serde_json::json!({
-                                            "title": candidate.title,
-                                            "external_id": candidate.external_id,
-                                        })),
-                                        Some(lid),
-                                        None,
-                                    ),
-                                    Err(e) => (
-                                        "error",
-                                        Some(fb_name.clone()),
-                                        true,
-                                        1,
-                                        Some(candidate.confidence),
-                                        None,
-                                        None,
-                                        Some(format!("Auto-apply failed: {e}")),
-                                    ),
-                                }
-                            }
-                            SearchOutcome::NoResults => (
-                                "no_results",
-                                Some(fb_name.clone()),
-                                true,
-                                0,
-                                None,
-                                None,
-                                None,
-                                Some("No results from primary or fallback provider".to_string()),
-                            ),
-                            SearchOutcome::TooManyResults(count, best) => (
-                                "too_many_results",
-                                Some(fb_name.clone()),
-                                true,
-                                count,
-                                best.as_ref().map(|c| c.confidence),
-                                best.map(|c| serde_json::json!({
-                                    "title": c.title,
-                                    "external_id": c.external_id,
-                                    "external_url": c.external_url,
-                                    "authors": c.authors,
-                                    "description": c.description,
-                                    "cover_url": c.cover_url,
-                                    "total_volumes": c.total_volumes,
-                                    "start_year": c.start_year,
-                                    "confidence": c.confidence,
-                                })),
-                                None,
-                                Some(format!("{count} results, manual review needed")),
-                            ),
-                            SearchOutcome::LowConfidence(candidate) => (
-                                "low_confidence",
-                                Some(fb_name.clone()),
-                                true,
-                                1,
-                                Some(candidate.confidence),
-                                Some(serde_json::json!({
-                                    "title": candidate.title,
-                                    "external_id": candidate.external_id,
-                                    "external_url": candidate.external_url,
-                                    "authors": candidate.authors,
-                                    "description": candidate.description,
-                                    "cover_url": candidate.cover_url,
-                                    "total_volumes": candidate.total_volumes,
-                                    "start_year": candidate.start_year,
-                                    "confidence": candidate.confidence,
-                                })),
-                                None,
-                                Some(format!("Best confidence: {:.0}%", candidate.confidence * 100.0)),
-                            ),
-                            SearchOutcome::Error(e) => (
-                                "error",
-                                Some(fb_name.clone()),
-                                true,
-                                0,
-                                None,
-                                None,
-                                None,
-                                Some(e),
-                            ),
-                        }
-                    } else {
-                        (
-                            "no_results",
-                            Some(primary_name.clone()),
-                            false,
+                            Some(fb_name.clone()),
+                            true,
                             0,
                             None,
                             None,
                             None,
-                            Some("No results found".to_string()),
-                        )
+                            Some(e),
+                        ),
                     }
+                } else {
+                    (
+                        "no_results",
+                        Some(primary_name.clone()),
+                        false,
+                        0,
+                        None,
+                        None,
+                        None,
+                        Some("No results found".to_string()),
+                    )
                 }
-                SearchOutcome::TooManyResults(count, best) => (
-                    "too_many_results",
-                    Some(primary_name.clone()),
-                    false,
-                    count,
-                    best.as_ref().map(|c| c.confidence),
-                    best.map(|c| serde_json::json!({
-                                    "title": c.title,
-                                    "external_id": c.external_id,
-                                    "external_url": c.external_url,
-                                    "authors": c.authors,
-                                    "description": c.description,
-                                    "cover_url": c.cover_url,
-                                    "total_volumes": c.total_volumes,
-                                    "start_year": c.start_year,
-                                    "confidence": c.confidence,
-                                })),
-                    None,
-                    Some(format!("{count} results, manual review needed")),
-                ),
-                SearchOutcome::LowConfidence(candidate) => (
-                    "low_confidence",
-                    Some(primary_name.clone()),
-                    false,
-                    1,
-                    Some(candidate.confidence),
-                    Some(serde_json::json!({
-                                    "title": candidate.title,
-                                    "external_id": candidate.external_id,
-                                    "external_url": candidate.external_url,
-                                    "authors": candidate.authors,
-                                    "description": candidate.description,
-                                    "cover_url": candidate.cover_url,
-                                    "total_volumes": candidate.total_volumes,
-                                    "start_year": candidate.start_year,
-                                    "confidence": candidate.confidence,
-                                })),
-                    None,
-                    Some(format!("Best confidence: {:.0}%", candidate.confidence * 100.0)),
-                ),
-                SearchOutcome::Error(e) => (
-                    "error",
-                    Some(primary_name.clone()),
-                    false,
-                    0,
-                    None,
-                    None,
-                    None,
-                    Some(e),
-                ),
-            };
+            }
+            SearchOutcome::TooManyResults(count, best) => (
+                "too_many_results",
+                Some(primary_name.clone()),
+                false,
+                count,
+                best.as_ref().map(|c| c.confidence),
+                best.map(|c| {
+                    serde_json::json!({
+                        "title": c.title,
+                        "external_id": c.external_id,
+                        "external_url": c.external_url,
+                        "authors": c.authors,
+                        "description": c.description,
+                        "cover_url": c.cover_url,
+                        "total_volumes": c.total_volumes,
+                        "start_year": c.start_year,
+                        "confidence": c.confidence,
+                    })
+                }),
+                None,
+                Some(format!("{count} results, manual review needed")),
+            ),
+            SearchOutcome::LowConfidence(candidate) => (
+                "low_confidence",
+                Some(primary_name.clone()),
+                false,
+                1,
+                Some(candidate.confidence),
+                Some(serde_json::json!({
+                    "title": candidate.title,
+                    "external_id": candidate.external_id,
+                    "external_url": candidate.external_url,
+                    "authors": candidate.authors,
+                    "description": candidate.description,
+                    "cover_url": candidate.cover_url,
+                    "total_volumes": candidate.total_volumes,
+                    "start_year": candidate.start_year,
+                    "confidence": candidate.confidence,
+                })),
+                None,
+                Some(format!(
+                    "Best confidence: {:.0}%",
+                    candidate.confidence * 100.0
+                )),
+            ),
+            SearchOutcome::Error(e) => (
+                "error",
+                Some(primary_name.clone()),
+                false,
+                0,
+                None,
+                None,
+                None,
+                Some(e),
+            ),
+        };
 
         // Insert event tracking (replaces insert_result -- events are the single source of truth)
         match result_status {
             "auto_matched" => {
                 insert_event(
-                    pool, job_id, "metadata_matched", "info", Some("series"), Some(series_name), None,
+                    pool,
+                    job_id,
+                    "metadata_matched",
+                    "info",
+                    Some("series"),
+                    Some(series_name),
+                    None,
                     Some(serde_json::json!({
                         "provider": provider_used,
                         "fallback_used": fallback_used,
@@ -778,22 +862,34 @@ pub(crate) async fn process_metadata_batch(
                         "best_candidate": best_candidate,
                         "link_id": link_id.map(|id| id.to_string()),
                     })),
-                ).await;
+                )
+                .await;
             }
             "no_results" => {
                 insert_event(
-                    pool, job_id, "metadata_no_results", "info", Some("series"), Some(series_name),
+                    pool,
+                    job_id,
+                    "metadata_no_results",
+                    "info",
+                    Some("series"),
+                    Some(series_name),
                     error_msg.as_deref(),
                     Some(serde_json::json!({
                         "provider": provider_used,
                         "fallback_used": fallback_used,
                         "candidates_count": candidates_count,
                     })),
-                ).await;
+                )
+                .await;
             }
             "low_confidence" => {
                 insert_event(
-                    pool, job_id, "metadata_low_confidence", "warning", Some("series"), Some(series_name),
+                    pool,
+                    job_id,
+                    "metadata_low_confidence",
+                    "warning",
+                    Some("series"),
+                    Some(series_name),
                     error_msg.as_deref(),
                     Some(serde_json::json!({
                         "provider": provider_used,
@@ -802,11 +898,17 @@ pub(crate) async fn process_metadata_batch(
                         "confidence": best_confidence,
                         "best_candidate": best_candidate,
                     })),
-                ).await;
+                )
+                .await;
             }
             "too_many_results" => {
                 insert_event(
-                    pool, job_id, "metadata_too_many", "warning", Some("series"), Some(series_name),
+                    pool,
+                    job_id,
+                    "metadata_too_many",
+                    "warning",
+                    Some("series"),
+                    Some(series_name),
                     error_msg.as_deref(),
                     Some(serde_json::json!({
                         "provider": provider_used,
@@ -815,7 +917,8 @@ pub(crate) async fn process_metadata_batch(
                         "confidence": best_confidence,
                         "best_candidate": best_candidate,
                     })),
-                ).await;
+                )
+                .await;
             }
             "error" => {
                 // Detect SensCritique 429 and trip the circuit breaker for this job
@@ -826,13 +929,20 @@ pub(crate) async fn process_metadata_batch(
                     }
                 }
                 insert_event(
-                    pool, job_id, "error", "error", Some("series"), Some(series_name), error_msg.as_deref(),
+                    pool,
+                    job_id,
+                    "error",
+                    "error",
+                    Some("series"),
+                    Some(series_name),
+                    error_msg.as_deref(),
                     Some(serde_json::json!({
                         "provider": provider_used,
                         "fallback_used": fallback_used,
                         "candidates_count": candidates_count,
                     })),
-                ).await;
+                )
+                .await;
             }
             _ => {}
         }
@@ -904,12 +1014,13 @@ pub(crate) async fn process_metadata_batch(
         }
     }
 
-    let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-        .bind(library_id)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
+    let library_name: Option<String> =
+        sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+            .bind(library_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
 
     let new_matches: Vec<String> = sqlx::query(
         "SELECT entity_name FROM index_job_events WHERE job_id = $1 AND event_type = 'metadata_matched' ORDER BY created_at LIMIT 10",
@@ -941,7 +1052,7 @@ pub(crate) async fn process_metadata_batch(
     Ok(())
 }
 
-use super::batch_sync::{SearchOutcome, search_and_evaluate, auto_apply};
+use super::batch_sync::{auto_apply, search_and_evaluate, SearchOutcome};
 
 // Helpers moved to crate::job_helpers and super::config
 

@@ -91,7 +91,10 @@ fn extract_names_with_array() {
             {"name": "Another Author"}
         ]
     });
-    assert_eq!(extract_names(&product, "authors"), vec!["Eiichiro Oda", "Another Author"]);
+    assert_eq!(
+        extract_names(&product, "authors"),
+        vec!["Eiichiro Oda", "Another Author"]
+    );
 }
 
 #[test]
@@ -109,13 +112,16 @@ fn extract_names_missing_name_field() {
             {"name": "Author2"}
         ]
     });
-    assert_eq!(extract_names(&product, "authors"), vec!["Author1", "Author2"]);
+    assert_eq!(
+        extract_names(&product, "authors"),
+        vec!["Author1", "Author2"]
+    );
 }
 
 // ─── Wiremock integration tests ─────────────────────────────────────
 
-use wiremock::{MockServer, Mock, ResponseTemplate};
 use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn mock_autocomplete_response() -> serde_json::Value {
     serde_json::json!({
@@ -198,7 +204,9 @@ async fn wiremock_graphql_request_url() {
 
     let client = build_client().unwrap();
     let body = serde_json::json!({ "query": "{ test }" });
-    let result = graphql_request_url(&client, &server.uri(), &body).await.unwrap();
+    let result = graphql_request_url(&client, &server.uri(), &body)
+        .await
+        .unwrap();
     assert_eq!(result["data"]["test"], true);
 }
 
@@ -253,25 +261,41 @@ async fn wiremock_search_deduplicates_by_franchise() {
     let body = serde_json::json!({
         "query": r#"{ searchAutocomplete(keywords: "Blacksad", universe: "comicBook", limit: 20) { items { product { id title url category synopsis medias { picture } authors { name } pencillers { name } dateRelease rating yearOfProduction franchises { id label } } } } }"#,
     });
-    let data = graphql_request_url(&client, &server.uri(), &body).await.unwrap();
+    let data = graphql_request_url(&client, &server.uri(), &body)
+        .await
+        .unwrap();
 
-    let items = data.pointer("/data/searchAutocomplete/items").unwrap().as_array().unwrap();
+    let items = data
+        .pointer("/data/searchAutocomplete/items")
+        .unwrap()
+        .as_array()
+        .unwrap();
     assert_eq!(items.len(), 3, "mock returns 3 items");
 
     // Verify dedup logic manually
-    let mut franchise_map: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
+    let mut franchise_map: std::collections::HashMap<i64, String> =
+        std::collections::HashMap::new();
     let mut standalone_count = 0;
     for item in items {
         let product = item.get("product").unwrap();
-        let franchises = product.get("franchises").and_then(|f| f.as_array()).unwrap();
+        let franchises = product
+            .get("franchises")
+            .and_then(|f| f.as_array())
+            .unwrap();
         if let Some(f) = franchises.first() {
             let fid = f["id"].as_i64().unwrap();
-            franchise_map.entry(fid).or_insert_with(|| product["title"].as_str().unwrap().to_string());
+            franchise_map
+                .entry(fid)
+                .or_insert_with(|| product["title"].as_str().unwrap().to_string());
         } else {
             standalone_count += 1;
         }
     }
-    assert_eq!(franchise_map.len(), 1, "two Blacksad tomes should dedup to one franchise");
+    assert_eq!(
+        franchise_map.len(),
+        1,
+        "two Blacksad tomes should dedup to one franchise"
+    );
     assert_eq!(standalone_count, 1, "one standalone book");
     assert!(franchise_map.contains_key(&2430));
 }
@@ -295,7 +319,10 @@ async fn group_products_filters_missing_covers() {
     let results = group_products_by_franchise(&items, 10);
     assert_eq!(results.len(), 2);
     assert!(results[0].cover_url.is_some(), "real cover should be kept");
-    assert!(results[1].cover_url.is_none(), "missing.png cover should be filtered out");
+    assert!(
+        results[1].cover_url.is_none(),
+        "missing.png cover should be filtered out"
+    );
 }
 
 #[test]
@@ -321,7 +348,11 @@ fn group_products_by_franchise_deduplicates() {
         }),
     ];
     let results = group_products_by_franchise(&items, 10);
-    assert_eq!(results.len(), 2, "two One Piece tomes should be grouped into one");
+    assert_eq!(
+        results.len(),
+        2,
+        "two One Piece tomes should be grouped into one"
+    );
     assert_eq!(results[0].title, "One Piece");
     assert_eq!(results[0].external_id, "franchise:482");
     assert_eq!(results[1].title, "Naruto");
@@ -380,7 +411,12 @@ fn edition_name_simple() {
 
 #[test]
 fn edition_encode_decode_roundtrip() {
-    for name in ["Naruto", "Naruto (Édition Hokage)", "Boruto: Two Blue Vortex", "Astérix"] {
+    for name in [
+        "Naruto",
+        "Naruto (Édition Hokage)",
+        "Boruto: Two Blue Vortex",
+        "Astérix",
+    ] {
         let encoded = encode_edition(name);
         let decoded = decode_edition(&encoded).unwrap();
         assert_eq!(decoded, name, "round-trip failed for {name}");
@@ -433,7 +469,10 @@ fn external_id_franchise_with_edition() {
 fn external_id_franchise_backward_compat() {
     let ext_id = "franchise:817";
     let rest = ext_id.strip_prefix("franchise:").unwrap();
-    assert!(rest.split_once(":edition:").is_none(), "old format has no edition");
+    assert!(
+        rest.split_once(":edition:").is_none(),
+        "old format has no edition"
+    );
 }
 
 // ─── name_similarity ──────────────────────────────────────────────

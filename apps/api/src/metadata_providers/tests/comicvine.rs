@@ -71,7 +71,10 @@ async fn search_series_parses_candidates() {
         Some("https://comicvine.example.com/blacksad/".to_string())
     );
     // Description should have HTML stripped
-    assert_eq!(best.description, Some("A noir detective story.".to_string()));
+    assert_eq!(
+        best.description,
+        Some("A noir detective story.".to_string())
+    );
 
     let second = &candidates[1];
     assert_eq!(second.external_id, "67890");
@@ -100,7 +103,10 @@ async fn search_series_empty_results() {
         .await
         .unwrap();
 
-    assert!(candidates.is_empty(), "should return empty vec for no results");
+    assert!(
+        candidates.is_empty(),
+        "should return empty vec for no results"
+    );
 }
 
 #[tokio::test]

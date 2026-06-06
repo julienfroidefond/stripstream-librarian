@@ -1,11 +1,6 @@
 use super::*;
 
-fn make_book(
-    title: &str,
-    volume: Option<i32>,
-    authors: Vec<&str>,
-    abs_path: &str,
-) -> BookFileData {
+fn make_book(title: &str, volume: Option<i32>, authors: Vec<&str>, abs_path: &str) -> BookFileData {
     make_book_with_type(title, volume, authors, abs_path, "regular")
 }
 
@@ -33,8 +28,18 @@ fn make_book_with_type(
 
 #[test]
 fn basic_template() {
-    let book = make_book("Son Goku et ses amis", Some(1), vec!["Akira Toriyama"], "/libraries/BD/old.cbz");
-    let result = apply_template("{series_name} - T{volume_padded} - {title}", "Dragon Ball", &book, 42);
+    let book = make_book(
+        "Son Goku et ses amis",
+        Some(1),
+        vec!["Akira Toriyama"],
+        "/libraries/BD/old.cbz",
+    );
+    let result = apply_template(
+        "{series_name} - T{volume_padded} - {title}",
+        "Dragon Ball",
+        &book,
+        42,
+    );
     assert_eq!(result, "Dragon Ball - T01 - Son Goku et ses amis");
 }
 
@@ -69,14 +74,24 @@ fn volume_padding_four_digits() {
 #[test]
 fn null_volume_removes_entire_segment() {
     let book = make_book("Title", None, vec!["Author"], "/libraries/BD/old.cbz");
-    let result = apply_template("{series_name} - T{volume_padded} - {title}", "Dragon Ball", &book, 10);
+    let result = apply_template(
+        "{series_name} - T{volume_padded} - {title}",
+        "Dragon Ball",
+        &book,
+        10,
+    );
     assert_eq!(result, "Dragon Ball - Title");
 }
 
 #[test]
 fn null_volume_removes_segment_without_prefix() {
     let book = make_book("Title", None, vec!["Author"], "/libraries/BD/old.cbz");
-    let result = apply_template("{series_name} - {volume_padded} - {title}", "Dragon Ball", &book, 10);
+    let result = apply_template(
+        "{series_name} - {volume_padded} - {title}",
+        "Dragon Ball",
+        &book,
+        10,
+    );
     assert_eq!(result, "Dragon Ball - Title");
 }
 
@@ -89,7 +104,12 @@ fn empty_authors_fallback_to_unknown() {
 
 #[test]
 fn multiple_authors_joined() {
-    let book = make_book("Title", Some(1), vec!["Author A", "Author B"], "/libraries/BD/old.cbz");
+    let book = make_book(
+        "Title",
+        Some(1),
+        vec!["Author A", "Author B"],
+        "/libraries/BD/old.cbz",
+    );
     let result = apply_template("{authors}", "S", &book, 1);
     assert_eq!(result, "Author A, Author B");
 }
@@ -121,7 +141,10 @@ fn null_publish_date_cleaned_up() {
 
 #[test]
 fn sanitize_replaces_forbidden_chars() {
-    assert_eq!(sanitize_filename("a/b\\c:d*e?f\"g<h>i|j"), "a_b_c_d_e_f_g_h_i_j");
+    assert_eq!(
+        sanitize_filename("a/b\\c:d*e?f\"g<h>i|j"),
+        "a_b_c_d_e_f_g_h_i_j"
+    );
 }
 
 #[test]
@@ -138,7 +161,10 @@ fn sanitize_truncates_long_names() {
 
 #[test]
 fn sanitize_normal_name_unchanged() {
-    assert_eq!(sanitize_filename("Dragon Ball - T01 - Son Goku"), "Dragon Ball - T01 - Son Goku");
+    assert_eq!(
+        sanitize_filename("Dragon Ball - T01 - Son Goku"),
+        "Dragon Ball - T01 - Son Goku"
+    );
 }
 
 // -- deduplicate_filenames --
@@ -235,7 +261,12 @@ fn full_flow_42_books_with_mixed_volumes() {
         let result = apply_template(template, series_name, &book, max_volume);
         let result = sanitize_filename(&result);
         // Should never be empty
-        assert!(!result.is_empty(), "empty result for vol={:?} title={}", vol, title);
+        assert!(
+            !result.is_empty(),
+            "empty result for vol={:?} title={}",
+            vol,
+            title
+        );
         // Should not contain null bytes
         assert!(!result.contains('\x00'), "null byte in result: {}", result);
     }
@@ -264,7 +295,13 @@ fn full_flow_42_books_with_mixed_volumes() {
 
 #[test]
 fn hs_book_uses_hs_template() {
-    let book = make_book_with_type("Spécial été", Some(2), vec![], "/libraries/BD/old.cbz", "hs");
+    let book = make_book_with_type(
+        "Spécial été",
+        Some(2),
+        vec![],
+        "/libraries/BD/old.cbz",
+        "hs",
+    );
     let hs_template = "{series_name} - HS {volume_padded}";
     let result = apply_template(hs_template, "Dragon Ball", &book, 10);
     assert_eq!(result, "Dragon Ball - HS 02");
@@ -280,7 +317,13 @@ fn hs_book_without_volume() {
 
 #[test]
 fn regular_book_not_affected_by_hs_template() {
-    let book = make_book_with_type("Chapter 1", Some(1), vec![], "/libraries/BD/old.cbz", "regular");
+    let book = make_book_with_type(
+        "Chapter 1",
+        Some(1),
+        vec![],
+        "/libraries/BD/old.cbz",
+        "regular",
+    );
     let regular_template = "{series_name} - T{volume_padded}";
     let result = apply_template(regular_template, "One Piece", &book, 100);
     assert_eq!(result, "One Piece - T001");
@@ -288,7 +331,13 @@ fn regular_book_not_affected_by_hs_template() {
 
 #[test]
 fn oneshot_book_uses_regular_template() {
-    let book = make_book_with_type("Le Monde sans fin", None, vec![], "/libraries/BD/old.cbz", "oneshot");
+    let book = make_book_with_type(
+        "Le Monde sans fin",
+        None,
+        vec![],
+        "/libraries/BD/old.cbz",
+        "oneshot",
+    );
     let template = "{series_name} - T{volume_padded} - {title}";
     let result = apply_template(template, "Le Monde sans fin", &book, 1);
     assert_eq!(result, "Le Monde sans fin - Le Monde sans fin");
@@ -296,7 +345,12 @@ fn oneshot_book_uses_regular_template() {
 
 #[test]
 fn no_double_extension_when_series_name_contains_ext() {
-    let book = make_book("La S\u{00e9}paration", Some(1), vec![], "/libraries/BD/Avengers.cbr/old.cbr");
+    let book = make_book(
+        "La S\u{00e9}paration",
+        Some(1),
+        vec![],
+        "/libraries/BD/Avengers.cbr/old.cbr",
+    );
     let template = "{series_name} - T{volume_padded} - {title}";
     let series_name = "Avengers - La S\u{00e9}paration.cbr";
     let new_stem = apply_template(template, series_name, &book, 1);
@@ -323,7 +377,12 @@ fn template_with_special_chars_in_title() {
         vec!["Auteur"],
         "/libraries/BD/old.cbz",
     );
-    let result = apply_template("{series_name} - T{volume_padded} - {title}", "S\u{00e9}rie \u{00e0} accents", &book, 10);
+    let result = apply_template(
+        "{series_name} - T{volume_padded} - {title}",
+        "S\u{00e9}rie \u{00e0} accents",
+        &book,
+        10,
+    );
     let sanitized = sanitize_filename(&result);
     assert_eq!(sanitized, "S\u{00e9}rie \u{00e0} accents - T05 - L'\u{00e9}preuve_ le retour! (2\u{00e8}me \u{00e9}dition)");
 }
@@ -339,21 +398,36 @@ fn volume_extracted_from_filename_when_db_null_tome() {
 
 #[test]
 fn volume_extracted_from_filename_when_db_null_t_prefix() {
-    let book = make_book("Frieren \u{2013} T10", None, vec![], "/libraries/BD/Frieren/Frieren \u{2013} T10.cbz");
+    let book = make_book(
+        "Frieren \u{2013} T10",
+        None,
+        vec![],
+        "/libraries/BD/Frieren/Frieren \u{2013} T10.cbz",
+    );
     let result = apply_template("{series_name} - T{volume_padded}", "Frieren", &book, 14);
     assert_eq!(result, "Frieren - T10");
 }
 
 #[test]
 fn volume_db_takes_precedence_over_filename() {
-    let book = make_book("Tome 05", Some(3), vec![], "/libraries/BD/Frieren/Tome 05.cbz");
+    let book = make_book(
+        "Tome 05",
+        Some(3),
+        vec![],
+        "/libraries/BD/Frieren/Tome 05.cbz",
+    );
     let result = apply_template("{series_name} - T{volume_padded}", "Frieren", &book, 14);
     assert_eq!(result, "Frieren - T03");
 }
 
 #[test]
 fn volume_none_and_no_volume_in_filename() {
-    let book = make_book("Special Edition", None, vec![], "/libraries/BD/Frieren/Special Edition.cbz");
+    let book = make_book(
+        "Special Edition",
+        None,
+        vec![],
+        "/libraries/BD/Frieren/Special Edition.cbz",
+    );
     let result = apply_template("{series_name} - T{volume_padded}", "Frieren", &book, 10);
     assert_eq!(result, "Frieren");
 }

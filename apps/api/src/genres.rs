@@ -246,7 +246,10 @@ pub async fn untagged_series(
     );
 
     let rows = if let Some(lib_id) = query.library_id {
-        sqlx::query(&sql).bind(lib_id).fetch_all(&state.pool).await?
+        sqlx::query(&sql)
+            .bind(lib_id)
+            .fetch_all(&state.pool)
+            .await?
     } else {
         sqlx::query(&sql).fetch_all(&state.pool).await?
     };

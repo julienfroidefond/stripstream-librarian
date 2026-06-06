@@ -38,7 +38,9 @@ pub(crate) async fn anilist_graphql(
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(ApiError::internal(format!("AniList returned {status}: {text}")));
+        return Err(ApiError::internal(format!(
+            "AniList returned {status}: {text}"
+        )));
     }
 
     let data: Value = resp
@@ -47,7 +49,9 @@ pub(crate) async fn anilist_graphql(
         .map_err(|e| ApiError::internal(format!("Failed to parse AniList response: {e}")))?;
 
     if let Some(errors) = data.get("errors") {
-        let msg = errors[0]["message"].as_str().unwrap_or("Unknown AniList error");
+        let msg = errors[0]["message"]
+            .as_str()
+            .unwrap_or("Unknown AniList error");
         return Err(ApiError::internal(format!("AniList API error: {msg}")));
     }
 
@@ -55,7 +59,9 @@ pub(crate) async fn anilist_graphql(
 }
 
 /// Load AniList settings from DB: (access_token, anilist_user_id, local_user_id)
-pub(crate) async fn load_anilist_settings(pool: &sqlx::PgPool) -> Result<(String, Option<i64>, Option<Uuid>), ApiError> {
+pub(crate) async fn load_anilist_settings(
+    pool: &sqlx::PgPool,
+) -> Result<(String, Option<i64>, Option<Uuid>), ApiError> {
     let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'anilist'")
         .fetch_optional(pool)
         .await?;
@@ -116,7 +122,7 @@ pub struct AnilistSeriesLinkResponse {
 }
 
 // Sync types and handlers are in super::anilist_sync
-pub use super::anilist_sync::{preview_sync, sync_to_anilist, pull_from_anilist};
+pub use super::anilist_sync::{preview_sync, pull_from_anilist, sync_to_anilist};
 
 #[derive(Deserialize, ToSchema)]
 pub struct AnilistSearchRequest {
@@ -210,12 +216,7 @@ pub async fn search_manga(
         }
     "#;
 
-    let data = anilist_graphql(
-        &token,
-        gql,
-        serde_json::json!({ "search": body.query }),
-    )
-    .await?;
+    let data = anilist_graphql(&token, gql, serde_json::json!({ "search": body.query })).await?;
 
     let media = data["Page"]["media"]
         .as_array()
@@ -321,7 +322,9 @@ pub async fn link_series(
                         }
                     }
                 "#;
-                match anilist_graphql(&token, gql, serde_json::json!({ "id": body.anilist_id })).await {
+                match anilist_graphql(&token, gql, serde_json::json!({ "id": body.anilist_id }))
+                    .await
+                {
                     Ok(data) => {
                         let title = data["Media"]["title"]["english"]
                             .as_str()
@@ -399,13 +402,12 @@ pub async fn unlink_series(
     State(state): State<AppState>,
     Path((library_id, series_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<crate::responses::UnlinkedResponse>, ApiError> {
-    let result = sqlx::query(
-        "DELETE FROM anilist_series_links WHERE library_id = $1 AND series_id = $2",
-    )
-    .bind(library_id)
-    .bind(series_id)
-    .execute(&state.pool)
-    .await?;
+    let result =
+        sqlx::query("DELETE FROM anilist_series_links WHERE library_id = $1 AND series_id = $2")
+            .bind(library_id)
+            .bind(series_id)
+            .execute(&state.pool)
+            .await?;
 
     if result.rows_affected() == 0 {
         return Err(ApiError::not_found("AniList link not found"));
@@ -519,7 +521,9 @@ pub async fn toggle_library(
         return Err(ApiError::not_found("library not found"));
     }
 
-    Ok(Json(serde_json::json!({ "library_id": library_id, "reading_status_provider": provider })))
+    Ok(Json(
+        serde_json::json!({ "library_id": library_id, "reading_status_provider": provider }),
+    ))
 }
 
 /// List series from AniList-enabled libraries that are not yet linked

@@ -56,7 +56,9 @@ async fn search_series_parses_candidates_from_html() {
         .mount(&server)
         .await;
 
-    let results = search_series_impl("Blacksad", &config(), &server.uri()).await.unwrap();
+    let results = search_series_impl("Blacksad", &config(), &server.uri())
+        .await
+        .unwrap();
 
     assert_eq!(results.len(), 2);
 
@@ -71,7 +73,11 @@ async fn search_series_parses_candidates_from_html() {
 
     // Enrichment should have populated details for top candidates
     assert!(results[0].description.is_some());
-    assert!(results[0].description.as_ref().unwrap().contains("policière animalière"));
+    assert!(results[0]
+        .description
+        .as_ref()
+        .unwrap()
+        .contains("policière animalière"));
     assert!(!results[0].authors.is_empty());
     assert!(!results[0].publishers.is_empty());
 }
@@ -119,7 +125,9 @@ async fn search_series_cover_url_uses_base_url() {
         .mount(&server)
         .await;
 
-    let results = search_series_impl("TestSerie", &config(), &server.uri()).await.unwrap();
+    let results = search_series_impl("TestSerie", &config(), &server.uri())
+        .await
+        .unwrap();
     assert_eq!(results.len(), 1);
 
     // Cover URL should use the mock server base, not hardcoded bedetheque.com
@@ -168,7 +176,9 @@ async fn get_series_books_parses_albums() {
         .mount(&server)
         .await;
 
-    let books = get_series_books_impl("3", &config(), &server.uri()).await.unwrap();
+    let books = get_series_books_impl("3", &config(), &server.uri())
+        .await
+        .unwrap();
 
     assert_eq!(books.len(), 2);
 
@@ -181,7 +191,10 @@ async fn get_series_books_parses_albums() {
 
     // Cover URL from pre-collected covers
     let cover = books[0].cover_url.as_ref().unwrap();
-    assert!(cover.contains("Couv_100"), "first book should get first cover, got: {cover}");
+    assert!(
+        cover.contains("Couv_100"),
+        "first book should get first cover, got: {cover}"
+    );
 
     assert_eq!(books[1].title, "Arctic-Nation");
     assert_eq!(books[1].volume_number, Some(2));
@@ -230,7 +243,9 @@ async fn get_series_books_skips_non_tome_albums() {
         .mount(&server)
         .await;
 
-    let books = get_series_books_impl("1", &config(), &server.uri()).await.unwrap();
+    let books = get_series_books_impl("1", &config(), &server.uri())
+        .await
+        .unwrap();
     // Only the Tome-1 album should be kept, the INT one should be filtered out
     assert_eq!(books.len(), 1);
     assert_eq!(books[0].title, "Tome 1");
@@ -274,7 +289,9 @@ async fn fetch_indispensables_parses_series_list() {
         .mount(&server)
         .await;
 
-    let results = fetch_indispensables_with_base_url(None, 10, &server.uri()).await.unwrap();
+    let results = fetch_indispensables_with_base_url(None, 10, &server.uri())
+        .await
+        .unwrap();
 
     assert_eq!(results.len(), 2);
     assert_eq!(results[0].title, "Blacksad");
@@ -284,7 +301,10 @@ async fn fetch_indispensables_parses_series_list() {
 
     // Cover URLs should come from the gallery
     let cover0 = results[0].cover_url.as_ref().unwrap();
-    assert!(cover0.contains("Couv_3"), "should use gallery cover, got: {cover0}");
+    assert!(
+        cover0.contains("Couv_3"),
+        "should use gallery cover, got: {cover0}"
+    );
 }
 
 #[tokio::test]
@@ -345,13 +365,19 @@ fn compute_confidence_prefix_match() {
 
 #[test]
 fn compute_confidence_contains_match() {
-    assert_eq!(compute_confidence("Les Aventures de Blacksad", "blacksad"), 0.7);
+    assert_eq!(
+        compute_confidence("Les Aventures de Blacksad", "blacksad"),
+        0.7
+    );
 }
 
 #[test]
 fn compute_confidence_normalized_match() {
     // "Légendaires (Les)" normalized == "légendaires" == "Les Légendaires" normalized
-    assert_eq!(compute_confidence("Légendaires (Les)", "Les Légendaires"), 1.0);
+    assert_eq!(
+        compute_confidence("Légendaires (Les)", "Les Légendaires"),
+        1.0
+    );
 }
 
 #[test]

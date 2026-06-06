@@ -22,7 +22,12 @@ fn check_openapi_spec(doc: utoipa::openapi::OpenApi, name: &str) {
         }
     }
     broken.dedup();
-    assert!(broken.is_empty(), "{} — Unresolved schema refs: {:?}", name, broken);
+    assert!(
+        broken.is_empty(),
+        "{} — Unresolved schema refs: {:?}",
+        name,
+        broken
+    );
 
     let path = format!("/tmp/openapi_{}.json", name);
     std::fs::write(&path, &json).expect("Failed to write file");

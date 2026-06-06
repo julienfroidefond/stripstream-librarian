@@ -6,7 +6,7 @@ use tracing::{info, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{integrations::anilist, error::ApiError, state::AppState};
+use crate::{error::ApiError, integrations::anilist, state::AppState};
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -68,7 +68,7 @@ pub async fn start_match(
     if body.library_id.is_none() {
         anilist::load_anilist_settings(&state.pool).await?;
         let library_ids: Vec<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM libraries WHERE reading_status_provider IS NOT NULL ORDER BY name"
+            "SELECT id FROM libraries WHERE reading_status_provider IS NOT NULL ORDER BY name",
         )
         .fetch_all(&state.pool)
         .await?;
@@ -80,7 +80,9 @@ pub async fn start_match(
             .bind(library_id)
             .fetch_optional(&state.pool)
             .await?;
-            if existing.is_some() { continue; }
+            if existing.is_some() {
+                continue;
+            }
             let job_id = Uuid::new_v4();
             sqlx::query(
                 "INSERT INTO index_jobs (id, library_id, type, status, started_at) VALUES ($1, $2, 'reading_status_match', 'running', NOW())",
@@ -90,12 +92,13 @@ pub async fn start_match(
             .execute(&state.pool)
             .await?;
             let pool = state.pool.clone();
-            let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-                .bind(library_id)
-                .fetch_optional(&state.pool)
-                .await
-                .ok()
-                .flatten();
+            let library_name: Option<String> =
+                sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+                    .bind(library_id)
+                    .fetch_optional(&state.pool)
+                    .await
+                    .ok()
+                    .flatten();
             tokio::spawn(async move {
                 if let Err(e) = process_reading_status_match(&pool, job_id, library_id).await {
                     warn!("[READING_STATUS_MATCH] job {job_id} failed: {e}");
@@ -299,8 +302,12 @@ pub async fn get_match_results(
     axum::extract::Path(job_id): axum::extract::Path<Uuid>,
     axum::extract::Query(query): axum::extract::Query<ResultsQuery>,
 ) -> Result<Json<Vec<ReadingStatusMatchResultDto>>, ApiError> {
-    let job_library_id: Option<Uuid> = sqlx::query_scalar("SELECT library_id FROM index_jobs WHERE id = $1")
-        .bind(job_id).fetch_optional(&state.pool).await?.flatten();
+    let job_library_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT library_id FROM index_jobs WHERE id = $1")
+            .bind(job_id)
+            .fetch_optional(&state.pool)
+            .await?
+            .flatten();
 
     // Map frontend status values to event_type values
     let event_type_filter = query.status.as_deref().map(|s| match s {
@@ -355,11 +362,20 @@ pub async fn get_match_results(
             ReadingStatusMatchResultDto {
                 id: row.get("id"),
                 series_id: row.get("series_id"),
-                series_name: row.get::<Option<String>, _>("entity_name").unwrap_or_default(),
+                series_name: row
+                    .get::<Option<String>, _>("entity_name")
+                    .unwrap_or_default(),
                 status: status.to_string(),
-                anilist_id: detail.as_ref().and_then(|d| d["anilist_id"].as_i64()).map(|v| v as i32),
-                anilist_title: detail.as_ref().and_then(|d| d["anilist_title"].as_str().map(String::from)),
-                anilist_url: detail.as_ref().and_then(|d| d["anilist_url"].as_str().map(String::from)),
+                anilist_id: detail
+                    .as_ref()
+                    .and_then(|d| d["anilist_id"].as_i64())
+                    .map(|v| v as i32),
+                anilist_title: detail
+                    .as_ref()
+                    .and_then(|d| d["anilist_title"].as_str().map(String::from)),
+                anilist_url: detail
+                    .as_ref()
+                    .and_then(|d| d["anilist_url"].as_str().map(String::from)),
                 error_message: row.get("message"),
             }
         })
@@ -446,37 +462,99 @@ pub(crate) async fn process_reading_status_match(
         .ok();
 
         if series_name == "unclassified" {
-            insert_event(pool, job_id, "anilist_already_linked", "info", Some(series_name), None, None).await;
+            insert_event(
+                pool,
+                job_id,
+                "anilist_already_linked",
+                "info",
+                Some(series_name),
+                None,
+                None,
+            )
+            .await;
             continue;
         }
 
         if already_linked.contains(series_name) {
-            insert_event(pool, job_id, "anilist_already_linked", "info", Some(series_name), None, None).await;
+            insert_event(
+                pool,
+                job_id,
+                "anilist_already_linked",
+                "info",
+                Some(series_name),
+                None,
+                None,
+            )
+            .await;
             continue;
         }
 
         match search_and_link(pool, library_id, series_name, &token).await {
-            Ok(Outcome::Linked { anilist_id, anilist_title, anilist_url }) => {
+            Ok(Outcome::Linked {
+                anilist_id,
+                anilist_title,
+                anilist_url,
+            }) => {
                 insert_event(pool, job_id, "anilist_linked", "info", Some(series_name), None, Some(serde_json::json!({"anilist_id": anilist_id, "anilist_title": anilist_title, "anilist_url": anilist_url}))).await;
             }
             Ok(Outcome::NoResults) => {
-                insert_event(pool, job_id, "anilist_no_results", "info", Some(series_name), None, None).await;
+                insert_event(
+                    pool,
+                    job_id,
+                    "anilist_no_results",
+                    "info",
+                    Some(series_name),
+                    None,
+                    None,
+                )
+                .await;
             }
             Ok(Outcome::Ambiguous) => {
-                insert_event(pool, job_id, "anilist_ambiguous", "warning", Some(series_name), None, None).await;
+                insert_event(
+                    pool,
+                    job_id,
+                    "anilist_ambiguous",
+                    "warning",
+                    Some(series_name),
+                    None,
+                    None,
+                )
+                .await;
             }
             Err(e) if e.contains("429") || e.contains("Too Many Requests") => {
                 warn!("[READING_STATUS_MATCH] rate limit hit for '{series_name}', waiting 10s before retry");
                 tokio::time::sleep(Duration::from_secs(10)).await;
                 match search_and_link(pool, library_id, series_name, &token).await {
-                    Ok(Outcome::Linked { anilist_id, anilist_title, anilist_url }) => {
+                    Ok(Outcome::Linked {
+                        anilist_id,
+                        anilist_title,
+                        anilist_url,
+                    }) => {
                         insert_event(pool, job_id, "anilist_linked", "info", Some(series_name), None, Some(serde_json::json!({"anilist_id": anilist_id, "anilist_title": anilist_title, "anilist_url": anilist_url}))).await;
                     }
                     Ok(Outcome::NoResults) => {
-                        insert_event(pool, job_id, "anilist_no_results", "info", Some(series_name), None, None).await;
+                        insert_event(
+                            pool,
+                            job_id,
+                            "anilist_no_results",
+                            "info",
+                            Some(series_name),
+                            None,
+                            None,
+                        )
+                        .await;
                     }
                     Ok(Outcome::Ambiguous) => {
-                        insert_event(pool, job_id, "anilist_ambiguous", "warning", Some(series_name), None, None).await;
+                        insert_event(
+                            pool,
+                            job_id,
+                            "anilist_ambiguous",
+                            "warning",
+                            Some(series_name),
+                            None,
+                            None,
+                        )
+                        .await;
                     }
                     Err(e2) => {
                         return Err(format!(
@@ -487,7 +565,16 @@ pub(crate) async fn process_reading_status_match(
             }
             Err(e) => {
                 warn!("[READING_STATUS_MATCH] series '{series_name}': {e}");
-                insert_event(pool, job_id, "error", "error", Some(series_name), Some(&e), None).await;
+                insert_event(
+                    pool,
+                    job_id,
+                    "error",
+                    "error",
+                    Some(series_name),
+                    Some(&e),
+                    None,
+                )
+                .await;
             }
         }
 
@@ -545,12 +632,13 @@ pub(crate) async fn process_reading_status_match(
         processed, total
     );
 
-    let library_name: Option<String> = sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-        .bind(library_id)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
+    let library_name: Option<String> =
+        sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+            .bind(library_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
 
     notifications::notify(
         pool.clone(),
@@ -663,14 +751,13 @@ async fn search_and_link(
         .map(String::from);
     let anilist_url = candidate["siteUrl"].as_str().map(String::from);
 
-    let series_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM series WHERE library_id = $1 AND name = $2",
-    )
-    .bind(library_id)
-    .bind(series_name)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| format!("series lookup failed for '{}': {}", series_name, e))?;
+    let series_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM series WHERE library_id = $1 AND name = $2")
+            .bind(library_id)
+            .bind(series_name)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| format!("series lookup failed for '{}': {}", series_name, e))?;
 
     sqlx::query(
         r#"

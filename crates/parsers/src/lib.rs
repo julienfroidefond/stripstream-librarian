@@ -165,7 +165,9 @@ pub fn extract_volumes(title: &str) -> Vec<i32> {
             // Skip optional spaces, dots, underscores, or '#' after prefix
             let mut i = ci + plen;
             let after_prefix = i;
-            while i < len && (chars[i] == ' ' || chars[i] == '.' || chars[i] == '_' || chars[i] == '#') {
+            while i < len
+                && (chars[i] == ' ' || chars[i] == '.' || chars[i] == '_' || chars[i] == '#')
+            {
                 i += 1;
             }
             let had_separator = i > after_prefix;
@@ -472,7 +474,12 @@ fn is_oneshot_folder(name: &str) -> bool {
     // Strip leading underscores/dots (e.g. "_oneshots", "_oneshot")
     let stripped = lower.trim_start_matches(['_', '.']);
     const PATTERNS: &[&str] = &[
-        "oneshots", "oneshot", "one-shots", "one-shot", "one shots", "one shot",
+        "oneshots",
+        "oneshot",
+        "one-shots",
+        "one-shot",
+        "one shots",
+        "one shot",
     ];
     PATTERNS.iter().any(|p| stripped == *p)
 }
@@ -481,10 +488,23 @@ fn is_oneshot_folder(name: &str) -> bool {
 fn is_hs_subfolder(name: &str) -> bool {
     let lower = name.to_lowercase();
     const PATTERNS: &[&str] = &[
-        "hors-série", "hors-serie", "hors série", "hors serie",
-        "spécial", "special", "specials", "spéciaux",
-        "bonus", "hs", "extras", "extra",
-        "intégrales", "integrales", "intégrale", "integrale", "int",
+        "hors-série",
+        "hors-serie",
+        "hors série",
+        "hors serie",
+        "spécial",
+        "special",
+        "specials",
+        "spéciaux",
+        "bonus",
+        "hs",
+        "extras",
+        "extra",
+        "intégrales",
+        "integrales",
+        "intégrale",
+        "integrale",
+        "int",
     ];
     PATTERNS.iter().any(|p| lower == *p)
 }
@@ -571,7 +591,10 @@ pub fn extract_int_info(filename: &str) -> Option<(Option<i32>, String)> {
                     continue; // "inter", "into", etc. — but allow "inths"
                 }
                 // For "int" specifically, also skip if followed by "h" (will be caught by "inths")
-                if *pattern == "int" && after_pattern < lower.len() && lower.as_bytes()[after_pattern] == b'h' {
+                if *pattern == "int"
+                    && after_pattern < lower.len()
+                    && lower.as_bytes()[after_pattern] == b'h'
+                {
                     continue;
                 }
             }
@@ -692,7 +715,11 @@ pub fn extract_hs_info(filename: &str) -> Option<(Option<i32>, String)> {
 }
 
 /// Fast metadata extraction from filename only — no archive I/O. Always succeeds.
-pub fn parse_metadata_fast(path: &Path, _format: BookFormat, library_root: &Path) -> ParsedMetadata {
+pub fn parse_metadata_fast(
+    path: &Path,
+    _format: BookFormat,
+    library_root: &Path,
+) -> ParsedMetadata {
     let filename = path
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
@@ -761,7 +788,11 @@ pub fn parse_metadata(
 
 /// Open an archive once and return (page_count, first_page_bytes).
 /// `pdf_render_scale`: max dimension used for PDF rasterization; 0 means use default (400).
-pub fn analyze_book(path: &Path, format: BookFormat, pdf_render_scale: u32) -> Result<(i32, Vec<u8>)> {
+pub fn analyze_book(
+    path: &Path,
+    format: BookFormat,
+    pdf_render_scale: u32,
+) -> Result<(i32, Vec<u8>)> {
     match format {
         BookFormat::Cbz => analyze_cbz(path, true),
         BookFormat::Cbr => analyze_cbr(path, true),
@@ -804,7 +835,11 @@ fn analyze_cbz(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {
                     return Ok(result);
                 }
             }
-            return Err(anyhow::anyhow!("invalid cbz archive for {}: {}", path.display(), zip_err));
+            return Err(anyhow::anyhow!(
+                "invalid cbz archive for {}: {}",
+                path.display(),
+                zip_err
+            ));
         }
     };
 
@@ -816,7 +851,10 @@ fn analyze_cbz(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {
     image_names.sort_by(|a, b| natord::compare(a, b));
 
     if image_names.is_empty() {
-        return Err(anyhow::anyhow!("no images found in cbz: {}", path.display()));
+        return Err(anyhow::anyhow!(
+            "no images found in cbz: {}",
+            path.display()
+        ));
     }
 
     // Try images in order until one reads successfully (first pages can be corrupted too)
@@ -839,7 +877,10 @@ fn analyze_cbz(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {
         }
     }
 
-    Err(anyhow::anyhow!("all entries unreadable in cbz: {}", path.display()))
+    Err(anyhow::anyhow!(
+        "all entries unreadable in cbz: {}",
+        path.display()
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -876,7 +917,9 @@ fn raw_zip_list_entries(path: &Path) -> Result<Vec<RawZipEntry>> {
         }
 
         let mut hdr = [0u8; 26];
-        reader.read_exact(&mut hdr).context("truncated local file header")?;
+        reader
+            .read_exact(&mut hdr)
+            .context("truncated local file header")?;
 
         let compression = u16::from_le_bytes([hdr[4], hdr[5]]);
         let compressed_size = u32::from_le_bytes([hdr[14], hdr[15], hdr[16], hdr[17]]) as u64;
@@ -931,7 +974,10 @@ fn raw_zip_read_entry(path: &Path, entry: &RawZipEntry) -> Result<Vec<u8>> {
             decoder.read_to_end(&mut decompressed)?;
             Ok(decompressed)
         }
-        other => Err(anyhow::anyhow!("unsupported zip compression method: {}", other)),
+        other => Err(anyhow::anyhow!(
+            "unsupported zip compression method: {}",
+            other
+        )),
     }
 }
 
@@ -944,7 +990,10 @@ fn analyze_cbz_streaming(path: &Path) -> Result<(i32, Vec<u8>)> {
         .collect();
 
     if image_entries.is_empty() {
-        return Err(anyhow::anyhow!("no images found in streaming cbz: {}", path.display()));
+        return Err(anyhow::anyhow!(
+            "no images found in streaming cbz: {}",
+            path.display()
+        ));
     }
 
     image_entries.sort_by(|a, b| natord::compare(&a.name, &b.name));
@@ -960,7 +1009,9 @@ fn is_not_rar_error(err_str: &str) -> bool {
 
 /// Try to open a CBR file for listing. Returns the archive or an error string.
 /// If the error indicates the file is not actually a RAR archive, the caller can fall back to CBZ.
-fn open_cbr_listing(path: &Path) -> std::result::Result<unrar::OpenArchive<unrar::List, unrar::CursorBeforeHeader>, String> {
+fn open_cbr_listing(
+    path: &Path,
+) -> std::result::Result<unrar::OpenArchive<unrar::List, unrar::CursorBeforeHeader>, String> {
     unrar::Archive::new(path)
         .open_for_listing()
         .map_err(|e| format!("unrar listing failed for {}: {}", path.display(), e))
@@ -998,7 +1049,10 @@ fn analyze_cbr(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {
     };
 
     if image_names.is_empty() {
-        return Err(anyhow::anyhow!("no images found in cbr: {}", path.display()));
+        return Err(anyhow::anyhow!(
+            "no images found in cbr: {}",
+            path.display()
+        ));
     }
 
     image_names.sort_by(|a, b| natord::compare(a, b));
@@ -1008,7 +1062,13 @@ fn analyze_cbr(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> {
     // Pass 2: extract first image to memory
     let mut archive = unrar::Archive::new(path)
         .open_for_processing()
-        .map_err(|e| anyhow::anyhow!("unrar open for processing failed for {}: {}", path.display(), e))?;
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "unrar open for processing failed for {}: {}",
+                path.display(),
+                e
+            )
+        })?;
 
     while let Some(header) = archive
         .read_header()
@@ -1051,7 +1111,11 @@ fn analyze_pdf(path: &Path, pdf_render_scale: u32) -> Result<(i32, Vec<u8>)> {
         return Err(anyhow::anyhow!("PDF has no pages: {}", path.display()));
     }
 
-    let scale = if pdf_render_scale == 0 { 400 } else { pdf_render_scale } as i32;
+    let scale = if pdf_render_scale == 0 {
+        400
+    } else {
+        pdf_render_scale
+    } as i32;
     let config = PdfRenderConfig::new()
         .set_target_width(scale)
         .set_maximum_height(scale);
@@ -1153,7 +1217,9 @@ pub fn list_archive_images(path: &Path, format: BookFormat) -> Result<Vec<String
     match format {
         BookFormat::Cbz => list_cbz_images(path),
         BookFormat::Cbr => list_cbr_images(path),
-        BookFormat::Pdf => Err(anyhow::anyhow!("list_archive_images not applicable for PDF")),
+        BookFormat::Pdf => Err(anyhow::anyhow!(
+            "list_archive_images not applicable for PDF"
+        )),
         BookFormat::Epub => get_epub_image_index(path),
     }
 }
@@ -1169,9 +1235,8 @@ fn list_cbz_images(path: &Path) -> Result<Vec<String>> {
                 return Ok(names);
             }
             // Try streaming fallback
-            return list_cbz_images_streaming(path).map_err(|_| {
-                anyhow::anyhow!("invalid cbz for {}: {}", path.display(), zip_err)
-            });
+            return list_cbz_images_streaming(path)
+                .map_err(|_| anyhow::anyhow!("invalid cbz for {}: {}", path.display(), zip_err));
         }
     };
 
@@ -1332,7 +1397,12 @@ pub fn extract_first_page(path: &Path, format: BookFormat) -> Result<Vec<u8>> {
 
 /// Extract a specific page (1-based index) from a book archive.
 /// `pdf_render_width`: max width for PDF rasterization; 0 means use default (1200).
-pub fn extract_page(path: &Path, format: BookFormat, page_number: u32, pdf_render_width: u32) -> Result<Vec<u8>> {
+pub fn extract_page(
+    path: &Path,
+    format: BookFormat,
+    page_number: u32,
+    pdf_render_width: u32,
+) -> Result<Vec<u8>> {
     if page_number == 0 {
         return Err(anyhow::anyhow!("page index starts at 1"));
     }
@@ -1340,7 +1410,11 @@ pub fn extract_page(path: &Path, format: BookFormat, page_number: u32, pdf_rende
         BookFormat::Cbz => extract_cbz_page(path, page_number, true),
         BookFormat::Cbr => extract_cbr_page(path, page_number, true),
         BookFormat::Pdf => {
-            let width = if pdf_render_width == 0 { 1200 } else { pdf_render_width };
+            let width = if pdf_render_width == 0 {
+                1200
+            } else {
+                pdf_render_width
+            };
             render_pdf_page_n(path, page_number, width)
         }
         BookFormat::Epub => extract_epub_page(path, page_number),
@@ -1349,7 +1423,8 @@ pub fn extract_page(path: &Path, format: BookFormat, page_number: u32, pdf_rende
 
 /// Cache of sorted image names per archive path. Avoids re-listing and sorting on every page request.
 /// Keyed by (path, mtime) so the cache invalidates automatically when the file is replaced.
-static CBZ_INDEX_CACHE: OnceLock<Mutex<HashMap<PathBuf, (SystemTime, Vec<String>)>>> = OnceLock::new();
+static CBZ_INDEX_CACHE: OnceLock<Mutex<HashMap<PathBuf, (SystemTime, Vec<String>)>>> =
+    OnceLock::new();
 
 fn cbz_index_cache() -> &'static Mutex<HashMap<PathBuf, (SystemTime, Vec<String>)>> {
     CBZ_INDEX_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -1394,11 +1469,16 @@ fn extract_cbz_page(path: &Path, page_number: u32, allow_fallback: bool) -> Resu
         Ok(mut archive) => {
             let image_names = get_cbz_image_index(path, &mut archive);
 
-            let selected = image_names
-                .get(index)
-                .with_context(|| format!("page {} out of range (total: {})", page_number, image_names.len()))?;
+            let selected = image_names.get(index).with_context(|| {
+                format!(
+                    "page {} out of range (total: {})",
+                    page_number,
+                    image_names.len()
+                )
+            })?;
 
-            let mut entry = archive.by_name(selected)
+            let mut entry = archive
+                .by_name(selected)
                 .with_context(|| format!("cannot read page {}", selected))?;
             let mut buf = Vec::new();
             entry.read_to_end(&mut buf)?;
@@ -1413,7 +1493,11 @@ fn extract_cbz_page(path: &Path, page_number: u32, allow_fallback: bool) -> Resu
                 // Raw ZIP fallback (bypasses extra field validation)
                 return extract_cbz_page_raw(path, page_number);
             }
-            Err(anyhow::anyhow!("invalid cbz archive for {}: {}", path.display(), zip_err))
+            Err(anyhow::anyhow!(
+                "invalid cbz archive for {}: {}",
+                path.display(),
+                zip_err
+            ))
         }
     }
 }
@@ -1427,9 +1511,13 @@ fn extract_cbz_page_raw(path: &Path, page_number: u32) -> Result<Vec<u8>> {
     image_entries.sort_by(|a, b| natord::compare(&a.name, &b.name));
 
     let index = page_number as usize - 1;
-    let entry = image_entries
-        .get(index)
-        .with_context(|| format!("page {} out of range (total: {})", page_number, image_entries.len()))?;
+    let entry = image_entries.get(index).with_context(|| {
+        format!(
+            "page {} out of range (total: {})",
+            page_number,
+            image_entries.len()
+        )
+    })?;
 
     raw_zip_read_entry(path, entry)
 }
@@ -1461,7 +1549,13 @@ fn extract_cbr_page(path: &Path, page_number: u32, allow_fallback: bool) -> Resu
     image_names.sort_by(|a, b| natord::compare(a, b));
     let target = image_names
         .get(index)
-        .with_context(|| format!("page {} out of range (total: {})", page_number, image_names.len()))?
+        .with_context(|| {
+            format!(
+                "page {} out of range (total: {})",
+                page_number,
+                image_names.len()
+            )
+        })?
         .clone();
 
     let mut archive = unrar::Archive::new(path)
@@ -1484,7 +1578,11 @@ fn extract_cbr_page(path: &Path, page_number: u32, allow_fallback: bool) -> Resu
             .map_err(|e| anyhow::anyhow!("unrar skip: {}", e))?;
     }
 
-    Err(anyhow::anyhow!("page '{}' not found in {}", target, path.display()))
+    Err(anyhow::anyhow!(
+        "page '{}' not found in {}",
+        target,
+        path.display()
+    ))
 }
 
 fn render_pdf_page_n(path: &Path, page_number: u32, width: u32) -> Result<Vec<u8>> {
@@ -1520,14 +1618,14 @@ fn render_pdf_page_n(path: &Path, page_number: u32, width: u32) -> Result<Vec<u8
     Ok(buf.into_inner())
 }
 
-
 // ============================================================
 // EPUB support — spine-aware image index with cache
 // ============================================================
 
 /// Cache of ordered image paths per EPUB file. Avoids re-parsing OPF/XHTML on every page request.
 /// Keyed by (path, mtime) so the cache invalidates automatically when the file is replaced.
-static EPUB_INDEX_CACHE: OnceLock<Mutex<HashMap<PathBuf, (SystemTime, Vec<String>)>>> = OnceLock::new();
+static EPUB_INDEX_CACHE: OnceLock<Mutex<HashMap<PathBuf, (SystemTime, Vec<String>)>>> =
+    OnceLock::new();
 
 fn epub_index_cache() -> &'static Mutex<HashMap<PathBuf, (SystemTime, Vec<String>)>> {
     EPUB_INDEX_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -1592,9 +1690,8 @@ fn build_epub_image_index(path: &Path) -> Result<Vec<String>> {
     };
 
     // 3. Walk spine entries to build ordered image list
-    let re_img = RE_EPUB_IMG_SRC.get_or_init(|| {
-        regex::Regex::new(r#"(?i)<img\s[^>]*src=["']([^"']+)["']"#).unwrap()
-    });
+    let re_img = RE_EPUB_IMG_SRC
+        .get_or_init(|| regex::Regex::new(r#"(?i)<img\s[^>]*src=["']([^"']+)["']"#).unwrap());
     let re_svg = RE_EPUB_SVG_HREF.get_or_init(|| {
         regex::Regex::new(r#"(?i)<image\s[^>]*(?:xlink:)?href=["']([^"']+)["']"#).unwrap()
     });
@@ -1665,7 +1762,10 @@ fn build_epub_image_index(path: &Path) -> Result<Vec<String>> {
     }
 
     if images.is_empty() {
-        return Err(anyhow::anyhow!("no images found in epub: {}", path.display()));
+        return Err(anyhow::anyhow!(
+            "no images found in epub: {}",
+            path.display()
+        ));
     }
 
     Ok(images)
@@ -1675,21 +1775,16 @@ fn parse_epub_opf(
     xml: &str,
     opf_dir: &str,
 ) -> Result<(HashMap<String, EpubManifestItem>, Vec<String>)> {
-    let re_item = RE_EPUB_ITEM.get_or_init(|| {
-        regex::Regex::new(r#"(?s)<(?:\w+:)?item\s([^>]+?)/?>"#).unwrap()
-    });
-    let re_itemref = RE_EPUB_ITEMREF.get_or_init(|| {
-        regex::Regex::new(r#"<(?:\w+:)?itemref\s[^>]*idref="([^"]+)""#).unwrap()
-    });
-    let re_id = RE_EPUB_ATTR_ID.get_or_init(|| {
-        regex::Regex::new(r#"(?:^|\s)id="([^"]+)""#).unwrap()
-    });
-    let re_href = RE_EPUB_ATTR_HREF.get_or_init(|| {
-        regex::Regex::new(r#"(?:^|\s)href="([^"]+)""#).unwrap()
-    });
-    let re_media = RE_EPUB_ATTR_MEDIA.get_or_init(|| {
-        regex::Regex::new(r#"media-type="([^"]+)""#).unwrap()
-    });
+    let re_item = RE_EPUB_ITEM
+        .get_or_init(|| regex::Regex::new(r#"(?s)<(?:\w+:)?item\s([^>]+?)/?>"#).unwrap());
+    let re_itemref = RE_EPUB_ITEMREF
+        .get_or_init(|| regex::Regex::new(r#"<(?:\w+:)?itemref\s[^>]*idref="([^"]+)""#).unwrap());
+    let re_id =
+        RE_EPUB_ATTR_ID.get_or_init(|| regex::Regex::new(r#"(?:^|\s)id="([^"]+)""#).unwrap());
+    let re_href =
+        RE_EPUB_ATTR_HREF.get_or_init(|| regex::Regex::new(r#"(?:^|\s)href="([^"]+)""#).unwrap());
+    let re_media =
+        RE_EPUB_ATTR_MEDIA.get_or_init(|| regex::Regex::new(r#"media-type="([^"]+)""#).unwrap());
 
     let mut manifest: HashMap<String, EpubManifestItem> = HashMap::new();
     for cap in re_item.captures_iter(xml) {
@@ -1771,15 +1866,13 @@ fn analyze_epub(path: &Path) -> Result<(i32, Vec<u8>)> {
 fn extract_epub_page(path: &Path, page_number: u32) -> Result<Vec<u8>> {
     let images = get_epub_image_index(path)?;
     let index = page_number as usize - 1;
-    let img_path = images
-        .get(index)
-        .with_context(|| {
-            format!(
-                "page {} out of range (total: {})",
-                page_number,
-                images.len()
-            )
-        })?;
+    let img_path = images.get(index).with_context(|| {
+        format!(
+            "page {} out of range (total: {})",
+            page_number,
+            images.len()
+        )
+    })?;
 
     let file = std::fs::File::open(path)
         .with_context(|| format!("cannot open epub: {}", path.display()))?;
@@ -1974,8 +2067,13 @@ pub fn convert_cbr_to_cbz(cbr_path: &Path) -> Result<PathBuf> {
         return Err(err);
     }
 
-    std::fs::rename(&tmp_path, &cbz_path)
-        .with_context(|| format!("cannot rename {} to {}", tmp_path.display(), cbz_path.display()))?;
+    std::fs::rename(&tmp_path, &cbz_path).with_context(|| {
+        format!(
+            "cannot rename {} to {}",
+            tmp_path.display(),
+            cbz_path.display()
+        )
+    })?;
 
     Ok(cbz_path)
 }
@@ -2016,17 +2114,23 @@ mod tests {
 
     #[test]
     fn is_not_rar_detects_not_rar_archive() {
-        assert!(is_not_rar_error("unrar listing failed for /path/file.cbr: Not a RAR archive"));
+        assert!(is_not_rar_error(
+            "unrar listing failed for /path/file.cbr: Not a RAR archive"
+        ));
     }
 
     #[test]
     fn is_not_rar_detects_bad_archive() {
-        assert!(is_not_rar_error("unrar listing failed for /path/file.cbr: bad archive"));
+        assert!(is_not_rar_error(
+            "unrar listing failed for /path/file.cbr: bad archive"
+        ));
     }
 
     #[test]
     fn is_not_rar_ignores_other_errors() {
-        assert!(!is_not_rar_error("unrar listing failed for /path/file.cbr: file not found"));
+        assert!(!is_not_rar_error(
+            "unrar listing failed for /path/file.cbr: file not found"
+        ));
         assert!(!is_not_rar_error("some other error"));
         assert!(!is_not_rar_error(""));
     }
@@ -2055,7 +2159,10 @@ mod tests {
 
     #[test]
     fn detect_format_epub() {
-        assert_eq!(detect_format(Path::new("test.epub")), Some(BookFormat::Epub));
+        assert_eq!(
+            detect_format(Path::new("test.epub")),
+            Some(BookFormat::Epub)
+        );
     }
 
     #[test]
@@ -2125,7 +2232,10 @@ mod tests {
     #[test]
     fn extract_volume_tome_with_subtitle() {
         // "Tome 19 - Pas de Nol pour le père Grommel"
-        assert_eq!(extract_volume("Tome 19 - Pas de Nol pour le père Grommel"), Some(19));
+        assert_eq!(
+            extract_volume("Tome 19 - Pas de Nol pour le père Grommel"),
+            Some(19)
+        );
     }
 
     #[test]
@@ -2178,8 +2288,14 @@ mod tests {
     #[test]
     fn extract_volumes_trailing_bare_number() {
         // Series name + space + number + extension
-        assert_eq!(sorted(extract_volumes("Shangri-La Frontier 18.cbz")), vec![18]);
-        assert_eq!(sorted(extract_volumes("Shangri-la Frontier 01.cbz")), vec![1]);
+        assert_eq!(
+            sorted(extract_volumes("Shangri-La Frontier 18.cbz")),
+            vec![18]
+        );
+        assert_eq!(
+            sorted(extract_volumes("Shangri-la Frontier 01.cbz")),
+            vec![1]
+        );
         assert_eq!(sorted(extract_volumes("My Series 7.pdf")), vec![7]);
         assert_eq!(sorted(extract_volumes("Some manga 123.epub")), vec![123]);
         // Should NOT trigger when a prefix-based pattern already matched
@@ -2205,10 +2321,19 @@ mod tests {
     #[test]
     fn extract_volume_underscore_delimited() {
         // Pattern D: _NN_ or _NN@ (Telegram channel filenames)
-        assert_eq!(extract_volume("Black_Clover_29_Une_Nuit_Sans_Matin_Yûki_Tabata_2021@BD_fr.cbz"), Some(29));
-        assert_eq!(extract_volume("Black_Clover_30_Bonne_Nouvelle_Yûki_Tabata_2022@BD_fr.cbz"), Some(30));
+        assert_eq!(
+            extract_volume("Black_Clover_29_Une_Nuit_Sans_Matin_Yûki_Tabata_2021@BD_fr.cbz"),
+            Some(29)
+        );
+        assert_eq!(
+            extract_volume("Black_Clover_30_Bonne_Nouvelle_Yûki_Tabata_2022@BD_fr.cbz"),
+            Some(30)
+        );
         assert_eq!(extract_volume("One_Piece_1_Romance_Dawn@ch.cbz"), Some(1));
-        assert_eq!(extract_volume("My_Hero_Academia_42_La_Cavalerie_Est_Là_Kōhei_Horikoshi_2025@BD.cbz"), Some(42));
+        assert_eq!(
+            extract_volume("My_Hero_Academia_42_La_Cavalerie_Est_Là_Kōhei_Horikoshi_2025@BD.cbz"),
+            Some(42)
+        );
         // 4-digit numbers (years) must not match as volume
         assert_eq!(extract_volume("Series_2021@channel.cbz"), None);
     }
@@ -2216,9 +2341,18 @@ mod tests {
     #[test]
     fn extract_volume_before_author_paren() {
         // Pattern E: " NN (" or " NN@" (author-in-parentheses format)
-        assert_eq!(extract_volume("Détective Conan 02 (Gosho AOYAMA)@BD_fr.cbz"), Some(2));
-        assert_eq!(extract_volume("Hunter x Hunter 36 (Yoshihiro Togashi)@ch.cbz"), Some(36));
-        assert_eq!(extract_volume("Blacksad 1 (Juan Díaz Canales)@ch.cbz"), Some(1));
+        assert_eq!(
+            extract_volume("Détective Conan 02 (Gosho AOYAMA)@BD_fr.cbz"),
+            Some(2)
+        );
+        assert_eq!(
+            extract_volume("Hunter x Hunter 36 (Yoshihiro Togashi)@ch.cbz"),
+            Some(36)
+        );
+        assert_eq!(
+            extract_volume("Blacksad 1 (Juan Díaz Canales)@ch.cbz"),
+            Some(1)
+        );
         // Should not false-positive on series numbers that are not volumes
         assert_eq!(extract_volume("Les 7 Secrets (Author)@ch.cbz"), None);
     }
@@ -2226,8 +2360,14 @@ mod tests {
     #[test]
     fn extract_volumes_glued_t_prefix() {
         // T directly attached to the series name (no separator), 2+ digits
-        assert_eq!(sorted(extract_volumes("Shangri-la FrontierT01.cbz")), vec![1]);
-        assert_eq!(sorted(extract_volumes("Shangri-la Frontiert05.cbz")), vec![5]);
+        assert_eq!(
+            sorted(extract_volumes("Shangri-la FrontierT01.cbz")),
+            vec![1]
+        );
+        assert_eq!(
+            sorted(extract_volumes("Shangri-la Frontiert05.cbz")),
+            vec![5]
+        );
         assert_eq!(sorted(extract_volumes("NarutoT42")), vec![42]);
         // 1-digit glued form NOT matched (too risky for false positives)
         assert_eq!(sorted(extract_volumes("WordT5")), Vec::<i32>::new());
@@ -2289,7 +2429,11 @@ mod tests {
             "[Compressé] One Piece [Team Chromatique] - Tome #097 - [V2].cbz",
         ));
         assert!(v.contains(&97), "expected 97 in {:?}", v);
-        assert!(!v.contains(&2), "[V2] should not be extracted as volume 2: {:?}", v);
+        assert!(
+            !v.contains(&2),
+            "[V2] should not be extracted as volume 2: {:?}",
+            v
+        );
     }
 
     #[test]
@@ -2338,9 +2482,15 @@ mod tests {
 
     #[test]
     fn extract_volumes_dash_number_dash_no_spaces() {
-        assert_eq!(sorted(extract_volumes("Largo Winch -21- L'étoile du matin.cbr")), vec![21]);
+        assert_eq!(
+            sorted(extract_volumes("Largo Winch -21- L'étoile du matin.cbr")),
+            vec![21]
+        );
         assert_eq!(sorted(extract_volumes("Largo Winch -05- H.cbr")), vec![5]);
-        assert_eq!(sorted(extract_volumes("Largo winch -22- Les Voiles écarlates.cbz")), vec![22]);
+        assert_eq!(
+            sorted(extract_volumes("Largo winch -22- Les Voiles écarlates.cbz")),
+            vec![22]
+        );
     }
 
     #[test]
@@ -2350,7 +2500,10 @@ mod tests {
 
     #[test]
     fn extract_volumes_no_volumes_plain_text() {
-        assert_eq!(extract_volumes("Some random title without volumes"), Vec::<i32>::new());
+        assert_eq!(
+            extract_volumes("Some random title without volumes"),
+            Vec::<i32>::new()
+        );
     }
 
     #[test]
@@ -2440,7 +2593,10 @@ mod tests {
 
     #[test]
     fn extract_volumes_tome_with_subtitle() {
-        assert_eq!(extract_volumes("Tome 19 - Pas de Nol pour le père Grommel.pdf"), vec![19]);
+        assert_eq!(
+            extract_volumes("Tome 19 - Pas de Nol pour le père Grommel.pdf"),
+            vec![19]
+        );
     }
 
     #[test]
@@ -2618,7 +2774,10 @@ mod tests {
     #[test]
     fn detect_format_case_insensitive() {
         assert_eq!(detect_format(Path::new("test.PDF")), Some(BookFormat::Pdf));
-        assert_eq!(detect_format(Path::new("test.Epub")), Some(BookFormat::Epub));
+        assert_eq!(
+            detect_format(Path::new("test.Epub")),
+            Some(BookFormat::Epub)
+        );
         assert_eq!(detect_format(Path::new("test.CbR")), Some(BookFormat::Cbr));
     }
 
@@ -2678,7 +2837,10 @@ mod tests {
     #[test]
     fn hs_at_end_with_prefix() {
         let result = extract_hs_info("Boruto - Two Blue Vortex HS");
-        assert!(result.is_some(), "should detect HS at end of 'Boruto - Two Blue Vortex HS'");
+        assert!(
+            result.is_some(),
+            "should detect HS at end of 'Boruto - Two Blue Vortex HS'"
+        );
         let (num, cleaned) = result.unwrap();
         assert_eq!(num, None);
         assert_eq!(cleaned, "Boruto - Two Blue Vortex");
@@ -2986,7 +3148,8 @@ mod tests {
         let mut zip = zip::ZipWriter::new(file);
         let opts: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Stored);
-        zip.start_file(image_name, opts).map_err(std::io::Error::other)?;
+        zip.start_file(image_name, opts)
+            .map_err(std::io::Error::other)?;
         // Minimal valid JPEG: just the SOI/EOI markers — enough to satisfy is_image_name.
         zip.write_all(&[0xFF, 0xD8, 0xFF, 0xD9])?;
         zip.finish().map_err(std::io::Error::other)?;

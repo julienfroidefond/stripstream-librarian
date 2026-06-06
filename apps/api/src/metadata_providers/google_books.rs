@@ -30,7 +30,9 @@ impl MetadataProvider for GoogleBooksProvider {
     > {
         let external_id = external_id.to_string();
         let config = config.clone();
-        Box::pin(async move { get_series_books_impl(&external_id, &config, DEFAULT_BASE_URL).await })
+        Box::pin(
+            async move { get_series_books_impl(&external_id, &config, DEFAULT_BASE_URL).await },
+        )
     }
 }
 
@@ -125,10 +127,7 @@ async fn search_series_impl(
 
         let cover_url = volume_info
             .get("imageLinks")
-            .and_then(|il| {
-                il.get("thumbnail")
-                    .or_else(|| il.get("smallThumbnail"))
-            })
+            .and_then(|il| il.get("thumbnail").or_else(|| il.get("smallThumbnail")))
             .and_then(|u| u.as_str())
             .map(|s| s.replace("http://", "https://"));
 
@@ -138,20 +137,21 @@ async fn search_series_impl(
             .unwrap_or("")
             .to_string();
 
-        let entry = series_map
-            .entry(series_name.clone())
-            .or_insert_with(|| SeriesCandidateBuilder {
-                title: series_name.clone(),
-                authors: vec![],
-                description: None,
-                publishers: vec![],
-                start_year: None,
-                volume_count: 0,
-                cover_url: None,
-                external_id: google_id.clone(),
-                external_url: None,
-                metadata_json: serde_json::json!({}),
-            });
+        let entry =
+            series_map
+                .entry(series_name.clone())
+                .or_insert_with(|| SeriesCandidateBuilder {
+                    title: series_name.clone(),
+                    authors: vec![],
+                    description: None,
+                    publishers: vec![],
+                    start_year: None,
+                    volume_count: 0,
+                    cover_url: None,
+                    external_id: google_id.clone(),
+                    external_url: None,
+                    metadata_json: serde_json::json!({}),
+                });
 
         entry.volume_count += 1;
 
@@ -187,10 +187,7 @@ async fn search_series_impl(
             entry.cover_url = cover_url;
         }
 
-        entry.external_url = Some(format!(
-            "https://books.google.com/books?id={}",
-            google_id
-        ));
+        entry.external_url = Some(format!("https://books.google.com/books?id={}", google_id));
     }
 
     let mut candidates: Vec<SeriesCandidate> = series_map
@@ -221,7 +218,11 @@ async fn search_series_impl(
         })
         .collect();
 
-    candidates.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     candidates.truncate(10);
 
     Ok(candidates)
@@ -238,10 +239,7 @@ async fn get_series_books_impl(
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
     // First fetch the volume to get its series info
-    let mut url = format!(
-        "{}/books/v1/volumes/{}",
-        base_url, external_id
-    );
+    let mut url = format!("{}/books/v1/volumes/{}", base_url, external_id);
     if let Some(ref key) = config.api_key {
         url.push_str(&format!("?key={}", key));
     }
@@ -263,7 +261,10 @@ async fn get_series_books_impl(
         .await
         .map_err(|e| format!("Failed to parse Google Books response: {e}"))?;
 
-    let volume_info = volume.get("volumeInfo").cloned().unwrap_or(serde_json::json!({}));
+    let volume_info = volume
+        .get("volumeInfo")
+        .cloned()
+        .unwrap_or(serde_json::json!({}));
     let title = volume_info
         .get("title")
         .and_then(|t| t.as_str())
@@ -303,10 +304,7 @@ async fn get_series_books_impl(
         None => return Ok(vec![volume_to_book_candidate(&volume)]),
     };
 
-    let mut books: Vec<BookCandidate> = items
-        .iter()
-        .map(volume_to_book_candidate)
-        .collect();
+    let mut books: Vec<BookCandidate> = items.iter().map(volume_to_book_candidate).collect();
 
     // Sort by volume number
     books.sort_by_key(|b| b.volume_number.unwrap_or(999));
@@ -315,7 +313,10 @@ async fn get_series_books_impl(
 }
 
 fn volume_to_book_candidate(item: &serde_json::Value) -> BookCandidate {
-    let volume_info = item.get("volumeInfo").cloned().unwrap_or(serde_json::json!({}));
+    let volume_info = item
+        .get("volumeInfo")
+        .cloned()
+        .unwrap_or(serde_json::json!({}));
     let title = volume_info
         .get("title")
         .and_then(|t| t.as_str())
@@ -444,10 +445,7 @@ fn compute_confidence(title: &str, query: &str) -> f32 {
         0.7
     } else {
         // Simple character overlap ratio
-        let common: usize = query
-            .chars()
-            .filter(|c| title_lower.contains(*c))
-            .count();
+        let common: usize = query.chars().filter(|c| title_lower.contains(*c)).count();
         let max_len = query.len().max(title_lower.len()).max(1);
         (common as f32 / max_len as f32).clamp(0.1, 0.6)
     }

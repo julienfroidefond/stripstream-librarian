@@ -145,11 +145,12 @@ async fn send_telegram(config: &TelegramConfig, text: &str) -> Result<()> {
     Ok(())
 }
 
-async fn send_telegram_photo(config: &TelegramConfig, caption: &str, photo_path: &str) -> Result<()> {
-    let url = format!(
-        "https://api.telegram.org/bot{}/sendPhoto",
-        config.bot_token
-    );
+async fn send_telegram_photo(
+    config: &TelegramConfig,
+    caption: &str,
+    photo_path: &str,
+) -> Result<()> {
+    let url = format!("https://api.telegram.org/bot{}/sendPhoto", config.bot_token);
 
     let photo_bytes = tokio::fs::read(photo_path).await?;
     let filename = std::path::Path::new(photo_path)
@@ -509,7 +510,10 @@ fn format_event(event: &NotificationEvent) -> String {
                 lines.push(format!("📝 <b>Fields:</b> {}", fields_updated.join(", ")));
             }
             if *books_matched > 0 || *books_updated > 0 {
-                lines.push(format!("📖 <b>Books:</b> {} matched, {} updated", books_matched, books_updated));
+                lines.push(format!(
+                    "📖 <b>Books:</b> {} matched, {} updated",
+                    books_matched, books_updated
+                ));
             }
             lines.join("\n")
         }
@@ -738,7 +742,11 @@ fn format_event(event: &NotificationEvent) -> String {
                 lines.push(String::new());
                 lines.push("📦 <b>New releases detected:</b>".to_string());
                 for (series, title) in new_items.iter().take(10) {
-                    lines.push(format!("  • <b>{}</b> — {}", truncate(series, 40), truncate(title, 60)));
+                    lines.push(format!(
+                        "  • <b>{}</b> — {}",
+                        truncate(series, 40),
+                        truncate(title, 60)
+                    ));
                 }
                 if new_items.len() > 10 {
                     lines.push(format!("  … and {} more", new_items.len() - 10));
@@ -884,17 +892,33 @@ fn is_event_enabled(config: &TelegramConfig, event: &NotificationEvent) -> bool 
         NotificationEvent::MetadataApproved { .. } => config.events.metadata_approved,
         NotificationEvent::MetadataBatchCompleted { .. } => config.events.metadata_batch_completed,
         NotificationEvent::MetadataBatchFailed { .. } => config.events.metadata_batch_failed,
-        NotificationEvent::MetadataRefreshCompleted { .. } => config.events.metadata_refresh_completed,
+        NotificationEvent::MetadataRefreshCompleted { .. } => {
+            config.events.metadata_refresh_completed
+        }
         NotificationEvent::MetadataRefreshFailed { .. } => config.events.metadata_refresh_failed,
-        NotificationEvent::ReadingStatusMatchCompleted { .. } => config.events.reading_status_match_completed,
-        NotificationEvent::ReadingStatusMatchFailed { .. } => config.events.reading_status_match_failed,
-        NotificationEvent::ReadingStatusPushCompleted { .. } => config.events.reading_status_push_completed,
-        NotificationEvent::ReadingStatusPushFailed { .. } => config.events.reading_status_push_failed,
-        NotificationEvent::DownloadDetectionCompleted { .. } => config.events.download_detection_completed,
-        NotificationEvent::DownloadDetectionFailed { .. } => config.events.download_detection_failed,
+        NotificationEvent::ReadingStatusMatchCompleted { .. } => {
+            config.events.reading_status_match_completed
+        }
+        NotificationEvent::ReadingStatusMatchFailed { .. } => {
+            config.events.reading_status_match_failed
+        }
+        NotificationEvent::ReadingStatusPushCompleted { .. } => {
+            config.events.reading_status_push_completed
+        }
+        NotificationEvent::ReadingStatusPushFailed { .. } => {
+            config.events.reading_status_push_failed
+        }
+        NotificationEvent::DownloadDetectionCompleted { .. } => {
+            config.events.download_detection_completed
+        }
+        NotificationEvent::DownloadDetectionFailed { .. } => {
+            config.events.download_detection_failed
+        }
         NotificationEvent::TorrentImportCompleted { .. } => config.events.torrent_import_completed,
         NotificationEvent::TorrentImportFailed { .. } => config.events.torrent_import_failed,
-        NotificationEvent::TelegramSyncIncrementalCompleted { .. } => config.events.telegram_sync_incremental_completed,
+        NotificationEvent::TelegramSyncIncrementalCompleted { .. } => {
+            config.events.telegram_sync_incremental_completed
+        }
     }
 }
 

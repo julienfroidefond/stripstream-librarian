@@ -4,8 +4,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::{error::ApiError, metadata_providers, state::AppState};
 
@@ -172,7 +172,11 @@ pub async fn search_metadata(
 
     // Determine provider: explicit override -> library-level -> global setting -> default
     let provider_name = if let Some(ref p) = body.provider {
-        if !p.is_empty() { p.clone() } else { get_provider_for_library(&state, library_id).await? }
+        if !p.is_empty() {
+            p.clone()
+        } else {
+            get_provider_for_library(&state, library_id).await?
+        }
     } else {
         get_provider_for_library(&state, library_id).await?
     };
@@ -182,7 +186,8 @@ pub async fn search_metadata(
         .or_else(|| metadata_providers::get_provider("google_books"))
         .ok_or_else(|| ApiError::bad_request(format!("unknown provider: {provider_name}")))?;
 
-    let mut provider_config = super::config::load_provider_config(&state.pool, &provider_name).await;
+    let mut provider_config =
+        super::config::load_provider_config(&state.pool, &provider_name).await;
     provider_config.detailed = true; // Manual search: show per-edition results
 
     let mut candidates = provider
@@ -253,7 +258,8 @@ pub async fn create_metadata_match(
         .parse()
         .map_err(|_| ApiError::bad_request("invalid library_id"))?;
 
-    let series_id = crate::series::get_or_create_series(&state.pool, library_id, &body.series_name).await?;
+    let series_id =
+        crate::series::get_or_create_series(&state.pool, library_id, &body.series_name).await?;
 
     let row = sqlx::query(
         r#"
@@ -343,7 +349,9 @@ pub async fn approve_metadata(
     let library_id: Uuid = row.get("library_id");
     let series_id: Uuid = row.get("series_id");
     let series_name: String = sqlx::query_scalar("SELECT name FROM series WHERE id = $1")
-        .bind(series_id).fetch_one(&state.pool).await?;
+        .bind(series_id)
+        .fetch_one(&state.pool)
+        .await?;
 
     // Reject any other approved links for the same series (only one active link per series)
     // Also clean up their external_book_metadata
@@ -377,15 +385,28 @@ pub async fn approve_metadata(
     // Sync series metadata if requested
     if body.sync_series {
         report.series = Some(
-            sync_series_metadata(&state, library_id, &series_name, &metadata_json, total_volumes_external).await?
+            sync_series_metadata(
+                &state,
+                library_id,
+                &series_name,
+                &metadata_json,
+                total_volumes_external,
+            )
+            .await?,
         );
     }
 
     // Sync books if requested
     if body.sync_books {
-        let (matched, book_reports, unmatched) =
-            sync_books_metadata(&state, id, library_id, &series_name, &provider_name, &external_id)
-                .await?;
+        let (matched, book_reports, unmatched) = sync_books_metadata(
+            &state,
+            id,
+            library_id,
+            &series_name,
+            &provider_name,
+            &external_id,
+        )
+        .await?;
         report.books_matched = matched;
         report.books = book_reports;
         report.books_unmatched = unmatched;
@@ -501,10 +522,7 @@ pub async fn get_metadata_links(
     State(state): State<AppState>,
     Query(query): Query<MetadataLinkQuery>,
 ) -> Result<Json<Vec<ExternalMetadataLinkDto>>, ApiError> {
-    let library_id: Option<Uuid> = query
-        .library_id
-        .as_deref()
-        .and_then(|s| s.parse().ok());
+    let library_id: Option<Uuid> = query.library_id.as_deref().and_then(|s| s.parse().ok());
 
     let series_id: Option<Uuid> = query.series_id.as_deref().and_then(|s| s.parse().ok());
 
@@ -549,13 +567,12 @@ pub async fn get_missing_books(
     AxumPath(id): AxumPath<Uuid>,
 ) -> Result<Json<MissingBooksDto>, ApiError> {
     // Verify link exists
-    let link = sqlx::query(
-        "SELECT eml.series_id FROM external_metadata_links eml WHERE eml.id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or_else(|| ApiError::not_found("link not found"))?;
+    let link =
+        sqlx::query("SELECT eml.series_id FROM external_metadata_links eml WHERE eml.id = $1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| ApiError::not_found("link not found"))?;
 
     let series_id: Uuid = link.get("series_id");
 
@@ -567,12 +584,11 @@ pub async fn get_missing_books(
             .await?;
 
     // Use series.total_volumes if set (user override), otherwise fall back to provider count
-    let series_total: Option<i32> = sqlx::query_scalar(
-        "SELECT total_volumes FROM series WHERE id = $1",
-    )
-    .bind(series_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let series_total: Option<i32> =
+        sqlx::query_scalar("SELECT total_volumes FROM series WHERE id = $1")
+            .bind(series_id)
+            .fetch_one(&state.pool)
+            .await?;
 
     let total_external = series_total
         .filter(|&v| v > 0)
@@ -714,7 +730,10 @@ fn row_to_link_dto(row: &sqlx::postgres::PgRow) -> ExternalMetadataLinkDto {
     }
 }
 
-pub(crate) async fn get_provider_for_library(state: &AppState, library_id: Uuid) -> Result<String, ApiError> {
+pub(crate) async fn get_provider_for_library(
+    state: &AppState,
+    library_id: Uuid,
+) -> Result<String, ApiError> {
     // Check library-level provider first
     let row = sqlx::query("SELECT metadata_provider FROM libraries WHERE id = $1")
         .bind(library_id)
@@ -750,7 +769,7 @@ pub(crate) async fn get_provider_for_library(state: &AppState, library_id: Uuid)
 // Provider config loading is in super::config::load_provider_config
 // sync_series_metadata and sync_books_metadata are in super::sync
 
-pub(crate) use super::sync::{sync_series_metadata, sync_books_metadata};
+pub(crate) use super::sync::{sync_books_metadata, sync_series_metadata};
 
 /// Normalize provider-specific status strings using the status_mappings table.
 /// Returns None if no mapping is found -- unknown statuses are not stored.
@@ -782,7 +801,6 @@ pub(crate) async fn normalize_series_status(pool: &sqlx::PgPool, raw: &str) -> S
     // No mapping found -- return the provider status as-is (lowercased)
     lower
 }
-
 
 /// Check if a field is locked based on the locked_fields JSON object.
 /// Extracted for testability.

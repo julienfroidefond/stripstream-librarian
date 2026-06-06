@@ -79,13 +79,11 @@ fn classify_returns_skipped_when_locked() {
 #[test]
 fn classify_returns_none_when_values_equal_and_unlocked() {
     let locked = json!({});
-    let result = classify_field_change(
-        "title",
-        Some(json!("same")),
-        Some(json!("same")),
-        &locked,
+    let result = classify_field_change("title", Some(json!("same")), Some(json!("same")), &locked);
+    assert!(
+        result.is_none(),
+        "identical values should produce no change"
     );
-    assert!(result.is_none(), "identical values should produce no change");
 }
 
 #[test]
@@ -279,7 +277,10 @@ fn link_dto_serializes_optional_fields() {
     let json = serde_json::to_value(&dto).unwrap();
     assert_eq!(json["status"], "pending");
     let confidence = json["confidence"].as_f64().unwrap();
-    assert!((confidence - 0.95).abs() < 0.001, "confidence should be ~0.95, got {confidence}");
+    assert!(
+        (confidence - 0.95).abs() < 0.001,
+        "confidence should be ~0.95, got {confidence}"
+    );
     assert!(json["external_url"].is_null());
 }
 
@@ -292,12 +293,24 @@ async fn setup_series_with_link(
     external_book_count: i32,
 ) -> (Uuid, Uuid, Uuid) {
     let lib_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'test', '/libraries/test')")
-        .bind(lib_id).execute(pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO libraries (id, name, root_path) VALUES ($1, 'test', '/libraries/test')",
+    )
+    .bind(lib_id)
+    .execute(pool)
+    .await
+    .unwrap();
 
     let series_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO series (id, library_id, name, total_volumes) VALUES ($1, $2, 'Test', $3)")
-        .bind(series_id).bind(lib_id).bind(total_volumes).execute(pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO series (id, library_id, name, total_volumes) VALUES ($1, $2, 'Test', $3)",
+    )
+    .bind(series_id)
+    .bind(lib_id)
+    .bind(total_volumes)
+    .execute(pool)
+    .await
+    .unwrap();
 
     for i in 0..local_book_count {
         sqlx::query("INSERT INTO books (id, library_id, title, kind, format, series_id) VALUES (gen_random_uuid(), $1, $2, 'comic', 'cbz', $3)")
@@ -311,8 +324,14 @@ async fn setup_series_with_link(
     for i in 0..external_book_count {
         // Mark some as matched (book_id set) based on local_book_count
         let book_id: Option<Uuid> = if i < local_book_count {
-            sqlx::query_scalar::<_, Uuid>("SELECT id FROM books WHERE series_id = $1 ORDER BY title LIMIT 1 OFFSET $2")
-                .bind(series_id).bind(i as i64).fetch_optional(pool).await.unwrap()
+            sqlx::query_scalar::<_, Uuid>(
+                "SELECT id FROM books WHERE series_id = $1 ORDER BY title LIMIT 1 OFFSET $2",
+            )
+            .bind(series_id)
+            .bind(i as i64)
+            .fetch_optional(pool)
+            .await
+            .unwrap()
         } else {
             None
         };
@@ -330,15 +349,25 @@ async fn missing_books_uses_series_total_volumes_override(pool: sqlx::PgPool) {
 
     let series_total: Option<i32> = sqlx::query_scalar("SELECT total_volumes FROM series WHERE id = (SELECT series_id FROM external_metadata_links WHERE id = $1)")
         .bind(link_id).fetch_one(&pool).await.unwrap();
-    let provider_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM external_book_metadata WHERE link_id = $1")
-        .bind(link_id).fetch_one(&pool).await.unwrap();
+    let provider_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM external_book_metadata WHERE link_id = $1")
+            .bind(link_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     let local_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM books WHERE series_id = (SELECT series_id FROM external_metadata_links WHERE id = $1)")
         .bind(link_id).fetch_one(&pool).await.unwrap();
 
-    let total_external = series_total.filter(|&v| v > 0).map(|v| v as i64).unwrap_or(provider_count);
+    let total_external = series_total
+        .filter(|&v| v > 0)
+        .map(|v| v as i64)
+        .unwrap_or(provider_count);
     let missing = (total_external - local_count).max(0);
 
-    assert_eq!(total_external, 3, "should use series.total_volumes override, not provider count");
+    assert_eq!(
+        total_external, 3,
+        "should use series.total_volumes override, not provider count"
+    );
     assert_eq!(missing, 0, "3 local / 3 total -> 0 missing");
 }
 
@@ -349,15 +378,25 @@ async fn missing_books_falls_back_to_provider_count(pool: sqlx::PgPool) {
 
     let series_total: Option<i32> = sqlx::query_scalar("SELECT total_volumes FROM series WHERE id = (SELECT series_id FROM external_metadata_links WHERE id = $1)")
         .bind(link_id).fetch_one(&pool).await.unwrap();
-    let provider_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM external_book_metadata WHERE link_id = $1")
-        .bind(link_id).fetch_one(&pool).await.unwrap();
+    let provider_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM external_book_metadata WHERE link_id = $1")
+            .bind(link_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     let local_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM books WHERE series_id = (SELECT series_id FROM external_metadata_links WHERE id = $1)")
         .bind(link_id).fetch_one(&pool).await.unwrap();
 
-    let total_external = series_total.filter(|&v| v > 0).map(|v| v as i64).unwrap_or(provider_count);
+    let total_external = series_total
+        .filter(|&v| v > 0)
+        .map(|v| v as i64)
+        .unwrap_or(provider_count);
     let missing = (total_external - local_count).max(0);
 
-    assert_eq!(total_external, 5, "NULL total_volumes -> use provider count");
+    assert_eq!(
+        total_external, 5,
+        "NULL total_volumes -> use provider count"
+    );
     assert_eq!(missing, 2, "3 local / 5 provider -> 2 missing");
 }
 
@@ -368,12 +407,19 @@ async fn missing_books_not_negative(pool: sqlx::PgPool) {
 
     let series_total: Option<i32> = sqlx::query_scalar("SELECT total_volumes FROM series WHERE id = (SELECT series_id FROM external_metadata_links WHERE id = $1)")
         .bind(link_id).fetch_one(&pool).await.unwrap();
-    let provider_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM external_book_metadata WHERE link_id = $1")
-        .bind(link_id).fetch_one(&pool).await.unwrap();
+    let provider_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM external_book_metadata WHERE link_id = $1")
+            .bind(link_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     let local_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM books WHERE series_id = (SELECT series_id FROM external_metadata_links WHERE id = $1)")
         .bind(link_id).fetch_one(&pool).await.unwrap();
 
-    let total_external = series_total.filter(|&v| v > 0).map(|v| v as i64).unwrap_or(provider_count);
+    let total_external = series_total
+        .filter(|&v| v > 0)
+        .map(|v| v as i64)
+        .unwrap_or(provider_count);
     let missing = (total_external - local_count).max(0);
 
     assert_eq!(total_external, 2);
@@ -390,12 +436,24 @@ async fn setup_series_with_link_and_hs(
     external_book_count: i32,
 ) -> (Uuid, Uuid, Uuid) {
     let lib_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'test_hs', '/libraries/test_hs')")
-        .bind(lib_id).execute(pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO libraries (id, name, root_path) VALUES ($1, 'test_hs', '/libraries/test_hs')",
+    )
+    .bind(lib_id)
+    .execute(pool)
+    .await
+    .unwrap();
 
     let series_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO series (id, library_id, name, total_volumes) VALUES ($1, $2, 'TestHS', $3)")
-        .bind(series_id).bind(lib_id).bind(total_volumes).execute(pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO series (id, library_id, name, total_volumes) VALUES ($1, $2, 'TestHS', $3)",
+    )
+    .bind(series_id)
+    .bind(lib_id)
+    .bind(total_volumes)
+    .execute(pool)
+    .await
+    .unwrap();
 
     for i in 0..regular_count {
         sqlx::query("INSERT INTO books (id, library_id, title, kind, format, series_id, volume, volume_type) VALUES (gen_random_uuid(), $1, $2, 'comic', 'cbz', $3, $4, 'regular')")
@@ -429,24 +487,36 @@ async fn setup_series_with_link_and_hs(
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn missing_books_total_local_excludes_hs(pool: sqlx::PgPool) {
     // 3 regular + 2 HS = 5 books, but total_local should be 3
-    let (_lib_id, series_id, link_id) = setup_series_with_link_and_hs(&pool, Some(5), 3, 2, 5).await;
+    let (_lib_id, series_id, link_id) =
+        setup_series_with_link_and_hs(&pool, Some(5), 3, 2, 5).await;
 
     let total_local: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM books WHERE series_id = $1 AND volume_type IN ('regular', 'integral')",
     )
     .bind(series_id).fetch_one(&pool).await.unwrap();
 
-    let total_all: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM books WHERE series_id = $1",
-    )
-    .bind(series_id).fetch_one(&pool).await.unwrap();
+    let total_all: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM books WHERE series_id = $1")
+        .bind(series_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
 
     assert_eq!(total_all, 5, "total books including HS");
-    assert_eq!(total_local, 3, "total_local should only count regular books");
+    assert_eq!(
+        total_local, 3,
+        "total_local should only count regular books"
+    );
 
-    let series_total: Option<i32> = sqlx::query_scalar("SELECT total_volumes FROM series WHERE id = $1")
-        .bind(series_id).fetch_one(&pool).await.unwrap();
-    let total_external = series_total.filter(|&v| v > 0).map(|v| v as i64).unwrap_or(5);
+    let series_total: Option<i32> =
+        sqlx::query_scalar("SELECT total_volumes FROM series WHERE id = $1")
+            .bind(series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let total_external = series_total
+        .filter(|&v| v > 0)
+        .map(|v| v as i64)
+        .unwrap_or(5);
     let missing = (total_external - total_local).max(0);
     assert_eq!(missing, 2, "5 total - 3 regular = 2 missing (HS excluded)");
 }
@@ -460,7 +530,11 @@ async fn missing_books_hs_volume_not_matched_to_regular(pool: sqlx::PgPool) {
 
     let series_id = Uuid::new_v4();
     sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'NoMatch')")
-        .bind(series_id).bind(lib_id).execute(&pool).await.unwrap();
+        .bind(series_id)
+        .bind(lib_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     // Only an HS book with volume=1, no regular book
     sqlx::query("INSERT INTO books (id, library_id, title, kind, format, series_id, volume, volume_type) VALUES (gen_random_uuid(), $1, 'HS 1', 'comic', 'cbz', $2, 1, 'hs')")
@@ -503,11 +577,19 @@ async fn missing_books_hs_volume_not_matched_to_regular(pool: sqlx::PgPool) {
     .await
     .unwrap();
 
-    assert_eq!(result.rows_affected(), 0, "HS book volume=1 should NOT match external volume=1");
+    assert_eq!(
+        result.rows_affected(),
+        0,
+        "HS book volume=1 should NOT match external volume=1"
+    );
 
     // Verify external book is still unmatched
-    let book_id: Option<Uuid> = sqlx::query_scalar("SELECT book_id FROM external_book_metadata WHERE id = $1")
-        .bind(ebm_id).fetch_one(&pool).await.unwrap();
+    let book_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT book_id FROM external_book_metadata WHERE id = $1")
+            .bind(ebm_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert!(book_id.is_none(), "external book should remain unmatched");
 }
 
@@ -519,8 +601,14 @@ async fn missing_books_integral_makes_series_complete(pool: sqlx::PgPool) {
         .bind(lib_id).execute(&pool).await.unwrap();
 
     let series_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO series (id, library_id, name, total_volumes) VALUES ($1, $2, 'INT Series', 3)")
-        .bind(series_id).bind(lib_id).execute(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO series (id, library_id, name, total_volumes) VALUES ($1, $2, 'INT Series', 3)",
+    )
+    .bind(series_id)
+    .bind(lib_id)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     // One integral book
     sqlx::query("INSERT INTO books (id, library_id, title, kind, format, series_id, volume_type) VALUES (gen_random_uuid(), $1, 'INT', 'comic', 'cbz', $2, 'integral')")
@@ -540,7 +628,10 @@ async fn missing_books_integral_makes_series_complete(pool: sqlx::PgPool) {
     let has_integral: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM books WHERE series_id = $1 AND volume_type = 'integral')",
     )
-    .bind(series_id).fetch_one(&pool).await.unwrap();
+    .bind(series_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert!(has_integral, "series should have an integral book");
 
     let total_local: i64 = sqlx::query_scalar(
@@ -549,14 +640,32 @@ async fn missing_books_integral_makes_series_complete(pool: sqlx::PgPool) {
     .bind(series_id).fetch_one(&pool).await.unwrap();
     assert_eq!(total_local, 1, "raw count is 1 (the integral)");
 
-    let series_total: Option<i32> = sqlx::query_scalar("SELECT total_volumes FROM series WHERE id = $1")
-        .bind(series_id).fetch_one(&pool).await.unwrap();
-    let total_external = series_total.filter(|&v| v > 0).map(|v| v as i64).unwrap_or(3);
+    let series_total: Option<i32> =
+        sqlx::query_scalar("SELECT total_volumes FROM series WHERE id = $1")
+            .bind(series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let total_external = series_total
+        .filter(|&v| v > 0)
+        .map(|v| v as i64)
+        .unwrap_or(3);
 
     // With integral: effective local = total_external, missing = 0
-    let effective_local = if has_integral { total_external } else { total_local };
-    let missing = if has_integral { 0 } else { (total_external - total_local).max(0) };
+    let effective_local = if has_integral {
+        total_external
+    } else {
+        total_local
+    };
+    let missing = if has_integral {
+        0
+    } else {
+        (total_external - total_local).max(0)
+    };
 
-    assert_eq!(effective_local, 3, "integral → effective local = total_external");
+    assert_eq!(
+        effective_local, 3,
+        "integral → effective local = total_external"
+    );
     assert_eq!(missing, 0, "integral → 0 missing");
 }

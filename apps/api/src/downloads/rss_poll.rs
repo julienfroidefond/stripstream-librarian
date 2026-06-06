@@ -4,8 +4,11 @@ use sqlx::{PgPool, Row};
 use tracing::info;
 use uuid::Uuid;
 
+use super::{
+    detection::{insert_event, AvailableReleaseDto},
+    missing, prowlarr,
+};
 use crate::{error::ApiError, state::AppState};
-use super::{detection::{insert_event, AvailableReleaseDto}, missing, prowlarr};
 
 // ---------------------------------------------------------------------------
 // POST /prowlarr-rss/start
@@ -134,13 +137,12 @@ pub(crate) async fn process_rss_poll(
     job_id: Uuid,
     library_id: Option<Uuid>,
 ) -> Result<(), String> {
-    let job_started_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
-        "SELECT COALESCE(started_at, created_at) FROM index_jobs WHERE id = $1",
-    )
-    .bind(job_id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let job_started_at: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT COALESCE(started_at, created_at) FROM index_jobs WHERE id = $1")
+            .bind(job_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
 
     let (prowlarr_url, prowlarr_api_key, categories) =
         prowlarr::load_prowlarr_config_internal(pool)
@@ -244,10 +246,16 @@ pub(crate) async fn process_rss_poll(
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
     // Single RSS fetch regardless of how many libraries/series are covered
-    let RssFetchResult { releases: rss_releases, indexer_stats } =
-        fetch_rss_releases(&client, &prowlarr_url, &prowlarr_api_key, &categories).await?;
+    let RssFetchResult {
+        releases: rss_releases,
+        indexer_stats,
+    } = fetch_rss_releases(&client, &prowlarr_url, &prowlarr_api_key, &categories).await?;
 
-    info!("[RSS_POLL] job={job_id} fetched {} releases from Prowlarr ({} indexers)", rss_releases.len(), indexer_stats.len());
+    info!(
+        "[RSS_POLL] job={job_id} fetched {} releases from Prowlarr ({} indexers)",
+        rss_releases.len(),
+        indexer_stats.len()
+    );
 
     let now_str = chrono::Utc::now().to_rfc3339();
 
@@ -284,18 +292,34 @@ pub(crate) async fn process_rss_poll(
             .collect();
 
         if matched_releases.is_empty() {
-            insert_event(pool, job_id, "downloads_not_found", "info", Some(series_name), None,
-                Some(serde_json::json!({"missing_count": missing_count}))).await;
+            insert_event(
+                pool,
+                job_id,
+                "downloads_not_found",
+                "info",
+                Some(series_name),
+                None,
+                Some(serde_json::json!({"missing_count": missing_count})),
+            )
+            .await;
             continue;
         }
 
         let releases_json = serde_json::to_value(&matched_releases).ok();
-        insert_event(pool, job_id, "downloads_found", "info", Some(series_name), None,
+        insert_event(
+            pool,
+            job_id,
+            "downloads_found",
+            "info",
+            Some(series_name),
+            None,
             Some(serde_json::json!({
                 "release_count": matched_releases.len(),
                 "missing_count": missing_count,
                 "available_releases": releases_json,
-            }))).await;
+            })),
+        )
+        .await;
 
         if let Some(ref rj) = releases_json {
             let _ = sqlx::query(
@@ -368,17 +392,23 @@ pub(crate) async fn process_rss_poll(
     };
 
     // Cap snapshot at 200 releases to bound storage per job
-    let snapshot: Vec<_> = rss_releases.iter().take(200).map(|r| serde_json::json!({
-        "title": r.title,
-        "indexer": r.indexer,
-        "size": r.size,
-        "seeders": r.seeders,
-        "leechers": r.leechers,
-        "publish_date": r.publish_date,
-        "categories": r.categories.as_ref().map(|cats| cats.iter()
-            .filter_map(|c| c.name.as_deref())
-            .collect::<Vec<_>>()),
-    })).collect();
+    let snapshot: Vec<_> = rss_releases
+        .iter()
+        .take(200)
+        .map(|r| {
+            serde_json::json!({
+                "title": r.title,
+                "indexer": r.indexer,
+                "size": r.size,
+                "seeders": r.seeders,
+                "leechers": r.leechers,
+                "publish_date": r.publish_date,
+                "categories": r.categories.as_ref().map(|cats| cats.iter()
+                    .filter_map(|c| c.name.as_deref())
+                    .collect::<Vec<_>>()),
+            })
+        })
+        .collect();
 
     let stats = serde_json::json!({
         "total_series": total as i64,
@@ -439,7 +469,12 @@ pub(crate) async fn process_rss_poll(
             .await
             .unwrap_or_default()
             .into_iter()
-            .map(|r| (r.get::<String, _>("series_name"), r.get::<String, _>("release_title")))
+            .map(|r| {
+                (
+                    r.get::<String, _>("series_name"),
+                    r.get::<String, _>("release_title"),
+                )
+            })
             .collect()
         } else {
             sqlx::query(
@@ -458,7 +493,12 @@ pub(crate) async fn process_rss_poll(
             .await
             .unwrap_or_default()
             .into_iter()
-            .map(|r| (r.get::<String, _>("series_name"), r.get::<String, _>("release_title")))
+            .map(|r| {
+                (
+                    r.get::<String, _>("series_name"),
+                    r.get::<String, _>("release_title"),
+                )
+            })
             .collect()
         };
 
@@ -513,7 +553,8 @@ async fn fetch_rss_releases(
         vec![]
     };
 
-    let indexer_meta: Vec<(i64, String)> = indexers.iter()
+    let indexer_meta: Vec<(i64, String)> = indexers
+        .iter()
         .filter_map(|i| {
             let id = i["id"].as_i64()?;
             let name = i["name"].as_str().unwrap_or("unknown").to_string();
@@ -522,18 +563,22 @@ async fn fetch_rss_releases(
         .collect();
 
     // Step 2: fire one request per indexer in parallel
-    let tasks: Vec<_> = indexer_meta.iter().map(|(id, name)| {
-        let client = client.clone();
-        let url = url.to_string();
-        let api_key = api_key.to_string();
-        let categories = categories.to_vec();
-        let indexer_id = *id;
-        let indexer_name = name.clone();
-        async move {
-            let result = fetch_rss_for_indexer(&client, &url, &api_key, &categories, indexer_id).await;
-            (indexer_id, indexer_name, result)
-        }
-    }).collect();
+    let tasks: Vec<_> = indexer_meta
+        .iter()
+        .map(|(id, name)| {
+            let client = client.clone();
+            let url = url.to_string();
+            let api_key = api_key.to_string();
+            let categories = categories.to_vec();
+            let indexer_id = *id;
+            let indexer_name = name.clone();
+            async move {
+                let result =
+                    fetch_rss_for_indexer(&client, &url, &api_key, &categories, indexer_id).await;
+                (indexer_id, indexer_name, result)
+            }
+        })
+        .collect();
 
     let results = futures::future::join_all(tasks).await;
 
@@ -566,7 +611,10 @@ async fn fetch_rss_releases(
         }
     }
 
-    Ok(RssFetchResult { releases: all, indexer_stats })
+    Ok(RssFetchResult {
+        releases: all,
+        indexer_stats,
+    })
 }
 
 async fn fetch_rss_for_indexer(
@@ -597,7 +645,9 @@ async fn fetch_rss_for_indexer(
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!("Prowlarr returned {status} for indexer {indexer_id}: {text}"));
+        return Err(format!(
+            "Prowlarr returned {status} for indexer {indexer_id}: {text}"
+        ));
     }
 
     resp.json::<Vec<prowlarr::ProwlarrRawRelease>>()

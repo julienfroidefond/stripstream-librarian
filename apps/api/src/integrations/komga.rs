@@ -189,11 +189,12 @@ pub async fn sync_komga_read_books(
         let title_lower = title.to_lowercase();
         let series_lower = series_title.to_lowercase();
 
-        let found = if let Some(entries) = primary_map.get(&(series_lower.clone(), title_lower.clone())) {
-            Some(entries)
-        } else {
-            secondary_map.get(&title_lower)
-        };
+        let found =
+            if let Some(entries) = primary_map.get(&(series_lower.clone(), title_lower.clone())) {
+                Some(entries)
+            } else {
+                secondary_map.get(&title_lower)
+            };
 
         if let Some(entries) = found {
             for (id, local_title, local_series) in entries {
@@ -387,10 +388,15 @@ pub async fn get_sync_report(
 
     let row = row.ok_or_else(|| ApiError::not_found("report not found"))?;
 
-    let matched_books_json: serde_json::Value = row.try_get("matched_books").unwrap_or(serde_json::Value::Array(vec![]));
+    let matched_books_json: serde_json::Value = row
+        .try_get("matched_books")
+        .unwrap_or(serde_json::Value::Array(vec![]));
     let matched_books: Vec<String> = serde_json::from_value(matched_books_json).unwrap_or_default();
-    let newly_marked_books_json: serde_json::Value = row.try_get("newly_marked_books").unwrap_or(serde_json::Value::Array(vec![]));
-    let newly_marked_books: Vec<String> = serde_json::from_value(newly_marked_books_json).unwrap_or_default();
+    let newly_marked_books_json: serde_json::Value = row
+        .try_get("newly_marked_books")
+        .unwrap_or(serde_json::Value::Array(vec![]));
+    let newly_marked_books: Vec<String> =
+        serde_json::from_value(newly_marked_books_json).unwrap_or_default();
     let unmatched_json: serde_json::Value = row.get("unmatched");
     let unmatched: Vec<String> = serde_json::from_value(unmatched_json).unwrap_or_default();
 

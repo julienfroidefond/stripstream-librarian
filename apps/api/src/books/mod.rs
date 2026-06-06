@@ -6,12 +6,15 @@ pub use pages::*;
 pub use rename::*;
 pub use thumbnails::*;
 
-use axum::{extract::{Extension, Path, Query, State}, Json};
+use axum::{
+    extract::{Extension, Path, Query, State},
+    Json,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::{auth::AuthUser, error::ApiError, index_jobs::IndexJobResponse, state::AppState};
 
@@ -151,31 +154,49 @@ pub async fn list_books(
 
     // Parse reading_status CSV → Vec<String>
     let reading_statuses: Option<Vec<String>> = query.reading_status.as_deref().map(|s| {
-        s.split(',').map(|v| v.trim().to_string()).filter(|v| !v.is_empty()).collect()
+        s.split(',')
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .collect()
     });
 
     // Conditions partagées COUNT et DATA — $1=library_id $2=kind $3=format, puis optionnels
     let mut p: usize = 3;
     let series_cond = match query.series.as_deref() {
         Some("unclassified") => "AND b.series_id IS NULL".to_string(),
-        Some(_) => { p += 1; format!("AND b.series_id = ${p}") }
+        Some(_) => {
+            p += 1;
+            format!("AND b.series_id = ${p}")
+        }
         None => String::new(),
     };
     let rs_cond = if reading_statuses.is_some() {
-        p += 1; format!("AND COALESCE(brp.status, 'unread') = ANY(${p})")
-    } else { String::new() };
+        p += 1;
+        format!("AND COALESCE(brp.status, 'unread') = ANY(${p})")
+    } else {
+        String::new()
+    };
     let author_cond = if query.author.is_some() {
-        p += 1; format!("AND (${p} = ANY(COALESCE(NULLIF(b.authors, '{{}}'), CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END)) OR (s.id IS NOT NULL AND ${p} = ANY(COALESCE(s.authors, ARRAY[]::text[]))))")
-    } else { String::new() };
+        p += 1;
+        format!("AND (${p} = ANY(COALESCE(NULLIF(b.authors, '{{}}'), CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END)) OR (s.id IS NOT NULL AND ${p} = ANY(COALESCE(s.authors, ARRAY[]::text[]))))")
+    } else {
+        String::new()
+    };
     let metadata_cond = match query.metadata_provider.as_deref() {
         Some("unlinked") => "AND eml.id IS NULL".to_string(),
         Some("linked") => "AND eml.id IS NOT NULL".to_string(),
-        Some(_) => { p += 1; format!("AND eml.provider = ${p}") },
+        Some(_) => {
+            p += 1;
+            format!("AND eml.provider = ${p}")
+        }
         None => String::new(),
     };
     let q_cond = if query.q.is_some() {
-        p += 1; format!("AND (b.title ILIKE ${p} OR s.name ILIKE ${p} OR b.author ILIKE ${p})")
-    } else { String::new() };
+        p += 1;
+        format!("AND (b.title ILIKE ${p} OR s.name ILIKE ${p} OR b.author ILIKE ${p})")
+    } else {
+        String::new()
+    };
     p += 1;
     let uid_p = p;
 
@@ -256,7 +277,9 @@ pub async fn list_books(
 
     if let Some(s) = query.series.as_deref() {
         if s != "unclassified" {
-            let series_uuid: Uuid = s.parse().map_err(|_| ApiError::bad_request("invalid series id"))?;
+            let series_uuid: Uuid = s
+                .parse()
+                .map_err(|_| ApiError::bad_request("invalid series id"))?;
             count_builder = count_builder.bind(series_uuid);
             data_builder = data_builder.bind(series_uuid);
         }
@@ -307,7 +330,8 @@ pub async fn list_books(
                 volume_type: row.get("volume_type"),
                 language: row.get("language"),
                 page_count: row.get("page_count"),
-                thumbnail_url: thumbnail_path.map(|_p| format!("/books/{}/thumbnail", row.get::<Uuid, _>("id"))),
+                thumbnail_url: thumbnail_path
+                    .map(|_p| format!("/books/{}/thumbnail", row.get::<Uuid, _>("id"))),
                 updated_at: row.get("updated_at"),
                 reading_status: row.get("reading_status"),
                 reading_current_page: row.get("reading_current_page"),
@@ -540,17 +564,49 @@ pub async fn update_book(
     if title.is_empty() {
         return Err(ApiError::bad_request("title cannot be empty"));
     }
-    let author = body.author.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
-    let authors: Vec<String> = body.authors.iter()
+    let author = body
+        .author
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let authors: Vec<String> = body
+        .authors
+        .iter()
         .map(|a| a.trim().to_string())
         .filter(|a| !a.is_empty())
         .collect();
-    let series = body.series.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
-    let language = body.language.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let series = body
+        .series
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let language = body
+        .language
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
 
-    let summary = body.summary.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
-    let isbn = body.isbn.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
-    let publish_date = body.publish_date.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let summary = body
+        .summary
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let isbn = body
+        .isbn
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let publish_date = body
+        .publish_date
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
     let locked_fields = body.locked_fields.clone().unwrap_or(serde_json::json!({}));
     // Resolve series name to series_id
     let series_id: Option<Uuid> = if let Some(ref s) = series {
@@ -811,7 +867,9 @@ pub async fn delete_book(
 
     tracing::info!(
         "[BOOKS] Deleted book {}, scan job {} queued for library {}",
-        id, scan_job_id, library_id
+        id,
+        scan_job_id,
+        library_id
     );
 
     Ok(Json(crate::responses::OkResponse::new()))

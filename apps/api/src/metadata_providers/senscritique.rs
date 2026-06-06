@@ -95,7 +95,10 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
             None => continue,
         };
 
-        let id = product.get("id").and_then(|v| v.as_i64()).unwrap_or_default();
+        let id = product
+            .get("id")
+            .and_then(|v| v.as_i64())
+            .unwrap_or_default();
         let title = product
             .get("title")
             .and_then(|v| v.as_str())
@@ -104,7 +107,10 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
             continue;
         }
 
-        let rating = product.get("rating").and_then(|r| r.as_f64()).unwrap_or(0.0);
+        let rating = product
+            .get("rating")
+            .and_then(|r| r.as_f64())
+            .unwrap_or(0.0);
 
         let franchises = product
             .get("franchises")
@@ -114,13 +120,13 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
 
         let authors = extract_names(product, "authors");
         let pencillers = extract_names(product, "pencillers");
-        let all_authors: Vec<String> = authors
-            .into_iter()
-            .chain(pencillers)
-            .collect::<Vec<_>>();
+        let all_authors: Vec<String> = authors.into_iter().chain(pencillers).collect::<Vec<_>>();
         // Deduplicate authors
         let mut seen = std::collections::HashSet::new();
-        let authors: Vec<String> = all_authors.into_iter().filter(|a| seen.insert(a.clone())).collect();
+        let authors: Vec<String> = all_authors
+            .into_iter()
+            .filter(|a| seen.insert(a.clone()))
+            .collect();
 
         let synopsis = product
             .get("synopsis")
@@ -141,7 +147,10 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
             .and_then(|y| y.as_i64())
             .map(|y| y as i32);
 
-        let url_path = product.get("url").and_then(|v| v.as_str()).unwrap_or_default();
+        let url_path = product
+            .get("url")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
         let external_url = if url_path.is_empty() {
             None
         } else {
@@ -151,7 +160,10 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
         let confidence = 1.0 - (i as f32 / 20.0).clamp(0.0, 0.9);
 
         if let Some(franchise) = franchises.first() {
-            let fid = franchise.get("id").and_then(|v| v.as_i64()).unwrap_or_default();
+            let fid = franchise
+                .get("id")
+                .and_then(|v| v.as_i64())
+                .unwrap_or_default();
             let flabel = franchise
                 .get("label")
                 .and_then(|v| v.as_str())
@@ -182,7 +194,9 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
             // Track description from the lowest volume number (tome 1 preferred)
             if let Some(syn) = synopsis.clone() {
                 match franchise_descriptions.get(&fid) {
-                    None => { franchise_descriptions.insert(fid, (vol_num, syn)); }
+                    None => {
+                        franchise_descriptions.insert(fid, (vol_num, syn));
+                    }
                     Some((existing_vol, _)) => {
                         let new_is_better = match (vol_num, existing_vol) {
                             (Some(n), Some(e)) => n < *e,
@@ -224,10 +238,22 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
         // Manual search: fetch all products per franchise, group by edition
         let mut results: Vec<SeriesCandidate> = Vec::new();
         for (fid, (base_candidate, _rating)) in &franchise_map {
-            let edition_candidates = fetch_franchise_editions(&client, *fid, base_candidate, &franchise_descriptions, &latest_dates, query).await;
+            let edition_candidates = fetch_franchise_editions(
+                &client,
+                *fid,
+                base_candidate,
+                &franchise_descriptions,
+                &latest_dates,
+                query,
+            )
+            .await;
             results.extend(edition_candidates);
         }
-        results.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.extend(standalone);
         Ok(results)
     } else {
@@ -248,7 +274,11 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
                 c
             })
             .collect();
-        results.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.extend(standalone);
         Ok(results)
     }
@@ -290,7 +320,9 @@ async fn fetch_franchise_editions(
         return vec![base_candidate.clone()];
     }
 
-    let status = latest_dates.get(&franchise_id).map(|d| infer_status_from_date(d));
+    let status = latest_dates
+        .get(&franchise_id)
+        .map(|d| infer_status_from_date(d));
 
     editions
         .into_iter()
@@ -301,7 +333,9 @@ async fn fetch_franchise_editions(
             let cover_url = products
                 .iter()
                 .filter_map(|p| {
-                    let vol = extract_volume_number(p.get("title").and_then(|v| v.as_str()).unwrap_or_default());
+                    let vol = extract_volume_number(
+                        p.get("title").and_then(|v| v.as_str()).unwrap_or_default(),
+                    );
                     vol.map(|v| (v, p))
                 })
                 .min_by_key(|(v, _)| *v)
@@ -320,7 +354,8 @@ async fn fetch_franchise_editions(
                 .filter_map(|p| {
                     let title = p.get("title").and_then(|v| v.as_str()).unwrap_or_default();
                     let vol = extract_volume_number(title).unwrap_or(i32::MAX);
-                    let syn = p.get("synopsis")
+                    let syn = p
+                        .get("synopsis")
                         .and_then(|s| s.as_str())
                         .filter(|s| !s.is_empty())
                         .map(String::from)?;
@@ -362,7 +397,11 @@ async fn fetch_franchise_editions(
             let confidence = (similarity + volume_bonus).min(1.0);
 
             SeriesCandidate {
-                external_id: format!("franchise:{}:edition:{}", franchise_id, encode_edition(&edition_name)),
+                external_id: format!(
+                    "franchise:{}:edition:{}",
+                    franchise_id,
+                    encode_edition(&edition_name)
+                ),
                 title: edition_name,
                 authors,
                 description,
@@ -385,12 +424,13 @@ async fn get_series_books_impl(external_id: &str) -> Result<Vec<BookCandidate>, 
     let client = build_client()?;
 
     if let Some(rest) = external_id.strip_prefix("franchise:") {
-        let (fid_str, edition_filter) = if let Some((fid_part, edition_part)) = rest.split_once(":edition:") {
-            let decoded = decode_edition(edition_part)?;
-            (fid_part, Some(decoded))
-        } else {
-            (rest, None)
-        };
+        let (fid_str, edition_filter) =
+            if let Some((fid_part, edition_part)) = rest.split_once(":edition:") {
+                let decoded = decode_edition(edition_part)?;
+                (fid_part, Some(decoded))
+            } else {
+                (rest, None)
+            };
         let fid: i64 = fid_str
             .parse()
             .map_err(|_| format!("invalid franchise id: {fid_str}"))?;
@@ -413,7 +453,11 @@ async fn get_series_books_impl(external_id: &str) -> Result<Vec<BookCandidate>, 
 }
 
 /// Fetch all books in a franchise via groupProducts, optionally filtered by edition.
-async fn fetch_franchise_books(client: &reqwest::Client, franchise_id: i64, edition_filter: Option<&str>) -> Result<Vec<BookCandidate>, String> {
+async fn fetch_franchise_books(
+    client: &reqwest::Client,
+    franchise_id: i64,
+    edition_filter: Option<&str>,
+) -> Result<Vec<BookCandidate>, String> {
     let gql = serde_json::json!({
         "query": format!(
             r#"{{ groupProducts(franchiseId: {franchise_id}, universe: "comicBook", limit: 200, offset: 0) {{
@@ -451,7 +495,10 @@ async fn fetch_franchise_books(client: &reqwest::Client, franchise_id: i64, edit
     let mut all_books: Vec<BookCandidate> = filtered_items
         .iter()
         .filter_map(|product| {
-            let id = product.get("id").and_then(|v| v.as_i64()).unwrap_or_default();
+            let id = product
+                .get("id")
+                .and_then(|v| v.as_i64())
+                .unwrap_or_default();
             let title = product
                 .get("title")
                 .and_then(|v| v.as_str())
@@ -525,7 +572,10 @@ async fn fetch_franchise_books(client: &reqwest::Client, franchise_id: i64, edit
 }
 
 /// Fetch a single product as a book.
-async fn fetch_single_book(client: &reqwest::Client, product_id: i64) -> Result<Vec<BookCandidate>, String> {
+async fn fetch_single_book(
+    client: &reqwest::Client,
+    product_id: i64,
+) -> Result<Vec<BookCandidate>, String> {
     let gql = serde_json::json!({
         "query": format!(
             r#"{{ product(id: {product_id}) {{
@@ -543,7 +593,10 @@ async fn fetch_single_book(client: &reqwest::Client, product_id: i64) -> Result<
         .pointer("/data/product")
         .ok_or("SensCritique: product not found")?;
 
-    let id = product.get("id").and_then(|v| v.as_i64()).unwrap_or_default();
+    let id = product
+        .get("id")
+        .and_then(|v| v.as_i64())
+        .unwrap_or_default();
     let title = product
         .get("title")
         .and_then(|v| v.as_str())
@@ -683,7 +736,10 @@ fn group_products_by_franchise(items: &[serde_json::Value], limit: usize) -> Vec
     let mut candidates: Vec<SeriesCandidate> = Vec::new();
 
     for (i, product) in items.iter().take(limit * 2).enumerate() {
-        let id = product.get("id").and_then(|v| v.as_i64()).unwrap_or_default();
+        let id = product
+            .get("id")
+            .and_then(|v| v.as_i64())
+            .unwrap_or_default();
         let title = product
             .get("title")
             .and_then(|v| v.as_str())
@@ -700,7 +756,11 @@ fn group_products_by_franchise(items: &[serde_json::Value], limit: usize) -> Vec
 
         let (display_title, external_id) = if let Some(f) = franchise {
             let fid = f.get("id").and_then(|v| v.as_i64()).unwrap_or_default();
-            let label = f.get("label").and_then(|v| v.as_str()).unwrap_or(&title).to_string();
+            let label = f
+                .get("label")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&title)
+                .to_string();
 
             // Skip if we already have this franchise
             if seen_franchises.contains_key(&fid) {
@@ -713,7 +773,10 @@ fn group_products_by_franchise(items: &[serde_json::Value], limit: usize) -> Vec
             (title.clone(), id.to_string())
         };
 
-        let url_path = product.get("url").and_then(|v| v.as_str()).unwrap_or_default();
+        let url_path = product
+            .get("url")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
         let external_url = if url_path.is_empty() {
             None
         } else {
@@ -867,7 +930,10 @@ async fn graphql_request_url(
                 delay_ms *= 2;
                 continue;
             }
-            return Err(format!("SensCritique GraphQL returned HTTP {}", resp.status()));
+            return Err(format!(
+                "SensCritique GraphQL returned HTTP {}",
+                resp.status()
+            ));
         }
 
         let data: serde_json::Value = resp
@@ -951,7 +1017,11 @@ fn name_similarity(a: &str, b: &str) -> f32 {
     let words_b: std::collections::HashSet<&str> = nb.split_whitespace().collect();
     let intersection = words_a.intersection(&words_b).count() as f32;
     let union = words_a.union(&words_b).count() as f32;
-    if union == 0.0 { 0.0 } else { intersection / union }
+    if union == 0.0 {
+        0.0
+    } else {
+        intersection / union
+    }
 }
 
 /// Extract edition name from a SensCritique product title.
@@ -987,11 +1057,16 @@ fn extract_edition_name(title: &str) -> Option<String> {
 }
 
 /// Group products by edition name. Returns (edition_name, products) pairs.
-fn group_products_by_edition(items: &[serde_json::Value]) -> Vec<(String, Vec<&serde_json::Value>)> {
+fn group_products_by_edition(
+    items: &[serde_json::Value],
+) -> Vec<(String, Vec<&serde_json::Value>)> {
     let mut groups: HashMap<String, Vec<&serde_json::Value>> = HashMap::new();
 
     for item in items {
-        let title = item.get("title").and_then(|v| v.as_str()).unwrap_or_default();
+        let title = item
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
         if let Some(edition) = extract_edition_name(title) {
             groups.entry(edition).or_default().push(item);
         }
@@ -1006,9 +1081,8 @@ fn group_products_by_edition(items: &[serde_json::Value]) -> Vec<(String, Vec<&s
 /// Extract volume number from title patterns like "..., tome 3" or "... T.3"
 fn extract_volume_number(title: &str) -> Option<i32> {
     use std::sync::LazyLock;
-    static RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-        regex::Regex::new(r"(?i)(?:tome|t\.|vol(?:ume)?\.?)\s*(\d+)").unwrap()
-    });
+    static RE: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"(?i)(?:tome|t\.|vol(?:ume)?\.?)\s*(\d+)").unwrap());
 
     RE.captures(title)
         .and_then(|caps| caps.get(1))

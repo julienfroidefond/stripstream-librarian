@@ -49,12 +49,14 @@ async fn search_series_parses_candidates() {
         .await;
 
     let config = test_config();
-    let candidates =
-        search_series_impl("Blacksad", &config, &mock_server.uri())
-            .await
-            .unwrap();
+    let candidates = search_series_impl("Blacksad", &config, &mock_server.uri())
+        .await
+        .unwrap();
 
-    assert!(!candidates.is_empty(), "should return at least one candidate");
+    assert!(
+        !candidates.is_empty(),
+        "should return at least one candidate"
+    );
     let best = &candidates[0];
     assert_eq!(best.title, "Blacksad");
     assert!(best.authors.contains(&"Juan Diaz Canales".to_string()));
@@ -80,12 +82,14 @@ async fn search_series_empty_results() {
         .await;
 
     let config = test_config();
-    let candidates =
-        search_series_impl("nonexistent_xyz_123", &config, &mock_server.uri())
-            .await
-            .unwrap();
+    let candidates = search_series_impl("nonexistent_xyz_123", &config, &mock_server.uri())
+        .await
+        .unwrap();
 
-    assert!(candidates.is_empty(), "should return empty vec for no results");
+    assert!(
+        candidates.is_empty(),
+        "should return empty vec for no results"
+    );
 }
 
 #[tokio::test]
@@ -155,10 +159,9 @@ async fn get_series_books_parses_books() {
         .await;
 
     let config = test_config();
-    let books =
-        get_series_books_impl("vol_abc", &config, &mock_server.uri())
-            .await
-            .unwrap();
+    let books = get_series_books_impl("vol_abc", &config, &mock_server.uri())
+        .await
+        .unwrap();
 
     assert_eq!(books.len(), 3);
 
@@ -208,10 +211,9 @@ async fn get_series_books_empty_search_results() {
         .await;
 
     let config = test_config();
-    let books =
-        get_series_books_impl("vol_xyz", &config, &mock_server.uri())
-            .await
-            .unwrap();
+    let books = get_series_books_impl("vol_xyz", &config, &mock_server.uri())
+        .await
+        .unwrap();
 
     // Should fall back to the single volume
     assert_eq!(books.len(), 1);

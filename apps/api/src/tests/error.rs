@@ -24,6 +24,12 @@ fn api_error_constructors() {
     assert_eq!(ApiError::not_found("x").status, StatusCode::NOT_FOUND);
     assert_eq!(ApiError::unauthorized("x").status, StatusCode::UNAUTHORIZED);
     assert_eq!(ApiError::forbidden("x").status, StatusCode::FORBIDDEN);
-    assert_eq!(ApiError::internal("x").status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(ApiError::unprocessable_entity("x").status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        ApiError::internal("x").status,
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    assert_eq!(
+        ApiError::unprocessable_entity("x").status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
 }

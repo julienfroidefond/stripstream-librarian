@@ -18,9 +18,6 @@ fn api_job_types_contains_all_expected_types() {
         "download_detection",
     ];
     for t in expected {
-        assert!(
-            API_JOB_TYPES.contains(t),
-            "API_JOB_TYPES is missing: {t}"
-        );
+        assert!(API_JOB_TYPES.contains(t), "API_JOB_TYPES is missing: {t}");
     }
 }

@@ -69,7 +69,8 @@ pub async fn get_related_series(
         return Err(ApiError::not_found("series not found"));
     }
 
-    let rows = sqlx::query(r#"
+    let rows = sqlx::query(
+        r#"
         WITH ref AS (
             SELECT authors, genres, publishers
             FROM series
@@ -156,39 +157,51 @@ pub async fn get_related_series(
           ))
         ORDER BY score DESC, COALESCE(bc.book_count, 0) DESC
         LIMIT $2
-    "#)
+    "#,
+    )
     .bind(series_id)
     .bind(limit)
     .bind(user_id)
     .fetch_all(&state.pool)
     .await?;
 
-    let items = rows.into_iter().map(|row| {
-        let has_same_author: bool = row.get("has_same_author");
-        let has_same_genre: bool = row.get("has_same_genre");
-        let has_same_publisher: bool = row.get("has_same_publisher");
-        let has_same_reading_list: bool = row.get("has_same_reading_list");
-        let mut match_reasons = Vec::new();
-        if has_same_reading_list { match_reasons.push("same_reading_list".to_string()); }
-        if has_same_author { match_reasons.push("same_author".to_string()); }
-        if has_same_genre { match_reasons.push("same_genre".to_string()); }
-        if has_same_publisher { match_reasons.push("same_publisher".to_string()); }
+    let items = rows
+        .into_iter()
+        .map(|row| {
+            let has_same_author: bool = row.get("has_same_author");
+            let has_same_genre: bool = row.get("has_same_genre");
+            let has_same_publisher: bool = row.get("has_same_publisher");
+            let has_same_reading_list: bool = row.get("has_same_reading_list");
+            let mut match_reasons = Vec::new();
+            if has_same_reading_list {
+                match_reasons.push("same_reading_list".to_string());
+            }
+            if has_same_author {
+                match_reasons.push("same_author".to_string());
+            }
+            if has_same_genre {
+                match_reasons.push("same_genre".to_string());
+            }
+            if has_same_publisher {
+                match_reasons.push("same_publisher".to_string());
+            }
 
-        RelatedSeriesItem {
-            series_id: row.get("series_id"),
-            name: row.get("name"),
-            library_id: row.get("library_id"),
-            series_status: row.get("series_status"),
-            cover_url: row.get("cover_url"),
-            book_count: row.get("book_count"),
-            books_read_count: 0,
-            first_book_id: row.get("first_book_id"),
-            first_book_updated_at: row.get("first_book_updated_at"),
-            metadata_provider: row.get("metadata_provider"),
-            score: row.get("score"),
-            match_reasons,
-        }
-    }).collect();
+            RelatedSeriesItem {
+                series_id: row.get("series_id"),
+                name: row.get("name"),
+                library_id: row.get("library_id"),
+                series_status: row.get("series_status"),
+                cover_url: row.get("cover_url"),
+                book_count: row.get("book_count"),
+                books_read_count: 0,
+                first_book_id: row.get("first_book_id"),
+                first_book_updated_at: row.get("first_book_updated_at"),
+                metadata_provider: row.get("metadata_provider"),
+                score: row.get("score"),
+                match_reasons,
+            }
+        })
+        .collect();
 
     Ok(Json(items))
 }

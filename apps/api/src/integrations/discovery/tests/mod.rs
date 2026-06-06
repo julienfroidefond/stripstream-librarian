@@ -45,7 +45,12 @@ async fn create_test_library(pool: &sqlx::PgPool) -> Uuid {
     id
 }
 
-fn make_request(library_id: Uuid, provider: &str, external_id: &str, title: &str) -> AddToLibraryRequest {
+fn make_request(
+    library_id: Uuid,
+    provider: &str,
+    external_id: &str,
+    title: &str,
+) -> AddToLibraryRequest {
     AddToLibraryRequest {
         library_id,
         provider: provider.to_string(),
@@ -88,7 +93,11 @@ async fn test_add_to_library_basic_bedetheque(pool: sqlx::PgPool) {
     let start_year: Option<i32> = series_row.get("start_year");
     assert_eq!(start_year, Some(2020));
     let cover_url: Option<String> = series_row.get("cover_url");
-    assert_eq!(cover_url, Some("https://example.com/cover.jpg".to_string()), "cover_url should be synced");
+    assert_eq!(
+        cover_url,
+        Some("https://example.com/cover.jpg".to_string()),
+        "cover_url should be synced"
+    );
 
     // Verify metadata link was created
     let link_row = sqlx::query(
@@ -113,17 +122,23 @@ async fn test_add_to_library_duplicate_series(pool: sqlx::PgPool) {
     let state = test_state(pool.clone());
 
     let req1 = make_request(library_id, "bedetheque", "ext-100", "Duplicate Series");
-    let resp1 = add_to_library(State(state.clone()), Json(req1)).await.unwrap().0;
+    let resp1 = add_to_library(State(state.clone()), Json(req1))
+        .await
+        .unwrap()
+        .0;
 
     let req2 = make_request(library_id, "bedetheque", "ext-200", "Duplicate Series");
     let resp2 = add_to_library(State(state), Json(req2)).await.unwrap().0;
 
     // Same series_id should be returned
-    assert_eq!(resp1.series_id, resp2.series_id, "should return the same series_id for duplicate name");
+    assert_eq!(
+        resp1.series_id, resp2.series_id,
+        "should return the same series_id for duplicate name"
+    );
 
     // Only one series row
     let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM series WHERE library_id = $1 AND name = 'Duplicate Series'"
+        "SELECT COUNT(*) FROM series WHERE library_id = $1 AND name = 'Duplicate Series'",
     )
     .bind(library_id)
     .fetch_one(&pool)
@@ -139,7 +154,10 @@ async fn test_add_to_library_duplicate_series(pool: sqlx::PgPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(link_count, 1, "should have exactly one metadata link per (series_id, provider)");
+    assert_eq!(
+        link_count, 1,
+        "should have exactly one metadata link per (series_id, provider)"
+    );
 }
 
 // 3. Non-linkable provider (anilist) — no metadata link created
@@ -160,17 +178,22 @@ async fn test_add_to_library_anilist_no_metadata_link(pool: sqlx::PgPool) {
     assert_eq!(count, 1, "series should be created");
 
     // No metadata link should be created
-    let link_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1"
-    )
-    .bind(resp.series_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(link_count, 0, "anilist provider should not create metadata link");
+    let link_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1")
+            .bind(resp.series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        link_count, 0,
+        "anilist provider should not create metadata link"
+    );
 
     // metadata_link_id should fall back to series_id
-    assert_eq!(resp.metadata_link_id, resp.series_id, "metadata_link_id should equal series_id when no link created");
+    assert_eq!(
+        resp.metadata_link_id, resp.series_id,
+        "metadata_link_id should equal series_id when no link created"
+    );
 }
 
 // 4. SC provider normalization — sc_trending_bd → senscritique
@@ -183,15 +206,16 @@ async fn test_add_to_library_sc_provider_normalization(pool: sqlx::PgPool) {
     let resp = add_to_library(State(state), Json(req)).await.unwrap().0;
 
     // Metadata link should exist with provider = "senscritique" (not "sc_trending_bd")
-    let link_row = sqlx::query(
-        "SELECT provider FROM external_metadata_links WHERE series_id = $1"
-    )
-    .bind(resp.series_id)
-    .fetch_one(&pool)
-    .await
-    .expect("metadata link should exist for sc_ provider");
+    let link_row = sqlx::query("SELECT provider FROM external_metadata_links WHERE series_id = $1")
+        .bind(resp.series_id)
+        .fetch_one(&pool)
+        .await
+        .expect("metadata link should exist for sc_ provider");
     let provider: String = link_row.get("provider");
-    assert_eq!(provider, "senscritique", "sc_trending_bd should be normalized to senscritique");
+    assert_eq!(
+        provider, "senscritique",
+        "sc_trending_bd should be normalized to senscritique"
+    );
 
     // Verify no link exists with original provider name
     let raw_count: i64 = sqlx::query_scalar(
@@ -201,7 +225,10 @@ async fn test_add_to_library_sc_provider_normalization(pool: sqlx::PgPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(raw_count, 0, "no link should exist with raw sc_trending_bd provider name");
+    assert_eq!(
+        raw_count, 0,
+        "no link should exist with raw sc_trending_bd provider name"
+    );
 }
 
 // 5. Senscritique provider — metadata link created with correct provider
@@ -209,13 +236,18 @@ async fn test_add_to_library_sc_provider_normalization(pool: sqlx::PgPool) {
 async fn test_add_to_library_senscritique_provider(pool: sqlx::PgPool) {
     let library_id = create_test_library(&pool).await;
     let state = test_state(pool.clone());
-    let req = make_request(library_id, "senscritique", "sc-direct-001", "SC Direct Series");
+    let req = make_request(
+        library_id,
+        "senscritique",
+        "sc-direct-001",
+        "SC Direct Series",
+    );
 
     let resp = add_to_library(State(state), Json(req)).await.unwrap().0;
 
     // Metadata link should exist with provider = "senscritique"
     let link_row = sqlx::query(
-        "SELECT provider, external_id, status FROM external_metadata_links WHERE series_id = $1"
+        "SELECT provider, external_id, status FROM external_metadata_links WHERE series_id = $1",
     )
     .bind(resp.series_id)
     .fetch_one(&pool)
@@ -229,7 +261,10 @@ async fn test_add_to_library_senscritique_provider(pool: sqlx::PgPool) {
     assert_eq!(status, "approved");
 
     // metadata_link_id should NOT equal series_id (a real link was created)
-    assert_ne!(resp.metadata_link_id, resp.series_id, "metadata_link_id should be a real link UUID, not series_id");
+    assert_ne!(
+        resp.metadata_link_id, resp.series_id,
+        "metadata_link_id should be a real link UUID, not series_id"
+    );
 }
 
 // 6. Hide suggestion + filter_already_owned excludes hidden
@@ -289,15 +324,27 @@ async fn test_unhide_removes_hidden(pool: sqlx::PgPool) {
     .unwrap();
 
     // Verify it exists
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM discovery_hidden WHERE external_id = 'unhide-ext'")
-        .fetch_one(&pool).await.unwrap();
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM discovery_hidden WHERE external_id = 'unhide-ext'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(count, 1);
 
     // Delete it
-    sqlx::query("DELETE FROM discovery_hidden WHERE provider = 'bedetheque' AND external_id = 'unhide-ext'")
-        .execute(&pool).await.unwrap();
+    sqlx::query(
+        "DELETE FROM discovery_hidden WHERE provider = 'bedetheque' AND external_id = 'unhide-ext'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
 
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM discovery_hidden WHERE external_id = 'unhide-ext'")
-        .fetch_one(&pool).await.unwrap();
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM discovery_hidden WHERE external_id = 'unhide-ext'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(count, 0, "hidden entry should be removed after unhide");
 }

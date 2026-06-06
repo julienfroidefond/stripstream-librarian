@@ -107,10 +107,7 @@ async fn search_series_impl(
     search_series_impl_url(query, ANILIST_GRAPHQL_URL).await
 }
 
-async fn search_series_impl_url(
-    query: &str,
-    url: &str,
-) -> Result<Vec<SeriesCandidate>, String> {
+async fn search_series_impl_url(query: &str, url: &str) -> Result<Vec<SeriesCandidate>, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
@@ -165,15 +162,9 @@ async fn search_series_impl_url(
                 .and_then(|y| y.as_i64())
                 .map(|y| y as i32);
 
-            let volumes = m
-                .get("volumes")
-                .and_then(|v| v.as_i64())
-                .map(|v| v as i32);
+            let volumes = m.get("volumes").and_then(|v| v.as_i64()).map(|v| v as i32);
 
-            let chapters = m
-                .get("chapters")
-                .and_then(|v| v.as_i64())
-                .map(|v| v as i32);
+            let chapters = m.get("chapters").and_then(|v| v.as_i64()).map(|v| v as i32);
 
             let status = m
                 .get("status")
@@ -181,10 +172,7 @@ async fn search_series_impl_url(
                 .unwrap_or("UNKNOWN")
                 .to_string();
 
-            let site_url = m
-                .get("siteUrl")
-                .and_then(|u| u.as_str())
-                .map(String::from);
+            let site_url = m.get("siteUrl").and_then(|u| u.as_str()).map(String::from);
 
             let authors = extract_authors(m);
 
@@ -224,7 +212,11 @@ async fn search_series_impl_url(
         })
         .collect();
 
-    candidates.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     candidates.truncate(10);
     Ok(candidates)
 }
@@ -249,13 +241,8 @@ async fn get_series_books_impl_url(
         .build()
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
-    let data = graphql_request_url(
-        &client,
-        url,
-        DETAIL_QUERY,
-        serde_json::json!({ "id": id }),
-    )
-    .await?;
+    let data =
+        graphql_request_url(&client, url, DETAIL_QUERY, serde_json::json!({ "id": id })).await?;
 
     let media = match data.get("data").and_then(|d| d.get("Media")) {
         Some(m) => m,
@@ -327,12 +314,12 @@ fn extract_authors(media: &serde_json::Value) -> Vec<String> {
         .and_then(|e| e.as_array())
     {
         for edge in edges {
-            let role = edge
-                .get("role")
-                .and_then(|r| r.as_str())
-                .unwrap_or("");
+            let role = edge.get("role").and_then(|r| r.as_str()).unwrap_or("");
             let role_lower = role.to_lowercase();
-            if role_lower.contains("story") || role_lower.contains("art") || role_lower.contains("original") {
+            if role_lower.contains("story")
+                || role_lower.contains("art")
+                || role_lower.contains("original")
+            {
                 if let Some(name) = edge
                     .get("node")
                     .and_then(|n| n.get("name"))
@@ -409,7 +396,10 @@ async fn fetch_trending_url(limit: i32, url: &str) -> Result<Vec<SeriesCandidate
 }
 
 /// Parse a single AniList media JSON object into a SeriesCandidate.
-fn parse_media_to_candidate(m: &serde_json::Value, default_confidence: f32) -> Option<SeriesCandidate> {
+fn parse_media_to_candidate(
+    m: &serde_json::Value,
+    default_confidence: f32,
+) -> Option<SeriesCandidate> {
     let id = m.get("id").and_then(|id| id.as_i64())?;
     let title_obj = m.get("title")?;
     let title = title_obj

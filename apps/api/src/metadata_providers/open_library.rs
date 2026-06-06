@@ -30,7 +30,9 @@ impl MetadataProvider for OpenLibraryProvider {
     > {
         let external_id = external_id.to_string();
         let config = config.clone();
-        Box::pin(async move { get_series_books_impl(&external_id, &config, DEFAULT_BASE_URL).await })
+        Box::pin(
+            async move { get_series_books_impl(&external_id, &config, DEFAULT_BASE_URL).await },
+        )
     }
 }
 
@@ -93,13 +95,20 @@ async fn search_series_impl(
         let authors: Vec<String> = doc
             .get("author_name")
             .and_then(|a| a.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
         let publishers: Vec<String> = doc
             .get("publisher")
             .and_then(|a| a.as_array())
             .map(|arr| {
-                let mut pubs: Vec<String> = arr.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+                let mut pubs: Vec<String> = arr
+                    .iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect();
                 pubs.truncate(3);
                 pubs
             })
@@ -109,7 +118,8 @@ async fn search_series_impl(
             .and_then(|y| y.as_i64())
             .map(|y| y as i32);
         let cover_i = doc.get("cover_i").and_then(|c| c.as_i64());
-        let cover_url = cover_i.map(|id| format!("https://covers.openlibrary.org/b/id/{}-M.jpg", id));
+        let cover_url =
+            cover_i.map(|id| format!("https://covers.openlibrary.org/b/id/{}-M.jpg", id));
         let key = doc
             .get("key")
             .and_then(|k| k.as_str())
@@ -118,23 +128,24 @@ async fn search_series_impl(
 
         let series_name = extract_series_name(&title);
 
-        let entry = series_map
-            .entry(series_name.clone())
-            .or_insert_with(|| SeriesCandidateBuilder {
-                title: series_name.clone(),
-                authors: vec![],
-                description: None,
-                publishers: vec![],
-                start_year: None,
-                volume_count: 0,
-                cover_url: None,
-                external_id: key.clone(),
-                external_url: if key.is_empty() {
-                    None
-                } else {
-                    Some(format!("https://openlibrary.org{}", key))
-                },
-            });
+        let entry =
+            series_map
+                .entry(series_name.clone())
+                .or_insert_with(|| SeriesCandidateBuilder {
+                    title: series_name.clone(),
+                    authors: vec![],
+                    description: None,
+                    publishers: vec![],
+                    start_year: None,
+                    volume_count: 0,
+                    cover_url: None,
+                    external_id: key.clone(),
+                    external_url: if key.is_empty() {
+                        None
+                    } else {
+                        Some(format!("https://openlibrary.org{}", key))
+                    },
+                });
 
         entry.volume_count += 1;
 
@@ -148,7 +159,8 @@ async fn search_series_impl(
                 entry.publishers.push(p.clone());
             }
         }
-        if (entry.start_year.is_none() || first_publish_year.is_some_and(|y| entry.start_year.unwrap() > y))
+        if (entry.start_year.is_none()
+            || first_publish_year.is_some_and(|y| entry.start_year.unwrap() > y))
             && first_publish_year.is_some()
         {
             entry.start_year = first_publish_year;
@@ -173,7 +185,11 @@ async fn search_series_impl(
                 description: b.description,
                 publishers: b.publishers,
                 start_year: b.start_year,
-                total_volumes: if b.volume_count > 1 { Some(b.volume_count) } else { None },
+                total_volumes: if b.volume_count > 1 {
+                    Some(b.volume_count)
+                } else {
+                    None
+                },
                 cover_url: b.cover_url,
                 external_url: b.external_url,
                 confidence,
@@ -182,7 +198,11 @@ async fn search_series_impl(
         })
         .collect();
 
-    candidates.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     candidates.truncate(10);
     Ok(candidates)
 }
@@ -199,10 +219,16 @@ async fn get_series_books_impl(
 
     // Fetch the work to get its title for series search
     let url = format!("{}{}.json", base_url, external_id);
-    let resp = client.get(&url).send().await.map_err(|e| format!("Open Library request failed: {e}"))?;
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Open Library request failed: {e}"))?;
 
     let work: serde_json::Value = if resp.status().is_success() {
-        resp.json().await.map_err(|e| format!("Failed to parse response: {e}"))?
+        resp.json()
+            .await
+            .map_err(|e| format!("Failed to parse response: {e}"))?
     } else {
         serde_json::json!({})
     };
@@ -216,13 +242,20 @@ async fn get_series_books_impl(
         base_url,
         urlencoded(&series_name)
     );
-    let resp = client.get(&search_url).send().await.map_err(|e| format!("Open Library search failed: {e}"))?;
+    let resp = client
+        .get(&search_url)
+        .send()
+        .await
+        .map_err(|e| format!("Open Library search failed: {e}"))?;
 
     if !resp.status().is_success() {
         return Ok(vec![]);
     }
 
-    let data: serde_json::Value = resp.json().await.map_err(|e| format!("Failed to parse response: {e}"))?;
+    let data: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
     let docs = match data.get("docs").and_then(|d| d.as_array()) {
         Some(docs) => docs,
         None => return Ok(vec![]),
@@ -231,11 +264,19 @@ async fn get_series_books_impl(
     let mut books: Vec<BookCandidate> = docs
         .iter()
         .map(|doc| {
-            let title = doc.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string();
+            let title = doc
+                .get("title")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
             let authors: Vec<String> = doc
                 .get("author_name")
                 .and_then(|a| a.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             let isbn = doc
                 .get("isbn")
@@ -248,7 +289,8 @@ async fn get_series_books_impl(
                 .and_then(|n| n.as_i64())
                 .map(|n| n as i32);
             let cover_i = doc.get("cover_i").and_then(|c| c.as_i64());
-            let cover_url = cover_i.map(|id| format!("https://covers.openlibrary.org/b/id/{}-M.jpg", id));
+            let cover_url =
+                cover_i.map(|id| format!("https://covers.openlibrary.org/b/id/{}-M.jpg", id));
             let language = doc
                 .get("language")
                 .and_then(|a| a.as_array())
@@ -259,7 +301,11 @@ async fn get_series_books_impl(
                 .get("first_publish_year")
                 .and_then(|y| y.as_i64())
                 .map(|y| y.to_string());
-            let key = doc.get("key").and_then(|k| k.as_str()).unwrap_or("").to_string();
+            let key = doc
+                .get("key")
+                .and_then(|k| k.as_str())
+                .unwrap_or("")
+                .to_string();
             let volume_number = extract_volume_number(&title);
 
             BookCandidate {

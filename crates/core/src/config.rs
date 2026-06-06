@@ -71,7 +71,8 @@ impl IndexerConfig {
         thumbnail_config.height = env_or("THUMBNAIL_HEIGHT", thumbnail_config.height);
         thumbnail_config.quality = env_or("THUMBNAIL_QUALITY", thumbnail_config.quality);
         thumbnail_config.format = env_string_or("THUMBNAIL_FORMAT", &thumbnail_config.format);
-        thumbnail_config.directory = env_string_or("THUMBNAIL_DIRECTORY", &thumbnail_config.directory);
+        thumbnail_config.directory =
+            env_string_or("THUMBNAIL_DIRECTORY", &thumbnail_config.directory);
 
         Ok(Self {
             listen_addr: env_string_or("INDEXER_LISTEN_ADDR", "0.0.0.0:7081"),

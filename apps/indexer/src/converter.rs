@@ -37,15 +37,36 @@ async fn insert_event(
 /// 5. Delete the original CBR (failure here does not fail the job)
 /// 6. Mark job as success
 pub async fn convert_book(state: &AppState, job_id: Uuid, book_id: Uuid) -> Result<()> {
-    info!("[CONVERTER] Starting CBR→CBZ conversion for book {} (job {})", book_id, job_id);
+    info!(
+        "[CONVERTER] Starting CBR→CBZ conversion for book {} (job {})",
+        book_id, job_id
+    );
 
     match convert_book_inner(state, job_id, book_id).await {
         Ok(book_name) => {
-            insert_event(&state.pool, job_id, "converted", "info", Some(&book_name), None, None).await;
+            insert_event(
+                &state.pool,
+                job_id,
+                "converted",
+                "info",
+                Some(&book_name),
+                None,
+                None,
+            )
+            .await;
             Ok(())
         }
         Err(e) => {
-            insert_event(&state.pool, job_id, "error", "error", None, Some(&e.to_string()), None).await;
+            insert_event(
+                &state.pool,
+                job_id,
+                "error",
+                "error",
+                None,
+                Some(&e.to_string()),
+                None,
+            )
+            .await;
             Err(e)
         }
     }
@@ -91,13 +112,11 @@ async fn convert_book_inner(state: &AppState, job_id: Uuid, book_id: Uuid) -> Re
     info!("[CONVERTER] Converting {} → CBZ", cbr_path.display());
 
     // Update job status to running (already set by claim_next_job, this updates current_file)
-    sqlx::query(
-        "UPDATE index_jobs SET current_file = $2 WHERE id = $1",
-    )
-    .bind(job_id)
-    .bind(&abs_path)
-    .execute(&state.pool)
-    .await?;
+    sqlx::query("UPDATE index_jobs SET current_file = $2 WHERE id = $1")
+        .bind(job_id)
+        .bind(&abs_path)
+        .execute(&state.pool)
+        .await?;
 
     // Do the conversion
     let cbz_path = parsers::convert_cbr_to_cbz(cbr_path)?;

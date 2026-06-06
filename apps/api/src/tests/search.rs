@@ -2,11 +2,13 @@ use super::*;
 use sqlx::Row;
 
 async fn create_test_user(pool: &sqlx::PgPool, username: &str) -> Uuid {
-    sqlx::query_scalar("INSERT INTO users (id, username) VALUES (gen_random_uuid(), $1) RETURNING id")
-        .bind(username)
-        .fetch_one(pool)
-        .await
-        .unwrap()
+    sqlx::query_scalar(
+        "INSERT INTO users (id, username) VALUES (gen_random_uuid(), $1) RETURNING id",
+    )
+    .bind(username)
+    .fetch_one(pool)
+    .await
+    .unwrap()
 }
 
 async fn block_genre_for_user(pool: &sqlx::PgPool, user_id: Uuid, genre: &str) {
@@ -41,7 +43,12 @@ async fn create_test_series(pool: &sqlx::PgPool, library_id: Uuid, name: &str) -
     .unwrap()
 }
 
-async fn create_test_series_with_genres(pool: &sqlx::PgPool, library_id: Uuid, name: &str, genres: &[&str]) -> Uuid {
+async fn create_test_series_with_genres(
+    pool: &sqlx::PgPool,
+    library_id: Uuid,
+    name: &str,
+    genres: &[&str],
+) -> Uuid {
     let genres_vec: Vec<String> = genres.iter().map(|g| g.to_string()).collect();
     sqlx::query_scalar(
         "INSERT INTO series (id, library_id, name, genres, created_at, updated_at) VALUES (gen_random_uuid(), $1, $2, $3, NOW(), NOW()) RETURNING id",
@@ -171,7 +178,16 @@ async fn search_by_book_title(pool: sqlx::PgPool) {
 async fn search_by_series_name(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "comics").await;
     let series_id = create_test_series(&pool, lib_id, "Dragon Ball").await;
-    create_test_book(&pool, lib_id, Some(series_id), "Volume 1", "comic", None, &[]).await;
+    create_test_book(
+        &pool,
+        lib_id,
+        Some(series_id),
+        "Volume 1",
+        "comic",
+        None,
+        &[],
+    )
+    .await;
     create_test_book(&pool, lib_id, None, "Unrelated Book", "comic", None, &[]).await;
 
     let rows = sqlx::query(BOOKS_SQL)
@@ -185,14 +201,35 @@ async fn search_by_series_name(pool: sqlx::PgPool) {
 
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get::<String, _>("title"), "Volume 1");
-    assert_eq!(rows[0].get::<Option<String>, _>("series").unwrap(), "Dragon Ball");
+    assert_eq!(
+        rows[0].get::<Option<String>, _>("series").unwrap(),
+        "Dragon Ball"
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn search_by_author(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "comics").await;
-    create_test_book(&pool, lib_id, None, "The Sandman", "comic", Some("Neil Gaiman"), &["Neil Gaiman"]).await;
-    create_test_book(&pool, lib_id, None, "Watchmen", "comic", Some("Alan Moore"), &["Alan Moore"]).await;
+    create_test_book(
+        &pool,
+        lib_id,
+        None,
+        "The Sandman",
+        "comic",
+        Some("Neil Gaiman"),
+        &["Neil Gaiman"],
+    )
+    .await;
+    create_test_book(
+        &pool,
+        lib_id,
+        None,
+        "Watchmen",
+        "comic",
+        Some("Alan Moore"),
+        &["Alan Moore"],
+    )
+    .await;
 
     let rows = sqlx::query(BOOKS_SQL)
         .bind("%Gaiman%")
@@ -281,8 +318,26 @@ async fn search_empty_query_returns_nothing(pool: sqlx::PgPool) {
 async fn search_series_returns_series_id(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "comics").await;
     let series_id = create_test_series(&pool, lib_id, "Dragon Ball").await;
-    create_test_book(&pool, lib_id, Some(series_id), "Dragon Ball Vol 1", "comic", None, &[]).await;
-    create_test_book(&pool, lib_id, Some(series_id), "Dragon Ball Vol 2", "comic", None, &[]).await;
+    create_test_book(
+        &pool,
+        lib_id,
+        Some(series_id),
+        "Dragon Ball Vol 1",
+        "comic",
+        None,
+        &[],
+    )
+    .await;
+    create_test_book(
+        &pool,
+        lib_id,
+        Some(series_id),
+        "Dragon Ball Vol 2",
+        "comic",
+        None,
+        &[],
+    )
+    .await;
 
     let rows = sqlx::query(SERIES_SQL)
         .bind("%Dragon%")
@@ -324,10 +379,29 @@ async fn search_series_genre_restriction_hides_blocked(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "comics").await;
 
     let shonen_id = create_test_series_with_genres(&pool, lib_id, "Dragon Ball", &["shonen"]).await;
-    let mystery_id = create_test_series_with_genres(&pool, lib_id, "Dragon Mystery", &["mystere"]).await;
+    let mystery_id =
+        create_test_series_with_genres(&pool, lib_id, "Dragon Mystery", &["mystere"]).await;
 
-    create_test_book(&pool, lib_id, Some(shonen_id), "Dragon Ball Vol 1", "comic", None, &[]).await;
-    create_test_book(&pool, lib_id, Some(mystery_id), "Dragon Mystery Vol 1", "comic", None, &[]).await;
+    create_test_book(
+        &pool,
+        lib_id,
+        Some(shonen_id),
+        "Dragon Ball Vol 1",
+        "comic",
+        None,
+        &[],
+    )
+    .await;
+    create_test_book(
+        &pool,
+        lib_id,
+        Some(mystery_id),
+        "Dragon Mystery Vol 1",
+        "comic",
+        None,
+        &[],
+    )
+    .await;
 
     let user_id = create_test_user(&pool, "alice").await;
     block_genre_for_user(&pool, user_id, "mystere").await;

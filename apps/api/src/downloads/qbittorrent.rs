@@ -137,7 +137,8 @@ pub async fn add_torrent(
     let inferred_series_name = body.series_name.clone().or_else(|| {
         // Extract series name from the URL filename param or the URL itself
         let url = &body.url;
-        url.split("file=").nth(1)
+        url.split("file=")
+            .nth(1)
             .map(|f| {
                 let encoded = f.split('&').next().unwrap_or(f);
                 // Simple percent-decode + '+' to space
@@ -172,11 +173,17 @@ pub async fn add_torrent(
     };
     let is_managed = inferred_library_id.is_some() && inferred_series_name.is_some();
 
-    tracing::info!("[QBITTORRENT] Add torrent request: url={}, managed={is_managed}", body.url);
+    tracing::info!(
+        "[QBITTORRENT] Add torrent request: url={}, managed={is_managed}",
+        body.url
+    );
 
-    let (base_url, username, password) = load_qbittorrent_config(&state.pool).await.inspect_err(|e| {
-        tracing::error!("[QBITTORRENT] Failed to load config: {}", e.message);
-    })?;
+    let (base_url, username, password) =
+        load_qbittorrent_config(&state.pool)
+            .await
+            .inspect_err(|e| {
+                tracing::error!("[QBITTORRENT] Failed to load config: {}", e.message);
+            })?;
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
@@ -202,19 +209,28 @@ pub async fn add_torrent(
             torrent_bytes = None;
         }
         ResolvedTorrent::TorrentFile(bytes) => {
-            tracing::info!("[QBITTORRENT] Resolved to .torrent file ({} bytes)", bytes.len());
+            tracing::info!(
+                "[QBITTORRENT] Resolved to .torrent file ({} bytes)",
+                bytes.len()
+            );
             resolved_magnet_url = None;
             torrent_bytes = Some(bytes);
         }
     }
 
-    let sid = qbittorrent_login(&client, &base_url, &username, &password).await.inspect_err(|e| {
-        tracing::error!("[QBITTORRENT] Login failed: {}", e.message);
-    })?;
+    let sid = qbittorrent_login(&client, &base_url, &username, &password)
+        .await
+        .inspect_err(|e| {
+            tracing::error!("[QBITTORRENT] Login failed: {}", e.message);
+        })?;
 
     // Pre-generate the download ID; use a unique category per download so we can
     // reliably match the torrent back (tags/savepath are unreliable on qBittorrent 4.x).
-    let download_id = if is_managed { Some(Uuid::new_v4()) } else { None };
+    let download_id = if is_managed {
+        Some(Uuid::new_v4())
+    } else {
+        None
+    };
     let category = download_id.as_ref().map(|id| format!("sl-{id}"));
 
     // Create the category in qBittorrent before adding the torrent
@@ -231,11 +247,13 @@ pub async fn add_torrent(
 
     let resp = if let Some(ref torrent_data) = torrent_bytes {
         // Upload .torrent file via multipart
-        let mut form = reqwest::multipart::Form::new()
-            .part("torrents", reqwest::multipart::Part::bytes(torrent_data.clone())
+        let mut form = reqwest::multipart::Form::new().part(
+            "torrents",
+            reqwest::multipart::Part::bytes(torrent_data.clone())
                 .file_name("torrent.torrent")
                 .mime_str("application/x-bittorrent")
-                .unwrap());
+                .unwrap(),
+        );
         if is_managed {
             form = form.text("savepath", savepath.to_string());
             if let Some(ref cat) = category {
@@ -264,7 +282,8 @@ pub async fn add_torrent(
             .form(&form_params)
             .send()
             .await
-    }.map_err(|e| {
+    }
+    .map_err(|e| {
         tracing::error!("[QBITTORRENT] Add torrent request failed: {e}");
         ApiError::internal(format!("qBittorrent add request failed: {e}"))
     })?;
@@ -315,11 +334,18 @@ pub async fn add_torrent(
                         // Find a torrent whose save_path contains our category directory
                         if let Some(ref cat) = category {
                             for t in &all_torrents {
-                                let t_cat = t.get("category").and_then(|c| c.as_str()).unwrap_or("");
-                                let t_save = t.get("save_path").and_then(|s| s.as_str()).unwrap_or("");
-                                let t_content = t.get("content_path").and_then(|s| s.as_str()).unwrap_or("");
-                                if t_cat == cat.as_str() || t_save.contains(cat.as_str()) || t_content.contains(cat.as_str()) {
-                                    qb_hash = t.get("hash").and_then(|h| h.as_str()).map(String::from);
+                                let t_cat =
+                                    t.get("category").and_then(|c| c.as_str()).unwrap_or("");
+                                let t_save =
+                                    t.get("save_path").and_then(|s| s.as_str()).unwrap_or("");
+                                let t_content =
+                                    t.get("content_path").and_then(|s| s.as_str()).unwrap_or("");
+                                if t_cat == cat.as_str()
+                                    || t_save.contains(cat.as_str())
+                                    || t_content.contains(cat.as_str())
+                                {
+                                    qb_hash =
+                                        t.get("hash").and_then(|h| h.as_str()).map(String::from);
                                     if qb_hash.is_some() {
                                         tracing::info!("[QBITTORRENT] Found duplicate torrent by save_path: hash={}", qb_hash.as_deref().unwrap_or("?"));
                                         break;
@@ -329,31 +355,59 @@ pub async fn add_torrent(
                             // If still not found, the torrent exists under a different category.
                             // Try matching by magnet hash if available from the URL.
                             if qb_hash.is_none() {
-                                if let Some(magnet_hash) = extract_magnet_hash(&body.url).or_else(|| resolved_magnet_url.as_deref().and_then(extract_magnet_hash)) {
+                                if let Some(magnet_hash) =
+                                    extract_magnet_hash(&body.url).or_else(|| {
+                                        resolved_magnet_url.as_deref().and_then(extract_magnet_hash)
+                                    })
+                                {
                                     let magnet_lower = magnet_hash.to_lowercase();
                                     for t in &all_torrents {
                                         if let Some(h) = t.get("hash").and_then(|h| h.as_str()) {
                                             if h.to_lowercase() == magnet_lower {
                                                 qb_hash = Some(h.to_string());
                                                 // Get the real content_path from the existing torrent
-                                                let existing_content = t.get("content_path").and_then(|c| c.as_str()).unwrap_or("").to_string();
+                                                let existing_content = t
+                                                    .get("content_path")
+                                                    .and_then(|c| c.as_str())
+                                                    .unwrap_or("")
+                                                    .to_string();
                                                 tracing::info!("[QBITTORRENT] Found existing torrent by magnet hash {h}, content_path={existing_content}");
 
                                                 // If the torrent is already completed, check if content still exists
-                                                let t_state = t.get("state").and_then(|s| s.as_str()).unwrap_or("");
-                                                let t_progress = t.get("progress").and_then(|p| p.as_f64()).unwrap_or(0.0);
-                                                if t_progress >= 1.0 || super::torrent_import::QB_COMPLETED_STATES.contains(&t_state) {
-                                                    let content_exists = !existing_content.is_empty()
-                                                        && tokio::fs::metadata(&existing_content).await.is_ok();
+                                                let t_state = t
+                                                    .get("state")
+                                                    .and_then(|s| s.as_str())
+                                                    .unwrap_or("");
+                                                let t_progress = t
+                                                    .get("progress")
+                                                    .and_then(|p| p.as_f64())
+                                                    .unwrap_or(0.0);
+                                                if t_progress >= 1.0
+                                                    || super::torrent_import::QB_COMPLETED_STATES
+                                                        .contains(&t_state)
+                                                {
+                                                    let content_exists = !existing_content
+                                                        .is_empty()
+                                                        && tokio::fs::metadata(&existing_content)
+                                                            .await
+                                                            .is_ok();
 
                                                     if !content_exists {
                                                         // Old torrent is a stale residue — content was already cleaned up.
                                                         // Remove it from qBittorrent and let the new torrent be added normally.
                                                         tracing::warn!("[QBITTORRENT] Duplicate torrent {h} content no longer exists at {existing_content}, removing stale torrent");
                                                         let _ = client
-                                                            .post(format!("{base_url}/api/v2/torrents/delete"))
+                                                            .post(format!(
+                                                                "{base_url}/api/v2/torrents/delete"
+                                                            ))
                                                             .header("Cookie", format!("SID={sid}"))
-                                                            .form(&[("hashes", h.to_string()), ("deleteFiles", "false".to_string())])
+                                                            .form(&[
+                                                                ("hashes", h.to_string()),
+                                                                (
+                                                                    "deleteFiles",
+                                                                    "false".to_string(),
+                                                                ),
+                                                            ])
                                                             .send()
                                                             .await;
                                                         qb_hash = None;
@@ -428,7 +482,9 @@ pub async fn add_torrent(
             ApiError::from(e)
         })?;
 
-        tracing::info!("[QBITTORRENT] Created torrent download {id} for {series_name}, qb_hash={qb_hash:?}");
+        tracing::info!(
+            "[QBITTORRENT] Created torrent download {id} for {series_name}, qb_hash={qb_hash:?}"
+        );
 
         Some(id)
     } else {
@@ -452,9 +508,7 @@ enum ResolvedTorrent {
 /// Resolve a torrent URL: if it's already a magnet link, return as-is.
 /// Otherwise follow HTTP redirects. If the final URL is a magnet, return it.
 /// If the response is a .torrent file, return the bytes.
-async fn resolve_torrent_url(
-    url: &str,
-) -> Result<ResolvedTorrent, String> {
+async fn resolve_torrent_url(url: &str) -> Result<ResolvedTorrent, String> {
     // Already a magnet link — nothing to resolve
     if url.starts_with("magnet:") {
         return Ok(ResolvedTorrent::Magnet(url.to_string()));
@@ -602,7 +656,11 @@ pub(crate) async fn resolve_hash_by_category(
 
     let torrents: Vec<QbTorrentEntry> = resp.json().await.unwrap_or_default();
     if torrents.len() == 1 {
-        tracing::info!("[QBITTORRENT] Resolved hash {} via category {category} ({})", torrents[0].hash, torrents[0].name);
+        tracing::info!(
+            "[QBITTORRENT] Resolved hash {} via category {category} ({})",
+            torrents[0].hash,
+            torrents[0].name
+        );
         return Some(torrents[0].hash.clone());
     }
 
@@ -632,7 +690,8 @@ pub(crate) async fn resolve_hash_by_category(
             if matched.len() == 1 {
                 tracing::info!(
                     "[QBITTORRENT] Resolved hash {} via save_path fallback for {category} ({})",
-                    matched[0].hash, matched[0].name
+                    matched[0].hash,
+                    matched[0].name
                 );
                 // Also fix the category on the torrent for future lookups
                 let _ = client
@@ -646,7 +705,9 @@ pub(crate) async fn resolve_hash_by_category(
         }
     }
 
-    tracing::warn!("[QBITTORRENT] No torrent found with category {category} (even with save_path fallback)");
+    tracing::warn!(
+        "[QBITTORRENT] No torrent found with category {category} (even with save_path fallback)"
+    );
     None
 }
 

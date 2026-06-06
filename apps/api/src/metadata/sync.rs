@@ -1,9 +1,9 @@
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{error::ApiError, metadata_providers, state::AppState};
-use super::handlers::{FieldChange, SeriesSyncReport, BookSyncReport};
+use super::handlers::{BookSyncReport, FieldChange, SeriesSyncReport};
 use super::shared_sync::{self, is_field_locked};
+use crate::{error::ApiError, metadata_providers, state::AppState};
 
 pub(crate) async fn sync_series_metadata(
     state: &AppState,
@@ -12,13 +12,11 @@ pub(crate) async fn sync_series_metadata(
     metadata_json: &serde_json::Value,
     total_volumes: Option<i32>,
 ) -> Result<SeriesSyncReport, ApiError> {
-    let fields = shared_sync::extract_series_fields(
-        &state.pool, metadata_json, None, total_volumes,
-    ).await;
+    let fields =
+        shared_sync::extract_series_fields(&state.pool, metadata_json, None, total_volumes).await;
 
-    let existing = shared_sync::upsert_series_metadata(
-        &state.pool, library_id, series_name, &fields,
-    ).await?;
+    let existing =
+        shared_sync::upsert_series_metadata(&state.pool, library_id, series_name, &fields).await?;
 
     // Build report from pre-update state
     let mut report = SeriesSyncReport::default();
@@ -28,28 +26,72 @@ pub(crate) async fn sync_series_metadata(
         .unwrap_or(serde_json::json!({}));
 
     let checks: Vec<(&str, Option<serde_json::Value>, Option<serde_json::Value>)> = vec![
-        ("description",
-            existing.as_ref().and_then(|r| r.get::<Option<String>, _>("description")).map(serde_json::Value::String),
-            fields.description.as_ref().map(|s| serde_json::Value::String(s.clone()))),
-        ("authors",
-            existing.as_ref().map(|r| serde_json::json!(r.get::<Vec<String>, _>("authors"))),
-            if fields.authors.is_empty() { None } else { Some(serde_json::json!(fields.authors)) }),
-        ("publishers",
-            existing.as_ref().map(|r| serde_json::json!(r.get::<Vec<String>, _>("publishers"))),
-            if fields.publishers.is_empty() { None } else { Some(serde_json::json!(fields.publishers)) }),
-        ("start_year",
-            existing.as_ref().and_then(|r| r.get::<Option<i32>, _>("start_year")).map(|y| serde_json::json!(y)),
-            fields.start_year.map(|y| serde_json::json!(y))),
-        ("total_volumes",
-            existing.as_ref().and_then(|r| r.get::<Option<i32>, _>("total_volumes")).map(|y| serde_json::json!(y)),
-            fields.total_volumes.map(|y| serde_json::json!(y))),
-        ("status",
-            existing.as_ref().and_then(|r| r.get::<Option<String>, _>("status")).map(serde_json::Value::String),
-            fields.status.as_ref().map(|s| serde_json::Value::String(s.clone()))),
+        (
+            "description",
+            existing
+                .as_ref()
+                .and_then(|r| r.get::<Option<String>, _>("description"))
+                .map(serde_json::Value::String),
+            fields
+                .description
+                .as_ref()
+                .map(|s| serde_json::Value::String(s.clone())),
+        ),
+        (
+            "authors",
+            existing
+                .as_ref()
+                .map(|r| serde_json::json!(r.get::<Vec<String>, _>("authors"))),
+            if fields.authors.is_empty() {
+                None
+            } else {
+                Some(serde_json::json!(fields.authors))
+            },
+        ),
+        (
+            "publishers",
+            existing
+                .as_ref()
+                .map(|r| serde_json::json!(r.get::<Vec<String>, _>("publishers"))),
+            if fields.publishers.is_empty() {
+                None
+            } else {
+                Some(serde_json::json!(fields.publishers))
+            },
+        ),
+        (
+            "start_year",
+            existing
+                .as_ref()
+                .and_then(|r| r.get::<Option<i32>, _>("start_year"))
+                .map(|y| serde_json::json!(y)),
+            fields.start_year.map(|y| serde_json::json!(y)),
+        ),
+        (
+            "total_volumes",
+            existing
+                .as_ref()
+                .and_then(|r| r.get::<Option<i32>, _>("total_volumes"))
+                .map(|y| serde_json::json!(y)),
+            fields.total_volumes.map(|y| serde_json::json!(y)),
+        ),
+        (
+            "status",
+            existing
+                .as_ref()
+                .and_then(|r| r.get::<Option<String>, _>("status"))
+                .map(serde_json::Value::String),
+            fields
+                .status
+                .as_ref()
+                .map(|s| serde_json::Value::String(s.clone())),
+        ),
     ];
 
     for (name, old, new) in checks {
-        if new.is_none() { continue; }
+        if new.is_none() {
+            continue;
+        }
         let change = FieldChange {
             field: name.to_string(),
             old_value: old.clone(),
@@ -94,13 +136,15 @@ pub(crate) async fn sync_books_metadata(
 
     for m in &matched {
         shared_sync::insert_external_book_metadata(
-            &state.pool, link_id, m.local_book_id, m.ext_book,
-        ).await?;
+            &state.pool,
+            link_id,
+            m.local_book_id,
+            m.ext_book,
+        )
+        .await?;
 
         if let Some(book_id) = m.local_book_id {
-            let current = shared_sync::push_book_metadata(
-                &state.pool, book_id, m.ext_book,
-            ).await?;
+            let current = shared_sync::push_book_metadata(&state.pool, book_id, m.ext_book).await?;
 
             // Build per-book report
             let locked = current.get::<serde_json::Value, _>("locked_fields");
@@ -109,25 +153,52 @@ pub(crate) async fn sync_books_metadata(
             let mut fields_skipped = Vec::new();
 
             let field_checks: Vec<(&str, Option<serde_json::Value>, Option<serde_json::Value>)> = vec![
-                ("summary",
-                    current.get::<Option<String>, _>("summary").map(|s| serde_json::json!(s)),
-                    m.ext_book.summary.as_ref().map(|s| serde_json::json!(s))),
-                ("isbn",
-                    current.get::<Option<String>, _>("isbn").map(|s| serde_json::json!(s)),
-                    m.ext_book.isbn.as_ref().map(|s| serde_json::json!(s))),
-                ("publish_date",
-                    current.get::<Option<String>, _>("publish_date").map(|s| serde_json::json!(s)),
-                    m.ext_book.publish_date.as_ref().map(|s| serde_json::json!(s))),
-                ("language",
-                    current.get::<Option<String>, _>("language").map(|s| serde_json::json!(s)),
-                    m.ext_book.language.as_ref().map(|s| serde_json::json!(s))),
-                ("authors",
+                (
+                    "summary",
+                    current
+                        .get::<Option<String>, _>("summary")
+                        .map(|s| serde_json::json!(s)),
+                    m.ext_book.summary.as_ref().map(|s| serde_json::json!(s)),
+                ),
+                (
+                    "isbn",
+                    current
+                        .get::<Option<String>, _>("isbn")
+                        .map(|s| serde_json::json!(s)),
+                    m.ext_book.isbn.as_ref().map(|s| serde_json::json!(s)),
+                ),
+                (
+                    "publish_date",
+                    current
+                        .get::<Option<String>, _>("publish_date")
+                        .map(|s| serde_json::json!(s)),
+                    m.ext_book
+                        .publish_date
+                        .as_ref()
+                        .map(|s| serde_json::json!(s)),
+                ),
+                (
+                    "language",
+                    current
+                        .get::<Option<String>, _>("language")
+                        .map(|s| serde_json::json!(s)),
+                    m.ext_book.language.as_ref().map(|s| serde_json::json!(s)),
+                ),
+                (
+                    "authors",
                     Some(serde_json::json!(current.get::<Vec<String>, _>("authors"))),
-                    if m.ext_book.authors.is_empty() { None } else { Some(serde_json::json!(&m.ext_book.authors)) }),
+                    if m.ext_book.authors.is_empty() {
+                        None
+                    } else {
+                        Some(serde_json::json!(&m.ext_book.authors))
+                    },
+                ),
             ];
 
             for (name, old, new) in field_checks {
-                if new.is_none() { continue; }
+                if new.is_none() {
+                    continue;
+                }
                 let change = FieldChange {
                     field: name.to_string(),
                     old_value: old.clone(),

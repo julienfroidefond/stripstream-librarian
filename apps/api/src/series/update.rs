@@ -1,12 +1,15 @@
 use axum::extract::Extension;
-use axum::{extract::{Path, State}, Json};
+use axum::{
+    extract::{Path, State},
+    Json,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
-use crate::{auth::AuthUser, error::ApiError, state::AppState};
 use super::helpers::resolve_library_id;
+use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateSeriesRequest {
@@ -70,29 +73,53 @@ pub async fn update_series(
     }
 
     // Verify the series exists
-    let old_row = sqlx::query("SELECT name, original_name FROM series WHERE id = $1 AND library_id = $2")
-        .bind(series_id)
-        .bind(library_id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or_else(|| ApiError::not_found("series not found"))?;
+    let old_row =
+        sqlx::query("SELECT name, original_name FROM series WHERE id = $1 AND library_id = $2")
+            .bind(series_id)
+            .bind(library_id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| ApiError::not_found("series not found"))?;
     let old_name: String = old_row.get("name");
 
     // author/language: None = absent (keep books unchanged), Some(v) = apply to all books
     let apply_author = body.author.is_some();
-    let author_value = body.author.flatten().as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let author_value = body
+        .author
+        .flatten()
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
     let apply_language = body.language.is_some();
-    let language_value = body.language.flatten().as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
-    let description = body.description.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
-    let publishers: Vec<String> = body.publishers.iter()
+    let language_value = body
+        .language
+        .flatten()
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let description = body
+        .description
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let publishers: Vec<String> = body
+        .publishers
+        .iter()
         .map(|p| p.trim().to_string())
         .filter(|p| !p.is_empty())
         .collect();
-    let authors: Vec<String> = body.authors.iter()
+    let authors: Vec<String> = body
+        .authors
+        .iter()
         .map(|a| a.trim().to_string())
         .filter(|a| !a.is_empty())
         .collect();
-    let genres: Vec<String> = body.genres.iter()
+    let genres: Vec<String> = body
+        .genres
+        .iter()
         .map(|g| g.trim().to_string())
         .filter(|g| !g.is_empty())
         .collect();
@@ -161,7 +188,9 @@ pub async fn update_series(
     .execute(&state.pool)
     .await?;
 
-    Ok(Json(UpdateSeriesResponse { updated: result.rows_affected() }))
+    Ok(Json(UpdateSeriesResponse {
+        updated: result.rows_affected(),
+    }))
 }
 
 /// Update a series by its UUID (resolves library_id internally)
@@ -268,10 +297,11 @@ pub async fn delete_series(
     // Delete the series directory
     // Use dir from book paths if available, otherwise build from library root + series name
     if series_dir.is_none() {
-        if let Ok(root) = sqlx::query_scalar::<_, String>("SELECT root_path FROM libraries WHERE id = $1")
-            .bind(library_id)
-            .fetch_one(&state.pool)
-            .await
+        if let Ok(root) =
+            sqlx::query_scalar::<_, String>("SELECT root_path FROM libraries WHERE id = $1")
+                .bind(library_id)
+                .fetch_one(&state.pool)
+                .await
         {
             let physical = remap_libraries_path(&root);
             series_dir = Some(
@@ -293,7 +323,9 @@ pub async fn delete_series(
                 Err(e) if e.kind() == std::io::ErrorKind::DirectoryNotEmpty => {
                     tracing::info!("[SERIES] Directory not empty, keeping: {}", dir);
                 }
-                Err(e) => tracing::warn!("[SERIES] Failed to delete series directory {}: {}", dir, e),
+                Err(e) => {
+                    tracing::warn!("[SERIES] Failed to delete series directory {}: {}", dir, e)
+                }
             }
         }
     }
@@ -404,7 +436,11 @@ pub async fn delete_series(
 
     tracing::info!(
         "[SERIES] Deleted series '{}' ({}) ({} books) from library {}, scan job {} queued",
-        series_name, series_id, book_ids.len(), library_id, scan_job_id
+        series_name,
+        series_id,
+        book_ids.len(),
+        library_id,
+        scan_job_id
     );
 
     Ok(Json(crate::responses::DeletedResponse::new(library_id)))

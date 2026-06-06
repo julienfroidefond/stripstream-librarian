@@ -1,5 +1,5 @@
-use axum::{extract::State, Json};
 use axum::extract::Path as AxumPath;
+use axum::{extract::State, Json};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -138,12 +138,10 @@ pub struct SyncResult {
 // ---------------------------------------------------------------------------
 
 async fn load_tg_settings(pool: &sqlx::PgPool) -> Option<(i64, String, String, Option<Vec<u8>>)> {
-    let row = sqlx::query(
-        "SELECT value FROM app_settings WHERE key = 'telegram_monitor'",
-    )
-    .fetch_optional(pool)
-    .await
-    .ok()??;
+    let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'telegram_monitor'")
+        .fetch_optional(pool)
+        .await
+        .ok()??;
 
     let v: Value = row.get("value");
     let api_id = v.get("api_id")?.as_i64()?;
@@ -196,12 +194,31 @@ pub(super) fn extract_series_name_from_filename(filename: &str) -> String {
 
     // Named patterns (longest first to avoid partial matches)
     let patterns: &[&str] = &[
-        " - intégrale", " - integrale", " - hors-série", " - hors série", " - hors-serie",
-        " - tome ", " - volume ", " - vol. ", " - vol ", " - chapter ", " - chapitre ",
-        " - chap. ", " - chap ", " - ch. ",
-        " - t.", " - t ",
-        " intégrale", " integrale", " hors-série", " hors série",
-        " tome ", " volume ", " vol. ", " vol ", " chapitre ",
+        " - intégrale",
+        " - integrale",
+        " - hors-série",
+        " - hors série",
+        " - hors-serie",
+        " - tome ",
+        " - volume ",
+        " - vol. ",
+        " - vol ",
+        " - chapter ",
+        " - chapitre ",
+        " - chap. ",
+        " - chap ",
+        " - ch. ",
+        " - t.",
+        " - t ",
+        " intégrale",
+        " integrale",
+        " hors-série",
+        " hors série",
+        " tome ",
+        " volume ",
+        " vol. ",
+        " vol ",
+        " chapitre ",
     ];
 
     let mut earliest = normalized.len();
@@ -239,14 +256,22 @@ pub(super) fn extract_series_name_from_filename(filename: &str) -> String {
             if cur == b't' || cur == b'v' {
                 // " T\d" / " V\d"
                 let j = i + 1;
-                let k = if j < bytes.len() && (bytes[j] == b'.' || bytes[j] == b' ') { j + 1 } else { j };
+                let k = if j < bytes.len() && (bytes[j] == b'.' || bytes[j] == b' ') {
+                    j + 1
+                } else {
+                    j
+                };
                 if k < bytes.len() && bytes[k].is_ascii_digit() && (i - 1) < earliest {
                     earliest = i - 1;
                 }
             } else if cur == b'c' {
                 // " Ch\d" — chapter marker like "Ch09"
                 let j = i + 1;
-                if j + 1 < bytes.len() && bytes[j] == b'h' && bytes[j + 1].is_ascii_digit() && (i - 1) < earliest {
+                if j + 1 < bytes.len()
+                    && bytes[j] == b'h'
+                    && bytes[j + 1].is_ascii_digit()
+                    && (i - 1) < earliest
+                {
                     earliest = i - 1;
                 }
             } else if cur == b'#' {
@@ -254,51 +279,77 @@ pub(super) fn extract_series_name_from_filename(filename: &str) -> String {
                 if j < bytes.len() && bytes[j].is_ascii_digit() && (i - 1) < earliest {
                     // " #\d"
                     earliest = i - 1;
-                } else if j + 2 < bytes.len() && bytes[j] == b'c' && bytes[j + 1] == b'h' && bytes[j + 2].is_ascii_digit() && (i - 1) < earliest {
+                } else if j + 2 < bytes.len()
+                    && bytes[j] == b'c'
+                    && bytes[j + 1] == b'h'
+                    && bytes[j + 2].is_ascii_digit()
+                    && (i - 1) < earliest
+                {
                     // " #Ch\d"
                     earliest = i - 1;
                 }
             }
         }
         // " - T\d" / " - V\d" / " - Ch\d"
-        if i >= 3 && bytes[i-3] == b' ' && bytes[i-2] == b'-' && bytes[i-1] == b' '
+        if i >= 3
+            && bytes[i - 3] == b' '
+            && bytes[i - 2] == b'-'
+            && bytes[i - 1] == b' '
             && (cur == b't' || cur == b'v' || cur == b'c')
         {
             let sep = i - 3;
             if cur == b'c' {
                 // " - Ch\d"
                 let j = i + 1;
-                if j + 1 < bytes.len() && bytes[j] == b'h' && bytes[j + 1].is_ascii_digit() && sep < earliest {
+                if j + 1 < bytes.len()
+                    && bytes[j] == b'h'
+                    && bytes[j + 1].is_ascii_digit()
+                    && sep < earliest
+                {
                     earliest = sep;
                 }
             } else {
                 let j = i + 1;
-                let k = if j < bytes.len() && (bytes[j] == b'.' || bytes[j] == b' ') { j + 1 } else { j };
+                let k = if j < bytes.len() && (bytes[j] == b'.' || bytes[j] == b' ') {
+                    j + 1
+                } else {
+                    j
+                };
                 if k < bytes.len() && bytes[k].is_ascii_digit() && sep < earliest {
                     earliest = sep;
                 }
             }
         }
         // " - #\d" / " - #Ch\d" (hash after space-dash-space)
-        if i >= 3 && bytes[i-3] == b' ' && bytes[i-2] == b'-' && bytes[i-1] == b' ' && cur == b'#' {
+        if i >= 3
+            && bytes[i - 3] == b' '
+            && bytes[i - 2] == b'-'
+            && bytes[i - 1] == b' '
+            && cur == b'#'
+        {
             let j = i + 1;
             let sep = i - 3;
             if j < bytes.len() && bytes[j].is_ascii_digit() && sep < earliest {
                 // " - #\d"
                 earliest = sep;
-            } else if j + 2 < bytes.len() && bytes[j] == b'c' && bytes[j + 1] == b'h' && bytes[j + 2].is_ascii_digit() && sep < earliest {
+            } else if j + 2 < bytes.len()
+                && bytes[j] == b'c'
+                && bytes[j + 1] == b'h'
+                && bytes[j + 2].is_ascii_digit()
+                && sep < earliest
+            {
                 // " - #Ch\d"
                 earliest = sep;
             }
         }
         // " -T\d" / " -V\d" (no space after dash, e.g. "Series -T01(...")
-        if i >= 2 && bytes[i-2] == b' ' && bytes[i-1] == b'-'
-            && (cur == b't' || cur == b'v')
-        {
+        if i >= 2 && bytes[i - 2] == b' ' && bytes[i - 1] == b'-' && (cur == b't' || cur == b'v') {
             let j = i + 1;
             if j < bytes.len() && bytes[j].is_ascii_digit() {
                 let sep = i - 2;
-                if sep < earliest { earliest = sep; }
+                if sep < earliest {
+                    earliest = sep;
+                }
             }
         }
         i += 1;
@@ -314,12 +365,21 @@ pub(super) fn extract_series_name_from_filename(filename: &str) -> String {
         // e.g. "Roi Démon ... 10 Enfants Le 1" → strip " 1", not " 10"
         let trailing_applied = {
             let mut end = n;
-            while end > 0 && b[end - 1].is_ascii_digit() { end -= 1; }
+            while end > 0 && b[end - 1].is_ascii_digit() {
+                end -= 1;
+            }
             let digit_count = n - end;
             if digit_count >= 1 && digit_count <= 3 && end > 0 && b[end - 1] == b' ' {
                 let sep = end - 1;
-                if sep >= 3 { earliest = sep; true } else { false }
-            } else { false }
+                if sep >= 3 {
+                    earliest = sep;
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
         };
 
         // Phase 5: middle " \d{1,3} " — only if no trailing number found.
@@ -329,7 +389,9 @@ pub(super) fn extract_series_name_from_filename(filename: &str) -> String {
             while i < b.len() {
                 if b[i - 1] == b' ' && b[i].is_ascii_digit() {
                     let mut j = i;
-                    while j < b.len() && b[j].is_ascii_digit() { j += 1; }
+                    while j < b.len() && b[j].is_ascii_digit() {
+                        j += 1;
+                    }
                     let digit_count = j - i;
                     let after_ok = j == b.len() || b[j] == b' ' || b[j] == b'-';
                     let sep = i - 1;
@@ -343,7 +405,9 @@ pub(super) fn extract_series_name_from_filename(filename: &str) -> String {
         }
     }
 
-    normalized[..earliest].trim_end_matches([' ', '-', '_', '.']).to_string()
+    normalized[..earliest]
+        .trim_end_matches([' ', '-', '_', '.'])
+        .to_string()
 }
 
 /// Find the physical target directory for a series in a library,
@@ -429,7 +493,13 @@ pub async fn get_status(
         }
     };
 
-    Ok(Json(TelegramMonitorStatus { configured, authorized, phone, api_id, sync_interval_minutes }))
+    Ok(Json(TelegramMonitorStatus {
+        configured,
+        authorized,
+        phone,
+        api_id,
+        sync_interval_minutes,
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -509,9 +579,7 @@ pub async fn save_settings(
     ),
     security(("Bearer" = []))
 )]
-pub async fn start_auth(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, ApiError> {
+pub async fn start_auth(State(state): State<AppState>) -> Result<Json<Value>, ApiError> {
     let (api_id, api_hash, phone, session_bytes) = load_tg_settings(&state.pool)
         .await
         .ok_or_else(|| ApiError::bad_request("Telegram monitor not configured"))?;
@@ -525,7 +593,9 @@ pub async fn start_auth(
     )
     .await?;
 
-    Ok(Json(serde_json::json!({ "ok": true, "message": "Code sent to your phone/Telegram app" })))
+    Ok(Json(
+        serde_json::json!({ "ok": true, "message": "Code sent to your phone/Telegram app" }),
+    ))
 }
 
 async fn do_start_auth(
@@ -539,8 +609,9 @@ async fn do_start_auth(
     use grammers_session::Session;
 
     let session = match session_bytes {
-        Some(bytes) => Session::load(&bytes)
-            .map_err(|e| ApiError::internal(format!("session load: {e}")))?,
+        Some(bytes) => {
+            Session::load(&bytes).map_err(|e| ApiError::internal(format!("session load: {e}")))?
+        }
         None => Session::new(),
     };
 
@@ -627,9 +698,7 @@ async fn do_verify_auth(
     responses((status = 200), (status = 401)),
     security(("Bearer" = []))
 )]
-pub async fn disconnect(
-    State(state): State<AppState>,
-) -> Result<Json<Value>, ApiError> {
+pub async fn disconnect(State(state): State<AppState>) -> Result<Json<Value>, ApiError> {
     // Clear session_data in DB
     sqlx::query(
         "UPDATE app_settings \
@@ -742,8 +811,7 @@ pub async fn process_telegram_sync(pool: &sqlx::PgPool, job_id: Uuid) -> Result<
         .await
         .ok_or_else(|| "Telegram not configured".to_string())?;
 
-    let session_bytes = session_bytes
-        .ok_or_else(|| "Telegram not authorized".to_string())?;
+    let session_bytes = session_bytes.ok_or_else(|| "Telegram not authorized".to_string())?;
 
     let sources: Vec<(Uuid, String, Option<Uuid>)> = sqlx::query(
         "SELECT id, channel_username, library_id FROM telegram_sources WHERE enabled = true",
@@ -761,18 +829,30 @@ pub async fn process_telegram_sync(pool: &sqlx::PgPool, job_id: Uuid) -> Result<
              stats_json = $2, progress_percent = 100 WHERE id = $1",
         )
         .bind(job_id)
-        .bind(serde_json::json!({ "message": "No sources configured", "synced": 0, "new_books": 0 }))
+        .bind(
+            serde_json::json!({ "message": "No sources configured", "synced": 0, "new_books": 0 }),
+        )
         .execute(pool)
         .await
         .map_err(|e| e.to_string())?;
         return Ok(());
     }
 
-    let r = do_sync(pool.clone(), api_id as i32, api_hash, session_bytes, sources, Some(job_id))
-        .await
-        .map_err(|e| format!("{e:?}"))?;
+    let r = do_sync(
+        pool.clone(),
+        api_id as i32,
+        api_hash,
+        session_bytes,
+        sources,
+        Some(job_id),
+    )
+    .await
+    .map_err(|e| format!("{e:?}"))?;
 
-    info!("[TG_SYNC] Job {job_id} complete: {} messages, {} new books, {} series searched", r.synced, r.new_books, r.series_searched);
+    info!(
+        "[TG_SYNC] Job {job_id} complete: {} messages, {} new books, {} series searched",
+        r.synced, r.new_books, r.series_searched
+    );
 
     // Which series matched a local series (current catalog state)
     let matched_series: Vec<serde_json::Value> = sqlx::query(
@@ -790,12 +870,14 @@ pub async fn process_telegram_sync(pool: &sqlx::PgPool, job_id: Uuid) -> Result<
     .await
     .unwrap_or_default()
     .iter()
-    .map(|row| serde_json::json!({
-        "telegram_name": row.get::<String, _>("telegram_name"),
-        "series_id": row.get::<Uuid, _>("series_id").to_string(),
-        "series_name": row.get::<String, _>("series_name"),
-        "book_count": row.get::<i64, _>("book_count"),
-    }))
+    .map(|row| {
+        serde_json::json!({
+            "telegram_name": row.get::<String, _>("telegram_name"),
+            "series_id": row.get::<Uuid, _>("series_id").to_string(),
+            "series_name": row.get::<String, _>("series_name"),
+            "book_count": row.get::<i64, _>("book_count"),
+        })
+    })
     .collect();
 
     sqlx::query(
@@ -805,17 +887,25 @@ pub async fn process_telegram_sync(pool: &sqlx::PgPool, job_id: Uuid) -> Result<
     .bind(job_id)
     .bind({
         // Merge counts and extracted names for series that appear across multiple sources
-        let mut deduped: std::collections::BTreeMap<&str, (usize, std::collections::BTreeSet<String>)> = std::collections::BTreeMap::new();
+        let mut deduped: std::collections::BTreeMap<
+            &str,
+            (usize, std::collections::BTreeSet<String>),
+        > = std::collections::BTreeMap::new();
         for (name, count, extracted) in &r.series_results {
             let entry = deduped.entry(name.as_str()).or_default();
             entry.0 += count;
             entry.1.extend(extracted.iter().cloned());
         }
-        let all_series: Vec<serde_json::Value> = deduped.iter().map(|(name, (count, extracted))| serde_json::json!({
-            "series_name": name,
-            "book_count": count,
-            "extracted_names": extracted.iter().collect::<Vec<_>>(),
-        })).collect();
+        let all_series: Vec<serde_json::Value> = deduped
+            .iter()
+            .map(|(name, (count, extracted))| {
+                serde_json::json!({
+                    "series_name": name,
+                    "book_count": count,
+                    "extracted_names": extracted.iter().collect::<Vec<_>>(),
+                })
+            })
+            .collect();
         serde_json::json!({
             "synced": r.synced,
             "new_books": r.new_books,
@@ -835,15 +925,17 @@ pub async fn process_telegram_sync(pool: &sqlx::PgPool, job_id: Uuid) -> Result<
 // Background job: process_telegram_sync_incremental (called by job poller)
 // ---------------------------------------------------------------------------
 
-pub async fn process_telegram_sync_incremental(pool: &sqlx::PgPool, job_id: Uuid) -> Result<(), String> {
+pub async fn process_telegram_sync_incremental(
+    pool: &sqlx::PgPool,
+    job_id: Uuid,
+) -> Result<(), String> {
     info!("[TG_SYNC_INC] Starting incremental telegram sync job {job_id}");
 
     let (api_id, api_hash, _, session_bytes) = load_tg_settings(pool)
         .await
         .ok_or_else(|| "Telegram not configured".to_string())?;
 
-    let session_bytes = session_bytes
-        .ok_or_else(|| "Telegram not authorized".to_string())?;
+    let session_bytes = session_bytes.ok_or_else(|| "Telegram not authorized".to_string())?;
 
     let sources: Vec<(Uuid, String, Option<Uuid>)> = sqlx::query(
         "SELECT id, channel_username, library_id FROM telegram_sources WHERE enabled = true",
@@ -870,14 +962,23 @@ pub async fn process_telegram_sync_incremental(pool: &sqlx::PgPool, job_id: Uuid
 
     let total = sources.len() as i32;
     let _ = sqlx::query("UPDATE index_jobs SET total_files = $2 WHERE id = $1")
-        .bind(job_id).bind(total).execute(pool).await;
+        .bind(job_id)
+        .bind(total)
+        .execute(pool)
+        .await;
 
     let started_at = chrono::Utc::now();
 
-    let (new_books, sources_scanned, per_source) =
-        do_incremental_sync(pool.clone(), api_id as i32, api_hash, session_bytes, sources, job_id)
-            .await
-            .map_err(|e| format!("{e:?}"))?;
+    let (new_books, sources_scanned, per_source) = do_incremental_sync(
+        pool.clone(),
+        api_id as i32,
+        api_hash,
+        session_bytes,
+        sources,
+        job_id,
+    )
+    .await
+    .map_err(|e| format!("{e:?}"))?;
 
     info!("[TG_SYNC_INC] Job {job_id} complete: {new_books} new books across {sources_scanned} sources");
 
@@ -895,22 +996,32 @@ pub async fn process_telegram_sync_incremental(pool: &sqlx::PgPool, job_id: Uuid
     .await
     .unwrap_or_default();
 
-    let recent_books: Vec<serde_json::Value> = recent_rows.iter().map(|r| serde_json::json!({
-        "filename":       r.get::<String, _>("filename"),
-        "series_name":    r.get::<Option<String>, _>("series_name"),
-        "volume_number":  r.get::<Option<i32>, _>("volume_number"),
-        "channel":        r.get::<String, _>("channel_username"),
-    })).collect();
+    let recent_books: Vec<serde_json::Value> = recent_rows
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "filename":       r.get::<String, _>("filename"),
+                "series_name":    r.get::<Option<String>, _>("series_name"),
+                "volume_number":  r.get::<Option<i32>, _>("volume_number"),
+                "channel":        r.get::<String, _>("channel_username"),
+            })
+        })
+        .collect();
 
     // Build notification items: prefer series_name, fall back to filename
-    let notif_items: Vec<(String, Option<i32>)> = recent_rows.iter().map(|r| {
-        let label = r.get::<Option<String>, _>("series_name")
-            .unwrap_or_else(|| r.get::<String, _>("filename"));
-        let vol = r.get::<Option<i32>, _>("volume_number");
-        (label, vol)
-    }).collect();
+    let notif_items: Vec<(String, Option<i32>)> = recent_rows
+        .iter()
+        .map(|r| {
+            let label = r
+                .get::<Option<String>, _>("series_name")
+                .unwrap_or_else(|| r.get::<String, _>("filename"));
+            let vol = r.get::<Option<i32>, _>("volume_number");
+            (label, vol)
+        })
+        .collect();
 
-    let sources_json: Vec<serde_json::Value> = per_source.iter()
+    let sources_json: Vec<serde_json::Value> = per_source
+        .iter()
         .map(|(username, count)| serde_json::json!({ "username": username, "new_books": count }))
         .collect();
 
@@ -993,8 +1104,14 @@ async fn do_incremental_sync(
 
         let chat = match client.resolve_username(username).await {
             Ok(Some(c)) => c,
-            Ok(None) => { error!("[TG_SYNC_INC] Channel @{username} not found"); continue; }
-            Err(e) => { error!("[TG_SYNC_INC] Resolve @{username}: {e}"); continue; }
+            Ok(None) => {
+                error!("[TG_SYNC_INC] Channel @{username} not found");
+                continue;
+            }
+            Err(e) => {
+                error!("[TG_SYNC_INC] Resolve @{username}: {e}");
+                continue;
+            }
         };
 
         let mut new_books = 0usize;
@@ -1009,19 +1126,34 @@ async fn do_incremental_sync(
                             break;
                         }
                     }
-                    if let Err(e) = insert_document_message(&pool, *source_id, *library_id, BOOK_EXTENSIONS, &message, &mut new_books).await {
+                    if let Err(e) = insert_document_message(
+                        &pool,
+                        *source_id,
+                        *library_id,
+                        BOOK_EXTENSIONS,
+                        &message,
+                        &mut new_books,
+                    )
+                    .await
+                    {
                         error!("[TG_SYNC_INC] Insert @{username} msg {msg_id}: {e}");
                     }
                 }
                 Ok(None) => break,
-                Err(e) => { error!("[TG_SYNC_INC] iter @{username}: {e}"); break; }
+                Err(e) => {
+                    error!("[TG_SYNC_INC] iter @{username}: {e}");
+                    break;
+                }
             }
         }
 
         total_new += new_books;
         sources_scanned += 1;
         per_source.push((username.clone(), new_books));
-        info!("[TG_SYNC_INC] @{username}: {new_books} new books (since msg id {})", max_known.unwrap_or(0));
+        info!(
+            "[TG_SYNC_INC] @{username}: {new_books} new books (since msg id {})",
+            max_known.unwrap_or(0)
+        );
     }
 
     let updated_bytes = client.session().save();
@@ -1052,13 +1184,15 @@ pub async fn search_channels(
     State(state): State<AppState>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<Vec<ChannelSuggestion>>, ApiError> {
-    let q = params.get("q").map(|s| s.to_lowercase()).unwrap_or_default();
+    let q = params
+        .get("q")
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
 
     let (api_id, api_hash, _, session_bytes) = load_tg_settings(&state.pool)
         .await
         .ok_or_else(|| ApiError::bad_request("Not configured"))?;
-    let session_bytes = session_bytes
-        .ok_or_else(|| ApiError::bad_request("Not authorized"))?;
+    let session_bytes = session_bytes.ok_or_else(|| ApiError::bad_request("Not authorized"))?;
 
     let results = do_search_channels(api_id as i32, api_hash, session_bytes, q).await?;
     Ok(Json(results))
@@ -1070,8 +1204,8 @@ async fn do_search_channels(
     session_bytes: Vec<u8>,
     query: String,
 ) -> Result<Vec<ChannelSuggestion>, ApiError> {
-    use grammers_client::{Client, Config};
     use grammers_client::types::Chat;
+    use grammers_client::{Client, Config};
     use grammers_session::Session;
 
     let session = Session::load(&session_bytes)
@@ -1088,7 +1222,9 @@ async fn do_search_channels(
     let mut results = Vec::new();
     let mut dialogs = client.iter_dialogs();
 
-    while let Some(dialog) = dialogs.next().await
+    while let Some(dialog) = dialogs
+        .next()
+        .await
         .map_err(|e| ApiError::internal(format!("iter dialogs: {e}")))?
     {
         let chat = dialog.chat().clone();
@@ -1102,10 +1238,17 @@ async fn do_search_channels(
 
         let matches = query.is_empty()
             || title.to_lowercase().contains(&query)
-            || username.as_deref().map(|u| u.to_lowercase().contains(&query)).unwrap_or(false);
+            || username
+                .as_deref()
+                .map(|u| u.to_lowercase().contains(&query))
+                .unwrap_or(false);
 
         if matches {
-            results.push(ChannelSuggestion { username, title, kind: kind.to_string() });
+            results.push(ChannelSuggestion {
+                username,
+                title,
+                kind: kind.to_string(),
+            });
         }
 
         if results.len() >= 30 {
@@ -1142,7 +1285,9 @@ pub async fn list_sources(
             id: r.get::<Uuid, _>("id").to_string(),
             channel_username: r.get("channel_username"),
             channel_title: r.get("channel_title"),
-            library_id: r.get::<Option<Uuid>, _>("library_id").map(|u| u.to_string()),
+            library_id: r
+                .get::<Option<Uuid>, _>("library_id")
+                .map(|u| u.to_string()),
             enabled: r.get("enabled"),
             created_at: r.get::<chrono::DateTime<Utc>, _>("created_at").to_rfc3339(),
         })
@@ -1162,8 +1307,16 @@ pub async fn add_source(
     State(state): State<AppState>,
     Json(body): Json<AddSourceRequest>,
 ) -> Result<Json<TelegramSourceDto>, ApiError> {
-    let username = body.channel_username.trim().trim_start_matches('@').to_string();
-    let library_id = body.library_id.as_deref().map(|s| Uuid::parse_str(s)).transpose()
+    let username = body
+        .channel_username
+        .trim()
+        .trim_start_matches('@')
+        .to_string();
+    let library_id = body
+        .library_id
+        .as_deref()
+        .map(|s| Uuid::parse_str(s))
+        .transpose()
         .map_err(|_| ApiError::bad_request("Invalid library_id"))?;
 
     let row = sqlx::query(
@@ -1180,9 +1333,13 @@ pub async fn add_source(
         id: row.get::<Uuid, _>("id").to_string(),
         channel_username: row.get("channel_username"),
         channel_title: row.get("channel_title"),
-        library_id: row.get::<Option<Uuid>, _>("library_id").map(|u| u.to_string()),
+        library_id: row
+            .get::<Option<Uuid>, _>("library_id")
+            .map(|u| u.to_string()),
         enabled: row.get("enabled"),
-        created_at: row.get::<chrono::DateTime<Utc>, _>("created_at").to_rfc3339(),
+        created_at: row
+            .get::<chrono::DateTime<Utc>, _>("created_at")
+            .to_rfc3339(),
     }))
 }
 
@@ -1222,9 +1379,7 @@ pub async fn delete_source(
     ),
     security(("Bearer" = []))
 )]
-pub async fn sync_sources(
-    State(state): State<AppState>,
-) -> Result<Json<SyncResult>, ApiError> {
+pub async fn sync_sources(State(state): State<AppState>) -> Result<Json<SyncResult>, ApiError> {
     let (api_id, api_hash, _, session_bytes) = load_tg_settings(&state.pool)
         .await
         .ok_or_else(|| ApiError::bad_request("Telegram monitor not configured"))?;
@@ -1242,10 +1397,23 @@ pub async fn sync_sources(
     .collect();
 
     if sources.is_empty() {
-        return Ok(Json(SyncResult { synced: 0, new_books: 0, series_searched: 0, series_results: vec![] }));
+        return Ok(Json(SyncResult {
+            synced: 0,
+            new_books: 0,
+            series_searched: 0,
+            series_results: vec![],
+        }));
     }
 
-    let result = do_sync(state.pool.clone(), api_id as i32, api_hash, session_bytes, sources, None).await?;
+    let result = do_sync(
+        state.pool.clone(),
+        api_id as i32,
+        api_hash,
+        session_bytes,
+        sources,
+        None,
+    )
+    .await?;
 
     Ok(Json(result))
 }
@@ -1300,11 +1468,17 @@ async fn do_sync(
         }
     }
 
-    let total_series = source_work.iter().map(|(_, _, _, sn)| sn.len()).sum::<usize>() as i32;
+    let total_series = source_work
+        .iter()
+        .map(|(_, _, _, sn)| sn.len())
+        .sum::<usize>() as i32;
 
     if let Some(jid) = job_id {
         let _ = sqlx::query("UPDATE index_jobs SET total_files = $2 WHERE id = $1")
-            .bind(jid).bind(total_series).execute(&pool).await;
+            .bind(jid)
+            .bind(total_series)
+            .execute(&pool)
+            .await;
     }
 
     let session = Session::load(&session_bytes)
@@ -1329,10 +1503,19 @@ async fn do_sync(
         total_series_searched += series_names.len();
 
         match sync_one_source(
-            &client, &pool, source_id, &username, library_id,
-            BOOK_EXTENSIONS, &series_names,
-            job_id, &mut processed, total_series,
-        ).await {
+            &client,
+            &pool,
+            source_id,
+            &username,
+            library_id,
+            BOOK_EXTENSIONS,
+            &series_names,
+            job_id,
+            &mut processed,
+            total_series,
+        )
+        .await
+        {
             Ok((synced, new_books, series_results)) => {
                 total_synced += synced;
                 total_new += new_books;
@@ -1377,9 +1560,17 @@ async fn insert_document_message(
 
         let msg_id = message.id() as i64;
         let text = message.text();
-        let msg_text = if text.is_empty() { None } else { Some(text.to_string()) };
+        let msg_text = if text.is_empty() {
+            None
+        } else {
+            Some(text.to_string())
+        };
         let series_name = extract_series_name_from_filename(&filename);
-        let series_name = if series_name.is_empty() { None } else { Some(series_name) };
+        let series_name = if series_name.is_empty() {
+            None
+        } else {
+            Some(series_name)
+        };
         let volume_number = extract_volume(&filename);
 
         let inserted = sqlx::query(
@@ -1442,8 +1633,12 @@ async fn sync_one_source(
                  SET processed_files = $2, progress_percent = $3, current_file = $4 \
                  WHERE id = $1",
             )
-            .bind(jid).bind(*processed).bind(pct).bind(&label)
-            .execute(pool).await;
+            .bind(jid)
+            .bind(*processed)
+            .bind(pct)
+            .bind(&label)
+            .execute(pool)
+            .await;
         }
 
         let mut iter = client
@@ -1462,21 +1657,35 @@ async fn sync_one_source(
                     extracted_names.insert(extracted);
                 }
             }
-            insert_document_message(pool, source_id, library_id, extensions, &message, &mut new_books).await?;
+            insert_document_message(
+                pool,
+                source_id,
+                library_id,
+                extensions,
+                &message,
+                &mut new_books,
+            )
+            .await?;
         }
         if series_count > 0 {
-            series_results.push((series_name.clone(), series_count, extracted_names.into_iter().collect()));
+            series_results.push((
+                series_name.clone(),
+                series_count,
+                extracted_names.into_iter().collect(),
+            ));
         }
         *processed += 1;
     }
 
     // Update channel title
     if let Some(title) = get_chat_title(client, username).await {
-        sqlx::query("UPDATE telegram_sources SET channel_title = $1, updated_at = NOW() WHERE id = $2")
-            .bind(title)
-            .bind(source_id)
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "UPDATE telegram_sources SET channel_title = $1, updated_at = NOW() WHERE id = $2",
+        )
+        .bind(title)
+        .bind(source_id)
+        .execute(pool)
+        .await?;
     }
 
     info!("Telegram search @{username}: {synced} messages scanned, {new_books} new books ({} series with results)", series_results.len());
@@ -1528,7 +1737,9 @@ pub async fn list_books(
             mime_type: r.get("mime_type"),
             message_text: r.get("message_text"),
             status: r.get("status"),
-            library_id: r.get::<Option<Uuid>, _>("library_id").map(|u| u.to_string()),
+            library_id: r
+                .get::<Option<Uuid>, _>("library_id")
+                .map(|u| u.to_string()),
             book_id: r.get::<Option<Uuid>, _>("book_id").map(|u| u.to_string()),
             error_message: r.get("error_message"),
             series_name: r.get("series_name"),
@@ -1580,7 +1791,8 @@ pub async fn list_available_by_series(
 
     // Collect unique library IDs and (series_name, library_id) pairs in one pass
     let mut lib_id_set: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
-    let mut series_key_set: std::collections::HashSet<(String, Uuid)> = std::collections::HashSet::new();
+    let mut series_key_set: std::collections::HashSet<(String, Uuid)> =
+        std::collections::HashSet::new();
     for r in &rows {
         if let Some(lid) = r.get::<Option<Uuid>, _>("resolved_library_id") {
             lib_id_set.insert(lid);
@@ -1605,9 +1817,11 @@ pub async fn list_available_by_series(
     }
 
     // Batch-resolve all (series_name, library_id) → series_id in a single UNNEST query
-    let mut series_ids: std::collections::HashMap<(String, Uuid), Option<Uuid>> = std::collections::HashMap::new();
+    let mut series_ids: std::collections::HashMap<(String, Uuid), Option<Uuid>> =
+        std::collections::HashMap::new();
     if !series_keys.is_empty() {
-        let (names, libs): (Vec<String>, Vec<Uuid>) = series_keys.iter()
+        let (names, libs): (Vec<String>, Vec<Uuid>) = series_keys
+            .iter()
             .map(|(sn, lid)| (sn.clone(), *lid))
             .unzip();
         let batch = sqlx::query(
@@ -1633,14 +1847,14 @@ pub async fn list_available_by_series(
     }
 
     // Batch-fetch owned volumes and series total_volumes for computing missing count
-    let matched_series_ids: Vec<Uuid> = series_ids.values()
-        .filter_map(|o| *o)
-        .collect();
-    let availability_by_series = missing::load_series_availability(&state.pool, &matched_series_ids).await?;
+    let matched_series_ids: Vec<Uuid> = series_ids.values().filter_map(|o| *o).collect();
+    let availability_by_series =
+        missing::load_series_availability(&state.pool, &matched_series_ids).await?;
 
     // Group books preserving insertion order (SQL ORDER BY series_name)
     let mut group_keys: Vec<(String, Uuid)> = Vec::new();
-    let mut groups: std::collections::HashMap<(String, Uuid), Vec<TelegramAvailableBookDto>> = std::collections::HashMap::new();
+    let mut groups: std::collections::HashMap<(String, Uuid), Vec<TelegramAvailableBookDto>> =
+        std::collections::HashMap::new();
     for r in &rows {
         let series_name: Option<String> = r.get("series_name");
         let lib_id: Option<Uuid> = r.get("resolved_library_id");
@@ -1667,7 +1881,9 @@ pub async fn list_available_by_series(
     let result: Vec<TelegramAvailableGroupDto> = group_keys
         .into_iter()
         .filter_map(|(series_name, lib_id)| {
-            let sid_uuid = series_ids.get(&(series_name.clone(), lib_id)).and_then(|o| *o);
+            let sid_uuid = series_ids
+                .get(&(series_name.clone(), lib_id))
+                .and_then(|o| *o);
             let series_id = sid_uuid.map(|u| u.to_string());
             series_id.as_ref()?; // skip unmatched groups
             let owned_volumes = sid_uuid
@@ -1732,22 +1948,27 @@ pub async fn list_downloads(
     .fetch_all(&state.pool)
     .await?;
 
-    let items = rows.iter().map(|r| TelegramDownloadItemDto {
-        id: r.get::<Uuid, _>("id").to_string(),
-        series_name: r.get("series_name"),
-        series_id: r.get::<Option<Uuid>, _>("series_id").map(|u| u.to_string()),
-        library_id: r.get::<Option<Uuid>, _>("resolved_library_id").map(|u| u.to_string()),
-        library_name: r.get("library_name"),
-        channel_username: r.get("channel_username"),
-        filename: r.get("filename"),
-        file_size: r.get("file_size"),
-        bytes_downloaded: r.get::<i64, _>("bytes_downloaded"),
-        volume_number: r.get("volume_number"),
-        status: r.get("status"),
-        error_message: r.get("error_message"),
-        created_at: r.get::<chrono::DateTime<Utc>, _>("created_at").to_rfc3339(),
-        updated_at: r.get::<chrono::DateTime<Utc>, _>("updated_at").to_rfc3339(),
-    }).collect();
+    let items = rows
+        .iter()
+        .map(|r| TelegramDownloadItemDto {
+            id: r.get::<Uuid, _>("id").to_string(),
+            series_name: r.get("series_name"),
+            series_id: r.get::<Option<Uuid>, _>("series_id").map(|u| u.to_string()),
+            library_id: r
+                .get::<Option<Uuid>, _>("resolved_library_id")
+                .map(|u| u.to_string()),
+            library_name: r.get("library_name"),
+            channel_username: r.get("channel_username"),
+            filename: r.get("filename"),
+            file_size: r.get("file_size"),
+            bytes_downloaded: r.get::<i64, _>("bytes_downloaded"),
+            volume_number: r.get("volume_number"),
+            status: r.get("status"),
+            error_message: r.get("error_message"),
+            created_at: r.get::<chrono::DateTime<Utc>, _>("created_at").to_rfc3339(),
+            updated_at: r.get::<chrono::DateTime<Utc>, _>("updated_at").to_rfc3339(),
+        })
+        .collect();
 
     Ok(Json(items))
 }
@@ -1782,7 +2003,9 @@ pub async fn download_book(
         .ok_or_else(|| ApiError::bad_request("Not authorized — complete auth first"))?;
 
     // Resolve library_id: from request, then from the link itself, then from the source
-    let override_lib = body.library_id.as_deref()
+    let override_lib = body
+        .library_id
+        .as_deref()
         .map(|s| Uuid::parse_str(s).ok())
         .flatten();
 
@@ -1812,12 +2035,11 @@ pub async fn download_book(
     let channel_username: String = row.get("channel_username");
     let series_name: Option<String> = row.get("series_name");
 
-    let library_id = library_id
-        .ok_or_else(|| ApiError::bad_request("No library configured for this source"))?;
+    let library_id =
+        library_id.ok_or_else(|| ApiError::bad_request("No library configured for this source"))?;
 
     // series_name fallback: extract from filename if not stored
-    let series_name = series_name
-        .unwrap_or_else(|| extract_series_name_from_filename(&filename));
+    let series_name = series_name.unwrap_or_else(|| extract_series_name_from_filename(&filename));
 
     // Mark as downloading
     sqlx::query(
@@ -1877,8 +2099,8 @@ async fn do_download(
     series_name: String,
     library_id: Uuid,
 ) -> anyhow::Result<()> {
-    use grammers_client::{Client, Config};
     use grammers_client::types::Downloadable;
+    use grammers_client::{Client, Config};
     use grammers_session::Session;
 
     let session = Session::load(&session_bytes)?;
@@ -1896,14 +2118,20 @@ async fn do_download(
         .ok_or_else(|| anyhow::anyhow!("Channel not found: {channel_username}"))?;
 
     // Find the specific message
-    let mut iter = client.iter_messages(&chat).offset_id((message_id + 1) as i32).limit(1);
+    let mut iter = client
+        .iter_messages(&chat)
+        .offset_id((message_id + 1) as i32)
+        .limit(1);
     let message = iter
         .next()
         .await?
         .ok_or_else(|| anyhow::anyhow!("Message {message_id} not found"))?;
 
     if message.id() as i64 != message_id {
-        anyhow::bail!("Message ID mismatch: expected {message_id}, got {}", message.id());
+        anyhow::bail!(
+            "Message ID mismatch: expected {message_id}, got {}",
+            message.id()
+        );
     }
 
     let media = message
@@ -1962,7 +2190,10 @@ async fn do_download(
                 let msg = e.to_string();
                 if msg.contains("FLOOD_WAIT") && retries < MAX_RETRIES {
                     let wait_secs = parse_flood_wait_secs(&msg).unwrap_or(5);
-                    warn!("FLOOD_WAIT {wait_secs}s for {filename}, retry {}/{MAX_RETRIES}", retries + 1);
+                    warn!(
+                        "FLOOD_WAIT {wait_secs}s for {filename}, retry {}/{MAX_RETRIES}",
+                        retries + 1
+                    );
                     tokio::time::sleep(std::time::Duration::from_secs(wait_secs + 1)).await;
                     retries += 1;
                 } else {
@@ -1972,7 +2203,9 @@ async fn do_download(
             }
             Err(_) => {
                 let _ = tokio::fs::remove_file(&tmp_path).await;
-                return Err(anyhow::anyhow!("Download timeout after 30 minutes: {filename}"));
+                return Err(anyhow::anyhow!(
+                    "Download timeout after 30 minutes: {filename}"
+                ));
             }
         }
     }
@@ -1980,7 +2213,8 @@ async fn do_download(
     tokio::fs::rename(&tmp_path, &dest_path).await?;
 
     let updated_bytes = client.session().save();
-    save_session_to_db(&pool, updated_bytes).await
+    save_session_to_db(&pool, updated_bytes)
+        .await
         .map_err(|e| anyhow::anyhow!("session save: {:?}", e))?;
 
     info!("Downloaded {filename} to {}", dest_path.display());
@@ -2009,7 +2243,8 @@ async fn do_download(
 
 fn parse_flood_wait_secs(err: &str) -> Option<u64> {
     // Error format: "rpc error 420: FLOOD_WAIT ... (value: 2)"
-    err.split("value:").nth(1)
+    err.split("value:")
+        .nth(1)
         .and_then(|s| s.trim().split(|c: char| !c.is_ascii_digit()).next())
         .and_then(|s| s.parse().ok())
 }
@@ -2022,7 +2257,11 @@ fn sanitize_filename(name: &str) -> String {
             c => c,
         })
         .collect();
-    if safe.is_empty() { "unknown".to_string() } else { safe }
+    if safe.is_empty() {
+        "unknown".to_string()
+    } else {
+        safe
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2123,8 +2362,8 @@ pub async fn live_search(
     State(state): State<AppState>,
     Json(body): Json<LiveSearchRequest>,
 ) -> Result<Json<Vec<TelegramSearchResultDto>>, ApiError> {
-    use grammers_client::{Client, Config};
     use grammers_client::grammers_tl_types::enums::MessagesFilter;
+    use grammers_client::{Client, Config};
     use grammers_session::Session;
 
     const BOOK_EXTENSIONS: &[&str] = &["cbz", "cbr", "pdf", "epub", "zip"];
@@ -2138,8 +2377,8 @@ pub async fn live_search(
         .await
         .ok_or_else(|| ApiError::bad_request("Telegram not configured"))?;
 
-    let session_bytes = session_bytes
-        .ok_or_else(|| ApiError::bad_request("Telegram not authorized"))?;
+    let session_bytes =
+        session_bytes.ok_or_else(|| ApiError::bad_request("Telegram not authorized"))?;
 
     let session = Session::load(&session_bytes)
         .map_err(|e| ApiError::internal(format!("Session load: {e}")))?;
@@ -2167,8 +2406,14 @@ pub async fn live_search(
     for (source_id, username, library_id) in &sources {
         let chat = match client.resolve_username(username).await {
             Ok(Some(c)) => c,
-            Ok(None) => { error!("live_search: channel @{username} not found"); continue; }
-            Err(e) => { error!("live_search: resolve @{username}: {e}"); continue; }
+            Ok(None) => {
+                error!("live_search: channel @{username} not found");
+                continue;
+            }
+            Err(e) => {
+                error!("live_search: resolve @{username}: {e}");
+                continue;
+            }
         };
 
         let mut iter = client
@@ -2179,12 +2424,24 @@ pub async fn live_search(
         loop {
             match iter.next().await {
                 Ok(Some(message)) => {
-                    if let Err(e) = insert_document_message(&state.pool, *source_id, *library_id, BOOK_EXTENSIONS, &message, &mut new_books).await {
+                    if let Err(e) = insert_document_message(
+                        &state.pool,
+                        *source_id,
+                        *library_id,
+                        BOOK_EXTENSIONS,
+                        &message,
+                        &mut new_books,
+                    )
+                    .await
+                    {
                         error!("live_search insert @{username}: {e}");
                     }
                 }
                 Ok(None) => break,
-                Err(e) => { error!("live_search iter @{username}: {e}"); break; }
+                Err(e) => {
+                    error!("live_search iter @{username}: {e}");
+                    break;
+                }
             }
         }
     }
@@ -2192,7 +2449,10 @@ pub async fn live_search(
     let updated_bytes = client.session().save();
     save_session_to_db(&state.pool, updated_bytes).await?;
 
-    info!("Telegram live search '{query}': {new_books} new books across {} sources", sources.len());
+    info!(
+        "Telegram live search '{query}': {new_books} new books across {} sources",
+        sources.len()
+    );
 
     let pattern = format!("%{}%", query);
     let results = search_books_by_pattern(&state.pool, &pattern).await?;
@@ -2255,26 +2515,89 @@ mod tests {
     }
 
     // --- existing patterns ---
-    #[test] fn tome_dash() { assert_eq!(e("One Piece - Tome 47.cbz"), "One Piece"); }
-    #[test] fn tome_prefix() { assert_eq!(e("Toriko T12.cbz"), "Toriko"); }
-    #[test] fn vol_dash() { assert_eq!(e("Naruto - Vol. 3.cbz"), "Naruto"); }
-    #[test] fn bare_number() { assert_eq!(e("Berserk 08.cbz"), "Berserk"); }
+    #[test]
+    fn tome_dash() {
+        assert_eq!(e("One Piece - Tome 47.cbz"), "One Piece");
+    }
+    #[test]
+    fn tome_prefix() {
+        assert_eq!(e("Toriko T12.cbz"), "Toriko");
+    }
+    #[test]
+    fn vol_dash() {
+        assert_eq!(e("Naruto - Vol. 3.cbz"), "Naruto");
+    }
+    #[test]
+    fn bare_number() {
+        assert_eq!(e("Berserk 08.cbz"), "Berserk");
+    }
 
     // --- chapter markers (the new cases) ---
-    #[test] fn ch_dash_number() { assert_eq!(e("Boruto - Two Blue Vortex - Ch11.cbz"), "Boruto - Two Blue Vortex"); }
-    #[test] fn ch_dash_lowercase() { assert_eq!(e("Boruto - Two Blue Vortex - ch12.cbz"), "Boruto - Two Blue Vortex"); }
-    #[test] fn ch_no_dash() { assert_eq!(e("Boruto - Two Blue Vortex Ch09.cbz"), "Boruto - Two Blue Vortex"); }
-    #[test] fn hash_ch_dash() { assert_eq!(e("Boruto - two blue vortex - #Ch03.cbz"), "Boruto - two blue vortex"); }
-    #[test] fn hash_ch_no_dash() { assert_eq!(e("Dandadan #Ch05.cbz"), "Dandadan"); }
-    #[test] fn hash_digit() { assert_eq!(e("Dandadan #15.cbz"), "Dandadan"); }
-    #[test] fn ch_dot() { assert_eq!(e("Gachiakuta - Ch. 38.cbz"), "Gachiakuta"); }
+    #[test]
+    fn ch_dash_number() {
+        assert_eq!(
+            e("Boruto - Two Blue Vortex - Ch11.cbz"),
+            "Boruto - Two Blue Vortex"
+        );
+    }
+    #[test]
+    fn ch_dash_lowercase() {
+        assert_eq!(
+            e("Boruto - Two Blue Vortex - ch12.cbz"),
+            "Boruto - Two Blue Vortex"
+        );
+    }
+    #[test]
+    fn ch_no_dash() {
+        assert_eq!(
+            e("Boruto - Two Blue Vortex Ch09.cbz"),
+            "Boruto - Two Blue Vortex"
+        );
+    }
+    #[test]
+    fn hash_ch_dash() {
+        assert_eq!(
+            e("Boruto - two blue vortex - #Ch03.cbz"),
+            "Boruto - two blue vortex"
+        );
+    }
+    #[test]
+    fn hash_ch_no_dash() {
+        assert_eq!(e("Dandadan #Ch05.cbz"), "Dandadan");
+    }
+    #[test]
+    fn hash_digit() {
+        assert_eq!(e("Dandadan #15.cbz"), "Dandadan");
+    }
+    #[test]
+    fn ch_dot() {
+        assert_eq!(e("Gachiakuta - Ch. 38.cbz"), "Gachiakuta");
+    }
 
     // --- series names with dashes must NOT be stripped ---
-    #[test] fn series_name_with_dash() { assert_eq!(e("Boruto - Two Blue Vortex - Tome 01.cbz"), "Boruto - Two Blue Vortex"); }
-    #[test] fn dragon_ball_z() { assert_eq!(e("Dragon Ball Z - Tome 01.cbz"), "Dragon Ball Z"); }
+    #[test]
+    fn series_name_with_dash() {
+        assert_eq!(
+            e("Boruto - Two Blue Vortex - Tome 01.cbz"),
+            "Boruto - Two Blue Vortex"
+        );
+    }
+    #[test]
+    fn dragon_ball_z() {
+        assert_eq!(e("Dragon Ball Z - Tome 01.cbz"), "Dragon Ball Z");
+    }
 
     // --- Telegram @channel attribution ---
-    #[test] fn tg_series_channel_tag() { assert_eq!(e("Berserk - 32@BD_fr.cbz"), "Berserk"); }
-    #[test] fn tg_volume_channel_tag() { assert_eq!(v("Berserk - 32@BD_fr.cbz"), Some(32)); }
-    #[test] fn tg_volume_channel_tag_spaced() { assert_eq!(v("One Piece - 47 @BD_fr.cbz"), Some(47)); }
+    #[test]
+    fn tg_series_channel_tag() {
+        assert_eq!(e("Berserk - 32@BD_fr.cbz"), "Berserk");
+    }
+    #[test]
+    fn tg_volume_channel_tag() {
+        assert_eq!(v("Berserk - 32@BD_fr.cbz"), Some(32));
+    }
+    #[test]
+    fn tg_volume_channel_tag_spaced() {
+        assert_eq!(v("One Piece - 47 @BD_fr.cbz"), Some(47));
+    }
 }

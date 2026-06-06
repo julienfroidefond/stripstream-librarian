@@ -257,7 +257,9 @@ pub async fn get_stats(
     let by_format: Vec<FormatCount> = format_rows
         .iter()
         .map(|r| FormatCount {
-            format: r.get::<Option<String>, _>("fmt").unwrap_or_else(|| "unknown".to_string()),
+            format: r
+                .get::<Option<String>, _>("fmt")
+                .unwrap_or_else(|| "unknown".to_string()),
             count: r.get("count"),
         })
         .collect();
@@ -532,7 +534,9 @@ pub async fn get_stats(
                 book_id: id.to_string(),
                 title: r.get("title"),
                 series: r.get("series"),
-                last_read_at: r.get::<Option<String>, _>("last_read_at").unwrap_or_default(),
+                last_read_at: r
+                    .get::<Option<String>, _>("last_read_at")
+                    .unwrap_or_default(),
                 username: r.get("username"),
             }
         })
@@ -1050,12 +1054,14 @@ pub async fn get_reading_overview(
     let overview = rows
         .into_iter()
         .map(|r| {
-            let currently_json: serde_json::Value =
-                r.try_get("currently_reading").unwrap_or(serde_json::Value::Array(vec![]));
+            let currently_json: serde_json::Value = r
+                .try_get("currently_reading")
+                .unwrap_or(serde_json::Value::Array(vec![]));
             let currently_reading: Vec<UserReadingOverviewItem> =
                 serde_json::from_value(currently_json).unwrap_or_default();
-            let recently_json: serde_json::Value =
-                r.try_get("recently_read").unwrap_or(serde_json::Value::Array(vec![]));
+            let recently_json: serde_json::Value = r
+                .try_get("recently_read")
+                .unwrap_or(serde_json::Value::Array(vec![]));
             let recently_read: Vec<UserReadingOverviewItem> =
                 serde_json::from_value(recently_json).unwrap_or_default();
             UserReadingOverview {

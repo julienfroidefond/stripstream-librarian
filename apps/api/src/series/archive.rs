@@ -153,7 +153,9 @@ pub async fn list_archived_series(
     let items = rows
         .into_iter()
         .map(|row| {
-            let progress_json: serde_json::Value = row.try_get("reading_progress").unwrap_or(serde_json::Value::Array(vec![]));
+            let progress_json: serde_json::Value = row
+                .try_get("reading_progress")
+                .unwrap_or(serde_json::Value::Array(vec![]));
             let reading_progress: Vec<ArchivedSeriesReadingProgress> =
                 serde_json::from_value(progress_json).unwrap_or_default();
             ArchivedSeriesItem {
@@ -162,7 +164,9 @@ pub async fn list_archived_series(
                 library_id: row.get("library_id"),
                 description: row.get("description"),
                 authors: row.try_get::<Vec<String>, _>("authors").unwrap_or_default(),
-                publishers: row.try_get::<Vec<String>, _>("publishers").unwrap_or_default(),
+                publishers: row
+                    .try_get::<Vec<String>, _>("publishers")
+                    .unwrap_or_default(),
                 genres: row.try_get::<Vec<String>, _>("genres").unwrap_or_default(),
                 cover_url: row.get("cover_url"),
                 start_year: row.get("start_year"),
@@ -247,7 +251,9 @@ pub async fn get_archived_series(
     let books = book_rows
         .into_iter()
         .map(|r| {
-            let progress_json: serde_json::Value = r.try_get("reading_progress").unwrap_or(serde_json::Value::Array(vec![]));
+            let progress_json: serde_json::Value = r
+                .try_get("reading_progress")
+                .unwrap_or(serde_json::Value::Array(vec![]));
             let reading_progress: Vec<ArchivedBookReadingProgress> =
                 serde_json::from_value(progress_json).unwrap_or_default();
             ArchivedBookItem {
@@ -277,7 +283,9 @@ pub async fn get_archived_series(
         library_id: row.get("library_id"),
         description: row.get("description"),
         authors: row.try_get::<Vec<String>, _>("authors").unwrap_or_default(),
-        publishers: row.try_get::<Vec<String>, _>("publishers").unwrap_or_default(),
+        publishers: row
+            .try_get::<Vec<String>, _>("publishers")
+            .unwrap_or_default(),
         genres: row.try_get::<Vec<String>, _>("genres").unwrap_or_default(),
         cover_url: row.get("cover_url"),
         total_volumes: row.get("total_volumes"),

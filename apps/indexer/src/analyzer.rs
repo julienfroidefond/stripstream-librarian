@@ -42,7 +42,11 @@ async fn load_thumbnail_config(pool: &sqlx::PgPool) -> ThumbnailConfig {
     let timeout_secs = limits_row
         .ok()
         .flatten()
-        .and_then(|r| r.get::<serde_json::Value, _>("value").get("timeout_seconds").and_then(|v| v.as_u64()))
+        .and_then(|r| {
+            r.get::<serde_json::Value, _>("value")
+                .get("timeout_seconds")
+                .and_then(|v| v.as_u64())
+        })
         .unwrap_or(fallback.timeout_secs);
 
     match thumb_row {
@@ -81,7 +85,10 @@ async fn load_thumbnail_config(pool: &sqlx::PgPool) -> ThumbnailConfig {
                 timeout_secs,
             }
         }
-        _ => ThumbnailConfig { timeout_secs, ..fallback },
+        _ => ThumbnailConfig {
+            timeout_secs,
+            ..fallback
+        },
     }
 }
 
@@ -118,7 +125,11 @@ fn detect_image_ext(data: &[u8]) -> &'static str {
 
 /// Fast JPEG decode with DCT scaling: decodes directly at reduced resolution (1/8, 1/4, 1/2).
 /// Returns (DynamicImage, original_width, original_height) or None if not JPEG / decode fails.
-fn fast_jpeg_decode(image_bytes: &[u8], target_w: u32, target_h: u32) -> Option<(image::DynamicImage, u32, u32)> {
+fn fast_jpeg_decode(
+    image_bytes: &[u8],
+    target_w: u32,
+    target_h: u32,
+) -> Option<(image::DynamicImage, u32, u32)> {
     // Only attempt for JPEG
     if image::guess_format(image_bytes).ok()? != image::ImageFormat::Jpeg {
         return None;
@@ -157,15 +168,16 @@ fn generate_thumbnail(image_bytes: &[u8], config: &ThumbnailConfig) -> anyhow::R
     let t0 = std::time::Instant::now();
 
     // Try fast JPEG DCT-scaled decode first (decodes directly at ~target size)
-    let (img, orig_w, orig_h) = if let Some(result) = fast_jpeg_decode(image_bytes, config.width, config.height) {
-        result
-    } else {
-        // Fallback for PNG/WebP/other formats
-        let img = image::load_from_memory(image_bytes)
-            .map_err(|e| anyhow::anyhow!("failed to load image: {}", e))?;
-        let (ow, oh) = img.dimensions();
-        (img, ow, oh)
-    };
+    let (img, orig_w, orig_h) =
+        if let Some(result) = fast_jpeg_decode(image_bytes, config.width, config.height) {
+            result
+        } else {
+            // Fallback for PNG/WebP/other formats
+            let img = image::load_from_memory(image_bytes)
+                .map_err(|e| anyhow::anyhow!("failed to load image: {}", e))?;
+            let (ow, oh) = img.dimensions();
+            (img, ow, oh)
+        };
     let t_decode = t0.elapsed();
 
     // Don't upscale — clamp to original size
@@ -192,21 +204,27 @@ fn generate_thumbnail(image_bytes: &[u8], config: &ThumbnailConfig) -> anyhow::R
     let result = match format {
         "original" => {
             // Re-encode in source format (fast JPEG encode instead of slow WebP)
-            let source_format = image::guess_format(image_bytes).unwrap_or(image::ImageFormat::Jpeg);
+            let source_format =
+                image::guess_format(image_bytes).unwrap_or(image::ImageFormat::Jpeg);
             match source_format {
                 image::ImageFormat::Png => {
                     let rgba = resized.to_rgba8();
                     let mut buf = Vec::new();
                     let encoder = image::codecs::png::PngEncoder::new(&mut buf);
-                    encoder.write_image(&rgba, w, h, image::ColorType::Rgba8.into())
+                    encoder
+                        .write_image(&rgba, w, h, image::ColorType::Rgba8.into())
                         .map_err(|e| anyhow::anyhow!("png encode failed: {}", e))?;
                     Ok(buf)
                 }
                 _ => {
                     let rgb = resized.to_rgb8();
                     let mut buf = Vec::new();
-                    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, config.quality);
-                    encoder.encode(&rgb, w, h, image::ColorType::Rgb8.into())
+                    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
+                        &mut buf,
+                        config.quality,
+                    );
+                    encoder
+                        .encode(&rgb, w, h, image::ColorType::Rgb8.into())
                         .map_err(|e| anyhow::anyhow!("jpeg encode failed: {}", e))?;
                     Ok(buf)
                 }
@@ -215,8 +233,10 @@ fn generate_thumbnail(image_bytes: &[u8], config: &ThumbnailConfig) -> anyhow::R
         "jpeg" | "jpg" => {
             let rgb = resized.to_rgb8();
             let mut buf = Vec::new();
-            let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, config.quality);
-            encoder.encode(&rgb, w, h, image::ColorType::Rgb8.into())
+            let mut encoder =
+                image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, config.quality);
+            encoder
+                .encode(&rgb, w, h, image::ColorType::Rgb8.into())
                 .map_err(|e| anyhow::anyhow!("jpeg encode failed: {}", e))?;
             Ok(buf)
         }
@@ -224,7 +244,8 @@ fn generate_thumbnail(image_bytes: &[u8], config: &ThumbnailConfig) -> anyhow::R
             let rgba = resized.to_rgba8();
             let mut buf = Vec::new();
             let encoder = image::codecs::png::PngEncoder::new(&mut buf);
-            encoder.write_image(&rgba, w, h, image::ColorType::Rgba8.into())
+            encoder
+                .write_image(&rgba, w, h, image::ColorType::Rgba8.into())
                 .map_err(|e| anyhow::anyhow!("png encode failed: {}", e))?;
             Ok(buf)
         }
@@ -233,7 +254,8 @@ fn generate_thumbnail(image_bytes: &[u8], config: &ThumbnailConfig) -> anyhow::R
             let rgb = resized.to_rgb8();
             let rgb_data: &[u8] = rgb.as_raw();
             let quality = config.quality as f32;
-            let webp_data = webp::Encoder::new(rgb_data, webp::PixelLayout::Rgb, w, h).encode(quality);
+            let webp_data =
+                webp::Encoder::new(rgb_data, webp::PixelLayout::Rgb, w, h).encode(quality);
             Ok(webp_data.to_vec())
         }
     };
@@ -432,7 +454,9 @@ pub async fn analyze_library_books(
 
         info!(
             "[ANALYZER] Extraction batch {}/{} — {} books",
-            batch_idx + 1, num_batches, batch_tasks.len()
+            batch_idx + 1,
+            num_batches,
+            batch_tasks.len()
         );
 
         let batch_extracted: Vec<(Uuid, String, i32)> = stream::iter(batch_tasks)
@@ -685,7 +709,12 @@ pub async fn analyze_library_books(
         if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
             for line in status.lines() {
                 if line.starts_with("VmRSS:") {
-                    info!("[ANALYZER] Memory after batch {}/{}: {}", batch_idx + 1, num_batches, line.trim());
+                    info!(
+                        "[ANALYZER] Memory after batch {}/{}: {}",
+                        batch_idx + 1,
+                        num_batches,
+                        line.trim()
+                    );
                     break;
                 }
             }
@@ -694,7 +723,10 @@ pub async fn analyze_library_books(
 
     if cancelled_flag.load(Ordering::Relaxed) {
         cancel_handle.abort();
-        info!("[ANALYZER] Job {} cancelled during extraction phase", job_id);
+        info!(
+            "[ANALYZER] Job {} cancelled during extraction phase",
+            job_id
+        );
         return Err(anyhow::anyhow!("Job cancelled by user"));
     }
 
@@ -820,7 +852,11 @@ pub async fn analyze_library_books(
         final_count,
         extracted_total,
         phase_b_elapsed.as_secs_f64(),
-        if final_count > 0 { phase_b_elapsed.as_millis() as f64 / final_count as f64 } else { 0.0 }
+        if final_count > 0 {
+            phase_b_elapsed.as_millis() as f64 / final_count as f64
+        } else {
+            0.0
+        }
     );
     info!(
         "[ANALYZER] Total: {:.1}s (extraction {:.1}s + resize {:.1}s)",
@@ -855,14 +891,21 @@ pub async fn regenerate_thumbnails(
             let path = Path::new(&config.directory).join(format!("{}.{}", book_id, ext));
             if path.exists() {
                 if let Err(e) = std::fs::remove_file(&path) {
-                    warn!("[ANALYZER] Failed to delete thumbnail {}: {}", path.display(), e);
+                    warn!(
+                        "[ANALYZER] Failed to delete thumbnail {}: {}",
+                        path.display(),
+                        e
+                    );
                 } else if *ext != "raw" {
                     deleted_count += 1;
                 }
             }
         }
     }
-    info!("[ANALYZER] Deleted {} thumbnail files for regeneration", deleted_count);
+    info!(
+        "[ANALYZER] Deleted {} thumbnail files for regeneration",
+        deleted_count
+    );
 
     sqlx::query(r#"UPDATE books SET thumbnail_path = NULL WHERE (library_id = $1 OR $1 IS NULL)"#)
         .bind(library_id)
@@ -902,7 +945,11 @@ pub async fn cleanup_orphaned_thumbnails(state: &AppState) -> Result<()> {
                 if let Ok(book_id) = Uuid::parse_str(&book_id_str) {
                     if !existing_book_ids.contains(&book_id) {
                         if let Err(e) = std::fs::remove_file(entry.path()) {
-                            warn!("Failed to delete orphaned file {}: {}", entry.path().display(), e);
+                            warn!(
+                                "Failed to delete orphaned file {}: {}",
+                                entry.path().display(),
+                                e
+                            );
                         } else {
                             deleted_count += 1;
                         }
@@ -912,7 +959,10 @@ pub async fn cleanup_orphaned_thumbnails(state: &AppState) -> Result<()> {
         }
     }
 
-    info!("[ANALYZER] Deleted {} orphaned thumbnail files", deleted_count);
+    info!(
+        "[ANALYZER] Deleted {} orphaned thumbnail files",
+        deleted_count
+    );
     Ok(())
 }
 
