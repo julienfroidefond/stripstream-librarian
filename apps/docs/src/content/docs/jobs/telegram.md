@@ -7,8 +7,8 @@ Deux tâches gèrent la surveillance Telegram, selon la profondeur de recherche 
 
 | Type | Ce qu'il fait |
 |------|--------------|
-| `telegram_sync` | Recherche active par série — requête Telegram par série de la bibliothèque |
-| `telegram_sync_incremental` | Parcours chronologique — uniquement les nouveaux messages depuis la dernière synchro |
+| Synchronisation complète | Recherche active par série dans vos channels |
+| Synchronisation incrémentale | Parcours chronologique des nouveaux messages |
 
 Les deux alimentent la liste **Livres disponibles Telegram** sur la page Téléchargements.
 
@@ -16,48 +16,32 @@ Les deux alimentent la liste **Livres disponibles Telegram** sur la page Téléc
 
 ## Règle métier : quelles séries sont recherchées ?
 
-Le job `telegram_sync` ne recherche **pas** toutes les séries de la bibliothèque. Pour être incluse, une série doit satisfaire deux conditions simultanément :
+La synchronisation complète ne recherche **pas** toutes les séries de la bibliothèque. Pour être incluse, une série doit satisfaire deux conditions simultanément :
 
-1. **Lien metadata approuvé** — un `external_metadata_links` avec `status = 'approved'` existe pour cette série
-2. **Volumes manquants** — au moins un `external_book_metadata` avec `book_id IS NULL` (tome attendu mais non possédé)
+1. **Métadonnées validées** — Stripstream doit connaître la liste officielle des volumes.
+2. **Volumes manquants** — au moins un volume connu doit être absent de votre bibliothèque.
 
-Les séries qui possèdent une intégrale (`volume_type = 'integral'`) sont considérées complètes et exclues de cette recherche active.
+Les séries qui possèdent une intégrale sont considérées complètes et exclues de cette recherche active.
 
 C'est exactement la même règle que la détection de téléchargements Prowlarr : seules les séries qu'on cherche activement à compléter sont scrutées.
 
-Le job `telegram_sync_incremental` n'applique **pas** ce filtre : il parcourt tous les messages récents sans distinction, car il s'agit d'un scan chronologique et non d'une recherche ciblée.
+La synchronisation incrémentale n'applique **pas** ce filtre : elle parcourt tous les messages récents sans distinction, car il s'agit d'un scan chronologique et non d'une recherche ciblée.
 
 ---
 
-## telegram_sync — synchronisation complète
+## Synchronisation complète
 
 ### Déclenchement
 
-**Manuel uniquement** — bouton *Sync complet* dans la page Tâches ou via **Settings → Telegram Monitor**. Il n'y a pas de planification automatique pour ce job.
+**Manuel uniquement** — bouton *Sync complet* dans la page Tâches ou via **Settings → Telegram Monitor**. Il n'y a pas de planification automatique.
 
-### Ce que fait le job
+### Ce qu'elle fait
 
-```
-Pour chaque channel activé avec bibliothèque configurée :
-    Filtrer les séries éligibles (metadata approuvée + volumes manquants)
-    Si aucune série éligible → passer au channel suivant
-    Résoudre le username → chat Telegram
-    Pour chaque série éligible :
-        → search_messages(query = nom de la série, filtre = documents)
-        → Pour chaque CBZ/CBR/PDF/EPUB/ZIP trouvé :
-            Extraire le nom de série et le numéro de volume
-            INSERT INTO telegram_book_links … ON CONFLICT DO NOTHING
-    Mettre à jour le channel_title
-Sauvegarder la session Telegram mise à jour
-```
+Pour chaque channel activé, Stripstream cherche les séries éligibles une par une. Les fichiers compatibles trouvés sont ajoutés à la liste **Livres disponibles Telegram**.
 
 ### Progression
 
-| Champ | Valeur |
-|-------|--------|
-| `total_files` | Nombre total de séries à rechercher (toutes sources) |
-| `processed_files` | Séries traitées |
-| `current_file` | Label `@channel: nom de la série` en cours |
+La progression indique le nombre de séries recherchées et la série en cours.
 
 ### Rapport final
 
@@ -70,7 +54,7 @@ Sauvegarder la session Telegram mise à jour
 
 ---
 
-## telegram_sync_incremental — synchronisation incrémentale
+## Synchronisation incrémentale
 
 ### Déclenchement
 
@@ -78,28 +62,15 @@ Sauvegarder la session Telegram mise à jour
 
 **Manuel** : bouton *Synchro incrémentale* dans la page Tâches.
 
-### Ce que fait le job
+### Ce qu'elle fait
 
-```
-Pour chaque channel activé :
-    Récupérer MAX(message_id) déjà connu pour ce channel dans telegram_book_links
-    Résoudre le username → chat Telegram
-    Parcourir iter_messages (du plus récent vers le plus ancien)
-    Dès qu'un message_id ≤ MAX connu → arrêter (déjà traité)
-    Pour chaque CBZ/CBR/PDF/EPUB/ZIP trouvé :
-        INSERT INTO telegram_book_links … ON CONFLICT DO NOTHING
-Sauvegarder la session Telegram mise à jour
-```
+Pour chaque channel activé, Stripstream lit les messages récents jusqu'à retrouver un message déjà connu. Les nouveaux fichiers compatibles sont ajoutés à la liste **Livres disponibles Telegram**.
 
 Lors du **premier run** (aucun message en base pour un channel), le job parcourt l'intégralité de l'historique du channel.
 
 ### Progression
 
-| Champ | Valeur |
-|-------|--------|
-| `total_files` | Nombre de channels (sources) à traiter |
-| `processed_files` | Channels traités |
-| `current_file` | Label `@channel (incremental)` en cours |
+La progression indique le nombre de channels analysés et le channel en cours.
 
 ### Rapport final
 
@@ -137,4 +108,31 @@ Voir [Telegram Monitor](/integrations/telegram-monitor/#livres-disponibles).
 **Stale jobs** : les jobs `pending` depuis > 30 min sont marqués `failed` par le cleanup du scheduler.
 
 **Contrainte DB** : le type `telegram_sync_incremental` est autorisé par la migration `0099_add_telegram_sync_incremental_job_type.sql`.
+
+**Règle d'éligibilité complète** : `telegram_sync` requiert un `external_metadata_links` avec `status = 'approved'` et au moins un `external_book_metadata` avec `book_id IS NULL`. Les séries avec `volume_type = 'integral'` sont exclues.
+
+**Pipeline `telegram_sync`** :
+```
+Pour chaque channel activé avec bibliothèque configurée :
+    Filtrer les séries éligibles
+    Résoudre le username → chat Telegram
+    Pour chaque série éligible :
+        → search_messages(query = nom de la série, filtre = documents)
+        → Pour chaque fichier compatible trouvé :
+            INSERT INTO telegram_book_links … ON CONFLICT DO NOTHING
+    Mettre à jour le channel_title
+Sauvegarder la session Telegram mise à jour
+```
+
+**Pipeline `telegram_sync_incremental`** :
+```
+Pour chaque channel activé :
+    Récupérer MAX(message_id) déjà connu pour ce channel dans telegram_book_links
+    Résoudre le username → chat Telegram
+    Parcourir iter_messages du plus récent vers le plus ancien
+    Dès qu'un message_id ≤ MAX connu → arrêter
+    Pour chaque fichier compatible trouvé :
+        INSERT INTO telegram_book_links … ON CONFLICT DO NOTHING
+Sauvegarder la session Telegram mise à jour
+```
 :::

@@ -9,11 +9,17 @@ Ces variables doivent être définies avant le premier démarrage. Stripstream r
 
 | Variable | Ce qu'elle représente |
 |----------|----------------------|
-| `DATABASE_URL` | Adresse de connexion PostgreSQL (ex: `postgres://user:pass@localhost:6432/stripstream`) |
-| `API_BOOTSTRAP_TOKEN` | Token secret pour le premier accès admin (ex: un UUID) |
+| `DATABASE_URL` | Adresse de connexion à la base de données |
+| `API_BOOTSTRAP_TOKEN` | Secret utilisé pour créer le premier accès admin |
 | `ADMIN_USERNAME` | Nom d'utilisateur du compte administrateur |
 | `ADMIN_PASSWORD` | Mot de passe du compte administrateur |
 | `SESSION_SECRET` | Clé secrète pour les sessions (minimum 32 caractères) |
+
+:::note[Détails techniques]
+Exemples :
+- `DATABASE_URL=postgres://user:pass@localhost:6432/stripstream`
+- `API_BOOTSTRAP_TOKEN` peut être un UUID ou toute chaîne longue et aléatoire.
+:::
 
 ## Chemins
 
@@ -21,7 +27,7 @@ Ces variables doivent être définies avant le premier démarrage. Stripstream r
 |----------|-------------|------------------|
 | `LIBRARIES_ROOT_PATH` | Chemin de montage des bibliothèques dans le conteneur | `/libraries/` |
 
-:::note
+:::note[Détails techniques]
 Les chemins de fichiers stockés en base de données commencent par `/libraries/`. En développement local sans Docker, définissez `LIBRARIES_ROOT_PATH` pour pointer vers le dossier réel de vos fichiers.
 :::
 
@@ -29,10 +35,16 @@ Les chemins de fichiers stockés en base de données commencent par `/libraries/
 
 | Variable | Description |
 |----------|-------------|
-| `RUST_LOG` | Niveaux de verbosité par domaine (ex: `indexer=info,scan=debug`) |
+| `RUST_LOG` | Niveau de détail des logs |
 
+Augmentez ce niveau uniquement pour diagnostiquer un problème précis : plus les logs sont détaillés, plus ils peuvent être volumineux.
+
+:::note[Détails techniques]
 Niveaux disponibles (du moins au plus verbeux) : `error` < `warn` < `info` < `debug` < `trace`
 
 Valeur par défaut : `indexer=info,scan=info,extraction=info,thumbnail=warn,watcher=info`
 
 Domaines disponibles : `indexer` (service principal), `scan` (scan de fichiers), `extraction` (extraction de pages), `thumbnail` (génération de miniatures), `watcher` (surveillance filesystem).
+
+Exemple : `RUST_LOG=indexer=info,scan=debug`
+:::

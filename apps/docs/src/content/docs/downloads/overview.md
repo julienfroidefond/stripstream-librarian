@@ -59,8 +59,8 @@ Bibliothèque
 :::caution[Conditions pour qu'une série soit recherchée]
 Une série n'est cherchée dans Prowlarr que si elle remplit **les deux conditions suivantes** :
 
-1. **Métadonnées approuvées** — la série doit avoir été matchée à un provider de métadonnées. Sans cela, Stripstream ne sait pas quels volumes existent.
-2. **Volumes manquants** — le provider doit connaître des volumes que vous n'avez pas encore dans votre bibliothèque.
+1. **Métadonnées validées** — Stripstream doit connaître la liste officielle des volumes.
+2. **Volumes manquants** — au moins un volume connu doit être absent de votre bibliothèque.
 
 Une série sans métadonnées, dont vous possédez tous les volumes connus, ou couverte par un livre de type **intégrale**, est silencieusement ignorée.
 :::
@@ -71,7 +71,7 @@ Une série sans métadonnées, dont vous possédez tous les volumes connus, ou c
 
 ### 2 — Volumes disponibles
 
-Les releases trouvées apparaissent dans la section **Volumes disponibles** de la page Téléchargements. Pour chaque série : nombre de volumes manquants, liste des releases avec indexer, seeders, taille et volumes couverts.
+Les releases trouvées apparaissent dans la section **Volumes disponibles** de la page Téléchargements. Pour chaque série, Stripstream affiche les volumes concernés, la taille, la source, le nombre de seeders et le bouton d'envoi vers qBittorrent.
 
 ### 3 — Suivi du téléchargement
 
@@ -79,7 +79,13 @@ Une fois envoyée à qBittorrent, la release apparaît dans la liste du haut ave
 
 ### 4 — Import automatique
 
-Quand qBittorrent termine le téléchargement, l'indexer détecte la complétion, importe les fichiers dans la bibliothèque, puis lance un scan et un refresh des métadonnées.
+Quand qBittorrent termine le téléchargement, Stripstream importe les fichiers dans la bibliothèque, puis met à jour la série pour faire apparaître les nouveaux volumes.
+
+:::note[Détails techniques]
+La détection repose sur un lien metadata approuvé et des volumes externes non associés à un livre local. Une série couverte par `volume_type = 'integral'` est considérée complète.
+
+Après import, l'indexer lance un scan puis un refresh des métadonnées pour synchroniser les fichiers, couvertures et compteurs.
+:::
 
 ---
 
@@ -119,7 +125,7 @@ En bas de la page, la liste des releases détectées mais pas encore demandées 
 | Manquants | Par nombre de volumes manquants |
 | Nom | Alphabétique |
 
-Cliquez sur une ligne pour déplier les releases disponibles pour cette série. Pour chaque release : volumes couverts, indexer, seeders, taille, bouton d'envoi à qBittorrent, bouton de blacklist.
+Cliquez sur une ligne pour déplier les releases disponibles pour cette série. Pour chaque release : volumes couverts, source, seeders, taille, bouton d'envoi à qBittorrent, bouton de blacklist.
 
 **Tout ignorer** : supprime toutes les releases disponibles d'une série sans les blacklister.
 
@@ -144,3 +150,7 @@ Pour gérer la blacklist : page Téléchargements → icône œil à côté du t
 ## Mode replace
 
 Lors de l'envoi à qBittorrent, l'option **Replace** importe tous les fichiers du torrent, sans se limiter aux volumes manquants attendus. Utile pour remplacer des fichiers existants par une version de meilleure qualité.
+
+:::note[Détails techniques]
+Le mode replace ignore la liste `expected_volumes` au moment de l'import. Il importe tous les fichiers compatibles trouvés dans le torrent, puis laisse le scan recaler l'état de la bibliothèque.
+:::

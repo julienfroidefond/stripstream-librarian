@@ -5,9 +5,13 @@ description: Créer et configurer vos bibliothèques
 
 ## Créer une bibliothèque
 
-Dans la page **Libraries**, renseignez un nom et choisissez un dossier racine via le sélecteur de dossiers. Le dossier doit être accessible par l'indexer (monté dans le conteneur Docker si applicable).
+Dans la page **Libraries**, renseignez un nom et choisissez le dossier qui contient vos fichiers.
 
 Une fois créée, la bibliothèque apparaît dans la grille avec ses compteurs de livres et de séries.
+
+:::note[Détails techniques]
+Le dossier choisi doit être accessible par l'indexer. En Docker, cela signifie qu'il doit être monté dans le conteneur via les chemins configurés dans `.env`.
+:::
 
 ## Supprimer une bibliothèque
 
@@ -40,7 +44,7 @@ La carte de la bibliothèque affiche en temps réel le prochain scan prévu (ex.
 
 Détecte instantanément les ajouts ou suppressions de fichiers dans le dossier racine, sans attendre le prochain scan planifié. Utile si vous ajoutez régulièrement des fichiers et souhaitez qu'ils apparaissent immédiatement.
 
-:::note
+:::note[Détails techniques]
 Le watcher et le scan planifié sont indépendants — vous pouvez activer l'un, l'autre, ou les deux.
 :::
 
@@ -54,7 +58,7 @@ Source utilisée pour récupérer automatiquement les informations de vos série
 
 | Valeur | Idéal pour |
 |--------|-----------|
-| Par défaut | Utilise le provider configuré globalement dans les Settings |
+| Par défaut | Utilise le fournisseur configuré globalement dans les Settings |
 | Aucun | Désactive la recherche automatique de métadonnées |
 | Google Books | Livres, romans, BD en français |
 | ComicVine | Comics anglophones |
@@ -85,7 +89,7 @@ Cliquez sur un tag pour l'activer ou le désactiver. Les tags actifs apparaissen
 
 ### État de lecture
 
-**Provider d'état de lecture**
+**Service d'état de lecture**
 
 Synchronise les états de lecture (lu / en cours / planifié) avec un service externe.
 
@@ -96,7 +100,7 @@ Synchronise les états de lecture (lu / en cours / planifié) avec un service ex
 
 **Synchronisation automatique**
 
-Fréquence à laquelle la progression de lecture est poussée automatiquement vers le provider. Si laissé à `Manuel`, la synchronisation se déclenche uniquement via le bouton dédié dans la page de la série.
+Fréquence à laquelle la progression de lecture est poussée automatiquement vers le service externe. Si laissé à **Manuel**, la synchronisation se déclenche uniquement via le bouton dédié dans la page de la série.
 
 ---
 
@@ -113,6 +117,6 @@ Lance périodiquement la détection de volumes manquants via Prowlarr. La détec
 | Quotidien | Vérification quotidienne |
 | Hebdomadaire | Vérification hebdomadaire |
 
-:::note
+:::note[Détails techniques]
 Cette section n'a d'effet que si les téléchargements sont activés dans **Settings → Téléchargements**.
 :::
