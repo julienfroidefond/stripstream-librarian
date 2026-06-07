@@ -1,6 +1,11 @@
 use super::*;
 
-fn make_book(title: &str, volume: Option<i32>, authors: Vec<&str>, abs_path: &str) -> BookFileData {
+fn make_book(
+    title: &str,
+    volume: Option<i32>,
+    authors: Vec<&str>,
+    abs_path: &str,
+) -> RenameTemplateBook {
     make_book_with_type(title, volume, authors, abs_path, "regular")
 }
 
@@ -10,9 +15,8 @@ fn make_book_with_type(
     authors: Vec<&str>,
     abs_path: &str,
     volume_type: &str,
-) -> BookFileData {
-    BookFileData {
-        book_id: Uuid::new_v4(),
+) -> RenameTemplateBook {
+    RenameTemplateBook {
         title: title.to_string(),
         authors: authors.into_iter().map(String::from).collect(),
         volume,
@@ -20,7 +24,6 @@ fn make_book_with_type(
         publish_date: None,
         isbn: None,
         abs_path: abs_path.to_string(),
-        file_id: Uuid::new_v4(),
     }
 }
 

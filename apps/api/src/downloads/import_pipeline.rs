@@ -2,8 +2,12 @@ use sqlx::{PgPool, Row};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use parsers::extract_volumes;
+use parsers::{detect_format, extract_volumes, parse_metadata_fast};
 use stripstream_core::paths::{remap_libraries_path, unmap_libraries_path};
+
+use crate::books::rename::{
+    load_rename_max_volume, load_rename_templates, render_rename_filename, RenameTemplateBook,
+};
 
 use super::torrent_import::{ImportResult, ImportedFile, SkippedFile};
 
@@ -170,6 +174,19 @@ pub(super) async fn do_import(
     let mut imported = Vec::new();
     let mut skipped = Vec::new();
     let mut used_destinations: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let rename_templates = load_rename_templates(pool).await?;
+    let max_template_volume = expected_set
+        .iter()
+        .copied()
+        .chain(
+            all_source_files
+                .iter()
+                .flat_map(|f| extract_volumes(filename_from_path(f))),
+        )
+        .max()
+        .unwrap_or(0);
+    let max_template_volume =
+        load_rename_max_volume(pool, library_id, series_name, max_template_volume).await?;
 
     for source_path in &source_files {
         let filename = std::path::Path::new(&source_path)
@@ -225,11 +242,19 @@ pub(super) async fn do_import(
                     ref_path, ref_vol, vol, ext, built, filename);
                 built.unwrap_or_else(|| filename.to_string())
             } else {
-                info!(
-                    "[IMPORT] No reference, keeping original filename '{}' for vol {}",
-                    filename, vol
+                let built = build_target_filename_from_template(
+                    &rename_templates,
+                    series_name,
+                    source_path,
+                    vol,
+                    ext,
+                    max_template_volume,
                 );
-                filename.to_string()
+                info!(
+                    "[IMPORT] No reference, template filename for '{}' vol {} => {:?}",
+                    filename, vol, built
+                );
+                built.unwrap_or_else(|| filename.to_string())
             };
 
             // If this destination was already used in this batch, keep original filename
@@ -574,6 +599,13 @@ fn collect_recursive(path: &str, exts: &[&str], out: &mut Vec<String>) -> anyhow
     Ok(())
 }
 
+fn filename_from_path(path: &str) -> &str {
+    std::path::Path::new(path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+}
+
 pub(super) fn move_file(src: &str, dst: &str) -> anyhow::Result<()> {
     if std::fs::rename(src, dst).is_err() {
         // Cross-device link: copy then remove
@@ -651,6 +683,31 @@ pub(super) fn build_target_filename(
     // Truncate after the volume number (remove suffixes like ".FR-NoFace696")
     let new_stem = format!("{}{}", &stem[..start], new_digits);
     Some(format!("{}.{}", new_stem, target_ext))
+}
+
+fn build_target_filename_from_template(
+    templates: &crate::books::rename::RenameTemplates,
+    series_name: &str,
+    source_path: &str,
+    volume: i32,
+    source_ext: &str,
+    max_volume: i64,
+) -> Option<String> {
+    let path = std::path::Path::new(source_path);
+    let format = detect_format(path)?;
+    let library_root = path.parent().unwrap_or_else(|| std::path::Path::new(""));
+    let parsed = parse_metadata_fast(path, format, library_root);
+    let book = RenameTemplateBook {
+        title: parsed.title,
+        authors: Vec::new(),
+        volume: Some(volume),
+        volume_type: parsed.volume_type.as_str().to_string(),
+        publish_date: None,
+        isbn: None,
+        abs_path: source_path.to_string(),
+    };
+
+    render_rename_filename(templates, series_name, &book, max_volume, source_ext)
 }
 
 #[cfg(test)]

@@ -18,6 +18,23 @@ Depuis la page d'une série, ouvrez le menu d'actions et choisissez **Renommer l
 
 Une fois satisfait de l'aperçu, confirmez pour renommer les fichiers sur le disque.
 
+## Renommage automatique à l'import
+
+Le même template est aussi utilisé lors des imports automatiques :
+
+- **Prowlarr / qBittorrent** — quand un torrent terminé est importé dans la bibliothèque
+- **Telegram Monitor** — quand un fichier Telegram est téléchargé directement dans une série
+
+Si la série possède déjà des livres, Stripstream continue de privilégier le nommage existant comme référence pour rester cohérent avec les fichiers déjà présents. Si la série n'a pas encore de livre, le fichier importé est renommé avec le template configuré.
+
+Exemple avec le template `{series_name} - T{volume_padded}` :
+
+| Fichier source | Série | Résultat |
+|----------------|-------|----------|
+| `Frieren Tome 3 - Le voyage.cbz` | Frieren | `Frieren - T03.cbz` |
+
+Le titre du fichier source n'est ajouté que si le template contient `{title}`. Avec `{series_name} - T{volume_padded} - {title}`, le même fichier deviendrait `Frieren - T03 - Frieren Tome 3 - Le voyage.cbz`.
+
 ## Templates par défaut
 
 | Type | Template par défaut |
@@ -45,5 +62,7 @@ Utilisez `{volume_padded}` plutôt que `{volume}` pour garantir un tri alphabét
 :::
 
 :::note[Détails techniques]
-Les templates sont sauvegardés dans la table `app_settings` sous les clés `rename_format`, `rename_format_hs` et `rename_format_int`. Le renommage inclut une déduplication automatique : si le template produit des noms identiques pour deux livres différents, un suffixe numérique est ajouté. Le padding est auto-calculé à partir du volume le plus grand de la série.
+Les templates sont sauvegardés dans la table `app_settings` sous les clés `rename_format`, `rename_format_hs` et `rename_format_int`. Le renommage manuel inclut une déduplication automatique : si le template produit des noms identiques pour deux livres différents, un suffixe numérique est ajouté.
+
+Le padding de `{volume_padded}` est calculé à partir du plus grand volume connu. Pour une série sans livre, l'import automatique utilise aussi `series.total_volumes` si la série est liée à des métadonnées, puis les volumes détectés dans le téléchargement.
 :::

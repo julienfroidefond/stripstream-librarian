@@ -159,7 +159,13 @@ Lorsque vous cliquez sur **Télécharger** (depuis la page Téléchargements ou 
 3. Un job de scan est déclenché automatiquement pour intégrer le nouveau fichier
 4. Le statut passe à `En cours` pendant le téléchargement (avec barre de progression), puis `Importé`
 
+Le fichier téléchargé utilise le même [template de renommage des livres](/books/renaming/#renommage-automatique-à-limport) que les imports qBittorrent quand la série n'a pas encore de livre. Par exemple, avec `{series_name} - T{volume_padded}`, `Frieren Tome 3 - Le voyage.cbz` devient `Frieren - T03.cbz`.
+
 Le téléchargement s'effectue en arrière-plan — vous pouvez continuer à utiliser Stripstream pendant ce temps. Un timeout de 30 minutes s'applique par fichier.
+
+:::note[Réimport après suppression]
+Un fichier Telegram déjà téléchargé apparaît avec le statut `Importé` et n'est pas retéléchargeable immédiatement. Si vous supprimez ensuite le livre de la bibliothèque, Stripstream détecte que le volume n'existe plus et repasse automatiquement l'entrée Telegram en `Disponible`, ce qui permet de la télécharger à nouveau.
+:::
 
 ---
 
@@ -195,6 +201,10 @@ Les téléchargements Telegram apparaissent dans l'historique en haut de la page
 **Correspondance de séries** : comparaison `LOWER(unaccent(series_name)) = LOWER(unaccent(name))` — insensible à la casse et aux accents. "One Piece" et "one piece" sont considérés identiques.
 
 **Répertoire de destination** : résolu dans cet ordre — (1) fichier existant de la série en DB, (2) répertoire existant dans la bibliothèque dont le nom correspond, (3) nouveau répertoire `bibliothèque/nom-de-série`.
+
+**Nommage à l'import** : applique `rename_format`, `rename_format_hs` ou `rename_format_int` selon le type de volume détecté. Le padding de `{volume_padded}` utilise le plus grand volume connu, `series.total_volumes` si disponible, puis le volume extrait du fichier Telegram.
+
+**Réimport** : les liens Telegram `imported` sont réconciliés avant l'affichage. Si aucun livre correspondant à la série et au volume n'existe plus en base après un délai de sécurité, le lien repasse à `available`.
 
 **Job de sync** : type `telegram_sync`, `library_id = NULL`. Déclenchement manuel depuis la page Tâches. Un seul job actif à la fois — les doublons sont ignorés.
 

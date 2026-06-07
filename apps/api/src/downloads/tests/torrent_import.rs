@@ -151,6 +151,69 @@ fn truncates_suffix_after_volume() {
     assert_eq!(result, Some("Goblin.Slayer.Tome.008.cbz".to_string()));
 }
 
+#[test]
+fn template_filename_without_reference_uses_regular_rename_format() {
+    let templates = crate::books::rename::RenameTemplates {
+        regular: "{series_name} - T{volume_padded} - {title}".to_string(),
+        hs: "{series_name} - HS {volume_padded}".to_string(),
+        integral: "{series_name} - INT {volume_padded}".to_string(),
+    };
+
+    let result = build_target_filename_from_template(
+        &templates,
+        "Frieren",
+        "/downloads/sl-1/Frieren Tome 3 - Le voyage.cbz",
+        3,
+        "cbz",
+        12,
+    );
+
+    assert_eq!(
+        result,
+        Some("Frieren - T03 - Frieren Tome 3 - Le voyage.cbz".to_string())
+    );
+}
+
+#[test]
+fn template_filename_without_reference_does_not_add_title_when_template_omits_it() {
+    let templates = crate::books::rename::RenameTemplates {
+        regular: "{series_name} - T{volume_padded}".to_string(),
+        hs: "{series_name} - HS {volume_padded}".to_string(),
+        integral: "{series_name} - INT {volume_padded}".to_string(),
+    };
+
+    let result = build_target_filename_from_template(
+        &templates,
+        "Frieren",
+        "/downloads/sl-1/Frieren Tome 3 - Le voyage.cbz",
+        3,
+        "cbz",
+        12,
+    );
+
+    assert_eq!(result, Some("Frieren - T03.cbz".to_string()));
+}
+
+#[test]
+fn template_filename_without_reference_uses_hs_rename_format() {
+    let templates = crate::books::rename::RenameTemplates {
+        regular: "{series_name} - T{volume_padded} - {title}".to_string(),
+        hs: "{series_name} - HS {volume_padded}".to_string(),
+        integral: "{series_name} - INT {volume_padded}".to_string(),
+    };
+
+    let result = build_target_filename_from_template(
+        &templates,
+        "Frieren",
+        "/downloads/sl-1/Frieren HS 2.cbz",
+        2,
+        "cbz",
+        12,
+    );
+
+    assert_eq!(result, Some("Frieren - HS 02.cbz".to_string()));
+}
+
 // default_filename tests removed — function replaced by keeping original filename
 
 // ─── format_priority ─────────────────────────────────────────────────

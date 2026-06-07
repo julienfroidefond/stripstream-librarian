@@ -9,9 +9,15 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-use parsers::extract_volume;
+use parsers::{detect_format, extract_volume, parse_metadata_fast};
 
-use crate::{error::ApiError, state::AppState};
+use crate::{
+    books::rename::{
+        load_rename_max_volume, load_rename_templates, render_rename_filename, RenameTemplateBook,
+    },
+    error::ApiError,
+    state::AppState,
+};
 use stripstream_core::paths::remap_libraries_path;
 
 use super::{import_pipeline::find_existing_series_dir, missing};
@@ -1699,6 +1705,41 @@ async fn get_chat_title(client: &grammers_client::Client, username: &str) -> Opt
     }
 }
 
+async fn refresh_reimportable_telegram_links(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE telegram_book_links b
+         SET status = 'available',
+             bytes_downloaded = 0,
+             error_message = NULL,
+             updated_at = NOW()
+         FROM telegram_sources src
+         WHERE src.id = b.source_id
+           AND b.status = 'imported'
+           AND b.updated_at < NOW() - INTERVAL '2 minutes'
+           AND b.series_name IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1
+             FROM series s
+             JOIN books bk ON bk.series_id = s.id
+             WHERE s.library_id = COALESCE(b.library_id, src.library_id)
+               AND LOWER(unaccent(s.name)) = LOWER(unaccent(b.series_name))
+               AND (
+                 b.volume_number IS NULL
+                 OR bk.volume = b.volume_number
+               )
+           )",
+    )
+    .execute(pool)
+    .await?;
+
+    let count = result.rows_affected();
+    if count > 0 {
+        info!("[TG] Marked {count} stale imported link(s) as available again");
+    }
+
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // GET /telegram-monitor/books
 // ---------------------------------------------------------------------------
@@ -1712,6 +1753,8 @@ async fn get_chat_title(client: &grammers_client::Client, username: &str) -> Opt
 pub async fn list_books(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TelegramBookLinkDto>>, ApiError> {
+    refresh_reimportable_telegram_links(&state.pool).await?;
+
     let rows = sqlx::query(
         "SELECT b.id, b.source_id, s.channel_username, b.message_id, b.filename, \
                 b.file_size, b.mime_type, b.message_text, b.status, b.library_id, \
@@ -1764,6 +1807,8 @@ pub async fn list_books(
 pub async fn list_available_by_series(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TelegramAvailableGroupDto>>, ApiError> {
+    refresh_reimportable_telegram_links(&state.pool).await?;
+
     // ROW_NUMBER CTE deduplicates per (source, series, volume): for non-null volumes keeps
     // most recent only; null-volume books each get their own partition via id so all survive.
     let rows = sqlx::query(
@@ -1930,6 +1975,8 @@ pub async fn list_available_by_series(
 pub async fn list_downloads(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TelegramDownloadItemDto>>, ApiError> {
+    refresh_reimportable_telegram_links(&state.pool).await?;
+
     let rows = sqlx::query(
         "SELECT b.id, b.series_name, src.channel_username, b.filename, b.file_size,
                 b.bytes_downloaded, b.volume_number, b.status, b.error_message, b.created_at, b.updated_at,
@@ -2142,7 +2189,9 @@ async fn do_download(
     let target_dir = resolve_target_dir(&pool, library_id, &series_name).await?;
     std::fs::create_dir_all(&target_dir)?;
 
-    let safe_name = sanitize_filename(&filename);
+    let safe_name = build_telegram_target_filename(&pool, library_id, &series_name, &filename)
+        .await?
+        .unwrap_or_else(|| sanitize_filename(&filename));
     let dest_path = std::path::Path::new(&target_dir).join(&safe_name);
 
     if dest_path.exists() {
@@ -2264,6 +2313,42 @@ fn sanitize_filename(name: &str) -> String {
     }
 }
 
+async fn build_telegram_target_filename(
+    pool: &sqlx::PgPool,
+    library_id: Uuid,
+    series_name: &str,
+    filename: &str,
+) -> anyhow::Result<Option<String>> {
+    let path = std::path::Path::new(filename);
+    let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let Some(format) = detect_format(path) else {
+        return Ok(None);
+    };
+
+    let parsed = parse_metadata_fast(path, format, std::path::Path::new(""));
+    let fallback_volume = parsed.volume.unwrap_or(0);
+    let max_volume = load_rename_max_volume(pool, library_id, series_name, fallback_volume).await?;
+    let templates = load_rename_templates(pool).await?;
+
+    let book = RenameTemplateBook {
+        title: parsed.title,
+        authors: Vec::new(),
+        volume: parsed.volume,
+        volume_type: parsed.volume_type.as_str().to_string(),
+        publish_date: None,
+        isbn: None,
+        abs_path: filename.to_string(),
+    };
+
+    Ok(render_rename_filename(
+        &templates,
+        series_name,
+        &book,
+        max_volume,
+        extension,
+    ))
+}
+
 // ---------------------------------------------------------------------------
 // DELETE /telegram-monitor/books/:id  — dismiss
 // ---------------------------------------------------------------------------
@@ -2317,6 +2402,8 @@ async fn search_books_by_pattern(
     pool: &sqlx::PgPool,
     pattern: &str,
 ) -> Result<Vec<TelegramSearchResultDto>, ApiError> {
+    refresh_reimportable_telegram_links(pool).await?;
+
     let rows = sqlx::query(
         "SELECT b.id, s.channel_username, b.filename, b.file_size, b.volume_number, \
                 b.series_name, b.status, b.created_at \

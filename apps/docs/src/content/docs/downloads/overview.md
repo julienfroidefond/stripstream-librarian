@@ -81,10 +81,16 @@ Une fois envoyée à qBittorrent, la release apparaît dans la liste du haut ave
 
 Quand qBittorrent termine le téléchargement, Stripstream importe les fichiers dans la bibliothèque, puis met à jour la série pour faire apparaître les nouveaux volumes.
 
+Lors de l'import, le nom de fichier final suit ces règles :
+
+1. Si la série possède déjà des livres, Stripstream reprend le nommage du fichier existant le plus pertinent pour garder une collection homogène.
+2. Si la série n'a pas encore de livre, Stripstream applique le [template de renommage des livres](/books/renaming/#renommage-automatique-à-limport), par exemple `{series_name} - T{volume_padded}`.
+3. Si le template ne peut pas être appliqué, le nom source est conservé après nettoyage des caractères interdits.
+
 :::note[Détails techniques]
 La détection repose sur un lien metadata approuvé et des volumes externes non associés à un livre local. Une série couverte par `volume_type = 'integral'` est considérée complète.
 
-Après import, l'indexer lance un scan puis un refresh des métadonnées pour synchroniser les fichiers, couvertures et compteurs.
+Après import, l'indexer lance un scan puis un refresh des métadonnées pour synchroniser les fichiers, couvertures et compteurs. Le padding de `{volume_padded}` utilise le plus grand volume connu, `series.total_volumes` si disponible, puis les volumes détectés dans le téléchargement.
 :::
 
 ---

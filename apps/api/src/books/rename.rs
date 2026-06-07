@@ -5,7 +5,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use uuid::Uuid;
@@ -62,24 +62,96 @@ pub struct RenameError {
 
 // ─── Book data for template rendering ───────────────────────────────────────
 
+pub(crate) struct RenameTemplates {
+    pub(crate) regular: String,
+    pub(crate) hs: String,
+    pub(crate) integral: String,
+}
+
+pub(crate) struct RenameTemplateBook {
+    pub(crate) title: String,
+    pub(crate) authors: Vec<String>,
+    pub(crate) volume: Option<i32>,
+    pub(crate) volume_type: String,
+    pub(crate) publish_date: Option<String>,
+    pub(crate) isbn: Option<String>,
+    pub(crate) abs_path: String,
+}
+
 struct BookFileData {
     book_id: Uuid,
-    title: String,
-    authors: Vec<String>,
-    volume: Option<i32>,
-    volume_type: String,
-    publish_date: Option<String>,
-    isbn: Option<String>,
-    abs_path: String,
+    template_book: RenameTemplateBook,
     file_id: Uuid,
 }
 
 // ─── Template engine ────────────────────────────────────────────────────────
 
+pub(crate) const DEFAULT_RENAME_TEMPLATE: &str = "{series_name} - T{volume_padded} - {title}";
+pub(crate) const DEFAULT_RENAME_TEMPLATE_HS: &str = "{series_name} - HS {volume_padded}";
+pub(crate) const DEFAULT_RENAME_TEMPLATE_INT: &str = "{series_name} - INT {volume_padded}";
+
+pub(crate) async fn load_rename_templates(pool: &PgPool) -> Result<RenameTemplates, sqlx::Error> {
+    let regular = load_rename_template(pool, "rename_format", DEFAULT_RENAME_TEMPLATE).await?;
+    let hs = load_rename_template(pool, "rename_format_hs", DEFAULT_RENAME_TEMPLATE_HS).await?;
+    let integral =
+        load_rename_template(pool, "rename_format_int", DEFAULT_RENAME_TEMPLATE_INT).await?;
+
+    Ok(RenameTemplates {
+        regular,
+        hs,
+        integral,
+    })
+}
+
+pub(crate) async fn load_rename_max_volume(
+    pool: &PgPool,
+    library_id: Uuid,
+    series_name: &str,
+    fallback_max_volume: i32,
+) -> Result<i64, sqlx::Error> {
+    let max_volume: i32 = sqlx::query_scalar(
+        "SELECT GREATEST(
+            COALESCE(MAX(b.volume), 0),
+            COALESCE(MAX(s.total_volumes), 0),
+            $3::int4
+         )
+         FROM series s
+         LEFT JOIN books b ON b.series_id = s.id AND b.volume IS NOT NULL
+         WHERE s.library_id = $1
+           AND LOWER(unaccent(s.name)) = LOWER(unaccent($2))",
+    )
+    .bind(library_id)
+    .bind(series_name)
+    .bind(fallback_max_volume)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(max_volume as i64)
+}
+
+async fn load_rename_template(
+    pool: &PgPool,
+    key: &str,
+    default_template: &str,
+) -> Result<String, sqlx::Error> {
+    let row = sqlx::query("SELECT value FROM app_settings WHERE key = $1")
+        .bind(key)
+        .fetch_optional(pool)
+        .await?;
+
+    Ok(row
+        .and_then(|r| {
+            let val: serde_json::Value = r.get("value");
+            val.as_str().map(ToOwned::to_owned)
+        })
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| default_template.to_string()))
+}
+
 fn apply_template(
     template: &str,
     series_name: &str,
-    book: &BookFileData,
+    book: &RenameTemplateBook,
     max_volume: i64,
 ) -> String {
     let re = Regex::new(r"\{(\w+)\}").expect("valid regex");
@@ -141,6 +213,35 @@ fn apply_template(
     )
     .expect("valid regex");
     cleanup.replace_all(&result, "").trim().to_string()
+}
+
+pub(crate) fn render_rename_filename(
+    templates: &RenameTemplates,
+    series_name: &str,
+    book: &RenameTemplateBook,
+    max_volume: i64,
+    extension: &str,
+) -> Option<String> {
+    let effective_template = match book.volume_type.as_str() {
+        "hs" => &templates.hs,
+        "integral" => &templates.integral,
+        _ => &templates.regular,
+    };
+    let new_stem = apply_template(effective_template, series_name, book, max_volume);
+    let new_stem = sanitize_filename(&new_stem);
+    if new_stem.is_empty() {
+        return None;
+    }
+
+    if extension.is_empty()
+        || new_stem
+            .to_lowercase()
+            .ends_with(&format!(".{}", extension.to_lowercase()))
+    {
+        Some(new_stem)
+    } else {
+        Some(format!("{}.{}", new_stem, extension))
+    }
 }
 
 fn sanitize_filename(name: &str) -> String {
@@ -205,56 +306,17 @@ pub async fn rename_books(
     Json(req): Json<RenameRequest>,
 ) -> Result<Json<RenameResponse>, ApiError> {
     // 1. Get the templates
-    let default_template = "{series_name} - T{volume_padded} - {title}";
-    let default_template_hs = "{series_name} - HS {volume_padded}";
-    let default_template_int = "{series_name} - INT {volume_padded}";
-
-    let template = match req.format {
-        Some(ref f) if !f.is_empty() => f.clone(),
-        _ => {
-            // Load from settings
-            let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'rename_format'")
-                .fetch_optional(&state.pool)
-                .await?;
-            match row {
-                Some(r) => {
-                    let val: serde_json::Value = r.get("value");
-                    val.as_str().unwrap_or(default_template).to_string()
-                }
-                None => default_template.to_string(),
-            }
+    let mut templates = load_rename_templates(&state.pool).await?;
+    if let Some(ref f) = req.format {
+        if !f.is_empty() {
+            templates.regular = f.clone();
         }
-    };
-
-    let template_hs = match req.format_hs {
-        Some(ref f) if !f.is_empty() => f.clone(),
-        _ => {
-            // Load from settings
-            let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'rename_format_hs'")
-                .fetch_optional(&state.pool)
-                .await?;
-            match row {
-                Some(r) => {
-                    let val: serde_json::Value = r.get("value");
-                    val.as_str().unwrap_or(default_template_hs).to_string()
-                }
-                None => default_template_hs.to_string(),
-            }
+    }
+    if let Some(ref f) = req.format_hs {
+        if !f.is_empty() {
+            templates.hs = f.clone();
         }
-    };
-
-    let template_int = {
-        let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'rename_format_int'")
-            .fetch_optional(&state.pool)
-            .await?;
-        match row {
-            Some(r) => {
-                let val: serde_json::Value = r.get("value");
-                val.as_str().unwrap_or(default_template_int).to_string()
-            }
-            None => default_template_int.to_string(),
-        }
-    };
+    }
 
     // 2. Get series info
     let series_row = sqlx::query("SELECT id, name FROM series WHERE id = $1")
@@ -296,13 +358,15 @@ pub async fn rename_books(
             let authors_raw: Vec<String> = row.get("authors");
             BookFileData {
                 book_id: row.get("book_id"),
-                title: row.get("title"),
-                authors: authors_raw,
-                volume: row.get("volume"),
-                volume_type: row.get("volume_type"),
-                publish_date: row.get("publish_date"),
-                isbn: row.get("isbn"),
-                abs_path: row.get("abs_path"),
+                template_book: RenameTemplateBook {
+                    title: row.get("title"),
+                    authors: authors_raw,
+                    volume: row.get("volume"),
+                    volume_type: row.get("volume_type"),
+                    publish_date: row.get("publish_date"),
+                    isbn: row.get("isbn"),
+                    abs_path: row.get("abs_path"),
+                },
                 file_id: row.get("file_id"),
             }
         })
@@ -311,7 +375,7 @@ pub async fn rename_books(
     // Compute max volume for padding
     let max_volume: i64 = books
         .iter()
-        .filter_map(|b| b.volume.map(|v| v as i64))
+        .filter_map(|b| b.template_book.volume.map(|v| v as i64))
         .max()
         .unwrap_or(0);
 
@@ -319,7 +383,7 @@ pub async fn rename_books(
     let mut entries: Vec<RenameEntry> = books
         .iter()
         .map(|book| {
-            let old_path = PathBuf::from(&book.abs_path);
+            let old_path = PathBuf::from(&book.template_book.abs_path);
             let old_filename = old_path
                 .file_name()
                 .map(|f| f.to_string_lossy().to_string())
@@ -327,24 +391,17 @@ pub async fn rename_books(
 
             let extension = old_path
                 .extension()
-                .map(|e| format!(".{}", e.to_string_lossy()))
+                .map(|e| e.to_string_lossy().to_string())
                 .unwrap_or_default();
 
-            let effective_template = match book.volume_type.as_str() {
-                "hs" => &template_hs,
-                "integral" => &template_int,
-                _ => &template,
-            };
-            let new_stem = apply_template(effective_template, &series_name, book, max_volume);
-            let new_stem = sanitize_filename(&new_stem);
-            // Avoid double extension (e.g. "Title.cbr" + ".cbr" → "Title.cbr")
-            let new_filename = if !extension.is_empty()
-                && new_stem.to_lowercase().ends_with(&extension.to_lowercase())
-            {
-                new_stem
-            } else {
-                format!("{}{}", new_stem, extension)
-            };
+            let new_filename = render_rename_filename(
+                &templates,
+                &series_name,
+                &book.template_book,
+                max_volume,
+                &extension,
+            )
+            .unwrap_or_else(|| old_filename.clone());
 
             let new_path = old_path
                 .parent()
@@ -357,7 +414,7 @@ pub async fn rename_books(
                 book_id: book.book_id,
                 old_filename,
                 new_filename,
-                old_path: book.abs_path.clone(),
+                old_path: book.template_book.abs_path.clone(),
                 new_path,
                 changed,
             }
