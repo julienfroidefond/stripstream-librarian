@@ -28,6 +28,16 @@ Vous pouvez activer ou désactiver chaque type de notification individuellement 
 | **Métadonnées** | Métadonnées approuvées, batch terminé, refresh terminé |
 | **Lecture** | Pull AniList terminé, pull en erreur, push AniList terminé, push en erreur |
 
+## Contenu des notifications
+
+Les notifications de succès les plus importantes incluent aussi un résumé utile, pas seulement un compteur :
+
+- **Scan terminé** : bibliothèque, type de scan, durée, compteurs, puis la liste des nouvelles séries et des nouveaux livres détectés
+- **Pull AniList terminé** : nombre de séries liées, puis la liste des séries effectivement liées pendant ce job
+- **Push AniList terminé** : nombre de séries poussées, puis la liste des séries effectivement envoyées à AniList
+
+Les listes sont volontairement tronquées si le job a produit beaucoup d'éléments.
+
 ---
 
 ## Images dans les notifications

@@ -134,6 +134,7 @@ std → external crates → workspace crates → local (`crate::`)
 - Site statique dans `apps/docs/`, build avec `npm run build`, servi par nginx en Docker
 - Thème custom cyan/magenta dans `src/styles/custom.css`
 - Contenu Markdown dans `src/content/docs/`, sidebar configurée dans `astro.config.mjs`
+- Toute modification de comportement visible, de notifications, de workflow admin, ou d'écran de settings doit déclencher une mise à jour de la doc utilisateur correspondante dans `apps/docs/`, sauf demande explicite contraire.
 
 ## Tests
 

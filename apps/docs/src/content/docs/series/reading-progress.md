@@ -41,6 +41,17 @@ Ce statut est affiché sur les cartes de séries, dans les filtres et dans les g
 
 Si plusieurs utilisateurs sont configurés, un sélecteur de lecteur est disponible sur la page d'une série et sur le dashboard. Chaque utilisateur a sa propre progression — les modifications pour un utilisateur n'affectent pas les autres.
 
+## Vue admin de progression
+
+Dans **Settings → Progression**, le backoffice affiche une vue transversale par utilisateur :
+
+- livres en cours de lecture
+- livres lus récemment
+- tableau dépliable par série avec statuts agrégés
+- détail par livre dans chaque série, avec couverture et état de lecture
+
+Cette vue est en lecture seule : elle sert à inspecter rapidement la progression de tous les utilisateurs depuis l'administration.
+
 ---
 
 ## Compte admin et progression de lecture

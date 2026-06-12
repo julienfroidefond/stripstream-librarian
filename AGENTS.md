@@ -97,6 +97,7 @@ docker compose logs -f indexer
 - **Idiomatic Rust**: Follow Rust best practices and ecosystem conventions.
 - **Error Handling**: Use `anyhow::Result<T>` for application code, `std::io::Result<T>` for simple file operations.
 - **Async**: Use `tokio` for async runtime. Prefer `#[tokio::main]` over manual runtime.
+- **User docs**: When a change affects visible behavior, admin workflows, notifications, settings, or user-facing job output, update the relevant docs in `apps/docs/` in the same change unless the user explicitly says not to.
 
 ### Naming Conventions
 
