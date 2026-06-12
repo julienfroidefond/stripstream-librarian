@@ -161,10 +161,27 @@ const API_JOB_TYPES: &[&str] = &[
     "telegram_sync_incremental",
 ];
 
+const GLOBAL_METADATA_REFRESH_JOB_TYPES: &[&str] = &["metadata_refresh", "metadata_refresh_all"];
+const API_ACTIVE_STATUSES: &[&str] = &["running"];
+
 async fn claim_next_api_job(
     pool: &PgPool,
 ) -> Result<Option<(Uuid, String, Option<Uuid>)>, sqlx::Error> {
     let mut tx = pool.begin().await?;
+
+    let has_active_metadata_refresh: bool = sqlx::query_scalar(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM index_jobs
+            WHERE status = ANY($1)
+              AND type = ANY($2)
+        )
+        "#,
+    )
+    .bind(API_ACTIVE_STATUSES)
+    .bind(GLOBAL_METADATA_REFRESH_JOB_TYPES)
+    .fetch_one(&mut *tx)
+    .await?;
 
     let row = sqlx::query(
         r#"
@@ -173,12 +190,18 @@ async fn claim_next_api_job(
         WHERE status = 'pending'
           AND type = ANY($1)
           AND (library_id IS NOT NULL OR type IN ('prowlarr_rss', 'telegram_sync', 'telegram_sync_incremental'))
+          AND (
+            (type = ANY($2) AND NOT $3::bool)
+            OR type != ALL($2)
+          )
         ORDER BY created_at ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1
         "#,
     )
     .bind(API_JOB_TYPES)
+    .bind(GLOBAL_METADATA_REFRESH_JOB_TYPES)
+    .bind(has_active_metadata_refresh)
     .fetch_optional(&mut *tx)
     .await?;
 
