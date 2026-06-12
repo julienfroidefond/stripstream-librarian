@@ -140,6 +140,14 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
                     new_series: val.get("new_series").and_then(|v| v.as_u64()).unwrap_or(0)
                         as usize,
                     errors: val.get("errors").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+                    new_series_names: val
+                        .get("new_series_names")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                        .unwrap_or_default(),
+                    new_book_titles: val
+                        .get("new_book_titles")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                        .unwrap_or_default(),
                 };
             }
         }
@@ -150,6 +158,8 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
             removed_files: 0,
             new_series: 0,
             errors: 0,
+            new_series_names: Vec::new(),
+            new_book_titles: Vec::new(),
         }
     }
 

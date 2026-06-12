@@ -620,6 +620,17 @@ pub async fn process_reading_status_push(
         }
     }
 
+    let pushed_series_names: Vec<String> = sqlx::query_scalar(
+        "SELECT entity_name FROM index_job_events \
+         WHERE job_id = $1 AND event_type = 'status_pushed' AND entity_name IS NOT NULL \
+         ORDER BY entity_name \
+         LIMIT 10",
+    )
+    .bind(job_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
     let stats = serde_json::json!({
         "total_series": total as i64,
         "pushed": count_pushed,
@@ -659,6 +670,7 @@ pub async fn process_reading_status_push(
             skipped: count_skipped,
             no_books: count_no_books,
             errors: count_errors,
+            pushed_series_names,
         },
     );
 

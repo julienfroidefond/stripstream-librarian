@@ -25,9 +25,18 @@ pub struct JobStats {
     pub errors: usize,
     pub warnings: usize,
     pub new_series: usize,
+    pub new_series_names: Vec<String>,
+    pub new_book_titles: Vec<String>,
 }
 
 const BATCH_SIZE: usize = 100;
+const NOTIFICATION_ITEMS_LIMIT: usize = 10;
+
+fn push_capped_item(items: &mut Vec<String>, value: String) {
+    if items.len() < NOTIFICATION_ITEMS_LIMIT {
+        items.push(value);
+    }
+}
 
 /// Look up a series by name in the local cache, or INSERT INTO series ... ON CONFLICT DO NOTHING
 /// then SELECT to get the id. Updates the cache on creation.
@@ -722,6 +731,7 @@ pub async fn scan_library_discovery(
         debug!(target: "scan", "[SCAN] Inserting: {}", file_name);
         let book_id = Uuid::new_v4();
         let file_id = Uuid::new_v4();
+        let new_book_title = parsed.title.clone();
 
         // Track new series
         let series_key = parsed
@@ -731,6 +741,13 @@ pub async fn scan_library_discovery(
             .to_string();
         if !existing_series.contains(&series_key) && seen_new_series.insert(series_key) {
             stats.new_series += 1;
+            push_capped_item(
+                &mut stats.new_series_names,
+                parsed
+                    .series
+                    .clone()
+                    .unwrap_or_else(|| "unclassified".to_string()),
+            );
         }
 
         // Resolve series name → series_id
@@ -780,6 +797,7 @@ pub async fn scan_library_discovery(
         });
 
         stats.indexed_files += 1;
+        push_capped_item(&mut stats.new_book_titles, new_book_title);
 
         if books_to_insert.len() >= BATCH_SIZE || files_to_insert.len() >= BATCH_SIZE {
             flush_all_batches(

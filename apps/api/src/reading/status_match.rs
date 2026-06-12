@@ -609,6 +609,17 @@ pub(crate) async fn process_reading_status_match(
         }
     }
 
+    let linked_series_names: Vec<String> = sqlx::query_scalar(
+        "SELECT entity_name FROM index_job_events \
+         WHERE job_id = $1 AND event_type = 'anilist_linked' AND entity_name IS NOT NULL \
+         ORDER BY entity_name \
+         LIMIT 10",
+    )
+    .bind(job_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
     let stats = serde_json::json!({
         "total_series": total as i64,
         "linked": count_linked,
@@ -650,6 +661,7 @@ pub(crate) async fn process_reading_status_match(
             no_results: count_no_results,
             ambiguous: count_ambiguous,
             errors: count_errors,
+            linked_series_names,
         },
     );
 

@@ -411,6 +411,8 @@ pub async fn process_job(
         errors: 0,
         warnings: 0,
         new_series: 0,
+        new_series_names: Vec::new(),
+        new_book_titles: Vec::new(),
     };
 
     let mut total_processed_count = 0i32;

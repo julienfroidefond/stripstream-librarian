@@ -207,6 +207,8 @@ pub struct ScanStats {
     pub removed_files: usize,
     pub new_series: usize,
     pub errors: usize,
+    pub new_series_names: Vec<String>,
+    pub new_book_titles: Vec<String>,
 }
 
 pub enum NotificationEvent {
@@ -299,6 +301,7 @@ pub enum NotificationEvent {
         no_results: i64,
         ambiguous: i64,
         errors: i64,
+        linked_series_names: Vec<String>,
     },
     ReadingStatusMatchFailed {
         library_name: Option<String>,
@@ -312,6 +315,7 @@ pub enum NotificationEvent {
         skipped: i64,
         no_books: i64,
         errors: i64,
+        pushed_series_names: Vec<String>,
     },
     ReadingStatusPushFailed {
         library_name: Option<String>,
@@ -392,6 +396,20 @@ fn format_event(event: &NotificationEvent) -> String {
             ];
             if stats.errors > 0 {
                 lines.push(format!("  ⚠️ Errors: <b>{}</b>", stats.errors));
+            }
+            if !stats.new_series_names.is_empty() {
+                lines.push(String::new());
+                lines.push("🆕 <b>Series added</b>".to_string());
+                for name in &stats.new_series_names {
+                    lines.push(format!("  • {name}"));
+                }
+            }
+            if !stats.new_book_titles.is_empty() {
+                lines.push(String::new());
+                lines.push("📚 <b>Books added</b>".to_string());
+                for title in &stats.new_book_titles {
+                    lines.push(format!("  • {title}"));
+                }
             }
             lines.join("\n")
         }
@@ -639,6 +657,7 @@ fn format_event(event: &NotificationEvent) -> String {
             no_results,
             ambiguous,
             errors,
+            linked_series_names,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let mut lines = vec![
@@ -658,6 +677,16 @@ fn format_event(event: &NotificationEvent) -> String {
             }
             if *errors > 0 {
                 lines.push(format!("❌ Errors: <b>{errors}</b>"));
+            }
+            if !linked_series_names.is_empty() {
+                lines.push(String::new());
+                lines.push("🆕 <b>Series linked</b>".to_string());
+                for name in linked_series_names.iter().take(10) {
+                    lines.push(format!("  • {}", truncate(name, 60)));
+                }
+                if linked_series_names.len() > 10 {
+                    lines.push(format!("  … and {} more", linked_series_names.len() - 10));
+                }
             }
             lines.join("\n")
         }
@@ -683,6 +712,7 @@ fn format_event(event: &NotificationEvent) -> String {
             skipped,
             no_books,
             errors,
+            pushed_series_names,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let mut lines = vec![
@@ -699,6 +729,16 @@ fn format_event(event: &NotificationEvent) -> String {
             }
             if *errors > 0 {
                 lines.push(format!("❌ Errors: <b>{errors}</b>"));
+            }
+            if !pushed_series_names.is_empty() {
+                lines.push(String::new());
+                lines.push("🆕 <b>Series pushed</b>".to_string());
+                for name in pushed_series_names.iter().take(10) {
+                    lines.push(format!("  • {}", truncate(name, 60)));
+                }
+                if pushed_series_names.len() > 10 {
+                    lines.push(format!("  … and {} more", pushed_series_names.len() - 10));
+                }
             }
             lines.join("\n")
         }
