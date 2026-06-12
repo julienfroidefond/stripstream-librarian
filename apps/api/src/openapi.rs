@@ -325,6 +325,8 @@ pub struct ClientApiDoc;
             crate::stats::RecentDownloadItem,
             crate::stats::UserReadingOverview,
             crate::stats::UserReadingOverviewItem,
+            crate::stats::UserReadingOverviewSeries,
+            crate::stats::UserReadingOverviewSeriesBook,
             // Libraries
             crate::libraries::LibraryResponse,
             crate::libraries::CreateLibraryRequest,

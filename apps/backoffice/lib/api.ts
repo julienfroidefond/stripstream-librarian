@@ -1666,6 +1666,28 @@ export type UserReadingOverviewItemDto = {
   last_read_at: string | null;
 };
 
+export type UserReadingOverviewSeriesBookDto = {
+  book_id: string;
+  title: string;
+  volume: number | null;
+  volume_type: "regular" | "hs" | "oneshot" | "integral";
+  status: ReadingStatus;
+  current_page: number;
+  page_count: number;
+  last_read_at: string | null;
+};
+
+export type UserReadingOverviewSeriesDto = {
+  series_id: string | null;
+  series_name: string;
+  books_total: number;
+  books_read: number;
+  books_reading: number;
+  books_unread: number;
+  last_read_at: string | null;
+  books: UserReadingOverviewSeriesBookDto[];
+};
+
 export type UserReadingOverviewDto = {
   user_id: string;
   username: string;
@@ -1675,6 +1697,7 @@ export type UserReadingOverviewDto = {
   last_read_at: string | null;
   currently_reading: UserReadingOverviewItemDto[];
   recently_read: UserReadingOverviewItemDto[];
+  series_progress: UserReadingOverviewSeriesDto[];
 };
 
 export async function getReadingOverview(): Promise<UserReadingOverviewDto[]> {
