@@ -22,17 +22,17 @@ Seules les séries ayant au moins un livre sont incluses.
 
 ## Recommandations personnalisées
 
-Les recommandations sont basées sur votre historique de lecture. Elles apparaissent dans la page **Découverte → onglet Recommandations**.
+Les recommandations sont basées sur votre historique de lecture. Dans le backoffice, elles apparaissent sur la page **Séries** via le bouton **Recommandations** à côté des listes de lecture.
 
 **Comment ça marche** :
-1. Stripstream prend vos dernières séries lues ou en cours de lecture (jusqu'à 5)
-2. Il agrège leurs genres, auteurs et éditeurs
-3. Il cherche dans votre bibliothèque les séries que vous n'avez pas encore commencées et qui correspondent à ces critères
+1. Stripstream prend vos dernières séries lues ou en cours de lecture
+2. Il combine plusieurs signaux: auteurs, genres, listes de lecture et éditeurs
+3. Il cherche dans votre bibliothèque les séries que vous n'avez pas encore commencées et qui ressortent avec les meilleurs correspondances
 
 Chaque recommandation indique pourquoi elle est suggérée — par exemple "parce que vous lisez Dragon Ball" pour une autre série du même auteur.
 
 :::tip
-Les recommandations ne s'affichent que si vous avez de l'historique de lecture. Plus vous marquez de livres comme lus, plus les suggestions sont pertinentes.
+Les recommandations ne s'affichent que si vous avez de l'historique de lecture. Plus vous marquez de livres comme lus, plus les suggestions ont de chances d'être pertinentes.
 :::
 
 Les restrictions de genre s'appliquent : les séries dont un genre est bloqué pour votre compte n'apparaissent pas dans les recommandations.
@@ -46,15 +46,17 @@ GET /series/{series_id}/related?limit=10
 
 **API recommandations** :
 ```
-GET /series/recommendations?sources=3&limit=20
+GET /series/recommendations?sources=5&limit=20
 ```
 
 | Paramètre | Défaut | Max | Description |
 |-----------|--------|-----|-------------|
-| `sources` | 3 | 5 | Nombre de séries récentes à utiliser comme source |
+| `sources` | 5 | 8 | Nombre de séries récentes à utiliser comme source |
 | `limit` | 20 | 50 | Nombre de recommandations retournées |
 
 Retourne `[]` si l'utilisateur n'a pas d'historique ou si le token ne porte pas d'utilisateur (admin).
 
-Champs de réponse : `score` (score pondéré), `because_of` (noms des séries sources), `match_reasons` (`same_genre`, `same_author`, `same_publisher`).
+Le score combine la récence des séries sources, l'engagement de lecture et des correspondances par auteur, genre, liste de lecture et éditeur. Les genres fréquents sont moins pondérés que les genres plus rares.
+
+Champs de réponse : `score` (score pondéré), `because_of` (noms des séries sources), `match_reasons` (`same_genre`, `same_author`, `same_publisher`, `same_reading_list`).
 :::

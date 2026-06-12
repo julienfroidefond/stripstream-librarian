@@ -185,6 +185,24 @@ export type RelatedSeriesDto = {
   match_reasons: string[];
 };
 
+export type RecommendedSeriesDto = {
+  series_id: string;
+  name: string;
+  library_id: string;
+  series_status: string | null;
+  cover_url: string | null;
+  book_count: number;
+  first_book_id: string | null;
+  first_book_updated_at: string | null;
+  metadata_provider: string | null;
+  description: string | null;
+  authors: string[];
+  genres: string[];
+  score: number;
+  because_of: string[];
+  match_reasons: string[];
+};
+
 export type AnilistStatusDto = {
   connected: boolean;
   user_id: number;
@@ -551,6 +569,16 @@ export async function fetchSeriesById(seriesId: string): Promise<SeriesDto> {
 export async function fetchRelatedSeries(seriesId: string, limit = 10): Promise<RelatedSeriesDto[]> {
   return apiFetch<RelatedSeriesDto[]>(`/series/${seriesId}/related?limit=${limit}`, {
     next: { revalidate: 60, tags: ["series", `series:${seriesId}`] },
+  });
+}
+
+export async function fetchSeriesRecommendations(limit = 24, sources = 5): Promise<RecommendedSeriesDto[]> {
+  const params = new URLSearchParams();
+  params.set("limit", limit.toString());
+  params.set("sources", sources.toString());
+
+  return apiFetch<RecommendedSeriesDto[]>(`/series/recommendations?${params.toString()}`, {
+    next: { revalidate: 60, tags: ["series"] },
   });
 }
 

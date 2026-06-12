@@ -12,8 +12,8 @@ use crate::{error::ApiError, state::AppState};
 
 #[derive(Deserialize, ToSchema)]
 pub struct RecommendationsQuery {
-    /// Number of source series to base recommendations on (default 3, max 5)
-    #[schema(value_type = Option<i64>, example = 3)]
+    /// Number of source series to base recommendations on (default 5, max 8)
+    #[schema(value_type = Option<i64>, example = 5)]
     pub sources: Option<i64>,
     /// Max recommendations to return (default 20, max 50)
     #[schema(value_type = Option<i64>, example = 20)]
@@ -51,7 +51,7 @@ pub struct RecommendedSeriesItem {
     path = "/series/recommendations",
     tag = "series",
     params(
-        ("sources" = Option<i64>, Query, description = "Number of recently-read source series to use (default 3, max 5)"),
+        ("sources" = Option<i64>, Query, description = "Number of recently-read source series to use (default 5, max 8)"),
         ("limit" = Option<i64>, Query, description = "Max recommendations to return (default 20, max 50)"),
     ),
     responses(
@@ -66,7 +66,7 @@ pub async fn get_recommendations(
     Query(query): Query<RecommendationsQuery>,
 ) -> Result<Json<Vec<RecommendedSeriesItem>>, ApiError> {
     let user_id: Option<Uuid> = user.map(|u| u.0.user_id);
-    let n_sources = query.sources.unwrap_or(3).clamp(1, 5);
+    let n_sources = query.sources.unwrap_or(5).clamp(1, 8);
     let limit = query.limit.unwrap_or(20).clamp(1, 50);
 
     // If no authenticated user, return empty (recommendations are personal)
@@ -76,95 +76,185 @@ pub async fn get_recommendations(
 
     let rows = sqlx::query(
         r#"
-        -- Step 1: last N series the user has read/is reading, ordered by recency
-        WITH source_series AS (
+        -- Step 1: source series from recent reading, with recency and engagement weights
+        WITH source_base AS (
             SELECT
-                s.id          AS series_id,
-                s.name        AS series_name,
-                s.authors     AS authors,
-                s.genres      AS genres,
-                s.publishers  AS publishers,
-                MAX(brp.last_read_at) AS last_read_at
+                s.id AS series_id,
+                s.name AS series_name,
+                COALESCE(s.authors, ARRAY[]::text[]) AS authors,
+                COALESCE(s.genres, ARRAY[]::text[]) AS genres,
+                COALESCE(s.publishers, ARRAY[]::text[]) AS publishers,
+                MAX(brp.last_read_at) AS last_read_at,
+                COUNT(*) FILTER (WHERE brp.status = 'read')::bigint AS read_books,
+                COUNT(*) FILTER (WHERE brp.status = 'reading')::bigint AS reading_books,
+                COUNT(*)::bigint AS touched_books
             FROM book_reading_progress brp
             JOIN books b ON b.id = brp.book_id
             JOIN series s ON s.id = b.series_id
             WHERE brp.user_id = $1
               AND brp.status IN ('read', 'reading')
             GROUP BY s.id, s.name, s.authors, s.genres, s.publishers
-            ORDER BY last_read_at DESC NULLS LAST
-            LIMIT $2
         ),
-        -- Step 2: aggregate all genres, authors, publishers from source series
-        source_attrs AS (
+        source_ranked AS (
             SELECT
-                array_agg(DISTINCT g) FILTER (WHERE g IS NOT NULL)  AS all_genres,
-                array_agg(DISTINCT a) FILTER (WHERE a IS NOT NULL)  AS all_authors,
-                array_agg(DISTINCT p) FILTER (WHERE p IS NOT NULL)  AS all_publishers
-            FROM source_series ss
-            LEFT JOIN LATERAL unnest(ss.genres)     AS g ON TRUE
-            LEFT JOIN LATERAL unnest(ss.authors)    AS a ON TRUE
-            LEFT JOIN LATERAL unnest(ss.publishers) AS p ON TRUE
+                sb.*,
+                ROW_NUMBER() OVER (
+                    ORDER BY sb.last_read_at DESC NULLS LAST, sb.read_books DESC, sb.reading_books DESC, sb.series_name
+                ) AS recency_rank
+            FROM source_base sb
         ),
-        -- Step 3: series the user has already touched (any reading progress)
+        source_series AS (
+            SELECT
+                sr.*,
+                (
+                    CASE
+                        WHEN sr.read_books > 0 THEN 6
+                        WHEN sr.reading_books > 0 THEN 4
+                        ELSE 2
+                    END
+                    + GREATEST($2 - sr.recency_rank, 0)
+                )::bigint AS source_weight
+            FROM source_ranked sr
+            WHERE sr.recency_rank <= $2
+        ),
+        -- Step 2: series the user has already touched (any reading progress)
         started AS (
             SELECT DISTINCT b.series_id
             FROM book_reading_progress brp
             JOIN books b ON b.id = brp.book_id
             WHERE brp.user_id = $1
         ),
-        -- Step 4: score every other series
-        genre_scores AS (
-            SELECT s.id AS series_id, COUNT(*)::bigint AS cnt
-            FROM series s
-            CROSS JOIN source_attrs sa
-            JOIN LATERAL unnest(s.genres) sg ON TRUE
-            JOIN LATERAL unnest(sa.all_genres) rg ON sg = rg
-            WHERE s.id NOT IN (SELECT series_id FROM started)
-            GROUP BY s.id
+        genre_frequency AS (
+            SELECT g.genre, COUNT(DISTINCT g.series_id)::bigint AS series_count
+            FROM (
+                SELECT s.id AS series_id, unnest(COALESCE(s.genres, ARRAY[]::text[])) AS genre
+                FROM series s
+            ) g
+            GROUP BY g.genre
         ),
-        author_scores AS (
-            SELECT s.id AS series_id, COUNT(*)::bigint AS cnt
-            FROM series s
-            CROSS JOIN source_attrs sa
-            JOIN LATERAL unnest(s.authors) sa2 ON TRUE
-            JOIN LATERAL unnest(sa.all_authors) ra ON sa2 = ra
-            WHERE s.id NOT IN (SELECT series_id FROM started)
-            GROUP BY s.id
-        ),
-        publisher_scores AS (
-            SELECT s.id AS series_id, 1::bigint AS cnt
-            FROM series s
-            CROSS JOIN source_attrs sa
-            WHERE s.id NOT IN (SELECT series_id FROM started)
-              AND s.publishers && sa.all_publishers
-        ),
-        reading_list_scores AS (
-            SELECT rli2.series_id, COUNT(*)::bigint AS cnt
-            FROM source_series src
-            JOIN reading_list_items rli1 ON rli1.series_id = src.series_id
-            JOIN reading_list_items rli2 ON rli2.list_id = rli1.list_id
-            WHERE rli2.series_id NOT IN (SELECT series_id FROM started)
-              AND rli2.series_id != src.series_id
-            GROUP BY rli2.series_id
-        ),
-        -- Step 5: for each candidate, which source series match?
-        because_of AS (
+        candidate_source_pairs AS (
             SELECT
-                cand.id AS series_id,
-                array_agg(DISTINCT ss.series_name) AS source_names
+                cand.id AS candidate_id,
+                src.series_id AS source_series_id,
+                src.series_name,
+                src.authors AS source_authors,
+                src.genres AS source_genres,
+                src.publishers AS source_publishers,
+                src.source_weight
             FROM series cand
-            JOIN source_series ss ON (
-                cand.authors    && ss.authors    OR
-                cand.genres     && ss.genres     OR
-                cand.publishers && ss.publishers OR
-                EXISTS (
-                    SELECT 1 FROM reading_list_items rli1
-                    JOIN reading_list_items rli2 ON rli2.list_id = rli1.list_id
-                    WHERE rli1.series_id = ss.series_id AND rli2.series_id = cand.id
-                )
-            )
+            CROSS JOIN source_series src
             WHERE cand.id NOT IN (SELECT series_id FROM started)
-            GROUP BY cand.id
+              AND cand.id != src.series_id
+        ),
+        author_matches AS (
+            SELECT
+                csp.candidate_id,
+                csp.source_series_id,
+                COUNT(DISTINCT cand_author)::bigint AS shared_author_count
+            FROM candidate_source_pairs csp
+            JOIN series cand ON cand.id = csp.candidate_id
+            JOIN LATERAL unnest(COALESCE(cand.authors, ARRAY[]::text[])) cand_author ON TRUE
+            JOIN LATERAL unnest(csp.source_authors) src_author ON cand_author = src_author
+            GROUP BY csp.candidate_id, csp.source_series_id
+        ),
+        genre_matches AS (
+            SELECT
+                csp.candidate_id,
+                csp.source_series_id,
+                COUNT(DISTINCT cand_genre)::bigint AS shared_genre_count,
+                COALESCE(
+                    SUM(
+                        CASE
+                            WHEN gf.series_count <= 5 THEN 4
+                            WHEN gf.series_count <= 15 THEN 3
+                            WHEN gf.series_count <= 40 THEN 2
+                            ELSE 1
+                        END
+                    ),
+                    0
+                )::bigint AS weighted_genre_score
+            FROM candidate_source_pairs csp
+            JOIN series cand ON cand.id = csp.candidate_id
+            JOIN LATERAL unnest(COALESCE(cand.genres, ARRAY[]::text[])) cand_genre ON TRUE
+            JOIN LATERAL unnest(csp.source_genres) src_genre ON cand_genre = src_genre
+            LEFT JOIN genre_frequency gf ON gf.genre = cand_genre
+            GROUP BY csp.candidate_id, csp.source_series_id
+        ),
+        publisher_matches AS (
+            SELECT
+                csp.candidate_id,
+                csp.source_series_id,
+                (COALESCE(cand.publishers, ARRAY[]::text[]) && csp.source_publishers) AS has_same_publisher
+            FROM candidate_source_pairs csp
+            JOIN series cand ON cand.id = csp.candidate_id
+        ),
+        reading_list_matches AS (
+            SELECT
+                csp.candidate_id,
+                csp.source_series_id,
+                EXISTS (
+                    SELECT 1
+                    FROM reading_list_items rli1
+                    JOIN reading_list_items rli2 ON rli2.list_id = rli1.list_id
+                    WHERE rli1.series_id = csp.source_series_id
+                      AND rli2.series_id = csp.candidate_id
+                ) AS has_same_reading_list
+            FROM candidate_source_pairs csp
+        ),
+        source_candidate_scores AS (
+            SELECT
+                csp.candidate_id,
+                csp.source_series_id,
+                csp.series_name,
+                csp.source_weight,
+                COALESCE(am.shared_author_count, 0) AS shared_author_count,
+                COALESCE(gm.shared_genre_count, 0) AS shared_genre_count,
+                COALESCE(gm.weighted_genre_score, 0) AS weighted_genre_score,
+                COALESCE(pm.has_same_publisher, FALSE) AS has_same_publisher,
+                COALESCE(rlm.has_same_reading_list, FALSE) AS has_same_reading_list,
+                (
+                    (
+                        COALESCE(am.shared_author_count, 0) * 8 +
+                        COALESCE(gm.weighted_genre_score, 0) * 2 +
+                        CASE WHEN COALESCE(pm.has_same_publisher, FALSE) THEN 1 ELSE 0 END +
+                        CASE WHEN COALESCE(rlm.has_same_reading_list, FALSE) THEN 10 ELSE 0 END +
+                        CASE
+                            WHEN COALESCE(rlm.has_same_reading_list, FALSE) AND COALESCE(am.shared_author_count, 0) > 0 THEN 8
+                            WHEN COALESCE(am.shared_author_count, 0) > 0 AND COALESCE(gm.shared_genre_count, 0) > 0 THEN 6
+                            WHEN COALESCE(rlm.has_same_reading_list, FALSE) AND COALESCE(gm.shared_genre_count, 0) > 0 THEN 5
+                            WHEN COALESCE(am.shared_author_count, 0) > 1 THEN 4
+                            WHEN COALESCE(gm.shared_genre_count, 0) > 1 THEN 3
+                            WHEN COALESCE(am.shared_author_count, 0) > 0 AND COALESCE(pm.has_same_publisher, FALSE) THEN 2
+                            ELSE 0
+                        END
+                    ) * csp.source_weight
+                )::bigint AS pair_score
+            FROM candidate_source_pairs csp
+            LEFT JOIN author_matches am
+                ON am.candidate_id = csp.candidate_id AND am.source_series_id = csp.source_series_id
+            LEFT JOIN genre_matches gm
+                ON gm.candidate_id = csp.candidate_id AND gm.source_series_id = csp.source_series_id
+            LEFT JOIN publisher_matches pm
+                ON pm.candidate_id = csp.candidate_id AND pm.source_series_id = csp.source_series_id
+            LEFT JOIN reading_list_matches rlm
+                ON rlm.candidate_id = csp.candidate_id AND rlm.source_series_id = csp.source_series_id
+            WHERE
+                COALESCE(rlm.has_same_reading_list, FALSE)
+                OR COALESCE(am.shared_author_count, 0) > 0
+                OR COALESCE(gm.shared_genre_count, 0) > 0
+        ),
+        candidate_scores AS (
+            SELECT
+                scs.candidate_id AS series_id,
+                SUM(scs.pair_score)::bigint AS score,
+                COUNT(*)::bigint AS matched_source_count,
+                array_agg(DISTINCT scs.series_name) AS source_names,
+                BOOL_OR(scs.has_same_reading_list) AS has_same_reading_list,
+                BOOL_OR(scs.shared_author_count > 0) AS has_same_author,
+                BOOL_OR(scs.shared_genre_count > 0) AS has_same_genre,
+                BOOL_OR(scs.has_same_publisher) AS has_same_publisher
+            FROM source_candidate_scores scs
+            GROUP BY scs.candidate_id
         ),
         first_books AS (
             SELECT DISTINCT ON (series_id)
@@ -187,45 +277,36 @@ pub async fn get_recommendations(
             GROUP BY series_id
         )
         SELECT
-            s.id           AS series_id,
+            s.id AS series_id,
             s.name,
             s.library_id,
-            s.status       AS series_status,
+            s.status AS series_status,
             s.cover_url,
             s.description,
-            COALESCE(s.authors, ARRAY[]::text[])  AS authors,
-            COALESCE(s.genres,  ARRAY[]::text[])  AS genres,
+            COALESCE(s.authors, ARRAY[]::text[]) AS authors,
+            COALESCE(s.genres, ARRAY[]::text[]) AS genres,
             COALESCE(bc.book_count, 0) AS book_count,
             fb.first_book_id,
             fb.first_book_updated_at,
-            ml.provider    AS metadata_provider,
-            (
-                COALESCE(gs.cnt, 0) * 2 +
-                COALESCE(as_.cnt, 0) * 3 +
-                COALESCE(ps.cnt, 0) * 1 +
-                COALESCE(rls.cnt, 0) * 5
-            )              AS score,
-            bo.source_names,
-            (as_.cnt IS NOT NULL)   AS has_same_author,
-            (gs.cnt IS NOT NULL)    AS has_same_genre,
-            (ps.cnt IS NOT NULL)    AS has_same_publisher,
-            (rls.cnt IS NOT NULL)   AS has_same_reading_list
+            ml.provider AS metadata_provider,
+            cs.score,
+            cs.source_names,
+            cs.has_same_author,
+            cs.has_same_genre,
+            cs.has_same_publisher,
+            cs.has_same_reading_list,
+            cs.matched_source_count
         FROM series s
-        LEFT JOIN genre_scores      gs  ON gs.series_id  = s.id
-        LEFT JOIN author_scores     as_ ON as_.series_id = s.id
-        LEFT JOIN publisher_scores  ps  ON ps.series_id  = s.id
-        LEFT JOIN reading_list_scores rls ON rls.series_id = s.id
-        LEFT JOIN because_of        bo  ON bo.series_id  = s.id
-        LEFT JOIN first_books       fb  ON fb.series_id  = s.id
-        LEFT JOIN meta_links        ml  ON ml.series_id  = s.id
-        LEFT JOIN book_counts       bc  ON bc.series_id  = s.id
-        WHERE (bo.series_id IS NOT NULL OR rls.cnt IS NOT NULL)  -- must match at least one source
-          AND COALESCE(bc.book_count, 0) > 0
+        JOIN candidate_scores cs ON cs.series_id = s.id
+        LEFT JOIN first_books fb ON fb.series_id = s.id
+        LEFT JOIN meta_links ml ON ml.series_id = s.id
+        LEFT JOIN book_counts bc ON bc.series_id = s.id
+        WHERE COALESCE(bc.book_count, 0) > 0
           AND NOT EXISTS (
               SELECT 1 FROM user_genre_restrictions ugr
               WHERE ugr.user_id = $1 AND ugr.genre = ANY(s.genres)
-          )
-        ORDER BY score DESC, COALESCE(bc.book_count, 0) DESC
+            )
+        ORDER BY cs.score DESC, cs.matched_source_count DESC, COALESCE(bc.book_count, 0) DESC, s.name ASC
         LIMIT $3
         "#,
     )

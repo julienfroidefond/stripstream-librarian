@@ -1,4 +1,4 @@
-import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, fetchReadingLists, fetchSeriesMemberships, LibraryDto, SeriesDto, SeriesPageDto, ReadingListDto, getBookCoverUrl } from "@/lib/api";
+import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, fetchReadingLists, fetchSeriesMemberships, fetchSeriesRecommendations, LibraryDto, SeriesDto, SeriesPageDto, ReadingListDto, RecommendedSeriesDto, getBookCoverUrl } from "@/lib/api";
 import { cookies } from "next/headers";
 import { ReadingListCover } from "@/app/components/ReadingListCover";
 import { getServerTranslations } from "@/lib/i18n/server";
@@ -39,20 +39,25 @@ export default async function SeriesPage({
   const volumeTypeFilter = paramString(sp, "volume_type"); // "regular" | "oneshot" | "hs" | "integral" | ""
   const metadataProvider = paramString(sp, "metadata_provider");
   const groupBy = paramString(sp, "group_by"); // "reading_list" | ""
+  const view = paramString(sp, "view");
   const page = paramInt(sp, "page", 1);
   const limit = paramInt(sp, "limit", 24);
 
   const isGroupedByList = groupBy === "reading_list";
+  const isRecommendationsView = view === "recommendations";
 
-  const [libraries, seriesPage, dbStatuses, readingLists] = await Promise.all([
+  const [libraries, seriesPage, dbStatuses, readingLists, recommendations] = await Promise.all([
     fetchLibraries().catch(() => [] as LibraryDto[]),
-    isGroupedByList
+    isGroupedByList || isRecommendationsView
       ? Promise.resolve({ items: [] as SeriesDto[], total: 0, page: 1, limit } as SeriesPageDto)
       : fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit, sort, seriesStatus, hasMissing, metadataProvider, undefined, booksFilter === "wishlist", booksFilter === "in_library", volumeTypeFilter || undefined).catch(
           () => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }) as SeriesPageDto
         ),
-    fetchSeriesStatuses().catch(() => [] as string[]),
+    isRecommendationsView ? Promise.resolve([] as string[]) : fetchSeriesStatuses().catch(() => [] as string[]),
     isGroupedByList ? fetchReadingLists().catch(() => [] as ReadingListDto[]) : Promise.resolve([] as ReadingListDto[]),
+    isRecommendationsView && hasActiveUser
+      ? fetchSeriesRecommendations(limit).catch(() => [] as RecommendedSeriesDto[])
+      : Promise.resolve([] as RecommendedSeriesDto[]),
   ]);
 
   const series = seriesPage.items;
@@ -83,6 +88,12 @@ export default async function SeriesPage({
     hiatus: t("seriesStatus.hiatus"),
     cancelled: t("seriesStatus.cancelled"),
     upcoming: t("seriesStatus.upcoming"),
+  };
+  const RECOMMENDATION_REASON_LABELS: Record<string, string> = {
+    same_author: t("series.recommendationReason.same_author"),
+    same_genre: t("series.recommendationReason.same_genre"),
+    same_publisher: t("series.recommendationReason.same_publisher"),
+    same_reading_list: t("series.recommendationReason.same_reading_list"),
   };
   const seriesStatusOptions = [
     { value: "", label: t("seriesStatus.allStatuses") },
@@ -134,11 +145,27 @@ export default async function SeriesPage({
             active={isGroupedByList}
             href={isGroupedByList ? "/series" : "/series?group_by=reading_list"}
           />
+          <Link
+            href={isRecommendationsView ? "/series" : "/series?view=recommendations"}
+            title={t("series.recommendations")}
+            className={`flex items-center gap-2 px-3 h-9 rounded-md border text-xs font-medium transition-colors ${
+              isRecommendationsView
+                ? "border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary"
+            }`}
+          >
+            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.868v4.264a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="hidden sm:inline">{t("series.recommendations")}</span>
+          </Link>
           <RefreshButton target="series" />
           <CreateSeriesButton libraries={libraries.map(lib => ({ id: lib.id, name: lib.name }))} />
         </div>
       </div>
 
+      {!isGroupedByList && !isRecommendationsView && (
       <Card className="mb-6">
         <CardContent className="pt-6">
           <LiveSearchForm
@@ -168,6 +195,7 @@ export default async function SeriesPage({
           />
         </CardContent>
       </Card>
+      )}
 
       {isGroupedByList ? (
         readingLists.length === 0 ? (
@@ -199,6 +227,108 @@ export default async function SeriesPage({
               );
             })}
           </div>
+        )
+      ) : isRecommendationsView ? (
+        !hasActiveUser ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                <svg className="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.389 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+              </div>
+              <h2 className="text-lg font-semibold text-foreground">{t("series.recommendations")}</h2>
+              <p className="mt-2 text-sm text-muted-foreground">{t("series.recommendationsNeedUser")}</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold text-foreground">{t("series.recommendations")}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">{t("series.recommendationsSubtitle")}</p>
+            </div>
+
+            {recommendations.length > 0 ? (
+              <div className="overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm">
+                {recommendations.map((s) => (
+                  <div
+                    key={s.series_id}
+                    className="border-b border-border/60 last:border-b-0"
+                  >
+                    <div className="flex gap-4 p-4 transition-colors hover:bg-muted/20">
+                      <Link href={`/series/${s.series_id}`} className="relative block h-24 w-16 shrink-0 overflow-hidden rounded-md bg-muted/50">
+                        {(s.first_book_id || s.cover_url) ? (
+                          <Image
+                            src={s.first_book_id ? getBookCoverUrl(s.first_book_id, s.first_book_updated_at) : s.cover_url!}
+                            alt={t("books.coverOf", { name: s.name })}
+                            fill
+                            className="object-cover"
+                            sizes="80px"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-muted-foreground/30">
+                            <svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
+                            </svg>
+                          </div>
+                        )}
+                      </Link>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0 flex-1">
+                            <Link href={`/series/${s.series_id}`}>
+                              <h3 className="text-sm font-semibold text-foreground hover:text-primary">
+                                {s.name === "unclassified" ? t("books.unclassified") : s.name}
+                              </h3>
+                            </Link>
+                            {s.description && (
+                              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                                {s.description}
+                              </p>
+                            )}
+                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                              <span>{t("series.readCount", { read: "0", total: String(s.book_count), plural: s.book_count !== 1 ? "s" : "" })}</span>
+                              {s.because_of.length > 0 && (
+                                <span>
+                                  <span className="font-medium text-foreground">{t("series.recommendationsBecauseOf")}</span>{" "}
+                                  {s.because_of.join(", ")}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2 self-start">
+                            <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                              {t("series.recommendationsScore", { score: String(s.score) })}
+                            </span>
+                          </div>
+                        </div>
+
+                        {s.match_reasons.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-1.5">
+                            {s.match_reasons.map((reason) => (
+                              <span key={reason} className="rounded-full border border-border/70 bg-background px-2 py-1 text-[11px] text-muted-foreground">
+                                {RECOMMENDATION_REASON_LABELS[reason] || reason}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <div className="mb-4 h-16 w-16 text-muted-foreground/30">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.813 15.904L9 18l-1.813-2.096L5 15l2.187-.904L9 12l.813 2.096L12 15l-2.187.904zM17 4l.94 2.06L20 7l-2.06.94L17 10l-.94-2.06L14 7l2.06-.94L17 4zm0 8l1.252 2.748L21 16l-2.748 1.252L17 20l-1.252-2.748L13 16l2.748-1.252L17 12z" />
+                  </svg>
+                </div>
+                <p className="text-lg text-muted-foreground">{t("series.recommendationsEmpty")}</p>
+              </div>
+            )}
+          </>
         )
       ) : (<>
       {/* Results count */}
