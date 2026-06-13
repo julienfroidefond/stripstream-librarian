@@ -23,8 +23,8 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
-  { href: "/books", labelKey: "nav.books", icon: "books", color: "text-success" },
   { href: "/series", labelKey: "nav.series", icon: "series", color: "text-warning" },
+  { href: "/books", labelKey: "nav.books", icon: "books", color: "text-success" },
   { href: "/authors", labelKey: "nav.authors", icon: "authors", color: "text-violet-500" },
   { href: "/genres", labelKey: "nav.genres", icon: "tag", color: "text-pink-500" },
   { href: "/reading-lists", labelKey: "nav.readingLists", icon: "bookmark", color: "text-cyan-500" },
