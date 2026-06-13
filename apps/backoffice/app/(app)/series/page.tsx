@@ -217,7 +217,7 @@ export default async function SeriesPage({
               { name: "volume_type", type: "select", label: t("series.volumeType"), options: volumeTypeOptions },
               { name: "metadata_provider", type: "select", label: t("series.metadata"), options: metadataOptions },
               { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },
-              ...(hasActiveUser ? [{ name: "rated_only", type: "select" as const, label: t("series.sortCommunityScore"), options: [{ value: "", label: t("common.all") }, { value: "true", label: t("series.ratedOnly") }] }] : []),
+              ...(hasActiveUser ? [{ name: "rated_only", type: "select" as const, label: t("series.myRatings"), options: [{ value: "", label: t("common.all") }, { value: "true", label: t("series.ratedOnly") }] }] : []),
             ]}
           />
         </CardContent>

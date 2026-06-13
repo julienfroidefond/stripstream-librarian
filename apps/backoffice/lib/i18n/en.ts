@@ -194,6 +194,7 @@ const en: Record<TranslationKey, string> = {
   "series.noReleaseDate": "No date",
   "series.sortCommunityScore": "Community score",
   "series.noCommunityScore": "Unrated",
+  "series.myRatings": "My ratings",
   "series.ratedOnly": "Rated only",
   "series.groupByReadingListOff": "All series",
 

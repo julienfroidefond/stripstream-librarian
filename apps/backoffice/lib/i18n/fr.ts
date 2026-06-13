@@ -192,6 +192,7 @@ const fr = {
   "series.noReleaseDate": "Sans date",
   "series.sortCommunityScore": "Note communauté",
   "series.noCommunityScore": "Sans note",
+  "series.myRatings": "Mes notes",
   "series.ratedOnly": "Notées uniquement",
   "series.groupByReadingListOff": "Toutes les séries",
 
