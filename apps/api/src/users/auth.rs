@@ -33,6 +33,18 @@ pub async fn require_admin(
         return Err(ApiError::forbidden("admin scope required"));
     }
 
+    // Inject AuthUser when the backoffice specifies which user is acting (X-As-User header)
+    if let Some(as_user_id) = req
+        .headers()
+        .get("X-As-User")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| uuid::Uuid::parse_str(v).ok())
+    {
+        req.extensions_mut().insert(AuthUser {
+            user_id: as_user_id,
+        });
+    }
+
     req.extensions_mut().insert(scope);
     Ok(next.run(req).await)
 }
