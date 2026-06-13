@@ -175,55 +175,66 @@ export function DownloadsIndicator() {
   }, []);
 
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-    let abortController: AbortController | null = null;
+    let eventSource: EventSource | null = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let staleTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    const fetchTelegramDownloads = async () => {
-      abortController?.abort();
-      abortController = new AbortController();
+    const resetStaleTimer = () => {
+      if (staleTimeout) clearTimeout(staleTimeout);
+      staleTimeout = setTimeout(() => {
+        eventSource?.close();
+        eventSource = null;
+        connect();
+      }, 30000);
+    };
 
-      try {
-        const resp = await fetch("/api/telegram-monitor/downloads", {
-          signal: abortController.signal,
-        });
-        if (!resp.ok) return;
-        const allDownloads: TelegramDownload[] = await resp.json();
-        setActiveTelegramDownloads(
-          allDownloads
-            .filter(download => download.status === "downloading")
-            .map(normalizeTelegramDownload)
-        );
-      } catch (error) {
-        if ((error as Error).name !== "AbortError") {
-          // Keep the last known state on transient failures.
-        }
+    const connect = () => {
+      if (eventSource) {
+        eventSource.close();
       }
+      eventSource = new EventSource("/api/telegram-monitor/downloads/stream");
+      resetStaleTimer();
+
+      eventSource.onmessage = (event) => {
+        resetStaleTimer();
+        try {
+          const allDownloads: TelegramDownload[] = JSON.parse(event.data);
+          setActiveTelegramDownloads(
+            allDownloads
+              .filter(download => download.status === "downloading")
+              .map(normalizeTelegramDownload)
+          );
+        } catch {
+          // ignore malformed data
+        }
+      };
+
+      eventSource.onerror = () => {
+        eventSource?.close();
+        eventSource = null;
+        reconnectTimeout = setTimeout(connect, 3000);
+      };
     };
 
-    const start = () => {
-      fetchTelegramDownloads();
-      interval = setInterval(fetchTelegramDownloads, 5000);
-    };
-
-    const stop = () => {
-      if (interval) { clearInterval(interval); interval = null; }
-      abortController?.abort();
-      abortController = null;
+    const disconnect = () => {
+      if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
+      if (staleTimeout) { clearTimeout(staleTimeout); staleTimeout = null; }
+      if (eventSource) { eventSource.close(); eventSource = null; }
     };
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        stop();
+        disconnect();
       } else {
-        start();
+        connect();
       }
     };
 
-    start();
+    connect();
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      stop();
+      disconnect();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
