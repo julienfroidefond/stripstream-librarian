@@ -196,6 +196,7 @@ const en: Record<TranslationKey, string> = {
   "series.noCommunityScore": "Unrated",
   "series.myRatings": "My ratings",
   "series.ratedOnly": "Rated only",
+  "series.unratedOnly": "Unrated",
   "series.groupByReadingListOff": "All series",
 
   // Authors page

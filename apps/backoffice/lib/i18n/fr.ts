@@ -194,6 +194,7 @@ const fr = {
   "series.noCommunityScore": "Sans note",
   "series.myRatings": "Mes notes",
   "series.ratedOnly": "Notées uniquement",
+  "series.unratedOnly": "Non notées",
   "series.groupByReadingListOff": "Toutes les séries",
 
   // Authors page

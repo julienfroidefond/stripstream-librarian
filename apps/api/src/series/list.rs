@@ -397,10 +397,10 @@ pub async fn list_all_series(
         String::new()
     };
 
-    let rated_only_cond = if query.rated_only.as_deref() == Some("true") {
-        "AND sur.rating IS NOT NULL".to_string()
-    } else {
-        String::new()
+    let rated_only_cond = match query.rated_only.as_deref() {
+        Some("true") => "AND sur.rating IS NOT NULL".to_string(),
+        Some("unrated") => "AND sur.rating IS NULL".to_string(),
+        _ => String::new(),
     };
 
     let oneshot_cond = if let Some(vt) = query.volume_type.as_deref() {
