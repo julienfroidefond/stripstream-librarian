@@ -192,6 +192,9 @@ const en: Record<TranslationKey, string> = {
   "series.groupByReadingList": "Reading lists",
   "series.sortReleaseDate": "Release date",
   "series.noReleaseDate": "No date",
+  "series.sortCommunityScore": "Community score",
+  "series.noCommunityScore": "Unrated",
+  "series.ratedOnly": "Rated only",
   "series.groupByReadingListOff": "All series",
 
   // Authors page

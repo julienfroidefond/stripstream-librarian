@@ -275,6 +275,8 @@ pub async fn untagged_series(
             genres: r.get::<Vec<String>, _>("genres"),
             authors: r.get::<Vec<String>, _>("authors"),
             description: r.get("description"),
+            user_rating: None,
+            community_score: None,
         })
         .collect();
 

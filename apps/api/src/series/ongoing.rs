@@ -106,6 +106,8 @@ pub async fn ongoing_series(
             genres: row.get::<Vec<String>, _>("genres"),
             authors: row.get::<Vec<String>, _>("authors"),
             description: row.get("description"),
+            user_rating: None,
+            community_score: None,
         })
         .collect();
 
@@ -395,6 +397,8 @@ pub async fn get_series_by_id(
         genres: row.get::<Vec<String>, _>("genres"),
         authors: row.get::<Vec<String>, _>("authors"),
         description: row.get("description"),
+        user_rating: None,
+        community_score: None,
     }))
 }
 

@@ -37,6 +37,7 @@ export default async function SeriesPage({
   const booksFilter = paramString(sp, "books_filter"); // "wishlist" | "in_library" | ""
   const volumeTypeFilter = paramString(sp, "volume_type"); // "regular" | "oneshot" | "hs" | "integral" | ""
   const metadataProvider = paramString(sp, "metadata_provider");
+  const ratedOnly = paramBool(sp, "rated_only");
   const groupBy = paramString(sp, "group_by"); // "reading_list" | ""
   const view = paramString(sp, "view");
   const page = paramInt(sp, "page", 1);
@@ -49,7 +50,7 @@ export default async function SeriesPage({
     fetchLibraries().catch(() => [] as LibraryDto[]),
     isGroupedByList || isRecommendationsView
       ? Promise.resolve({ items: [] as SeriesDto[], total: 0, page: 1, limit } as SeriesPageDto)
-      : fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit, sort, seriesStatus, hasMissing, metadataProvider, undefined, booksFilter === "wishlist", booksFilter === "in_library", volumeTypeFilter || undefined).catch(
+      : fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit, sort, seriesStatus, hasMissing, metadataProvider, undefined, booksFilter === "wishlist", booksFilter === "in_library", volumeTypeFilter || undefined, ratedOnly || undefined).catch(
           () => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }) as SeriesPageDto
         ),
     isRecommendationsView ? Promise.resolve([] as string[]) : fetchSeriesStatuses().catch(() => [] as string[]),
@@ -65,9 +66,10 @@ export default async function SeriesPage({
     { value: "", label: t("books.sortTitle") },
     { value: "latest", label: t("books.sortLatest") },
     { value: "release_date", label: t("series.sortReleaseDate") },
+    { value: "community_score", label: t("series.sortCommunityScore") },
   ];
 
-  const hasFilters = searchQuery || libraryId || readingStatus || sort || seriesStatus || hasMissing || booksFilter || volumeTypeFilter || metadataProvider;
+  const hasFilters = searchQuery || libraryId || readingStatus || sort || seriesStatus || hasMissing || booksFilter || volumeTypeFilter || metadataProvider || ratedOnly;
 
   const libraryOptions = [
     { value: "", label: t("books.allLibraries") },
@@ -203,6 +205,7 @@ export default async function SeriesPage({
               volume_type: volumeTypeFilter || "",
               metadata_provider: metadataProvider || "",
               sort: sort || "",
+              ...(hasActiveUser ? { rated_only: ratedOnly ? "true" : "" } : {}),
             }}
             fields={[
               { name: "q", type: "text", label: t("common.search"), placeholder: t("series.searchPlaceholder") },
@@ -214,6 +217,7 @@ export default async function SeriesPage({
               { name: "volume_type", type: "select", label: t("series.volumeType"), options: volumeTypeOptions },
               { name: "metadata_provider", type: "select", label: t("series.metadata"), options: metadataOptions },
               { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },
+              ...(hasActiveUser ? [{ name: "rated_only", type: "select" as const, label: t("series.sortCommunityScore"), options: [{ value: "", label: t("common.all") }, { value: "true", label: t("series.ratedOnly") }] }] : []),
             ]}
           />
         </CardContent>
@@ -368,12 +372,28 @@ export default async function SeriesPage({
               const previousYear = index > 0 ? series[index - 1].start_year : undefined;
               const showYearGroup = sort === "release_date" && year !== previousYear;
 
+              const communityGroup = s.community_score != null ? Math.floor(s.community_score) : null;
+              const prevScore = index > 0 ? series[index - 1].community_score : undefined;
+              const previousCommunityGroup = prevScore != null ? Math.floor(prevScore) : (prevScore === undefined ? undefined : null);
+              const showCommunityGroup = sort === "community_score" && communityGroup !== previousCommunityGroup;
+              const communityGroupLabel = communityGroup != null
+                ? "★".repeat(communityGroup) + "☆".repeat(Math.max(0, 5 - communityGroup)) + `  ${communityGroup}/5`
+                : t("series.noCommunityScore");
+
               return (
                 <Fragment key={s.series_id}>
                   {showYearGroup && (
                     <div className="col-span-full flex items-center gap-3 pt-2 first:pt-0">
                       <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                         {year ?? t("series.noReleaseDate")}
+                      </span>
+                      <span className="h-px flex-1 bg-border/60" />
+                    </div>
+                  )}
+                  {showCommunityGroup && (
+                    <div className="col-span-full flex items-center gap-3 pt-2 first:pt-0">
+                      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        {communityGroupLabel}
                       </span>
                       <span className="h-px flex-1 bg-border/60" />
                     </div>

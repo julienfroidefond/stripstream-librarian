@@ -68,6 +68,8 @@ pub struct SeriesItem {
     pub genres: Vec<String>,
     pub authors: Vec<String>,
     pub description: Option<String>,
+    pub user_rating: Option<i16>,
+    pub community_score: Option<f32>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -144,6 +146,9 @@ pub struct ListAllSeriesQuery {
     /// Filter series by book volume type: "regular", "oneshot", "hs", "integral"
     #[schema(value_type = Option<String>, example = "oneshot")]
     pub volume_type: Option<String>,
+    /// Only return series rated by the current user: "true"
+    #[schema(value_type = Option<String>, example = "true")]
+    pub rated_only: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]

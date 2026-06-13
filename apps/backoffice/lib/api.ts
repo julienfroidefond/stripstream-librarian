@@ -168,6 +168,8 @@ export type SeriesDto = {
   anilist_url: string | null;
   cover_url: string | null;
   start_year: number | null;
+  user_rating: number | null;
+  community_score: number | null;
 };
 
 export type RelatedSeriesDto = {
@@ -539,6 +541,7 @@ export async function fetchAllSeries(
   noBooks?: boolean,
   hasBooks?: boolean,
   volumeType?: string,
+  ratedOnly?: boolean,
 ): Promise<SeriesPageDto> {
   const params = new URLSearchParams();
   if (libraryId) params.set("library_id", libraryId);
@@ -552,6 +555,7 @@ export async function fetchAllSeries(
   if (noBooks) params.set("no_books", "true");
   if (hasBooks) params.set("has_books", "true");
   if (volumeType) params.set("volume_type", volumeType);
+  if (ratedOnly) params.set("rated_only", "true");
   params.set("page", page.toString());
   params.set("limit", limit.toString());
 

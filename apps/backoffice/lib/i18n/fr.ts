@@ -190,6 +190,9 @@ const fr = {
   "series.groupByReadingList": "Listes de lecture",
   "series.sortReleaseDate": "Date de sortie",
   "series.noReleaseDate": "Sans date",
+  "series.sortCommunityScore": "Note communauté",
+  "series.noCommunityScore": "Sans note",
+  "series.ratedOnly": "Notées uniquement",
   "series.groupByReadingListOff": "Toutes les séries",
 
   // Authors page

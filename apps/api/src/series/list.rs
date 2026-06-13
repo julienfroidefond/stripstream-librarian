@@ -261,6 +261,8 @@ pub async fn list_series(
             genres: row.get::<Vec<String>, _>("genres"),
             authors: row.get::<Vec<String>, _>("authors"),
             description: row.get("description"),
+            user_rating: None,
+            community_score: None,
         })
         .collect();
 
@@ -395,6 +397,12 @@ pub async fn list_all_series(
         String::new()
     };
 
+    let rated_only_cond = if query.rated_only.as_deref() == Some("true") {
+        "AND sur.rating IS NOT NULL".to_string()
+    } else {
+        String::new()
+    };
+
     let oneshot_cond = if let Some(vt) = query.volume_type.as_deref() {
         let safe_vt = match vt {
             "regular" | "oneshot" | "hs" | "integral" => vt,
@@ -418,6 +426,14 @@ pub async fn list_all_series(
 
     let metadata_links_cte = helpers::METADATA_LINKS_CTE;
 
+    let community_scores_cte = r#"community_scores AS (
+        SELECT series_id,
+               (AVG(provider_rating / COALESCE(NULLIF(provider_rating_scale, 0), 10.0) * 5.0))::real AS community_score
+        FROM external_metadata_links
+        WHERE status = 'approved' AND provider_rating IS NOT NULL AND provider_rating > 0
+        GROUP BY series_id
+    )"#;
+
     let user_id_p = p + 1;
     let limit_p = p + 2;
     let offset_p = p + 3;
@@ -439,12 +455,15 @@ pub async fn list_all_series(
             GROUP BY s.id, s.name, s.library_id, s.created_at
         ),
         {missing_cte},
-        {metadata_links_cte}
+        {metadata_links_cte},
+        {community_scores_cte}
         SELECT COUNT(*) FROM series_counts sc
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
         LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = sc.library_id
-        WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {author_cond} {has_books_cond} {no_books_cond} {genre_cond} {oneshot_cond} {genre_restriction_cond}
+        LEFT JOIN community_scores cs ON cs.series_id = sc.series_id
+        LEFT JOIN series_user_ratings sur ON sur.series_id = sc.series_id AND sur.user_id = ${user_id_p}::uuid
+        WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {author_cond} {has_books_cond} {no_books_cond} {genre_cond} {oneshot_cond} {rated_only_cond} {genre_restriction_cond}
         "#
     );
 
@@ -456,6 +475,7 @@ pub async fn list_all_series(
             "sc.latest_created_at DESC".to_string()
         }
         Some("release_date") => format!("s.start_year DESC NULLS LAST, {title_order_clause}"),
+        Some("community_score") => format!("cs.community_score DESC NULLS LAST, {title_order_clause}"),
         _ => title_order_clause.to_string(),
     };
 
@@ -496,7 +516,8 @@ pub async fn list_all_series(
             GROUP BY s.id, s.name, s.library_id, s.created_at
         ),
         {missing_cte},
-        {metadata_links_cte}
+        {metadata_links_cte},
+        {community_scores_cte}
         SELECT
             sc.name,
             sc.series_id,
@@ -510,13 +531,17 @@ pub async fn list_all_series(
             ml.provider as metadata_provider,
             asl.anilist_id,
             asl.anilist_url,
-            s.cover_url, s.start_year, s.genres, s.authors, s.description
+            s.cover_url, s.start_year, s.genres, s.authors, s.description,
+            cs.community_score,
+            sur.rating as user_rating
         FROM series_counts sc
         LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id AND sb.rn = 1
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
         LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = sc.library_id
         LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
+        LEFT JOIN community_scores cs ON cs.series_id = sc.series_id
+        LEFT JOIN series_user_ratings sur ON sur.series_id = sc.series_id AND sur.user_id = ${user_id_p}::uuid
         WHERE TRUE
           {q_cond}
           {rs_cond}
@@ -528,6 +553,7 @@ pub async fn list_all_series(
           {no_books_cond}
           {genre_cond}
           {oneshot_cond}
+          {rated_only_cond}
           {genre_restriction_cond}
         ORDER BY {series_order_clause}
         LIMIT ${limit_p} OFFSET ${offset_p}
@@ -599,6 +625,8 @@ pub async fn list_all_series(
             genres: row.get::<Vec<String>, _>("genres"),
             authors: row.get::<Vec<String>, _>("authors"),
             description: row.get("description"),
+            user_rating: row.get("user_rating"),
+            community_score: row.get("community_score"),
         })
         .collect();
 
