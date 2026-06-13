@@ -16,7 +16,6 @@ import nextDynamic from "next/dynamic";
 const CreateSeriesButton = nextDynamic(
   () => import("@/app/components/CreateSeriesButton").then(m => m.CreateSeriesButton)
 );
-import { GroupByToggle } from "@/app/components/GroupByToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -141,29 +140,53 @@ export default async function SeriesPage({
           {t("series.title")}
         </h1>
         <div className="flex items-center gap-2">
-          <GroupByToggle
-            active={isGroupedByList}
-            href={isGroupedByList ? "/series" : "/series?group_by=reading_list"}
-          />
-          <Link
-            href={isRecommendationsView ? "/series" : "/series?view=recommendations"}
-            title={t("series.recommendations")}
-            className={`flex items-center gap-2 px-3 h-9 rounded-md border text-xs font-medium transition-colors ${
-              isRecommendationsView
-                ? "border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary"
-            }`}
-          >
-            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.868v4.264a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="hidden sm:inline">{t("series.recommendations")}</span>
-          </Link>
           <RefreshButton target="series" />
           <CreateSeriesButton libraries={libraries.map(lib => ({ id: lib.id, name: lib.name }))} />
         </div>
       </div>
+
+      <nav className="mb-6 flex gap-0 border-b border-border">
+        <Link
+          href="/series"
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            !isGroupedByList && !isRecommendationsView
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          </svg>
+          <span>{t("series.groupByReadingListOff")}</span>
+        </Link>
+        <Link
+          href="/series?group_by=reading_list"
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            isGroupedByList
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+          </svg>
+          <span>{t("series.groupByReadingList")}</span>
+        </Link>
+        <Link
+          href="/series?view=recommendations"
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            isRecommendationsView
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.868v4.264a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>{t("series.recommendations")}</span>
+        </Link>
+      </nav>
 
       {!isGroupedByList && !isRecommendationsView && (
       <Card className="mb-6">
