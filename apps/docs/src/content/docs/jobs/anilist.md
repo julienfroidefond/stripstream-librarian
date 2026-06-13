@@ -3,7 +3,7 @@ title: Tâches AniList
 description: Liaison des séries et synchronisation de la progression de lecture vers AniList
 ---
 
-Deux tâches gèrent la synchronisation avec AniList. Elles peuvent s'exécuter en parallèle avec d'autres tâches.
+Trois tâches gèrent la synchronisation avec AniList. Elles peuvent s'exécuter en parallèle avec d'autres tâches.
 
 ---
 
@@ -25,6 +25,42 @@ Cette tâche recherche chaque série de la bibliothèque sur AniList et crée au
 | Déjà lié | Déjà lié, ignoré |
 | Aucun résultat | Série introuvable sur AniList |
 | Ambigu | Plusieurs correspondances, sélection manuelle requise |
+
+---
+
+## Importer les notes AniList
+
+Récupère votre score personnel AniList pour **toutes les séries déjà liées** et l'importe comme note locale. C'est l'inverse du push : les données viennent d'AniList vers Stripstream.
+
+**Ce qui se passe** :
+- Une seule requête GraphQL récupère l'ensemble de votre liste manga AniList
+- Pour chaque série localement liée, le score est converti (POINT_100 ÷ 10) et arrondi sur l'échelle 1–10
+- Insertion dans `series_user_ratings` avec `ON CONFLICT DO NOTHING` — **vos notes saisies manuellement ne sont jamais écrasées**
+- Si la série n'est pas dans votre liste AniList, elle est ignorée (comptabilisée comme "non trouvée")
+
+**Rapport** :
+
+| Résultat | Signification |
+|----------|---------------|
+| Mis à jour | Score importé |
+| Non noté | Lié localement mais pas noté sur AniList |
+| Non trouvé | Série liée localement mais absente de votre liste AniList |
+
+:::note
+Ce job ne remplace pas le bouton **Importer depuis AniList** de la page Paramètres — il couvre uniquement les séries déjà liées via "Lier les séries à AniList". Lancez d'abord ce dernier si vos séries ne sont pas encore liées.
+:::
+
+:::note[Détails techniques]
+`rating_pull` — job global (sans `library_id`), exécuté par l'API. Un seul job peut tourner à la fois.  
+`API : POST /ratings/pull`
+
+Événements :
+| `event_type` | Niveau |
+|-------------|--------|
+| `score_updated` | `info` |
+| `unrated` | `info` |
+| `not_found` | `info` |
+:::
 
 ---
 

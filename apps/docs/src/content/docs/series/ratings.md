@@ -27,7 +27,7 @@ La conversion est la suivante :
 | 5 (2,5 étoiles) | 50 |
 | 10 (5 étoiles) | 100 |
 
-À l'inverse, lors d'un **Pull AniList** (`/anilist/pull`), votre score AniList existant est importé dans Stripstream si vous n'avez pas encore de note locale pour cette série (sans écraser une note existante).
+À l'inverse, le job **Import des notes AniList** (`rating_pull`) importe votre score AniList existant dans Stripstream pour toutes les séries déjà liées, sans écraser une note locale existante (voir [Tâches AniList](/jobs/anilist/)).
 
 > **Note :** la suppression d'une note locale ne supprime pas votre score côté AniList pour éviter les pertes accidentelles.
 
@@ -43,6 +43,18 @@ Sous votre note se trouvent les notes moyennes remontées par les providers de m
 | OpenLibrary | 0–5 | `ratings_average` |
 
 Ces notes sont mises à jour à chaque synchronisation ou rafraîchissement de métadonnées. Le nombre de votes est affiché entre parenthèses quand il est disponible.
+
+## Notes communauté dans la liste des séries
+
+La **note communauté** (moyenne normalisée sur 5 des notes providers) est disponible dans la page **Séries** :
+
+- **Tri "Note communauté"** — classe les séries par score communauté décroissant. Les séries sans note apparaissent en fin de liste.
+- **Groupes par note** — quand ce tri est actif, des séparateurs ★★★★★ / ★★★★ / ★★★ / ★★ / ★ / Sans note regroupent les séries par note entière.
+- **Filtre "Mes notes"** (visible uniquement si un utilisateur est sélectionné) — trois valeurs : *Toutes*, *Notées uniquement*, *Non notées*.
+
+:::note
+La note communauté dans la liste est calculée côté API à partir des ratings providers approuvés. Elle se met à jour après un job **Refresh metadata**.
+:::
 
 ## API
 

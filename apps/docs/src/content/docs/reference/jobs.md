@@ -80,7 +80,7 @@ Métadonnées : `metadata_batch`, `metadata_batch_rematch`, `metadata_refresh`, 
 
 Téléchargements : `download_detection`, `prowlarr_rss`.
 
-AniList : `reading_status_match`, `reading_status_push`.
+AniList : `reading_status_match`, `reading_status_push`, `rating_pull`.
 
 **Statuts intermédiaires** : `extracting_pages`, `generating_thumbnails`.
 
