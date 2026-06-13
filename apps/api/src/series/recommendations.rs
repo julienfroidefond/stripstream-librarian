@@ -39,6 +39,20 @@ pub struct RecommendedSeriesItem {
     pub authors: Vec<String>,
     pub genres: Vec<String>,
     pub score: i64,
+    /// Raw similarity score (before community bonus)
+    pub similarity_score: i64,
+    /// Community score bonus (community_score * 10, 0 if no data)
+    pub community_bonus: i64,
+    /// Community score 0-5 (None if no provider ratings)
+    pub community_score: Option<f32>,
+    /// Points from shared authors
+    pub author_pts: i64,
+    /// Points from shared genres
+    pub genre_pts: i64,
+    /// Points from shared reading lists
+    pub reading_list_pts: i64,
+    /// Points from shared publisher
+    pub publisher_pts: i64,
     /// Names of the recently-read series that triggered this recommendation
     pub because_of: Vec<String>,
     /// Match reasons: "same_genre", "same_author", "same_publisher"
@@ -243,10 +257,24 @@ pub async fn get_recommendations(
                 OR COALESCE(am.shared_author_count, 0) > 0
                 OR COALESCE(gm.shared_genre_count, 0) > 0
         ),
+        community_scores AS (
+            SELECT series_id,
+                   (AVG(provider_rating / COALESCE(NULLIF(provider_rating_scale, 0), 10.0) * 5.0))::real AS community_score
+            FROM external_metadata_links
+            WHERE status = 'approved' AND provider_rating IS NOT NULL AND provider_rating > 0
+            GROUP BY series_id
+        ),
         candidate_scores AS (
             SELECT
                 scs.candidate_id AS series_id,
                 (SUM(scs.pair_score) + COALESCE(ROUND(comm.community_score * 10)::bigint, 0))::bigint AS score,
+                SUM(scs.pair_score)::bigint AS similarity_score,
+                COALESCE(ROUND(comm.community_score * 10)::bigint, 0) AS community_bonus,
+                comm.community_score::real AS community_score,
+                SUM(scs.shared_author_count * 8 * scs.source_weight)::bigint AS author_pts,
+                SUM(scs.weighted_genre_score * 2 * scs.source_weight)::bigint AS genre_pts,
+                SUM(CASE WHEN scs.has_same_reading_list THEN 10 * scs.source_weight ELSE 0 END)::bigint AS reading_list_pts,
+                SUM(CASE WHEN scs.has_same_publisher THEN scs.source_weight ELSE 0 END)::bigint AS publisher_pts,
                 COUNT(*)::bigint AS matched_source_count,
                 array_agg(DISTINCT scs.series_name) AS source_names,
                 BOOL_OR(scs.has_same_reading_list) AS has_same_reading_list,
@@ -256,13 +284,6 @@ pub async fn get_recommendations(
             FROM source_candidate_scores scs
             LEFT JOIN community_scores comm ON comm.series_id = scs.candidate_id
             GROUP BY scs.candidate_id, comm.community_score
-        ),
-        community_scores AS (
-            SELECT series_id,
-                   (AVG(provider_rating / COALESCE(NULLIF(provider_rating_scale, 0), 10.0) * 5.0))::real AS community_score
-            FROM external_metadata_links
-            WHERE status = 'approved' AND provider_rating IS NOT NULL AND provider_rating > 0
-            GROUP BY series_id
         ),
         first_books AS (
             SELECT DISTINCT ON (series_id)
@@ -298,6 +319,13 @@ pub async fn get_recommendations(
             fb.first_book_updated_at,
             ml.provider AS metadata_provider,
             cs.score,
+            cs.similarity_score,
+            cs.community_bonus,
+            cs.community_score,
+            cs.author_pts,
+            cs.genre_pts,
+            cs.reading_list_pts,
+            cs.publisher_pts,
             cs.source_names,
             cs.has_same_author,
             cs.has_same_genre,
@@ -363,6 +391,13 @@ pub async fn get_recommendations(
                 authors: row.try_get::<Vec<String>, _>("authors").unwrap_or_default(),
                 genres: row.try_get::<Vec<String>, _>("genres").unwrap_or_default(),
                 score: row.get("score"),
+                similarity_score: row.get("similarity_score"),
+                community_bonus: row.get("community_bonus"),
+                community_score: row.get("community_score"),
+                author_pts: row.get("author_pts"),
+                genre_pts: row.get("genre_pts"),
+                reading_list_pts: row.get("reading_list_pts"),
+                publisher_pts: row.get("publisher_pts"),
                 because_of,
                 match_reasons,
             }

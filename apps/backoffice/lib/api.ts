@@ -201,6 +201,13 @@ export type RecommendedSeriesDto = {
   authors: string[];
   genres: string[];
   score: number;
+  similarity_score: number;
+  community_bonus: number;
+  community_score: number | null;
+  author_pts: number;
+  genre_pts: number;
+  reading_list_pts: number;
+  publisher_pts: number;
   because_of: string[];
   match_reasons: string[];
 };

@@ -324,10 +324,42 @@ export default async function SeriesPage({
                               )}
                             </div>
                           </div>
-                          <div className="flex shrink-0 items-center gap-2 self-start">
+                          <div className="flex shrink-0 flex-col items-end gap-1.5 self-start">
                             <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
                               {t("series.recommendationsScore", { score: String(s.score) })}
                             </span>
+                            <div className="rounded-md border border-border/50 bg-muted/30 px-2 py-1.5 w-36">
+                              {s.reading_list_pts > 0 && (
+                                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                                  <span>📚 {t("series.recommendationReason.same_reading_list")}</span>
+                                  <span className="font-medium tabular-nums">+{s.reading_list_pts}</span>
+                                </div>
+                              )}
+                              {s.author_pts > 0 && (
+                                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                                  <span>✍️ {t("series.recommendationReason.same_author")}</span>
+                                  <span className="font-medium tabular-nums">+{s.author_pts}</span>
+                                </div>
+                              )}
+                              {s.genre_pts > 0 && (
+                                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                                  <span>🏷️ {t("series.recommendationReason.same_genre")}</span>
+                                  <span className="font-medium tabular-nums">+{s.genre_pts}</span>
+                                </div>
+                              )}
+                              {s.publisher_pts > 0 && (
+                                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                                  <span>🏢 {t("series.recommendationReason.same_publisher")}</span>
+                                  <span className="font-medium tabular-nums">+{s.publisher_pts}</span>
+                                </div>
+                              )}
+                              {s.community_bonus > 0 && (
+                                <div className="flex items-center justify-between text-[10px] text-warning mt-0.5 pt-0.5 border-t border-border/40">
+                                  <span>★ {s.community_score?.toFixed(1)}/5</span>
+                                  <span className="font-medium tabular-nums">+{s.community_bonus}</span>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
 
