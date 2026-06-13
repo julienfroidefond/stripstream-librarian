@@ -27,7 +27,8 @@ export default async function SeriesDetailPage({
   const { seriesId } = await params;
   const { t } = await getServerTranslations();
   const cookieStore = await cookies();
-  const hasActiveUser = !!cookieStore.get("as_user_id")?.value;
+  const activeUserId = cookieStore.get("as_user_id")?.value ?? "admin";
+  const hasActiveUser = activeUserId !== "admin";
   const searchParamsAwaited = await searchParams;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 24;
@@ -201,6 +202,7 @@ export default async function SeriesDetailPage({
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             {/* My rating */}
             <SeriesRatingControl
+              key={activeUserId}
               seriesId={seriesId}
               initialRating={seriesRatings?.user_rating ?? null}
               hasAniListLink={!!readingStatusLink}
