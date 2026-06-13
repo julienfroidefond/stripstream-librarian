@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import type { UserDto } from "@/lib/api";
 import { Icon } from "./ui";
 
@@ -16,6 +17,7 @@ export function UserSwitcher({
   const [open, setOpen] = useState(false);
   const [, startTransition] = useTransition();
   const ref = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   const activeUser = users.find((u) => u.id === activeUserId) ?? null;
 
@@ -33,6 +35,7 @@ export function UserSwitcher({
       const fd = new FormData();
       fd.append("user_id", userId ?? "");
       await setActiveUserAction(fd);
+      router.refresh();
     });
   }
 
