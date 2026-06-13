@@ -47,6 +47,7 @@ export default defineConfig({
 						{ label: 'Genres', slug: 'series/genres' },
 						{ label: 'Listes de lecture', slug: 'series/reading-lists' },
 						{ label: 'Séries liées & Recommandations', slug: 'series/related' },
+						{ label: 'Notation', slug: 'series/ratings' },
 						{ label: 'Volumes manquants', slug: 'series/missing-volumes' },
 						{ label: 'Progression de lecture', slug: 'series/reading-progress' },
 						{ label: 'Archives', slug: 'series/archives' },
