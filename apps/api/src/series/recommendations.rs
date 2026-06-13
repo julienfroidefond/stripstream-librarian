@@ -159,16 +159,6 @@ pub async fn get_recommendations(
             CROSS JOIN source_series src
             WHERE cand.id NOT IN (SELECT series_id FROM started)
               AND cand.id != src.series_id
-              AND (
-                  cand.genres && src.genres
-                  OR cand.authors && src.authors
-                  OR cand.publishers && src.publishers
-                  OR EXISTS (
-                      SELECT 1 FROM reading_list_items rli1
-                      JOIN reading_list_items rli2 ON rli2.list_id = rli1.list_id
-                      WHERE rli1.series_id = src.series_id AND rli2.series_id = cand.id
-                  )
-              )
         ),
         author_matches AS (
             SELECT
