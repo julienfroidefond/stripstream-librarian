@@ -72,7 +72,7 @@ pub async fn get_series_ratings(
     };
 
     let anilist_pulled_rating: Option<f64> = sqlx::query_scalar(
-        "SELECT user_score FROM anilist_series_links WHERE series_id = $1 LIMIT 1",
+        "SELECT user_score::float8 FROM anilist_series_links WHERE series_id = $1 LIMIT 1",
     )
     .bind(series_id)
     .fetch_optional(&state.pool)
