@@ -246,7 +246,7 @@ pub async fn get_recommendations(
         candidate_scores AS (
             SELECT
                 scs.candidate_id AS series_id,
-                SUM(scs.pair_score)::bigint AS score,
+                (SUM(scs.pair_score) + COALESCE(ROUND(comm.community_score * 10)::bigint, 0))::bigint AS score,
                 COUNT(*)::bigint AS matched_source_count,
                 array_agg(DISTINCT scs.series_name) AS source_names,
                 BOOL_OR(scs.has_same_reading_list) AS has_same_reading_list,
@@ -254,7 +254,15 @@ pub async fn get_recommendations(
                 BOOL_OR(scs.shared_genre_count > 0) AS has_same_genre,
                 BOOL_OR(scs.has_same_publisher) AS has_same_publisher
             FROM source_candidate_scores scs
-            GROUP BY scs.candidate_id
+            LEFT JOIN community_scores comm ON comm.series_id = scs.candidate_id
+            GROUP BY scs.candidate_id, comm.community_score
+        ),
+        community_scores AS (
+            SELECT series_id,
+                   (AVG(provider_rating / COALESCE(NULLIF(provider_rating_scale, 0), 10.0) * 5.0))::real AS community_score
+            FROM external_metadata_links
+            WHERE status = 'approved' AND provider_rating IS NOT NULL AND provider_rating > 0
+            GROUP BY series_id
         ),
         first_books AS (
             SELECT DISTINCT ON (series_id)
