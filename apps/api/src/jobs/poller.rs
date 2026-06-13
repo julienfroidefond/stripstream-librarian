@@ -65,6 +65,13 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                             )
                             .await
                         }
+                        "rating_pull" => {
+                            reading::status_pull::process_rating_pull(
+                                &pool_clone,
+                                job_id,
+                            )
+                            .await
+                        }
                         "download_detection" => download_detection::process_download_detection(
                             &pool_clone,
                             job_id,
@@ -155,6 +162,7 @@ const API_JOB_TYPES: &[&str] = &[
     "metadata_refresh",
     "metadata_refresh_all",
     "reading_status_push",
+    "rating_pull",
     "download_detection",
     "prowlarr_rss",
     "telegram_sync",

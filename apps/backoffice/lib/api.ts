@@ -1310,6 +1310,12 @@ export async function startReadingStatusPush(libraryId?: string) {
   });
 }
 
+export async function startReadingStatusPull() {
+  return apiFetch<{ id: string | null; status: string }>("/ratings/pull", {
+    method: "POST",
+  });
+}
+
 export type ReadingStatusPushReportDto = {
   job_id: string;
   status: string;

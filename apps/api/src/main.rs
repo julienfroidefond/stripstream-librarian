@@ -440,6 +440,14 @@ async fn main() -> anyhow::Result<()> {
             get(reading::get_push_results),
         )
         .route(
+            "/ratings/pull",
+            axum::routing::post(reading::start_pull),
+        )
+        .route(
+            "/ratings/pull/:id/report",
+            get(reading::get_pull_report),
+        )
+        .route(
             "/download-detection/start",
             axum::routing::post(downloads::start_detection),
         )

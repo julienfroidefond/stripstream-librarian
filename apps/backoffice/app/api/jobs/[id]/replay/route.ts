@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { apiFetch, IndexJobDto, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startMetadataRefreshAll, startReadingStatusMatch, startReadingStatusPush, startDownloadDetection, startRssPoll } from "@/lib/api";
+import { apiFetch, IndexJobDto, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startMetadataRefreshAll, startReadingStatusMatch, startReadingStatusPush, startReadingStatusPull, startDownloadDetection, startRssPoll } from "@/lib/api";
 
 export async function POST(
   _request: NextRequest,
@@ -38,6 +38,8 @@ export async function POST(
       case "reading_status_push":
         if (!libraryId) return NextResponse.json({ error: "Library ID required for reading status push" }, { status: 400 });
         return NextResponse.json(await startReadingStatusPush(libraryId));
+      case "rating_pull":
+        return NextResponse.json(await startReadingStatusPull());
       case "download_detection":
         if (!libraryId) return NextResponse.json({ error: "Library ID required for download detection" }, { status: 400 });
         return NextResponse.json(await startDownloadDetection(libraryId));

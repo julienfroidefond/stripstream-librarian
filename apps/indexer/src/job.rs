@@ -114,6 +114,7 @@ const API_ONLY_JOB_TYPES: &[&str] = &[
     "metadata_refresh",
     "metadata_refresh_all",
     "reading_status_push",
+    "rating_pull",
     "download_detection",
     "prowlarr_rss",
     "telegram_sync",

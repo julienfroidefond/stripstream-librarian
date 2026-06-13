@@ -123,6 +123,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     metadata_refresh_all: { label: t("jobType.metadata_refresh_allLabel"), description: t("jobType.metadata_refresh_allDesc"), isThumbnailOnly: false },
     reading_status_match: { label: t("jobType.reading_status_matchLabel"), description: t("jobType.reading_status_matchDesc"), isThumbnailOnly: false },
     reading_status_push: { label: t("jobType.reading_status_pushLabel"), description: t("jobType.reading_status_pushDesc"), isThumbnailOnly: false },
+    rating_pull: { label: t("jobType.rating_pullLabel"), description: t("jobType.rating_pullDesc"), isThumbnailOnly: false },
     download_detection: { label: t("jobType.download_detectionLabel"), description: t("jobType.download_detectionDesc"), isThumbnailOnly: false },
     prowlarr_rss: { label: t("jobType.prowlarr_rssLabel"), description: t("jobType.prowlarr_rssDesc"), isThumbnailOnly: false },
     telegram_sync: { label: t("jobType.telegram_syncLabel"), description: t("jobType.telegram_syncDesc"), isThumbnailOnly: false },
