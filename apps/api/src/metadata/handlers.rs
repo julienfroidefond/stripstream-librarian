@@ -261,11 +261,15 @@ pub async fn create_metadata_match(
     let series_id =
         crate::series::get_or_create_series(&state.pool, library_id, &body.series_name).await?;
 
+    let (pr_rating, pr_rating_count, pr_rating_scale) =
+        crate::metadata::shared_sync::extract_provider_rating(&body.metadata_json);
+
     let row = sqlx::query(
         r#"
         INSERT INTO external_metadata_links
-            (library_id, series_id, provider, external_id, external_url, status, confidence, metadata_json, total_volumes_external)
-        VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8)
+            (library_id, series_id, provider, external_id, external_url, status, confidence, metadata_json, total_volumes_external,
+             provider_rating, provider_rating_count, provider_rating_scale)
+        VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10, $11)
         ON CONFLICT (series_id, provider)
         DO UPDATE SET
             external_id = EXCLUDED.external_id,
@@ -274,6 +278,9 @@ pub async fn create_metadata_match(
             confidence = EXCLUDED.confidence,
             metadata_json = EXCLUDED.metadata_json,
             total_volumes_external = EXCLUDED.total_volumes_external,
+            provider_rating = EXCLUDED.provider_rating,
+            provider_rating_count = EXCLUDED.provider_rating_count,
+            provider_rating_scale = EXCLUDED.provider_rating_scale,
             matched_at = NOW(),
             updated_at = NOW(),
             approved_at = NULL,
@@ -289,6 +296,9 @@ pub async fn create_metadata_match(
     .bind(body.confidence)
     .bind(&body.metadata_json)
     .bind(body.total_volumes)
+    .bind(pr_rating)
+    .bind(pr_rating_count)
+    .bind(pr_rating_scale)
     .fetch_one(&state.pool)
     .await?;
 

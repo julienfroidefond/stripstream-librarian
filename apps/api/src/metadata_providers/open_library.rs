@@ -126,6 +126,13 @@ async fn search_series_impl(
             .unwrap_or("")
             .to_string();
 
+        let ratings_average = doc
+            .get("ratings_average")
+            .and_then(|r| r.as_f64());
+        let ratings_count = doc
+            .get("ratings_count")
+            .and_then(|c| c.as_i64());
+
         let series_name = extract_series_name(&title);
 
         let entry =
@@ -145,9 +152,17 @@ async fn search_series_impl(
                     } else {
                         Some(format!("https://openlibrary.org{}", key))
                     },
+                    rating: None,
+                    rating_count: None,
                 });
 
         entry.volume_count += 1;
+
+        // Keep the rating from the doc with the highest ratings_count
+        if ratings_count.unwrap_or(0) > entry.rating_count.unwrap_or(0) {
+            entry.rating = ratings_average;
+            entry.rating_count = ratings_count;
+        }
 
         for a in &authors {
             if !entry.authors.contains(a) {
@@ -177,6 +192,13 @@ async fn search_series_impl(
             let mut metadata_json = serde_json::json!({});
             if let Some(ref desc) = b.description {
                 metadata_json["description"] = serde_json::json!(desc);
+            }
+            if let Some(r) = b.rating {
+                metadata_json["rating"] = serde_json::json!(r);
+                metadata_json["rating_scale"] = serde_json::json!(5.0_f64);
+            }
+            if let Some(c) = b.rating_count {
+                metadata_json["rating_count"] = serde_json::json!(c);
             }
             SeriesCandidate {
                 external_id: b.external_id,
@@ -404,6 +426,8 @@ struct SeriesCandidateBuilder {
     cover_url: Option<String>,
     external_id: String,
     external_url: Option<String>,
+    rating: Option<f64>,
+    rating_count: Option<i64>,
 }
 
 #[cfg(test)]

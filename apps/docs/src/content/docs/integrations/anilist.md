@@ -79,6 +79,14 @@ Stripstream ne marque jamais une série comme terminée sur AniList en se basant
 
 Sur la page d'une série liée à AniList, vous pouvez consulter et modifier directement son statut AniList sans passer par une synchronisation complète.
 
+## Notation et scores
+
+Lorsque vous notez une série dans Stripstream (voir [Notation des séries](/series/ratings/)), la note est **automatiquement poussée vers AniList** si la série est liée. Le push utilise `SaveMediaListEntry(score)` avec une conversion vers l'échelle POINT_100.
+
+Inversement, lors d'un **Pull**, votre score AniList est importé dans Stripstream comme note initiale (sans écraser une note locale existante).
+
+---
+
 :::note[Détails techniques]
 Rate limiting : attente fixe de 700ms entre chaque requête AniList (~85 req/min). Retry 10s sur HTTP 429, abandon au second 429 consécutif.
 

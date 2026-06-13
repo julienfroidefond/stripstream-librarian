@@ -137,6 +137,13 @@ async fn search_series_impl(
             .unwrap_or("")
             .to_string();
 
+        let avg_rating = volume_info
+            .get("averageRating")
+            .and_then(|r| r.as_f64());
+        let ratings_count = volume_info
+            .get("ratingsCount")
+            .and_then(|c| c.as_i64());
+
         let entry =
             series_map
                 .entry(series_name.clone())
@@ -151,9 +158,17 @@ async fn search_series_impl(
                     external_id: google_id.clone(),
                     external_url: None,
                     metadata_json: serde_json::json!({}),
+                    rating: None,
+                    rating_count: None,
                 });
 
         entry.volume_count += 1;
+
+        // Keep the rating from the volume with the highest ratings_count
+        if ratings_count.unwrap_or(0) > entry.rating_count.unwrap_or(0) {
+            entry.rating = avg_rating;
+            entry.rating_count = ratings_count;
+        }
 
         // Merge authors
         for a in &authors {
@@ -197,6 +212,13 @@ async fn search_series_impl(
             let mut metadata_json = b.metadata_json;
             if let Some(ref desc) = b.description {
                 metadata_json["description"] = serde_json::json!(desc);
+            }
+            if let Some(r) = b.rating {
+                metadata_json["rating"] = serde_json::json!(r);
+                metadata_json["rating_scale"] = serde_json::json!(5.0_f64);
+            }
+            if let Some(c) = b.rating_count {
+                metadata_json["rating_count"] = serde_json::json!(c);
             }
             SeriesCandidate {
                 external_id: b.external_id,
@@ -477,6 +499,8 @@ struct SeriesCandidateBuilder {
     external_id: String,
     external_url: Option<String>,
     metadata_json: serde_json::Value,
+    rating: Option<f64>,
+    rating_count: Option<i64>,
 }
 
 #[cfg(test)]

@@ -4,6 +4,7 @@ pub(crate) mod helpers;
 pub mod list;
 pub mod merge;
 pub mod ongoing;
+pub mod ratings;
 pub mod recommendations;
 pub mod related;
 #[cfg(test)]
@@ -16,6 +17,7 @@ pub(crate) use helpers::{get_or_create_series, resolve_library_id};
 pub use list::*;
 pub use merge::*;
 pub use ongoing::*;
+pub use ratings::*;
 pub use recommendations::*;
 pub use related::*;
 pub use update::*;

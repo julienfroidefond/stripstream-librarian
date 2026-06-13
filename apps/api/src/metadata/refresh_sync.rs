@@ -62,12 +62,17 @@ pub(crate) async fn refresh_link(
         .or_else(|| candidates.first());
 
     if let Some(candidate) = candidate {
-        // Update link metadata_json
+        let (pr_rating, pr_rating_count, pr_rating_scale) =
+            shared_sync::extract_provider_rating(&candidate.metadata_json);
+        // Update link metadata_json and provider rating columns
         sqlx::query(
             r#"
             UPDATE external_metadata_links
             SET metadata_json = $2,
                 total_volumes_external = $3,
+                provider_rating = $4,
+                provider_rating_count = $5,
+                provider_rating_scale = $6,
                 updated_at = NOW()
             WHERE id = $1
             "#,
@@ -75,6 +80,9 @@ pub(crate) async fn refresh_link(
         .bind(link_id)
         .bind(&candidate.metadata_json)
         .bind(candidate.total_volumes)
+        .bind(pr_rating)
+        .bind(pr_rating_count)
+        .bind(pr_rating_scale)
         .execute(pool)
         .await
         .map_err(|e| e.to_string())?;

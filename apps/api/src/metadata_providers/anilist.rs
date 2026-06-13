@@ -47,6 +47,9 @@ query ($search: String) {
       staff { edges { node { name { full } } role } }
       siteUrl
       genres
+      averageScore
+      meanScore
+      popularity
     }
   }
 }
@@ -66,6 +69,9 @@ query ($id: Int) {
     staff { edges { node { name { full } } role } }
     siteUrl
     genres
+    averageScore
+    meanScore
+    popularity
   }
 }
 "#;
@@ -178,6 +184,12 @@ async fn search_series_impl_url(query: &str, url: &str) -> Result<Vec<SeriesCand
 
             let genres = extract_genres(m);
 
+            let average_score = m.get("averageScore").and_then(|v| v.as_f64());
+            let mean_score = m.get("meanScore").and_then(|v| v.as_f64());
+            let popularity = m.get("popularity").and_then(|v| v.as_i64());
+            // Use averageScore, fall back to meanScore
+            let rating = average_score.or(mean_score);
+
             let confidence = compute_confidence(&title, &query_lower);
 
             // Use volumes if known, otherwise fall back to chapters count
@@ -207,6 +219,9 @@ async fn search_series_impl_url(query: &str, url: &str) -> Result<Vec<SeriesCand
                     "volume_source": volume_source,
                     "genres": genres,
                     "description": description,
+                    "rating": rating,
+                    "rating_scale": 100.0_f64,
+                    "rating_count": popularity,
                 }),
             })
         })
@@ -353,6 +368,9 @@ query ($perPage: Int) {
       staff { edges { node { name { full } } role } }
       siteUrl
       genres
+      averageScore
+      meanScore
+      popularity
     }
   }
 }
@@ -439,6 +457,11 @@ fn parse_media_to_candidate(
     let authors = extract_authors(m);
     let genres = extract_genres(m);
 
+    let average_score = m.get("averageScore").and_then(|v| v.as_f64());
+    let mean_score = m.get("meanScore").and_then(|v| v.as_f64());
+    let popularity = m.get("popularity").and_then(|v| v.as_i64());
+    let rating = average_score.or(mean_score);
+
     let (total_volumes, volume_source) = match volumes {
         Some(v) => (Some(v), "volumes"),
         None => match chapters {
@@ -465,6 +488,9 @@ fn parse_media_to_candidate(
             "volume_source": volume_source,
             "genres": genres,
             "description": description,
+            "rating": rating,
+            "rating_scale": 100.0_f64,
+            "rating_count": popularity,
         }),
     })
 }

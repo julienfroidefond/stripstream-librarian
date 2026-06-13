@@ -363,6 +363,11 @@ async fn main() -> anyhow::Result<()> {
             delete(integrations::anilist::unlink_series_by_id),
         )
         .route(
+            "/series/:series_id/rating",
+            axum::routing::put(series::set_series_rating)
+                .delete(series::delete_series_rating),
+        )
+        .route(
             "/metadata/search",
             axum::routing::post(metadata::search_metadata),
         )
@@ -561,6 +566,10 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/series/:series_id/related",
             get(series::get_related_series),
+        )
+        .route(
+            "/series/:series_id/ratings",
+            get(series::get_series_ratings),
         )
         .route("/series/ongoing", get(series::ongoing_series))
         .route("/series/statuses", get(series::series_statuses))

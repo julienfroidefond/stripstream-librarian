@@ -1,4 +1,5 @@
 mod create;
+mod ratings;
 mod related;
 
 use super::helpers::get_or_create_series;

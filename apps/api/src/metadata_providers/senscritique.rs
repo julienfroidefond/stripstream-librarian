@@ -83,7 +83,7 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
         .ok_or("SensCritique: missing searchAutocomplete items")?;
 
     // Group by franchise — keep the first occurrence per franchise
-    let mut franchise_map: HashMap<i64, (SeriesCandidate, f64)> = HashMap::new();
+    let mut franchise_map: HashMap<i64, (SeriesCandidate, Option<f64>)> = HashMap::new();
     // Track best description per franchise: prefer lowest volume number (tome 1)
     let mut franchise_descriptions: HashMap<i64, (Option<i32>, String)> = HashMap::new();
     // Products without franchise get their own entry
@@ -110,7 +110,7 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
         let rating = product
             .get("rating")
             .and_then(|r| r.as_f64())
-            .unwrap_or(0.0);
+            .filter(|&r| r > 0.0);
 
         let franchises = product
             .get("franchises")
@@ -184,6 +184,7 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
                 metadata_json: serde_json::json!({
                     "franchise_id": fid,
                     "rating": rating,
+                    "rating_scale": 10.0_f64,
                     "description": synopsis,
                 }),
             };
@@ -224,6 +225,7 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
                 metadata_json: serde_json::json!({
                     "product_id": id,
                     "rating": rating,
+                    "rating_scale": 10.0_f64,
                     "description": synopsis,
                 }),
             });
@@ -824,6 +826,7 @@ fn group_products_by_franchise(items: &[serde_json::Value], limit: usize) -> Vec
             metadata_json: serde_json::json!({
                 "source": "senscritique",
                 "rating": rating,
+                "rating_scale": 10.0_f64,
                 "category": category,
                 "description": description,
             }),

@@ -94,6 +94,20 @@ pub(crate) async fn extract_series_fields(
     }
 }
 
+/// Extract provider rating fields from a metadata_json blob.
+/// Returns (rating, rating_count, rating_scale) — all optional.
+pub(crate) fn extract_provider_rating(
+    metadata_json: &serde_json::Value,
+) -> (Option<f64>, Option<i64>, Option<f64>) {
+    let rating = metadata_json
+        .get("rating")
+        .and_then(|v| v.as_f64())
+        .filter(|&r| r > 0.0);
+    let rating_count = metadata_json.get("rating_count").and_then(|v| v.as_i64());
+    let rating_scale = metadata_json.get("rating_scale").and_then(|v| v.as_f64());
+    (rating, rating_count, rating_scale)
+}
+
 fn extract_string_array(json: &serde_json::Value, key: &str) -> Option<Vec<String>> {
     json.get(key)
         .and_then(|a| a.as_array())

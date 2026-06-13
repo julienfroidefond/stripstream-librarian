@@ -935,6 +935,40 @@ export async function fetchSeriesMetadata(seriesId: string) {
   );
 }
 
+// ─── Ratings ──────────────────────────────────────────────────────────────────
+
+export type ProviderRatingDto = {
+  provider: string;
+  rating: number;
+  rating_scale: number;
+  rating_count: number | null;
+};
+
+export type SeriesRatingsDto = {
+  user_rating: number | null;
+  anilist_pulled_rating: number | null;
+  provider_ratings: ProviderRatingDto[];
+};
+
+export async function fetchSeriesRatings(seriesId: string): Promise<SeriesRatingsDto> {
+  return apiFetch<SeriesRatingsDto>(`/series/${seriesId}/ratings`, {
+    next: { revalidate: 30, tags: ["series", `series:${seriesId}`] },
+  });
+}
+
+export async function updateSeriesRating(seriesId: string, rating: number): Promise<void> {
+  return apiFetch<void>(`/series/${seriesId}/rating`, {
+    method: "PUT",
+    body: JSON.stringify({ rating }),
+  });
+}
+
+export async function deleteSeriesRating(seriesId: string): Promise<void> {
+  return apiFetch<void>(`/series/${seriesId}/rating`, {
+    method: "DELETE",
+  });
+}
+
 export async function fetchAllGenres(): Promise<string[]> {
   return apiFetch<string[]>("/series/genres").catch(() => []);
 }

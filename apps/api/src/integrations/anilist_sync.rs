@@ -335,6 +335,7 @@ pub async fn pull_from_anilist(
                         media { id siteUrl }
                         status
                         progressVolumes
+                        score(format: POINT_100)
                     }
                 }
             }
@@ -348,14 +349,17 @@ pub async fn pull_from_anilist(
         .cloned()
         .unwrap_or_default();
 
-    let mut entries: Vec<(i32, String, i32)> = Vec::new();
+    // (anilist_media_id, status, progress_volumes, score_0_100)
+    let mut entries: Vec<(i32, String, i32, Option<f64>)> = Vec::new();
     for list in &lists {
         if let Some(list_entries) = list["entries"].as_array() {
             for entry in list_entries {
                 let media_id = entry["media"]["id"].as_i64().unwrap_or(0) as i32;
                 let status = entry["status"].as_str().unwrap_or("").to_string();
                 let progress = entry["progressVolumes"].as_i64().unwrap_or(0) as i32;
-                entries.push((media_id, status, progress));
+                // score is 0 when not rated on AniList — treat 0 as None
+                let score = entry["score"].as_f64().filter(|&s| s > 0.0);
+                entries.push((media_id, status, progress, score));
             }
         }
     }
@@ -390,12 +394,39 @@ pub async fn pull_from_anilist(
     let mut errors: Vec<String> = Vec::new();
     let mut items: Vec<AnilistPullItem> = Vec::new();
 
-    for (anilist_id, anilist_status, progress_volumes) in &entries {
+    for (anilist_id, anilist_status, progress_volumes, user_score_100) in &entries {
         let Some((series_id, series_name, anilist_title, anilist_url)) = link_map.get(anilist_id)
         else {
             skipped += 1;
             continue;
         };
+
+        // Persist user score (normalised 0-10) on anilist_series_links
+        let user_score_normalised = user_score_100.map(|s| s / 10.0);
+        let _ = sqlx::query(
+            "UPDATE anilist_series_links SET user_score = $1 WHERE series_id = $2",
+        )
+        .bind(user_score_normalised)
+        .bind(series_id)
+        .execute(&state.pool)
+        .await;
+
+        // Backfill series_user_ratings if no local rating exists yet
+        if let Some(score) = user_score_normalised {
+            let rounded = (score.round() as i16).clamp(1, 10);
+            let _ = sqlx::query(
+                r#"
+                INSERT INTO series_user_ratings (user_id, series_id, rating)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (user_id, series_id) DO NOTHING
+                "#,
+            )
+            .bind(local_user_id)
+            .bind(series_id)
+            .bind(rounded)
+            .execute(&state.pool)
+            .await;
+        }
 
         let local_status = match anilist_status.as_str() {
             "COMPLETED" => "read",

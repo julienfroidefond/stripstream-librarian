@@ -1,4 +1,4 @@
-import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, fetchDownloadsEnabled, fetchSeriesReadingLists, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto, ReadingListDto, TelegramMonitorStatus } from "@/lib/api";
+import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, fetchDownloadsEnabled, fetchSeriesReadingLists, fetchSeriesRatings, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto, ReadingListDto, TelegramMonitorStatus, SeriesRatingsDto } from "@/lib/api";
 import { cookies } from "next/headers";
 import { BooksGrid, EmptyState } from "@/app/components/BookCard";
 import { SeriesRelatedCarousel } from "@/app/components/SeriesRelatedCarousel";
@@ -6,6 +6,7 @@ import { BooksGridWithMissingToggle } from "@/app/components/ShowMissingToggle";
 import { MarkBookReadButton } from "@/app/components/MarkBookReadButton";
 import { ProviderIcon, providerLabel } from "@/app/components/ProviderIcon";
 import { SeriesActionsToolbar } from "@/app/components/SeriesActionsToolbar";
+import { SeriesRatingControl } from "@/app/components/SeriesRatingControl";
 import { OffsetPagination } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { Icon } from "@/app/components/ui/Icon";
@@ -57,8 +58,8 @@ export default async function SeriesDetailPage({
   // Get series name from metadata for display
   const seriesName = seriesMeta?.series_name ?? "";
 
-  // Fetch books and related series in parallel
-  const [booksPage, relatedSeries, seriesReadingLists] = await Promise.all([
+  // Fetch books, related series and ratings in parallel
+  const [booksPage, relatedSeries, seriesReadingLists, seriesRatings] = await Promise.all([
     fetchBooks(libraryId, seriesId, page, limit).catch(() => ({
       items: [] as BookDto[],
       total: 0,
@@ -67,6 +68,7 @@ export default async function SeriesDetailPage({
     })),
     fetchRelatedSeries(seriesId, 12).catch(() => []),
     fetchSeriesReadingLists(seriesId).catch(() => [] as ReadingListDto[]),
+    fetchSeriesRatings(seriesId).catch(() => null as SeriesRatingsDto | null),
   ]);
 
   const hiddenProviders: string[] = [];
@@ -192,6 +194,38 @@ export default async function SeriesDetailPage({
                 </svg>
                 AniList
               </a>
+            )}
+          </div>
+
+          {/* Ratings section */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {/* My rating */}
+            <SeriesRatingControl
+              seriesId={seriesId}
+              initialRating={seriesRatings?.user_rating ?? null}
+              hasAniListLink={!!readingStatusLink}
+            />
+
+            {/* Provider score badges */}
+            {seriesRatings && seriesRatings.provider_ratings.length > 0 && (
+              <>
+                <span className="w-px h-5 bg-border shrink-0" />
+                <div className="flex flex-wrap items-center gap-2">
+                  {seriesRatings.provider_ratings.map((pr) => (
+                    <div
+                      key={pr.provider}
+                      className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-muted/60 border border-border/60 text-xs"
+                      title={pr.rating_count ? `${pr.rating_count.toLocaleString()} votes` : undefined}
+                    >
+                      <ProviderIcon provider={pr.provider} size={11} />
+                      <span className="font-medium tabular-nums text-foreground">
+                        {pr.rating.toFixed(1)}
+                      </span>
+                      <span className="text-muted-foreground">/{pr.rating_scale % 1 === 0 ? pr.rating_scale.toFixed(0) : pr.rating_scale}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
 
