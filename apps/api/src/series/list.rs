@@ -426,13 +426,15 @@ pub async fn list_all_series(
 
     let metadata_links_cte = helpers::METADATA_LINKS_CTE;
 
-    let community_scores_cte = r#"community_scores AS (
-        SELECT series_id,
-               (AVG(provider_rating / COALESCE(NULLIF(provider_rating_scale, 0), 10.0) * 5.0))::real AS community_score
+    // Used in SELECT and ORDER BY — index on (series_id, status) makes this fast per row
+    let community_score_lateral = r#"LEFT JOIN LATERAL (
+        SELECT (AVG(provider_rating / COALESCE(NULLIF(provider_rating_scale, 0), 10.0) * 5.0))::real AS community_score
         FROM external_metadata_links
-        WHERE status = 'approved' AND provider_rating IS NOT NULL AND provider_rating > 0
-        GROUP BY series_id
-    )"#;
+        WHERE series_id = sc.series_id
+          AND status = 'approved'
+          AND provider_rating IS NOT NULL
+          AND provider_rating > 0
+    ) cs ON TRUE"#;
 
     let user_id_p = p + 1;
     let limit_p = p + 2;
@@ -455,13 +457,11 @@ pub async fn list_all_series(
             GROUP BY s.id, s.name, s.library_id, s.created_at
         ),
         {missing_cte},
-        {metadata_links_cte},
-        {community_scores_cte}
+        {metadata_links_cte}
         SELECT COUNT(*) FROM series_counts sc
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
         LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = sc.library_id
-        LEFT JOIN community_scores cs ON cs.series_id = sc.series_id
         LEFT JOIN series_user_ratings sur ON sur.series_id = sc.series_id AND sur.user_id = ${user_id_p}::uuid
         WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {author_cond} {has_books_cond} {no_books_cond} {genre_cond} {oneshot_cond} {rated_only_cond} {genre_restriction_cond}
         "#
@@ -516,8 +516,7 @@ pub async fn list_all_series(
             GROUP BY s.id, s.name, s.library_id, s.created_at
         ),
         {missing_cte},
-        {metadata_links_cte},
-        {community_scores_cte}
+        {metadata_links_cte}
         SELECT
             sc.name,
             sc.series_id,
@@ -540,7 +539,7 @@ pub async fn list_all_series(
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
         LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = sc.library_id
         LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
-        LEFT JOIN community_scores cs ON cs.series_id = sc.series_id
+        {community_score_lateral}
         LEFT JOIN series_user_ratings sur ON sur.series_id = sc.series_id AND sur.user_id = ${user_id_p}::uuid
         WHERE TRUE
           {q_cond}

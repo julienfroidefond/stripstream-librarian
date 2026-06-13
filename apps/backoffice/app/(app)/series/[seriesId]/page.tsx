@@ -46,13 +46,13 @@ export default async function SeriesDetailPage({
     getMetadataLink(seriesId).catch(() => [] as ExternalMetadataLinkDto[]),
     getReadingStatusLink(seriesId).catch(() => null as AnilistSeriesLinkDto | null),
     fetchDownloadsEnabled(),
-    apiFetch<{ url?: string; username?: string }>("/settings/qbittorrent")
+    apiFetch<{ url?: string; username?: string }>("/settings/qbittorrent", { next: { revalidate: 3600 } })
       .then(d => !!(d?.url?.trim() && d?.username?.trim()))
       .catch(() => false),
-    apiFetch<{ comicvine?: { api_key?: string } }>("/settings/metadata_providers").catch(() => null),
-    apiFetch<string>("/settings/rename_format").catch(() => null),
-    apiFetch<string>("/settings/rename_format_hs").catch(() => null),
-    apiFetch<TelegramMonitorStatus>("/telegram-monitor/status").catch(() => null),
+    apiFetch<{ comicvine?: { api_key?: string } }>("/settings/metadata_providers", { next: { revalidate: 3600 } }).catch(() => null),
+    apiFetch<string>("/settings/rename_format", { next: { revalidate: 3600 } }).catch(() => null),
+    apiFetch<string>("/settings/rename_format_hs", { next: { revalidate: 3600 } }).catch(() => null),
+    apiFetch<TelegramMonitorStatus>("/telegram-monitor/status", { next: { revalidate: 60 } }).catch(() => null),
   ]);
   const telegramEnabled = !!(telegramStatus?.configured && telegramStatus?.authorized);
 

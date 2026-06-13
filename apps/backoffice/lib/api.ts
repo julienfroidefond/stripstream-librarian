@@ -664,7 +664,9 @@ export async function getSettings() {
 }
 
 export async function fetchDownloadsEnabled(): Promise<boolean> {
-  return apiFetch<{ enabled: boolean }>("/settings/downloads_enabled")
+  return apiFetch<{ enabled: boolean }>("/settings/downloads_enabled", {
+    next: { revalidate: 300 },
+  })
     .then(d => d?.enabled === true)
     .catch(() => false);
 }
@@ -941,9 +943,9 @@ export type SeriesMetadataDto = {
 };
 
 export async function fetchSeriesMetadata(seriesId: string) {
-  return apiFetch<SeriesMetadataDto>(
-    `/series/${seriesId}/metadata`
-  );
+  return apiFetch<SeriesMetadataDto>(`/series/${seriesId}/metadata`, {
+    next: { revalidate: 60, tags: ["series", `series:${seriesId}`] },
+  });
 }
 
 // ─── Ratings ──────────────────────────────────────────────────────────────────
@@ -1194,9 +1196,9 @@ export async function getMetadataLink(seriesId: string) {
 }
 
 export async function getReadingStatusLink(seriesId: string) {
-  return apiFetch<AnilistSeriesLinkDto>(
-    `/series/${seriesId}/anilist`
-  );
+  return apiFetch<AnilistSeriesLinkDto>(`/series/${seriesId}/anilist`, {
+    next: { revalidate: 60, tags: ["series", `series:${seriesId}`] },
+  });
 }
 
 export async function getMissingBooks(linkId: string) {
@@ -1592,7 +1594,9 @@ export type SeriesMembershipDto = {
 };
 
 export async function fetchReadingLists(): Promise<ReadingListDto[]> {
-  return apiFetch<ReadingListDto[]>("/reading-lists");
+  return apiFetch<ReadingListDto[]>("/reading-lists", {
+    next: { revalidate: 30 },
+  });
 }
 
 export async function fetchSeriesReadingLists(seriesId: string): Promise<ReadingListDto[]> {

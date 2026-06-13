@@ -59,27 +59,27 @@ pub async fn get_series_ratings(
 ) -> Result<Json<SeriesRatingsResponse>, ApiError> {
     let user_id = user.map(|u| u.0.user_id);
 
-    let user_rating: Option<i16> = if let Some(uid) = user_id {
-        sqlx::query_scalar(
-            "SELECT rating FROM series_user_ratings WHERE user_id = $1 AND series_id = $2",
-        )
-        .bind(uid)
-        .bind(series_id)
-        .fetch_optional(&state.pool)
-        .await?
-    } else {
-        None
+    let user_rating_fut = async {
+        if let Some(uid) = user_id {
+            sqlx::query_scalar::<_, i16>(
+                "SELECT rating FROM series_user_ratings WHERE user_id = $1 AND series_id = $2",
+            )
+            .bind(uid)
+            .bind(series_id)
+            .fetch_optional(&state.pool)
+            .await
+        } else {
+            Ok(None)
+        }
     };
 
-    let anilist_pulled_rating: Option<f64> = sqlx::query_scalar(
+    let anilist_fut = sqlx::query_scalar::<_, Option<f64>>(
         "SELECT user_score::float8 FROM anilist_series_links WHERE series_id = $1 LIMIT 1",
     )
     .bind(series_id)
-    .fetch_optional(&state.pool)
-    .await?
-    .flatten();
+    .fetch_optional(&state.pool);
 
-    let provider_rows = sqlx::query(
+    let providers_fut = sqlx::query(
         r#"
         SELECT provider, provider_rating, provider_rating_scale, provider_rating_count
         FROM external_metadata_links
@@ -90,8 +90,12 @@ pub async fn get_series_ratings(
         "#,
     )
     .bind(series_id)
-    .fetch_all(&state.pool)
-    .await?;
+    .fetch_all(&state.pool);
+
+    let (user_rating, anilist_row, provider_rows) =
+        tokio::try_join!(user_rating_fut, anilist_fut, providers_fut)?;
+
+    let anilist_pulled_rating = anilist_row.flatten();
 
     let provider_ratings: Vec<ProviderRating> = provider_rows
         .iter()
