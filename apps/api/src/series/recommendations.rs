@@ -159,6 +159,16 @@ pub async fn get_recommendations(
             CROSS JOIN source_series src
             WHERE cand.id NOT IN (SELECT series_id FROM started)
               AND cand.id != src.series_id
+              AND (
+                  cand.genres && src.genres
+                  OR cand.authors && src.authors
+                  OR cand.publishers && src.publishers
+                  OR EXISTS (
+                      SELECT 1 FROM reading_list_items rli1
+                      JOIN reading_list_items rli2 ON rli2.list_id = rli1.list_id
+                      WHERE rli1.series_id = src.series_id AND rli2.series_id = cand.id
+                  )
+              )
         ),
         author_matches AS (
             SELECT
@@ -284,26 +294,6 @@ pub async fn get_recommendations(
             FROM source_candidate_scores scs
             LEFT JOIN community_scores comm ON comm.series_id = scs.candidate_id
             GROUP BY scs.candidate_id, comm.community_score
-        ),
-        first_books AS (
-            SELECT DISTINCT ON (series_id)
-                series_id, id AS first_book_id, updated_at AS first_book_updated_at
-            FROM books
-            ORDER BY series_id,
-                CASE WHEN volume_type = 'regular' THEN 0 ELSE 1 END,
-                volume ASC NULLS LAST,
-                created_at ASC
-        ),
-        meta_links AS (
-            SELECT DISTINCT ON (series_id) series_id, provider
-            FROM external_metadata_links
-            WHERE status = 'approved'
-            ORDER BY series_id, created_at DESC
-        ),
-        book_counts AS (
-            SELECT series_id, COUNT(*) AS book_count
-            FROM books
-            GROUP BY series_id
         )
         SELECT
             s.id AS series_id,
@@ -334,9 +324,21 @@ pub async fn get_recommendations(
             cs.matched_source_count
         FROM series s
         JOIN candidate_scores cs ON cs.series_id = s.id
-        LEFT JOIN first_books fb ON fb.series_id = s.id
-        LEFT JOIN meta_links ml ON ml.series_id = s.id
-        LEFT JOIN book_counts bc ON bc.series_id = s.id
+        LEFT JOIN LATERAL (
+            SELECT b.id AS first_book_id, b.updated_at AS first_book_updated_at
+            FROM books b
+            WHERE b.series_id = s.id
+            ORDER BY CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END, b.volume NULLS LAST, b.created_at ASC
+            LIMIT 1
+        ) fb ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT eml.provider FROM external_metadata_links eml
+            WHERE eml.series_id = s.id AND eml.status = 'approved'
+            ORDER BY eml.created_at DESC LIMIT 1
+        ) ml ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT COUNT(*) AS book_count FROM books b WHERE b.series_id = s.id
+        ) bc ON TRUE
         WHERE COALESCE(bc.book_count, 0) > 0
           AND NOT EXISTS (
               SELECT 1 FROM user_genre_restrictions ugr

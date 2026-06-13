@@ -113,7 +113,6 @@ pub async fn list_series(
     );
 
     let missing_cte = helpers::build_missing_counts_cte(Some("$1"));
-    let metadata_links_cte = helpers::METADATA_LINKS_CTE;
 
     let title_order_clause = "REGEXP_REPLACE(LOWER(sc.name), '[0-9].*$', ''), COALESCE((REGEXP_MATCH(LOWER(sc.name), '\\d+'))[1]::int, 0), sc.name ASC";
     let series_order_clause = match query.sort.as_deref() {
@@ -133,12 +132,15 @@ pub async fn list_series(
             WHERE s.library_id = $1
             GROUP BY s.id, s.name
         ),
-        {missing_cte},
-        {metadata_links_cte}
+        {missing_cte}
         SELECT COUNT(*) FROM series_counts sc
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
-        LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = $1
+        LEFT JOIN LATERAL (
+            SELECT eml.provider FROM external_metadata_links eml
+            WHERE eml.series_id = sc.series_id AND eml.library_id = $1 AND eml.status = 'approved'
+            ORDER BY eml.created_at DESC LIMIT 1
+        ) ml ON TRUE
         WHERE TRUE {q_cond} {count_rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {has_books_cond} {genre_restriction_cond}
         "#
     );
@@ -174,8 +176,7 @@ pub async fn list_series(
             WHERE s.library_id = $1
             GROUP BY s.id, s.name
         ),
-        {missing_cte},
-        {metadata_links_cte}
+        {missing_cte}
         SELECT
             sc.name,
             sc.series_id,
@@ -193,7 +194,11 @@ pub async fn list_series(
         LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id AND sb.rn = 1
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
-        LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = $1
+        LEFT JOIN LATERAL (
+            SELECT eml.provider FROM external_metadata_links eml
+            WHERE eml.series_id = sc.series_id AND eml.library_id = $1 AND eml.status = 'approved'
+            ORDER BY eml.created_at DESC LIMIT 1
+        ) ml ON TRUE
         LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
         WHERE TRUE
           {q_cond}
@@ -424,8 +429,6 @@ pub async fn list_all_series(
         helpers::build_missing_counts_cte(None)
     };
 
-    let metadata_links_cte = helpers::METADATA_LINKS_CTE;
-
     // Used in SELECT and ORDER BY — index on (series_id, status) makes this fast per row
     let community_score_lateral = r#"LEFT JOIN LATERAL (
         SELECT (AVG(provider_rating / COALESCE(NULLIF(provider_rating_scale, 0), 10.0) * 5.0))::real AS community_score
@@ -456,12 +459,15 @@ pub async fn list_all_series(
             {lib_cond}
             GROUP BY s.id, s.name, s.library_id, s.created_at
         ),
-        {missing_cte},
-        {metadata_links_cte}
+        {missing_cte}
         SELECT COUNT(*) FROM series_counts sc
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
-        LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = sc.library_id
+        LEFT JOIN LATERAL (
+            SELECT eml.provider FROM external_metadata_links eml
+            WHERE eml.series_id = sc.series_id AND eml.library_id = sc.library_id AND eml.status = 'approved'
+            ORDER BY eml.created_at DESC LIMIT 1
+        ) ml ON TRUE
         LEFT JOIN series_user_ratings sur ON sur.series_id = sc.series_id AND sur.user_id = ${user_id_p}::uuid
         WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {author_cond} {has_books_cond} {no_books_cond} {genre_cond} {oneshot_cond} {rated_only_cond} {genre_restriction_cond}
         "#
@@ -515,8 +521,7 @@ pub async fn list_all_series(
             {lib_cond}
             GROUP BY s.id, s.name, s.library_id, s.created_at
         ),
-        {missing_cte},
-        {metadata_links_cte}
+        {missing_cte}
         SELECT
             sc.name,
             sc.series_id,
@@ -537,7 +542,11 @@ pub async fn list_all_series(
         LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id AND sb.rn = 1
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
-        LEFT JOIN metadata_links ml ON ml.series_id = sc.series_id AND ml.library_id = sc.library_id
+        LEFT JOIN LATERAL (
+            SELECT eml.provider FROM external_metadata_links eml
+            WHERE eml.series_id = sc.series_id AND eml.library_id = sc.library_id AND eml.status = 'approved'
+            ORDER BY eml.created_at DESC LIMIT 1
+        ) ml ON TRUE
         LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
         {community_score_lateral}
         LEFT JOIN series_user_ratings sur ON sur.series_id = sc.series_id AND sur.user_id = ${user_id_p}::uuid

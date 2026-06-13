@@ -200,21 +200,15 @@ pub async fn list_books(
     p += 1;
     let uid_p = p;
 
-    let metadata_links_cte = r#"
-        metadata_links AS (
-            SELECT DISTINCT ON (eml.series_id, eml.library_id)
-                eml.series_id, eml.library_id, eml.provider, eml.id
-            FROM external_metadata_links eml
-            WHERE eml.status = 'approved'
-            ORDER BY eml.series_id, eml.library_id, eml.created_at DESC
-        )"#;
-
     let count_sql = format!(
-        r#"WITH {metadata_links_cte}
-           SELECT COUNT(*) FROM books b
+        r#"SELECT COUNT(*) FROM books b
            LEFT JOIN series s ON s.id = b.series_id
            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${uid_p}::uuid IS NOT NULL AND brp.user_id = ${uid_p}
-           LEFT JOIN metadata_links eml ON eml.series_id = b.series_id AND eml.library_id = b.library_id
+           LEFT JOIN LATERAL (
+               SELECT eml.provider, eml.id FROM external_metadata_links eml
+               WHERE eml.series_id = b.series_id AND eml.library_id = b.library_id AND eml.status = 'approved'
+               ORDER BY eml.created_at DESC LIMIT 1
+           ) eml ON TRUE
            WHERE ($1::uuid IS NULL OR b.library_id = $1)
              AND ($2::text IS NULL OR b.kind = $2)
              AND ($3::text IS NULL OR b.format = $3)
@@ -240,7 +234,6 @@ pub async fn list_books(
     let offset_p = p + 2;
     let data_sql = format!(
         r#"
-        WITH {metadata_links_cte}
         SELECT b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.volume_type, b.language, b.page_count, b.thumbnail_path, b.updated_at,
                COALESCE(brp.status, 'unread') AS reading_status,
                brp.current_page AS reading_current_page,
@@ -248,7 +241,11 @@ pub async fn list_books(
         FROM books b
         LEFT JOIN series s ON s.id = b.series_id
         LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${uid_p}::uuid IS NOT NULL AND brp.user_id = ${uid_p}
-        LEFT JOIN metadata_links eml ON eml.series_id = b.series_id AND eml.library_id = b.library_id
+        LEFT JOIN LATERAL (
+            SELECT eml.provider, eml.id FROM external_metadata_links eml
+            WHERE eml.series_id = b.series_id AND eml.library_id = b.library_id AND eml.status = 'approved'
+            ORDER BY eml.created_at DESC LIMIT 1
+        ) eml ON TRUE
         WHERE ($1::uuid IS NULL OR b.library_id = $1)
           AND ($2::text IS NULL OR b.kind = $2)
           AND ($3::text IS NULL OR b.format = $3)
