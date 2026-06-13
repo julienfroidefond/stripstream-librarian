@@ -37,7 +37,7 @@ export default async function SeriesPage({
   const booksFilter = paramString(sp, "books_filter"); // "wishlist" | "in_library" | ""
   const volumeTypeFilter = paramString(sp, "volume_type"); // "regular" | "oneshot" | "hs" | "integral" | ""
   const metadataProvider = paramString(sp, "metadata_provider");
-  const ratedOnly = paramBool(sp, "rated_only");
+  const ratedOnly = paramString(sp, "rated_only"); // "" | "true" | "unrated"
   const groupBy = paramString(sp, "group_by"); // "reading_list" | ""
   const view = paramString(sp, "view");
   const page = paramInt(sp, "page", 1);
@@ -205,7 +205,7 @@ export default async function SeriesPage({
               volume_type: volumeTypeFilter || "",
               metadata_provider: metadataProvider || "",
               sort: sort || "",
-              ...(hasActiveUser ? { rated_only: ratedOnly ? "true" : "" } : {}),
+              ...(hasActiveUser ? { rated_only: ratedOnly || "" } : {}),
             }}
             fields={[
               { name: "q", type: "text", label: t("common.search"), placeholder: t("series.searchPlaceholder") },
