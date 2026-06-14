@@ -262,12 +262,3 @@ pub(super) fn build_missing_counts_cte(library_id_param: Option<&str>) -> String
         )"#
     )
 }
-
-/// The `metadata_links` CTE SQL fragment (approved links, latest per series+library).
-pub(super) const METADATA_LINKS_CTE: &str = r#"metadata_links AS (
-            SELECT DISTINCT ON (eml.series_id, eml.library_id)
-                eml.series_id, eml.library_id, eml.provider
-            FROM external_metadata_links eml
-            WHERE eml.status = 'approved'
-            ORDER BY eml.series_id, eml.library_id, eml.created_at DESC
-        )"#;

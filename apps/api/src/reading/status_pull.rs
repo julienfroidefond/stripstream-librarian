@@ -5,7 +5,11 @@ use tracing::{info, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{error::ApiError, integrations::anilist, state::AppState};
+use crate::{
+    error::ApiError,
+    integrations::{anilist, anilist_rating_push::anilist_score_to_local},
+    state::AppState,
+};
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -222,7 +226,16 @@ pub async fn process_rating_pull(pool: &PgPool, job_id: Uuid) -> Result<(), Stri
             None => {
                 // Series linked locally but not in user's AniList list
                 count_not_found += 1;
-                insert_event(pool, job_id, "not_found", "info", Some(&series_name), None, None).await;
+                insert_event(
+                    pool,
+                    job_id,
+                    "not_found",
+                    "info",
+                    Some(&series_name),
+                    None,
+                    None,
+                )
+                .await;
             }
             Some(score_100_opt) => {
                 let user_score = score_100_opt.map(|s| s / 10.0);
@@ -236,8 +249,8 @@ pub async fn process_rating_pull(pool: &PgPool, job_id: Uuid) -> Result<(), Stri
                 .execute(pool)
                 .await;
 
-                if let Some(score) = user_score {
-                    let rounded = (score.round() as i16).clamp(1, 10);
+                if let Some(score_100) = score_100_opt {
+                    let rounded = anilist_score_to_local(*score_100);
                     // Backfill local rating — DO NOTHING if already set manually
                     let _ = sqlx::query(
                         r#"
@@ -265,7 +278,16 @@ pub async fn process_rating_pull(pool: &PgPool, job_id: Uuid) -> Result<(), Stri
                     .await;
                 } else {
                     count_unrated += 1;
-                    insert_event(pool, job_id, "unrated", "info", Some(&series_name), None, None).await;
+                    insert_event(
+                        pool,
+                        job_id,
+                        "unrated",
+                        "info",
+                        Some(&series_name),
+                        None,
+                        None,
+                    )
+                    .await;
                 }
             }
         }

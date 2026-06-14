@@ -21,9 +21,7 @@ pub async fn push_rating_to_anilist(
     local_user_id: Uuid,
     rating_1_10: i16,
 ) {
-    if let Err(e) =
-        push_rating_inner(pool, series_id, local_user_id, rating_1_10).await
-    {
+    if let Err(e) = push_rating_inner(pool, series_id, local_user_id, rating_1_10).await {
         tracing::warn!("AniList rating push failed for series {series_id}: {e}");
     }
 }
@@ -34,17 +32,14 @@ async fn push_rating_inner(
     _local_user_id: Uuid,
     rating_1_10: i16,
 ) -> Result<(), String> {
-    let (token, _, _) = load_anilist_settings(pool)
-        .await
-        .map_err(|e| e.message)?;
+    let (token, _, _) = load_anilist_settings(pool).await.map_err(|e| e.message)?;
 
-    let row = sqlx::query(
-        "SELECT anilist_id FROM anilist_series_links WHERE series_id = $1 LIMIT 1",
-    )
-    .bind(series_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let row =
+        sqlx::query("SELECT anilist_id FROM anilist_series_links WHERE series_id = $1 LIMIT 1")
+            .bind(series_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| e.to_string())?;
 
     let anilist_id: i32 = match row {
         Some(r) => r.get("anilist_id"),
@@ -52,7 +47,7 @@ async fn push_rating_inner(
     };
 
     // Convert 1-10 (half-star ×2) to POINT_100
-    let score_100 = (rating_1_10 as f64) * 10.0;
+    let score_100 = local_rating_to_anilist_score(rating_1_10);
 
     anilist_graphql(
         &token,
@@ -66,13 +61,11 @@ async fn push_rating_inner(
     .map_err(|e| e.message)?;
 
     // Update the cached user_score on the link
-    let _ = sqlx::query(
-        "UPDATE anilist_series_links SET user_score = $1 WHERE series_id = $2",
-    )
-    .bind(rating_1_10 as f64)
-    .bind(series_id)
-    .execute(pool)
-    .await;
+    let _ = sqlx::query("UPDATE anilist_series_links SET user_score = $1 WHERE series_id = $2")
+        .bind(rating_1_10 as f64)
+        .bind(series_id)
+        .execute(pool)
+        .await;
 
     Ok(())
 }

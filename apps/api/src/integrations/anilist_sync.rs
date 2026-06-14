@@ -6,6 +6,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use super::anilist::{anilist_graphql, load_anilist_settings};
+use super::anilist_rating_push::anilist_score_to_local;
 use crate::{error::ApiError, state::AppState};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -403,17 +404,15 @@ pub async fn pull_from_anilist(
 
         // Persist user score (normalised 0-10) on anilist_series_links
         let user_score_normalised = user_score_100.map(|s| s / 10.0);
-        let _ = sqlx::query(
-            "UPDATE anilist_series_links SET user_score = $1 WHERE series_id = $2",
-        )
-        .bind(user_score_normalised)
-        .bind(series_id)
-        .execute(&state.pool)
-        .await;
+        let _ = sqlx::query("UPDATE anilist_series_links SET user_score = $1 WHERE series_id = $2")
+            .bind(user_score_normalised)
+            .bind(series_id)
+            .execute(&state.pool)
+            .await;
 
         // Backfill series_user_ratings if no local rating exists yet
-        if let Some(score) = user_score_normalised {
-            let rounded = (score.round() as i16).clamp(1, 10);
+        if let Some(score_100) = user_score_100 {
+            let rounded = anilist_score_to_local(*score_100);
             let _ = sqlx::query(
                 r#"
                 INSERT INTO series_user_ratings (user_id, series_id, rating)
