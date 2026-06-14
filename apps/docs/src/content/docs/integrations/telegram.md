@@ -32,7 +32,8 @@ Vous pouvez activer ou désactiver chaque type de notification individuellement 
 
 Les notifications de succès les plus importantes incluent aussi un résumé utile, pas seulement un compteur :
 
-- **Scan terminé** : bibliothèque, type de scan, durée, compteurs, puis la liste des nouvelles séries et des nouveaux livres détectés
+- **Scan avec nouveaux fichiers** : une notification par série, avec l'affiche quand elle est disponible, puis la liste des nouveaux livres ajoutés dans cette série
+- **Scan terminé sans nouveaux livres** : bibliothèque, type de scan, durée et compteurs
 - **Pull AniList terminé** : nombre de séries liées, puis la liste des séries effectivement liées pendant ce job
 - **Push AniList terminé** : nombre de séries poussées, puis la liste des séries effectivement envoyées à AniList
 
@@ -42,7 +43,7 @@ Les listes sont volontairement tronquées si le job a produit beaucoup d'éléme
 
 ## Images dans les notifications
 
-Pour les événements pertinents (conversion, approbation de métadonnées), la miniature de couverture est jointe à la notification Telegram.
+Pour les événements pertinents (scan avec nouveaux livres, conversion, approbation de métadonnées), la miniature de couverture est jointe à la notification Telegram.
 
 :::tip
 Si une image ne s'affiche pas dans une notification, c'est que la miniature n'était pas encore générée au moment de l'envoi. La notification texte est toujours envoyée.

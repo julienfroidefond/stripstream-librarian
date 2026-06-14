@@ -201,6 +201,7 @@ pub async fn send_test_message(config: &TelegramConfig) -> Result<()> {
 // Notification events
 // ---------------------------------------------------------------------------
 
+#[derive(Clone, Debug, Default)]
 pub struct ScanStats {
     pub scanned_files: usize,
     pub indexed_files: usize,
@@ -227,6 +228,12 @@ pub enum NotificationEvent {
     ScanCancelled {
         job_type: String,
         library_name: Option<String>,
+    },
+    ScanSeriesDiscovered {
+        library_name: Option<String>,
+        series_name: String,
+        thumbnail_path: Option<String>,
+        book_titles: Vec<String>,
     },
     // Thumbnail jobs (thumbnail_rebuild, thumbnail_regenerate)
     ThumbnailCompleted {
@@ -442,6 +449,37 @@ fn format_event(event: &NotificationEvent) -> String {
                 format!("🏷 <b>Type:</b> {job_type}"),
             ]
             .join("\n")
+        }
+        NotificationEvent::ScanSeriesDiscovered {
+            library_name,
+            series_name,
+            book_titles,
+            ..
+        } => {
+            let lib = library_name.as_deref().unwrap_or("All libraries");
+            let mut lines = vec![
+                "📚 <b>Nouveaux livres détectés</b>".to_string(),
+                String::new(),
+                format!("📂 <b>Bibliothèque:</b> {lib}"),
+                format!("📚 <b>Série:</b> {}", truncate(series_name, 60)),
+                format!(
+                    "📥 <b>{}</b> nouveau{} livre{}",
+                    book_titles.len(),
+                    if book_titles.len() > 1 { "x" } else { "" },
+                    if book_titles.len() > 1 { "s" } else { "" }
+                ),
+            ];
+            if !book_titles.is_empty() {
+                lines.push(String::new());
+                lines.push("📖 <b>Livres ajoutés :</b>".to_string());
+                for title in book_titles.iter().take(15) {
+                    lines.push(format!("  • {}", truncate(title, 80)));
+                }
+                if book_titles.len() > 15 {
+                    lines.push(format!("  … et {} de plus", book_titles.len() - 15));
+                }
+            }
+            lines.join("\n")
         }
         NotificationEvent::ThumbnailCompleted {
             job_type,
@@ -925,6 +963,7 @@ fn is_event_enabled(config: &TelegramConfig, event: &NotificationEvent) -> bool 
         NotificationEvent::ScanCompleted { .. } => config.events.scan_completed,
         NotificationEvent::ScanFailed { .. } => config.events.scan_failed,
         NotificationEvent::ScanCancelled { .. } => config.events.scan_cancelled,
+        NotificationEvent::ScanSeriesDiscovered { .. } => config.events.scan_completed,
         NotificationEvent::ThumbnailCompleted { .. } => config.events.thumbnail_completed,
         NotificationEvent::ThumbnailFailed { .. } => config.events.thumbnail_failed,
         NotificationEvent::ConversionCompleted { .. } => config.events.conversion_completed,
@@ -973,6 +1012,7 @@ fn is_noteworthy(event: &NotificationEvent) -> bool {
                 || stats.new_series > 0
                 || stats.errors > 0
         }
+        NotificationEvent::ScanSeriesDiscovered { book_titles, .. } => !book_titles.is_empty(),
         // Cancelled by user — they already know
         NotificationEvent::ScanCancelled { .. } => false,
         // Metadata batch: only if something was actually matched
@@ -997,6 +1037,7 @@ fn is_noteworthy(event: &NotificationEvent) -> bool {
 /// Extract thumbnail path from event if present and file exists on disk.
 fn event_thumbnail(event: &NotificationEvent) -> Option<&str> {
     let path = match event {
+        NotificationEvent::ScanSeriesDiscovered { thumbnail_path, .. } => thumbnail_path.as_deref(),
         NotificationEvent::ConversionCompleted { thumbnail_path, .. } => thumbnail_path.as_deref(),
         NotificationEvent::ConversionFailed { thumbnail_path, .. } => thumbnail_path.as_deref(),
         NotificationEvent::MetadataApproved { thumbnail_path, .. } => thumbnail_path.as_deref(),
@@ -1040,4 +1081,24 @@ pub fn notify(pool: PgPool, event: NotificationEvent) {
             Err(e) => warn!("[TELEGRAM] Failed to send notification: {e}"),
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{format_event, NotificationEvent};
+
+    #[test]
+    fn scan_series_discovered_lists_titles() {
+        let text = format_event(&NotificationEvent::ScanSeriesDiscovered {
+            library_name: Some("Manga".to_string()),
+            series_name: "Dragon Ball".to_string(),
+            thumbnail_path: Some("/tmp/dragon-ball.webp".to_string()),
+            book_titles: vec!["Dragon Ball T01".to_string(), "Dragon Ball T02".to_string()],
+        });
+
+        assert!(text.contains("Nouveaux livres détectés"));
+        assert!(text.contains("Dragon Ball"));
+        assert!(text.contains("Dragon Ball T01"));
+        assert!(text.contains("Dragon Ball T02"));
+    }
 }

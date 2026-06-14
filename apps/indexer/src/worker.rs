@@ -1,5 +1,6 @@
 use crate::{job, scheduler, watcher, AppState};
 use sqlx::Row;
+use std::collections::HashMap;
 use std::time::Duration;
 use tracing::{error, info, trace};
 use uuid::Uuid;
@@ -64,6 +65,12 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
         library_name: Option<String>,
         book_title: Option<String>,
         thumbnail_path: Option<String>,
+    }
+
+    struct ScanSeriesNotification {
+        series_name: String,
+        thumbnail_path: Option<String>,
+        book_titles: Vec<String>,
     }
 
     async fn load_job_info(pool: &sqlx::PgPool, job_id: Uuid, library_id: Option<Uuid>) -> JobInfo {
@@ -163,6 +170,52 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
         }
     }
 
+    async fn load_scan_series_notifications(
+        pool: &sqlx::PgPool,
+        job_id: Uuid,
+    ) -> Vec<ScanSeriesNotification> {
+        let rows = sqlx::query(
+            "SELECT \
+                COALESCE(s.name, 'Non classé') AS series_name, \
+                b.title, \
+                b.thumbnail_path \
+             FROM index_job_events e \
+             JOIN books b ON b.id = e.entity_id \
+             LEFT JOIN series s ON s.id = b.series_id \
+             WHERE e.job_id = $1 AND e.event_type = 'book_added' \
+             ORDER BY COALESCE(s.name, 'Non classé'), b.volume NULLS LAST, b.title",
+        )
+        .bind(job_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        let mut groups: HashMap<String, ScanSeriesNotification> = HashMap::new();
+        for row in rows {
+            let series_name: String = row.get("series_name");
+            let title: String = row.get("title");
+            let thumbnail_path: Option<String> = row.get("thumbnail_path");
+
+            let group =
+                groups
+                    .entry(series_name.clone())
+                    .or_insert_with(|| ScanSeriesNotification {
+                        series_name,
+                        thumbnail_path: None,
+                        book_titles: Vec::new(),
+                    });
+
+            if group.thumbnail_path.is_none() && thumbnail_path.is_some() {
+                group.thumbnail_path = thumbnail_path;
+            }
+            group.book_titles.push(title);
+        }
+
+        let mut grouped: Vec<_> = groups.into_values().collect();
+        grouped.sort_by(|a, b| a.series_name.cmp(&b.series_name));
+        grouped
+    }
+
     fn build_completed_event(
         job_type: &str,
         library_name: Option<String>,
@@ -253,17 +306,51 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
                 } else {
                     info!("[INDEXER] Job {} completed", job_id);
                     let stats = load_scan_stats(&state.pool, job_id).await;
-                    notifications::notify(
-                        state.pool.clone(),
-                        build_completed_event(
-                            &info.job_type,
-                            info.library_name.clone(),
-                            info.book_title.clone(),
-                            info.thumbnail_path.clone(),
-                            stats,
-                            started_at.elapsed().as_secs(),
-                        ),
-                    );
+                    if notifications::job_type_category(&info.job_type) == "scan" {
+                        let series_notifications =
+                            load_scan_series_notifications(&state.pool, job_id).await;
+
+                        for series in &series_notifications {
+                            notifications::notify(
+                                state.pool.clone(),
+                                notifications::NotificationEvent::ScanSeriesDiscovered {
+                                    library_name: info.library_name.clone(),
+                                    series_name: series.series_name.clone(),
+                                    thumbnail_path: series.thumbnail_path.clone(),
+                                    book_titles: series.book_titles.clone(),
+                                },
+                            );
+                        }
+
+                        if series_notifications.is_empty()
+                            || stats.removed_files > 0
+                            || stats.errors > 0
+                        {
+                            notifications::notify(
+                                state.pool.clone(),
+                                build_completed_event(
+                                    &info.job_type,
+                                    info.library_name.clone(),
+                                    info.book_title.clone(),
+                                    info.thumbnail_path.clone(),
+                                    stats,
+                                    started_at.elapsed().as_secs(),
+                                ),
+                            );
+                        }
+                    } else {
+                        notifications::notify(
+                            state.pool.clone(),
+                            build_completed_event(
+                                &info.job_type,
+                                info.library_name.clone(),
+                                info.book_title.clone(),
+                                info.thumbnail_path.clone(),
+                                stats,
+                                started_at.elapsed().as_secs(),
+                            ),
+                        );
+                    }
                 }
             }
             Ok(None) => {
