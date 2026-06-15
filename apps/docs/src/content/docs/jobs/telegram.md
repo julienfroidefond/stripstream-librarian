@@ -10,11 +10,11 @@ Deux tâches gèrent la surveillance Telegram, selon la profondeur de recherche 
 | Synchronisation complète | Recherche active par série dans vos channels |
 | Synchronisation incrémentale | Parcours chronologique des nouveaux messages |
 
-Les deux alimentent la liste **Livres disponibles Telegram** sur la page Téléchargements.
+Les deux alimentent la section **Disponibles au téléchargement** de la page Téléchargements.
 
 ---
 
-## Règle métier : quelles séries sont recherchées ?
+## Quelles séries sont recherchées ?
 
 La synchronisation complète ne recherche **pas** toutes les séries de la bibliothèque. Pour être incluse, une série doit satisfaire deux conditions simultanément :
 
@@ -23,7 +23,7 @@ La synchronisation complète ne recherche **pas** toutes les séries de la bibli
 
 Les séries qui possèdent une intégrale sont considérées complètes et exclues de cette recherche active.
 
-C'est exactement la même règle que la détection de téléchargements Prowlarr : seules les séries qu'on cherche activement à compléter sont scrutées.
+C'est la même condition que la détection Prowlarr : seules les séries qu'on cherche activement à compléter sont scrutées.
 
 La synchronisation incrémentale n'applique **pas** ce filtre : elle parcourt tous les messages récents sans distinction, car il s'agit d'un scan chronologique et non d'une recherche ciblée.
 
@@ -81,11 +81,11 @@ La progression indique le nombre de channels analysés et le channel en cours.
 
 ---
 
-## Livres disponibles après les jobs
+## Résultat après les jobs
 
-À l'issue d'un sync (complet ou incrémental), les fichiers dont la série existe dans la bibliothèque apparaissent dans **Livres disponibles Telegram** sur la page Téléchargements. L'affichage est filtré dynamiquement : seules les séries avec un lien metadata approuvé et des volumes manquants sont présentées.
+À l'issue d'un sync (complet ou incrémental), les fichiers dont la série existe dans la bibliothèque apparaissent dans la section **Disponibles au téléchargement** de la page Téléchargements, filtrables par source Telegram.
 
-Voir [Telegram Monitor](/integrations/telegram-monitor/#livres-disponibles).
+Voir [Téléchargements — Telegram](/downloads/telegram).
 
 ---
 

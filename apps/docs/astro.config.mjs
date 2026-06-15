@@ -73,6 +73,8 @@ export default defineConfig({
 					label: 'Téléchargements',
 					items: [
 						{ label: 'Vue d\'ensemble', slug: 'downloads/overview' },
+						{ label: 'Prowlarr + qBittorrent', slug: 'downloads/prowlarr' },
+						{ label: 'Telegram Monitor', slug: 'downloads/telegram' },
 					],
 				},
 				{

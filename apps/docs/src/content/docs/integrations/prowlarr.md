@@ -27,7 +27,7 @@ Sur la page d'une série, le bouton **Prowlarr** lance une recherche ciblée. Le
 
 ## Détection automatique
 
-Stripstream peut interroger automatiquement Prowlarr à intervalles réguliers pour toutes vos séries avec des volumes manquants. Les releases trouvées apparaissent dans la section **Volumes disponibles** de chaque série et sur la page Téléchargements.
+Stripstream peut interroger automatiquement Prowlarr à intervalles réguliers pour toutes vos séries avec des volumes manquants. Les releases trouvées apparaissent dans la section **Disponibles au téléchargement** de la page Téléchargements.
 
 La fréquence se configure dans les paramètres de chaque bibliothèque → section **Détection de téléchargements**.
 
@@ -49,7 +49,7 @@ Certains indexeurs privés n'acceptent pas les requêtes RSS sans terme de reche
 
 **Indicateur d'échec** : une release est marquée si un téléchargement précédent l'utilisant a échoué. Elle reste disponible mais vous êtes averti.
 
-**Blacklist** : masquez définitivement les releases indésirables — elles ne seront plus proposées lors des prochaines détections. Pour gérer la blacklist, accédez au panel via l'icône œil à côté du titre "Volumes disponibles" sur la page Téléchargements.
+**Blacklist** : masquez définitivement les releases indésirables — elles ne seront plus proposées lors des prochaines détections. Pour gérer la blacklist, accédez au panel via l'icône œil à côté du titre "Disponibles au téléchargement" sur la page Téléchargements.
 
 ---
 

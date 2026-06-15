@@ -48,7 +48,7 @@ En pratique, les deux tâches se complètent : le RSS pour les nouveautés en te
 
 Une release peut être blacklistée pour ne plus apparaître dans les résultats futurs. Elle disparaît de la liste des volumes disponibles lors du prochain scan.
 
-Pour gérer la blacklist : page Téléchargements → icône œil à côté du titre "Volumes disponibles".
+Pour gérer la blacklist : page Téléchargements → icône œil à côté du titre "Disponibles au téléchargement".
 
 :::note[Détails techniques]
 **Détection classique** (`download_detection`) :
