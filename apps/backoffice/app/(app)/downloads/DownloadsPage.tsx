@@ -1129,7 +1129,7 @@ export function AvailableDownloadsSection({
                           onClick={() => handleTelegramDownload(source.book.id)}
                           disabled={downloadingTelegramIds.has(source.book.id)}
                           title={source.book.status === "failed" ? t("downloads.retry") : t("telegramMonitor.download")}
-                          className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors disabled:opacity-30 ${source.book.status === "failed" ? "text-destructive hover:text-foreground hover:bg-muted" : "text-muted-foreground hover:text-success hover:bg-success/10"}`}
+                          className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors disabled:opacity-30 ${source.book.status === "failed" ? "text-destructive hover:text-foreground hover:bg-muted" : "text-primary hover:bg-primary/10"}`}
                         >
                           {downloadingTelegramIds.has(source.book.id)
                             ? <Icon name="spinner" size="sm" className="animate-spin" />
@@ -1140,12 +1140,12 @@ export function AvailableDownloadsSection({
                           type="button"
                           onClick={() => handleTelegramDismiss(source.book.id)}
                           disabled={dismissingTelegramIds.has(source.book.id)}
-                          title={t("downloads.delete")}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
+                          title={t("downloads.blacklist")}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 shrink-0"
                         >
                           {dismissingTelegramIds.has(source.book.id)
                             ? <Icon name="spinner" size="sm" className="animate-spin" />
-                            : <Icon name="trash" size="sm" />}
+                            : <Icon name="x" size="sm" />}
                         </button>
                       </div>
                     </div>
