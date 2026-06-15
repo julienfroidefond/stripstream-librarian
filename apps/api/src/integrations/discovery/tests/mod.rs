@@ -29,6 +29,8 @@ fn test_state(pool: sqlx::PgPool) -> AppState {
         settings: Arc::new(RwLock::new(DynamicSettings::default())),
         prowlarr_fetch_lock: Arc::new(Mutex::new(())),
         pending_tg_auth: Arc::new(Mutex::new(None)),
+        telegram_download_limit: Arc::new(Semaphore::new(1)),
+        telegram_abort_handles: Arc::new(Mutex::new(std::collections::HashMap::new())),
     }
 }
 
