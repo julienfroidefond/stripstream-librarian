@@ -481,7 +481,9 @@ pub async fn list_all_series(
             "sc.latest_created_at DESC".to_string()
         }
         Some("release_date") => format!("s.start_year DESC NULLS LAST, {title_order_clause}"),
-        Some("community_score") => format!("cs.community_score DESC NULLS LAST, {title_order_clause}"),
+        Some("community_score") => {
+            format!("cs.community_score DESC NULLS LAST, {title_order_clause}")
+        }
         _ => title_order_clause.to_string(),
     };
 

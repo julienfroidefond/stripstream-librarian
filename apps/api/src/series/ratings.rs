@@ -9,9 +9,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
-    auth::AuthUser,
-    error::ApiError,
-    integrations::anilist_rating_push::push_rating_to_anilist,
+    auth::AuthUser, error::ApiError, integrations::anilist_rating_push::push_rating_to_anilist,
     state::AppState,
 };
 
@@ -141,9 +139,9 @@ pub async fn set_series_rating(
         return Err(ApiError::bad_request("rating must be between 1 and 10"));
     }
 
-    let user_id = user
-        .map(|u| u.0.user_id)
-        .ok_or_else(|| ApiError::bad_request("no user selected — choose a user in the backoffice settings"))?;
+    let user_id = user.map(|u| u.0.user_id).ok_or_else(|| {
+        ApiError::bad_request("no user selected — choose a user in the backoffice settings")
+    })?;
 
     sqlx::query(
         r#"
@@ -186,17 +184,15 @@ pub async fn delete_series_rating(
     user: Option<Extension<AuthUser>>,
     Path(series_id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
-    let user_id = user
-        .map(|u| u.0.user_id)
-        .ok_or_else(|| ApiError::bad_request("no user selected — choose a user in the backoffice settings"))?;
+    let user_id = user.map(|u| u.0.user_id).ok_or_else(|| {
+        ApiError::bad_request("no user selected — choose a user in the backoffice settings")
+    })?;
 
-    sqlx::query(
-        "DELETE FROM series_user_ratings WHERE user_id = $1 AND series_id = $2",
-    )
-    .bind(user_id)
-    .bind(series_id)
-    .execute(&state.pool)
-    .await?;
+    sqlx::query("DELETE FROM series_user_ratings WHERE user_id = $1 AND series_id = $2")
+        .bind(user_id)
+        .bind(series_id)
+        .execute(&state.pool)
+        .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }

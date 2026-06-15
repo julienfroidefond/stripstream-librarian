@@ -1,5 +1,5 @@
-use uuid::Uuid;
 use crate::series::ratings::{ProviderRating, SeriesRatingsResponse};
+use uuid::Uuid;
 
 // ─── Unit: response serialization ────────────────────────────────────────────
 
@@ -89,13 +89,14 @@ async fn upsert_series_user_rating(pool: sqlx::PgPool) {
     .await
     .unwrap();
 
-    let rating: i16 =
-        sqlx::query_scalar("SELECT rating FROM series_user_ratings WHERE user_id = $1 AND series_id = $2")
-            .bind(user_id)
-            .bind(series_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let rating: i16 = sqlx::query_scalar(
+        "SELECT rating FROM series_user_ratings WHERE user_id = $1 AND series_id = $2",
+    )
+    .bind(user_id)
+    .bind(series_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(rating, 8);
 
     // Update via ON CONFLICT
@@ -113,13 +114,14 @@ async fn upsert_series_user_rating(pool: sqlx::PgPool) {
     .await
     .unwrap();
 
-    let updated: i16 =
-        sqlx::query_scalar("SELECT rating FROM series_user_ratings WHERE user_id = $1 AND series_id = $2")
-            .bind(user_id)
-            .bind(series_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let updated: i16 = sqlx::query_scalar(
+        "SELECT rating FROM series_user_ratings WHERE user_id = $1 AND series_id = $2",
+    )
+    .bind(user_id)
+    .bind(series_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(updated, 10);
 }
 

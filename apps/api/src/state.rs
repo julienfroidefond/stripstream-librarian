@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use std::sync::{atomic::AtomicU64, Arc};
 use std::time::Instant;
 
 use lru::LruCache;
 use sqlx::{Pool, Postgres, Row};
 use tokio::sync::{Mutex, RwLock, Semaphore};
+use uuid::Uuid;
 
 use crate::downloads::telegram_monitor::PendingAuth;
 
@@ -20,6 +22,10 @@ pub struct AppState {
     pub prowlarr_fetch_lock: Arc<Mutex<()>>,
     /// Holds the in-progress Telegram MTProto auth state between send-code and verify-code calls
     pub pending_tg_auth: Arc<Mutex<Option<PendingAuth>>>,
+    /// Limits concurrent Telegram file downloads to avoid FLOOD_WAIT errors
+    pub telegram_download_limit: Arc<Semaphore>,
+    /// Abort handles for active/queued Telegram downloads, keyed by book link ID
+    pub telegram_abort_handles: Arc<Mutex<HashMap<Uuid, tokio::task::AbortHandle>>>,
 }
 
 #[derive(Clone)]
@@ -82,6 +88,25 @@ pub async fn load_concurrent_renders(pool: &Pool<Postgres>) -> usize {
                 .get("concurrent_renders")
                 .and_then(|v: &serde_json::Value| v.as_u64())
                 .map(|v| v as usize)
+                .unwrap_or(default_concurrency)
+        }
+        _ => default_concurrency,
+    }
+}
+
+pub async fn load_concurrent_telegram_downloads(pool: &Pool<Postgres>) -> usize {
+    let default_concurrency = 2;
+    let row = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'limits'"#)
+        .fetch_optional(pool)
+        .await;
+
+    match row {
+        Ok(Some(row)) => {
+            let value: serde_json::Value = row.get("value");
+            value
+                .get("concurrent_telegram_downloads")
+                .and_then(|v: &serde_json::Value| v.as_u64())
+                .map(|v| (v as usize).max(1))
                 .unwrap_or(default_concurrency)
         }
         _ => default_concurrency,

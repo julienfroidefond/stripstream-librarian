@@ -137,12 +137,8 @@ async fn search_series_impl(
             .unwrap_or("")
             .to_string();
 
-        let avg_rating = volume_info
-            .get("averageRating")
-            .and_then(|r| r.as_f64());
-        let ratings_count = volume_info
-            .get("ratingsCount")
-            .and_then(|c| c.as_i64());
+        let avg_rating = volume_info.get("averageRating").and_then(|r| r.as_f64());
+        let ratings_count = volume_info.get("ratingsCount").and_then(|c| c.as_i64());
 
         let entry =
             series_map

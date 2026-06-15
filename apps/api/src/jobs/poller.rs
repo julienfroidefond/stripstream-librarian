@@ -66,11 +66,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                             .await
                         }
                         "rating_pull" => {
-                            reading::status_pull::process_rating_pull(
-                                &pool_clone,
-                                job_id,
-                            )
-                            .await
+                            reading::status_pull::process_rating_pull(&pool_clone, job_id).await
                         }
                         "download_detection" => download_detection::process_download_detection(
                             &pool_clone,

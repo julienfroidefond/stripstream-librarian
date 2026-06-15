@@ -11,7 +11,7 @@ import {
   TelegramAvailableGroupDto,
   TelegramDownloadItemDto,
 } from "@/lib/api";
-import { Card, CardContent, CardHeader, CardTitle, Button, Icon } from "@/app/components/ui";
+import { Card, CardContent, CardHeader, CardTitle, Button, Icon, toast } from "@/app/components/ui";
 import { QbittorrentProvider, QbittorrentDownloadButton } from "@/app/components/QbittorrentDownloadButton";
 import { useTranslation } from "@/lib/i18n/context";
 import { compressVolumes } from "@/lib/volumeRanges";
@@ -39,6 +39,7 @@ function groupReleasesByTitle<T extends { title: string }>(releases: T[]): { tit
 
 function statusLabel(status: string, t: TFunction): string {
   const map: Record<string, TranslationKey> = {
+    queued:            "downloads.status.queued",
     downloading:       "downloads.status.downloading",
     completed:         "downloads.status.completed",
     importing:         "downloads.status.importing",
@@ -52,6 +53,7 @@ function statusLabel(status: string, t: TFunction): string {
 
 function statusClass(status: string): string {
   switch (status) {
+    case "queued":      return "bg-muted/50 text-muted-foreground";
     case "downloading": return "bg-primary/10 text-primary";
     case "completed":   return "bg-warning/10 text-warning";
     case "importing":   return "bg-primary/10 text-primary";
@@ -130,14 +132,25 @@ type UnifiedAvailableGroup = {
   sources: UnifiedAvailableSource[];
 };
 
+const ACTIVE_STATUSES = new Set(["queued", "downloading", "completed", "importing"]);
+
 function mergeDownloads(torrents: TorrentDownloadDto[], tg: TelegramDownloadItemDto[]): DownloadItem[] {
   const items: DownloadItem[] = [
     ...torrents.map(d => ({ kind: "torrent" as const, data: d })),
     ...tg.map(d => ({ kind: "telegram" as const, data: d })),
   ];
-  return items.sort((a, b) =>
-    new Date(b.data.updated_at).getTime() - new Date(a.data.updated_at).getTime()
-  );
+  return items.sort((a, b) => {
+    const aActive = ACTIVE_STATUSES.has(a.data.status);
+    const bActive = ACTIVE_STATUSES.has(b.data.status);
+    if (aActive !== bActive) return aActive ? -1 : 1;
+    if (aActive) {
+      // Active: oldest created_at first — stable, no swapping during progress updates
+      return new Date(a.data.created_at).getTime() - new Date(b.data.created_at).getTime();
+    } else {
+      // Inactive: most recently updated first — stable since updated_at doesn't change after import
+      return new Date(b.data.updated_at).getTime() - new Date(a.data.updated_at).getTime();
+    }
+  });
 }
 
 function itemMatchesFilter(item: DownloadItem, filter: string): boolean {
@@ -146,7 +159,7 @@ function itemMatchesFilter(item: DownloadItem, filter: string): boolean {
     if (filter === "active") return STATUS_ACTIVE.has(item.data.status);
     return item.data.status === filter;
   } else {
-    if (filter === "active") return item.data.status === "downloading";
+    if (filter === "active") return item.data.status === "queued" || item.data.status === "downloading";
     if (filter === "imported") return item.data.status === "imported";
     if (filter === "error") return item.data.status === "failed";
     return false;
@@ -385,6 +398,12 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
             latestFound={latestFound}
             telegramAvailable={telegramAvailable}
             onRefresh={() => refresh(false)}
+            onTelegramDownloaded={(bookId) => {
+              setTelegramAvailable(prev => prev.map(group => ({
+                ...group,
+                books: group.books.map(book => book.id === bookId ? { ...book, status: "queued" } : book),
+              })));
+            }}
           />
         </QbittorrentProvider>
       )}
@@ -574,8 +593,15 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
   async function handleRetry() {
     setRetrying(true);
     try {
-      await fetch(`/api/telegram-monitor/books/${item.id}/download`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
-      onRefresh();
+      const resp = await fetch(`/api/telegram-monitor/books/${item.id}/download`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      if (resp.ok) {
+        onRefresh();
+      } else {
+        const body = await resp.json().catch(() => ({}));
+        toast(body?.error ?? `Error ${resp.status}`, "error");
+      }
+    } catch (e) {
+      toast(String(e), "error");
     } finally {
       setRetrying(false);
     }
@@ -600,6 +626,8 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
     ? <Icon name="check" size="sm" className="text-success" />
     : item.status === "downloading"
     ? <Icon name="download" size="sm" className="text-primary" />
+    : item.status === "queued"
+    ? <Icon name="clock" size="sm" className="text-muted-foreground" />
     : <Icon name="warning" size="sm" className="text-destructive" />;
 
   return (
@@ -660,7 +688,7 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
 
         <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums hidden sm:block">{formatDate(item.updated_at)}</span>
 
-        {item.status === "failed" && (
+        {(item.status === "failed" || item.status === "imported") && (
           <button
             type="button"
             onClick={handleRetry}
@@ -676,7 +704,7 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
           onClick={() => setShowConfirm(true)}
           disabled={deleting}
           className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30 shrink-0"
-          title={item.status === "downloading" ? t("downloads.cancel") : t("downloads.delete")}
+          title={(item.status === "queued" || item.status === "downloading") ? t("downloads.cancel") : t("downloads.delete")}
         >
           {deleting ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="trash" size="sm" />}
         </button>
@@ -689,7 +717,7 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
             <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
               <div className="p-6">
                 <h3 className="text-lg font-semibold text-foreground mb-2">
-                  {item.status === "downloading" ? t("downloads.cancel") : t("downloads.delete")}
+                  {(item.status === "queued" || item.status === "downloading") ? t("downloads.cancel") : t("downloads.delete")}
                 </h3>
                 <p className="text-sm text-muted-foreground">
                   {item.status === "downloading" ? t("downloads.confirmCancel") : t("downloads.confirmDelete")}
@@ -700,7 +728,7 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
                   {t("common.cancel")}
                 </Button>
                 <Button variant="destructive" size="sm" onClick={handleDelete}>
-                  {item.status === "downloading" ? t("downloads.cancel") : t("downloads.delete")}
+                  {(item.status === "queued" || item.status === "downloading") ? t("downloads.cancel") : t("downloads.delete")}
                 </Button>
               </div>
             </div>
@@ -724,10 +752,12 @@ export function AvailableDownloadsSection({
   latestFound,
   telegramAvailable,
   onRefresh,
+  onTelegramDownloaded,
 }: {
   latestFound: LatestFoundPerLibraryDto[];
   telegramAvailable: TelegramAvailableGroupDto[];
   onRefresh: () => void;
+  onTelegramDownloaded?: (bookId: string) => void;
 }) {
   const { t } = useTranslation();
   const [sort, setSort] = useState<AvailableSortKey>("recent");
@@ -805,7 +835,7 @@ export function AvailableDownloadsSection({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      if (resp.ok) onRefresh();
+      if (resp.ok) onTelegramDownloaded?.(bookId);
     } finally {
       setDownloadingTelegramIds(prev => { const next = new Set(prev); next.delete(bookId); return next; });
     }
@@ -1087,6 +1117,13 @@ export function AvailableDownloadsSection({
                       <span className="text-muted-foreground shrink-0 hidden sm:inline">@{source.book.channel_username}</span>
                       {source.book.file_size && <span className="text-muted-foreground shrink-0">{formatSize(source.book.file_size)}</span>}
                       <div className="flex items-center gap-0.5 ml-auto shrink-0">
+                        {(source.book.status === "queued" || source.book.status === "downloading") ? (
+                          <span className={`inline-flex items-center justify-center w-7 h-7 ${source.book.status === "queued" ? "text-muted-foreground" : "text-primary"}`}>
+                            {source.book.status === "queued"
+                              ? <Icon name="clock" size="sm" />
+                              : <Icon name="spinner" size="sm" className="animate-spin" />}
+                          </span>
+                        ) : (
                         <button
                           type="button"
                           onClick={() => handleTelegramDownload(source.book.id)}
@@ -1098,6 +1135,7 @@ export function AvailableDownloadsSection({
                             ? <Icon name="spinner" size="sm" className="animate-spin" />
                             : source.book.status === "failed" ? <Icon name="refresh" size="sm" /> : <Icon name="download" size="sm" />}
                         </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleTelegramDismiss(source.book.id)}

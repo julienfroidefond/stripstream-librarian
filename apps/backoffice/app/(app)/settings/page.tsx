@@ -30,7 +30,7 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
     getSettings().catch(() => ({
       image_processing: { format: "webp", quality: 85, filter: "lanczos3", max_width: 2160 },
       cache: { enabled: true, directory: "/tmp/stripstream-image-cache", max_size_mb: 10000 },
-      limits: { concurrent_renders: 4, timeout_seconds: 12, rate_limit_per_second: 120 },
+      limits: { concurrent_renders: 4, timeout_seconds: 12, rate_limit_per_second: 120, concurrent_telegram_downloads: 2 },
       thumbnail: { enabled: true, width: 300, height: 400, quality: 80, format: "webp", directory: "/data/thumbnails" }
     })),
     getCacheStats().catch(() => ({ total_size_mb: 0, file_count: 0, directory: "/tmp/stripstream-image-cache" })),

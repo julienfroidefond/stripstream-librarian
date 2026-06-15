@@ -667,7 +667,15 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       <QBittorrentCard handleUpdateSetting={handleUpdateSetting} initialQbittorrent={initialQbittorrent} initialTorrentImport={initialTorrentImport} />
 
       {/* Telegram Monitor */}
-      <TelegramMonitorCard initialLibraries={initialLibraries} />
+      <TelegramMonitorCard
+        initialLibraries={initialLibraries}
+        initialConcurrentDownloads={settings.limits.concurrent_telegram_downloads ?? 2}
+        onSaveConcurrentDownloads={(value) => {
+          const newLimits = { ...settings.limits, concurrent_telegram_downloads: value };
+          setSettings({ ...settings, limits: newLimits });
+          handleUpdateSetting("limits", newLimits);
+        }}
+      />
       </>)}
 
       {activeTab === "notifications" && (<>

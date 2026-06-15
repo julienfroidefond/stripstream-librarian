@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Icon } from "./ui";
+import { Icon, toast } from "./ui";
 import { useTranslation } from "../../lib/i18n/context";
 import { stripLeadingArticle } from "../../lib/volumeRanges";
 import type { TelegramSearchResultDto } from "../../lib/api";
@@ -13,9 +13,11 @@ type TFunction = (key: TranslationKey, vars?: Record<string, string | number>) =
 function tgStatusClass(status: string): string {
   switch (status) {
     case "available":    return "bg-sky-500/15 text-sky-600";
+    case "queued":       return "bg-muted/50 text-muted-foreground";
     case "downloading":  return "bg-primary/10 text-primary";
     case "imported":     return "bg-success/10 text-success";
     case "failed":       return "bg-destructive/10 text-destructive";
+    case "dismissed":    return "bg-muted/30 text-muted-foreground";
     default:             return "bg-muted/30 text-muted-foreground";
   }
 }
@@ -23,9 +25,11 @@ function tgStatusClass(status: string): string {
 function tgStatusLabel(status: string, t: TFunction): string {
   const map: Record<string, TranslationKey> = {
     available:   "telegramMonitor.statusAvailable",
+    queued:      "downloads.status.queued",
     downloading: "downloads.status.downloading",
     imported:    "downloads.status.imported",
     failed:      "downloads.status.error",
+    dismissed:   "telegramMonitor.statusDismissed",
   };
   return t(map[status] ?? status);
 }
@@ -95,14 +99,23 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
   }
 
   async function handleDownload(bookId: string) {
+    const prevStatus = results.find(b => b.id === bookId)?.status ?? "available";
     setDownloadingIds(prev => new Set(prev).add(bookId));
+    setResults(prev => prev.map(b => b.id === bookId ? { ...b, status: "queued" } : b));
     try {
       const resp = await fetch(`/api/telegram-monitor/books/${bookId}/download`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      if (resp.ok) setResults(prev => prev.filter(b => b.id !== bookId));
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        toast(body?.error ?? `Error ${resp.status}`, "error");
+        setResults(prev => prev.map(b => b.id === bookId ? { ...b, status: prevStatus } : b));
+      }
+    } catch (e) {
+      toast(String(e), "error");
+      setResults(prev => prev.map(b => b.id === bookId ? { ...b, status: prevStatus } : b));
     } finally {
       setDownloadingIds(prev => { const s = new Set(prev); s.delete(bookId); return s; });
     }
@@ -112,7 +125,7 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
     setDismissingIds(prev => new Set(prev).add(bookId));
     try {
       const resp = await fetch(`/api/telegram-monitor/books/${bookId}`, { method: "DELETE" });
-      if (resp.ok) setResults(prev => prev.filter(b => b.id !== bookId));
+      if (resp.ok) setResults(prev => prev.map(b => b.id === bookId ? { ...b, status: "dismissed" } : b));
     } finally {
       setDismissingIds(prev => { const s = new Set(prev); s.delete(bookId); return s; });
     }
@@ -124,7 +137,7 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
     <>
       <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50" onClick={handleClose} />
       <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
-        <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
+        <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
 
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-muted/30 rounded-t-xl sticky top-0 z-10">
@@ -215,72 +228,93 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
                 <p className="text-xs text-muted-foreground mb-3">
                   {t("telegramMonitor.availableCount", { count: results.length, plural: results.length > 1 ? "s" : "" })}
                 </p>
-                <div className="rounded-lg border border-border overflow-hidden">
-                  {results.map(book => {
-                    const isMissing = book.volume_number != null && ownedVolumes != null && !ownedVolumeSet.has(book.volume_number);
-                    return (
-                    <div
-                      key={book.id}
-                      className={`flex items-center gap-2 sm:gap-3 px-3 py-2.5 border-b border-border/40 last:border-b-0 transition-colors ${isMissing ? "bg-green-500/10 hover:bg-green-500/20 border-l-2 border-l-green-500" : "hover:bg-muted/20"}`}
-                    >
-                      {book.volume_number != null ? (
-                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium shrink-0 tabular-nums ${isMissing ? "bg-green-500/20 text-green-600" : "bg-success/20 text-success"}`}>
-                          T{String(book.volume_number).padStart(2, "0")}
-                        </span>
-                      ) : (
-                        <span className="px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground text-xs shrink-0">—</span>
-                      )}
-
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-foreground truncate" title={book.filename}>{book.filename}</p>
-                        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
-                          <span>@{book.channel_username}</span>
-                          {book.file_size && <span>{formatSize(book.file_size)}</span>}
-                          {book.series_name && book.series_name !== seriesName && (
-                            <span className="px-1 py-px rounded bg-warning/10 text-warning text-[10px]">{book.series_name}</span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${tgStatusClass(book.status)}`}>
-                          {tgStatusLabel(book.status, t)}
-                        </span>
-                        {book.status === "available" && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleDownload(book.id)}
-                              disabled={downloadingIds.has(book.id)}
-                              title={t("telegramMonitor.download")}
-                              className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-success hover:bg-success/10 transition-colors disabled:opacity-30"
-                            >
-                              {downloadingIds.has(book.id)
-                                ? <Icon name="spinner" size="sm" className="animate-spin" />
-                                : <Icon name="download" size="sm" />}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDismiss(book.id)}
-                              disabled={dismissingIds.has(book.id)}
-                              title={t("telegramMonitor.dismiss")}
-                              className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
-                            >
-                              {dismissingIds.has(book.id)
-                                ? <Icon name="spinner" size="sm" className="animate-spin" />
-                                : <Icon name="trash" size="sm" />}
-                            </button>
-                          </>
-                        )}
-                        {book.status === "downloading" && (
-                          <Icon name="spinner" size="sm" className="animate-spin text-primary" />
-                        )}
-                        {book.status === "imported" && (
-                          <Icon name="check" size="sm" className="text-success" />
-                        )}
-                      </div>
-                    </div>
-                  ); })}
+                <div className="overflow-x-auto rounded-lg border border-border">
+                  <table className="w-full min-w-[640px] text-sm">
+                    <tbody>
+                    {results.map(book => {
+                      const isMissing = book.volume_number != null && ownedVolumes != null && !ownedVolumeSet.has(book.volume_number);
+                      const isActing = downloadingIds.has(book.id) || dismissingIds.has(book.id);
+                      return (
+                        <tr
+                          key={book.id}
+                          className={`border-b border-border/40 last:border-b-0 transition-colors ${isMissing ? "bg-green-500/10 hover:bg-green-500/15" : "hover:bg-muted/20"} ${book.status === "dismissed" ? "opacity-40" : ""}`}
+                        >
+                          <td className="px-3 py-2.5 whitespace-nowrap w-12">
+                            {book.volume_number != null ? (
+                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium tabular-nums ${isMissing ? "bg-green-500/20 text-green-600" : "bg-muted/50 text-muted-foreground"}`}>
+                                T{String(book.volume_number).padStart(2, "0")}
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded bg-muted/30 text-muted-foreground text-xs">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 min-w-[220px]">
+                            <p className="text-sm text-foreground">{book.filename}</p>
+                            {book.series_name && book.series_name !== seriesName && (
+                              <span className="px-1 py-px rounded bg-warning/10 text-warning text-[10px]">{book.series_name}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-[11px] text-muted-foreground">
+                            @{book.channel_username}
+                          </td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-[11px] text-muted-foreground">
+                            {book.file_size ? formatSize(book.file_size) : ""}
+                          </td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${tgStatusClass(book.status)}`}>
+                              {tgStatusLabel(book.status, t)}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 whitespace-nowrap w-16">
+                            <div className="flex items-center gap-1">
+                              {book.status === "available" && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDownload(book.id)}
+                                    disabled={isActing}
+                                    title={t("telegramMonitor.download")}
+                                    className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-success hover:bg-success/10 transition-colors disabled:opacity-30"
+                                  >
+                                    {downloadingIds.has(book.id)
+                                      ? <Icon name="spinner" size="sm" className="animate-spin" />
+                                      : <Icon name="download" size="sm" />}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDismiss(book.id)}
+                                    disabled={isActing}
+                                    title={t("telegramMonitor.dismiss")}
+                                    className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30"
+                                  >
+                                    {dismissingIds.has(book.id)
+                                      ? <Icon name="spinner" size="sm" className="animate-spin" />
+                                      : <Icon name="trash" size="sm" />}
+                                  </button>
+                                </>
+                              )}
+                              {book.status === "queued" && <Icon name="clock" size="sm" className="text-muted-foreground" />}
+                              {book.status === "downloading" && <Icon name="spinner" size="sm" className="animate-spin text-primary" />}
+                              {book.status === "imported" && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDownload(book.id)}
+                                  disabled={downloadingIds.has(book.id)}
+                                  title={t("downloads.retry")}
+                                  className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-30"
+                                >
+                                  {downloadingIds.has(book.id)
+                                    ? <Icon name="spinner" size="sm" className="animate-spin" />
+                                    : <Icon name="refresh" size="sm" />}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}

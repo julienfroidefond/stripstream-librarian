@@ -1988,8 +1988,8 @@ pub async fn list_downloads(
          LEFT JOIN libraries l ON l.id = COALESCE(b.library_id, src.library_id)
          LEFT JOIN series sr ON LOWER(unaccent(sr.name)) = LOWER(unaccent(b.series_name))
            AND sr.library_id = COALESCE(b.library_id, src.library_id)
-         WHERE b.status IN ('downloading', 'imported', 'failed')
-         ORDER BY b.updated_at DESC
+         WHERE b.status IN ('queued', 'downloading', 'imported', 'failed')
+         ORDER BY b.created_at DESC
          LIMIT 200",
     )
     .fetch_all(&state.pool)
@@ -2071,7 +2071,7 @@ pub async fn download_book(
     .ok_or_else(|| ApiError::not_found("book link not found"))?;
 
     let status: String = row.get("status");
-    if status == "downloading" || status == "imported" {
+    if status == "queued" || status == "downloading" {
         return Err(ApiError::bad_request(format!("already {status}")));
     }
 
@@ -2088,9 +2088,9 @@ pub async fn download_book(
     // series_name fallback: extract from filename if not stored
     let series_name = series_name.unwrap_or_else(|| extract_series_name_from_filename(&filename));
 
-    // Mark as downloading
+    // Mark as queued (will switch to 'downloading' once the semaphore permit is acquired)
     sqlx::query(
-        "UPDATE telegram_book_links SET status = 'downloading', bytes_downloaded = 0, updated_at = NOW() WHERE id = $1",
+        "UPDATE telegram_book_links SET status = 'queued', bytes_downloaded = 0, updated_at = NOW() WHERE id = $1",
     )
     .bind(id)
     .execute(&state.pool)
@@ -2098,8 +2098,36 @@ pub async fn download_book(
 
     let pool = state.pool.clone();
     let api_id_i32 = api_id as i32;
+    let download_limit = state.telegram_download_limit.clone();
+    let abort_handles = state.telegram_abort_handles.clone();
 
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
+        // Acquire semaphore permit — waits here if the concurrent download limit is reached
+        let _permit = download_limit.acquire_owned().await;
+
+        // Check if dismissed while waiting for the permit
+        let current = sqlx::query_scalar::<_, String>(
+            "SELECT status FROM telegram_book_links WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(&pool)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+        if current == "dismissed" {
+            abort_handles.lock().await.remove(&id);
+            return;
+        }
+
+        // Switch to 'downloading' now that we have a slot
+        let _ = sqlx::query(
+            "UPDATE telegram_book_links SET status = 'downloading', updated_at = NOW() WHERE id = $1 AND status = 'queued'",
+        )
+        .bind(id)
+        .execute(&pool)
+        .await;
+
         match do_download(
             pool.clone(),
             api_id_i32,
@@ -2118,8 +2146,9 @@ pub async fn download_book(
             Ok(_) => {}
             Err(e) => {
                 error!("Telegram download failed for {id}: {e}");
+                // Don't overwrite 'dismissed' status
                 let _ = sqlx::query(
-                    "UPDATE telegram_book_links SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2",
+                    "UPDATE telegram_book_links SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2 AND status != 'dismissed'",
                 )
                 .bind(e.to_string())
                 .bind(id)
@@ -2127,7 +2156,10 @@ pub async fn download_book(
                 .await;
             }
         }
+
+        abort_handles.lock().await.remove(&id);
     });
+    state.telegram_abort_handles.lock().await.insert(id, handle.abort_handle());
 
     Ok(Json(serde_json::json!({ "ok": true })))
 }
@@ -2195,7 +2227,9 @@ async fn do_download(
     let dest_path = std::path::Path::new(&target_dir).join(&safe_name);
 
     if dest_path.exists() {
-        anyhow::bail!("File already exists: {}", dest_path.display());
+        tokio::fs::remove_file(&dest_path)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to remove existing file for re-import: {e}"))?;
     }
 
     let tmp_path = format!("{}.tmp", dest_path.display());
@@ -2364,16 +2398,28 @@ pub async fn dismiss_book(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
-    let res = sqlx::query(
+    let current = sqlx::query_scalar::<_, String>(
+        "SELECT status FROM telegram_book_links WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::not_found("book link not found"))?;
+
+    sqlx::query(
         "UPDATE telegram_book_links SET status = 'dismissed', updated_at = NOW() WHERE id = $1",
     )
     .bind(id)
     .execute(&state.pool)
     .await?;
 
-    if res.rows_affected() == 0 {
-        return Err(ApiError::not_found("book link not found"));
+    // Abort the running/queued task so the semaphore slot is freed immediately
+    if current == "queued" || current == "downloading" {
+        if let Some(handle) = state.telegram_abort_handles.lock().await.remove(&id) {
+            handle.abort();
+        }
     }
+
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 

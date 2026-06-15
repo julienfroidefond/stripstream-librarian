@@ -47,7 +47,8 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::state::{
-    load_concurrent_renders, load_dynamic_settings, AppState, Metrics, ReadRateLimit,
+    load_concurrent_renders, load_concurrent_telegram_downloads, load_dynamic_settings, AppState,
+    Metrics, ReadRateLimit,
 };
 
 #[tokio::main]
@@ -68,6 +69,12 @@ async fn main() -> anyhow::Result<()> {
     // Load concurrent_renders from settings, default to 8
     let concurrent_renders = load_concurrent_renders(&pool).await;
     info!("Using concurrent_renders limit: {}", concurrent_renders);
+
+    let concurrent_telegram_downloads = load_concurrent_telegram_downloads(&pool).await;
+    info!(
+        "Using concurrent_telegram_downloads limit: {}",
+        concurrent_telegram_downloads
+    );
 
     let dynamic_settings = load_dynamic_settings(&pool).await;
     info!(
@@ -96,6 +103,8 @@ async fn main() -> anyhow::Result<()> {
         settings: Arc::new(RwLock::new(dynamic_settings)),
         prowlarr_fetch_lock: Arc::new(Mutex::new(())),
         pending_tg_auth: Arc::new(Mutex::new(None)),
+        telegram_download_limit: Arc::new(Semaphore::new(concurrent_telegram_downloads)),
+        telegram_abort_handles: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
     };
 
     let admin_routes = Router::new()
@@ -364,8 +373,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .route(
             "/series/:series_id/rating",
-            axum::routing::put(series::set_series_rating)
-                .delete(series::delete_series_rating),
+            axum::routing::put(series::set_series_rating).delete(series::delete_series_rating),
         )
         .route(
             "/metadata/search",
@@ -439,14 +447,8 @@ async fn main() -> anyhow::Result<()> {
             "/reading-status/push/:id/results",
             get(reading::get_push_results),
         )
-        .route(
-            "/ratings/pull",
-            axum::routing::post(reading::start_pull),
-        )
-        .route(
-            "/ratings/pull/:id/report",
-            get(reading::get_pull_report),
-        )
+        .route("/ratings/pull", axum::routing::post(reading::start_pull))
+        .route("/ratings/pull/:id/report", get(reading::get_pull_report))
         .route(
             "/download-detection/start",
             axum::routing::post(downloads::start_detection),

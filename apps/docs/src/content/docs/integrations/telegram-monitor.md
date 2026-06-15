@@ -45,12 +45,25 @@ Le bouton **Déconnecter** efface la session stockée. Une nouvelle authentifica
 
 ## Channels surveillés
 
-Une fois authentifié, ajoutez les channels à surveiller dans la section **Channels surveillés** :
+Une fois authentifié, la section **Channels surveillés** permet de gérer vos sources.
+
+### Options de téléchargement
+
+Deux paramètres s'affichent au-dessus de la liste de channels :
+
+| Paramètre | Description |
+|-----------|-------------|
+| **Période de sync incrémentale** | Fréquence de la sync automatique (30 min, 1h, 1 jour, 1 mois) |
+| **Téléchargements simultanés** | Nombre maximal de fichiers téléchargés en parallèle (défaut : 2) |
+
+:::tip[FLOOD_WAIT]
+Telegram applique une limite de débit sur les téléchargements simultanés. Si vous recevez des erreurs `FLOOD_WAIT`, réduisez le nombre de téléchargements simultanés. La modification prend effet après redémarrage du serveur.
+:::
+
+### Ajouter un channel
 
 - **@username** — saisissez le nom d'utilisateur du channel Telegram (avec ou sans `@`)
 - **Bibliothèque cible** — associez le channel à une bibliothèque. Les fichiers trouvés seront placés dans cette bibliothèque et les séries de cette bibliothèque seront utilisées pour les recherches.
-
-Chaque channel peut être activé/désactivé individuellement.
 
 :::caution
 Vous devez être **membre** du channel Telegram pour que la synchronisation fonctionne. Rejoignez le channel depuis votre application Telegram avant de l'ajouter ici.
@@ -123,6 +136,8 @@ En dépliant un groupe, pour chaque fichier :
 - Bouton **Télécharger** — lance le téléchargement direct
 - Bouton **Ignorer** — masque définitivement ce fichier (status `dismissed`)
 
+Après avoir cliqué sur **Télécharger**, le fichier passe au statut **En attente** et reste visible dans la liste (il ne disparaît pas). Le bouton de téléchargement est remplacé par une icône horloge le temps que le fichier soit pris en charge.
+
 :::note
 Seuls les livres dont la série existe dans votre bibliothèque sont affichés ici. Les livres non associés restent en base mais n'apparaissent pas dans cet écran — utilisez la [recherche depuis la fiche série](#recherche-depuis-une-série) pour les retrouver.
 :::
@@ -140,13 +155,19 @@ Dans la fenêtre de recherche :
 - **Champ de recherche** — modifiable pour affiner la requête (le nom de la série est pré-rempli, sans l'article initial si présent)
 - **Badge de la série** — relance la recherche avec le nom court ou complet
 - **Badges des tomes manquants** — raccourcis pour chercher un tome précis
-- **Résultats** — liste des fichiers trouvés avec : numéro de tome, channel source, taille, statut
+- **Résultats** — table scrollable avec : numéro de tome, nom de fichier complet, channel source, taille, statut, actions
 
-Pour chaque résultat au statut *Disponible* :
-- **Bouton télécharger** — lance le téléchargement immédiat
-- **Bouton ignorer** — masque ce fichier
+Pour chaque résultat :
 
-Les résultats déjà en cours de téléchargement ou déjà importés affichent leur statut sans action possible.
+| Statut | Action disponible |
+|--------|-------------------|
+| **Disponible** | Bouton télécharger + bouton ignorer |
+| **En attente** | Icône horloge (en file d'attente) |
+| **Téléchargement** | Indicateur de progression |
+| **Importé** | Bouton ↺ pour forcer le re-téléchargement |
+| **Ignoré** | Aucune action (ligne grisée) |
+
+Les résultats ne disparaissent pas au clic : leur statut est mis à jour dans la fenêtre sans la fermer.
 
 ---
 
@@ -154,36 +175,43 @@ Les résultats déjà en cours de téléchargement ou déjà importés affichent
 
 Lorsque vous cliquez sur **Télécharger** (depuis la page Téléchargements ou depuis la recherche série) :
 
-1. Stripstream se connecte à Telegram et récupère le message contenant le fichier
-2. Le fichier est téléchargé en streaming dans le répertoire de la série (détecté depuis la bibliothèque ou créé si inexistant)
-3. Un job de scan est déclenché automatiquement pour intégrer le nouveau fichier
-4. Le statut passe à `En cours` pendant le téléchargement (avec barre de progression), puis `Importé`
+1. Le fichier passe au statut **En attente** — il entre dans la file de téléchargement
+2. Dès qu'un slot est disponible (selon le paramètre *Téléchargements simultanés*), Stripstream se connecte à Telegram et récupère le message
+3. Le fichier est téléchargé en streaming dans le répertoire de la série (détecté depuis la bibliothèque ou créé si inexistant)
+4. Un job de scan est déclenché automatiquement pour intégrer le nouveau fichier
+5. Le statut passe à **Téléchargement** (avec barre de progression), puis **Importé**
 
 Le fichier téléchargé utilise le même [template de renommage des livres](/books/renaming/#renommage-automatique-à-limport) que les imports qBittorrent quand la série n'a pas encore de livre. Par exemple, avec `{series_name} - T{volume_padded}`, `Frieren Tome 3 - Le voyage.cbz` devient `Frieren - T03.cbz`.
 
 Le téléchargement s'effectue en arrière-plan — vous pouvez continuer à utiliser Stripstream pendant ce temps. Un timeout de 30 minutes s'applique par fichier.
 
-:::note[Réimport après suppression]
-Un fichier Telegram déjà téléchargé apparaît avec le statut `Importé` et n'est pas retéléchargeable immédiatement. Si vous supprimez ensuite le livre de la bibliothèque, Stripstream détecte que le volume n'existe plus et repasse automatiquement l'entrée Telegram en `Disponible`, ce qui permet de la télécharger à nouveau.
+:::note[Forcer le re-téléchargement]
+Un fichier Telegram déjà importé peut être re-téléchargé en cliquant sur le bouton **↺** (page Téléchargements ou fenêtre de recherche). Le fichier existant est d'abord supprimé, puis retéléchargé depuis Telegram. Utile si le fichier a été supprimé manuellement ou pour le remplacer par une meilleure version.
+
+Alternativement, si vous supprimez le livre de la bibliothèque, Stripstream détecte automatiquement que le volume n'existe plus et repasse l'entrée en `Disponible`.
 :::
 
 ---
 
 ## Suivi dans la page Téléchargements
 
-Les téléchargements Telegram apparaissent dans l'historique en haut de la page Téléchargements, mêlés aux téléchargements qBittorrent, triés par date de mise à jour.
+Les téléchargements Telegram apparaissent dans l'historique en haut de la page Téléchargements, mêlés aux téléchargements qBittorrent.
+
+**Tri** : les téléchargements actifs (en attente + en cours) apparaissent en premier, triés par date de lancement (le plus ancien en tête). Les téléchargements terminés suivent, du plus récent au plus ancien.
 
 | Statut | Description |
 |--------|-------------|
-| **En cours** | Téléchargement depuis Telegram en progression (barre de progression visible) |
+| **En attente** | En file d'attente, attend un slot de téléchargement disponible |
+| **Téléchargement** | Téléchargement depuis Telegram en progression (barre de progression visible) |
 | **Importé** | Fichier téléchargé et copié dans la bibliothèque |
 | **Erreur** | Échec du téléchargement ou de la copie |
 
 **Actions disponibles** :
-- **Retry** — relancer le téléchargement pour les entrées en erreur
-- **Annuler / Supprimer** — interrompre ou retirer l'entrée (avec confirmation)
+- **↺ Retry** — relancer le téléchargement pour les entrées en erreur ou déjà importées
+- **Annuler** — interrompre un téléchargement en attente ou en cours (libère immédiatement le slot)
+- **Supprimer** — retirer une entrée terminée de l'historique
 
-**Filtres** de la page : *Actifs*, *Importés* et *Erreur* s'appliquent aussi aux entrées Telegram.
+**Filtres** de la page : *Actifs* (inclut En attente + Téléchargement), *Importés* et *Erreur* s'appliquent aussi aux entrées Telegram.
 
 ---
 
@@ -208,5 +236,7 @@ Les téléchargements Telegram apparaissent dans l'historique en haut de la page
 
 **Job de sync** : type `telegram_sync`, `library_id = NULL`. Déclenchement manuel depuis la page Tâches. Un seul job actif à la fois — les doublons sont ignorés.
 
-**Reset au démarrage** : les téléchargements bloqués en statut `downloading` au redémarrage de l'API sont automatiquement réinitialisés à `available`.
+**Statuts de téléchargement** : `queued` → en file d'attente (semaphore plein), `downloading` → en cours, `imported` → terminé, `failed` → erreur. Le semaphore limite le nombre de téléchargements simultanés (configurable dans Settings → Telegram Monitor, défaut 2). Annuler un téléchargement `queued` ou `downloading` libère immédiatement le slot via un `AbortHandle` tokio.
+
+**Reset au démarrage** : les téléchargements bloqués en statut `queued` ou `downloading` au redémarrage de l'API sont automatiquement réinitialisés à `available`.
 :::

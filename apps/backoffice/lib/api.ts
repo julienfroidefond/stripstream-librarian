@@ -631,6 +631,7 @@ export type Settings = {
     concurrent_renders: number;
     timeout_seconds: number;
     rate_limit_per_second: number;
+    concurrent_telegram_downloads: number;
   };
   thumbnail: {
     enabled: boolean;
@@ -1858,7 +1859,7 @@ export type TelegramDownloadItemDto = {
   file_size: number | null;
   bytes_downloaded: number;
   volume_number: number | null;
-  status: "downloading" | "imported" | "failed";
+  status: "queued" | "downloading" | "imported" | "failed";
   error_message: string | null;
   created_at: string;
   updated_at: string;

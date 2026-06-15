@@ -126,12 +126,8 @@ async fn search_series_impl(
             .unwrap_or("")
             .to_string();
 
-        let ratings_average = doc
-            .get("ratings_average")
-            .and_then(|r| r.as_f64());
-        let ratings_count = doc
-            .get("ratings_count")
-            .and_then(|c| c.as_i64());
+        let ratings_average = doc.get("ratings_average").and_then(|r| r.as_f64());
+        let ratings_count = doc.get("ratings_count").and_then(|c| c.as_i64());
 
         let series_name = extract_series_name(&title);
 
