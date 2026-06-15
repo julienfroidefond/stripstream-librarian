@@ -200,7 +200,7 @@ pub async fn search_metadata(
         "SELECT COUNT(*) FROM books b \
          JOIN series s ON s.id = b.series_id \
          WHERE b.library_id = $1 AND LOWER(unaccent(s.name)) = LOWER(unaccent($2)) \
-         AND b.volume_type IN ('regular', 'integral')",
+         AND b.volume_type IN ('regular', 'integral', 'oneshot')",
     )
     .bind(library_id)
     .bind(&body.series_name)

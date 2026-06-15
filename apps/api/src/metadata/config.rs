@@ -75,16 +75,15 @@ pub(crate) fn boost_confidence_by_book_count(
     candidates: &mut [metadata_providers::SeriesCandidate],
     local_count: i64,
 ) {
-    if local_count <= 0 {
-        return;
-    }
-    for c in candidates.iter_mut() {
-        if let Some(ext_total) = c.total_volumes {
-            if ext_total > 0 {
-                if local_count == ext_total as i64 {
-                    c.confidence = (c.confidence + 0.3).min(1.0);
-                } else if (local_count - ext_total as i64).abs() <= 2 {
-                    c.confidence = (c.confidence + 0.15).min(1.0);
+    if local_count > 0 {
+        for c in candidates.iter_mut() {
+            if let Some(ext_total) = c.total_volumes {
+                if ext_total > 0 {
+                    if local_count == ext_total as i64 {
+                        c.confidence = (c.confidence + 0.3).min(1.0);
+                    } else if (local_count - ext_total as i64).abs() <= 2 {
+                        c.confidence = (c.confidence + 0.15).min(1.0);
+                    }
                 }
             }
         }
