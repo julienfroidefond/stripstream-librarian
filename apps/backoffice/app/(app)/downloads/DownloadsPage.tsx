@@ -767,6 +767,7 @@ export function AvailableDownloadsSection({
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [downloadingTelegramIds, setDownloadingTelegramIds] = useState<Set<string>>(new Set());
   const [dismissingTelegramIds, setDismissingTelegramIds] = useState<Set<string>>(new Set());
+  const [deletingTelegramIds, setDeletingTelegramIds] = useState<Set<string>>(new Set());
 
   const allResults = buildUnifiedAvailableGroups(latestFound, telegramAvailable);
 
@@ -848,6 +849,16 @@ export function AvailableDownloadsSection({
       if (resp.ok) onRefresh();
     } finally {
       setDismissingTelegramIds(prev => { const next = new Set(prev); next.delete(bookId); return next; });
+    }
+  }
+
+  async function handleTelegramDelete(bookId: string) {
+    setDeletingTelegramIds(prev => new Set(prev).add(bookId));
+    try {
+      const resp = await fetch(`/api/telegram-monitor/books/${bookId}?hard=true`, { method: "DELETE" });
+      if (resp.ok) onRefresh();
+    } finally {
+      setDeletingTelegramIds(prev => { const next = new Set(prev); next.delete(bookId); return next; });
     }
   }
 
@@ -1146,6 +1157,17 @@ export function AvailableDownloadsSection({
                           {dismissingTelegramIds.has(source.book.id)
                             ? <Icon name="spinner" size="sm" className="animate-spin" />
                             : <Icon name="x" size="sm" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleTelegramDelete(source.book.id)}
+                          disabled={deletingTelegramIds.has(source.book.id)}
+                          title={t("downloads.delete")}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30 shrink-0"
+                        >
+                          {deletingTelegramIds.has(source.book.id)
+                            ? <Icon name="spinner" size="sm" className="animate-spin" />
+                            : <Icon name="trash" size="sm" />}
                         </button>
                       </div>
                     </div>

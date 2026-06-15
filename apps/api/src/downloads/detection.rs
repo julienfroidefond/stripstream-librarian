@@ -668,15 +668,22 @@ pub async fn blacklist_release(
     Ok(Json(serde_json::json!({"blacklisted": true})))
 }
 
-/// Remove a release from the blacklist.
+/// Remove a release from the blacklist. If it was a dismissed Telegram book, also restores it.
 pub async fn unblacklist_release(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    sqlx::query("DELETE FROM release_blacklist WHERE id = $1")
-        .bind(id)
-        .execute(&state.pool)
-        .await?;
+    // Delete and restore TG book status atomically if tg_book_id is set
+    sqlx::query(
+        "WITH deleted AS ( \
+             DELETE FROM release_blacklist WHERE id = $1 RETURNING tg_book_id \
+         ) \
+         UPDATE telegram_book_links SET status = 'available', updated_at = NOW() \
+         WHERE id = (SELECT tg_book_id FROM deleted) AND status = 'dismissed'",
+    )
+    .bind(id)
+    .execute(&state.pool)
+    .await?;
 
     Ok(Json(serde_json::json!({"blacklisted": false})))
 }

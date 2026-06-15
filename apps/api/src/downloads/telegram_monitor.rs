@@ -1,4 +1,4 @@
-use axum::extract::Path as AxumPath;
+use axum::extract::{Path as AxumPath, Query};
 use axum::{extract::State, Json};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -2384,8 +2384,13 @@ async fn build_telegram_target_filename(
 }
 
 // ---------------------------------------------------------------------------
-// DELETE /telegram-monitor/books/:id  — dismiss
+// DELETE /telegram-monitor/books/:id  — dismiss (soft) or hard delete (?hard=true)
 // ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct DismissBookQuery {
+    pub hard: Option<bool>,
+}
 
 #[utoipa::path(
     delete, path = "/telegram-monitor/books/{id}",
@@ -2397,6 +2402,7 @@ async fn build_telegram_target_filename(
 pub async fn dismiss_book(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
+    Query(query): Query<DismissBookQuery>,
 ) -> Result<Json<Value>, ApiError> {
     let current = sqlx::query_scalar::<_, String>(
         "SELECT status FROM telegram_book_links WHERE id = $1",
@@ -2406,18 +2412,38 @@ pub async fn dismiss_book(
     .await?
     .ok_or_else(|| ApiError::not_found("book link not found"))?;
 
-    sqlx::query(
-        "UPDATE telegram_book_links SET status = 'dismissed', updated_at = NOW() WHERE id = $1",
-    )
-    .bind(id)
-    .execute(&state.pool)
-    .await?;
-
-    // Abort the running/queued task so the semaphore slot is freed immediately
+    // Abort running/queued task before any DB change so the semaphore slot is freed immediately
     if current == "queued" || current == "downloading" {
         if let Some(handle) = state.telegram_abort_handles.lock().await.remove(&id) {
             handle.abort();
         }
+    }
+
+    if query.hard.unwrap_or(false) {
+        sqlx::query("DELETE FROM telegram_book_links WHERE id = $1")
+            .bind(id)
+            .execute(&state.pool)
+            .await?;
+    } else {
+        sqlx::query(
+            "UPDATE telegram_book_links SET status = 'dismissed', updated_at = NOW() WHERE id = $1",
+        )
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+
+        // Also insert into release_blacklist so the book appears in "Releases masquées"
+        let _ = sqlx::query(
+            "INSERT INTO release_blacklist (title, indexer, series_name, tg_book_id) \
+             SELECT tbl.filename, ts.channel_username, tbl.series_name, tbl.id \
+             FROM telegram_book_links tbl \
+             JOIN telegram_sources ts ON ts.id = tbl.source_id \
+             WHERE tbl.id = $1 \
+             ON CONFLICT (title) DO UPDATE SET tg_book_id = EXCLUDED.tg_book_id",
+        )
+        .bind(id)
+        .execute(&state.pool)
+        .await;
     }
 
     Ok(Json(serde_json::json!({ "ok": true })))
