@@ -307,6 +307,9 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
                     info!("[INDEXER] Job {} completed", job_id);
                     let stats = load_scan_stats(&state.pool, job_id).await;
                     if notifications::job_type_category(&info.job_type) == "scan" {
+                        if let Some(lid) = library_id {
+                            cleanup_available_downloads(&state.pool, lid).await;
+                        }
                         let series_notifications =
                             load_scan_series_notifications(&state.pool, job_id).await;
 
@@ -361,6 +364,107 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
                 error!("[INDEXER] Worker error: {}", err);
                 tokio::time::sleep(wait).await;
             }
+        }
+    }
+}
+
+/// After a scan completes, prune `available_downloads` entries by removing volumes
+/// that are now present in the library. Deletes releases with no remaining matched
+/// volumes, and deletes rows with no remaining releases.
+async fn cleanup_available_downloads(pool: &sqlx::PgPool, library_id: Uuid) {
+    let rows = match sqlx::query(
+        "SELECT id, series_id, available_releases, missing_count \
+         FROM available_downloads WHERE library_id = $1",
+    )
+    .bind(library_id)
+    .fetch_all(pool)
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            error!("[CLEANUP] Failed to fetch available_downloads: {e}");
+            return;
+        }
+    };
+
+    for row in rows {
+        let ad_id: Uuid = row.get("id");
+        let series_id: Uuid = row.get("series_id");
+        let releases_json: Option<serde_json::Value> = row.get("available_releases");
+        let old_missing: i32 = row.get("missing_count");
+
+        let present_volumes: Vec<i32> = sqlx::query_scalar(
+            "SELECT volume FROM books \
+             WHERE series_id = $1 AND volume IS NOT NULL \
+             AND volume_type IN ('regular', 'integral', 'oneshot')",
+        )
+        .bind(series_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        if present_volumes.is_empty() {
+            continue;
+        }
+
+        let Some(serde_json::Value::Array(releases)) = releases_json else {
+            continue;
+        };
+
+        let mut pruned_vols: std::collections::HashSet<i32> = std::collections::HashSet::new();
+        let updated: Vec<serde_json::Value> = releases
+            .into_iter()
+            .filter_map(|mut release| {
+                if let Some(matched) = release.get_mut("matched_missing_volumes") {
+                    if let Some(arr) = matched.as_array() {
+                        let filtered: Vec<serde_json::Value> = arr
+                            .iter()
+                            .filter(|v| {
+                                let vol = v.as_i64().unwrap_or(-1) as i32;
+                                let present = present_volumes.contains(&vol);
+                                if present {
+                                    pruned_vols.insert(vol);
+                                }
+                                !present
+                            })
+                            .cloned()
+                            .collect();
+                        if filtered.is_empty() {
+                            return None;
+                        }
+                        *matched = serde_json::Value::Array(filtered);
+                    }
+                }
+                Some(release)
+            })
+            .collect();
+
+        if pruned_vols.is_empty() {
+            continue;
+        }
+
+        if updated.is_empty() {
+            let _ = sqlx::query("DELETE FROM available_downloads WHERE id = $1")
+                .bind(ad_id)
+                .execute(pool)
+                .await;
+            info!("[CLEANUP] Deleted available_downloads {ad_id} (all volumes now present)");
+        } else {
+            let new_missing = (old_missing - pruned_vols.len() as i32).max(0);
+            let _ = sqlx::query(
+                "UPDATE available_downloads \
+                 SET available_releases = $1, missing_count = $2, updated_at = NOW() \
+                 WHERE id = $3",
+            )
+            .bind(serde_json::Value::Array(updated))
+            .bind(new_missing)
+            .bind(ad_id)
+            .execute(pool)
+            .await;
+            info!(
+                "[CLEANUP] Pruned {} volume(s) from available_downloads {ad_id}",
+                pruned_vols.len()
+            );
         }
     }
 }
