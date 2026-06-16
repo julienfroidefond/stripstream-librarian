@@ -33,56 +33,66 @@ pub async fn ongoing_series(
     let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
     let limit = query.limit.unwrap_or(10).clamp(1, 50);
 
+    // Without a user there is no reading progress → always empty
+    let Some(uid) = user_id else {
+        return Ok(Json(vec![]));
+    };
+
     let rows = sqlx::query(
         r#"
-        WITH series_stats AS (
+        -- Start from user's reading progress (small set) instead of scanning all books/series
+        WITH user_progress AS (
+            SELECT book_id, status, last_read_at
+            FROM book_reading_progress
+            WHERE user_id = $2
+        ),
+        active_series AS (
+            SELECT DISTINCT b.series_id
+            FROM user_progress up
+            JOIN books b ON b.id = up.book_id
+            WHERE up.status IN ('read', 'reading')
+        ),
+        series_stats AS (
             SELECT
                 s.id AS series_id,
                 s.name,
                 s.library_id,
-                COUNT(*) AS book_count,
-                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') AS books_read_count,
-                MAX(brp.last_read_at) AS last_read_at
-            FROM series s
+                COUNT(b.id) AS book_count,
+                COUNT(up.book_id) FILTER (WHERE up.status = 'read') AS books_read_count,
+                MAX(up.last_read_at) AS last_read_at
+            FROM active_series a_s
+            JOIN series s ON s.id = a_s.series_id
             JOIN books b ON b.series_id = s.id
-            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
+            LEFT JOIN user_progress up ON up.book_id = b.id
             GROUP BY s.id, s.name, s.library_id
             HAVING (
-                COUNT(brp.book_id) FILTER (WHERE brp.status IN ('read', 'reading')) > 0
-                AND COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') < COUNT(*)
+                COUNT(up.book_id) FILTER (WHERE up.status IN ('read', 'reading')) > 0
+                AND COUNT(up.book_id) FILTER (WHERE up.status = 'read') < COUNT(b.id)
             )
         ),
+        -- DISTINCT ON over only ongoing-series books (was: ROW_NUMBER over ALL books)
         first_books AS (
-            SELECT
-                b.series_id,
-                b.id,
-                b.library_id,
-                b.updated_at,
-                ROW_NUMBER() OVER (
-                    PARTITION BY b.series_id
-                    ORDER BY
-                        b.volume NULLS LAST,
-                        REGEXP_REPLACE(LOWER(b.title), '[0-9].*$', ''),
-                        COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),
-                        b.title ASC
-                ) AS rn
+            SELECT DISTINCT ON (b.series_id) b.series_id, b.id, b.library_id, b.updated_at
             FROM books b
+            WHERE b.series_id IN (SELECT series_id FROM series_stats)
+            ORDER BY b.series_id, b.volume NULLS LAST, b.title ASC
         )
-        SELECT ss.name, ss.series_id, ss.book_count, ss.books_read_count, fb.id AS first_book_id, fb.updated_at AS first_book_updated_at, fb.library_id,
+        SELECT ss.name, ss.series_id, ss.book_count, ss.books_read_count,
+               fb.id AS first_book_id, fb.updated_at AS first_book_updated_at, fb.library_id,
                s.genres, s.authors, s.description
         FROM series_stats ss
-        JOIN first_books fb ON fb.series_id = ss.series_id AND fb.rn = 1
+        JOIN first_books fb ON fb.series_id = ss.series_id
         JOIN series s ON s.id = ss.series_id
-        WHERE ($2::uuid IS NULL OR NOT EXISTS (
+        WHERE NOT EXISTS (
             SELECT 1 FROM user_genre_restrictions ugr
             WHERE ugr.user_id = $2 AND ugr.genre = ANY(s.genres)
-        ))
+        )
         ORDER BY ss.last_read_at DESC NULLS LAST
         LIMIT $1
         "#,
     )
     .bind(limit)
-    .bind(user_id)
+    .bind(uid)
     .fetch_all(&state.pool)
     .await?;
 
@@ -136,32 +146,46 @@ pub async fn ongoing_books(
     let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
     let limit = query.limit.unwrap_or(10).clamp(1, 50);
 
+    // Without a user there is no reading progress → always empty
+    let Some(uid) = user_id else {
+        return Ok(Json(vec![]));
+    };
+
     let rows = sqlx::query(
         r#"
-        WITH ongoing_series AS (
+        -- Start from user's reading progress (small set) instead of scanning all books/series
+        WITH user_progress AS (
+            SELECT book_id, status, last_read_at, current_page
+            FROM book_reading_progress
+            WHERE user_id = $2
+        ),
+        active_series AS (
+            SELECT DISTINCT b.series_id
+            FROM user_progress up
+            JOIN books b ON b.id = up.book_id
+            WHERE up.status IN ('read', 'reading')
+        ),
+        ongoing_series AS (
             SELECT
-                s.id AS series_id,
-                MAX(brp.last_read_at) AS series_last_read_at
-            FROM series s
-            JOIN books b ON b.series_id = s.id
-            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
-            WHERE ($2::uuid IS NULL OR NOT EXISTS (
-                SELECT 1 FROM user_genre_restrictions ugr
-                WHERE ugr.user_id = $2 AND ugr.genre = ANY(s.genres)
-            ))
-            GROUP BY s.id
+                a_s.series_id,
+                MAX(up.last_read_at) AS series_last_read_at
+            FROM active_series a_s
+            JOIN books b ON b.series_id = a_s.series_id
+            LEFT JOIN user_progress up ON up.book_id = b.id
+            GROUP BY a_s.series_id
             HAVING (
-                COUNT(brp.book_id) FILTER (WHERE brp.status IN ('read', 'reading')) > 0
-                AND COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') < COUNT(*)
+                COUNT(up.book_id) FILTER (WHERE up.status IN ('read', 'reading')) > 0
+                AND COUNT(up.book_id) FILTER (WHERE up.status = 'read') < COUNT(b.id)
             )
         ),
         next_books AS (
             SELECT
-                b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.volume_type,
+                b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors,
+                s.name AS series, b.series_id, b.volume, b.volume_type,
                 b.language, b.page_count, b.thumbnail_path, b.updated_at,
-                COALESCE(brp.status, 'unread') AS reading_status,
-                brp.current_page AS reading_current_page,
-                brp.last_read_at AS reading_last_read_at,
+                COALESCE(up.status, 'unread') AS reading_status,
+                up.current_page AS reading_current_page,
+                up.last_read_at AS reading_last_read_at,
                 os.series_last_read_at,
                 ROW_NUMBER() OVER (
                     PARTITION BY b.series_id
@@ -170,11 +194,15 @@ pub async fn ongoing_books(
             FROM books b
             JOIN ongoing_series os ON b.series_id = os.series_id
             JOIN series s ON s.id = b.series_id
-            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
-            WHERE COALESCE(brp.status, 'unread') != 'read'
+            LEFT JOIN user_progress up ON up.book_id = b.id
+            WHERE COALESCE(up.status, 'unread') != 'read'
+              AND NOT EXISTS (
+                  SELECT 1 FROM user_genre_restrictions ugr
+                  WHERE ugr.user_id = $2 AND ugr.genre = ANY(s.genres)
+              )
         )
-        SELECT id, library_id, kind, format, title, author, authors, series, series_id, volume, volume_type, language, page_count,
-               thumbnail_path, updated_at, reading_status, reading_current_page, reading_last_read_at
+        SELECT id, library_id, kind, format, title, author, authors, series, series_id, volume, volume_type,
+               language, page_count, thumbnail_path, updated_at, reading_status, reading_current_page, reading_last_read_at
         FROM next_books
         WHERE rn = 1
         ORDER BY series_last_read_at DESC NULLS LAST
@@ -182,7 +210,7 @@ pub async fn ongoing_books(
         "#,
     )
     .bind(limit)
-    .bind(user_id)
+    .bind(uid)
     .fetch_all(&state.pool)
     .await?;
 
