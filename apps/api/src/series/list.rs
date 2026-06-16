@@ -114,7 +114,7 @@ pub async fn list_series(
 
     let missing_cte = helpers::build_missing_counts_cte(Some("$1"));
 
-    let title_order_clause = "REGEXP_REPLACE(LOWER(sc.name), '[0-9].*$', ''), COALESCE((REGEXP_MATCH(LOWER(sc.name), '\\d+'))[1]::int, 0), sc.name ASC";
+    let title_order_clause = "lower(sc.name) ASC";
     let series_order_clause = match query.sort.as_deref() {
         Some("release_date") => format!("s.start_year DESC NULLS LAST, {title_order_clause}"),
         _ => title_order_clause.to_string(),
@@ -148,21 +148,16 @@ pub async fn list_series(
     let data_sql = format!(
         r#"
         WITH sorted_books AS (
-            SELECT
+            SELECT DISTINCT ON (b.series_id)
                 b.series_id,
                 b.id,
-                b.updated_at,
-                ROW_NUMBER() OVER (
-                    PARTITION BY b.series_id
-                    ORDER BY
-                        CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
-                        b.volume NULLS LAST,
-                        REGEXP_REPLACE(LOWER(b.title), '[0-9].*$', ''),
-                        COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),
-                        b.title ASC
-                ) as rn
+                b.updated_at
             FROM books b
             WHERE b.library_id = $1
+            ORDER BY b.series_id,
+                     CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
+                     b.volume NULLS LAST,
+                     b.title ASC
         ),
         series_counts AS (
             SELECT
@@ -191,7 +186,7 @@ pub async fn list_series(
             asl.anilist_url,
             s.cover_url, s.start_year, s.genres, s.authors, s.description
         FROM series_counts sc
-        LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id AND sb.rn = 1
+        LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
         LEFT JOIN LATERAL (
@@ -473,7 +468,7 @@ pub async fn list_all_series(
         "#
     );
 
-    let title_order_clause = "REGEXP_REPLACE(LOWER(sc.name), '[0-9].*$', ''), COALESCE((REGEXP_MATCH(LOWER(sc.name), '\\d+'))[1]::int, 0), sc.name ASC";
+    let title_order_clause = "lower(sc.name) ASC";
     let series_order_clause = match query.sort.as_deref() {
         Some("latest") => {
             // For series without books, latest_created_at falls back to s.created_at
@@ -490,24 +485,18 @@ pub async fn list_all_series(
     let data_sql = format!(
         r#"
         WITH sorted_books AS (
-            SELECT
+            SELECT DISTINCT ON (b.series_id)
                 b.series_id,
                 b.id,
                 b.library_id,
-                b.created_at,
-                b.updated_at,
-                ROW_NUMBER() OVER (
-                    PARTITION BY b.series_id
-                    ORDER BY
-                        CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
-                        b.volume NULLS LAST,
-                        REGEXP_REPLACE(LOWER(b.title), '[0-9].*$', ''),
-                        COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),
-                        b.title ASC
-                ) as rn
+                b.updated_at
             FROM books b
             JOIN series s ON s.id = b.series_id
             {lib_cond}
+            ORDER BY b.series_id,
+                     CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
+                     b.volume NULLS LAST,
+                     b.title ASC
         ),
         series_counts AS (
             SELECT
@@ -541,7 +530,7 @@ pub async fn list_all_series(
             cs.community_score,
             sur.rating as user_rating
         FROM series_counts sc
-        LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id AND sb.rn = 1
+        LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id
         LEFT JOIN series s ON s.id = sc.series_id
         LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
         LEFT JOIN LATERAL (

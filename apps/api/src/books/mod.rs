@@ -745,7 +745,7 @@ pub async fn get_thumbnail(
     // Fast path: if a stored thumbnail exists and its size matches the client's ETag, return 304
     // without reading the file body.
     if let Some(ref path) = thumbnail_path {
-        if let Ok(meta) = std::fs::metadata(path) {
+        if let Ok(meta) = tokio::fs::metadata(path).await {
             let etag_value = format!("\"{}_{:x}\"", book_id, meta.len());
             if if_none_match == Some(etag_value.as_str()) {
                 let mut headers = HeaderMap::new();
@@ -762,7 +762,7 @@ pub async fn get_thumbnail(
     }
 
     let (data, content_type) = if let Some(ref path) = thumbnail_path {
-        match std::fs::read(path) {
+        match tokio::fs::read(path).await {
             Ok(bytes) => {
                 let ct = detect_thumbnail_content_type(path);
                 (bytes, ct)
