@@ -146,6 +146,16 @@ pub async fn get_recommendations(
             ) g
             GROUP BY g.genre
         ),
+        -- Pre-compute reading list co-occurrences once (source → candidate via shared list)
+        rl_cooccurrences AS (
+            SELECT DISTINCT rli1.series_id AS source_series_id, rli2.series_id AS candidate_id
+            FROM reading_list_items rli1
+            JOIN source_series ss ON ss.series_id = rli1.series_id
+            JOIN reading_list_items rli2 ON rli2.list_id = rli1.list_id
+            WHERE rli2.series_id NOT IN (SELECT series_id FROM started)
+              AND rli2.series_id != rli1.series_id
+        ),
+        -- Only keep (candidate, source) pairs with actual overlap — uses GIN indexes on authors/genres
         candidate_source_pairs AS (
             SELECT
                 cand.id AS candidate_id,
@@ -159,6 +169,23 @@ pub async fn get_recommendations(
             CROSS JOIN source_series src
             WHERE cand.id NOT IN (SELECT series_id FROM started)
               AND cand.id != src.series_id
+              AND (
+                  COALESCE(cand.authors, '{}') && src.authors
+                  OR COALESCE(cand.genres, '{}') && src.genres
+                  OR COALESCE(cand.publishers, '{}') && src.publishers
+              )
+            UNION
+            -- Reading list co-occurrences not already captured by structural overlap
+            SELECT
+                rlc.candidate_id,
+                rlc.source_series_id,
+                src.series_name,
+                src.authors AS source_authors,
+                src.genres AS source_genres,
+                src.publishers AS source_publishers,
+                src.source_weight
+            FROM rl_cooccurrences rlc
+            JOIN source_series src ON src.series_id = rlc.source_series_id
         ),
         author_matches AS (
             SELECT
@@ -202,18 +229,16 @@ pub async fn get_recommendations(
             FROM candidate_source_pairs csp
             JOIN series cand ON cand.id = csp.candidate_id
         ),
+        -- Replace per-pair EXISTS with a left join to the pre-computed co-occurrences
         reading_list_matches AS (
             SELECT
                 csp.candidate_id,
                 csp.source_series_id,
-                EXISTS (
-                    SELECT 1
-                    FROM reading_list_items rli1
-                    JOIN reading_list_items rli2 ON rli2.list_id = rli1.list_id
-                    WHERE rli1.series_id = csp.source_series_id
-                      AND rli2.series_id = csp.candidate_id
-                ) AS has_same_reading_list
+                (rlc.candidate_id IS NOT NULL) AS has_same_reading_list
             FROM candidate_source_pairs csp
+            LEFT JOIN rl_cooccurrences rlc
+                ON rlc.source_series_id = csp.source_series_id
+                AND rlc.candidate_id = csp.candidate_id
         ),
         source_candidate_scores AS (
             SELECT
