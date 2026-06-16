@@ -533,29 +533,39 @@ pub async fn list_reading_lists(
 ) -> Result<Json<Vec<ReadingListDto>>, ApiError> {
     let rows = sqlx::query(
         r#"
+        -- Pre-compute covers for the first 5 items (with cover data) per list, in one pass
+        WITH items_with_covers AS (
+            SELECT
+                rli.list_id,
+                COALESCE(fb.id::text, s.cover_url) AS cover,
+                rli.position,
+                ROW_NUMBER() OVER (PARTITION BY rli.list_id ORDER BY rli.position) AS rn
+            FROM reading_list_items rli
+            JOIN series s ON s.id = rli.series_id
+            LEFT JOIN LATERAL (
+                SELECT b.id FROM books b WHERE b.series_id = s.id
+                ORDER BY CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END, b.volume NULLS LAST
+                LIMIT 1
+            ) fb ON TRUE
+            WHERE fb.id IS NOT NULL OR s.cover_url IS NOT NULL
+        ),
+        covers_agg AS (
+            SELECT list_id, array_agg(cover ORDER BY position) AS preview_covers
+            FROM items_with_covers
+            WHERE rn <= 5
+            GROUP BY list_id
+        )
         SELECT rl.id, rl.name, rl.description, rl.created_at, rl.updated_at,
                COUNT(rli.id)::bigint AS series_count,
-               ARRAY(
-                   SELECT COALESCE(fb.id::text, s.cover_url)
-                   FROM reading_list_items rli2
-                   JOIN series s ON s.id = rli2.series_id
-                   LEFT JOIN LATERAL (
-                       SELECT b.id FROM books b WHERE b.series_id = s.id
-                       ORDER BY CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END, b.volume NULLS LAST
-                       LIMIT 1
-                   ) fb ON TRUE
-                   WHERE rli2.list_id = rl.id
-                     AND (fb.id IS NOT NULL OR s.cover_url IS NOT NULL)
-                   ORDER BY rli2.position
-                   LIMIT 5
-               ) AS preview_covers
+               COALESCE(ca.preview_covers, ARRAY[]::text[]) AS preview_covers
         FROM reading_lists rl
         LEFT JOIN reading_list_items rli ON rli.list_id = rl.id
+        LEFT JOIN covers_agg ca ON ca.list_id = rl.id
         WHERE ($1::uuid IS NULL OR EXISTS (
             SELECT 1 FROM reading_list_items rli_f
             WHERE rli_f.list_id = rl.id AND rli_f.series_id = $1
         ))
-        GROUP BY rl.id
+        GROUP BY rl.id, ca.preview_covers
         ORDER BY rl.name
         "#,
     )
