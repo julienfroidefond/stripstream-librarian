@@ -592,6 +592,8 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/authors", get(authors::list_authors))
         .route("/stats", get(stats::get_stats))
+        .route("/stats/overview", get(stats::get_stats_overview))
+        .route("/stats/breakdown", get(stats::get_stats_breakdown))
         .route("/search", get(search::search_books))
         .route("/metadata/links", get(metadata::get_metadata_links))
         .route("/metadata/missing/:id", get(metadata::get_missing_books))

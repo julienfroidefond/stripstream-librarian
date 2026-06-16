@@ -877,6 +877,34 @@ export async function fetchStats(period?: "day" | "week" | "month") {
   });
 }
 
+export type StatsOverviewData = {
+  overview: StatsOverview;
+  reading_status: ReadingStatusStats;
+  by_format: FormatCount[];
+  by_language: LanguageCount[];
+  metadata: MetadataStats;
+  currently_reading: CurrentlyReadingItem[];
+  recently_read: RecentlyReadItem[];
+};
+
+export type StatsBreakdownData = {
+  by_library: LibraryStatsItem[];
+  top_series: TopSeriesItem[];
+  downloads: DownloadStats;
+};
+
+export async function fetchStatsOverview() {
+  return apiFetch<StatsOverviewData>("/stats/overview", {
+    next: { revalidate: 30, tags: ["stats"] },
+  });
+}
+
+export async function fetchStatsBreakdown() {
+  return apiFetch<StatsBreakdownData>("/stats/breakdown", {
+    next: { revalidate: 30, tags: ["stats"] },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Authors
 // ---------------------------------------------------------------------------
