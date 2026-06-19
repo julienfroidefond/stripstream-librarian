@@ -72,6 +72,11 @@ Stripstream ne marque jamais une série comme terminée sur AniList en se basant
 | Planifié (PLANNING) | Non lu |
 | En cours (CURRENT) | En cours |
 | Terminé (COMPLETED) | Lu |
+| Abandonné (DROPPED) | Série archivée (fichiers supprimés du disque) |
+
+### Séries archivées
+
+Quand tous les fichiers d'une série sont supprimés du disque, le scanner l'archive automatiquement. Si cette série était liée à AniList, le lien est conservé dans l'archive et le prochain push envoie le statut **DROPPED** sur AniList — évitant de laisser une entrée bloquée sur son ancien statut.
 
 ---
 

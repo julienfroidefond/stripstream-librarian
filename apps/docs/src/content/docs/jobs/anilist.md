@@ -68,7 +68,9 @@ Ce job ne remplace pas le bouton **Importer depuis AniList** de la page Paramèt
 
 Envoie votre progression de lecture vers AniList. Seules les séries **modifiées depuis le dernier push** sont envoyées — pas toute la bibliothèque à chaque fois.
 
-**Ce qui est envoyé** : le statut de la série (planifié / en cours / terminé) et le nombre de tomes lus.
+**Ce qui est envoyé** : le statut de la série (planifié / en cours / terminé / abandonné) et le nombre de tomes lus.
+
+**Séries archivées** : si une série liée à AniList a été archivée (fichiers supprimés du disque), le push envoie automatiquement le statut **DROPPED**. Ce push n'est effectué qu'une seule fois par série archivée.
 
 **Déclenchement automatique** : configurez la fréquence dans les paramètres de la bibliothèque → section **État de lecture**.
 
