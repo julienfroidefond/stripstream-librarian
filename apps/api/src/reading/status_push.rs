@@ -595,6 +595,119 @@ pub async fn process_reading_status_push(
         tokio::time::sleep(Duration::from_millis(700)).await;
     }
 
+    // Push DROPPED for archived series that still have an AniList link
+    let archived_to_push: Vec<(Uuid, String, i32, Option<String>, Option<String>)> = sqlx::query(
+        r#"
+        SELECT id, name, anilist_id, anilist_title, anilist_url
+        FROM archived_series
+        WHERE library_id = $1
+          AND anilist_id IS NOT NULL
+          AND anilist_dropped_pushed_at IS NULL
+        ORDER BY name
+        "#,
+    )
+    .bind(library_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .into_iter()
+    .map(|row| {
+        (
+            row.get::<Uuid, _>("id"),
+            row.get::<String, _>("name"),
+            row.get::<i32, _>("anilist_id"),
+            row.get::<Option<String>, _>("anilist_title"),
+            row.get::<Option<String>, _>("anilist_url"),
+        )
+    })
+    .collect();
+
+    for (archived_id, series_name, anilist_id, anilist_title, anilist_url) in &archived_to_push {
+        match push_to_anilist(&token, *anilist_id, "DROPPED", 0).await {
+            Ok(()) => {
+                let _ = sqlx::query(
+                    "UPDATE archived_series SET anilist_dropped_pushed_at = NOW() WHERE id = $1",
+                )
+                .bind(archived_id)
+                .execute(pool)
+                .await;
+
+                insert_event(
+                    pool,
+                    job_id,
+                    "status_pushed",
+                    "info",
+                    Some(series_name),
+                    None,
+                    Some(serde_json::json!({
+                        "anilist_id": anilist_id,
+                        "anilist_title": anilist_title,
+                        "anilist_url": anilist_url,
+                        "anilist_status": "DROPPED",
+                        "progress": 0,
+                        "archived": true
+                    })),
+                )
+                .await;
+            }
+            Err(e) if e.contains("429") || e.contains("Too Many Requests") => {
+                warn!(
+                    "[READING_STATUS_PUSH] rate limit hit for archived '{}', waiting 10s before retry",
+                    series_name
+                );
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                match push_to_anilist(&token, *anilist_id, "DROPPED", 0).await {
+                    Ok(()) => {
+                        let _ = sqlx::query(
+                            "UPDATE archived_series SET anilist_dropped_pushed_at = NOW() WHERE id = $1",
+                        )
+                        .bind(archived_id)
+                        .execute(pool)
+                        .await;
+
+                        insert_event(
+                            pool,
+                            job_id,
+                            "status_pushed",
+                            "info",
+                            Some(series_name),
+                            None,
+                            Some(serde_json::json!({
+                                "anilist_id": anilist_id,
+                                "anilist_title": anilist_title,
+                                "anilist_url": anilist_url,
+                                "anilist_status": "DROPPED",
+                                "progress": 0,
+                                "archived": true
+                            })),
+                        )
+                        .await;
+                    }
+                    Err(e2) => {
+                        return Err(format!(
+                            "AniList rate limit exceeded (429) on archived series — job stopped: {e2}"
+                        ));
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("[READING_STATUS_PUSH] archived series '{}': {e}", series_name);
+                insert_event(
+                    pool,
+                    job_id,
+                    "error",
+                    "error",
+                    Some(series_name),
+                    Some(&e),
+                    Some(serde_json::json!({"anilist_id": anilist_id, "anilist_title": anilist_title, "anilist_url": anilist_url, "archived": true})),
+                )
+                .await;
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(700)).await;
+    }
+
     // Build final stats from events
     let counts = sqlx::query(
         "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",

@@ -888,7 +888,7 @@ const fr = {
   "settings.anilistLocalUserDesc": "Choisir l'utilisateur local dont la progression est synchronisée avec ce compte AniList",
   "settings.anilistLocalUserNone": "— Sélectionner un utilisateur —",
   "settings.anilistSyncTitle": "AniList Sync",
-  "settings.anilistSyncDesc": "Envoyer la progression locale vers AniList. Règles : aucun lu → PLANNING · au moins 1 lu → CURRENT (progression = nbre de tomes lus) · tous les tomes publiés lus (total_volumes connu) → COMPLETED.",
+  "settings.anilistSyncDesc": "Envoyer la progression locale vers AniList. Règles : aucun lu → PLANNING · au moins 1 lu → CURRENT (progression = nbre de tomes lus) · tous les tomes publiés lus (total_volumes connu) → COMPLETED · série supprimée du disque (archivée) → DROPPED.",
   "settings.anilistSyncButton": "Synchroniser vers AniList",
   "settings.anilistPullButton": "Importer depuis AniList",
   "settings.anilistPullDesc": "Importer votre liste de lecture AniList et mettre à jour la progression locale. Règles : COMPLETED/CURRENT/REPEATING → livres marqués lus jusqu'au volume de progression · PLANNING/PAUSED/DROPPED → non lus.",

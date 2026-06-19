@@ -919,6 +919,24 @@ async fn archive_empty_series(pool: &sqlx::PgPool, series_ids: &[Uuid]) -> Resul
     .execute(pool)
     .await?;
 
+    // Preserve AniList link before the CASCADE delete wipes anilist_series_links
+    sqlx::query(
+        r#"
+        UPDATE archived_series aseries
+        SET anilist_id    = asl.anilist_id,
+            anilist_title = asl.anilist_title,
+            anilist_url   = asl.anilist_url
+        FROM anilist_series_links asl
+        WHERE asl.series_id = aseries.id
+          AND aseries.id = ANY($1)
+          AND asl.anilist_id IS NOT NULL
+          AND aseries.anilist_id IS NULL
+        "#,
+    )
+    .bind(series_ids)
+    .execute(pool)
+    .await?;
+
     Ok(())
 }
 
@@ -938,6 +956,25 @@ async fn archive_orphan_series(pool: &sqlx::PgPool, library_id: Uuid) -> Result<
           AND NOT EXISTS (SELECT 1 FROM external_metadata_links WHERE series_id = series.id)
           AND NOT EXISTS (SELECT 1 FROM available_downloads WHERE series_id = series.id)
         ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .bind(library_id)
+    .execute(pool)
+    .await?;
+
+    // Preserve AniList link before the CASCADE delete wipes anilist_series_links
+    sqlx::query(
+        r#"
+        UPDATE archived_series aseries
+        SET anilist_id    = asl.anilist_id,
+            anilist_title = asl.anilist_title,
+            anilist_url   = asl.anilist_url
+        FROM anilist_series_links asl
+        JOIN series s ON s.id = asl.series_id
+        WHERE asl.series_id = aseries.id
+          AND s.library_id = $1
+          AND asl.anilist_id IS NOT NULL
+          AND aseries.anilist_id IS NULL
         "#,
     )
     .bind(library_id)

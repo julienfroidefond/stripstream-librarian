@@ -890,7 +890,7 @@ const en: Record<TranslationKey, string> = {
   "settings.anilistLocalUserDesc": "Select the local user whose reading progress is synced with this AniList account",
   "settings.anilistLocalUserNone": "— Select a user —",
   "settings.anilistSyncTitle": "AniList Sync",
-  "settings.anilistSyncDesc": "Push local reading progress to AniList. Rules: none read → PLANNING · at least 1 read → CURRENT (progress = volumes read) · all published volumes read (total_volumes known) → COMPLETED.",
+  "settings.anilistSyncDesc": "Push local reading progress to AniList. Rules: none read → PLANNING · at least 1 read → CURRENT (progress = volumes read) · all published volumes read (total_volumes known) → COMPLETED · series removed from disk (archived) → DROPPED.",
   "settings.anilistSyncButton": "Sync to AniList",
   "settings.anilistPullButton": "Pull from AniList",
   "settings.anilistPullDesc": "Import your AniList reading list and update local reading progress. Rules: COMPLETED/CURRENT/REPEATING → books marked read up to the progress volume · PLANNING/PAUSED/DROPPED → unread.",
