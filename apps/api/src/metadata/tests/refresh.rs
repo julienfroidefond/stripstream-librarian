@@ -102,3 +102,28 @@ fn request_dto_deserializes_with_library_id() {
     let req: MetadataRefreshRequest = serde_json::from_value(json).unwrap();
     assert_eq!(req.library_id.unwrap(), "abc-123");
 }
+
+#[test]
+fn notification_change_shows_old_and_new_values() {
+    let change = FieldDiff {
+        field: "authors".to_string(),
+        old: Some(serde_json::json!(["Old author"])),
+        new: Some(serde_json::json!(["New author"])),
+    };
+
+    assert_eq!(
+        format_notification_change(&change),
+        "authors: [\"Old author\"] → [\"New author\"]"
+    );
+}
+
+#[test]
+fn notification_change_marks_missing_old_value() {
+    let change = FieldDiff {
+        field: "start_year".to_string(),
+        old: None,
+        new: Some(serde_json::json!(2026)),
+    };
+
+    assert_eq!(format_notification_change(&change), "start_year: ∅ → 2026");
+}

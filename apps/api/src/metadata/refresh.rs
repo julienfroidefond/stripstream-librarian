@@ -36,6 +36,38 @@ pub(crate) struct SeriesRefreshResult {
     pub(crate) error: Option<String>,
 }
 
+const NOTIFICATION_VALUE_MAX_LEN: usize = 120;
+
+fn format_notification_value(value: Option<&serde_json::Value>) -> String {
+    let value = match value {
+        None | Some(serde_json::Value::Null) => "∅".to_string(),
+        Some(serde_json::Value::String(value)) => value.clone(),
+        Some(value) => value.to_string(),
+    };
+    let value = value.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    if value.chars().count() > NOTIFICATION_VALUE_MAX_LEN {
+        format!(
+            "{}…",
+            value
+                .chars()
+                .take(NOTIFICATION_VALUE_MAX_LEN)
+                .collect::<String>()
+        )
+    } else {
+        value
+    }
+}
+
+fn format_notification_change(change: &FieldDiff) -> String {
+    format!(
+        "{}: {} → {}",
+        change.field,
+        format_notification_value(change.old.as_ref()),
+        format_notification_value(change.new.as_ref()),
+    )
+}
+
 /// Response DTO for the report endpoint
 #[derive(Serialize, ToSchema)]
 pub struct MetadataRefreshReportDto {
@@ -718,27 +750,35 @@ async fn process_metadata_refresh_inner(
     let mut detail_lines: Vec<String> = Vec::new();
     for result in &all_results {
         if result.status == "updated" {
-            let series_field_names: Vec<&str> = result
-                .series_changes
-                .iter()
-                .map(|c| c.field.as_str())
-                .collect();
+            let series_field_count = result.series_changes.len();
             let book_field_count = result
                 .book_changes
                 .iter()
                 .map(|b| b.changes.len())
                 .sum::<usize>();
-            series_fields_count += series_field_names.len();
+            series_fields_count += series_field_count;
             books_fields_count += book_field_count;
-            if !series_field_names.is_empty() || book_field_count > 0 {
-                let mut parts: Vec<String> = Vec::new();
-                if !series_field_names.is_empty() {
-                    parts.push(series_field_names.join(", "));
+            if series_field_count > 0 || book_field_count > 0 {
+                let mut changes: Vec<String> = result
+                    .series_changes
+                    .iter()
+                    .map(format_notification_change)
+                    .collect();
+                for book in &result.book_changes {
+                    let book_name = if book.title.is_empty() {
+                        format!("Volume {}", book.volume.unwrap_or_default())
+                    } else {
+                        book.title.clone()
+                    };
+                    changes.extend(book.changes.iter().map(|change| {
+                        format!("{book_name} — {}", format_notification_change(change))
+                    }));
                 }
-                if book_field_count > 0 {
-                    parts.push(format!("{book_field_count} book fields"));
-                }
-                detail_lines.push(format!("{}: {}", result.series_name, parts.join(", ")));
+                detail_lines.push(format!(
+                    "{}:\n  • {}",
+                    result.series_name,
+                    changes.join("\n  • ")
+                ));
             }
         }
     }

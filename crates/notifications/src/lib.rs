@@ -668,7 +668,7 @@ fn format_event(event: &NotificationEvent) -> String {
                 lines.push(format!("❌ Errors: <b>{errors}</b>"));
             }
             for detail in details.iter().take(5) {
-                lines.push(format!("📖 {detail}"));
+                lines.push(format!("📖 {}", escape_html(detail)));
             }
             lines.join("\n")
         }
@@ -943,6 +943,12 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
 fn format_duration(secs: u64) -> String {
     if secs < 60 {
         format!("{secs}s")
@@ -1100,5 +1106,20 @@ mod tests {
         assert!(text.contains("Dragon Ball"));
         assert!(text.contains("Dragon Ball T01"));
         assert!(text.contains("Dragon Ball T02"));
+    }
+
+    #[test]
+    fn metadata_refresh_escapes_detail_values() {
+        let text = format_event(&NotificationEvent::MetadataRefreshCompleted {
+            library_name: Some("Manga".to_string()),
+            refreshed: 1,
+            unchanged: 0,
+            errors: 0,
+            series_fields_updated: 1,
+            books_fields_updated: 0,
+            details: vec!["Test: description: <old> → & new".to_string()],
+        });
+
+        assert!(text.contains("&lt;old&gt; → &amp; new"));
     }
 }
