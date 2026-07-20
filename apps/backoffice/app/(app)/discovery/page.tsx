@@ -17,6 +17,7 @@ export interface DiscoverySuggestion {
   start_year: number | null;
   total_volumes: number | null;
   status: string | null;
+  rating: number | null;
 }
 
 export default async function DiscoveryPage({

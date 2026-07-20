@@ -93,6 +93,13 @@ export function DiscoveryCard({
           </span>
         )}
 
+        {/* SensCritique average rating for the newest and best lists */}
+        {suggestion.provider.startsWith("sc_") && suggestion.rating !== null && (
+          <span className="absolute top-2 left-2 inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full font-semibold bg-black/60 text-amber-300 backdrop-blur-sm tabular-nums">
+            ★ {suggestion.rating.toFixed(1)}/10
+          </span>
+        )}
+
         {/* Title + genres overlay on image */}
         <div className="absolute inset-x-0 bottom-0 p-2.5">
           <h3 className={`font-semibold text-sm leading-tight line-clamp-2 ${

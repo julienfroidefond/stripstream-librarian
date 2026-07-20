@@ -20,7 +20,9 @@ pub struct ReadingListDto {
     pub description: Option<String>,
     pub series_count: i64,
     pub preview_covers: Vec<String>,
+    #[schema(value_type = String)]
     pub created_at: DateTime<Utc>,
+    #[schema(value_type = String)]
     pub updated_at: DateTime<Utc>,
 }
 
@@ -31,7 +33,9 @@ pub struct ReadingListDetailDto {
     pub name: String,
     pub description: Option<String>,
     pub items: Vec<ReadingListSeriesDto>,
+    #[schema(value_type = String)]
     pub created_at: DateTime<Utc>,
+    #[schema(value_type = String)]
     pub updated_at: DateTime<Utc>,
 }
 
@@ -43,6 +47,7 @@ pub struct ReadingListSeriesDto {
     pub cover_url: Option<String>,
     #[schema(value_type = String)]
     pub first_book_id: Option<Uuid>,
+    #[schema(value_type = Option<String>)]
     pub first_book_updated_at: Option<chrono::DateTime<chrono::Utc>>,
     pub provider: Option<String>,
     pub external_id: Option<String>,

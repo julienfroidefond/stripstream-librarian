@@ -5,7 +5,7 @@ use sqlx::Row;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{error::ApiError, state::AppState};
+use crate::{error::ApiError, series::SeriesItem, state::AppState};
 
 #[derive(Serialize, ToSchema)]
 pub struct GenreDto {
@@ -201,7 +201,7 @@ pub struct UntaggedSeriesQuery {
     tag = "genres",
     params(("library_id" = Option<String>, Query, description = "Filter by library ID")),
     responses(
-        (status = 200, body = Vec<crate::series::SeriesItem>),
+        (status = 200, body = Vec<SeriesItem>),
         (status = 401, description = "Unauthorized"),
     ),
     security(("Bearer" = []))
@@ -209,7 +209,7 @@ pub struct UntaggedSeriesQuery {
 pub async fn untagged_series(
     State(state): State<AppState>,
     Query(query): Query<UntaggedSeriesQuery>,
-) -> Result<Json<Vec<crate::series::SeriesItem>>, ApiError> {
+) -> Result<Json<Vec<SeriesItem>>, ApiError> {
     let lib_cond = if query.library_id.is_some() {
         "AND s.library_id = $1"
     } else {

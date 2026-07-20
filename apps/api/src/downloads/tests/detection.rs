@@ -844,8 +844,8 @@ async fn detection_includes_series_without_books(pool: sqlx::PgPool) {
         .await
         .unwrap();
     sqlx::query(
-        "INSERT INTO books (id, library_id, series_id, title, abs_path, kind, volume_type) \
-         VALUES ($1, $2, $3, 'Owned 1', '/libraries/test/owned.cbz', 'comic', 'regular')",
+        "INSERT INTO books (id, library_id, series_id, title, kind, volume_type) \
+         VALUES ($1, $2, $3, 'Owned 1', 'comic', 'regular')",
     )
     .bind(Uuid::new_v4())
     .bind(library_id)

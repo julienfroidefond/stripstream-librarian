@@ -35,6 +35,7 @@ pub struct ArchivedSeriesItem {
     pub total_volumes: Option<i32>,
     pub status: Option<String>,
     pub book_count: i64,
+    #[schema(value_type = String)]
     pub archived_at: DateTime<Utc>,
     pub reading_progress: Vec<ArchivedSeriesReadingProgress>,
 }
@@ -44,6 +45,7 @@ pub struct ArchivedBookReadingProgress {
     pub user_name: String,
     pub status: String,
     pub current_page: Option<i32>,
+    #[schema(value_type = Option<String>)]
     pub last_read_at: Option<DateTime<Utc>>,
 }
 
@@ -64,6 +66,7 @@ pub struct ArchivedBookItem {
     pub isbn: Option<String>,
     pub publish_date: Option<String>,
     pub abs_path: Option<String>,
+    #[schema(value_type = String)]
     pub archived_at: DateTime<Utc>,
     pub reading_progress: Vec<ArchivedBookReadingProgress>,
 }
@@ -83,6 +86,7 @@ pub struct ArchivedSeriesDetail {
     pub total_volumes: Option<i32>,
     pub status: Option<String>,
     pub start_year: Option<i32>,
+    #[schema(value_type = String)]
     pub archived_at: DateTime<Utc>,
     pub books: Vec<ArchivedBookItem>,
 }

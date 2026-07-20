@@ -70,13 +70,11 @@ async fn upsert_series_user_rating(pool: sqlx::PgPool) {
     .await
     .unwrap();
 
-    sqlx::query(
-        "INSERT INTO users (id, username, password_hash, role) VALUES ($1, 'testuser', 'hash', 'admin')",
-    )
-    .bind(user_id)
-    .execute(&pool)
-    .await
-    .unwrap();
+    sqlx::query("INSERT INTO users (id, username) VALUES ($1, 'testuser')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     // Insert
     sqlx::query(
@@ -145,13 +143,11 @@ async fn cascade_delete_user_removes_ratings(pool: sqlx::PgPool) {
     .await
     .unwrap();
 
-    sqlx::query(
-        "INSERT INTO users (id, username, password_hash, role) VALUES ($1, 'deluser', 'hash', 'admin')",
-    )
-    .bind(user_id)
-    .execute(&pool)
-    .await
-    .unwrap();
+    sqlx::query("INSERT INTO users (id, username) VALUES ($1, 'deluser')")
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     sqlx::query("INSERT INTO series_user_ratings (user_id, series_id, rating) VALUES ($1, $2, 5)")
         .bind(user_id)

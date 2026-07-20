@@ -20,6 +20,8 @@ La page **Découverte** vous permet de parcourir des listes de séries populaire
 | **Prowlarr** | Releases récentes disponibles sur vos indexeurs |
 | **Recommandations** | Séries de votre bibliothèque à découvrir selon vos lectures |
 
+Les cartes des listes **Nouveautés** et **Meilleures** affichent la note moyenne SensCritique lorsqu'elle est disponible.
+
 ## Ajouter à la bibliothèque
 
 Sur chaque carte de découverte, un bouton **"+"** permet d'ajouter la série à votre bibliothèque en un clic. Voir [Ajouter à la bibliothèque](/discovery/add-to-library/) pour le détail.

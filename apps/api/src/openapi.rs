@@ -288,6 +288,8 @@ pub struct ClientApiDoc;
             crate::series::ArchivedSeriesItem,
             crate::series::ArchivedBookItem,
             crate::series::ArchivedSeriesDetail,
+            crate::series::ArchivedSeriesReadingProgress,
+            crate::series::ArchivedBookReadingProgress,
             // Reading
             crate::reading::progress::ReadingProgressResponse,
             crate::reading::progress::UpdateReadingProgressRequest,

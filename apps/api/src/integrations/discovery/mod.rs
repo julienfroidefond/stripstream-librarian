@@ -30,6 +30,8 @@ pub struct DiscoverySuggestionDto {
     pub start_year: Option<i32>,
     pub total_volumes: Option<i32>,
     pub status: Option<String>,
+    #[serde(default)]
+    pub rating: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -287,6 +289,10 @@ async fn fetch_and_cache_trending(
                 .get("status")
                 .and_then(|s| s.as_str())
                 .map(String::from);
+            let rating = c
+                .metadata_json
+                .get("rating")
+                .and_then(|rating| rating.as_f64());
             DiscoverySuggestionDto {
                 provider: provider.to_string(),
                 external_id: c.external_id,
@@ -299,6 +305,7 @@ async fn fetch_and_cache_trending(
                 start_year: c.start_year,
                 total_volumes: c.total_volumes,
                 status,
+                rating,
             }
         })
         .collect();
