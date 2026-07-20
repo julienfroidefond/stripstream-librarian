@@ -23,6 +23,17 @@ impl MetadataProvider for BedethequeProvider {
         Box::pin(async move { search_series_impl(&query, &config, BEDETHEQUE_BASE_URL).await })
     }
 
+    fn get_series(
+        &self,
+        external_id: &str,
+        _config: &ProviderConfig,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<SeriesCandidate, String>> + Send + '_>,
+    > {
+        let external_id = external_id.to_string();
+        Box::pin(async move { get_series_impl(&external_id, BEDETHEQUE_BASE_URL).await })
+    }
+
     fn get_series_books(
         &self,
         external_id: &str,
@@ -467,6 +478,57 @@ fn extract_info_value<'a>(text: &'a str, label: &str) -> Option<&'a str> {
 // ---------------------------------------------------------------------------
 // Get series books
 // ---------------------------------------------------------------------------
+
+async fn get_series_impl(external_id: &str, base_url: &str) -> Result<SeriesCandidate, String> {
+    let client = build_client()?;
+    let external_url = format!("{base_url}/serie-{external_id}-BD-Serie.html");
+    let details = fetch_series_details(&client, external_id, Some(&external_url), base_url).await?;
+    let SeriesDetails {
+        description,
+        authors,
+        publishers,
+        start_year,
+        album_count,
+        genres,
+        status,
+        origin,
+        language,
+        cover_url,
+    } = details;
+    let metadata_json = serde_json::json!({
+        "description": description,
+        "authors": authors,
+        "publishers": publishers,
+        "start_year": start_year,
+        "genres": genres,
+        "status": status,
+        "origin": origin,
+        "language": language,
+    });
+    Ok(SeriesCandidate {
+        external_id: external_id.to_string(),
+        title: external_id.to_string(),
+        authors: metadata_json["authors"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|author| author.as_str().map(String::from))
+            .collect(),
+        description: metadata_json["description"].as_str().map(String::from),
+        publishers: metadata_json["publishers"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|publisher| publisher.as_str().map(String::from))
+            .collect(),
+        start_year,
+        total_volumes: album_count,
+        cover_url,
+        external_url: Some(external_url),
+        confidence: 1.0,
+        metadata_json,
+    })
+}
 
 async fn get_series_books_impl(
     external_id: &str,

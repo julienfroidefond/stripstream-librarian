@@ -26,6 +26,17 @@ impl MetadataProvider for SensCritiqueProvider {
         Box::pin(async move { search_series_impl(&query, detailed).await })
     }
 
+    fn get_series(
+        &self,
+        external_id: &str,
+        _config: &ProviderConfig,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<SeriesCandidate, String>> + Send + '_>,
+    > {
+        let external_id = external_id.to_string();
+        Box::pin(async move { get_series_impl(&external_id).await })
+    }
+
     fn get_series_books(
         &self,
         external_id: &str,
@@ -422,6 +433,38 @@ async fn fetch_franchise_editions(
 /// Get all volumes/books for a series identified by its external_id.
 ///
 /// external_id format: "franchise:{id}:edition:{encoded}" or "franchise:{id}" or "product:{id}"
+async fn get_series_impl(external_id: &str) -> Result<SeriesCandidate, String> {
+    let books = get_series_books_impl(external_id).await?;
+    let first = books
+        .iter()
+        .min_by_key(|book| book.volume_number.unwrap_or(i32::MAX))
+        .ok_or_else(|| format!("SensCritique series {external_id} has no products"))?;
+    let start_year = books
+        .iter()
+        .filter_map(|book| book.publish_date.as_deref())
+        .filter_map(|date| date.get(..4))
+        .filter_map(|year| year.parse().ok())
+        .min();
+    let description = first.summary.clone();
+    let mut metadata_json = serde_json::json!({});
+    if let Some(description) = &description {
+        metadata_json["description"] = serde_json::json!(description);
+    }
+    Ok(SeriesCandidate {
+        external_id: external_id.to_string(),
+        title: first.title.clone(),
+        authors: first.authors.clone(),
+        description,
+        publishers: vec![],
+        start_year,
+        total_volumes: Some(books.len() as i32),
+        cover_url: first.cover_url.clone(),
+        external_url: None,
+        confidence: 1.0,
+        metadata_json,
+    })
+}
+
 async fn get_series_books_impl(external_id: &str) -> Result<Vec<BookCandidate>, String> {
     let client = build_client()?;
 

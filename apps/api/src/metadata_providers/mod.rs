@@ -63,6 +63,18 @@ pub trait MetadataProvider: Send + Sync {
         Box<dyn std::future::Future<Output = Result<Vec<SeriesCandidate>, String>> + Send + '_>,
     >;
 
+    /// Fetch the exact series previously linked to this provider.
+    ///
+    /// Refreshes must use this method rather than a name search: search rankings
+    /// are not stable enough to safely update an approved link.
+    fn get_series(
+        &self,
+        external_id: &str,
+        config: &ProviderConfig,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<SeriesCandidate, String>> + Send + '_>,
+    >;
+
     fn get_series_books(
         &self,
         external_id: &str,

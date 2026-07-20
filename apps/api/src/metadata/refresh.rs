@@ -748,6 +748,7 @@ async fn process_metadata_refresh_inner(
     let mut series_fields_count = 0usize;
     let mut books_fields_count = 0usize;
     let mut detail_lines: Vec<String> = Vec::new();
+    let mut error_lines: Vec<String> = Vec::new();
     for result in &all_results {
         if result.status == "updated" {
             let series_field_count = result.series_changes.len();
@@ -780,6 +781,9 @@ async fn process_metadata_refresh_inner(
                     changes.join("\n  • ")
                 ));
             }
+        } else if result.status == "error" {
+            let error = result.error.as_deref().unwrap_or("Unknown error");
+            error_lines.push(format!("{} — {error}", result.series_name));
         }
     }
 
@@ -793,6 +797,7 @@ async fn process_metadata_refresh_inner(
             series_fields_updated: series_fields_count,
             books_fields_updated: books_fields_count,
             details: detail_lines,
+            error_details: error_lines,
         },
     );
 

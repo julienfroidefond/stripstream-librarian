@@ -51,22 +51,16 @@ pub(crate) async fn refresh_link(
     let mut book_changes: Vec<BookDiff> = Vec::new();
 
     // -- Series-level refresh --
-    let candidates = provider
-        .search_series(series_name, &config)
+    let candidate = provider
+        .get_series(external_id, &config)
         .await
-        .map_err(|e| format!("provider search error: {e}"))?;
+        .map_err(|e| format!("provider lookup by external ID failed: {e}"))?;
 
-    let candidate = candidates
-        .iter()
-        .find(|c| c.external_id == external_id)
-        .or_else(|| candidates.first());
-
-    if let Some(candidate) = candidate {
-        let (pr_rating, pr_rating_count, pr_rating_scale) =
-            shared_sync::extract_provider_rating(&candidate.metadata_json);
-        // Update link metadata_json and provider rating columns
-        sqlx::query(
-            r#"
+    let (pr_rating, pr_rating_count, pr_rating_scale) =
+        shared_sync::extract_provider_rating(&candidate.metadata_json);
+    // Update link metadata_json and provider rating columns
+    sqlx::query(
+        r#"
             UPDATE external_metadata_links
             SET metadata_json = $2,
                 total_volumes_external = $3,
@@ -75,21 +69,20 @@ pub(crate) async fn refresh_link(
                 provider_rating_scale = $6,
                 updated_at = NOW()
             WHERE id = $1
-            "#,
-        )
-        .bind(link_id)
-        .bind(&candidate.metadata_json)
-        .bind(candidate.total_volumes)
-        .bind(pr_rating)
-        .bind(pr_rating_count)
-        .bind(pr_rating_scale)
-        .execute(pool)
-        .await
-        .map_err(|e| e.to_string())?;
+        "#,
+    )
+    .bind(link_id)
+    .bind(&candidate.metadata_json)
+    .bind(candidate.total_volumes)
+    .bind(pr_rating)
+    .bind(pr_rating_count)
+    .bind(pr_rating_scale)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
 
-        // Diff + sync series metadata
-        series_changes = sync_series_with_diff(pool, library_id, series_name, candidate).await?;
-    }
+    // Diff + sync series metadata
+    series_changes = sync_series_with_diff(pool, library_id, series_name, &candidate).await?;
 
     // -- Book-level refresh --
     let books = provider

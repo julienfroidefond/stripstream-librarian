@@ -21,6 +21,18 @@ impl MetadataProvider for OpenLibraryProvider {
         Box::pin(async move { search_series_impl(&query, &config, DEFAULT_BASE_URL).await })
     }
 
+    fn get_series(
+        &self,
+        external_id: &str,
+        config: &ProviderConfig,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<SeriesCandidate, String>> + Send + '_>,
+    > {
+        let external_id = external_id.to_string();
+        let config = config.clone();
+        Box::pin(async move { get_series_impl(&external_id, &config, DEFAULT_BASE_URL).await })
+    }
+
     fn get_series_books(
         &self,
         external_id: &str,
@@ -223,6 +235,67 @@ async fn search_series_impl(
     });
     candidates.truncate(10);
     Ok(candidates)
+}
+
+async fn get_series_impl(
+    external_id: &str,
+    _config: &ProviderConfig,
+    base_url: &str,
+) -> Result<SeriesCandidate, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("failed to build HTTP client: {e}"))?;
+    let url = format!("{base_url}{external_id}.json");
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Open Library request failed: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("Open Library returned {}", response.status()));
+    }
+    let work: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Open Library response: {e}"))?;
+    let title = work
+        .get("title")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let description = work.get("description").and_then(|value| {
+        value.as_str().map(String::from).or_else(|| {
+            value
+                .get("value")
+                .and_then(|value| value.as_str())
+                .map(String::from)
+        })
+    });
+    let start_year = work
+        .get("first_publish_date")
+        .and_then(|value| value.as_str())
+        .and_then(|date| date.get(..4))
+        .and_then(|year| year.parse().ok());
+    let mut metadata_json = serde_json::json!({});
+    if let Some(description) = &description {
+        metadata_json["description"] = serde_json::json!(description);
+    }
+    Ok(SeriesCandidate {
+        external_id: external_id.to_string(),
+        title,
+        // The work endpoint only exposes author keys. Do not replace readable
+        // local author names with those identifiers during a refresh.
+        authors: vec![],
+        description,
+        publishers: vec![],
+        start_year,
+        total_volumes: None,
+        cover_url: None,
+        external_url: Some(format!("https://openlibrary.org{external_id}")),
+        confidence: 1.0,
+        metadata_json,
+    })
 }
 
 async fn get_series_books_impl(

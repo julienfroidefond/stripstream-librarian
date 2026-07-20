@@ -19,6 +19,17 @@ impl MetadataProvider for AniListProvider {
         Box::pin(async move { search_series_impl(&query, &config).await })
     }
 
+    fn get_series(
+        &self,
+        external_id: &str,
+        _config: &ProviderConfig,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<SeriesCandidate, String>> + Send + '_>,
+    > {
+        let external_id = external_id.to_string();
+        Box::pin(async move { get_series_impl(&external_id).await })
+    }
+
     fn get_series_books(
         &self,
         external_id: &str,
@@ -234,6 +245,30 @@ async fn search_series_impl_url(query: &str, url: &str) -> Result<Vec<SeriesCand
     });
     candidates.truncate(10);
     Ok(candidates)
+}
+
+async fn get_series_impl(external_id: &str) -> Result<SeriesCandidate, String> {
+    let id: i64 = external_id
+        .parse()
+        .map_err(|_| "invalid AniList ID".to_string())?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("failed to build HTTP client: {e}"))?;
+    let data = graphql_request_url(
+        &client,
+        ANILIST_GRAPHQL_URL,
+        DETAIL_QUERY,
+        serde_json::json!({ "id": id }),
+    )
+    .await?;
+    let media = data
+        .get("data")
+        .and_then(|data| data.get("Media"))
+        .ok_or_else(|| format!("AniList media {external_id} not found"))?;
+
+    parse_media_to_candidate(media, 1.0)
+        .ok_or_else(|| format!("AniList media {external_id} has invalid data"))
 }
 
 async fn get_series_books_impl(

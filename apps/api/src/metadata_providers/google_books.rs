@@ -21,6 +21,18 @@ impl MetadataProvider for GoogleBooksProvider {
         Box::pin(async move { search_series_impl(&query, &config, DEFAULT_BASE_URL).await })
     }
 
+    fn get_series(
+        &self,
+        external_id: &str,
+        config: &ProviderConfig,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<SeriesCandidate, String>> + Send + '_>,
+    > {
+        let external_id = external_id.to_string();
+        let config = config.clone();
+        Box::pin(async move { get_series_impl(&external_id, &config, DEFAULT_BASE_URL).await })
+    }
+
     fn get_series_books(
         &self,
         external_id: &str,
@@ -244,6 +256,98 @@ async fn search_series_impl(
     candidates.truncate(10);
 
     Ok(candidates)
+}
+
+async fn get_series_impl(
+    external_id: &str,
+    config: &ProviderConfig,
+    base_url: &str,
+) -> Result<SeriesCandidate, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("failed to build HTTP client: {e}"))?;
+    let mut url = format!("{base_url}/books/v1/volumes/{external_id}");
+    if let Some(key) = &config.api_key {
+        url.push_str(&format!("?key={key}"));
+    }
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Google Books request failed: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("Google Books returned {}", response.status()));
+    }
+    let volume: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Google Books response: {e}"))?;
+    let info = volume
+        .get("volumeInfo")
+        .ok_or_else(|| format!("Google Books volume {external_id} has no volumeInfo"))?;
+    let title = info
+        .get("title")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let authors = info
+        .get("authors")
+        .and_then(|value| value.as_array())
+        .map(|authors| {
+            authors
+                .iter()
+                .filter_map(|author| author.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    let description = info
+        .get("description")
+        .and_then(|value| value.as_str())
+        .map(String::from);
+    let publishers = info
+        .get("publisher")
+        .and_then(|value| value.as_str())
+        .map(String::from)
+        .into_iter()
+        .collect();
+    let start_year = info
+        .get("publishedDate")
+        .and_then(|value| value.as_str())
+        .and_then(extract_year);
+    let cover_url = info
+        .get("imageLinks")
+        .and_then(|links| {
+            links
+                .get("thumbnail")
+                .or_else(|| links.get("smallThumbnail"))
+        })
+        .and_then(|value| value.as_str())
+        .map(|url| url.replace("http://", "https://"));
+    let mut metadata_json = serde_json::json!({});
+    if let Some(description) = &description {
+        metadata_json["description"] = serde_json::json!(description);
+    }
+    if let Some(rating) = info.get("averageRating").and_then(|value| value.as_f64()) {
+        metadata_json["rating"] = serde_json::json!(rating);
+        metadata_json["rating_scale"] = serde_json::json!(5.0);
+    }
+    if let Some(count) = info.get("ratingsCount").and_then(|value| value.as_i64()) {
+        metadata_json["rating_count"] = serde_json::json!(count);
+    }
+    Ok(SeriesCandidate {
+        external_id: external_id.to_string(),
+        title,
+        authors,
+        description,
+        publishers,
+        start_year,
+        total_volumes: None,
+        cover_url,
+        external_url: Some(format!("https://books.google.com/books?id={external_id}")),
+        confidence: 1.0,
+        metadata_json,
+    })
 }
 
 async fn get_series_books_impl(

@@ -294,6 +294,7 @@ pub enum NotificationEvent {
         series_fields_updated: usize,
         books_fields_updated: usize,
         details: Vec<String>,
+        error_details: Vec<String>,
     },
     MetadataRefreshFailed {
         library_name: Option<String>,
@@ -653,6 +654,7 @@ fn format_event(event: &NotificationEvent) -> String {
             series_fields_updated,
             books_fields_updated,
             details,
+            error_details,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let mut lines = vec![
@@ -666,6 +668,9 @@ fn format_event(event: &NotificationEvent) -> String {
             }
             if *errors > 0 {
                 lines.push(format!("❌ Errors: <b>{errors}</b>"));
+                for error in error_details.iter().take(5) {
+                    lines.push(format!("⚠️ {}", escape_html(&truncate(error, 240))));
+                }
             }
             for detail in details.iter().take(5) {
                 lines.push(format!("📖 {}", escape_html(detail)));
@@ -1118,8 +1123,25 @@ mod tests {
             series_fields_updated: 1,
             books_fields_updated: 0,
             details: vec!["Test: description: <old> → & new".to_string()],
+            error_details: vec![],
         });
 
         assert!(text.contains("&lt;old&gt; → &amp; new"));
+    }
+
+    #[test]
+    fn metadata_refresh_lists_series_errors() {
+        let text = format_event(&NotificationEvent::MetadataRefreshCompleted {
+            library_name: Some("BD".to_string()),
+            refreshed: 0,
+            unchanged: 1,
+            errors: 1,
+            series_fields_updated: 0,
+            books_fields_updated: 0,
+            details: vec![],
+            error_details: vec!["Corum — provider timeout".to_string()],
+        });
+
+        assert!(text.contains("⚠️ Corum — provider timeout"));
     }
 }

@@ -21,6 +21,18 @@ impl MetadataProvider for ComicVineProvider {
         Box::pin(async move { search_series_impl(&query, &config, DEFAULT_BASE_URL).await })
     }
 
+    fn get_series(
+        &self,
+        external_id: &str,
+        config: &ProviderConfig,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<SeriesCandidate, String>> + Send + '_>,
+    > {
+        let external_id = external_id.to_string();
+        let config = config.clone();
+        Box::pin(async move { get_series_impl(&external_id, &config, DEFAULT_BASE_URL).await })
+    }
+
     fn get_series_books(
         &self,
         external_id: &str,
@@ -151,6 +163,86 @@ async fn search_series_impl(
     });
     candidates.truncate(10);
     Ok(candidates)
+}
+
+async fn get_series_impl(
+    external_id: &str,
+    config: &ProviderConfig,
+    base_url: &str,
+) -> Result<SeriesCandidate, String> {
+    let api_key = config
+        .api_key
+        .as_deref()
+        .filter(|key| !key.is_empty())
+        .ok_or_else(|| "ComicVine requires an API key".to_string())?;
+    let client = build_client()?;
+    let url = format!("{base_url}/api/volume/4050-{external_id}/?api_key={api_key}&format=json");
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("ComicVine request failed: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("ComicVine returned {}", response.status()));
+    }
+    let volume: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse ComicVine response: {e}"))?;
+    let volume = volume
+        .get("results")
+        .ok_or_else(|| format!("ComicVine volume {external_id} not found"))?;
+    let title = volume
+        .get("name")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| format!("ComicVine volume {external_id} has no name"))?
+        .to_string();
+    let description = volume
+        .get("description")
+        .and_then(|value| value.as_str())
+        .map(strip_html);
+    let publishers = volume
+        .get("publisher")
+        .and_then(|value| value.get("name"))
+        .and_then(|value| value.as_str())
+        .map(String::from)
+        .into_iter()
+        .collect();
+    let start_year = volume
+        .get("start_year")
+        .and_then(|value| value.as_str())
+        .and_then(|year| year.parse().ok());
+    let total_volumes = volume
+        .get("count_of_issues")
+        .and_then(|value| value.as_i64())
+        .map(|count| count as i32);
+    let cover_url = volume
+        .get("image")
+        .and_then(|image| image.get("medium_url").or_else(|| image.get("small_url")))
+        .and_then(|value| value.as_str())
+        .map(String::from);
+    let external_url = volume
+        .get("site_detail_url")
+        .and_then(|value| value.as_str())
+        .map(String::from);
+    let mut metadata_json = serde_json::json!({});
+    if let Some(description) = &description {
+        metadata_json["description"] = serde_json::json!(description);
+    }
+
+    Ok(SeriesCandidate {
+        external_id: external_id.to_string(),
+        title,
+        authors: vec![],
+        description,
+        publishers,
+        start_year,
+        total_volumes,
+        cover_url,
+        external_url,
+        confidence: 1.0,
+        metadata_json,
+    })
 }
 
 async fn get_series_books_impl(
