@@ -118,6 +118,36 @@ fn extract_names_missing_name_field() {
     );
 }
 
+#[test]
+fn extract_product_authors_includes_pencillers_without_duplicates() {
+    let product = serde_json::json!({
+        "authors": [{"name": "René Goscinny"}],
+        "pencillers": [
+            {"name": "Albert Uderzo"},
+            {"name": "René Goscinny"}
+        ]
+    });
+
+    assert_eq!(
+        extract_product_authors(&product),
+        vec!["René Goscinny", "Albert Uderzo"]
+    );
+}
+
+#[test]
+fn first_volume_product_selects_tome_one() {
+    let tome_two = serde_json::json!({"title": "Astérix, tome 2"});
+    let tome_one = serde_json::json!({"title": "Astérix, tome 1"});
+    let products = vec![&tome_two, &tome_one];
+
+    assert_eq!(
+        first_volume_product(&products)
+            .and_then(|product| product.get("title"))
+            .and_then(|title| title.as_str()),
+        Some("Astérix, tome 1")
+    );
+}
+
 // ─── Wiremock integration tests ─────────────────────────────────────
 
 use wiremock::matchers::{method, path};

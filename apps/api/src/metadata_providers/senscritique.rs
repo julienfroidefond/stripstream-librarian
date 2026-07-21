@@ -129,15 +129,7 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
             .cloned()
             .unwrap_or_default();
 
-        let authors = extract_names(product, "authors");
-        let pencillers = extract_names(product, "pencillers");
-        let all_authors: Vec<String> = authors.into_iter().chain(pencillers).collect::<Vec<_>>();
-        // Deduplicate authors
-        let mut seen = std::collections::HashSet::new();
-        let authors: Vec<String> = all_authors
-            .into_iter()
-            .filter(|a| seen.insert(a.clone()))
-            .collect();
+        let authors = extract_product_authors(product);
 
         let synopsis = product
             .get("synopsis")
@@ -309,7 +301,7 @@ async fn fetch_franchise_editions(
     let gql = serde_json::json!({
         "query": format!(
             r#"{{ groupProducts(franchiseId: {franchise_id}, universe: "comicBook", limit: 200, offset: 0) {{
-                items {{ id title url dateRelease medias {{ picture }} authors {{ name }} synopsis }}
+                items {{ id title url dateRelease medias {{ picture }} authors {{ name }} pencillers {{ name }} synopsis }}
             }} }}"#
         ),
     });
@@ -394,7 +386,9 @@ async fn fetch_franchise_editions(
                 .min()
                 .or(base_candidate.start_year);
 
-            let authors = base_candidate.authors.clone();
+            let authors = first_volume_product(&products)
+                .map(extract_product_authors)
+                .unwrap_or_else(|| base_candidate.authors.clone());
 
             let mut metadata = base_candidate.metadata_json.clone();
             if let Some(ref s) = status {
@@ -510,6 +504,7 @@ async fn fetch_franchise_books(
                     id title url dateRelease rating
                     medias {{ picture }}
                     authors {{ name }}
+                    pencillers {{ name }}
                     synopsis
                 }}
             }} }}"#
@@ -573,7 +568,7 @@ async fn fetch_franchise_books(
                 .and_then(|d| d.as_str())
                 .map(String::from);
 
-            let authors = extract_names(product, "authors");
+            let authors = extract_product_authors(product);
 
             Some(BookCandidate {
                 external_book_id: id.to_string(),
@@ -627,6 +622,7 @@ async fn fetch_single_book(
                 id title url dateRelease rating
                 medias {{ picture }}
                 authors {{ name }}
+                pencillers {{ name }}
                 synopsis
             }} }}"#
         ),
@@ -666,7 +662,7 @@ async fn fetch_single_book(
         .and_then(|d| d.as_str())
         .map(String::from);
 
-    let authors = extract_names(product, "authors");
+    let authors = extract_product_authors(product);
 
     Ok(vec![BookCandidate {
         external_book_id: id.to_string(),
@@ -1013,6 +1009,31 @@ fn extract_names(product: &serde_json::Value, field: &str) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// SensCritique exposes writers and pencillers as separate fields.
+fn extract_product_authors(product: &serde_json::Value) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    extract_names(product, "authors")
+        .into_iter()
+        .chain(extract_names(product, "pencillers"))
+        .filter(|name| seen.insert(name.clone()))
+        .collect()
+}
+
+/// Return the lowest-numbered volume from an edition's products.
+fn first_volume_product<'a>(products: &[&'a serde_json::Value]) -> Option<&'a serde_json::Value> {
+    products
+        .iter()
+        .filter_map(|product| {
+            let title = product
+                .get("title")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default();
+            extract_volume_number(title).map(|volume| (volume, *product))
+        })
+        .min_by_key(|(volume, _)| *volume)
+        .map(|(_, product)| product)
 }
 
 /// Encode an edition name for use in external_id.

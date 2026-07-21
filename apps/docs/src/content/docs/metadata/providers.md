@@ -42,6 +42,8 @@ Accès : **Settings → onglet Général → Status Mappings**.
 :::note[Détails techniques]
 **SensCritique** : utilise l'API GraphQL `apollo.senscritique.com`. Recherche via `searchAutocomplete` avec déduplication par franchise. Mode détaillé via `groupProducts` pour distinguer les éditions. Format `external_id` : `franchise:{id}:edition:{base64(name)}`, rétrocompatible avec `franchise:{id}`. Rate limiting : retry avec backoff exponentiel sur HTTP 429 (1s, 2s, 4s, 3 retries). Statut inféré depuis la dernière date de sortie : < 18 mois → `ongoing`, ≥ 18 mois → `ended`.
 
+Pour une édition SensCritique, les métadonnées de série sont celles du tome au numéro le plus bas. Les auteurs regroupent les champs `authors` et `pencillers` de ce tome ; la même règle est appliquée au matching initial et aux refresh.
+
 **Sources de description par provider** :
 
 | Provider | Source de la description |
