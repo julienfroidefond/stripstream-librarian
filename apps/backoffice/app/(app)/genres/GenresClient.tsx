@@ -22,6 +22,7 @@ type Props = {
 
 // null = "sans genre"
 type GenreFilter = string | null;
+const ALL_SERIES_FILTER = "__all__";
 
 function SeriesCoverImage({ series }: { series: SeriesDto }) {
   if (series.first_book_id) {
@@ -223,7 +224,8 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
           setUntaggedCount(data.length);
         }
       } else {
-        const params = new URLSearchParams({ genre, limit: "500" });
+        const params = new URLSearchParams({ limit: "500" });
+        if (genre !== ALL_SERIES_FILTER) params.set("genre", genre);
         if (libId) params.set("library_id", libId);
         const res = await fetch(`/api/series?${params}`);
         if (res.ok) {
@@ -526,6 +528,19 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
         {/* Filter tabs */}
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <button
+            onClick={() => handleFilterChange(ALL_SERIES_FILTER)}
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+              seriesFilter === ALL_SERIES_FILTER
+                ? "bg-foreground text-background border-foreground"
+                : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+            }`}
+          >
+            {t("common.all")}
+            <span className="ml-1.5 opacity-70">
+              ({seriesFilter === ALL_SERIES_FILTER ? seriesTotal : totalSeries})
+            </span>
+          </button>
+          <button
             onClick={() => handleFilterChange(null)}
             className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
               seriesFilter === null
@@ -638,6 +653,18 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
                     >
                       {s.name}
                     </Link>
+                    {seriesFilter === ALL_SERIES_FILTER && s.genres.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {s.genres.map(genre => (
+                          <span
+                            key={genre}
+                            className="rounded-full bg-success/10 px-1.5 py-0.5 text-[10px] leading-tight text-success"
+                          >
+                            {genre}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               );

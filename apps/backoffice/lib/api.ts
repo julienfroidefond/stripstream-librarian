@@ -168,6 +168,7 @@ export type SeriesDto = {
   anilist_url: string | null;
   cover_url: string | null;
   start_year: number | null;
+  genres: string[];
   user_rating: number | null;
   community_score: number | null;
 };
