@@ -21,10 +21,10 @@ type Props = {
   initialTotalSeries: number;
 };
 
-// null = "sans genre"
-type GenreFilter = string | null;
+// null = "sans genre", [] = aucun filtre de genre
+type GenreFilter = string[] | null;
 type SeriesView = "cards" | "table";
-const ALL_SERIES_FILTER = "__all__";
+type GenreFilterMode = "include" | "exclude";
 
 function mergeGenreCounts(groups: GenreDto[][]): GenreDto[] {
   const counts = new Map<string, number>();
@@ -193,6 +193,8 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
 
   // Series browser
   const [seriesFilter, setSeriesFilter] = useState<GenreFilter>(null);
+  const [excludedGenres, setExcludedGenres] = useState<string[]>([]);
+  const [genreFilterMode, setGenreFilterMode] = useState<GenreFilterMode>("include");
   const [libraryFilter, setLibraryFilter] = useState<string[]>([]);
   const [filteredLibrariesTotal, setFilteredLibrariesTotal] = useState(initialTotalSeries);
   const [browserGenres, setBrowserGenres] = useState<GenreDto[]>(initialGenres);
@@ -223,7 +225,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     setBrowserGenres(mergeGenreCounts(genreGroups));
   }, [libraryFilter]);
 
-  const fetchSeriesForFilter = useCallback(async (genre: GenreFilter, libraryIds: string[]) => {
+  const fetchSeriesForFilter = useCallback(async (genre: GenreFilter, libraryIds: string[], excluded: string[] = []) => {
     setSeriesLoading(true);
     setSelected(new Set());
     setSeriesSearch("");
@@ -241,25 +243,42 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
         setSeriesTotal(series.length);
         setUntaggedCount(series.length);
       } else {
-        const results = await Promise.all(requestedLibraries.map(async libraryId => {
+        const genreFilters = genre.length > 0 ? genre : [null];
+        const results = await Promise.all(requestedLibraries.flatMap(libraryId => genreFilters.map(async genreName => {
           const params = new URLSearchParams({ limit: "500" });
-          if (genre !== ALL_SERIES_FILTER) params.set("genre", genre);
+          if (genreName) params.set("genre", genreName);
           if (libraryId) params.set("library_id", libraryId);
           const response = await fetch(`/api/series?${params}`);
-          return response.ok ? response.json() as Promise<{ items: SeriesDto[]; total: number }> : { items: [], total: 0 };
-        }));
-        setSeriesList(results.flatMap(result => result.items));
-        setSeriesTotal(results.reduce((total, result) => total + result.total, 0));
+          return response.ok ? response.json() as Promise<{ items: SeriesDto[] }> : { items: [] };
+        })));
+        const series = Array.from(new Map(results.flatMap(result => result.items).map(item => [item.series_id, item])).values())
+          .filter(series => !excluded.some(excludedGenre => series.genres.includes(excludedGenre)));
+        setSeriesList(series);
+        setSeriesTotal(series.length);
       }
     } finally {
       setSeriesLoading(false);
     }
   }, []);
 
-  const handleFilterChange = (genre: GenreFilter) => {
-    setSeriesFilter(genre);
-    fetchSeriesForFilter(genre, libraryFilter);
+  const handleFilterChange = (genres: GenreFilter, excluded = excludedGenres) => {
+    setSeriesFilter(genres);
+    setExcludedGenres(excluded);
+    fetchSeriesForFilter(genres, libraryFilter, excluded);
     filterRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
+
+  const toggleGenreFilter = (genre: string) => {
+    if (genreFilterMode === "exclude") {
+      handleFilterChange(seriesFilter, excludedGenres.includes(genre)
+        ? excludedGenres.filter(excludedGenre => excludedGenre !== genre)
+        : [...excludedGenres, genre]);
+      return;
+    }
+    const selectedGenres = Array.isArray(seriesFilter) ? seriesFilter : [];
+    handleFilterChange(selectedGenres.includes(genre)
+      ? selectedGenres.filter(selectedGenre => selectedGenre !== genre)
+      : [...selectedGenres, genre]);
   };
 
   const fetchBrowserGenres = useCallback(async (libraryIds: string[]) => {
@@ -284,7 +303,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
 
   const handleLibraryChange = (libraryIds: string[]) => {
     setLibraryFilter(libraryIds);
-    fetchSeriesForFilter(seriesFilter, libraryIds);
+    fetchSeriesForFilter(seriesFilter, libraryIds, excludedGenres);
     fetchBrowserGenres(libraryIds);
   };
 
@@ -298,7 +317,12 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ new_name: newName }),
       });
-      if (seriesFilter === oldName) setSeriesFilter(newName);
+      if (Array.isArray(seriesFilter) && seriesFilter.includes(oldName)) {
+        setSeriesFilter(seriesFilter.map(genre => genre === oldName ? newName : genre));
+      }
+      if (excludedGenres.includes(oldName)) {
+        setExcludedGenres(excludedGenres.map(genre => genre === oldName ? newName : genre));
+      }
       setGenreCovers(prev => {
         const next = { ...prev };
         next[newName] = next[oldName] ?? [];
@@ -324,9 +348,10 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
         delete next[name];
         return next;
       });
-      if (seriesFilter === name) {
-        setSeriesFilter(null);
-        await Promise.all([refreshGenres(), fetchSeriesForFilter(null, libraryFilter)]);
+      if (Array.isArray(seriesFilter) && seriesFilter.includes(name)) {
+        const nextFilters = seriesFilter.filter(genre => genre !== name);
+        setSeriesFilter(nextFilters);
+        await Promise.all([refreshGenres(), fetchSeriesForFilter(nextFilters, libraryFilter, excludedGenres)]);
       } else {
         await refreshGenres();
       }
@@ -347,7 +372,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
         body: JSON.stringify({ genre, series_ids: Array.from(selected) }),
       });
       const count = selected.size;
-      await Promise.all([refreshGenres(), fetchSeriesForFilter(seriesFilter, libraryFilter)]);
+      await Promise.all([refreshGenres(), fetchSeriesForFilter(seriesFilter, libraryFilter, excludedGenres)]);
       setAssignInput("");
       showToast(t("genres.assignSuccess", { count: String(count), plural: count !== 1 ? "s" : "" }));
     } finally {
@@ -389,6 +414,10 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     ? genres.filter(g => g.name.toLowerCase().includes(genreFilter.toLowerCase()))
     : genres
   ).sort((a, b) => b.series_count - a.series_count);
+  const availableGenreNames = browserGenres.filter(g => g.series_count > 0).map(g => g.name);
+  const activeGenreFilters = genreFilterMode === "include"
+    ? (Array.isArray(seriesFilter) ? seriesFilter : [])
+    : excludedGenres;
 
   // Stats
   const tagged = totalSeries > 0 ? totalSeries - untaggedCount : 0;
@@ -546,17 +575,49 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
 
         {/* Filter tabs */}
         <div className="flex flex-wrap items-center gap-2 mb-4">
+          <div className="flex items-center rounded-lg border border-border p-0.5">
+            <button
+              type="button"
+              onClick={() => setGenreFilterMode("include")}
+              className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${genreFilterMode === "include" ? "bg-success/15 text-success" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              {t("genres.includeGenres")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setGenreFilterMode("exclude")}
+              className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${genreFilterMode === "exclude" ? "bg-destructive/10 text-destructive" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              {t("genres.excludeGenres")}
+            </button>
+          </div>
           <button
-            onClick={() => handleFilterChange(ALL_SERIES_FILTER)}
+            onClick={() => {
+              const allGenres = availableGenreNames;
+              handleFilterChange(genreFilterMode === "include" ? allGenres : seriesFilter, genreFilterMode === "exclude" ? allGenres : excludedGenres);
+            }}
             className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-              seriesFilter === ALL_SERIES_FILTER
+              activeGenreFilters.length === availableGenreNames.length
                 ? "bg-foreground text-background border-foreground"
                 : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
             }`}
           >
             {t("common.all")}
             <span className="ml-1.5 opacity-70">
-              ({seriesFilter === ALL_SERIES_FILTER ? seriesTotal : filteredLibrariesTotal})
+              ({filteredLibrariesTotal - untaggedCount})
+            </span>
+          </button>
+          <button
+            onClick={() => handleFilterChange(genreFilterMode === "include" ? [] : seriesFilter, genreFilterMode === "exclude" ? [] : excludedGenres)}
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+              activeGenreFilters.length === 0
+                ? "bg-foreground text-background border-foreground"
+                : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+            }`}
+          >
+            {t("genres.clearGenreFilters")}
+            <span className="ml-1.5 opacity-70">
+              ({Array.isArray(seriesFilter) && seriesFilter.length === 0 ? seriesTotal : filteredLibrariesTotal})
             </span>
           </button>
           <button
@@ -575,16 +636,16 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
           {[...browserGenres].sort((a, b) => b.series_count - a.series_count).filter(g => g.series_count > 0).map(g => (
             <button
               key={g.name}
-              onClick={() => handleFilterChange(g.name)}
+              onClick={() => toggleGenreFilter(g.name)}
               className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                seriesFilter === g.name
-                  ? "bg-success/15 text-success border-success/40"
+                (genreFilterMode === "include" ? Array.isArray(seriesFilter) && seriesFilter.includes(g.name) : excludedGenres.includes(g.name))
+                  ? genreFilterMode === "include" ? "bg-success/15 text-success border-success/40" : "bg-destructive/10 text-destructive border-destructive/40"
                   : "border-border text-muted-foreground hover:border-success/30 hover:text-foreground"
               }`}
             >
               {g.name}
               <span className="ml-1.5 opacity-70">
-                ({seriesFilter === g.name ? seriesTotal : g.series_count})
+                ({g.series_count})
               </span>
             </button>
           ))}
