@@ -14,6 +14,65 @@ interface LibraryBadgeSelectorProps {
   initialSelected?: string | null;
 }
 
+interface LibraryMultiBadgeSelectorProps {
+  libraries: Library[];
+  selectedIds: string[];
+  onChange: (selectedIds: string[]) => void;
+}
+
+export function LibraryMultiBadgeSelector({ libraries, selectedIds, onChange }: LibraryMultiBadgeSelectorProps) {
+  const { t } = useTranslation();
+
+  function toggleLibrary(id: string) {
+    onChange(selectedIds.includes(id)
+      ? selectedIds.filter(selectedId => selectedId !== id)
+      : [...selectedIds, id]);
+  }
+
+  return (
+    <div className="flex flex-wrap justify-end gap-2">
+      <button
+        type="button"
+        onClick={() => onChange([])}
+        className={`cursor-pointer inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border-2 transition-all duration-150 ${
+          selectedIds.length === 0
+            ? "border-primary bg-primary/10 text-primary dark:bg-primary/20"
+            : "border-transparent bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground"
+        }`}
+      >
+        {selectedIds.length === 0 && (
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+          </svg>
+        )}
+        {t("common.all")}
+      </button>
+      {libraries.map((library) => {
+        const isSelected = selectedIds.includes(library.id);
+        return (
+          <button
+            key={library.id}
+            type="button"
+            onClick={() => toggleLibrary(library.id)}
+            className={`cursor-pointer inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border-2 transition-all duration-150 ${
+              isSelected
+                ? "border-primary bg-primary/10 text-primary dark:bg-primary/20"
+                : "border-transparent bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            {isSelected && (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+            {library.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function LibraryBadgeSelector({ libraries, children, initialSelected = null }: LibraryBadgeSelectorProps) {
   const { t } = useTranslation();
   // null = no selection, "" = all, string = specific library id

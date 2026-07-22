@@ -7,6 +7,7 @@ import Link from "next/link";
 import { getBookCoverUrl } from "@/lib/api";
 import type { SeriesDto, LibraryDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
+import { LibraryMultiBadgeSelector } from "../jobs/components/LibraryBadgeSelector";
 
 export type GenreDto = {
   name: string;
@@ -24,6 +25,14 @@ type Props = {
 type GenreFilter = string | null;
 type SeriesView = "cards" | "table";
 const ALL_SERIES_FILTER = "__all__";
+
+function mergeGenreCounts(groups: GenreDto[][]): GenreDto[] {
+  const counts = new Map<string, number>();
+  for (const group of groups) {
+    for (const genre of group) counts.set(genre.name, (counts.get(genre.name) ?? 0) + genre.series_count);
+  }
+  return Array.from(counts, ([name, series_count]) => ({ name, series_count }));
+}
 
 function SeriesCoverImage({ series }: { series: SeriesDto }) {
   if (series.first_book_id) {
@@ -184,7 +193,8 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
 
   // Series browser
   const [seriesFilter, setSeriesFilter] = useState<GenreFilter>(null);
-  const [libraryFilter, setLibraryFilter] = useState<string | null>(null);
+  const [libraryFilter, setLibraryFilter] = useState<string[]>([]);
+  const [filteredLibrariesTotal, setFilteredLibrariesTotal] = useState(initialTotalSeries);
   const [browserGenres, setBrowserGenres] = useState<GenreDto[]>(initialGenres);
   const [seriesList, setSeriesList] = useState<SeriesDto[]>(initialUntagged);
   const [seriesTotal, setSeriesTotal] = useState(initialUntagged.length);
@@ -202,39 +212,44 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
   };
 
   const refreshGenres = useCallback(async () => {
-    const [res, res2] = await Promise.all([
+    const [res, ...libraryResponses] = await Promise.all([
       fetch("/api/genres"),
-      fetch(libraryFilter ? `/api/genres?library_id=${libraryFilter}` : "/api/genres"),
+      ...(libraryFilter.length > 0
+        ? libraryFilter.map(libraryId => fetch(`/api/genres?library_id=${libraryId}`))
+        : [fetch("/api/genres")]),
     ]);
     if (res.ok) setGenres(await res.json());
-    if (res2.ok) setBrowserGenres(await res2.json());
+    const genreGroups = await Promise.all(libraryResponses.map(async response => response.ok ? response.json() as Promise<GenreDto[]> : []));
+    setBrowserGenres(mergeGenreCounts(genreGroups));
   }, [libraryFilter]);
 
-  const fetchSeriesForFilter = useCallback(async (genre: GenreFilter, libId: string | null) => {
+  const fetchSeriesForFilter = useCallback(async (genre: GenreFilter, libraryIds: string[]) => {
     setSeriesLoading(true);
     setSelected(new Set());
     setSeriesSearch("");
     try {
+      const requestedLibraries = libraryIds.length > 0 ? libraryIds : [null];
       if (genre === null) {
-        const params = new URLSearchParams();
-        if (libId) params.set("library_id", libId);
-        const res = await fetch(`/api/genres/untagged-series?${params}`);
-        if (res.ok) {
-          const data: SeriesDto[] = await res.json();
-          setSeriesList(data);
-          setSeriesTotal(data.length);
-          setUntaggedCount(data.length);
-        }
+        const results = await Promise.all(requestedLibraries.map(async libraryId => {
+          const params = new URLSearchParams();
+          if (libraryId) params.set("library_id", libraryId);
+          const response = await fetch(`/api/genres/untagged-series?${params}`);
+          return response.ok ? response.json() as Promise<SeriesDto[]> : [];
+        }));
+        const series = results.flat();
+        setSeriesList(series);
+        setSeriesTotal(series.length);
+        setUntaggedCount(series.length);
       } else {
-        const params = new URLSearchParams({ limit: "500" });
-        if (genre !== ALL_SERIES_FILTER) params.set("genre", genre);
-        if (libId) params.set("library_id", libId);
-        const res = await fetch(`/api/series?${params}`);
-        if (res.ok) {
-          const data = await res.json();
-          setSeriesList(data.items ?? []);
-          setSeriesTotal(data.total ?? 0);
-        }
+        const results = await Promise.all(requestedLibraries.map(async libraryId => {
+          const params = new URLSearchParams({ limit: "500" });
+          if (genre !== ALL_SERIES_FILTER) params.set("genre", genre);
+          if (libraryId) params.set("library_id", libraryId);
+          const response = await fetch(`/api/series?${params}`);
+          return response.ok ? response.json() as Promise<{ items: SeriesDto[]; total: number }> : { items: [], total: 0 };
+        }));
+        setSeriesList(results.flatMap(result => result.items));
+        setSeriesTotal(results.reduce((total, result) => total + result.total, 0));
       }
     } finally {
       setSeriesLoading(false);
@@ -247,23 +262,30 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     filterRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   };
 
-  const fetchBrowserGenres = useCallback(async (libId: string | null) => {
-    const qs = libId ? `?library_id=${libId}` : "";
-    const [genresRes, untaggedRes] = await Promise.all([
-      fetch(`/api/genres${qs}`),
-      fetch(`/api/genres/untagged-series${qs}`),
-    ]);
-    if (genresRes.ok) setBrowserGenres(await genresRes.json());
-    if (untaggedRes.ok) {
-      const data: SeriesDto[] = await untaggedRes.json();
-      setUntaggedCount(data.length);
-    }
+  const fetchBrowserGenres = useCallback(async (libraryIds: string[]) => {
+    const requestedLibraries = libraryIds.length > 0 ? libraryIds : [null];
+    const results = await Promise.all(requestedLibraries.map(async libraryId => {
+      const qs = libraryId ? `?library_id=${libraryId}` : "";
+      const [genresRes, untaggedRes, seriesRes] = await Promise.all([
+        fetch(`/api/genres${qs}`),
+        fetch(`/api/genres/untagged-series${qs}`),
+        fetch(`/api/series${qs}${qs ? "&" : "?"}limit=1`),
+      ]);
+      return {
+        genres: genresRes.ok ? await genresRes.json() as GenreDto[] : [],
+        untagged: untaggedRes.ok ? await untaggedRes.json() as SeriesDto[] : [],
+        total: seriesRes.ok ? (await seriesRes.json() as { total: number }).total : 0,
+      };
+    }));
+    setBrowserGenres(mergeGenreCounts(results.map(result => result.genres)));
+    setUntaggedCount(results.reduce((count, result) => count + result.untagged.length, 0));
+    setFilteredLibrariesTotal(results.reduce((count, result) => count + result.total, 0));
   }, []);
 
-  const handleLibraryChange = (libId: string | null) => {
-    setLibraryFilter(libId);
-    fetchSeriesForFilter(seriesFilter, libId);
-    fetchBrowserGenres(libId);
+  const handleLibraryChange = (libraryIds: string[]) => {
+    setLibraryFilter(libraryIds);
+    fetchSeriesForFilter(seriesFilter, libraryIds);
+    fetchBrowserGenres(libraryIds);
   };
 
   const handleRename = async (oldName: string) => {
@@ -514,16 +536,11 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
         <div className="flex items-center justify-between gap-4 mb-4">
           <h2 className="text-lg font-semibold">{t("nav.series")}</h2>
           {libraries.length > 1 && (
-            <select
-              value={libraryFilter ?? ""}
-              onChange={e => handleLibraryChange(e.target.value || null)}
-              className="h-8 px-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">{t("common.all")}</option>
-              {libraries.map(lib => (
-                <option key={lib.id} value={lib.id}>{lib.name}</option>
-              ))}
-            </select>
+            <LibraryMultiBadgeSelector
+              libraries={libraries}
+              selectedIds={libraryFilter}
+              onChange={handleLibraryChange}
+            />
           )}
         </div>
 
@@ -539,7 +556,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
           >
             {t("common.all")}
             <span className="ml-1.5 opacity-70">
-              ({seriesFilter === ALL_SERIES_FILTER ? seriesTotal : totalSeries})
+              ({seriesFilter === ALL_SERIES_FILTER ? seriesTotal : filteredLibrariesTotal})
             </span>
           </button>
           <button
