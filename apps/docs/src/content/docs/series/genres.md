@@ -14,7 +14,7 @@ La page **Genres** du backoffice centralise toute la gestion :
 - **Grille de genres** — chaque genre affiché avec le nombre de séries associées, filtrables par bibliothèque
 - **Renommage** — cliquez sur un genre pour le renommer sur toutes les séries en une fois
 - **Suppression** — retire le genre de toutes les séries (les séries elles-mêmes ne sont pas supprimées)
-- **Navigateur de séries** — sélectionnez un genre pour parcourir les séries qui le portent. Le badge **Tous** affiche toutes les séries, et chaque carte affiche ses genres
+- **Navigateur de séries** — sélectionnez un genre pour parcourir les séries qui le portent. Le badge **Tous** affiche toutes les séries, et les genres sont visibles sur chaque carte. Un basculeur permet aussi d'afficher les mêmes séries dans un tableau, avec la même sélection et l'affectation en masse
 - **Couverture de genre** — choisissez une image représentative pour chaque genre
 
 ## Taguer des séries

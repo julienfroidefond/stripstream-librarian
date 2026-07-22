@@ -1235,6 +1235,8 @@ const en: Record<TranslationKey, string> = {
   "genres.newNamePlaceholder": "New genre name...",
   "genres.deleteConfirm": "Remove this genre from all series?",
   "genres.untaggedSeries": "Series without genre",
+  "genres.cardView": "Cards",
+  "genres.tableView": "Table",
   "genres.untaggedCount": "{{count}} series without genre (limit 500)",
   "genres.selectAll": "Select all",
   "genres.deselectAll": "Deselect all",

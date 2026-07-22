@@ -22,6 +22,7 @@ type Props = {
 
 // null = "sans genre"
 type GenreFilter = string | null;
+type SeriesView = "cards" | "table";
 const ALL_SERIES_FILTER = "__all__";
 
 function SeriesCoverImage({ series }: { series: SeriesDto }) {
@@ -190,6 +191,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
   const [untaggedCount, setUntaggedCount] = useState(initialUntagged.length);
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [seriesSearch, setSeriesSearch] = useState("");
+  const [seriesView, setSeriesView] = useState<SeriesView>("cards");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [assignInput, setAssignInput] = useState("");
   const filterRef = useRef<HTMLDivElement>(null);
@@ -583,6 +585,33 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
           <button onClick={toggleAll} className="text-xs font-medium text-primary hover:underline shrink-0">
             {allSelected ? t("genres.deselectAll") : t("genres.selectAll")}
           </button>
+          <div className="flex items-center rounded-lg border border-border p-0.5">
+            <button
+              type="button"
+              onClick={() => setSeriesView("cards")}
+              title={t("genres.cardView")}
+              aria-label={t("genres.cardView")}
+              className={`rounded-md p-1.5 transition-colors ${seriesView === "cards" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3" y="3" width="7" height="7" rx="1" strokeWidth={2} />
+                <rect x="14" y="3" width="7" height="7" rx="1" strokeWidth={2} />
+                <rect x="3" y="14" width="7" height="7" rx="1" strokeWidth={2} />
+                <rect x="14" y="14" width="7" height="7" rx="1" strokeWidth={2} />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSeriesView("table")}
+              title={t("genres.tableView")}
+              aria-label={t("genres.tableView")}
+              className={`rounded-md p-1.5 transition-colors ${seriesView === "table" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          </div>
           {selected.size > 0 && (
             <>
               <span className="text-xs text-muted-foreground shrink-0">{selected.size} sél.</span>
@@ -616,7 +645,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
           <div className="py-12 text-center text-muted-foreground text-sm">
             {seriesFilter === null ? t("genres.noUntagged") : t("common.noData")}
           </div>
-        ) : (
+        ) : seriesView === "cards" ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
             {displayedSeries.map(s => {
               const isSelected = selected.has(s.series_id);
@@ -669,6 +698,71 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
                 </div>
               );
             })}
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full min-w-[620px] text-sm">
+              <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="w-10 px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleAll}
+                      aria-label={allSelected ? t("genres.deselectAll") : t("genres.selectAll")}
+                      className="h-4 w-4 accent-primary"
+                    />
+                  </th>
+                  <th className="w-14 px-2 py-3" aria-label="" />
+                  <th className="px-3 py-3">{t("nav.series")}</th>
+                  <th className="px-3 py-3">{t("nav.genres")}</th>
+                  <th className="px-3 py-3 text-right">{t("dashboard.books")}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {displayedSeries.map(s => {
+                  const isSelected = selected.has(s.series_id);
+                  return (
+                    <tr
+                      key={s.series_id}
+                      onClick={() => toggleSelect(s.series_id)}
+                      className={`cursor-pointer transition-colors ${isSelected ? "bg-primary/10" : "hover:bg-muted/60"}`}
+                    >
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onClick={e => e.stopPropagation()}
+                          onChange={() => toggleSelect(s.series_id)}
+                          aria-label={s.name}
+                          className="h-4 w-4 accent-primary"
+                        />
+                      </td>
+                      <td className="px-2 py-2">
+                        <div className="relative h-12 w-9 overflow-hidden rounded-md bg-muted">
+                          <SeriesCoverImage series={s} />
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 font-medium">
+                        <Link href={`/series/${s.series_id}`} onClick={e => e.stopPropagation()} className="hover:text-primary transition-colors">
+                          {s.name}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap gap-1">
+                          {s.genres.map(genre => (
+                            <span key={genre} className="rounded-full bg-success/10 px-1.5 py-0.5 text-xs text-success">
+                              {genre}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-right text-muted-foreground">{s.book_count}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </section>

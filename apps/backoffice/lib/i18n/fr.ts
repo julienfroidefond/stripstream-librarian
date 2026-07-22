@@ -1233,6 +1233,8 @@ const fr = {
   "genres.newNamePlaceholder": "Nouveau nom du genre...",
   "genres.deleteConfirm": "Supprimer ce genre de toutes les séries ?",
   "genres.untaggedSeries": "Séries sans genre",
+  "genres.cardView": "Cartes",
+  "genres.tableView": "Tableau",
   "genres.untaggedCount": "{{count}} série{{plural}} sans genre (limite 500)",
   "genres.selectAll": "Tout sélectionner",
   "genres.deselectAll": "Tout désélectionner",
