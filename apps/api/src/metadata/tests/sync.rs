@@ -1,6 +1,8 @@
 use sqlx::Row;
 use uuid::Uuid;
 
+use super::super::shared_sync::{self, SeriesFields};
+
 async fn create_test_library(pool: &sqlx::PgPool, name: &str) -> Uuid {
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
@@ -210,4 +212,81 @@ async fn sync_series_metadata_null_cover_url_preserved(pool: sqlx::PgPool) {
         Some("https://example.com/original.jpg".to_string()),
         "existing cover_url should be preserved when sync provides NULL"
     );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn sync_series_metadata_overwrites_unlocked_description(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "sync_description_refresh").await;
+    let series_id = create_series(&pool, lib_id, "Description Refresh").await;
+    sqlx::query("UPDATE series SET description = $1 WHERE id = $2")
+        .bind("Previous description")
+        .bind(series_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    shared_sync::upsert_series_metadata(
+        &pool,
+        lib_id,
+        "Description Refresh",
+        &SeriesFields {
+            description: Some("Refreshed description".to_string()),
+            authors: vec![],
+            publishers: vec![],
+            start_year: None,
+            total_volumes: None,
+            status: None,
+            genres: vec![],
+            cover_url: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let description: Option<String> =
+        sqlx::query_scalar("SELECT description FROM series WHERE id = $1")
+            .bind(series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(description.as_deref(), Some("Refreshed description"));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn sync_series_metadata_preserves_locked_description(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "sync_description_locked").await;
+    let series_id = create_series(&pool, lib_id, "Description Locked").await;
+    sqlx::query("UPDATE series SET description = $1, locked_fields = $2 WHERE id = $3")
+        .bind("Manual description")
+        .bind(serde_json::json!({ "description": true }))
+        .bind(series_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    shared_sync::upsert_series_metadata(
+        &pool,
+        lib_id,
+        "Description Locked",
+        &SeriesFields {
+            description: Some("Provider description".to_string()),
+            authors: vec![],
+            publishers: vec![],
+            start_year: None,
+            total_volumes: None,
+            status: None,
+            genres: vec![],
+            cover_url: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let description: Option<String> =
+        sqlx::query_scalar("SELECT description FROM series WHERE id = $1")
+            .bind(series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(description.as_deref(), Some("Manual description"));
 }
