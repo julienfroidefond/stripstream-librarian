@@ -653,7 +653,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
                     >
                       {s.name}
                     </Link>
-                    {seriesFilter === ALL_SERIES_FILTER && s.genres.length > 0 && (
+                    {s.genres.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {s.genres.map(genre => (
                           <span
