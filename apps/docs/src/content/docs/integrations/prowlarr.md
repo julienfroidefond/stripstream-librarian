@@ -23,6 +23,8 @@ L'onglet **Prowlarr** de la page Découverte agrège les releases récentes disp
 
 Sur la page d'une série, le bouton **Prowlarr** lance une recherche ciblée. Les résultats sont triés par pertinence et indiquent quels volumes manquants sont couverts par chaque release. Vous pouvez envoyer directement un résultat à qBittorrent.
 
+Lorsqu'un titre ou un numéro de tome est ambigu, Stripstream demande une confirmation avant l'envoi à qBittorrent. Vérifiez alors la release proposée avant de confirmer ; ce contrôle évite qu'une série ou un tome homonyme soit téléchargé par erreur.
+
 ---
 
 ## Détection automatique
@@ -48,6 +50,8 @@ Certains indexeurs privés n'acceptent pas les requêtes RSS sans terme de reche
 ## Gestion des releases
 
 **Indicateur d'échec** : une release est marquée si un téléchargement précédent l'utilisant a échoué. Elle reste disponible mais vous êtes averti.
+
+**Correspondance à vérifier** : certaines releases sont trouvées mais leur rapprochement avec la série ou le tome reste incertain. Elles restent visibles afin de ne pas masquer une bonne release, mais demandent confirmation avant téléchargement.
 
 **Blacklist** : masquez définitivement les releases indésirables — elles ne seront plus proposées lors des prochaines détections. Pour gérer la blacklist, accédez au panel via l'icône œil à côté du titre "Disponibles au téléchargement" sur la page Téléchargements.
 

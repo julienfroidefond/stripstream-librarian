@@ -56,6 +56,7 @@ Pour gérer la blacklist : page Téléchargements → icône œil à côté du t
 - Récupère les volumes manquants depuis `external_book_metadata` où `book_id IS NULL`
 - Ignore les séries qui possèdent une intégrale (`volume_type = 'integral'`), considérées comme complètes
 - Filtre la blacklist `release_blacklist` avant matching
+- Les rapprochements ambigus de titre ou de tome restent affichés, mais nécessitent une confirmation avant l'envoi à qBittorrent
 - Fusion dans `available_downloads` : `detected_at` préservé pour les releases déjà connues
 - Résultats par série : `downloads_found`, `downloads_not_found`, `no_missing_volumes`, `no_metadata`, `prowlarr_no_results`, `error`
 - `API : POST /download-detection/start { "library_id": "uuid" }`
