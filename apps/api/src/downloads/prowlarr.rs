@@ -4,7 +4,7 @@ use sqlx::Row;
 use utoipa::ToSchema;
 
 use crate::{error::ApiError, state::AppState};
-use parsers::extract_volumes;
+use parsers::{extract_volumes, match_title_volumes};
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -97,48 +97,6 @@ pub(crate) async fn load_prowlarr_config_internal(
 
 pub(crate) async fn check_prowlarr_configured(pool: &sqlx::PgPool) -> Result<(), ApiError> {
     load_prowlarr_config(pool).await.map(|_| ())
-}
-
-/// Returns true if the title indicates a complete/integral edition
-/// (e.g., "intégrale", "complet", "complete", "integral").
-/// Match a release title against a list of missing volumes.
-/// Returns (matched_volumes, all_volumes_in_title).
-/// For integral releases, matched_volumes = all missing volumes, all_volumes = empty.
-pub(crate) fn match_title_volumes(title: &str, missing_volumes: &[i32]) -> (Vec<i32>, Vec<i32>) {
-    let title_volumes = extract_volumes(title);
-    let is_integral = is_integral_release(title);
-
-    let matched = if is_integral && !missing_volumes.is_empty() {
-        missing_volumes.to_vec()
-    } else {
-        title_volumes
-            .iter()
-            .copied()
-            .filter(|v| missing_volumes.contains(v))
-            .collect()
-    };
-
-    let all = if is_integral { vec![] } else { title_volumes };
-    (matched, all)
-}
-
-pub(crate) fn is_integral_release(title: &str) -> bool {
-    let lower = title.to_lowercase();
-    // Strip accents for matching: "intégrale" → "integrale"
-    let normalized = lower.replace(['é', 'è'], "e");
-    let keywords = [
-        "integrale",
-        "integral",
-        "complet",
-        "complete",
-        "l'integrale",
-    ];
-    keywords.iter().any(|kw| {
-        // Match as whole word: check boundaries
-        normalized
-            .split(|c: char| !c.is_alphanumeric() && c != '\'')
-            .any(|word| word == *kw)
-    })
 }
 
 async fn load_prowlarr_config(pool: &sqlx::PgPool) -> Result<(String, String, Vec<i32>), ApiError> {
@@ -409,33 +367,6 @@ pub async fn test_prowlarr(
     let response = do_prowlarr_test(&url, &api_key).await?;
 
     Ok(Json(response))
-}
-
-// ─── Title matching ──────────────────────────────────────────────────────────
-
-/// Normalize a string for fuzzy title matching:
-/// - dots, underscores, hyphens, apostrophes, brackets → space
-/// - accented chars → ASCII equivalent
-/// - lowercase
-pub(crate) fn normalize_for_match(s: &str) -> String {
-    s.chars()
-        .map(|c| match c {
-            '.' | '_' | '-' | '\'' | '\u{2019}' | '[' | ']' | '(' | ')' => ' ',
-            'é' | 'è' | 'ê' | 'ë' | 'É' | 'È' | 'Ê' | 'Ë' => 'e',
-            'à' | 'â' | 'ä' | 'À' | 'Â' | 'Ä' => 'a',
-            'ù' | 'û' | 'ü' | 'Ù' | 'Û' | 'Ü' => 'u',
-            'î' | 'ï' | 'Î' | 'Ï' => 'i',
-            'ô' | 'ö' | 'Ô' | 'Ö' => 'o',
-            'ç' | 'Ç' => 'c',
-            other => other.to_ascii_lowercase(),
-        })
-        .collect()
-}
-
-pub(crate) fn title_matches_series(title: &str, series_name: &str) -> bool {
-    let norm_title = normalize_for_match(title);
-    let norm_name = normalize_for_match(series_name);
-    norm_title.contains(&norm_name)
 }
 
 #[cfg(test)]

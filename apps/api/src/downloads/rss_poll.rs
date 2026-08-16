@@ -1,4 +1,5 @@
 use axum::{extract::State, Json};
+use parsers::match_release_title;
 use serde::Deserialize;
 use sqlx::{PgPool, Row};
 use tracing::info;
@@ -269,24 +270,21 @@ pub(crate) async fn process_rss_poll(
         let matched_releases: Vec<AvailableReleaseDto> = rss_releases
             .iter()
             .filter(|r| !blacklisted_titles.contains(&r.title))
-            .filter(|r| prowlarr::title_matches_series(&r.title, series_name))
             .filter_map(|r| {
-                let (matched_vols, all_vols) =
-                    prowlarr::match_title_volumes(&r.title, missing_volumes);
-                if matched_vols.is_empty() {
-                    None
-                } else {
+                if let Some(matched) = match_release_title(&r.title, series_name, missing_volumes) {
                     Some(AvailableReleaseDto {
                         title: r.title.clone(),
                         size: r.size,
                         download_url: r.download_url.clone(),
                         indexer: r.indexer.clone(),
                         seeders: r.seeders,
-                        matched_missing_volumes: matched_vols,
-                        all_volumes: all_vols,
+                        matched_missing_volumes: matched.matched_missing_volumes,
+                        all_volumes: matched.all_volumes,
                         has_failed: false,
                         detected_at: Some(now_str.clone()),
                     })
+                } else {
+                    None
                 }
             })
             .collect();

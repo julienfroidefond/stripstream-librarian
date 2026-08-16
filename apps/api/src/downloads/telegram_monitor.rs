@@ -173,249 +173,6 @@ async fn load_tg_sync_interval(pool: &sqlx::PgPool) -> i32 {
     .unwrap_or(60)
 }
 
-/// Extract series name from a book filename by stripping volume/tome markers.
-/// "One Piece - Tome 47.cbz" → "One Piece"
-/// "Toriko T12.cbz" → "Toriko"
-pub(super) fn extract_series_name_from_filename(filename: &str) -> String {
-    let stem = std::path::Path::new(filename)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or(filename);
-
-    // Strip Telegram channel attribution "@channel" at end of stem (no spaces in handle)
-    let stem = if let Some(at_pos) = stem.rfind('@') {
-        let after = &stem[at_pos + 1..];
-        if !after.is_empty() && !after.contains(' ') {
-            stem[..at_pos].trim_end()
-        } else {
-            stem
-        }
-    } else {
-        stem
-    };
-
-    // Normalize underscores → spaces so both naming styles are handled uniformly
-    let normalized = stem.replace('_', " ");
-    let lower = normalized.to_lowercase();
-
-    // Named patterns (longest first to avoid partial matches)
-    let patterns: &[&str] = &[
-        " - intégrale",
-        " - integrale",
-        " - hors-série",
-        " - hors série",
-        " - hors-serie",
-        " - tome ",
-        " - volume ",
-        " - vol. ",
-        " - vol ",
-        " - chapter ",
-        " - chapitre ",
-        " - chap. ",
-        " - chap ",
-        " - ch. ",
-        " - t.",
-        " - t ",
-        " intégrale",
-        " integrale",
-        " hors-série",
-        " hors série",
-        " tome ",
-        " volume ",
-        " vol. ",
-        " vol ",
-        " chapitre ",
-    ];
-
-    let mut earliest = normalized.len();
-    for pattern in patterns {
-        if let Some(pos) = lower.find(pattern) {
-            if pos < earliest && pos > 0 {
-                earliest = pos;
-            }
-        }
-    }
-
-    // " - \d" pattern: bare number between dashes e.g. "Series - 02 - Title" or "Series - 02"
-    {
-        let b = lower.as_bytes();
-        let mut i = 3usize;
-        while i < b.len() {
-            if b[i - 3] == b' ' && b[i - 2] == b'-' && b[i - 1] == b' ' && b[i].is_ascii_digit() {
-                let sep = i - 3;
-                if sep > 0 && sep < earliest {
-                    earliest = sep;
-                }
-                break;
-            }
-            i += 1;
-        }
-    }
-
-    // " T\d", " V\d", " Ch\d", " #\d", " #Ch\d" and " - T\d", " - V\d", " - Ch\d", " - #Ch\d" patterns
-    let bytes = lower.as_bytes();
-    let mut i = 1usize;
-    while i + 1 < bytes.len() {
-        let prev = bytes[i - 1];
-        let cur = bytes[i];
-        if prev == b' ' {
-            if cur == b't' || cur == b'v' {
-                // " T\d" / " V\d"
-                let j = i + 1;
-                let k = if j < bytes.len() && (bytes[j] == b'.' || bytes[j] == b' ') {
-                    j + 1
-                } else {
-                    j
-                };
-                if k < bytes.len() && bytes[k].is_ascii_digit() && (i - 1) < earliest {
-                    earliest = i - 1;
-                }
-            } else if cur == b'c' {
-                // " Ch\d" — chapter marker like "Ch09"
-                let j = i + 1;
-                if j + 1 < bytes.len()
-                    && bytes[j] == b'h'
-                    && bytes[j + 1].is_ascii_digit()
-                    && (i - 1) < earliest
-                {
-                    earliest = i - 1;
-                }
-            } else if cur == b'#' {
-                let j = i + 1;
-                if j < bytes.len() && bytes[j].is_ascii_digit() && (i - 1) < earliest {
-                    // " #\d"
-                    earliest = i - 1;
-                } else if j + 2 < bytes.len()
-                    && bytes[j] == b'c'
-                    && bytes[j + 1] == b'h'
-                    && bytes[j + 2].is_ascii_digit()
-                    && (i - 1) < earliest
-                {
-                    // " #Ch\d"
-                    earliest = i - 1;
-                }
-            }
-        }
-        // " - T\d" / " - V\d" / " - Ch\d"
-        if i >= 3
-            && bytes[i - 3] == b' '
-            && bytes[i - 2] == b'-'
-            && bytes[i - 1] == b' '
-            && (cur == b't' || cur == b'v' || cur == b'c')
-        {
-            let sep = i - 3;
-            if cur == b'c' {
-                // " - Ch\d"
-                let j = i + 1;
-                if j + 1 < bytes.len()
-                    && bytes[j] == b'h'
-                    && bytes[j + 1].is_ascii_digit()
-                    && sep < earliest
-                {
-                    earliest = sep;
-                }
-            } else {
-                let j = i + 1;
-                let k = if j < bytes.len() && (bytes[j] == b'.' || bytes[j] == b' ') {
-                    j + 1
-                } else {
-                    j
-                };
-                if k < bytes.len() && bytes[k].is_ascii_digit() && sep < earliest {
-                    earliest = sep;
-                }
-            }
-        }
-        // " - #\d" / " - #Ch\d" (hash after space-dash-space)
-        if i >= 3
-            && bytes[i - 3] == b' '
-            && bytes[i - 2] == b'-'
-            && bytes[i - 1] == b' '
-            && cur == b'#'
-        {
-            let j = i + 1;
-            let sep = i - 3;
-            if j < bytes.len() && bytes[j].is_ascii_digit() && sep < earliest {
-                // " - #\d"
-                earliest = sep;
-            } else if j + 2 < bytes.len()
-                && bytes[j] == b'c'
-                && bytes[j + 1] == b'h'
-                && bytes[j + 2].is_ascii_digit()
-                && sep < earliest
-            {
-                // " - #Ch\d"
-                earliest = sep;
-            }
-        }
-        // " -T\d" / " -V\d" (no space after dash, e.g. "Series -T01(...")
-        if i >= 2 && bytes[i - 2] == b' ' && bytes[i - 1] == b'-' && (cur == b't' || cur == b'v') {
-            let j = i + 1;
-            if j < bytes.len() && bytes[j].is_ascii_digit() {
-                let sep = i - 2;
-                if sep < earliest {
-                    earliest = sep;
-                }
-            }
-        }
-        i += 1;
-    }
-
-    // Phases 4 & 5: bare number handling — only when no named pattern matched yet
-    if earliest == normalized.len() {
-        let b = lower.as_bytes();
-        let n = b.len();
-
-        // Phase 4: trailing " \d{1,3}$" (not 4-digit years)
-        // If applied, skip phase 5 to preserve embedded title numbers.
-        // e.g. "Roi Démon ... 10 Enfants Le 1" → strip " 1", not " 10"
-        let trailing_applied = {
-            let mut end = n;
-            while end > 0 && b[end - 1].is_ascii_digit() {
-                end -= 1;
-            }
-            let digit_count = n - end;
-            if digit_count >= 1 && digit_count <= 3 && end > 0 && b[end - 1] == b' ' {
-                let sep = end - 1;
-                if sep >= 3 {
-                    earliest = sep;
-                    true
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        };
-
-        // Phase 5: middle " \d{1,3} " — only if no trailing number found.
-        // e.g. "Dragon Ball Super 1 Les Guerriers" → "Dragon Ball Super"
-        if !trailing_applied {
-            let mut i = 1usize;
-            while i < b.len() {
-                if b[i - 1] == b' ' && b[i].is_ascii_digit() {
-                    let mut j = i;
-                    while j < b.len() && b[j].is_ascii_digit() {
-                        j += 1;
-                    }
-                    let digit_count = j - i;
-                    let after_ok = j == b.len() || b[j] == b' ' || b[j] == b'-';
-                    let sep = i - 1;
-                    if digit_count <= 3 && after_ok && sep >= 3 {
-                        earliest = sep;
-                        break;
-                    }
-                }
-                i += 1;
-            }
-        }
-    }
-
-    normalized[..earliest]
-        .trim_end_matches([' ', '-', '_', '.'])
-        .to_string()
-}
-
 /// Find the physical target directory for a series in a library,
 /// matching existing book files first, then existing directories, then fallback to new.
 async fn resolve_target_dir(
@@ -1571,7 +1328,7 @@ async fn insert_document_message(
         } else {
             Some(text.to_string())
         };
-        let series_name = extract_series_name_from_filename(&filename);
+        let series_name = parsers::extract_series_name_from_filename(&filename);
         let series_name = if series_name.is_empty() {
             None
         } else {
@@ -1658,7 +1415,7 @@ async fn sync_one_source(
             synced += 1;
             series_count += 1;
             if let Some(Media::Document(doc)) = message.media() {
-                let extracted = extract_series_name_from_filename(doc.name());
+                let extracted = parsers::extract_series_name_from_filename(doc.name());
                 if !extracted.is_empty() {
                     extracted_names.insert(extracted);
                 }
@@ -2086,7 +1843,8 @@ pub async fn download_book(
         library_id.ok_or_else(|| ApiError::bad_request("No library configured for this source"))?;
 
     // series_name fallback: extract from filename if not stored
-    let series_name = series_name.unwrap_or_else(|| extract_series_name_from_filename(&filename));
+    let series_name =
+        series_name.unwrap_or_else(|| parsers::extract_series_name_from_filename(&filename));
 
     // Mark as queued (will switch to 'downloading' once the semaphore permit is acquired)
     sqlx::query(
@@ -2106,15 +1864,14 @@ pub async fn download_book(
         let _permit = download_limit.acquire_owned().await;
 
         // Check if dismissed while waiting for the permit
-        let current = sqlx::query_scalar::<_, String>(
-            "SELECT status FROM telegram_book_links WHERE id = $1",
-        )
-        .bind(id)
-        .fetch_optional(&pool)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_default();
+        let current =
+            sqlx::query_scalar::<_, String>("SELECT status FROM telegram_book_links WHERE id = $1")
+                .bind(id)
+                .fetch_optional(&pool)
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_default();
         if current == "dismissed" {
             abort_handles.lock().await.remove(&id);
             return;
@@ -2159,7 +1916,11 @@ pub async fn download_book(
 
         abort_handles.lock().await.remove(&id);
     });
-    state.telegram_abort_handles.lock().await.insert(id, handle.abort_handle());
+    state
+        .telegram_abort_handles
+        .lock()
+        .await
+        .insert(id, handle.abort_handle());
 
     Ok(Json(serde_json::json!({ "ok": true })))
 }
@@ -2404,13 +2165,12 @@ pub async fn dismiss_book(
     AxumPath(id): AxumPath<Uuid>,
     Query(query): Query<DismissBookQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    let current = sqlx::query_scalar::<_, String>(
-        "SELECT status FROM telegram_book_links WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or_else(|| ApiError::not_found("book link not found"))?;
+    let current =
+        sqlx::query_scalar::<_, String>("SELECT status FROM telegram_book_links WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| ApiError::not_found("book link not found"))?;
 
     // Abort running/queued task before any DB change so the semaphore slot is freed immediately
     if current == "queued" || current == "downloading" {
@@ -2662,8 +2422,7 @@ pub struct PendingAuth {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_series_name_from_filename;
-    use parsers::extract_volume;
+    use parsers::{extract_series_name_from_filename, extract_volume};
 
     fn e(filename: &str) -> String {
         extract_series_name_from_filename(filename)

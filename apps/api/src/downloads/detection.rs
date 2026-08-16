@@ -2,6 +2,7 @@ use axum::{
     extract::{Path, State},
     Json,
 };
+use parsers::match_release_title;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 use tracing::{info, warn};
@@ -1195,23 +1196,20 @@ async fn search_prowlarr_for_series(
     let matched: Vec<AvailableReleaseDto> = raw_releases
         .into_iter()
         .filter_map(|r| {
-            let (matched_vols, all_volumes) =
-                prowlarr::match_title_volumes(&r.title, missing_volumes);
-
-            if matched_vols.is_empty() {
-                None
-            } else {
+            if let Some(matched) = match_release_title(&r.title, series_name, missing_volumes) {
                 Some(AvailableReleaseDto {
                     title: r.title,
                     size: r.size,
                     download_url: r.download_url,
                     indexer: r.indexer,
                     seeders: r.seeders,
-                    matched_missing_volumes: matched_vols,
-                    all_volumes,
+                    matched_missing_volumes: matched.matched_missing_volumes,
+                    all_volumes: matched.all_volumes,
                     has_failed: false,
                     detected_at: None,
                 })
+            } else {
+                None
             }
         })
         .collect();

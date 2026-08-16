@@ -649,7 +649,7 @@ pub async fn prowlarr_discovery(
             .unwrap_or_default();
 
         // Extract series name for local-library annotation only
-        let series_name = extract_series_name_from_torrent(&title);
+        let series_name = parsers::extract_series_name_from_release(&title);
         let volumes = parsers::extract_volumes(&title);
 
         items.push(ProwlarrDiscoveryItem {
@@ -719,104 +719,27 @@ pub async fn prowlarr_discovery(
     }))
 }
 
-pub fn extract_series_name_from_torrent(title: &str) -> String {
-    // Dot-separated NRC-style: "Series.Name.T31.Author.Year.FR.[CBZ]-NRC"
-    // Use dot-count heuristic: handles titles with spaces inside brackets too
-    let dot_count = title.chars().filter(|&c| c == '.').count();
-    let space_count = title.chars().filter(|&c| c == ' ').count();
-    if dot_count > space_count {
-        let parts: Vec<&str> = title.split('.').collect();
-        let mut end_idx = parts.len();
-        for (i, part) in parts.iter().enumerate() {
-            if i == 0 {
-                continue;
-            }
-            let pu = part.to_uppercase();
-            // T31, T06, Vol01, Tome31 — prefix + all-digit suffix
-            let is_combined_volume = (pu.starts_with('T')
-                && pu.len() >= 2
-                && pu[1..].chars().all(|c| c.is_ascii_digit()))
-                || ["VOL", "TOME", "VOLUME"].iter().any(|pfx| {
-                    pu.starts_with(pfx)
-                        && pu.len() > pfx.len()
-                        && pu[pfx.len()..].chars().all(|c| c.is_ascii_digit())
-                });
-            // Standalone "Tome"/"Vol" always indicate volume in release names
-            let is_standalone_volume_word =
-                matches!(pu.as_str(), "TOME" | "TOMES" | "VOL" | "VOLS" | "VOLUME");
-            let is_volume = is_combined_volume || is_standalone_volume_word;
-            let is_year = pu.len() == 4
-                && (pu.starts_with("19") || pu.starts_with("20"))
-                && pu.chars().all(|c| c.is_ascii_digit());
-            let is_tag = matches!(
-                pu.as_str(),
-                "FR" | "EN" | "JP" | "VF" | "VO" | "FRENCH" | "CBZ" | "CBR" | "PDF" | "EPUB"
-            ) || pu.starts_with('[');
-            if is_volume || is_year || is_tag {
-                end_idx = i;
-                break;
-            }
-        }
-        return parts[..end_idx].join(" ");
-    }
-
-    // Space-separated titles
-    let lower = title.to_lowercase();
-    let separators = [
-        " - bd ",
-        " - tome ",
-        " - t0",
-        " - t1",
-        " - t2",
-        " - t3",
-        " - t4",
-        " - t5",
-        " - t6",
-        " - t7",
-        " - t8",
-        " - t9",
-        " -bd ",
-        " tome ",
-        " vol.",
-        " vol ",
-        " [",
-        " (",
-        " intégrale",
-        " integrale",
-        " complet",
-    ];
-    let mut best_pos = title.len();
-    for sep in &separators {
-        if let Some(pos) = lower.find(sep) {
-            if pos > 0 && pos < best_pos {
-                best_pos = pos;
-            }
-        }
-    }
-    title[..best_pos].trim().to_string()
-}
-
 #[cfg(test)]
 mod extract_tests {
-    use super::extract_series_name_from_torrent;
+    use parsers::extract_series_name_from_release;
 
     #[test]
     fn dot_t_volume() {
         // T31 → stop
         assert_eq!(
-            extract_series_name_from_torrent(
+            extract_series_name_from_release(
                 "Orcs.&.Gobelins.T31.Tren'gar.Peru.Sentenac.2025.FR.[CBZ]-NRC"
             ),
             "Orcs & Gobelins"
         );
         assert_eq!(
-            extract_series_name_from_torrent(
+            extract_series_name_from_release(
                 "Orcs.&.Gobelins.T32.Ogoor.Jarry.Scalisi.2025.FR.[CBZ]-NRC"
             ),
             "Orcs & Gobelins"
         );
         assert_eq!(
-            extract_series_name_from_torrent(
+            extract_series_name_from_release(
                 "Elric.T06.La.Sorciere.dormante.Blondel.Cano.2025.fr.[PDF].[CBZ]-notag"
             ),
             "Elric"
@@ -827,12 +750,12 @@ mod extract_tests {
     fn dot_tome_split_volume() {
         // Tome/Vol standalone always a stop word
         assert_eq!(
-            extract_series_name_from_torrent("Monstress.Tome.01.L'Éveil.LIU.FR.[PDF]-Notag"),
+            extract_series_name_from_release("Monstress.Tome.01.L'Éveil.LIU.FR.[PDF]-Notag"),
             "Monstress"
         );
         // Title with spaces inside brackets — dot heuristic still applies
         assert_eq!(
-            extract_series_name_from_torrent(
+            extract_series_name_from_release(
                 "One.Piece.Tome.[1 à 100].3.HS.Eichiro.Oda.FR.[CBZ]-GRP"
             ),
             "One Piece"
@@ -843,23 +766,23 @@ mod extract_tests {
     fn dot_integrale_bracket() {
         // [INTEGRALE] and [COLLECTION] stop via bracket detection
         assert_eq!(
-            extract_series_name_from_torrent("Gunnm.[INTEGRALE].FR.[CBZ]-PRiNTER-PapriKa"),
+            extract_series_name_from_release("Gunnm.[INTEGRALE].FR.[CBZ]-PRiNTER-PapriKa"),
             "Gunnm"
         );
         assert_eq!(
-            extract_series_name_from_torrent("Meteors.[INTEGRALE].FR.[PDF]-NOTAG"),
+            extract_series_name_from_release("Meteors.[INTEGRALE].FR.[PDF]-NOTAG"),
             "Meteors"
         );
         assert_eq!(
-            extract_series_name_from_torrent("Hot.Cousine.Nils.[COLLECTION].FR.[CBR]-NOTAG"),
+            extract_series_name_from_release("Hot.Cousine.Nils.[COLLECTION].FR.[CBR]-NOTAG"),
             "Hot Cousine Nils"
         );
         assert_eq!(
-            extract_series_name_from_torrent("Planètes.[INTEGRALE].FR.[CBZ]-PapriKa"),
+            extract_series_name_from_release("Planètes.[INTEGRALE].FR.[CBZ]-PapriKa"),
             "Planètes"
         );
         assert_eq!(
-            extract_series_name_from_torrent(
+            extract_series_name_from_release(
                 "Sherlock.Holmes.[COLLECTION].29.Albums.Par.Editeur.FR.[PDF]-NOTAG"
             ),
             "Sherlock Holmes"
@@ -869,13 +792,13 @@ mod extract_tests {
     #[test]
     fn dot_year_stop() {
         assert_eq!(
-            extract_series_name_from_torrent(
+            extract_series_name_from_release(
                 "Neon.Genesis.Evangelion.1998.[INTEGRALE].FR.[CBZ]-MangaFR"
             ),
             "Neon Genesis Evangelion"
         );
         assert_eq!(
-            extract_series_name_from_torrent("Naruto.2024.FR.[CBZ]-GRP"),
+            extract_series_name_from_release("Naruto.2024.FR.[CBZ]-GRP"),
             "Naruto"
         );
     }
@@ -883,33 +806,33 @@ mod extract_tests {
     #[test]
     fn dot_lang_stop() {
         assert_eq!(
-            extract_series_name_from_torrent(
+            extract_series_name_from_release(
                 "Akira.Edition.Originale.Katsuhiro.Otomo.FR.CBZ-Manga.Fr"
             ),
             "Akira Edition Originale Katsuhiro Otomo"
         );
         assert_eq!(
-            extract_series_name_from_torrent("Star.Wars.Mega.Pack.Comics.FRENCH.[PDF]-Moorea81"),
+            extract_series_name_from_release("Star.Wars.Mega.Pack.Comics.FRENCH.[PDF]-Moorea81"),
             "Star Wars Mega Pack Comics"
         );
     }
 
     #[test]
     fn space_separated_tome() {
-        assert_eq!(extract_series_name_from_torrent("Akira tome 1"), "Akira");
+        assert_eq!(extract_series_name_from_release("Akira tome 1"), "Akira");
     }
 
     #[test]
     fn space_separated_bracket() {
         assert_eq!(
-            extract_series_name_from_torrent("Dragon Ball [CBZ]"),
+            extract_series_name_from_release("Dragon Ball [CBZ]"),
             "Dragon Ball"
         );
     }
 
     #[test]
     fn no_volume_marker_unchanged() {
-        assert_eq!(extract_series_name_from_torrent("MySeries"), "MySeries");
+        assert_eq!(extract_series_name_from_release("MySeries"), "MySeries");
     }
 }
 

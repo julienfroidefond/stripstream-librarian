@@ -1,4 +1,5 @@
 use super::*;
+use parsers::{is_integral_release, match_title_volumes, title_matches_series};
 
 // ── title_matches_series ────────────────────────────────────────────────────
 
