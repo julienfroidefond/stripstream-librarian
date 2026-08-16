@@ -71,12 +71,19 @@ pub struct AvailableReleaseDto {
     #[serde(default = "default_match_confidence")]
     pub match_confidence: String,
     /// Machine-readable evidence used by the shared title matcher.
-    #[serde(default)]
+    #[serde(default = "default_match_reasons")]
     pub match_reasons: Vec<String>,
 }
 
 fn default_match_confidence() -> String {
-    "high".to_string()
+    // Historical JSON releases have no qualification evidence. Keep them
+    // visible, but require an explicit confirmation until a scan refreshes
+    // them with the shared matcher.
+    "review".to_string()
+}
+
+fn default_match_reasons() -> Vec<String> {
+    vec!["legacy_unqualified".to_string()]
 }
 
 // ---------------------------------------------------------------------------
