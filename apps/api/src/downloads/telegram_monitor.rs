@@ -771,14 +771,37 @@ pub async fn process_telegram_sync_incremental(
         })
         .collect();
 
-    // Build notification items: prefer series_name, fall back to filename
-    let notif_items: Vec<(String, Option<i32>)> = recent_rows
+    // Only notify about files that match a series in the configured library.
+    // Keep `recent_books` above unfiltered so the job report remains a complete
+    // record of everything Telegram discovered.
+    let matched_rows = sqlx::query(
+        "SELECT b.filename, b.series_name, b.volume_number, s.channel_username \
+         FROM telegram_book_links b \
+         JOIN telegram_sources s ON s.id = b.source_id \
+         WHERE b.created_at >= $1 \
+           AND b.series_name IS NOT NULL \
+           AND EXISTS ( \
+             SELECT 1 FROM series sr \
+             WHERE sr.library_id = COALESCE(b.library_id, s.library_id) \
+               AND LOWER(unaccent(sr.name)) = LOWER(unaccent(b.series_name)) \
+           ) \
+         ORDER BY b.created_at DESC \
+         LIMIT 200",
+    )
+    .bind(started_at)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let mut matched_per_source = std::collections::BTreeMap::<String, usize>::new();
+    let notif_items: Vec<(String, Option<i32>)> = matched_rows
         .iter()
         .map(|r| {
-            let label = r
-                .get::<Option<String>, _>("series_name")
-                .unwrap_or_else(|| r.get::<String, _>("filename"));
+            let label = r.get::<String, _>("series_name");
             let vol = r.get::<Option<i32>, _>("volume_number");
+            *matched_per_source
+                .entry(r.get::<String, _>("channel_username"))
+                .or_default() += 1;
             (label, vol)
         })
         .collect();
@@ -806,9 +829,9 @@ pub async fn process_telegram_sync_incremental(
     notifications::notify(
         pool.clone(),
         notifications::NotificationEvent::TelegramSyncIncrementalCompleted {
-            new_books,
+            matched_books: notif_items.len(),
             sources_scanned,
-            per_source,
+            per_source: matched_per_source.into_iter().collect(),
             new_items: notif_items,
         },
     );

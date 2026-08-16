@@ -360,11 +360,12 @@ pub enum NotificationEvent {
     },
     // Telegram incremental sync completed
     TelegramSyncIncrementalCompleted {
-        new_books: usize,
+        /// New files matched to a local series during this sync.
+        matched_books: usize,
         sources_scanned: usize,
-        /// Per-source breakdown: (channel_username, new_books_count)
+        /// Per-source breakdown of local matches: (channel_username, matched_books_count)
         per_source: Vec<(String, usize)>,
-        /// New books detected: (series_name_or_filename, volume_number), capped at 15
+        /// New books matched to a local series: (series_name, volume_number), capped at 15
         new_items: Vec<(String, Option<i32>)>,
     },
 }
@@ -903,17 +904,17 @@ fn format_event(event: &NotificationEvent) -> String {
             .join("\n")
         }
         NotificationEvent::TelegramSyncIncrementalCompleted {
-            new_books,
+            matched_books,
             sources_scanned,
             per_source,
             new_items,
         } => {
             let mut lines = vec![
-                "📡 <b>Telegram — nouveaux livres détectés</b>".to_string(),
+                "📡 <b>Telegram — nouveaux livres associés</b>".to_string(),
                 String::new(),
-                format!("📥 <b>{new_books}</b> nouveau{} livre{} sur <b>{sources_scanned}</b> channel{}",
-                    if *new_books > 1 { "x" } else { "" },
-                    if *new_books > 1 { "s" } else { "" },
+                format!("📥 <b>{matched_books}</b> livre{} associé{} à votre bibliothèque sur <b>{sources_scanned}</b> channel{}",
+                    if *matched_books > 1 { "s" } else { "" },
+                    if *matched_books > 1 { "s" } else { "" },
                     if *sources_scanned > 1 { "s" } else { "" },
                 ),
             ];
@@ -926,7 +927,7 @@ fn format_event(event: &NotificationEvent) -> String {
             }
             if !new_items.is_empty() {
                 lines.push(String::new());
-                lines.push("📦 <b>Nouveaux livres :</b>".to_string());
+                lines.push("📦 <b>Correspondances :</b>".to_string());
                 for (label, vol) in new_items.iter().take(15) {
                     let vol_str = vol.map(|v| format!(" T{v:02}")).unwrap_or_default();
                     lines.push(format!("  • <b>{}</b>{}", truncate(label, 50), vol_str));
@@ -1038,8 +1039,10 @@ fn is_noteworthy(event: &NotificationEvent) -> bool {
         NotificationEvent::ReadingStatusPushCompleted { pushed, .. } => *pushed > 0,
         // Download detection: only if releases were found
         NotificationEvent::DownloadDetectionCompleted { found, .. } => *found > 0,
-        // Telegram incremental: only if new books were found
-        NotificationEvent::TelegramSyncIncrementalCompleted { new_books, .. } => *new_books > 0,
+        // Telegram incremental: only if a new file matched a local series
+        NotificationEvent::TelegramSyncIncrementalCompleted { matched_books, .. } => {
+            *matched_books > 0
+        }
         // All failures, conversions, imports, manual actions → always noteworthy
         _ => true,
     }
@@ -1143,5 +1146,19 @@ mod tests {
         });
 
         assert!(text.contains("⚠️ Corum — provider timeout"));
+    }
+
+    #[test]
+    fn telegram_incremental_sync_lists_only_local_matches() {
+        let text = format_event(&NotificationEvent::TelegramSyncIncrementalCompleted {
+            matched_books: 1,
+            sources_scanned: 2,
+            per_source: vec![("bd_fr".to_string(), 1)],
+            new_items: vec![("Les Géants".to_string(), Some(3))],
+        });
+
+        assert!(text.contains("livre associé à votre bibliothèque"));
+        assert!(text.contains("<b>Les Géants</b> T03"));
+        assert!(!text.contains("nouveaux livres détectés"));
     }
 }

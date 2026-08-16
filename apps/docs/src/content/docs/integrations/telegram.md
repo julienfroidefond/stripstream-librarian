@@ -27,6 +27,7 @@ Vous pouvez activer ou désactiver chaque type de notification individuellement 
 | **Conversion CBR→CBZ** | Conversion terminée, en erreur, annulée |
 | **Métadonnées** | Métadonnées approuvées, batch terminé, refresh terminé |
 | **Lecture** | Pull AniList terminé, pull en erreur, push AniList terminé, push en erreur |
+| **Téléchargements** | Synchronisation incrémentale du Telegram Monitor terminée |
 
 ## Contenu des notifications
 
@@ -36,6 +37,7 @@ Les notifications de succès les plus importantes incluent aussi un résumé uti
 - **Scan terminé sans nouveaux livres** : bibliothèque, type de scan, durée et compteurs
 - **Pull AniList terminé** : nombre de séries liées, puis la liste des séries effectivement liées pendant ce job
 - **Push AniList terminé** : nombre de séries poussées, puis la liste des séries effectivement envoyées à AniList
+- **Synchronisation Telegram Monitor** : uniquement les nouveaux fichiers rapprochés d'une série de votre bibliothèque ; aucune notification n'est envoyée si aucun fichier ne correspond
 
 Les listes sont volontairement tronquées si le job a produit beaucoup d'éléments.
 
