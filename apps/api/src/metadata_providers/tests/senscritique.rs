@@ -1,49 +1,5 @@
 use super::*;
 
-// ─── extract_volume_number ───────────────────────────────────────────
-
-#[test]
-fn extract_volume_number_tome() {
-    assert_eq!(extract_volume_number("One Piece, tome 3"), Some(3));
-    assert_eq!(extract_volume_number("Naruto Tome 12"), Some(12));
-    assert_eq!(extract_volume_number("TOME 1"), Some(1));
-}
-
-#[test]
-fn extract_volume_number_t_dot() {
-    assert_eq!(extract_volume_number("One Piece T.3"), Some(3));
-    assert_eq!(extract_volume_number("Series T.12"), Some(12));
-    assert_eq!(extract_volume_number("T.007"), Some(7));
-}
-
-#[test]
-fn extract_volume_number_vol() {
-    assert_eq!(extract_volume_number("Vol. 12"), Some(12));
-    assert_eq!(extract_volume_number("Vol 5"), Some(5));
-    assert_eq!(extract_volume_number("Vol.3"), Some(3));
-    assert_eq!(extract_volume_number("Volume 8"), Some(8));
-    assert_eq!(extract_volume_number("volume 1"), Some(1));
-}
-
-#[test]
-fn extract_volume_number_integrale_no_match() {
-    // "Intégrale" has no volume number pattern
-    assert_eq!(extract_volume_number("One Piece - Intégrale"), None);
-}
-
-#[test]
-fn extract_volume_number_no_volume() {
-    assert_eq!(extract_volume_number("Just a book title"), None);
-    assert_eq!(extract_volume_number(""), None);
-    assert_eq!(extract_volume_number("No numbers at all"), None);
-}
-
-#[test]
-fn extract_volume_number_zero_padded() {
-    assert_eq!(extract_volume_number("Tome 007"), Some(7));
-    assert_eq!(extract_volume_number("T.001"), Some(1));
-}
-
 // ─── infer_status_from_date ──────────────────────────────────────────
 
 #[test]

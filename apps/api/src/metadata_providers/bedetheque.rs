@@ -641,7 +641,7 @@ async fn get_series_books_impl(
         let volume_number = RE_VOLUME
             .captures(album_url)
             .and_then(|c| c[1].parse::<i32>().ok())
-            .or_else(|| extract_volume_from_title(&title));
+            .or_else(|| parsers::extract_metadata_volume(&title));
 
         // Authors from itemprop="author" and itemprop="illustrator"
         let mut authors = Vec::new();
@@ -710,24 +710,6 @@ async fn get_series_books_impl(
 /// Filter out placeholder author names from Bédéthèque
 fn is_real_author(name: &str) -> bool {
     !name.starts_with('<') && !name.ends_with('>') && name != "Collectif"
-}
-
-fn extract_volume_from_title(title: &str) -> Option<i32> {
-    let patterns = [
-        r"(?i)(?:tome|t\.)\s*(\d+)",
-        r"(?i)(?:vol(?:ume)?\.?)\s*(\d+)",
-        r"#\s*(\d+)",
-    ];
-    for pattern in &patterns {
-        if let Ok(re) = regex::Regex::new(pattern) {
-            if let Some(caps) = re.captures(title) {
-                if let Ok(n) = caps[1].parse::<i32>() {
-                    return Some(n);
-                }
-            }
-        }
-    }
-    None
 }
 
 /// Normalize a title by removing French articles (leading or in parentheses)

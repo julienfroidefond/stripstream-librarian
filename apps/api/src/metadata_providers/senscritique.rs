@@ -136,7 +136,7 @@ async fn search_series_impl(query: &str, detailed: bool) -> Result<Vec<SeriesCan
             .and_then(|s| s.as_str())
             .filter(|s| !s.is_empty())
             .map(String::from);
-        let vol_num = extract_volume_number(title);
+        let vol_num = parsers::extract_metadata_volume(title);
 
         let cover_url = product
             .get("medias")
@@ -338,7 +338,7 @@ async fn fetch_franchise_editions(
             let cover_url = products
                 .iter()
                 .filter_map(|p| {
-                    let vol = extract_volume_number(
+                    let vol = parsers::extract_metadata_volume(
                         p.get("title").and_then(|v| v.as_str()).unwrap_or_default(),
                     );
                     vol.map(|v| (v, p))
@@ -358,7 +358,7 @@ async fn fetch_franchise_editions(
                 .iter()
                 .filter_map(|p| {
                     let title = p.get("title").and_then(|v| v.as_str()).unwrap_or_default();
-                    let vol = extract_volume_number(title).unwrap_or(i32::MAX);
+                    let vol = parsers::extract_metadata_volume(title).unwrap_or(i32::MAX);
                     let syn = p
                         .get("synopsis")
                         .and_then(|s| s.as_str())
@@ -548,7 +548,7 @@ async fn fetch_franchise_books(
                 return None;
             }
 
-            let volume_number = extract_volume_number(&title);
+            let volume_number = parsers::extract_metadata_volume(&title);
 
             let cover_url = product
                 .get("medias")
@@ -1030,7 +1030,7 @@ fn first_volume_product<'a>(products: &[&'a serde_json::Value]) -> Option<&'a se
                 .get("title")
                 .and_then(|value| value.as_str())
                 .unwrap_or_default();
-            extract_volume_number(title).map(|volume| (volume, *product))
+            parsers::extract_metadata_volume(title).map(|volume| (volume, *product))
         })
         .min_by_key(|(volume, _)| *volume)
         .map(|(_, product)| product)
@@ -1143,17 +1143,6 @@ fn group_products_by_edition(
     // Sort by volume count descending (main edition first)
     result.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
     result
-}
-
-/// Extract volume number from title patterns like "..., tome 3" or "... T.3"
-fn extract_volume_number(title: &str) -> Option<i32> {
-    use std::sync::LazyLock;
-    static RE: LazyLock<regex::Regex> =
-        LazyLock::new(|| regex::Regex::new(r"(?i)(?:tome|t\.|vol(?:ume)?\.?)\s*(\d+)").unwrap());
-
-    RE.captures(title)
-        .and_then(|caps| caps.get(1))
-        .and_then(|m| m.as_str().parse().ok())
 }
 
 #[cfg(test)]

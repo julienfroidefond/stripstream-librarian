@@ -381,14 +381,6 @@ fn compute_confidence_normalized_match() {
 }
 
 #[test]
-fn extract_volume_from_title_works() {
-    assert_eq!(extract_volume_from_title("Tome 3 - Blah"), Some(3));
-    assert_eq!(extract_volume_from_title("Vol. 12"), Some(12));
-    assert_eq!(extract_volume_from_title("#5 something"), Some(5));
-    assert_eq!(extract_volume_from_title("No volume here"), None);
-}
-
-#[test]
 fn is_real_author_filters_placeholders() {
     assert!(!is_real_author("<Anonyme>"));
     assert!(!is_real_author("Collectif"));

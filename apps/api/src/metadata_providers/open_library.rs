@@ -397,7 +397,8 @@ async fn get_series_books_impl(
                 .and_then(|k| k.as_str())
                 .unwrap_or("")
                 .to_string();
-            let volume_number = extract_volume_number(&title);
+            let volume_number = parsers::extract_metadata_volume(&title)
+                .or_else(|| extract_fallback_volume_number(&title));
 
             BookCandidate {
                 external_book_id: key,
@@ -439,12 +440,8 @@ fn extract_series_name(title: &str) -> String {
     result.trim().to_string()
 }
 
-fn extract_volume_number(title: &str) -> Option<i32> {
-    let patterns = [
-        r"(?i)(?:vol(?:ume)?\.?\s*|tome\s*|t\.\s*|#)\s*(\d+)",
-        r"\((\d+)\)\s*$",
-        r"\b(\d+)\s*$",
-    ];
+fn extract_fallback_volume_number(title: &str) -> Option<i32> {
+    let patterns = [r"\((\d+)\)\s*$", r"\b(\d+)\s*$"];
     for pattern in &patterns {
         if let Ok(re) = regex::Regex::new(pattern) {
             if let Some(caps) = re.captures(title) {

@@ -12,6 +12,23 @@ pub use matching::{
     MatchConfidence, MatchReason, ReleaseTitleMatch,
 };
 
+/// Extract a volume number from an external metadata title when it has an
+/// explicit marker (`Tome`, `T.`, `Vol`, `Volume` or `#`).
+///
+/// Unlike filename parsing, this deliberately does not infer a volume from a
+/// bare trailing number: provider titles often end in an edition number or a
+/// year.
+pub fn extract_metadata_volume(title: &str) -> Option<i32> {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        regex::Regex::new(r"(?i)(?:tome|t\.|vol(?:ume)?\.?|#)\s*(\d+)")
+            .expect("valid metadata volume regex")
+    });
+    re.captures(title)
+        .and_then(|captures| captures.get(1))
+        .and_then(|value| value.as_str().parse().ok())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BookFormat {
     Cbz,
@@ -2118,6 +2135,24 @@ fn clean_title(filename: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extract_metadata_volume_requires_an_explicit_marker() {
+        assert_eq!(extract_metadata_volume("One Piece - Tome 12"), Some(12));
+        assert_eq!(extract_metadata_volume("Naruto Tome 12"), Some(12));
+        assert_eq!(extract_metadata_volume("Astro Boy T.03"), Some(3));
+        assert_eq!(extract_metadata_volume("T.007"), Some(7));
+        assert_eq!(extract_metadata_volume("Saga Vol. 004"), Some(4));
+        assert_eq!(extract_metadata_volume("Vol 5"), Some(5));
+        assert_eq!(extract_metadata_volume("Series Volume 5"), Some(5));
+        assert_eq!(extract_metadata_volume("Issue #42"), Some(42));
+        assert_eq!(extract_metadata_volume("#5 something"), Some(5));
+
+        assert_eq!(extract_metadata_volume("One Piece (12)"), None);
+        assert_eq!(extract_metadata_volume("One Piece 12"), None);
+        assert_eq!(extract_metadata_volume("Edition 2024"), None);
+        assert_eq!(extract_metadata_volume("One Piece - Intégrale"), None);
+    }
 
     #[test]
     fn is_not_rar_detects_not_rar_archive() {
