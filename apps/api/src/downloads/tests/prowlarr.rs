@@ -211,6 +211,32 @@ fn match_missing_volumes_with_none_volume() {
 }
 
 #[test]
+fn match_missing_volumes_does_not_match_another_series_with_same_volume() {
+    let releases = vec![ProwlarrRawRelease {
+        guid: "naruto-5".into(),
+        title: "Naruto T05".into(),
+        size: 100,
+        download_url: None,
+        indexer: None,
+        seeders: None,
+        leechers: None,
+        publish_date: None,
+        protocol: None,
+        info_url: None,
+        categories: None,
+    }];
+    let missing = vec![MissingVolumeInput {
+        volume_number: Some(5),
+        title: None,
+    }];
+
+    let result = match_missing_volumes(releases, "One Piece", &missing);
+    assert!(result[0].matched_missing_volumes.is_none());
+    assert!(result[0].match_confidence.is_none());
+    assert!(result[0].match_reasons.is_empty());
+}
+
+#[test]
 fn is_integral_with_grave_accent_e() {
     assert!(is_integral_release("Série Intègrale")); // è instead of é
 }

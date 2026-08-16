@@ -1,6 +1,22 @@
 use super::*;
 use sqlx::Row;
 
+#[test]
+fn legacy_release_without_qualification_requires_review() {
+    let release: AvailableReleaseDto = serde_json::from_value(serde_json::json!({
+        "title": "One Piece T05",
+        "size": 123,
+        "download_url": null,
+        "indexer": null,
+        "seeders": null,
+        "matched_missing_volumes": [5]
+    }))
+    .unwrap();
+
+    assert_eq!(release.match_confidence, "review");
+    assert_eq!(release.match_reasons, vec!["legacy_unqualified"]);
+}
+
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn failed_download_count_query(pool: sqlx::PgPool) {
     // Setup: library + series

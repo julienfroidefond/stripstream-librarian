@@ -429,6 +429,31 @@ mod tests {
     }
 
     #[test]
+    fn marks_short_series_with_explicit_volume_for_review() {
+        let matched = match_release_title("Saga T05", "Saga", &[5]).unwrap();
+        assert_eq!(matched.confidence, MatchConfidence::Review);
+        assert!(matched.reasons.contains(&MatchReason::ShortSeriesTitle));
+        assert!(matched.reasons.contains(&MatchReason::ExplicitVolume));
+    }
+
+    #[test]
+    fn marks_explicit_and_integral_matches_as_high_confidence() {
+        let explicit = match_release_title("One Piece T05", "One Piece", &[5]).unwrap();
+        assert_eq!(explicit.confidence, MatchConfidence::High);
+        assert_eq!(
+            explicit.reasons,
+            vec![MatchReason::SeriesTitle, MatchReason::ExplicitVolume]
+        );
+
+        let integral = match_release_title("One Piece Intégrale", "One Piece", &[1]).unwrap();
+        assert_eq!(integral.confidence, MatchConfidence::High);
+        assert_eq!(
+            integral.reasons,
+            vec![MatchReason::SeriesTitle, MatchReason::IntegralEdition]
+        );
+    }
+
+    #[test]
     fn integral_requires_a_series_match() {
         let matched = match_release_title("One Piece Intégrale", "One Piece", &[1, 2, 3]).unwrap();
         assert_eq!(matched.matched_missing_volumes, vec![1, 2, 3]);
