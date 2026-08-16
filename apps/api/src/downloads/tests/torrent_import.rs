@@ -246,28 +246,28 @@ fn format_priority_unknown_extension() {
     assert_eq!(format_priority("doc"), 4);
 }
 
-// ─── strip_accents ───────────────────────────────────────────────────
+// ─── fold_accents ────────────────────────────────────────────────────
 
 #[test]
-fn strip_accents_french() {
-    assert_eq!(strip_accents("les géants"), "les geants");
-    assert_eq!(strip_accents("astérix"), "asterix");
-    assert_eq!(strip_accents("à la maison"), "a la maison");
+fn fold_accents_french() {
+    assert_eq!(fold_accents("les géants"), "les geants");
+    assert_eq!(fold_accents("astérix"), "asterix");
+    assert_eq!(fold_accents("à la maison"), "a la maison");
 }
 
 #[test]
-fn strip_accents_special() {
-    assert_eq!(strip_accents("naïve"), "naive");
-    assert_eq!(strip_accents("über"), "uber");
-    assert_eq!(strip_accents("señor"), "senor");
-    assert_eq!(strip_accents("cœur"), "coeur");
-    assert_eq!(strip_accents("æther"), "aether");
+fn fold_accents_special() {
+    assert_eq!(fold_accents("naïve"), "naive");
+    assert_eq!(fold_accents("über"), "uber");
+    assert_eq!(fold_accents("señor"), "senor");
+    assert_eq!(fold_accents("cœur"), "coeur");
+    assert_eq!(fold_accents("æther"), "aether");
 }
 
 #[test]
-fn strip_accents_no_accents() {
-    assert_eq!(strip_accents("hello world"), "hello world");
-    assert_eq!(strip_accents(""), "");
+fn fold_accents_no_accents() {
+    assert_eq!(fold_accents("hello world"), "hello world");
+    assert_eq!(fold_accents(""), "");
 }
 
 // ─── collect_book_files (uses temp dirs) ─────────────────────────────

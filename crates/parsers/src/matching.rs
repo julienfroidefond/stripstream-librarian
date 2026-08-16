@@ -51,11 +51,10 @@ impl MatchReason {
     }
 }
 
-/// Normalize a title for comparison: lowercase, accents stripped and every
-/// separator collapsed to a single space.
-pub fn normalize_title(value: &str) -> String {
-    let mut normalized = String::with_capacity(value.len());
-    let mut previous_was_space = true;
+/// Fold common Latin diacritics while preserving case, punctuation and the
+/// structure of the original text. Non-Latin characters are kept unchanged.
+pub fn fold_accents(value: &str) -> String {
+    let mut folded = String::with_capacity(value.len());
 
     for c in value.chars() {
         let replacement = match c {
@@ -71,26 +70,40 @@ pub fn normalize_title(value: &str) -> String {
             'ÿ' | 'ý' | 'Ÿ' | 'Ý' => "y",
             'æ' | 'Æ' => "ae",
             'œ' | 'Œ' => "oe",
-            _ if c.is_alphanumeric() => {
-                if c.is_ascii() {
-                    normalized.push(c.to_ascii_lowercase());
-                } else {
-                    normalized.extend(c.to_lowercase());
-                }
-                previous_was_space = false;
+            _ => {
+                folded.push(c);
                 continue;
             }
-            _ => " ",
         };
-
-        if replacement == " " {
-            if !previous_was_space {
-                normalized.push(' ');
-                previous_was_space = true;
-            }
+        if c.is_uppercase() {
+            folded.extend(replacement.chars().flat_map(char::to_uppercase));
         } else {
-            normalized.push_str(replacement);
+            folded.push_str(replacement);
+        }
+    }
+
+    folded
+}
+
+/// Normalize a title for comparison: lowercase, accents stripped and every
+/// separator collapsed to a single space.
+pub fn normalize_title(value: &str) -> String {
+    let mut normalized = String::with_capacity(value.len());
+    let mut previous_was_space = true;
+
+    for c in fold_accents(value).chars() {
+        if c.is_alphanumeric() {
+            if c.is_ascii() {
+                normalized.push(c.to_ascii_lowercase());
+            } else {
+                normalized.extend(c.to_lowercase());
+            }
             previous_was_space = false;
+            continue;
+        }
+        if !previous_was_space {
+            normalized.push(' ');
+            previous_was_space = true;
         }
     }
 
@@ -379,6 +392,16 @@ mod tests {
     #[test]
     fn normalizes_accents_and_separators() {
         assert_eq!(normalize_title("L’Île-de minuit"), "l ile de minuit");
+    }
+
+    #[test]
+    fn folds_accents_without_changing_title_structure() {
+        assert_eq!(
+            fold_accents("L'Île et L’Œuvre — sous_le  vent"),
+            "L'Ile et L’OEuvre — sous_le  vent"
+        );
+        assert_eq!(fold_accents("cœur æther"), "coeur aether");
+        assert_eq!(fold_accents("東京"), "東京");
     }
 
     #[test]

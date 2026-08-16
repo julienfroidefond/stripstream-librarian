@@ -7,9 +7,9 @@ use std::time::SystemTime;
 
 pub mod matching;
 pub use matching::{
-    extract_series_name_from_filename, extract_series_name_from_release, is_integral_release,
-    match_release_title, match_title_volumes, normalize_title, title_matches_series,
-    MatchConfidence, MatchReason, ReleaseTitleMatch,
+    extract_series_name_from_filename, extract_series_name_from_release, fold_accents,
+    is_integral_release, match_release_title, match_title_volumes, normalize_title,
+    title_matches_series, MatchConfidence, MatchReason, ReleaseTitleMatch,
 };
 
 /// Extract a volume number from an external metadata title when it has an

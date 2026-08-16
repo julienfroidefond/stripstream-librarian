@@ -2,7 +2,7 @@ use sqlx::{PgPool, Row};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use parsers::{detect_format, extract_volumes, parse_metadata_fast};
+use parsers::{detect_format, extract_volumes, fold_accents, parse_metadata_fast};
 use stripstream_core::paths::{remap_libraries_path, unmap_libraries_path};
 
 use crate::books::rename::{
@@ -403,7 +403,7 @@ pub(super) async fn do_import(
 /// Find an existing directory in `root` whose name matches `series_name`
 /// case-insensitively and accent-insensitively (e.g. "les géants" matches "les geants").
 pub(super) fn find_existing_series_dir(root: &str, series_name: &str) -> Option<String> {
-    let target_norm = strip_accents(&series_name.to_lowercase());
+    let target_norm = fold_accents(&series_name.to_lowercase());
     let entries = std::fs::read_dir(root).ok()?;
     let mut best: Option<(String, bool)> = None; // (path, is_exact_case_match)
     for entry in entries.flatten() {
@@ -413,7 +413,7 @@ pub(super) fn find_existing_series_dir(root: &str, series_name: &str) -> Option<
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
         let name_lower = name_str.to_lowercase();
-        let name_norm = strip_accents(&name_lower);
+        let name_norm = fold_accents(&name_lower);
         if name_norm == target_norm {
             let path = entry.path().to_string_lossy().into_owned();
             let exact = name_lower == series_name.to_lowercase();
@@ -428,30 +428,6 @@ pub(super) fn find_existing_series_dir(root: &str, series_name: &str) -> Option<
         }
     }
     best.map(|(p, _)| p)
-}
-
-/// Remove diacritical marks from a string (é→e, à→a, ü→u, etc.)
-pub(super) fn strip_accents(s: &str) -> String {
-    use std::fmt::Write;
-    let mut result = String::with_capacity(s.len());
-    for c in s.chars() {
-        // Decompose the character and skip combining marks (U+0300..U+036F)
-        // Map common accented chars to their base letter
-        let _ = match c {
-            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' => result.write_char('a'),
-            'è' | 'é' | 'ê' | 'ë' => result.write_char('e'),
-            'ì' | 'í' | 'î' | 'ï' => result.write_char('i'),
-            'ò' | 'ó' | 'ô' | 'õ' | 'ö' => result.write_char('o'),
-            'ù' | 'ú' | 'û' | 'ü' => result.write_char('u'),
-            'ý' | 'ÿ' => result.write_char('y'),
-            'ñ' => result.write_char('n'),
-            'ç' => result.write_char('c'),
-            'æ' => result.write_str("ae"),
-            'œ' => result.write_str("oe"),
-            _ => result.write_char(c),
-        };
-    }
-    result
 }
 
 // ─── Format deduplication ─────────────────────────────────────────────────────
