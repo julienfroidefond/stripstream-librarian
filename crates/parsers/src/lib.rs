@@ -87,12 +87,22 @@ pub fn detect_format(path: &Path) -> Option<BookFormat> {
     }
 }
 
-/// Extract all volume numbers from a title string.
+/// Internal representation shared by the public volume projections.
+///
+/// It keeps the source title alongside the deduplicated numbers so title
+/// cleanup can use the same parsing entry point without affecting consumers
+/// that only need volumes.
+struct ParsedVolumeMarkers<'a> {
+    title: &'a str,
+    volumes: Vec<i32>,
+}
+
+/// Parse individual and range volume markers from a title or filename.
 ///
 /// Handles individual volumes (T01, Tome 01, Vol. 01, v01, #01) and also
 /// **range packs** like `T01.T15`, `[T001.T104]`, `T01-T15`, `Tome 01 à Tome 15`
 /// — the range is expanded so every volume in [start..=end] is returned.
-pub fn extract_volumes(title: &str) -> Vec<i32> {
+fn parse_volume_markers(title: &str) -> ParsedVolumeMarkers<'_> {
     let lower = title.to_lowercase();
     let chars: Vec<char> = lower.chars().collect();
     let mut volumes = Vec::new();
@@ -411,7 +421,12 @@ pub fn extract_volumes(title: &str) -> Vec<i32> {
         }
     }
 
-    volumes
+    ParsedVolumeMarkers { title, volumes }
+}
+
+/// Extract all volume numbers from a title string.
+pub fn extract_volumes(title: &str) -> Vec<i32> {
+    parse_volume_markers(title).volumes
 }
 
 /// Read a bare number (no prefix) at `pos`. Returns `(number, position_after_last_digit)`.
@@ -2104,32 +2119,43 @@ pub fn convert_cbr_to_cbz(cbr_path: &Path) -> Result<PathBuf> {
 
 #[allow(dead_code)]
 fn clean_title(filename: &str) -> String {
-    let cleaned = regex::Regex::new(r"(?i)\s*T\d+\s*")
-        .ok()
-        .map(|re| re.replace_all(filename, " ").to_string())
-        .unwrap_or_else(|| filename.to_string());
+    parse_volume_markers(filename).cleaned_title()
+}
 
-    let cleaned = regex::Regex::new(r"(?i)\s*Vol\.?\s*\d+\s*")
-        .ok()
-        .map(|re| re.replace_all(&cleaned, " ").to_string())
-        .unwrap_or(cleaned);
+impl ParsedVolumeMarkers<'_> {
+    /// Remove the marker forms historically stripped from display titles.
+    ///
+    /// This intentionally keeps its conservative legacy cleanup policy: not
+    /// every number recognized for file matching is suitable for removal from
+    /// a display title.
+    fn cleaned_title(&self) -> String {
+        let cleaned = regex::Regex::new(r"(?i)\s*T\d+\s*")
+            .ok()
+            .map(|re| re.replace_all(self.title, " ").to_string())
+            .unwrap_or_else(|| self.title.to_string());
 
-    let cleaned = regex::Regex::new(r"(?i)\s*Volume\s*\d+\s*")
-        .ok()
-        .map(|re| re.replace_all(&cleaned, " ").to_string())
-        .unwrap_or(cleaned);
+        let cleaned = regex::Regex::new(r"(?i)\s*Vol\.?\s*\d+\s*")
+            .ok()
+            .map(|re| re.replace_all(&cleaned, " ").to_string())
+            .unwrap_or(cleaned);
 
-    let cleaned = regex::Regex::new(r"#\d+")
-        .ok()
-        .map(|re| re.replace_all(&cleaned, " ").to_string())
-        .unwrap_or(cleaned);
+        let cleaned = regex::Regex::new(r"(?i)\s*Volume\s*\d+\s*")
+            .ok()
+            .map(|re| re.replace_all(&cleaned, " ").to_string())
+            .unwrap_or(cleaned);
 
-    let cleaned = regex::Regex::new(r"-\s*\d+\s*$")
-        .ok()
-        .map(|re| re.replace_all(&cleaned, " ").to_string())
-        .unwrap_or(cleaned);
+        let cleaned = regex::Regex::new(r"#\d+")
+            .ok()
+            .map(|re| re.replace_all(&cleaned, " ").to_string())
+            .unwrap_or(cleaned);
 
-    cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
+        let cleaned = regex::Regex::new(r"-\s*\d+\s*$")
+            .ok()
+            .map(|re| re.replace_all(&cleaned, " ").to_string())
+            .unwrap_or(cleaned);
+
+        cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
 }
 
 #[cfg(test)]
@@ -2152,6 +2178,26 @@ mod tests {
         assert_eq!(extract_metadata_volume("One Piece 12"), None);
         assert_eq!(extract_metadata_volume("Edition 2024"), None);
         assert_eq!(extract_metadata_volume("One Piece - Intégrale"), None);
+    }
+
+    #[test]
+    fn volume_projections_share_a_deduplicated_parse() {
+        let parsed = parse_volume_markers("Series T01-T03 T02");
+
+        assert_eq!(parsed.volumes, vec![1, 2, 3]);
+        assert_eq!(extract_volume(parsed.title), Some(1));
+        assert_eq!(extract_volumes(parsed.title), parsed.volumes);
+    }
+
+    #[test]
+    fn cleaning_a_title_does_not_create_a_volume_marker() {
+        let title = "Series Vol. 02";
+        let parsed = parse_volume_markers(title);
+        let cleaned = parsed.cleaned_title();
+
+        assert!(extract_volumes(&cleaned)
+            .into_iter()
+            .all(|volume| parsed.volumes.contains(&volume)));
     }
 
     #[test]
