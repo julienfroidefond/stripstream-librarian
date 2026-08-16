@@ -9,6 +9,46 @@ pub struct ReleaseTitleMatch {
     /// All explicit volumes found in the title. Empty for integral releases.
     pub all_volumes: Vec<i32>,
     pub is_integral: bool,
+    pub confidence: MatchConfidence,
+    pub reasons: Vec<MatchReason>,
+}
+
+/// Confidence assigned to a title match before any source-specific policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchConfidence {
+    High,
+    Review,
+}
+
+impl MatchConfidence {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::High => "high",
+            Self::Review => "review",
+        }
+    }
+}
+
+/// Evidence used when qualifying a release title.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchReason {
+    SeriesTitle,
+    ExplicitVolume,
+    IntegralEdition,
+    ShortSeriesTitle,
+    AmbiguousVolumeNumber,
+}
+
+impl MatchReason {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SeriesTitle => "series_title",
+            Self::ExplicitVolume => "explicit_volume",
+            Self::IntegralEdition => "integral_edition",
+            Self::ShortSeriesTitle => "short_series_title",
+            Self::AmbiguousVolumeNumber => "ambiguous_volume_number",
+        }
+    }
 }
 
 /// Normalize a title for comparison: lowercase, accents stripped and every
@@ -122,6 +162,47 @@ pub fn match_release_title(
         matched_missing_volumes,
         all_volumes,
         is_integral: is_integral_release(candidate_title),
+        confidence: match_confidence(candidate_title, series_name),
+        reasons: match_reasons(candidate_title, series_name),
+    })
+}
+
+fn match_confidence(candidate_title: &str, series_name: &str) -> MatchConfidence {
+    if normalize_title(series_name).split_whitespace().count() == 1
+        && normalize_title(series_name).chars().count() <= 4
+        || !has_explicit_volume_marker(candidate_title) && !is_integral_release(candidate_title)
+    {
+        MatchConfidence::Review
+    } else {
+        MatchConfidence::High
+    }
+}
+
+fn match_reasons(candidate_title: &str, series_name: &str) -> Vec<MatchReason> {
+    let mut reasons = vec![MatchReason::SeriesTitle];
+    if is_integral_release(candidate_title) {
+        reasons.push(MatchReason::IntegralEdition);
+    } else if has_explicit_volume_marker(candidate_title) {
+        reasons.push(MatchReason::ExplicitVolume);
+    } else {
+        reasons.push(MatchReason::AmbiguousVolumeNumber);
+    }
+    if normalize_title(series_name).split_whitespace().count() == 1
+        && normalize_title(series_name).chars().count() <= 4
+    {
+        reasons.push(MatchReason::ShortSeriesTitle);
+    }
+    reasons
+}
+
+fn has_explicit_volume_marker(title: &str) -> bool {
+    let normalized = normalize_title(title);
+    normalized.split_whitespace().any(|word| {
+        matches!(
+            word,
+            "tome" | "vol" | "volume" | "chapitre" | "chapter" | "ch"
+        ) || (word.starts_with('t') && word[1..].chars().all(|c| c.is_ascii_digit()))
+            || (word.starts_with("vol") && word[3..].chars().all(|c| c.is_ascii_digit()))
     })
 }
 
@@ -335,6 +416,16 @@ mod tests {
     #[test]
     fn rejects_a_generic_title_from_another_series() {
         assert_eq!(match_release_title("Saga T05", "One Piece", &[5]), None);
+    }
+
+    #[test]
+    fn marks_short_series_and_bare_numbers_for_review() {
+        let matched = match_release_title("Saga 05", "Saga", &[5]).unwrap();
+        assert_eq!(matched.confidence, MatchConfidence::Review);
+        assert!(matched.reasons.contains(&MatchReason::ShortSeriesTitle));
+        assert!(matched
+            .reasons
+            .contains(&MatchReason::AmbiguousVolumeNumber));
     }
 
     #[test]

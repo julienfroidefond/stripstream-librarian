@@ -37,6 +37,7 @@ export function QbittorrentDownloadButton({
   expectedVolumes,
   allVolumes,
   alwaysShowReplace,
+  requiresReview = false,
 }: {
   downloadUrl: string;
   releaseId: string;
@@ -46,13 +47,15 @@ export function QbittorrentDownloadButton({
   allVolumes?: number[];
   /** Show replace button even when allVolumes == expectedVolumes (e.g. in Prowlarr search modal) */
   alwaysShowReplace?: boolean;
+  /** Require a confirmation before downloading a weak title match. */
+  requiresReview?: boolean;
 }) {
   const { t } = useTranslation();
   const { configured, onDownloadStarted } = useContext(QbConfigContext);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmMode, setConfirmMode] = useState<"replace" | "review" | null>(null);
 
   if (!configured) return null;
 
@@ -97,7 +100,7 @@ export function QbittorrentDownloadButton({
       <div className="inline-flex items-center gap-0.5">
         <button
           type="button"
-          onClick={() => handleSend()}
+          onClick={() => requiresReview ? setConfirmMode("review") : handleSend()}
           disabled={sending}
           className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors disabled:opacity-50 shrink-0 ${
             sent
@@ -122,7 +125,7 @@ export function QbittorrentDownloadButton({
         {showReplaceButton && (
           <button
             type="button"
-            onClick={() => setShowConfirm(true)}
+            onClick={() => setConfirmMode("replace")}
             disabled={sending}
             className="inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors disabled:opacity-50 shrink-0 text-warning hover:bg-warning/10"
             title={t("prowlarr.replaceAndDownload")}
@@ -132,25 +135,31 @@ export function QbittorrentDownloadButton({
         )}
       </div>
 
-      {showConfirm && createPortal(
+      {confirmMode && createPortal(
         <>
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50" onClick={() => setShowConfirm(false)} />
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50" onClick={() => setConfirmMode(null)} />
           <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
             <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
               <div className="p-6">
                 <h3 className="text-lg font-semibold text-foreground mb-2">
-                  {t("prowlarr.replaceAndDownload")}
+                  {confirmMode === "review" ? "Correspondance à vérifier" : t("prowlarr.replaceAndDownload")}
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  {t("prowlarr.confirmReplace")}
+                  {confirmMode === "review"
+                    ? "Le titre ou le numéro de tome est ambigu. Confirmer l’envoi à qBittorrent ?"
+                    : t("prowlarr.confirmReplace")}
                 </p>
               </div>
               <div className="flex justify-end gap-2 px-6 pb-6">
-                <Button variant="outline" size="sm" onClick={() => setShowConfirm(false)}>
+                <Button variant="outline" size="sm" onClick={() => setConfirmMode(null)}>
                   {t("common.cancel")}
                 </Button>
-                <Button variant="destructive" size="sm" onClick={() => { setShowConfirm(false); handleSend(allVolumes, true); }}>
-                  {t("prowlarr.replaceAndDownload")}
+                <Button variant={confirmMode === "review" ? "default" : "destructive"} size="sm" onClick={() => {
+                  const mode = confirmMode;
+                  setConfirmMode(null);
+                  if (mode === "review") handleSend(); else handleSend(allVolumes, true);
+                }}>
+                  {confirmMode === "review" ? t("prowlarr.sendToQbittorrent") : t("prowlarr.replaceAndDownload")}
                 </Button>
               </div>
             </div>

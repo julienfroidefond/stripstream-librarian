@@ -178,7 +178,7 @@ fn match_missing_volumes_maps_correctly() {
             title: None,
         },
     ];
-    let result = match_missing_volumes(releases, &missing);
+    let result = match_missing_volumes(releases, "Naruto", &missing);
     assert_eq!(result.len(), 2);
     assert_eq!(result[0].matched_missing_volumes, Some(vec![5]));
     assert!(result[1].matched_missing_volumes.is_none());
@@ -205,7 +205,7 @@ fn match_missing_volumes_with_none_volume() {
         info_url: None,
         categories: None,
     }];
-    let result = match_missing_volumes(releases, &missing);
+    let result = match_missing_volumes(releases, "Naruto", &missing);
     // No missing_numbers to match against, so matched should be None
     assert!(result[0].matched_missing_volumes.is_none());
 }
@@ -252,9 +252,16 @@ async fn wiremock_search_returns_releases_with_correct_parsing() {
         .mount(&server)
         .await;
 
-    let result = do_prowlarr_search(&server.uri(), "test-key", "One Piece", &[7030], None)
-        .await
-        .expect("search should succeed");
+    let result = do_prowlarr_search(
+        &server.uri(),
+        "test-key",
+        "One Piece",
+        "One Piece",
+        &[7030],
+        None,
+    )
+    .await
+    .expect("search should succeed");
 
     assert_eq!(result.results.len(), 2);
     assert_eq!(result.query, "One Piece");
@@ -314,6 +321,7 @@ async fn wiremock_search_with_missing_volumes_matching() {
         &server.uri(),
         "test-key",
         "One Piece",
+        "One Piece",
         &[7030],
         Some(&missing),
     )
@@ -348,6 +356,7 @@ async fn wiremock_search_empty_results() {
     let result = do_prowlarr_search(
         &server.uri(),
         "test-key",
+        "Nonexistent Series",
         "Nonexistent Series",
         &[7030, 7020],
         None,
@@ -414,7 +423,7 @@ async fn wiremock_search_http_500_error() {
         .mount(&server)
         .await;
 
-    let err = do_prowlarr_search(&server.uri(), "test-key", "query", &[7030], None)
+    let err = do_prowlarr_search(&server.uri(), "test-key", "query", "query", &[7030], None)
         .await
         .unwrap_err();
 
@@ -435,7 +444,7 @@ async fn wiremock_search_invalid_json_response() {
         .mount(&server)
         .await;
 
-    let err = do_prowlarr_search(&server.uri(), "test-key", "query", &[7030], None)
+    let err = do_prowlarr_search(&server.uri(), "test-key", "query", "query", &[7030], None)
         .await
         .unwrap_err();
 
@@ -480,6 +489,7 @@ async fn wiremock_search_with_integral_release_matching() {
     let result = do_prowlarr_search(
         &server.uri(),
         "test-key",
+        "One Piece",
         "One Piece",
         &[7030],
         Some(&missing),

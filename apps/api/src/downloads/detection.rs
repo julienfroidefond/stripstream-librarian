@@ -67,6 +67,16 @@ pub struct AvailableReleaseDto {
     /// When this release was first detected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detected_at: Option<String>,
+    /// `high` can be automated; `review` has weaker title or volume evidence.
+    #[serde(default = "default_match_confidence")]
+    pub match_confidence: String,
+    /// Machine-readable evidence used by the shared title matcher.
+    #[serde(default)]
+    pub match_reasons: Vec<String>,
+}
+
+fn default_match_confidence() -> String {
+    "high".to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -1207,6 +1217,12 @@ async fn search_prowlarr_for_series(
                     all_volumes: matched.all_volumes,
                     has_failed: false,
                     detected_at: None,
+                    match_confidence: matched.confidence.as_str().to_string(),
+                    match_reasons: matched
+                        .reasons
+                        .into_iter()
+                        .map(|reason| reason.as_str().to_string())
+                        .collect(),
                 })
             } else {
                 None

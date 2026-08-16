@@ -9,7 +9,7 @@ pub mod matching;
 pub use matching::{
     extract_series_name_from_filename, extract_series_name_from_release, is_integral_release,
     match_release_title, match_title_volumes, normalize_title, title_matches_series,
-    ReleaseTitleMatch,
+    MatchConfidence, MatchReason, ReleaseTitleMatch,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

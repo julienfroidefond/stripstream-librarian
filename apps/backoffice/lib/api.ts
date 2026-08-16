@@ -1410,6 +1410,8 @@ export type AvailableReleaseDto = {
   all_volumes: number[];
   has_failed?: boolean;
   detected_at?: string;
+  match_confidence?: "high" | "review";
+  match_reasons?: string[];
 };
 
 export type DownloadDetectionReportDto = {
@@ -1530,6 +1532,8 @@ export type ProwlarrRelease = {
   categories: ProwlarrCategory[] | null;
   matchedMissingVolumes: number[] | null;
   allVolumes?: number[];
+  matchConfidence?: "high" | "review";
+  matchReasons?: string[];
 };
 
 export type ProwlarrSearchResponse = {

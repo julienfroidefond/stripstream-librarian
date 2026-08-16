@@ -200,6 +200,11 @@ export function DownloadDetectionResultsCard({ results, libraryId, qbConfigured,
                           <span className="text-[10px] text-muted-foreground">
                             {(release.size / 1024 / 1024).toFixed(0)} MB
                           </span>
+                          {release.match_confidence === "review" && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning/20 text-warning font-medium" title={release.match_reasons?.join(", ")}>
+                              À vérifier
+                            </span>
+                          )}
                           <div className="flex flex-wrap items-center gap-1">
                             {compressVolumes(release.matched_missing_volumes).map((range) => (
                               <span key={range} className="text-[10px] px-1.5 py-0.5 rounded-full bg-success/20 text-success font-medium">
@@ -217,6 +222,7 @@ export function DownloadDetectionResultsCard({ results, libraryId, qbConfigured,
                           seriesName={r.series_name}
                           expectedVolumes={release.matched_missing_volumes}
                           allVolumes={release.all_volumes}
+                          requiresReview={release.match_confidence === "review"}
                         />
                       )}
                     </div>

@@ -305,6 +305,11 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                                   ))}
                                 </div>
                               )}
+                              {release.matchConfidence === "review" && (
+                                <span className="inline-flex mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-warning/20 text-warning" title={release.matchReasons?.join(", ")}>
+                                  À vérifier
+                                </span>
+                              )}
                             </td>
                             <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
                               {release.indexer || "—"}
@@ -339,6 +344,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                                     expectedVolumes={release.matchedMissingVolumes ?? release.allVolumes ?? defaultExpectedVolumes}
                                     allVolumes={release.allVolumes}
                                     alwaysShowReplace
+                                    requiresReview={release.matchConfidence === "review"}
                                   />
                                 )}
                                 {release.infoUrl && (

@@ -1060,6 +1060,11 @@ export function AvailableDownloadsSection({
                       {source.release.has_failed && (
                         <span className="px-1.5 py-px rounded bg-destructive/20 text-destructive font-medium shrink-0" title={t("downloads.failedBefore", { count: 1 })}>!</span>
                       )}
+                      {source.release.match_confidence === "review" && (
+                        <span className="px-1.5 py-px rounded bg-warning/20 text-warning font-medium shrink-0" title={source.release.match_reasons?.join(", ")}>
+                          À vérifier
+                        </span>
+                      )}
                       <span className="px-1.5 py-px rounded bg-primary/10 text-primary font-medium shrink-0">Prowlarr</span>
                       <div className="flex items-center gap-1 shrink-0">
                         {compressVolumes(source.release.matched_missing_volumes).map(range => (
@@ -1085,6 +1090,7 @@ export function AvailableDownloadsSection({
                             seriesName={r.series_name}
                             expectedVolumes={source.release.matched_missing_volumes}
                             allVolumes={source.release.all_volumes}
+                            requiresReview={source.release.match_confidence === "review"}
                           />
                         )}
                         <button

@@ -4,7 +4,7 @@ use sqlx::Row;
 use utoipa::ToSchema;
 
 use crate::{error::ApiError, state::AppState};
-use parsers::{extract_volumes, match_title_volumes};
+use parsers::{extract_volumes, match_release_title};
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -58,6 +58,10 @@ pub struct ProwlarrRelease {
     /// All volumes extracted from the release title (not just missing ones).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub all_volumes: Vec<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub match_confidence: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub match_reasons: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -126,6 +130,7 @@ async fn load_prowlarr_config(pool: &sqlx::PgPool) -> Result<(String, String, Ve
 /// Match releases against missing volume numbers.
 fn match_missing_volumes(
     releases: Vec<ProwlarrRawRelease>,
+    series_name: &str,
     missing: &[MissingVolumeInput],
 ) -> Vec<ProwlarrRelease> {
     let missing_numbers: Vec<i32> = missing.iter().filter_map(|m| m.volume_number).collect();
@@ -133,12 +138,22 @@ fn match_missing_volumes(
     releases
         .into_iter()
         .map(|r| {
-            let (matched_vols, all_volumes) = match_title_volumes(&r.title, &missing_numbers);
-            let matched = if matched_vols.is_empty() {
-                None
-            } else {
-                Some(matched_vols)
-            };
+            let title_match = match_release_title(&r.title, series_name, &missing_numbers);
+            let (matched, all_volumes, match_confidence, match_reasons) = title_match.map_or_else(
+                || (None, extract_volumes(&r.title), None, vec![]),
+                |matched| {
+                    (
+                        Some(matched.matched_missing_volumes),
+                        matched.all_volumes,
+                        Some(matched.confidence.as_str().to_string()),
+                        matched
+                            .reasons
+                            .into_iter()
+                            .map(|reason| reason.as_str().to_string())
+                            .collect(),
+                    )
+                },
+            );
 
             ProwlarrRelease {
                 guid: r.guid,
@@ -154,6 +169,8 @@ fn match_missing_volumes(
                 categories: r.categories,
                 matched_missing_volumes: matched,
                 all_volumes,
+                match_confidence,
+                match_reasons,
             }
         })
         .collect()
@@ -168,6 +185,7 @@ async fn do_prowlarr_search(
     base_url: &str,
     api_key: &str,
     query: &str,
+    series_name: &str,
     categories: &[i32],
     missing_volumes: Option<&[MissingVolumeInput]>,
 ) -> Result<ProwlarrSearchResponse, ApiError> {
@@ -233,7 +251,7 @@ async fn do_prowlarr_search(
     );
 
     let results = if let Some(missing) = missing_volumes {
-        match_missing_volumes(raw_releases, missing)
+        match_missing_volumes(raw_releases, series_name, missing)
     } else {
         raw_releases
             .into_iter()
@@ -253,6 +271,8 @@ async fn do_prowlarr_search(
                     categories: r.categories,
                     matched_missing_volumes: None,
                     all_volumes,
+                    match_confidence: None,
+                    match_reasons: vec![],
                 }
             })
             .collect()
@@ -339,6 +359,7 @@ pub async fn search_prowlarr(
         &url,
         &api_key,
         &query,
+        &body.series_name,
         &categories,
         body.missing_volumes.as_deref(),
     )
