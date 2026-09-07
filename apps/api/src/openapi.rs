@@ -21,6 +21,8 @@ use utoipa::OpenApi;
         crate::series::provider_statuses,
         crate::series::get_related_series,
         crate::series::get_recommendations,
+        crate::series::list_favorites,
+        crate::series::is_favorite,
         crate::reading::progress::get_reading_progress,
         crate::reading::progress::update_reading_progress,
         crate::reading::progress::mark_series_read,

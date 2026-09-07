@@ -1,5 +1,6 @@
 pub mod archive;
 pub mod create;
+pub mod favorites;
 pub(crate) mod helpers;
 pub mod list;
 pub mod merge;
@@ -13,6 +14,7 @@ pub mod update;
 
 pub use archive::*;
 pub use create::*;
+pub use favorites::*;
 pub(crate) use helpers::{get_or_create_series, resolve_library_id};
 pub use list::*;
 pub use merge::*;
