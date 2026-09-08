@@ -22,7 +22,7 @@ jobs:
           echo "REPO_DIR=$REPO_DIR" >> "$GITHUB_ENV"
           git clone --quiet --depth=2 \
             -c "http.extraheader=Authorization: Bearer ${GITHUB_TOKEN}" \
-            "${{ github.server_url }}/${{ github.repository }}.git" \
+            "http://127.0.0.1:4010/${{ github.repository }}.git" \
             "$REPO_DIR"
           v=$(grep '^version = ' "$REPO_DIR/Cargo.toml" | head -1 | sed 's/version = "\(.*\)"/\1/')
           echo "VERSION=$v" >> "$GITHUB_ENV"
