@@ -1101,7 +1101,7 @@ pub async fn add_source(
     let library_id = body
         .library_id
         .as_deref()
-        .map(|s| Uuid::parse_str(s))
+        .map(Uuid::parse_str)
         .transpose()
         .map_err(|_| ApiError::bad_request("Invalid library_id"))?;
 
@@ -1384,6 +1384,7 @@ async fn insert_document_message(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn sync_one_source(
     client: &grammers_client::Client,
     pool: &sqlx::PgPool,
@@ -1833,8 +1834,7 @@ pub async fn download_book(
     let override_lib = body
         .library_id
         .as_deref()
-        .map(|s| Uuid::parse_str(s).ok())
-        .flatten();
+        .and_then(|s| Uuid::parse_str(s).ok());
 
     let row = sqlx::query(
         "SELECT b.source_id, b.message_id, b.filename, b.status, b.series_name, \
@@ -2034,7 +2034,7 @@ async fn do_download(
             let mut iter = client.iter_download(&downloadable);
             let mut bytes_written: i64 = 0;
             let mut last_db_update: i64 = 0;
-            while let Some(chunk) = iter.next().await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))? {
+            while let Some(chunk) = iter.next().await.map_err(std::io::Error::other)? {
                 file.write_all(&chunk).await?;
                 bytes_written += chunk.len() as i64;
                 if bytes_written - last_db_update >= PROGRESS_UPDATE_BYTES {

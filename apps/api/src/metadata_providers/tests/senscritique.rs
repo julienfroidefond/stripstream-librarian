@@ -106,7 +106,7 @@ fn first_volume_product_selects_tome_one() {
 
 // ─── Wiremock integration tests ─────────────────────────────────────
 
-use wiremock::matchers::{method, path};
+use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn mock_autocomplete_response() -> serde_json::Value {
@@ -163,16 +163,6 @@ fn mock_autocomplete_response() -> serde_json::Value {
                         }
                     }
                 ]
-            }
-        }
-    })
-}
-
-fn mock_latest_dates_response() -> serde_json::Value {
-    serde_json::json!({
-        "data": {
-            "f_2430": {
-                "items": [{ "dateRelease": "2025-12-05" }]
             }
         }
     })

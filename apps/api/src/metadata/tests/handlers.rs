@@ -487,7 +487,7 @@ async fn setup_series_with_link_and_hs(
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn missing_books_total_local_excludes_hs(pool: sqlx::PgPool) {
     // 3 regular + 2 HS = 5 books, but total_local should be 3
-    let (_lib_id, series_id, link_id) =
+    let (_lib_id, series_id, _link_id) =
         setup_series_with_link_and_hs(&pool, Some(5), 3, 2, 5).await;
 
     let total_local: i64 = sqlx::query_scalar(

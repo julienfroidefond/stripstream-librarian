@@ -462,7 +462,7 @@ fn extract_info_value<'a>(text: &'a str, label: &str) -> Option<&'a str> {
     let patterns = [
         format!("{} :", label),
         format!("{}:", label),
-        format!("{} :", &label.to_lowercase()),
+        format!("{} :", label.to_lowercase()),
     ];
     for pat in &patterns {
         if let Some(pos) = text.find(pat.as_str()) {

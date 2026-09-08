@@ -280,15 +280,15 @@ pub(crate) async fn process_rss_poll(
                         seeders: r.seeders,
                         matched_missing_volumes: matched.matched_missing_volumes,
                         all_volumes: matched.all_volumes,
-                    has_failed: false,
-                    detected_at: Some(now_str.clone()),
-                    match_confidence: matched.confidence.as_str().to_string(),
-                    match_reasons: matched
-                        .reasons
-                        .into_iter()
-                        .map(|reason| reason.as_str().to_string())
-                        .collect(),
-                })
+                        has_failed: false,
+                        detected_at: Some(now_str.clone()),
+                        match_confidence: matched.confidence.as_str().to_string(),
+                        match_reasons: matched
+                            .reasons
+                            .into_iter()
+                            .map(|reason| reason.as_str().to_string())
+                            .collect(),
+                    })
                 } else {
                     None
                 }

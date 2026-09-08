@@ -372,14 +372,6 @@ async fn main() -> anyhow::Result<()> {
             delete(integrations::anilist::unlink_series_by_id),
         )
         .route(
-            "/series/:series_id/rating",
-            axum::routing::put(series::set_series_rating).delete(series::delete_series_rating),
-        )
-        .route(
-            "/series/:series_id/favorite",
-            axum::routing::put(series::add_favorite).delete(series::remove_favorite),
-        )
-        .route(
             "/metadata/search",
             axum::routing::post(metadata::search_metadata),
         )
@@ -585,12 +577,21 @@ async fn main() -> anyhow::Result<()> {
             "/series/:series_id/ratings",
             get(series::get_series_ratings),
         )
+        .route(
+            "/series/:series_id/rating",
+            axum::routing::put(series::set_series_rating).delete(series::delete_series_rating),
+        )
         .route("/series/ongoing", get(series::ongoing_series))
         .route("/series/statuses", get(series::series_statuses))
         .route("/series/genres", get(series::series_genres))
         .route("/series/recommendations", get(series::get_recommendations))
         .route("/favorites", get(series::list_favorites))
-        .route("/series/:series_id/favorite", get(series::is_favorite))
+        .route(
+            "/series/:series_id/favorite",
+            get(series::is_favorite)
+                .put(series::add_favorite)
+                .delete(series::remove_favorite),
+        )
         .route("/series/provider-statuses", get(series::provider_statuses))
         .route(
             "/series/mark-read",

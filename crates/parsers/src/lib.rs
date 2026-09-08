@@ -369,8 +369,7 @@ fn parse_volume_markers(title: &str) -> ParsedVolumeMarkers<'_> {
                         j += 1;
                     }
                     let digit_count = j - digit_start;
-                    if digit_count >= 1
-                        && digit_count <= 3
+                    if (1..=3).contains(&digit_count)
                         && j < chars.len()
                         && (chars[j] == '_' || chars[j] == '@')
                     {
@@ -399,7 +398,7 @@ fn parse_volume_markers(title: &str) -> ParsedVolumeMarkers<'_> {
                         j += 1;
                     }
                     let digit_count = j - digit_start;
-                    if digit_count >= 1 && digit_count <= 3 && j < chars.len() {
+                    if (1..=3).contains(&digit_count) && j < chars.len() {
                         let after_nn = chars[j];
                         let valid = after_nn == '@'
                             || (after_nn == ' '
@@ -520,7 +519,7 @@ fn is_oneshot_folder(name: &str) -> bool {
         "one shots",
         "one shot",
     ];
-    PATTERNS.iter().any(|p| stripped == *p)
+    PATTERNS.contains(&stripped)
 }
 
 /// Check if a directory name is an HS/special subfolder (not a series).
@@ -1462,8 +1461,9 @@ pub fn extract_page(
 
 /// Cache of sorted image names per archive path. Avoids re-listing and sorting on every page request.
 /// Keyed by (path, mtime) so the cache invalidates automatically when the file is replaced.
-static CBZ_INDEX_CACHE: OnceLock<Mutex<HashMap<PathBuf, (SystemTime, Vec<String>)>>> =
-    OnceLock::new();
+type ArchiveIndexCache = OnceLock<Mutex<HashMap<PathBuf, (SystemTime, Vec<String>)>>>;
+
+static CBZ_INDEX_CACHE: ArchiveIndexCache = OnceLock::new();
 
 fn cbz_index_cache() -> &'static Mutex<HashMap<PathBuf, (SystemTime, Vec<String>)>> {
     CBZ_INDEX_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -1663,8 +1663,7 @@ fn render_pdf_page_n(path: &Path, page_number: u32, width: u32) -> Result<Vec<u8
 
 /// Cache of ordered image paths per EPUB file. Avoids re-parsing OPF/XHTML on every page request.
 /// Keyed by (path, mtime) so the cache invalidates automatically when the file is replaced.
-static EPUB_INDEX_CACHE: OnceLock<Mutex<HashMap<PathBuf, (SystemTime, Vec<String>)>>> =
-    OnceLock::new();
+static EPUB_INDEX_CACHE: ArchiveIndexCache = OnceLock::new();
 
 fn epub_index_cache() -> &'static Mutex<HashMap<PathBuf, (SystemTime, Vec<String>)>> {
     EPUB_INDEX_CACHE.get_or_init(|| Mutex::new(HashMap::new()))

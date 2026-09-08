@@ -213,7 +213,7 @@ pub async fn sync_komga_read_books(
     }
 
     // Deduplicate by ID
-    matched_entries.sort_by(|a, b| a.0.cmp(&b.0));
+    matched_entries.sort_by_key(|entry| entry.0);
     matched_entries.dedup_by(|a, b| a.0 == b.0);
 
     let matched_ids: Vec<Uuid> = matched_entries.iter().map(|(id, _)| *id).collect();
