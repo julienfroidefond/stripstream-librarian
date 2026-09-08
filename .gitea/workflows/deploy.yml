@@ -20,7 +20,7 @@ jobs:
         run: |
           REPO_DIR="$HOME/build-${{ github.run_id }}"
           echo "REPO_DIR=$REPO_DIR" >> "$GITHUB_ENV"
-          git clone --quiet --depth=2 \
+          git clone --quiet --depth=1 \
             -c "http.extraheader=Authorization: Bearer ${GITHUB_TOKEN}" \
             "http://127.0.0.1:4010/${{ github.repository }}.git" \
             "$REPO_DIR"
