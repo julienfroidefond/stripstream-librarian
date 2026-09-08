@@ -47,7 +47,6 @@ pub(crate) async fn refresh_link(
 
     let config = super::config::load_provider_config(pool, provider_name).await;
 
-    let mut series_changes: Vec<FieldDiff> = Vec::new();
     let mut book_changes: Vec<BookDiff> = Vec::new();
 
     // -- Series-level refresh --
@@ -82,7 +81,7 @@ pub(crate) async fn refresh_link(
     .map_err(|e| e.to_string())?;
 
     // Diff + sync series metadata
-    series_changes = sync_series_with_diff(pool, library_id, series_name, &candidate).await?;
+    let series_changes = sync_series_with_diff(pool, library_id, series_name, &candidate).await?;
 
     // -- Book-level refresh --
     let books = provider

@@ -391,13 +391,13 @@ fn format_event(event: &NotificationEvent) -> String {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let duration = format_duration(*duration_seconds);
             let mut lines = vec![
-                format!("✅ <b>Scan completed</b>"),
+                "✅ <b>Scan completed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("🏷 <b>Type:</b> {job_type}"),
                 format!("⏱ <b>Duration:</b> {duration}"),
                 String::new(),
-                format!("📊 <b>Results</b>"),
+                "📊 <b>Results</b>".to_string(),
                 format!("  📗 New books: <b>{}</b>", stats.indexed_files),
                 format!("  📚 New series: <b>{}</b>", stats.new_series),
                 format!("  🔎 Files scanned: <b>{}</b>", stats.scanned_files),
@@ -559,7 +559,7 @@ fn format_event(event: &NotificationEvent) -> String {
             ..
         } => {
             let mut lines = vec![
-                format!("✅ <b>Metadata linked</b>"),
+                "✅ <b>Metadata linked</b>".to_string(),
                 String::new(),
                 format!("📚 <b>Series:</b> {series_name}"),
                 format!("🔗 <b>Provider:</b> {provider}"),
@@ -589,7 +589,7 @@ fn format_event(event: &NotificationEvent) -> String {
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let mut lines = vec![
-                format!("📊 <b>Metadata batch completed</b>"),
+                "📊 <b>Metadata batch completed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("📋 <b>Processed:</b> {processed}/{total_series} series"),
@@ -659,7 +659,7 @@ fn format_event(event: &NotificationEvent) -> String {
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let mut lines = vec![
-                format!("🔄 <b>Metadata refresh completed</b>"),
+                "🔄 <b>Metadata refresh completed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("📝 {refreshed} series refreshed, {unchanged} unchanged"),
@@ -705,7 +705,7 @@ fn format_event(event: &NotificationEvent) -> String {
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let mut lines = vec![
-                format!("✅ <b>Reading status match completed</b>"),
+                "✅ <b>Reading status match completed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("🔗 Linked: <b>{linked}</b> / <b>{total_series}</b> series"),
@@ -760,7 +760,7 @@ fn format_event(event: &NotificationEvent) -> String {
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let mut lines = vec![
-                format!("✅ <b>Reading status push completed</b>"),
+                "✅ <b>Reading status push completed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("⬆️ Pushed: <b>{pushed}</b> / <b>{total_series}</b> series"),
@@ -814,7 +814,7 @@ fn format_event(event: &NotificationEvent) -> String {
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let mut lines = vec![
-                format!("✅ <b>Download detection completed</b>"),
+                "✅ <b>Download detection completed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("📥 Found: <b>{found}</b> / <b>{total_series}</b> series"),
@@ -873,7 +873,7 @@ fn format_event(event: &NotificationEvent) -> String {
         } => {
             let lib = library_name.as_deref().unwrap_or("Unknown");
             let mut lines = vec![
-                format!("📥 <b>Torrent import completed</b>"),
+                "📥 <b>Torrent import completed</b>".to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("📚 <b>{series_name}</b> — {imported_count} files imported"),

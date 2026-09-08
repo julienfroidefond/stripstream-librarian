@@ -1141,7 +1141,7 @@ fn group_products_by_edition(
 
     let mut result: Vec<_> = groups.into_iter().collect();
     // Sort by volume count descending (main edition first)
-    result.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    result.sort_by_key(|entry| std::cmp::Reverse(entry.1.len()));
     result
 }
 

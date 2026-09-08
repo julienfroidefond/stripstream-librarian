@@ -1113,7 +1113,9 @@ pub async fn get_stats_overview(
         by_format: format_rows
             .iter()
             .map(|r| FormatCount {
-                format: r.get::<Option<String>, _>("fmt").unwrap_or_else(|| "unknown".to_string()),
+                format: r
+                    .get::<Option<String>, _>("fmt")
+                    .unwrap_or_else(|| "unknown".to_string()),
                 count: r.get("count"),
             })
             .collect(),
@@ -1160,7 +1162,9 @@ pub async fn get_stats_overview(
                     book_id: id.to_string(),
                     title: r.get("title"),
                     series: r.get("series"),
-                    last_read_at: r.get::<Option<String>, _>("last_read_at").unwrap_or_default(),
+                    last_read_at: r
+                        .get::<Option<String>, _>("last_read_at")
+                        .unwrap_or_default(),
                     username: r.get("username"),
                 }
             })

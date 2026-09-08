@@ -56,9 +56,9 @@ curl -H "Authorization: Bearer stl_abc_votre_token_complet" \
 :::note[Détails techniques]
 **Bootstrap token** : token admin initial via la variable d'environnement `API_BOOTSTRAP_TOKEN`. Utilisé uniquement pour créer les premiers tokens API depuis l'interface.
 
-**Tokens API** : format `stl_{prefix}_{secret}`, hash Argon2 en base de données. Deux scopes : `admin` (accès complet) et `read` (lecture seule).
+**Tokens API** : format `stl_{prefix}_{secret}`, hash Argon2 en base de données. Deux scopes : `admin` (accès complet) et `read` (consultation, progression de lecture, favoris et notations personnelles). Un token `read` peut donc ajouter ou supprimer ses propres favoris et modifier ou supprimer ses propres notations.
 
 **Rate limiting** : fenêtre glissante configurable, défaut 120 req/s.
 
-**Dual spec OpenAPI** : Client API (`/openapi.json`, scope read) et Admin API (`/admin/openapi.json`, tous scopes). Les endpoints `GET /metadata/links` et `GET /metadata/missing/:id` sont en scope read.
+**Dual spec OpenAPI** : Client API (`/openapi.json`, scope read) et Admin API (`/admin/openapi.json`, tous scopes). La Client API inclut notamment les endpoints de progression, favoris et notations associés à l'utilisateur du token.
 :::

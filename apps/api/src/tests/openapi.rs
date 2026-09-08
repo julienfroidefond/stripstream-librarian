@@ -43,3 +43,23 @@ fn test_client_openapi_generation() {
 fn test_admin_openapi_generation() {
     check_openapi_spec(AdminApiDoc::openapi(), "admin");
 }
+
+#[test]
+fn client_openapi_exposes_favorite_and_rating_mutations() {
+    let spec = serde_json::to_value(ClientApiDoc::openapi()).unwrap();
+
+    for (path, methods) in [
+        (
+            "/series/{series_id}/favorite",
+            &["get", "put", "delete"][..],
+        ),
+        ("/series/{series_id}/rating", &["put", "delete"][..]),
+    ] {
+        for &method in methods {
+            assert!(
+                spec["paths"][path][method].is_object(),
+                "client OpenAPI must expose {method} {path}"
+            );
+        }
+    }
+}

@@ -403,7 +403,7 @@ pub async fn prowlarr_discovery(
     }
 
     // Sort a mutable slice by the requested mode
-    fn apply_sort(items: &mut Vec<ProwlarrDiscoveryItem>, by_date: bool) {
+    fn apply_sort(items: &mut [ProwlarrDiscoveryItem], by_date: bool) {
         if by_date {
             items.sort_by(|a, b| {
                 b.best_publish_date
@@ -412,7 +412,7 @@ pub async fn prowlarr_discovery(
                     .cmp(a.best_publish_date.as_deref().unwrap_or(""))
             });
         } else {
-            items.sort_by(|a, b| b.best_seeders.cmp(&a.best_seeders));
+            items.sort_by_key(|item| std::cmp::Reverse(item.best_seeders));
         }
     }
 
@@ -681,7 +681,7 @@ pub async fn prowlarr_discovery(
     }
 
     // Sort by seeders by default; apply_sort will re-order per-request
-    items.sort_by(|a, b| b.best_seeders.cmp(&a.best_seeders));
+    items.sort_by_key(|item| std::cmp::Reverse(item.best_seeders));
 
     tracing::info!(
         "[DISCOVERY] Prowlarr: {} releases (deduplicated from {} raw)",
@@ -720,6 +720,7 @@ pub async fn prowlarr_discovery(
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod extract_tests {
     use parsers::extract_series_name_from_release;
 

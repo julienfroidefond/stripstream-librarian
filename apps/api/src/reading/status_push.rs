@@ -596,7 +596,8 @@ pub async fn process_reading_status_push(
     }
 
     // Push DROPPED for archived series that still have an AniList link
-    let archived_to_push: Vec<(Uuid, String, i32, Option<String>, Option<String>)> = sqlx::query(
+    type ArchivedSeriesToPush = (Uuid, String, i32, Option<String>, Option<String>);
+    let archived_to_push: Vec<ArchivedSeriesToPush> = sqlx::query(
         r#"
         SELECT id, name, anilist_id, anilist_title, anilist_url
         FROM archived_series
@@ -691,7 +692,10 @@ pub async fn process_reading_status_push(
                 }
             }
             Err(e) => {
-                warn!("[READING_STATUS_PUSH] archived series '{}': {e}", series_name);
+                warn!(
+                    "[READING_STATUS_PUSH] archived series '{}': {e}",
+                    series_name
+                );
                 insert_event(
                     pool,
                     job_id,

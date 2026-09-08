@@ -28,6 +28,7 @@ async fn create_series(pool: &sqlx::PgPool, lib_id: Uuid, name: &str) -> Uuid {
 
 /// Run the same INSERT...ON CONFLICT query used in sync_series_metadata,
 /// testing the SQL logic directly without requiring a full AppState.
+#[allow(clippy::too_many_arguments)]
 async fn run_sync_sql(
     pool: &sqlx::PgPool,
     library_id: Uuid,
