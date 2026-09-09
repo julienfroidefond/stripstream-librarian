@@ -452,11 +452,12 @@ Browse and add series to your library from external sources.
 - Concurrent render limit (default 8) with semaphore
 
 ### Caching
-- **LRU in-memory cache**: 512 entries
+- **LRU in-memory cache**: byte-size limit configurable from the backoffice (128 MB by default), applied immediately
 - **Disk cache**: SHA256-keyed, two-level directory structure
 - Cache key = hash(path + page + format + quality + width)
 - Configurable cache directory and max size
-- Manual cache clear via settings
+- Manual disk and memory cache clear via settings
+- Live memory usage, cached page count, and configured limit in the backoffice
 
 ---
 

@@ -56,7 +56,7 @@ async fn get_book(...) { }
 ```
 
 ### Cache pages (`pages.rs`)
-- **Cache mémoire** : LRU 512 entrées (`AppState.page_cache`)
+- **Cache mémoire** : LRU limité en octets (`cache.memory_max_size_mb`, 128 Mo par défaut), redimensionné à chaud
 - **Cache disque** : `IMAGE_CACHE_DIR` (défaut `/tmp/stripstream-image-cache`), clé SHA256
 - Concurrence limitée par `AppState.page_render_limit` (Semaphore, configurable en DB)
 - `spawn_blocking` pour le rendu image (CPU-bound)

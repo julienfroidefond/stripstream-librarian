@@ -13,7 +13,7 @@ use crate::downloads::telegram_monitor::PendingAuth;
 pub struct AppState {
     pub pool: sqlx::PgPool,
     pub bootstrap_token: Arc<str>,
-    pub page_cache: Arc<Mutex<LruCache<String, Arc<Vec<u8>>>>>,
+    pub page_cache: Arc<Mutex<PageCache>>,
     pub page_render_limit: Arc<Semaphore>,
     pub metrics: Arc<Metrics>,
     pub read_rate_limit: Arc<Mutex<ReadRateLimit>>,
@@ -37,6 +37,7 @@ pub struct DynamicSettings {
     pub image_filter: String,
     pub image_max_width: u32,
     pub cache_directory: String,
+    pub page_cache_max_size_mb: usize,
 }
 
 impl Default for DynamicSettings {
@@ -50,6 +51,7 @@ impl Default for DynamicSettings {
             image_max_width: 2160,
             cache_directory: std::env::var("IMAGE_CACHE_DIR")
                 .unwrap_or_else(|_| "/tmp/stripstream-image-cache".to_string()),
+            page_cache_max_size_mb: 128,
         }
     }
 }
@@ -157,7 +159,107 @@ pub async fn load_dynamic_settings(pool: &Pool<Postgres>) -> DynamicSettings {
         if let Some(dir) = v.get("directory").and_then(|x| x.as_str()) {
             s.cache_directory = dir.to_string();
         }
+        if let Some(n) = v.get("memory_max_size_mb").and_then(|x| x.as_u64()) {
+            s.page_cache_max_size_mb = (n as usize).max(1);
+        }
     }
 
     s
+}
+
+pub struct PageCache {
+    entries: LruCache<String, Arc<Vec<u8>>>,
+    current_size_bytes: usize,
+    max_size_bytes: usize,
+}
+
+impl PageCache {
+    pub fn new(max_size_mb: usize) -> Self {
+        let max_size_bytes = max_size_mb.max(1).saturating_mul(1024 * 1024);
+        Self {
+            entries: LruCache::unbounded(),
+            current_size_bytes: 0,
+            max_size_bytes,
+        }
+    }
+
+    pub fn get(&mut self, key: &str) -> Option<&Arc<Vec<u8>>> {
+        self.entries.get(key)
+    }
+
+    pub fn contains(&self, key: &str) -> bool {
+        self.entries.contains(key)
+    }
+
+    pub fn put(&mut self, key: String, value: Arc<Vec<u8>>) {
+        let value_size = value.len();
+        if let Some(previous) = self.entries.put(key, value) {
+            self.current_size_bytes = self.current_size_bytes.saturating_sub(previous.len());
+        }
+        self.current_size_bytes = self.current_size_bytes.saturating_add(value_size);
+        self.evict_to_limit();
+    }
+
+    pub fn set_max_size_mb(&mut self, max_size_mb: usize) {
+        self.max_size_bytes = max_size_mb.max(1).saturating_mul(1024 * 1024);
+        self.evict_to_limit();
+    }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
+        self.current_size_bytes = 0;
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn current_size_bytes(&self) -> usize {
+        self.current_size_bytes
+    }
+
+    pub fn max_size_bytes(&self) -> usize {
+        self.max_size_bytes
+    }
+
+    fn evict_to_limit(&mut self) {
+        while self.current_size_bytes > self.max_size_bytes {
+            let Some((_key, value)) = self.entries.pop_lru() else {
+                self.current_size_bytes = 0;
+                break;
+            };
+            self.current_size_bytes = self.current_size_bytes.saturating_sub(value.len());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PageCache;
+    use std::sync::Arc;
+
+    #[test]
+    fn page_cache_evicts_lru_entries_to_respect_byte_limit() {
+        let mut cache = PageCache::new(2);
+        cache.put("first".into(), Arc::new(vec![0; 1024 * 1024]));
+        cache.put("second".into(), Arc::new(vec![0; 1024 * 1024]));
+        let _ = cache.get("first");
+        cache.put("third".into(), Arc::new(vec![0; 1024 * 1024]));
+
+        assert!(cache.contains("first"));
+        assert!(!cache.contains("second"));
+        assert!(cache.contains("third"));
+    }
+
+    #[test]
+    fn lowering_page_cache_limit_evicts_immediately() {
+        let mut cache = PageCache::new(3);
+        cache.put("first".into(), Arc::new(vec![0; 1024 * 1024]));
+        cache.put("second".into(), Arc::new(vec![0; 1024 * 1024]));
+
+        cache.set_max_size_mb(1);
+
+        assert!(!cache.contains("first"));
+        assert!(cache.contains("second"));
+    }
 }

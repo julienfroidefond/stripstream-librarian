@@ -30,6 +30,9 @@ pub struct CacheStats {
     pub total_size_mb: f64,
     pub file_count: u64,
     pub directory: String,
+    pub memory_size_mb: f64,
+    pub memory_page_count: usize,
+    pub memory_max_size_mb: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -150,6 +153,11 @@ pub async fn update_setting(
     // Rechargement des settings dynamiques si la clé affecte le comportement runtime
     if key == "limits" || key == "image_processing" || key == "cache" {
         let new_settings = load_dynamic_settings(&state.pool).await;
+        state
+            .page_cache
+            .lock()
+            .await
+            .set_max_size_mb(new_settings.page_cache_max_size_mb);
         *state.settings.write().await = new_settings;
     }
 
@@ -170,6 +178,7 @@ pub async fn update_setting(
 pub async fn clear_cache(
     State(state): State<AppState>,
 ) -> Result<Json<ClearCacheResponse>, ApiError> {
+    state.page_cache.lock().await.clear();
     let cache_dir = state.settings.read().await.cache_directory.clone();
 
     let result = tokio::task::spawn_blocking(move || {
@@ -213,6 +222,14 @@ pub async fn clear_cache(
 )]
 pub async fn get_cache_stats(State(state): State<AppState>) -> Result<Json<CacheStats>, ApiError> {
     let cache_dir = state.settings.read().await.cache_directory.clone();
+    let (memory_size_mb, memory_page_count, memory_max_size_mb) = {
+        let cache = state.page_cache.lock().await;
+        (
+            cache.current_size_bytes() as f64 / 1024.0 / 1024.0,
+            cache.len(),
+            cache.max_size_bytes() as f64 / 1024.0 / 1024.0,
+        )
+    };
 
     let cache_dir_clone = cache_dir.clone();
     let stats = tokio::task::spawn_blocking(move || {
@@ -222,6 +239,9 @@ pub async fn get_cache_stats(State(state): State<AppState>) -> Result<Json<Cache
                 total_size_mb: 0.0,
                 file_count: 0,
                 directory: cache_dir_clone,
+                memory_size_mb,
+                memory_page_count,
+                memory_max_size_mb,
             };
         }
 
@@ -254,6 +274,9 @@ pub async fn get_cache_stats(State(state): State<AppState>) -> Result<Json<Cache
             total_size_mb: total_size as f64 / 1024.0 / 1024.0,
             file_count,
             directory: cache_dir_clone,
+            memory_size_mb,
+            memory_page_count,
+            memory_max_size_mb,
         }
     })
     .await

@@ -29,11 +29,11 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
   const [settings, cacheStats, thumbnailStats, users, prowlarr, qbittorrent, torrentImport, telegram, anilist, komga, metadataProviders, statusMappings, seriesStatuses, providerStatuses, apiVersion, indexerVersion, renameFormat, renameFormatHs, downloadsEnabled, libraries] = await Promise.all([
     getSettings().catch(() => ({
       image_processing: { format: "webp", quality: 85, filter: "lanczos3", max_width: 2160 },
-      cache: { enabled: true, directory: "/tmp/stripstream-image-cache", max_size_mb: 10000 },
+      cache: { enabled: true, directory: "/tmp/stripstream-image-cache", max_size_mb: 10000, memory_max_size_mb: 128 },
       limits: { concurrent_renders: 4, timeout_seconds: 12, rate_limit_per_second: 120, concurrent_telegram_downloads: 2 },
       thumbnail: { enabled: true, width: 300, height: 400, quality: 80, format: "webp", directory: "/data/thumbnails" }
     })),
-    getCacheStats().catch(() => ({ total_size_mb: 0, file_count: 0, directory: "/tmp/stripstream-image-cache" })),
+    getCacheStats().catch(() => ({ total_size_mb: 0, file_count: 0, directory: "/tmp/stripstream-image-cache", memory_size_mb: 0, memory_page_count: 0, memory_max_size_mb: 128 })),
     getThumbnailStats().catch(() => ({ total_size_mb: 0, file_count: 0, directory: "/data/thumbnails" })),
     fetchUsers().catch(() => []),
     apiFetch<Record<string, unknown>>("/settings/prowlarr").catch(() => null),

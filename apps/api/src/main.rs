@@ -37,9 +37,7 @@ use axum::{
     routing::{delete, get},
     Router,
 };
-use lru::LruCache;
 use sqlx::postgres::PgPoolOptions;
-use std::num::NonZeroUsize;
 use stripstream_core::config::ApiConfig;
 use tokio::sync::{Mutex, RwLock, Semaphore};
 use tracing::info;
@@ -78,7 +76,7 @@ async fn main() -> anyhow::Result<()> {
 
     let dynamic_settings = load_dynamic_settings(&pool).await;
     info!(
-        "Dynamic settings: rate_limit={}, timeout={}s, format={}, quality={}, filter={}, max_width={}, cache_dir={}",
+        "Dynamic settings: rate_limit={}, timeout={}s, format={}, quality={}, filter={}, max_width={}, cache_dir={}, page_cache_max_size_mb={}",
         dynamic_settings.rate_limit_per_second,
         dynamic_settings.timeout_seconds,
         dynamic_settings.image_format,
@@ -86,13 +84,14 @@ async fn main() -> anyhow::Result<()> {
         dynamic_settings.image_filter,
         dynamic_settings.image_max_width,
         dynamic_settings.cache_directory,
+        dynamic_settings.page_cache_max_size_mb,
     );
 
     let state = AppState {
         pool,
         bootstrap_token: Arc::from(config.api_bootstrap_token),
-        page_cache: Arc::new(Mutex::new(LruCache::new(
-            NonZeroUsize::new(512).expect("non-zero"),
+        page_cache: Arc::new(Mutex::new(crate::state::PageCache::new(
+            dynamic_settings.page_cache_max_size_mb,
         ))),
         page_render_limit: Arc::new(Semaphore::new(concurrent_renders)),
         metrics: Arc::new(Metrics::new()),

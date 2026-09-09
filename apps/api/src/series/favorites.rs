@@ -167,12 +167,10 @@ fn series_item_from_row(row: &sqlx::postgres::PgRow) -> SeriesItem {
 mod tests {
     use std::{
         collections::HashMap,
-        num::NonZeroUsize,
         sync::{atomic::AtomicU64, Arc},
         time::Instant,
     };
 
-    use lru::LruCache;
     use tokio::sync::{Mutex, RwLock, Semaphore};
 
     use super::*;
@@ -183,7 +181,7 @@ mod tests {
         AppState {
             pool,
             bootstrap_token: Arc::from("test-token"),
-            page_cache: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(1).unwrap()))),
+            page_cache: Arc::new(Mutex::new(crate::state::PageCache::new(1))),
             page_render_limit: Arc::new(Semaphore::new(1)),
             metrics: Arc::new(Metrics {
                 requests_total: AtomicU64::new(0),

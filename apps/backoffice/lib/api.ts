@@ -627,6 +627,7 @@ export type Settings = {
     enabled: boolean;
     directory: string;
     max_size_mb: number;
+    memory_max_size_mb: number;
   };
   limits: {
     concurrent_renders: number;
@@ -648,6 +649,9 @@ export type CacheStats = {
   total_size_mb: number;
   file_count: number;
   directory: string;
+  memory_size_mb: number;
+  memory_page_count: number;
+  memory_max_size_mb: number;
 };
 
 export type ClearCacheResponse = {

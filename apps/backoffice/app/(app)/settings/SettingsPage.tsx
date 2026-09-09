@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, FormRow, Icon, toast, Toaster } from "@/app/components/ui";
 import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, UserDto } from "@/lib/api";
@@ -69,6 +69,22 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
   const [activeTab, setActiveTab] = useState<TabId>(
     resolveTab(searchParams.get("tab") ?? initialTab)
   );
+
+  useEffect(() => {
+    if (activeTab !== "media") return;
+
+    let active = true;
+    const refreshCacheStats = async () => {
+      const response = await fetch("/api/settings/cache/stats", { cache: "no-store" }).catch(() => null);
+      if (active && response?.ok) setCacheStats(await response.json());
+    };
+    void refreshCacheStats();
+    const interval = window.setInterval(refreshCacheStats, 5000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [activeTab]);
 
   function handleTabChange(tab: TabId) {
     setActiveTab(tab);
@@ -408,9 +424,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg">
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
               <div>
-                <p className="text-sm text-muted-foreground">{t("settings.cacheSize")}</p>
+                <p className="text-sm text-muted-foreground">{t("settings.diskCacheSize")}</p>
                 <p className="text-2xl font-semibold">{cacheStats.total_size_mb.toFixed(2)} MB</p>
               </div>
               <div>
@@ -418,6 +434,14 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                 <p className="text-2xl font-semibold">{cacheStats.file_count}</p>
               </div>
               <div>
+                <p className="text-sm text-muted-foreground">{t("settings.memoryCacheSize")}</p>
+                <p className="text-2xl font-semibold">{cacheStats.memory_size_mb.toFixed(2)} / {cacheStats.memory_max_size_mb.toFixed(0)} MB</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">{t("settings.cachedPages")}</p>
+                <p className="text-2xl font-semibold">{cacheStats.memory_page_count}</p>
+              </div>
+              <div className="col-span-2 xl:col-span-4">
                 <p className="text-sm text-muted-foreground">{t("settings.directory")}</p>
                 <p className="text-sm font-mono truncate" title={cacheStats.directory}>{cacheStats.directory}</p>
               </div>
@@ -453,6 +477,20 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   }}
                   onBlur={() => handleUpdateSetting("cache", settings.cache)}
                 />
+              </FormField>
+              <FormField className="w-56">
+                <label className="text-sm font-medium text-muted-foreground mb-1 block whitespace-nowrap">{t("settings.memoryMaxSizeMb")}</label>
+                <FormInput
+                  type="number"
+                  min={1}
+                  value={settings.cache.memory_max_size_mb}
+                  onChange={(e) => {
+                    const memory_max_size_mb = Math.max(1, parseInt(e.target.value) || 128);
+                    setSettings({ ...settings, cache: { ...settings.cache, memory_max_size_mb } });
+                  }}
+                  onBlur={() => handleUpdateSetting("cache", settings.cache)}
+                />
+                <p className="text-xs text-muted-foreground mt-1">{t("settings.memoryMaxSizeMbHelp")}</p>
               </FormField>
             </FormRow>
 
