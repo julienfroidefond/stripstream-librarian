@@ -6,6 +6,8 @@ pub use pages::*;
 pub use rename::*;
 pub use thumbnails::*;
 
+use std::time::Instant;
+
 use axum::{
     extract::{Extension, Path, Query, State},
     Json,
@@ -844,6 +846,7 @@ pub async fn get_thumbnail(
     Path(book_id): Path<Uuid>,
     headers_in: HeaderMap,
 ) -> Result<axum::response::Response, ApiError> {
+    let started_at = Instant::now();
     let row = sqlx::query("SELECT thumbnail_path FROM books WHERE id = $1")
         .bind(book_id)
         .fetch_optional(&state.pool)
@@ -898,6 +901,10 @@ pub async fn get_thumbnail(
         persist_rendered_thumbnail(&state, book_id, &data, content_type).await?;
     }
 
+    let source = if rendered { "rendered" } else { "stored" };
+    let duration_ms = started_at.elapsed().as_millis();
+    tracing::info!(book_id = %book_id, source, duration_ms, "[THUMBNAIL] served");
+
     let etag_value = format!("\"{}_{:x}\"", book_id, data.len());
 
     let mut headers = HeaderMap::new();
@@ -908,6 +915,10 @@ pub async fn get_thumbnail(
     );
     if let Ok(v) = HeaderValue::from_str(&etag_value) {
         headers.insert(header::ETAG, v);
+    }
+    headers.insert("x-thumbnail-source", HeaderValue::from_static(source));
+    if let Ok(v) = HeaderValue::from_str(&duration_ms.to_string()) {
+        headers.insert("x-thumbnail-duration-ms", v);
     }
 
     Ok((StatusCode::OK, headers, Body::from(data)).into_response())
