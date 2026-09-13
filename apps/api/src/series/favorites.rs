@@ -175,13 +175,17 @@ mod tests {
 
     use super::*;
     use crate::series::ratings::{delete_series_rating, set_series_rating, SetRatingRequest};
-    use crate::state::{DynamicSettings, Metrics, ReadRateLimit};
+    use crate::state::{
+        DiskCacheStatsSnapshot, DynamicSettings, Metrics, PageRenderLocks, ReadRateLimit,
+    };
 
     fn test_state(pool: sqlx::PgPool) -> AppState {
         AppState {
             pool,
             bootstrap_token: Arc::from("test-token"),
             page_cache: Arc::new(Mutex::new(crate::state::PageCache::new(1))),
+            disk_cache_stats: Arc::new(Mutex::new(None::<DiskCacheStatsSnapshot>)),
+            page_render_locks: Arc::new(PageRenderLocks::new(1)),
             page_render_limit: Arc::new(Semaphore::new(1)),
             metrics: Arc::new(Metrics {
                 requests_total: AtomicU64::new(0),

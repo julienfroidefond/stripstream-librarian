@@ -70,18 +70,30 @@ fn get_cache_path(cache_key: &str, format: &OutputFormat, cache_dir: &Path) -> P
         .join(format!("{}.{}", cache_key, ext))
 }
 
-fn read_from_disk_cache(cache_path: &Path) -> Option<Vec<u8>> {
-    std::fs::read(cache_path).ok()
+async fn read_from_disk_cache(cache_path: PathBuf) -> Option<Vec<u8>> {
+    tokio::task::spawn_blocking(move || std::fs::read(cache_path).ok())
+        .await
+        .ok()
+        .flatten()
 }
 
-fn write_to_disk_cache(cache_path: &Path, data: &[u8]) -> Result<(), std::io::Error> {
+async fn write_to_disk_cache(cache_path: PathBuf, data: Arc<[u8]>) -> Result<(), std::io::Error> {
+    tokio::task::spawn_blocking(move || write_to_disk_cache_blocking(&cache_path, &data))
+        .await
+        .map_err(std::io::Error::other)?
+}
+
+fn write_to_disk_cache_blocking(cache_path: &Path, data: &[u8]) -> Result<(), std::io::Error> {
     if let Some(parent) = cache_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let mut file = std::fs::File::create(cache_path)?;
+    let filename = cache_path.file_name().unwrap_or_default().to_string_lossy();
+    let temporary_path = cache_path.with_file_name(format!(".{filename}-{}.tmp", Uuid::new_v4()));
+    let mut file = std::fs::File::create(&temporary_path)?;
     file.write_all(data)?;
     // No sync_data() — this is a cache, durability is not critical
-    Ok(())
+    drop(file);
+    std::fs::rename(temporary_path, cache_path)
 }
 
 #[derive(Deserialize, ToSchema, Debug)]
@@ -274,13 +286,49 @@ pub async fn get_page(
         }
     }
 
-    if let Some(cached_bytes) = read_from_disk_cache(&cache_path) {
-        let bytes = Arc::new(cached_bytes);
+    if let Some(cached_bytes) = read_from_disk_cache(cache_path.clone()).await {
+        let bytes: Arc<[u8]> = Arc::from(cached_bytes);
         state
             .page_cache
             .lock()
             .await
             .put(memory_cache_key, bytes.clone());
+        return Ok(image_response(
+            bytes,
+            format,
+            Some(&disk_cache_key),
+            &headers,
+        ));
+    }
+
+    // Coalesce concurrent misses. Recheck both cache levels after waiting because the
+    // request that held this key may have completed the render in the meantime.
+    let _render_lock = state.page_render_locks.acquire(&disk_cache_key).await;
+    if let Some(cached) = state
+        .page_cache
+        .lock()
+        .await
+        .get(&memory_cache_key)
+        .cloned()
+    {
+        state
+            .metrics
+            .page_cache_hits
+            .fetch_add(1, Ordering::Relaxed);
+        return Ok(image_response(
+            cached,
+            format,
+            Some(&disk_cache_key),
+            &headers,
+        ));
+    }
+    if let Some(cached_bytes) = read_from_disk_cache(cache_path.clone()).await {
+        let bytes: Arc<[u8]> = Arc::from(cached_bytes);
+        state
+            .page_cache
+            .lock()
+            .await
+            .put(memory_cache_key.clone(), bytes.clone());
         return Ok(image_response(
             bytes,
             format,
@@ -333,11 +381,11 @@ pub async fn get_page(
         Ok(data) => {
             info!("Rendered page {} in {:?}", n, duration);
 
-            if let Err(e) = write_to_disk_cache(&cache_path, &data) {
+            let bytes: Arc<[u8]> = Arc::from(data);
+            if let Err(e) = write_to_disk_cache(cache_path.clone(), bytes.clone()).await {
                 warn!("Failed to write to disk cache: {}", e);
             }
 
-            let bytes = Arc::new(data);
             state
                 .page_cache
                 .lock()
@@ -415,6 +463,10 @@ async fn prefetch_page(state: AppState, params: &PrefetchParams<'_>) {
     if cache_path.exists() {
         return;
     }
+    let _render_lock = state.page_render_locks.acquire(&disk_key).await;
+    if state.page_cache.lock().await.contains(&mem_key) || cache_path.exists() {
+        return;
+    }
     // Acquire render permit (don't block too long — if busy, skip)
     let permit = tokio::time::timeout(
         Duration::from_millis(100),
@@ -455,14 +507,14 @@ async fn prefetch_page(state: AppState, params: &PrefetchParams<'_>) {
     .await;
 
     if let Ok(Ok(Ok(data))) = result {
-        let _ = write_to_disk_cache(&cache_path, &data);
-        let bytes = Arc::new(data);
+        let bytes: Arc<[u8]> = Arc::from(data);
+        let _ = write_to_disk_cache(cache_path, bytes.clone()).await;
         state.page_cache.lock().await.put(mem_key, bytes);
     }
 }
 
 fn image_response(
-    bytes: Arc<Vec<u8>>,
+    bytes: Arc<[u8]>,
     format: OutputFormat,
     etag_suffix: Option<&str>,
     req_headers: &HeaderMap,
@@ -507,8 +559,9 @@ fn image_response(
     if let Ok(v) = HeaderValue::from_str(&etag) {
         headers.insert(header::ETAG, v);
     }
-    // Use Bytes to avoid cloning the Vec — shares the Arc's allocation via zero-copy
-    let body_bytes = axum::body::Bytes::from(Arc::unwrap_or_clone(bytes));
+    // Keep the cache's Arc as the owner of the response bytes. `unwrap_or_clone` would
+    // clone every RAM-cache hit because the LRU still holds a reference.
+    let body_bytes = axum::body::Bytes::from_owner(bytes);
     (StatusCode::OK, headers, Body::from(body_bytes)).into_response()
 }
 
@@ -766,6 +819,22 @@ mod tests {
         assert_ne!(
             base,
             get_cache_key("/libraries/x.cbz", 1000, 1, "webp", 80, 800)
+        );
+    }
+
+    #[tokio::test]
+    async fn disk_cache_round_trip_uses_the_published_file() {
+        let directory = tempfile::tempdir().expect("temporary cache directory");
+        let cache_path = directory.path().join("ab/page.webp");
+        let expected: Arc<[u8]> = Arc::from(&b"image bytes"[..]);
+
+        write_to_disk_cache(cache_path.clone(), expected.clone())
+            .await
+            .expect("write cache entry");
+
+        assert_eq!(
+            read_from_disk_cache(cache_path).await.as_deref(),
+            Some(expected.as_ref())
         );
     }
 }

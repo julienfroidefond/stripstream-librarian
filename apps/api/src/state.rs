@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use lru::LruCache;
 use sqlx::{Pool, Postgres, Row};
-use tokio::sync::{Mutex, RwLock, Semaphore};
+use tokio::sync::{Mutex, OwnedMutexGuard, RwLock, Semaphore};
 use uuid::Uuid;
 
 use crate::downloads::telegram_monitor::PendingAuth;
@@ -14,6 +14,10 @@ pub struct AppState {
     pub pool: sqlx::PgPool,
     pub bootstrap_token: Arc<str>,
     pub page_cache: Arc<Mutex<PageCache>>,
+    /// Latest disk-cache walk, reused by the Backoffice's frequent cache-stat polling.
+    pub disk_cache_stats: Arc<Mutex<Option<DiskCacheStatsSnapshot>>>,
+    /// Coalesces concurrent cache misses for the same rendered page.
+    pub page_render_locks: Arc<PageRenderLocks>,
     pub page_render_limit: Arc<Semaphore>,
     pub metrics: Arc<Metrics>,
     pub read_rate_limit: Arc<Mutex<ReadRateLimit>>,
@@ -26,6 +30,14 @@ pub struct AppState {
     pub telegram_download_limit: Arc<Semaphore>,
     /// Abort handles for active/queued Telegram downloads, keyed by book link ID
     pub telegram_abort_handles: Arc<Mutex<HashMap<Uuid, tokio::task::AbortHandle>>>,
+}
+
+#[derive(Clone)]
+pub struct DiskCacheStatsSnapshot {
+    pub directory: String,
+    pub total_size_bytes: u64,
+    pub file_count: u64,
+    pub collected_at: Instant,
 }
 
 #[derive(Clone)]
@@ -168,9 +180,41 @@ pub async fn load_dynamic_settings(pool: &Pool<Postgres>) -> DynamicSettings {
 }
 
 pub struct PageCache {
-    entries: LruCache<String, Arc<Vec<u8>>>,
+    entries: LruCache<String, Arc<[u8]>>,
     current_size_bytes: usize,
     max_size_bytes: usize,
+}
+
+/// A bounded key-to-lock registry for page rendering. It prevents a foreground request and
+/// prefetches (or several readers) from rendering the exact same cache key concurrently.
+pub struct PageRenderLocks {
+    entries: Mutex<LruCache<String, Arc<Mutex<()>>>>,
+    max_entries: usize,
+}
+
+impl PageRenderLocks {
+    pub fn new(max_entries: usize) -> Self {
+        Self {
+            entries: Mutex::new(LruCache::unbounded()),
+            max_entries: max_entries.max(1),
+        }
+    }
+
+    pub async fn acquire(&self, key: &str) -> OwnedMutexGuard<()> {
+        let lock = {
+            let mut entries = self.entries.lock().await;
+            let lock = entries.get(key).cloned().unwrap_or_else(|| {
+                let lock = Arc::new(Mutex::new(()));
+                entries.put(key.to_owned(), lock.clone());
+                lock
+            });
+            while entries.len() > self.max_entries {
+                entries.pop_lru();
+            }
+            lock
+        };
+        lock.lock_owned().await
+    }
 }
 
 impl PageCache {
@@ -183,7 +227,7 @@ impl PageCache {
         }
     }
 
-    pub fn get(&mut self, key: &str) -> Option<&Arc<Vec<u8>>> {
+    pub fn get(&mut self, key: &str) -> Option<&Arc<[u8]>> {
         self.entries.get(key)
     }
 
@@ -191,7 +235,7 @@ impl PageCache {
         self.entries.contains(key)
     }
 
-    pub fn put(&mut self, key: String, value: Arc<Vec<u8>>) {
+    pub fn put(&mut self, key: String, value: Arc<[u8]>) {
         let value_size = value.len();
         if let Some(previous) = self.entries.put(key, value) {
             self.current_size_bytes = self.current_size_bytes.saturating_sub(previous.len());
@@ -235,16 +279,18 @@ impl PageCache {
 
 #[cfg(test)]
 mod tests {
-    use super::PageCache;
+    use super::{PageCache, PageRenderLocks};
     use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::{sync::oneshot, time::timeout};
 
     #[test]
     fn page_cache_evicts_lru_entries_to_respect_byte_limit() {
         let mut cache = PageCache::new(2);
-        cache.put("first".into(), Arc::new(vec![0; 1024 * 1024]));
-        cache.put("second".into(), Arc::new(vec![0; 1024 * 1024]));
+        cache.put("first".into(), Arc::from(vec![0; 1024 * 1024]));
+        cache.put("second".into(), Arc::from(vec![0; 1024 * 1024]));
         let _ = cache.get("first");
-        cache.put("third".into(), Arc::new(vec![0; 1024 * 1024]));
+        cache.put("third".into(), Arc::from(vec![0; 1024 * 1024]));
 
         assert!(cache.contains("first"));
         assert!(!cache.contains("second"));
@@ -254,12 +300,31 @@ mod tests {
     #[test]
     fn lowering_page_cache_limit_evicts_immediately() {
         let mut cache = PageCache::new(3);
-        cache.put("first".into(), Arc::new(vec![0; 1024 * 1024]));
-        cache.put("second".into(), Arc::new(vec![0; 1024 * 1024]));
+        cache.put("first".into(), Arc::from(vec![0; 1024 * 1024]));
+        cache.put("second".into(), Arc::from(vec![0; 1024 * 1024]));
 
         cache.set_max_size_mb(1);
 
         assert!(!cache.contains("first"));
         assert!(cache.contains("second"));
+    }
+
+    #[tokio::test]
+    async fn page_render_locks_serialize_the_same_cache_key() {
+        let locks = Arc::new(PageRenderLocks::new(2));
+        let first = locks.acquire("page-key").await;
+        let (sent, mut received) = oneshot::channel();
+        let waiting_locks = locks.clone();
+
+        tokio::spawn(async move {
+            let _second = waiting_locks.acquire("page-key").await;
+            let _ = sent.send(());
+        });
+
+        assert!(timeout(Duration::from_millis(20), &mut received)
+            .await
+            .is_err());
+        drop(first);
+        assert!(timeout(Duration::from_secs(1), received).await.is_ok());
     }
 }

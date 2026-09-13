@@ -46,7 +46,7 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::state::{
     load_concurrent_renders, load_concurrent_telegram_downloads, load_dynamic_settings, AppState,
-    Metrics, ReadRateLimit,
+    Metrics, PageRenderLocks, ReadRateLimit,
 };
 
 #[tokio::main]
@@ -93,6 +93,8 @@ async fn main() -> anyhow::Result<()> {
         page_cache: Arc::new(Mutex::new(crate::state::PageCache::new(
             dynamic_settings.page_cache_max_size_mb,
         ))),
+        disk_cache_stats: Arc::new(Mutex::new(None)),
+        page_render_locks: Arc::new(PageRenderLocks::new(512)),
         page_render_limit: Arc::new(Semaphore::new(concurrent_renders)),
         metrics: Arc::new(Metrics::new()),
         read_rate_limit: Arc::new(Mutex::new(ReadRateLimit {

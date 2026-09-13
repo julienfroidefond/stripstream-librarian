@@ -6,7 +6,9 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{Mutex, RwLock, Semaphore};
 
-use crate::state::{AppState, DynamicSettings, Metrics, ReadRateLimit};
+use crate::state::{
+    AppState, DiskCacheStatsSnapshot, DynamicSettings, Metrics, PageRenderLocks, ReadRateLimit,
+};
 
 /// Build a minimal AppState suitable for testing (only `pool` is used).
 fn test_state(pool: sqlx::PgPool) -> AppState {
@@ -14,6 +16,8 @@ fn test_state(pool: sqlx::PgPool) -> AppState {
         pool,
         bootstrap_token: Arc::from("test-token"),
         page_cache: Arc::new(Mutex::new(crate::state::PageCache::new(1))),
+        disk_cache_stats: Arc::new(Mutex::new(None::<DiskCacheStatsSnapshot>)),
+        page_render_locks: Arc::new(PageRenderLocks::new(1)),
         page_render_limit: Arc::new(Semaphore::new(1)),
         metrics: Arc::new(Metrics {
             requests_total: AtomicU64::new(0),

@@ -6,13 +6,16 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::Row;
+use std::time::Duration;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
     error::ApiError,
-    state::{load_dynamic_settings, AppState},
+    state::{load_dynamic_settings, AppState, DiskCacheStatsSnapshot},
 };
+
+const DISK_CACHE_STATS_TTL: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UpdateSettingRequest {
@@ -159,6 +162,9 @@ pub async fn update_setting(
             .await
             .set_max_size_mb(new_settings.page_cache_max_size_mb);
         *state.settings.write().await = new_settings;
+        if key == "cache" {
+            *state.disk_cache_stats.lock().await = None;
+        }
     }
 
     Ok(Json(value))
@@ -206,6 +212,8 @@ pub async fn clear_cache(
     .await
     .map_err(|e| ApiError::internal(format!("cache clear failed: {}", e)))?;
 
+    *state.disk_cache_stats.lock().await = None;
+
     Ok(Json(result))
 }
 
@@ -231,58 +239,77 @@ pub async fn get_cache_stats(State(state): State<AppState>) -> Result<Json<Cache
         )
     };
 
-    let cache_dir_clone = cache_dir.clone();
-    let stats = tokio::task::spawn_blocking(move || {
-        let path = std::path::Path::new(&cache_dir_clone);
-        if !path.exists() {
-            return CacheStats {
-                total_size_mb: 0.0,
-                file_count: 0,
-                directory: cache_dir_clone,
-                memory_size_mb,
-                memory_page_count,
-                memory_max_size_mb,
-            };
-        }
+    let cached_stats = state
+        .disk_cache_stats
+        .lock()
+        .await
+        .as_ref()
+        .filter(|stats| {
+            stats.directory == cache_dir && stats.collected_at.elapsed() < DISK_CACHE_STATS_TTL
+        })
+        .cloned();
 
-        let mut total_size: u64 = 0;
-        let mut file_count: u64 = 0;
+    let disk_stats = if let Some(stats) = cached_stats {
+        stats
+    } else {
+        let cache_dir_clone = cache_dir.clone();
+        let stats = tokio::task::spawn_blocking(move || {
+            let path = std::path::Path::new(&cache_dir_clone);
+            if !path.exists() {
+                return DiskCacheStatsSnapshot {
+                    total_size_bytes: 0,
+                    file_count: 0,
+                    directory: cache_dir_clone,
+                    collected_at: std::time::Instant::now(),
+                };
+            }
 
-        fn visit_dirs(
-            dir: &std::path::Path,
-            total_size: &mut u64,
-            file_count: &mut u64,
-        ) -> std::io::Result<()> {
-            if dir.is_dir() {
-                for entry in std::fs::read_dir(dir)? {
-                    let entry = entry?;
-                    let path = entry.path();
-                    if path.is_dir() {
-                        visit_dirs(&path, total_size, file_count)?;
-                    } else {
-                        *total_size += entry.metadata()?.len();
-                        *file_count += 1;
+            let mut total_size: u64 = 0;
+            let mut file_count: u64 = 0;
+
+            fn visit_dirs(
+                dir: &std::path::Path,
+                total_size: &mut u64,
+                file_count: &mut u64,
+            ) -> std::io::Result<()> {
+                if dir.is_dir() {
+                    for entry in std::fs::read_dir(dir)? {
+                        let entry = entry?;
+                        let path = entry.path();
+                        if path.is_dir() {
+                            visit_dirs(&path, total_size, file_count)?;
+                        } else {
+                            *total_size += entry.metadata()?.len();
+                            *file_count += 1;
+                        }
                     }
                 }
+                Ok(())
             }
-            Ok(())
-        }
 
-        let _ = visit_dirs(path, &mut total_size, &mut file_count);
+            let _ = visit_dirs(path, &mut total_size, &mut file_count);
 
-        CacheStats {
-            total_size_mb: total_size as f64 / 1024.0 / 1024.0,
-            file_count,
-            directory: cache_dir_clone,
-            memory_size_mb,
-            memory_page_count,
-            memory_max_size_mb,
-        }
-    })
-    .await
-    .map_err(|e| ApiError::internal(format!("cache stats failed: {}", e)))?;
+            DiskCacheStatsSnapshot {
+                total_size_bytes: total_size,
+                file_count,
+                directory: cache_dir_clone,
+                collected_at: std::time::Instant::now(),
+            }
+        })
+        .await
+        .map_err(|e| ApiError::internal(format!("cache stats failed: {}", e)))?;
+        *state.disk_cache_stats.lock().await = Some(stats.clone());
+        stats
+    };
 
-    Ok(Json(stats))
+    Ok(Json(CacheStats {
+        total_size_mb: disk_stats.total_size_bytes as f64 / 1024.0 / 1024.0,
+        file_count: disk_stats.file_count,
+        directory: disk_stats.directory,
+        memory_size_mb,
+        memory_page_count,
+        memory_max_size_mb,
+    }))
 }
 
 fn compute_dir_stats(path: &std::path::Path) -> (u64, u64) {
