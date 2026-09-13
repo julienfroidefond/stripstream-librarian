@@ -423,6 +423,8 @@ async fn fetch_list_items(
             l.id           AS library_id,
             l.name         AS library_name,
             rli.position,
+            progress.book_count,
+            progress.books_read_count,
             eml.provider,
             eml.external_id,
             eml.external_url,
