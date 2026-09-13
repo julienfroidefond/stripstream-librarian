@@ -1598,6 +1598,8 @@ export type ReadingListDto = {
   name: string;
   description: string | null;
   series_count: number;
+  book_count: number;
+  books_read_count: number;
   preview_covers: string[];
   created_at: string;
   updated_at: string;

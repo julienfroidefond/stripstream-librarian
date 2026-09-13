@@ -75,9 +75,9 @@ Voir [Séries liées & Recommandations](/series/related/) pour le détail.
 
 | Méthode | Endpoint | Description |
 |---------|----------|-------------|
-| `GET` | `/reading-lists` | Lister toutes les listes |
+| `GET` | `/reading-lists` | Lister toutes les listes avec leur progression de lecture |
 | `POST` | `/reading-lists` | Créer une liste |
-| `GET` | `/reading-lists/{id}` | Détail d'une liste avec ses séries |
+| `GET` | `/reading-lists/{id}` | Détail d'une liste avec ses séries et leur progression de lecture |
 | `PATCH` | `/reading-lists/{id}` | Modifier le nom/description |
 | `DELETE` | `/reading-lists/{id}` | Supprimer une liste |
 | `POST` | `/reading-lists/{id}/series` | Ajouter une série |

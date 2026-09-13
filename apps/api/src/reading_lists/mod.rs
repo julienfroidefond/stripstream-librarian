@@ -19,6 +19,10 @@ pub struct ReadingListDto {
     pub name: String,
     pub description: Option<String>,
     pub series_count: i64,
+    /// Total books across this list's series.
+    pub book_count: i64,
+    /// Books marked as read by the requesting user.
+    pub books_read_count: i64,
     pub preview_covers: Vec<String>,
     #[schema(value_type = String)]
     pub created_at: DateTime<Utc>,
@@ -56,6 +60,10 @@ pub struct ReadingListSeriesDto {
     pub library_id: Uuid,
     pub library_name: String,
     pub position: i32,
+    /// Number of books in this series, for reader progress displays.
+    pub book_count: i64,
+    /// Number of books marked as read by the requesting user.
+    pub books_read_count: i64,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -124,6 +132,8 @@ pub async fn create_reading_list(
         name: row.get("name"),
         description: row.get("description"),
         series_count: 0,
+        book_count: 0,
+        books_read_count: 0,
         preview_covers: vec![],
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
@@ -179,6 +189,8 @@ pub async fn update_reading_list(
         name: row.get("name"),
         description: row.get("description"),
         series_count,
+        book_count: 0,
+        books_read_count: 0,
         preview_covers: vec![],
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
@@ -389,6 +401,8 @@ async fn fetch_list_dto(pool: &sqlx::PgPool, id: Uuid) -> Result<ReadingListDto,
         name: row.get("name"),
         description: row.get("description"),
         series_count: row.get("series_count"),
+        book_count: 0,
+        books_read_count: 0,
         preview_covers: row.get::<Vec<String>, _>("preview_covers"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
@@ -431,8 +445,8 @@ async fn fetch_list_items(
         ) eml ON true
         LEFT JOIN LATERAL (
             SELECT
-                COUNT(*) FILTER (WHERE b2.volume_type = 'regular') AS total_regular,
-                COUNT(brp2.book_id) FILTER (WHERE brp2.status = 'read' AND b2.volume_type = 'regular') AS read_regular
+                COUNT(b2.id) AS book_count,
+                COUNT(brp2.book_id) FILTER (WHERE brp2.status = 'read') AS books_read_count
             FROM books b2
             LEFT JOIN book_reading_progress brp2 ON brp2.book_id = b2.id
                 AND $2::uuid IS NOT NULL AND brp2.user_id = $2
@@ -445,8 +459,8 @@ async fn fetch_list_items(
           ))
         ORDER BY
             CASE WHEN $2::uuid IS NOT NULL
-                  AND progress.total_regular > 0
-                  AND progress.read_regular >= progress.total_regular
+                  AND progress.book_count > 0
+                  AND progress.books_read_count >= progress.book_count
                  THEN 1 ELSE 0 END ASC,
             rli.position,
             rli.created_at
@@ -471,6 +485,8 @@ async fn fetch_list_items(
             library_id: r.get("library_id"),
             library_name: r.get("library_name"),
             position: r.get("position"),
+            book_count: r.get("book_count"),
+            books_read_count: r.get("books_read_count"),
         })
         .collect())
 }
@@ -534,8 +550,10 @@ pub struct ListReadingListsQuery {
 )]
 pub async fn list_reading_lists(
     State(state): State<AppState>,
+    user: Option<Extension<AuthUser>>,
     Query(query): Query<ListReadingListsQuery>,
 ) -> Result<Json<Vec<ReadingListDto>>, ApiError> {
+    let user_id: Option<Uuid> = user.map(|u| u.0.user_id);
     let rows = sqlx::query(
         r#"
         -- Pre-compute covers for the first 5 items (with cover data) per list, in one pass
@@ -562,19 +580,32 @@ pub async fn list_reading_lists(
         )
         SELECT rl.id, rl.name, rl.description, rl.created_at, rl.updated_at,
                COUNT(rli.id)::bigint AS series_count,
+               progress.book_count,
+               progress.books_read_count,
                COALESCE(ca.preview_covers, ARRAY[]::text[]) AS preview_covers
         FROM reading_lists rl
         LEFT JOIN reading_list_items rli ON rli.list_id = rl.id
         LEFT JOIN covers_agg ca ON ca.list_id = rl.id
+        LEFT JOIN LATERAL (
+            SELECT
+                COUNT(b.id)::bigint AS book_count,
+                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read')::bigint AS books_read_count
+            FROM reading_list_items rli_progress
+            JOIN books b ON b.series_id = rli_progress.series_id
+            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id
+                AND $2::uuid IS NOT NULL AND brp.user_id = $2
+            WHERE rli_progress.list_id = rl.id
+        ) progress ON TRUE
         WHERE ($1::uuid IS NULL OR EXISTS (
             SELECT 1 FROM reading_list_items rli_f
             WHERE rli_f.list_id = rl.id AND rli_f.series_id = $1
         ))
-        GROUP BY rl.id, ca.preview_covers
+        GROUP BY rl.id, ca.preview_covers, progress.book_count, progress.books_read_count
         ORDER BY rl.name
         "#,
     )
     .bind(query.series_id)
+    .bind(user_id)
     .fetch_all(&state.pool)
     .await?;
 
@@ -585,6 +616,8 @@ pub async fn list_reading_lists(
             name: r.get("name"),
             description: r.get("description"),
             series_count: r.get("series_count"),
+            book_count: r.get("book_count"),
+            books_read_count: r.get("books_read_count"),
             preview_covers: r.get::<Vec<String>, _>("preview_covers"),
             created_at: r.get("created_at"),
             updated_at: r.get("updated_at"),
