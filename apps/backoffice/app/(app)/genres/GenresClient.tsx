@@ -25,6 +25,7 @@ type Props = {
 type GenreFilter = string[] | null;
 type SeriesView = "cards" | "table";
 type GenreFilterMode = "include" | "exclude";
+type AiSuggestion = { series_id: string; name: string; tags: string[] };
 
 function mergeGenreCounts(groups: GenreDto[][]): GenreDto[] {
   const counts = new Map<string, number>();
@@ -206,6 +207,8 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
   const [seriesView, setSeriesView] = useState<SeriesView>("cards");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [assignInput, setAssignInput] = useState("");
+  const [aiSuggestions, setAiSuggestions] = useState<AiSuggestion[]>([]);
+  const [aiLoading, setAiLoading] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
 
   const showToast = (msg: string) => {
@@ -375,6 +378,45 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
       await Promise.all([refreshGenres(), fetchSeriesForFilter(seriesFilter, libraryFilter, excludedGenres)]);
       setAssignInput("");
       showToast(t("genres.assignSuccess", { count: String(count), plural: count !== 1 ? "s" : "" }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAiSuggest = async () => {
+    if (selected.size === 0) return;
+    setAiLoading(true);
+    try {
+      const response = await fetch("/api/genres/ai-suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ series_ids: Array.from(selected) }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      setAiSuggestions(data.suggestions ?? []);
+      if ((data.suggestions ?? []).length === 0) showToast(t("genres.aiError"));
+    } catch {
+      showToast(t("genres.aiError"));
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleApplyAiTag = async (seriesId: string, genre: string) => {
+    setBusy(true);
+    try {
+      const response = await fetch("/api/genres/assign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ genre, series_ids: [seriesId] }),
+      });
+      if (!response.ok) throw new Error();
+      setAiSuggestions(prev => prev.map(s => s.series_id === seriesId ? { ...s, tags: s.tags.filter(tag => tag !== genre) } : s).filter(s => s.tags.length > 0));
+      await Promise.all([refreshGenres(), fetchSeriesForFilter(seriesFilter, libraryFilter, excludedGenres)]);
+      showToast(t("genres.assignSuccess", { count: "1", plural: "" }));
+    } catch {
+      showToast(t("genres.aiError"));
     } finally {
       setBusy(false);
     }
@@ -712,9 +754,37 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
               >
                 {t("genres.assignButton", { count: String(selected.size), plural: selected.size !== 1 ? "s" : "" })}
               </button>
+              <button
+                onClick={handleAiSuggest}
+                disabled={busy || aiLoading}
+                className="px-4 py-1.5 rounded-lg border border-violet-500/40 bg-violet-500/10 text-violet-400 text-xs font-medium hover:bg-violet-500/20 disabled:opacity-50 transition-colors shrink-0"
+              >
+                {aiLoading ? t("common.loading") : t("genres.aiSuggestSelected", { count: String(selected.size), plural: selected.size !== 1 ? "s" : "" })}
+              </button>
             </>
           )}
         </div>
+
+        {aiSuggestions.length > 0 && (
+          <div className="mb-5 rounded-xl border border-violet-500/30 bg-violet-500/5 p-4">
+            <h3 className="mb-3 text-sm font-semibold text-violet-300">{t("genres.aiSuggestions")}</h3>
+            <div className="space-y-3">
+              {aiSuggestions.map(suggestion => (
+                <div key={suggestion.series_id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="text-sm font-medium truncate">{suggestion.name}</span>
+                  <div className="flex flex-wrap gap-2">
+                    {suggestion.tags.map(tag => (
+                      <button key={tag} onClick={() => handleApplyAiTag(suggestion.series_id, tag)} disabled={busy} className="rounded-full border border-violet-400/40 px-2.5 py-1 text-xs text-violet-300 hover:bg-violet-500/20 disabled:opacity-50">
+                        {tag} <span className="ml-1 opacity-70">+</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">{t("genres.aiSuggested")}</p>
+          </div>
+        )}
 
         {/* Series cover grid */}
         {seriesLoading ? (

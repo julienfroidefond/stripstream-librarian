@@ -617,6 +617,14 @@ export function getBookCoverUrl(bookId: string, version?: string | null): string
 }
 
 export type Settings = {
+  ai_tagging?: {
+    enabled: boolean;
+    base_url: string;
+    api_key: string;
+    model: string;
+    max_tags: number;
+    prompt?: string;
+  };
   image_processing: {
     format: string;
     quality: number;

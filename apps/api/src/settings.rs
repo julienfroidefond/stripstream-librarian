@@ -49,6 +49,10 @@ pub fn settings_routes() -> Router<AppState> {
     Router::new()
         .route("/settings", get(get_settings))
         .route("/settings/:key", get(get_setting).post(update_setting))
+        .route(
+            "/settings/ai_tagging/test",
+            post(crate::ai_tagging::test_connection),
+        )
         .route("/settings/cache/clear", post(clear_cache))
         .route("/settings/cache/stats", get(get_cache_stats))
         .route("/settings/thumbnail/stats", get(get_thumbnail_stats))

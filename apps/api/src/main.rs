@@ -1,3 +1,4 @@
+mod ai_tagging;
 mod api_middleware;
 mod authors;
 mod books;
@@ -509,6 +510,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/genres", get(genres::list_genres))
         .route("/genres/assign", axum::routing::post(genres::assign_genre))
         .route("/genres/untagged-series", get(genres::untagged_series))
+        .route(
+            "/genres/ai-suggest",
+            axum::routing::post(ai_tagging::suggest_tags),
+        )
         .route(
             "/genres/:name",
             axum::routing::patch(genres::rename_genre).delete(genres::delete_genre),

@@ -27,6 +27,10 @@ Depuis la page Genres, un panneau **"Séries sans genre"** liste les séries non
 
 Sur la page détail d'une série, les genres sont modifiables directement dans les métadonnées.
 
+### Propositions par IAG
+
+Dans **Paramètres → IAG**, configurez l'endpoint OpenAI-compatible, la clé API et le modèle (OpenRouter est préconfiguré). Activez ensuite les propositions IAG dans le navigateur des séries sans genre. L'IAG choisit uniquement parmi les genres déjà existants ; aucun nouveau genre ne peut être créé par cette fonctionnalité. Les tags proposés sont affichés par série et doivent être affectés individuellement : aucune modification n'est appliquée automatiquement.
+
 ## Filtrer les séries par genre
 
 Sur la page **Séries**, un filtre par genre est disponible. Les séries peuvent être filtrées par un ou plusieurs genres.
@@ -45,6 +49,7 @@ Les genres issus des providers sont écrits lors de la synchronisation des méta
 | `DELETE` | `/genres/{name}` | Supprime un genre de toutes les séries |
 | `POST` | `/genres/assign` | Assigne un genre à une liste de séries (bulk) |
 | `GET` | `/genres/untagged-series` | Séries sans aucun genre (max 500) |
+| `POST` | `/genres/ai-suggest` | Propose des tags pour 1 à 25 séries sans modifier les données |
 
 `GET /genres` et `GET /genres/untagged-series` acceptent le paramètre `library_id` (UUID) pour filtrer à une bibliothèque donnée.
 :::

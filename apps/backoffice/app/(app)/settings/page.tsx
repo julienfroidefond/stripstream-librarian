@@ -31,7 +31,8 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
       image_processing: { format: "webp", quality: 85, filter: "lanczos3", max_width: 2160 },
       cache: { enabled: true, directory: "/tmp/stripstream-image-cache", max_size_mb: 10000, memory_max_size_mb: 128 },
       limits: { concurrent_renders: 4, timeout_seconds: 12, rate_limit_per_second: 120, concurrent_telegram_downloads: 2 },
-      thumbnail: { enabled: true, width: 300, height: 400, quality: 80, format: "webp", directory: "/data/thumbnails" }
+      thumbnail: { enabled: true, width: 300, height: 400, quality: 80, format: "webp", directory: "/data/thumbnails" },
+      ai_tagging: { enabled: false, base_url: "https://openrouter.ai/api/v1", api_key: "", model: "openrouter/free", max_tags: 5 }
     })),
     getCacheStats().catch(() => ({ total_size_mb: 0, file_count: 0, directory: "/tmp/stripstream-image-cache", memory_size_mb: 0, memory_page_count: 0, memory_max_size_mb: 128 })),
     getThumbnailStats().catch(() => ({ total_size_mb: 0, file_count: 0, directory: "/data/thumbnails" })),
