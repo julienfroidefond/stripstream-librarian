@@ -56,11 +56,25 @@ function SeriesCoverImage({ series }: { series: SeriesDto }) {
   return null;
 }
 
-function GenreSeriesModal({ genre, onClose }: { genre: string; onClose: () => void }) {
+function GenreSeriesModal({
+  genre,
+  onClose,
+  onRename,
+  onDelete,
+  busy,
+}: {
+  genre: string;
+  onClose: () => void;
+  onRename: (newName: string) => Promise<boolean>;
+  onDelete: () => Promise<boolean>;
+  busy: boolean;
+}) {
   const { t } = useTranslation();
   const [series, setSeries] = useState<SeriesDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(genre);
 
   useEffect(() => {
     setLoading(true);
@@ -70,6 +84,19 @@ function GenreSeriesModal({ genre, onClose }: { genre: string; onClose: () => vo
       .catch(() => setSeries([]))
       .finally(() => setLoading(false));
   }, [genre]);
+
+  useEffect(() => {
+    setName(genre);
+    setEditing(false);
+  }, [genre]);
+
+  const saveRename = async () => {
+    if (await onRename(name)) setEditing(false);
+  };
+
+  const deleteGenre = async () => {
+    if (await onDelete()) onClose();
+  };
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -82,17 +109,47 @@ function GenreSeriesModal({ genre, onClose }: { genre: string; onClose: () => vo
       <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
         <div className="pointer-events-auto w-full max-w-lg max-h-[80vh] bg-background rounded-2xl border border-border shadow-2xl flex flex-col">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-semibold bg-success/10 text-success border border-success/20 truncate">
-                {genre}
-              </span>
+          <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border shrink-0">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              {editing ? (
+                <input
+                  className="h-9 min-w-0 flex-1 rounded-lg border border-primary/50 bg-background px-3 text-sm font-semibold text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+                  value={name}
+                  autoFocus
+                  onChange={e => setName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") void saveRename();
+                    if (e.key === "Escape") { setName(genre); setEditing(false); }
+                  }}
+                />
+              ) : (
+                <span className="truncate text-lg font-semibold text-foreground">{genre}</span>
+              )}
               {!loading && (
                 <span className="text-sm text-muted-foreground shrink-0">
                   {t("genres.seriesCount", { count: String(total), plural: total !== 1 ? "s" : "" })}
                 </span>
               )}
             </div>
+            {editing ? (
+              <>
+                <button onClick={() => void saveRename()} disabled={busy} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50" title={t("common.save")}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                </button>
+                <button onClick={() => { setName(genre); setEditing(false); }} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" title={t("common.cancel")}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => setEditing(true)} disabled={busy} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50" title={t("genres.rename")}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
+                </button>
+                <button onClick={() => void deleteGenre()} disabled={busy} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" title={t("genres.delete")}>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                </button>
+              </>
+            )}
             <button onClick={onClose} className="ml-3 shrink-0 p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -131,42 +188,9 @@ function GenreSeriesModal({ genre, onClose }: { genre: string; onClose: () => vo
   );
 }
 
-function StatCard({
-  emoji,
-  label,
-  value,
-  sub,
-  color,
-}: {
-  emoji: string;
-  label: string;
-  value: string | number;
-  sub?: string;
-  color: "violet" | "green" | "blue" | "amber";
-}) {
-  const palette = {
-    violet: "border-violet-500/30 bg-violet-500/5 [&_span]:text-violet-400",
-    green:  "border-emerald-500/30 bg-emerald-500/5 [&_span]:text-emerald-400",
-    blue:   "border-blue-500/30 bg-blue-500/5 [&_span]:text-blue-400",
-    amber:  "border-amber-500/30 bg-amber-500/5 [&_span]:text-amber-400",
-  }[color];
-  return (
-    <div className={`rounded-2xl border p-4 flex flex-col gap-2 ${palette}`}>
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
-        <span className="text-xl">{emoji}</span>
-      </div>
-      <p className="text-3xl font-bold tracking-tight text-foreground">{value}</p>
-      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
-    </div>
-  );
-}
-
 export function GenresClient({ initialGenres, initialUntagged, libraries, initialTotalSeries }: Props) {
   const { t } = useTranslation();
   const [genres, setGenres] = useState<GenreDto[]>(initialGenres);
-  const [renaming, setRenaming] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [activeGenreModal, setActiveGenreModal] = useState<string | null>(null);
@@ -310,9 +334,9 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     fetchBrowserGenres(libraryIds);
   };
 
-  const handleRename = async (oldName: string) => {
-    const newName = renameValue.trim();
-    if (!newName || newName === oldName) { setRenaming(null); return; }
+  const handleRename = async (oldName: string, requestedName: string) => {
+    const newName = requestedName.trim();
+    if (!newName || newName === oldName) return true;
     setBusy(true);
     try {
       await fetch(`/api/genres/${encodeURIComponent(oldName)}`, {
@@ -332,17 +356,16 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
         delete next[oldName];
         return next;
       });
-      setRenaming(null);
-      setRenameValue("");
       await refreshGenres();
       showToast(t("genres.renameSuccess"));
+      return true;
     } finally {
       setBusy(false);
     }
   };
 
   const handleDelete = async (name: string) => {
-    if (!confirm(t("genres.deleteConfirm"))) return;
+    if (!confirm(t("genres.deleteConfirm"))) return false;
     setBusy(true);
     try {
       await fetch(`/api/genres/${encodeURIComponent(name)}`, { method: "DELETE" });
@@ -359,6 +382,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
         await refreshGenres();
       }
       showToast(t("genres.deleteSuccess"));
+      return true;
     } finally {
       setBusy(false);
     }
@@ -457,17 +481,13 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     : genres
   ).sort((a, b) => b.series_count - a.series_count);
   const availableGenreNames = browserGenres.filter(g => g.series_count > 0).map(g => g.name);
-  const activeGenreFilters = genreFilterMode === "include"
-    ? (Array.isArray(seriesFilter) ? seriesFilter : [])
-    : excludedGenres;
-
   // Stats
   const tagged = totalSeries > 0 ? totalSeries - untaggedCount : 0;
   const pct = totalSeries > 0 ? Math.round((tagged / totalSeries) * 100) : 0;
   const topGenre = [...genres].sort((a, b) => b.series_count - a.series_count)[0];
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-6">
       {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 bg-success text-success-foreground px-4 py-3 rounded-xl shadow-lg text-sm font-medium">
@@ -477,39 +497,59 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
 
       {/* Genre detail modal */}
       {activeGenreModal && (
-        <GenreSeriesModal genre={activeGenreModal} onClose={() => setActiveGenreModal(null)} />
+        <GenreSeriesModal
+          genre={activeGenreModal}
+          busy={busy}
+          onClose={() => setActiveGenreModal(null)}
+          onRename={async newName => {
+            const renamed = await handleRename(activeGenreModal, newName);
+            if (renamed) setActiveGenreModal(newName.trim());
+            return renamed;
+          }}
+          onDelete={() => handleDelete(activeGenreModal)}
+        />
       )}
 
-      {/* ── Stats banner ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard emoji="🏷️" label={t("genres.allGenres")} value={genres.length} color="violet" />
-        <StatCard
-          emoji="✅"
-          label={t("genres.taggedSeries")}
-          value={tagged}
-          sub={totalSeries > 0 ? `sur ${totalSeries} au total` : undefined}
-          color="green"
-        />
-        <StatCard emoji="📈" label={t("genres.tagRate")} value={`${pct}%`} color="blue" />
-        <StatCard
-          emoji="⭐"
-          label={t("genres.topGenre")}
-          value={topGenre?.name ?? "—"}
-          sub={topGenre ? `${topGenre.series_count} séries` : undefined}
-          color="amber"
-        />
-      </div>
+      <section className="overflow-hidden rounded-3xl border border-border bg-card">
+        <div className="flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-muted-foreground">{t("genres.taggedSeries")}</p>
+            <div className="mt-1 flex items-baseline gap-2">
+              <p className="text-3xl font-semibold tracking-tight">{tagged}</p>
+              <p className="text-sm text-muted-foreground">/ {totalSeries}</p>
+            </div>
+            <div className="mt-3 h-2 w-full max-w-sm overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+          <dl className="grid grid-cols-3 divide-x divide-border rounded-2xl border border-border bg-muted/30 text-center">
+            <div className="px-4 py-3">
+              <dt className="text-xs text-muted-foreground">{t("genres.tagRate")}</dt>
+              <dd className="mt-1 text-lg font-semibold">{pct}%</dd>
+            </div>
+            <div className="px-4 py-3">
+              <dt className="text-xs text-muted-foreground">{t("genres.allGenres")}</dt>
+              <dd className="mt-1 text-lg font-semibold">{genres.length}</dd>
+            </div>
+            <div className="min-w-0 px-4 py-3">
+              <dt className="text-xs text-muted-foreground">{t("genres.topGenre")}</dt>
+              <dd className="mt-1 truncate text-lg font-semibold">{topGenre?.name ?? "—"}</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
 
-      {/* ── Genre cards ──────────────────────────────────────────────── */}
-      <section>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4 mb-5">
-          <h2 className="text-lg font-semibold shrink-0">
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(18rem,0.8fr)_minmax(0,2fr)]">
+      {/* ── Genre library ───────────────────────────────────────────── */}
+      <section className="rounded-3xl border border-border bg-card p-4 sm:p-5 xl:sticky xl:top-6">
+        <div className="mb-4 flex flex-col gap-3">
+          <h2 className="text-base font-semibold shrink-0">
             {t("genres.allGenres")} <span className="text-muted-foreground font-normal text-base">({genres.length})</span>
           </h2>
           {genres.length > 8 && (
             <input
               type="text"
-              className="h-8 px-3 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary w-full sm:w-56"
+              className="h-9 w-full rounded-xl border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder={t("common.search") + "…"}
               value={genreFilter}
               onChange={e => setGenreFilter(e.target.value)}
@@ -519,14 +559,13 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
         {genres.length === 0 ? (
           <p className="text-muted-foreground text-sm">{t("genres.noGenres")}</p>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+          <div className="grid max-h-[calc(100vh-18rem)] grid-cols-2 gap-2 overflow-y-auto pr-1 md:grid-cols-4 xl:grid-cols-2">
             {filteredGenres.map(g => {
               const covers = genreCovers[g.name] ?? [];
               return (
-                <div key={g.name} className="group relative bg-card rounded-2xl border border-border overflow-hidden hover:border-primary/40 hover:shadow-lg transition-all duration-200">
-                  {/* Cover hero */}
-                  <button onClick={() => setActiveGenreModal(g.name)} className="w-full block focus:outline-none" tabIndex={-1}>
-                    <div className="h-14 relative bg-muted overflow-hidden">
+                <div key={g.name} className="group relative min-h-[60px] rounded-lg bg-muted/50 p-2 transition-colors hover:bg-muted">
+                  <button onClick={() => setActiveGenreModal(g.name)} className="absolute left-2 top-2 block h-11 w-8 overflow-hidden rounded-md bg-background focus:outline-none">
+                    <div className="relative h-full w-full">
                       {covers.length > 0 ? (
                         <SeriesCoverImage series={covers[Math.floor(covers.length * (g.name.length % 4) / 4)]} />
                       ) : (
@@ -536,49 +575,27 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
                           </svg>
                         </div>
                       )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
                     </div>
                   </button>
 
-                  {/* Card body */}
-                  <div className="px-2.5 py-2 min-w-0">
-                    {renaming === g.name ? (
-                      <div className="flex flex-wrap items-center gap-1.5 sm:flex-nowrap">
-                        <input
-                          className="h-6 min-w-0 w-full flex-1 bg-transparent text-sm focus:outline-none text-foreground border-b border-primary sm:w-auto"
-                          value={renameValue}
-                          autoFocus
-                          onChange={e => setRenameValue(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === "Enter") handleRename(g.name);
-                            if (e.key === "Escape") { setRenaming(null); setRenameValue(""); }
-                          }}
-                        />
-                        <button onClick={() => handleRename(g.name)} disabled={busy} className="text-primary hover:text-primary/70 disabled:opacity-50 shrink-0" title={t("common.save")}>
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                        </button>
-                        <button onClick={() => { setRenaming(null); setRenameValue(""); }} className="text-muted-foreground hover:text-foreground shrink-0" title={t("common.cancel")}>
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-1.5">
+                  <div className="min-h-11 min-w-0 py-0.5 pl-11 pr-1">
+                    <div className="flex h-full flex-col justify-between gap-1">
                         <button
                           onClick={() => setActiveGenreModal(g.name)}
-                          className="min-w-0 text-left font-semibold text-sm leading-tight text-foreground hover:text-primary transition-colors break-words sm:flex-1 sm:truncate sm:whitespace-nowrap"
+                          className="min-w-0 text-left text-sm font-semibold leading-tight text-foreground transition-colors hover:text-primary line-clamp-2"
                         >
                           {g.name}
                         </button>
-                        <div className="flex items-center justify-between gap-2 sm:justify-end">
-                          <span className="text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0">
-                            {g.series_count}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            {t("genres.seriesCount", { count: String(g.series_count), plural: g.series_count !== 1 ? "s" : "" })}
                           </span>
-                          <div className="flex items-center gap-1">
+                          <div className="hidden">
                             <button
-                              onClick={() => { setRenaming(g.name); setRenameValue(g.name); }}
+                              onClick={() => setActiveGenreModal(g.name)}
                               disabled={busy}
                               title={t("genres.rename")}
-                              className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors shrink-0"
+                              className="rounded-md bg-background/90 p-1.5 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
                             >
                               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                             </button>
@@ -586,14 +603,13 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
                               onClick={() => handleDelete(g.name)}
                               disabled={busy}
                               title={t("genres.delete")}
-                              className="p-1 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive disabled:opacity-50 transition-colors shrink-0"
+                              className="rounded-md bg-background/90 p-1.5 text-muted-foreground shadow-sm transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
                             >
                               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                             </button>
                           </div>
                         </div>
                       </div>
-                    )}
                   </div>
                 </div>
               );
@@ -602,10 +618,13 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
         )}
       </section>
 
-      {/* ── Series browser ──────────────────────────────────────────── */}
-      <section ref={filterRef}>
-        <div className="flex items-center justify-between gap-4 mb-4">
-          <h2 className="text-lg font-semibold">{t("nav.series")}</h2>
+      {/* ── Assignment workspace ───────────────────────────────────── */}
+      <section ref={filterRef} className="rounded-3xl border border-border bg-card p-4 sm:p-5">
+        <div className="mb-5 flex flex-col gap-3 border-b border-border pb-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{t("nav.genres")}</p>
+            <h2 className="mt-1 text-xl font-semibold">{t("nav.series")}</h2>
+          </div>
           {libraries.length > 1 && (
             <LibraryMultiBadgeSelector
               libraries={libraries}
@@ -615,8 +634,9 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
           )}
         </div>
 
-        {/* Filter tabs */}
-        <div className="flex flex-wrap items-center gap-2 mb-4">
+        {/* Filter controls */}
+        <div className="mb-5 rounded-2xl border border-border bg-muted/25 p-3">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center rounded-lg border border-border p-0.5">
             <button
               type="button"
@@ -634,32 +654,16 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
             </button>
           </div>
           <button
-            onClick={() => {
-              const allGenres = availableGenreNames;
-              handleFilterChange(genreFilterMode === "include" ? allGenres : seriesFilter, genreFilterMode === "exclude" ? allGenres : excludedGenres);
-            }}
+            onClick={() => handleFilterChange([], [])}
             className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-              activeGenreFilters.length === availableGenreNames.length
+              Array.isArray(seriesFilter) && seriesFilter.length === 0 && excludedGenres.length === 0
                 ? "bg-foreground text-background border-foreground"
                 : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
             }`}
           >
             {t("common.all")}
             <span className="ml-1.5 opacity-70">
-              ({filteredLibrariesTotal - untaggedCount})
-            </span>
-          </button>
-          <button
-            onClick={() => handleFilterChange(genreFilterMode === "include" ? [] : seriesFilter, genreFilterMode === "exclude" ? [] : excludedGenres)}
-            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-              activeGenreFilters.length === 0
-                ? "bg-foreground text-background border-foreground"
-                : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
-            }`}
-          >
-            {t("genres.clearGenreFilters")}
-            <span className="ml-1.5 opacity-70">
-              ({Array.isArray(seriesFilter) && seriesFilter.length === 0 ? seriesTotal : filteredLibrariesTotal})
+              ({filteredLibrariesTotal})
             </span>
           </button>
           <button
@@ -692,17 +696,18 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
             </button>
           ))}
         </div>
+        </div>
 
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
           <input
             type="text"
-            className="h-8 px-3 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary flex-1 min-w-[160px] max-w-xs"
+            className="h-9 min-w-[180px] flex-1 rounded-xl border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             placeholder={t("common.search") + "…"}
             value={seriesSearch}
             onChange={e => setSeriesSearch(e.target.value)}
           />
-          <button onClick={toggleAll} className="text-xs font-medium text-primary hover:underline shrink-0">
+          <button onClick={toggleAll} className="h-9 rounded-xl px-3 text-xs font-medium text-primary hover:bg-primary/10 shrink-0">
             {allSelected ? t("genres.deselectAll") : t("genres.selectAll")}
           </button>
           <div className="flex items-center rounded-lg border border-border p-0.5">
@@ -732,12 +737,14 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
               </svg>
             </button>
           </div>
-          {selected.size > 0 && (
-            <>
-              <span className="text-xs text-muted-foreground shrink-0">{selected.size} sél.</span>
+        </div>
+
+        {selected.size > 0 && (
+          <div className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border border-primary/25 bg-primary/5 p-3">
+              <span className="rounded-lg bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground shrink-0">{selected.size} sél.</span>
               <input
                 type="text"
-                className="h-8 px-3 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary w-44"
+                className="h-9 min-w-[180px] flex-1 rounded-xl border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder={t("genres.assignGenrePlaceholder")}
                 value={assignInput}
                 onChange={e => setAssignInput(e.target.value)}
@@ -750,31 +757,36 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
               <button
                 onClick={handleAssign}
                 disabled={busy || !assignInput.trim()}
-                className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors shrink-0"
+                className="h-9 rounded-xl bg-primary px-4 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors shrink-0"
               >
                 {t("genres.assignButton", { count: String(selected.size), plural: selected.size !== 1 ? "s" : "" })}
               </button>
               <button
                 onClick={handleAiSuggest}
                 disabled={busy || aiLoading}
-                className="px-4 py-1.5 rounded-lg border border-violet-500/40 bg-violet-500/10 text-violet-400 text-xs font-medium hover:bg-violet-500/20 disabled:opacity-50 transition-colors shrink-0"
+                className="h-9 rounded-xl border border-violet-500/40 bg-violet-500/10 px-4 text-xs font-medium text-violet-400 hover:bg-violet-500/20 disabled:opacity-50 transition-colors shrink-0"
               >
                 {aiLoading ? t("common.loading") : t("genres.aiSuggestSelected", { count: String(selected.size), plural: selected.size !== 1 ? "s" : "" })}
               </button>
-            </>
-          )}
-        </div>
+          </div>
+        )}
 
         {aiSuggestions.length > 0 && (
-          <div className="mb-5 rounded-xl border border-violet-500/30 bg-violet-500/5 p-4">
-            <h3 className="mb-3 text-sm font-semibold text-violet-300">{t("genres.aiSuggestions")}</h3>
-            <div className="space-y-3">
+          <div className="mb-5 rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-violet-300">{t("genres.aiSuggestions")}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{t("genres.aiSuggested")}</p>
+              </div>
+              <span className="rounded-lg bg-violet-500/10 px-2 py-1 text-xs font-medium text-violet-300">{aiSuggestions.length}</span>
+            </div>
+            <div className="grid gap-2 md:grid-cols-2">
               {aiSuggestions.map(suggestion => (
-                <div key={suggestion.series_id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <span className="text-sm font-medium truncate">{suggestion.name}</span>
+                <div key={suggestion.series_id} className="rounded-xl border border-violet-500/20 bg-background/60 p-3">
+                  <span className="block truncate text-sm font-medium">{suggestion.name}</span>
                   <div className="flex flex-wrap gap-2">
                     {suggestion.tags.map(tag => (
-                      <button key={tag} onClick={() => handleApplyAiTag(suggestion.series_id, tag)} disabled={busy} className="rounded-full border border-violet-400/40 px-2.5 py-1 text-xs text-violet-300 hover:bg-violet-500/20 disabled:opacity-50">
+                      <button key={tag} onClick={() => handleApplyAiTag(suggestion.series_id, tag)} disabled={busy} className="mt-2 rounded-full border border-violet-400/40 px-2.5 py-1 text-xs text-violet-300 hover:bg-violet-500/20 disabled:opacity-50">
                         {tag} <span className="ml-1 opacity-70">+</span>
                       </button>
                     ))}
@@ -782,7 +794,6 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
                 </div>
               ))}
             </div>
-            <p className="mt-3 text-xs text-muted-foreground">{t("genres.aiSuggested")}</p>
           </div>
         )}
 
@@ -794,7 +805,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
             {seriesFilter === null ? t("genres.noUntagged") : t("common.noData")}
           </div>
         ) : seriesView === "cards" ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
             {displayedSeries.map(s => {
               const isSelected = selected.has(s.series_id);
               return (
@@ -914,6 +925,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
           </div>
         )}
       </section>
+      </div>
     </div>
   );
 }

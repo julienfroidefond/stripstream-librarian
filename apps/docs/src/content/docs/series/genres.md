@@ -7,21 +7,20 @@ Les genres sont des tags libres attachés aux séries. Ils peuvent être issus d
 
 ## Page Genres
 
-![Page de gestion des genres — compteurs, grille de genres avec couvertures, et navigateur de séries](/screenshots/genres-management.png)
+![Page de gestion des genres — bibliothèque de genres et espace d'attribution](/screenshots/genres-management.png)
 
 La page **Genres** du backoffice centralise toute la gestion :
 
-- **Grille de genres** — chaque genre affiché avec le nombre de séries associées, filtrables par bibliothèque
-- **Renommage** — cliquez sur un genre pour le renommer sur toutes les séries en une fois
-- **Suppression** — retire le genre de toutes les séries (les séries elles-mêmes ne sont pas supprimées)
-- **Navigateur de séries** — sélectionnez plusieurs genres à inclure ou à exclure. Les séries affichées portent au moins un genre inclus et aucun genre exclu. Le badge **Tous** sélectionne tous les genres dans le mode actif, tandis que **Aucun** retire cette sélection. Le filtre de bibliothèque accepte aussi plusieurs bibliothèques. Les genres sont visibles sur chaque carte et un basculeur permet aussi d'afficher les mêmes séries dans un tableau, avec la même sélection et l'affectation en masse
-- **Couverture de genre** — choisissez une image représentative pour chaque genre
+- **Bibliothèque de genres** — chaque genre affiche une couverture représentative et son nombre de séries. Cliquez dessus pour consulter les séries concernées.
+- **Renommage et suppression** — ces actions se trouvent dans la modale du genre. Le renommage s'applique à toutes les séries ; la suppression retire uniquement ce genre des séries.
+- **Espace d'attribution** — filtrez les séries par bibliothèque, genre inclus ou exclu, ou affichez uniquement les séries sans genre. Le filtre **Tous** rétablit toutes les séries du périmètre sélectionné.
+- **Sélection et affichage** — choisissez plusieurs séries dans la vue cartes ou tableau, puis affectez-leur un genre existant en une opération.
 
 ## Taguer des séries
 
 ### Assignation en masse
 
-Depuis la page Genres, un panneau **"Séries sans genre"** liste les séries non encore taguées. Sélectionnez-en plusieurs et assignez-leur un genre en un clic.
+Depuis la page Genres, sélectionnez les séries à traiter — notamment via le filtre **Séries sans genre** — puis assignez-leur un genre en une opération.
 
 ### Assignation individuelle
 
@@ -29,7 +28,7 @@ Sur la page détail d'une série, les genres sont modifiables directement dans l
 
 ### Propositions par IAG
 
-Dans **Paramètres → IAG**, configurez l'endpoint OpenAI-compatible, la clé API et le modèle (OpenRouter est préconfiguré). Activez ensuite les propositions IAG dans le navigateur des séries sans genre. L'IAG choisit uniquement parmi les genres déjà existants ; aucun nouveau genre ne peut être créé par cette fonctionnalité. Les tags proposés sont affichés par série et doivent être affectés individuellement : aucune modification n'est appliquée automatiquement.
+Dans **Paramètres → IAG**, configurez l'endpoint OpenAI-compatible, la clé API, le modèle et le prompt (OpenRouter est préconfiguré). Sélectionnez les séries à analyser puis lancez les propositions. L'IAG choisit uniquement parmi les genres déjà existants ; aucun nouveau genre ne peut être créé par cette fonctionnalité. Les suggestions sont regroupées dans une zone de révision par série et doivent être affectées individuellement : aucune modification n'est appliquée automatiquement.
 
 ## Filtrer les séries par genre
 
