@@ -318,7 +318,10 @@ export function BooksGridWithMissing({
         item.kind === "owned" ? (
           <BookCard key={item.book.id} book={item.book} compact={compact} hasActiveUser={hasActiveUser} />
         ) : (
-          <MissingBookCard key={`missing-${item.book.volume_number ?? idx}`} book={item.book} />
+          <MissingBookCard
+            key={item.book.volume_number != null ? `missing-vol-${item.book.volume_number}` : `missing-idx-${idx}`}
+            book={item.book}
+          />
         )
       )}
     </div>
