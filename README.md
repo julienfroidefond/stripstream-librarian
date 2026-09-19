@@ -114,7 +114,9 @@ The backoffice will be available at http://localhost:7082
 ### External Metadata
 - Search, match, approve/reject workflow with confidence scoring
 - SensCritique edition selection (per-edition volume count for accurate matching)
+- BDTheque and BDphile providers for French/Belgian comics, including volume, ISBN/EAN, author, publisher, date, cover, and summary metadata
 - Batch auto-matching, re-match to different provider, and scheduled metadata refresh
+- BDTheque/BDphile ISBN matching is additive and never moves an existing historical provider match
 - Confidence boosted by local book count vs provider total_volumes
 - Field locking to protect manual edits from sync
 

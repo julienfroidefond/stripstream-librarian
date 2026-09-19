@@ -27,6 +27,17 @@ pub(crate) struct MatchedBook<'a> {
     pub local_book_id: Option<Uuid>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct LocalBookForMatching {
+    pub id: Uuid,
+    pub volume: i32,
+    pub title: String,
+    pub isbn: Option<String>,
+    pub volume_type: String,
+}
+
+type LocalBookRow = (Uuid, Option<i32>, String, Option<String>, String);
+
 /// Pre-update series row returned by upsert for callers that need diff/reporting.
 pub(crate) type ExistingSeriesRow = sqlx::postgres::PgRow;
 
@@ -207,14 +218,14 @@ pub(crate) async fn fetch_local_books(
     pool: &PgPool,
     library_id: Uuid,
     series_name: &str,
-) -> Result<Vec<(Uuid, i32, String)>, sqlx::Error> {
-    let rows: Vec<(Uuid, Option<i32>, String)> = sqlx::query_as(
+) -> Result<Vec<LocalBookForMatching>, sqlx::Error> {
+    let rows: Vec<LocalBookRow> = sqlx::query_as(
         r#"
-        SELECT b.id, b.volume, b.title FROM books b
+        SELECT b.id, b.volume, b.title, b.isbn, b.volume_type FROM books b
         LEFT JOIN series s ON s.id = b.series_id
         WHERE b.library_id = $1
           AND COALESCE(s.name, 'unclassified') = $2
-          AND b.volume_type IN ('regular', 'integral')
+          AND b.volume_type IN ('regular', 'integral', 'oneshot')
         ORDER BY b.volume NULLS LAST,
                  REGEXP_REPLACE(LOWER(b.title), '[0-9].*$', ''),
                  COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),
@@ -229,7 +240,15 @@ pub(crate) async fn fetch_local_books(
     let with_pos = rows
         .iter()
         .enumerate()
-        .map(|(idx, (id, vol, title))| (*id, vol.unwrap_or((idx + 1) as i32), title.clone()))
+        .map(
+            |(idx, (id, vol, title, isbn, volume_type))| LocalBookForMatching {
+                id: *id,
+                volume: vol.unwrap_or((idx + 1) as i32),
+                title: title.clone(),
+                isbn: isbn.clone(),
+                volume_type: volume_type.clone(),
+            },
+        )
         .collect();
 
     Ok(with_pos)
@@ -239,7 +258,32 @@ pub(crate) async fn fetch_local_books(
 /// Returns matched pairs preserving the external book order.
 pub(crate) fn match_books<'a>(
     ext_books: &'a [BookCandidate],
-    local_books: &[(Uuid, i32, String)],
+    local_books: &[LocalBookForMatching],
+) -> Vec<MatchedBook<'a>> {
+    match_books_with_policy(ext_books, local_books, false)
+}
+
+/// Match books for the new HTML providers. This is deliberately opt-in so
+/// historical providers keep their existing regular/integral matching behavior.
+pub(crate) fn match_books_for_new_provider<'a>(
+    ext_books: &'a [BookCandidate],
+    local_books: &[LocalBookForMatching],
+) -> Vec<MatchedBook<'a>> {
+    match_books_with_policy(ext_books, local_books, true)
+}
+
+fn normalize_isbn(value: &str) -> String {
+    value
+        .chars()
+        .filter(|c| c.is_ascii_digit() || *c == 'X' || *c == 'x')
+        .map(|c| c.to_ascii_uppercase())
+        .collect()
+}
+
+fn match_books_with_policy<'a>(
+    ext_books: &'a [BookCandidate],
+    local_books: &[LocalBookForMatching],
+    allow_oneshots: bool,
 ) -> Vec<MatchedBook<'a>> {
     let mut matched_ids: HashSet<Uuid> = HashSet::new();
 
@@ -248,31 +292,59 @@ pub(crate) fn match_books<'a>(
         .enumerate()
         .map(|(ext_idx, book)| {
             let is_vol_zero = book.volume_number == Some(0);
+            let is_oneshot = allow_oneshots
+                && book
+                    .metadata_json
+                    .get("oneshot")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
             let ext_vol = book.volume_number.unwrap_or((ext_idx + 1) as i32);
 
             // Strategy 1: Match by volume number (skip vol 0 — T0 = HS in providers)
-            let mut local_id: Option<Uuid> = if is_vol_zero {
+            let mut local_id: Option<Uuid> = if is_vol_zero || is_oneshot {
                 None
             } else {
                 local_books
                     .iter()
-                    .find(|(id, v, _)| *v == ext_vol && !matched_ids.contains(id))
-                    .map(|(id, _, _)| *id)
+                    .find(|book| {
+                        book.volume == ext_vol
+                            && !matched_ids.contains(&book.id)
+                            && (allow_oneshots || book.volume_type != "oneshot")
+                    })
+                    .map(|book| book.id)
             };
 
             // Strategy 2: Title containment (case-insensitive)
-            if !is_vol_zero && local_id.is_none() {
+            if !is_vol_zero && !is_oneshot && local_id.is_none() {
                 let ext_lower = book.title.to_lowercase();
                 local_id = local_books
                     .iter()
-                    .find(|(id, _, title)| {
-                        if matched_ids.contains(id) {
+                    .find(|local| {
+                        if matched_ids.contains(&local.id)
+                            || (!allow_oneshots && local.volume_type == "oneshot")
+                        {
                             return false;
                         }
-                        let local_lower = title.to_lowercase();
+                        let local_lower = local.title.to_lowercase();
                         local_lower.contains(&ext_lower) || ext_lower.contains(&local_lower)
                     })
-                    .map(|(id, _, _)| *id);
+                    .map(|local| local.id);
+            }
+
+            // ISBN is additive: it is only considered when the historical
+            // volume/title strategies did not find a book.
+            if local_id.is_none() && allow_oneshots {
+                if let Some(ext_isbn) = book.isbn.as_deref().map(normalize_isbn) {
+                    local_id = local_books
+                        .iter()
+                        .find(|local| {
+                            !matched_ids.contains(&local.id)
+                                && local.isbn.as_deref().map(normalize_isbn).as_deref()
+                                    == Some(ext_isbn.as_str())
+                                && (is_oneshot == (local.volume_type == "oneshot"))
+                        })
+                        .map(|local| local.id);
+                }
             }
 
             if let Some(id) = local_id {
@@ -385,6 +457,92 @@ pub(crate) async fn push_book_metadata(
     .await?;
 
     Ok(current)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn external(
+        title: &str,
+        volume: Option<i32>,
+        isbn: Option<&str>,
+        oneshot: bool,
+    ) -> BookCandidate {
+        BookCandidate {
+            external_book_id: title.to_string(),
+            title: title.to_string(),
+            volume_number: volume,
+            authors: vec![],
+            isbn: isbn.map(str::to_string),
+            summary: None,
+            cover_url: None,
+            page_count: None,
+            language: None,
+            publish_date: None,
+            metadata_json: serde_json::json!({"oneshot": oneshot}),
+        }
+    }
+
+    fn local(
+        id: Uuid,
+        volume: i32,
+        title: &str,
+        isbn: Option<&str>,
+        volume_type: &str,
+    ) -> LocalBookForMatching {
+        LocalBookForMatching {
+            id,
+            volume,
+            title: title.to_string(),
+            isbn: isbn.map(str::to_string),
+            volume_type: volume_type.to_string(),
+        }
+    }
+
+    #[test]
+    fn historical_matching_does_not_move_existing_volume_match_to_isbn_match() {
+        let existing = Uuid::new_v4();
+        let isbn_match = Uuid::new_v4();
+        let ext = external("Different title", Some(1), Some("978-2-0000-0000-0"), false);
+        let books = vec![
+            local(existing, 1, "Existing tome", None, "regular"),
+            local(isbn_match, 9, "ISBN tome", Some("9782000000000"), "regular"),
+        ];
+        let external_books = [ext];
+        let matched = match_books(&external_books, &books);
+        assert_eq!(matched[0].local_book_id, Some(existing));
+    }
+
+    #[test]
+    fn new_provider_uses_isbn_when_volume_and_title_do_not_match() {
+        let expected = Uuid::new_v4();
+        let ext = external("Different title", Some(8), Some("978-2-0000-0000-0"), false);
+        let books = vec![local(
+            expected,
+            9,
+            "ISBN tome",
+            Some("9782000000000"),
+            "regular",
+        )];
+        let external_books = [ext];
+        let matched = match_books_for_new_provider(&external_books, &books);
+        assert_eq!(matched[0].local_book_id, Some(expected));
+    }
+
+    #[test]
+    fn one_shot_requires_one_shot_local_book() {
+        let oneshot = Uuid::new_v4();
+        let regular = Uuid::new_v4();
+        let ext = external("Album unique", None, Some("978-2-0000-0000-0"), true);
+        let books = vec![
+            local(regular, 1, "Album unique", Some("9782000000000"), "regular"),
+            local(oneshot, 1, "Album unique", Some("9782000000000"), "oneshot"),
+        ];
+        let external_books = [ext];
+        let matched = match_books_for_new_provider(&external_books, &books);
+        assert_eq!(matched[0].local_book_id, Some(oneshot));
+    }
 }
 
 // ---------------------------------------------------------------------------

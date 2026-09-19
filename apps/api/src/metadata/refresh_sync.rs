@@ -97,7 +97,11 @@ pub(crate) async fn refresh_link(
         .await
         .map_err(|e| e.to_string())?;
 
-    let matched = shared_sync::match_books(&books, &local_books);
+    let matched = if provider_name == "bdtheque" || provider_name == "bdphile" {
+        shared_sync::match_books_for_new_provider(&books, &local_books)
+    } else {
+        shared_sync::match_books(&books, &local_books)
+    };
 
     for m in &matched {
         shared_sync::insert_external_book_metadata(pool, link_id, m.local_book_id, m.ext_book)
@@ -109,8 +113,8 @@ pub(crate) async fn refresh_link(
             if !diffs.is_empty() {
                 let local_title = local_books
                     .iter()
-                    .find(|(id, _, _)| *id == book_id)
-                    .map(|(_, _, t)| t.clone())
+                    .find(|book| book.id == book_id)
+                    .map(|book| book.title.clone())
                     .unwrap_or_default();
                 book_changes.push(BookDiff {
                     book_id: book_id.to_string(),

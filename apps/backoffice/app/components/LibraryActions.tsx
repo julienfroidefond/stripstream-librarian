@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { Button, Icon } from "../components/ui";
 import { ProviderIcon } from "../components/ProviderIcon";
 import { useTranslation } from "../../lib/i18n/context";
+import type { MetadataProviderDto } from "../../lib/api";
 
 interface LibraryActionsProps {
   libraryId: string;
@@ -39,6 +40,14 @@ export function LibraryActions({
   const [isPending, startTransition] = useTransition();
   const [saveError, setSaveError] = useState<string | null>(null);
   const [tags, setTags] = useState<string[]>(initialTags);
+  const [providers, setProviders] = useState<MetadataProviderDto[]>([]);
+
+  useEffect(() => {
+    fetch("/api/metadata/providers")
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("provider list failed")))
+      .then((data: MetadataProviderDto[]) => setProviders(data))
+      .catch(() => setProviders([]));
+  }, []);
 
   const PREDEFINED_TAGS = [
     "manga",
@@ -133,12 +142,14 @@ export function LibraryActions({
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50"
-            onClick={() => setIsOpen(false)}
+            className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none"
           />
 
           {/* Modal */}
-          <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+          <div
+            className="fixed inset-0 flex items-center justify-center z-50 p-4"
+            onClick={(event) => { if (event.target === event.currentTarget) setIsOpen(false); }}
+          >
             <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-muted/30">
@@ -237,12 +248,7 @@ export function LibraryActions({
                         >
                           <option value="">{t("libraryActions.default")}</option>
                           <option value="none">{t("libraryActions.none")}</option>
-                          <option value="google_books">Google Books</option>
-                          <option value="comicvine">ComicVine</option>
-                          <option value="open_library">Open Library</option>
-                          <option value="anilist">AniList</option>
-                          <option value="bedetheque">Bédéthèque</option>
-                          <option value="senscritique">SensCritique</option>
+                          {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}
                         </select>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1.5">{t("libraryActions.providerDesc")}</p>
@@ -261,12 +267,7 @@ export function LibraryActions({
                           className="text-sm border border-border rounded-lg px-3 py-1.5 bg-background min-w-[160px] shrink-0"
                         >
                           <option value="">{t("libraryActions.none")}</option>
-                          <option value="google_books">Google Books</option>
-                          <option value="comicvine">ComicVine</option>
-                          <option value="open_library">Open Library</option>
-                          <option value="anilist">AniList</option>
-                          <option value="bedetheque">Bédéthèque</option>
-                          <option value="senscritique">SensCritique</option>
+                          {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}
                         </select>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1.5">{t("libraryActions.fallbackDesc")}</p>

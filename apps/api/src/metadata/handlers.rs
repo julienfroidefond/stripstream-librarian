@@ -234,6 +234,17 @@ pub async fn search_metadata(
     Ok(Json(dtos))
 }
 
+#[utoipa::path(
+    get,
+    path = "/metadata/providers",
+    tag = "metadata",
+    responses((status = 200, body = Vec<metadata_providers::ProviderDescriptor>)),
+    security(("Bearer" = []))
+)]
+pub async fn list_metadata_providers() -> Json<Vec<metadata_providers::ProviderDescriptor>> {
+    Json(metadata_providers::available_providers())
+}
+
 // ---------------------------------------------------------------------------
 // POST /metadata/match
 // ---------------------------------------------------------------------------

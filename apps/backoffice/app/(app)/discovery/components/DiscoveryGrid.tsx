@@ -22,7 +22,6 @@ const PROVIDERS = [
   { id: "sc_trending_manga", label: "Nouveautés Manga", description: "", hasPeriod: true },
   { id: "sc_best_bd", label: "Meilleures BD", description: "", hasPeriod: true },
   { id: "sc_best_manga", label: "Meilleurs Manga", description: "", hasPeriod: true },
-  { id: "bedetheque", label: "Bédéthèque", description: "Top BD", hasPeriod: false },
   { id: "senscritique_bd", label: "SensCritique", description: "Top BD", hasPeriod: false },
   { id: "senscritique", label: "SensCritique", description: "Top Manga", hasPeriod: false },
   { id: "anilist", label: "AniList", description: "Top Manga", hasPeriod: false },

@@ -1,4 +1,4 @@
-import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, fetchReadingLists, fetchSeriesMemberships, fetchSeriesRecommendations, LibraryDto, SeriesDto, SeriesPageDto, ReadingListDto, RecommendedSeriesDto, getBookCoverUrl } from "@/lib/api";
+import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, fetchReadingLists, fetchSeriesMemberships, fetchSeriesRecommendations, fetchMetadataProviders, LibraryDto, SeriesDto, SeriesPageDto, ReadingListDto, RecommendedSeriesDto, getBookCoverUrl } from "@/lib/api";
 import { cookies } from "next/headers";
 import { ReadingListCard } from "@/app/components/ReadingListCard";
 import { getServerTranslations } from "@/lib/i18n/server";
@@ -59,6 +59,7 @@ export default async function SeriesPage({
       ? fetchSeriesRecommendations(limit).catch(() => [] as RecommendedSeriesDto[])
       : Promise.resolve([] as RecommendedSeriesDto[]),
   ]);
+  const metadataProviders = await fetchMetadataProviders().catch(() => []);
 
   const series = seriesPage.items;
   const totalPages = Math.ceil(seriesPage.total / limit);
@@ -124,12 +125,7 @@ export default async function SeriesPage({
     { value: "", label: t("series.metadataAll") },
     { value: "linked", label: t("series.metadataLinked") },
     { value: "unlinked", label: t("series.metadataUnlinked") },
-    { value: "google_books", label: "Google Books" },
-    { value: "open_library", label: "Open Library" },
-    { value: "comicvine", label: "ComicVine" },
-    { value: "anilist", label: "AniList" },
-    { value: "bedetheque", label: "Bédéthèque" },
-    { value: "senscritique", label: "SensCritique" },
+    ...metadataProviders.map((provider) => ({ value: provider.id, label: provider.label })),
   ];
 
   return (

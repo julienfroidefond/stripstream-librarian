@@ -79,6 +79,8 @@ export function ProviderIcon({ provider, size = 16, className = "" }: ProviderIc
       );
 
     case "bedetheque":
+    case "bdtheque":
+    case "bdphile":
       // French flag-inspired book (Bédéthèque)
       return (
         <svg viewBox="0 0 24 24" style={style} className={className}>
@@ -116,15 +118,8 @@ export function ProviderIcon({ provider, size = 16, className = "" }: ProviderIc
   }
 }
 
-export const PROVIDERS = [
-  { value: "google_books", label: "Google Books" },
-  { value: "open_library", label: "Open Library" },
-  { value: "comicvine", label: "ComicVine" },
-  { value: "anilist", label: "AniList" },
-  { value: "bedetheque", label: "Bédéthèque" },
-  { value: "senscritique", label: "SensCritique" },
-] as const;
-
 export function providerLabel(value: string) {
-  return PROVIDERS.find((p) => p.value === value)?.label ?? value.replace("_", " ");
+  return value
+    .replaceAll("_", " ")
+    .replace(/(^|\s)\S/g, (character) => character.toUpperCase());
 }

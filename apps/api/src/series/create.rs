@@ -11,7 +11,7 @@ use crate::{auth::AuthUser, error::ApiError, state::AppState};
 pub struct CreateSeriesRequest {
     pub library_id: String,
     pub name: String,
-    /// Provider name (e.g., "senscritique", "bedetheque")
+    /// Provider name (e.g., "senscritique", "bdtheque")
     pub provider: Option<String>,
     /// External ID from provider search result
     pub external_id: Option<String>,

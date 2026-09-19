@@ -229,6 +229,143 @@ async fn bedetheque_search_and_books() {
     );
 }
 
+#[tokio::test]
+#[ignore]
+async fn bdtheque_search_and_books() {
+    let provider = get_provider("bdtheque").unwrap();
+    let candidates = provider
+        .search_series("Les Géants", &config_fr())
+        .await
+        .unwrap();
+    assert!(!candidates.is_empty(), "bdtheque: no results");
+    assert!(
+        candidates[0].cover_url.is_some(),
+        "bdtheque: search candidate has no cover"
+    );
+    println!(
+        "bdtheque candidate: title={:?} authors={:?} publishers={:?} start_year={:?} total_volumes={:?} status={:?}",
+        candidates[0].title,
+        candidates[0].authors,
+        candidates[0].publishers,
+        candidates[0].start_year,
+        candidates[0].total_volumes,
+        candidates[0].metadata_json.get("status"),
+    );
+    assert!(
+        !candidates[0].authors.is_empty(),
+        "bdtheque: search candidate has no authors"
+    );
+    assert!(
+        !candidates[0].publishers.is_empty(),
+        "bdtheque: search candidate has no publishers"
+    );
+    assert!(
+        candidates[0].start_year.is_some(),
+        "bdtheque: search candidate has no start_year"
+    );
+    assert!(
+        candidates[0]
+            .metadata_json
+            .get("status")
+            .and_then(|v| v.as_str())
+            .is_some(),
+        "bdtheque: search candidate has no status"
+    );
+    let books = provider
+        .get_series_books(&candidates[0].external_id, &config_fr())
+        .await
+        .unwrap();
+    assert!(!books.is_empty(), "bdtheque: no books returned");
+    assert!(
+        books.iter().any(|book| book.isbn.is_some()),
+        "bdtheque: no ISBNs returned"
+    );
+    assert!(
+        books.iter().any(|book| book.cover_url.is_some()),
+        "bdtheque: no covers returned"
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn bdphile_search_and_books() {
+    let provider = get_provider("bdphile").unwrap();
+    let candidates = provider
+        .search_series("Les Géants", &config_fr())
+        .await
+        .unwrap();
+    assert!(!candidates.is_empty(), "bdphile: no results");
+    assert!(
+        candidates[0].cover_url.is_some(),
+        "bdphile: search candidate has no cover"
+    );
+    println!(
+        "bdphile candidate: title={:?} authors={:?} publishers={:?} start_year={:?} total_volumes={:?} status={:?}",
+        candidates[0].title,
+        candidates[0].authors,
+        candidates[0].publishers,
+        candidates[0].start_year,
+        candidates[0].total_volumes,
+        candidates[0].metadata_json.get("status"),
+    );
+    assert!(
+        !candidates[0].authors.is_empty(),
+        "bdphile: search candidate has no authors"
+    );
+    assert!(
+        !candidates[0].publishers.is_empty(),
+        "bdphile: search candidate has no publishers"
+    );
+    assert!(
+        candidates[0].start_year.is_some(),
+        "bdphile: search candidate has no start_year"
+    );
+    assert!(
+        candidates[0].total_volumes.is_some(),
+        "bdphile: search candidate has no total_volumes"
+    );
+    let series = provider
+        .get_series(&candidates[0].external_id, &config_fr())
+        .await
+        .unwrap();
+    assert!(series.cover_url.is_some(), "bdphile: series has no cover");
+    let books = provider
+        .get_series_books(&candidates[0].external_id, &config_fr())
+        .await
+        .unwrap();
+    assert!(!books.is_empty(), "bdphile: no books returned");
+    assert!(
+        books.iter().any(|book| book.isbn.is_some()),
+        "bdphile: no ISBNs returned"
+    );
+    assert!(
+        books.iter().any(|book| book.cover_url.is_some()),
+        "bdphile: no covers returned"
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn bdphile_asterix_fields() {
+    let provider = get_provider("bdphile").unwrap();
+    let series = provider
+        .get_series("bd/124-asterix", &config_fr())
+        .await
+        .unwrap();
+    println!(
+        "asterix authors={:?} publishers={:?} start={:?} vols={:?}",
+        series.authors, series.publishers, series.start_year, series.total_volumes
+    );
+    assert!(
+        !series.authors.is_empty(),
+        "bdphile: astérix has no authors"
+    );
+    assert!(
+        !series.publishers.is_empty(),
+        "bdphile: astérix has no publishers"
+    );
+}
+
 // --- ComicVine (needs API key) ---
 
 #[tokio::test]

@@ -279,7 +279,8 @@ External book metadata is also stored in `external_book_metadata` (cover_url, ti
 | Google Books | First volume's description encountered during grouping |
 | AniList | Series-level description from GraphQL |
 | ComicVine | Volume description (HTML stripped) |
-| Bedetheque | Series page meta description (scraped, top 3 enriched) |
+| BDTheque | Series and album pages/album-list endpoint |
+| BDphile | Series and album pages, including edition EAN |
 | Open Library | First volume's description encountered during grouping |
 
 All providers persist `description` in `metadata_json` so it survives the DB round-trip (match → approve → sync).
@@ -290,6 +291,8 @@ All providers persist `description` in `metadata_json` so it survives the DB rou
 - Change tracking reports per series and per book (field-level diffs)
 - Non-destructive: only updates when provider has new data
 - Uses the same shared sync functions as approve and batch
+- BDTheque and BDphile use ISBN/EAN only as an additive fallback for new links; historical provider matches are not displaced
+- Bédéthèque (`bedetheque.com`) is retired: the site is now behind a Cloudflare challenge. It is no longer exposed as a provider; existing library settings are migrated to BDTheque.
 
 ### Field Locking
 - Individual series and book fields can be locked to prevent external sync from overwriting manual edits
@@ -333,7 +336,6 @@ Browse and add series to your library from external sources.
 | Nouveautés Manga | SensCritique `productsByRelease` | Popularity | Month / Year / All time |
 | Meilleures BD | SensCritique `productsByRelease` | Rating | Month / Year / All time |
 | Meilleurs Manga | SensCritique `productsByRelease` | Rating | Month / Year / All time |
-| Bédéthèque | Bédéthèque indispensables | Rank | — |
 | SensCritique Top BD | SensCritique `top` (TOP_100_OUT_OF_TOP_10) | Rank | — |
 | SensCritique Top Manga | SensCritique `poll` (id: 192836) | Rank | — |
 | AniList | AniList trending manga | Popularity | — |
@@ -353,7 +355,7 @@ Browse and add series to your library from external sources.
 
 ### Add to Library
 - Crée la série + metadata (description, auteurs, genres, statut, cover)
-- Crée un metadata link pour `bedetheque` et `senscritique` (providers `sc_*` normalisés vers `senscritique`)
+- Crée un metadata link pour `senscritique` (providers `sc_*` normalisés vers `senscritique`)
 - Pas de metadata link pour `anilist` et `prowlarr`
 - Discovery results grouped by franchise (series-level, not individual tomes)
 - Revalidation des pages `/series` et `/libraries` après ajout

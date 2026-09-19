@@ -10,7 +10,7 @@ mod sync;
 // Re-export handlers (used by main.rs routes and openapi.rs paths)
 pub use handlers::{
     approve_metadata, create_metadata_match, delete_metadata_link, get_metadata_links,
-    get_missing_books, reject_metadata, search_metadata,
+    get_missing_books, list_metadata_providers, reject_metadata, search_metadata,
 };
 
 // Re-export handler types (used by openapi.rs schemas)

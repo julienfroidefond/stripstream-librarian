@@ -1,4 +1,6 @@
 pub mod anilist;
+pub mod bdphile;
+pub mod bdtheque;
 pub mod bedetheque;
 pub mod comicvine;
 pub mod google_books;
@@ -6,6 +8,7 @@ pub mod open_library;
 pub mod senscritique;
 
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 /// Configuration passed to providers (API keys, etc.)
 #[derive(Debug, Clone, Default)]
@@ -16,6 +19,32 @@ pub struct ProviderConfig {
     /// When true, return detailed results (e.g., per-edition for SensCritique).
     /// Set to false in batch mode to reduce API calls.
     pub detailed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ProviderDescriptor {
+    pub id: String,
+    pub label: String,
+    pub requires_api_key: bool,
+}
+
+pub fn available_providers() -> Vec<ProviderDescriptor> {
+    [
+        ("google_books", "Google Books", true),
+        ("open_library", "Open Library", false),
+        ("comicvine", "ComicVine", true),
+        ("anilist", "AniList", false),
+        ("bdtheque", "BDTheque", false),
+        ("bdphile", "BDphile", false),
+        ("senscritique", "SensCritique", false),
+    ]
+    .into_iter()
+    .map(|(id, label, requires_api_key)| ProviderDescriptor {
+        id: id.to_string(),
+        label: label.to_string(),
+        requires_api_key,
+    })
+    .collect()
 }
 
 /// A candidate series returned by a provider search
@@ -92,6 +121,8 @@ pub fn get_provider(name: &str) -> Option<Box<dyn MetadataProvider>> {
         "comicvine" => Some(Box::new(comicvine::ComicVineProvider)),
         "anilist" => Some(Box::new(anilist::AniListProvider)),
         "bedetheque" => Some(Box::new(bedetheque::BedethequeProvider)),
+        "bdphile" => Some(Box::new(bdphile::BdphileProvider)),
+        "bdtheque" => Some(Box::new(bdtheque::BdthequeProvider)),
         "senscritique" => Some(Box::new(senscritique::SensCritiqueProvider)),
         _ => None,
     }

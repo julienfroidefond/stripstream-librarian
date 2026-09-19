@@ -22,6 +22,12 @@ export type LibraryDto = {
   tags: string[];
 };
 
+export type MetadataProviderDto = {
+  id: string;
+  label: string;
+  requires_api_key: boolean;
+};
+
 export type IndexJobDto = {
   id: string;
   library_id: string | null;
@@ -1197,6 +1203,10 @@ export async function searchMetadata(libraryId: string, seriesName: string, prov
     method: "POST",
     body: JSON.stringify({ library_id: libraryId, series_name: seriesName, provider: provider || undefined }),
   });
+}
+
+export async function fetchMetadataProviders() {
+  return apiFetch<MetadataProviderDto[]>("/metadata/providers");
 }
 
 export async function createMetadataMatch(data: {

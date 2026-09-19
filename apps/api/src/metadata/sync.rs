@@ -129,7 +129,11 @@ pub(crate) async fn sync_books_metadata(
     shared_sync::delete_link_book_metadata(&state.pool, link_id).await?;
 
     let local_books = shared_sync::fetch_local_books(&state.pool, library_id, series_name).await?;
-    let matched = shared_sync::match_books(&books, &local_books);
+    let matched = if provider_name == "bdtheque" || provider_name == "bdphile" {
+        shared_sync::match_books_for_new_provider(&books, &local_books)
+    } else {
+        shared_sync::match_books(&books, &local_books)
+    };
 
     let mut matched_count: i64 = 0;
     let mut book_reports: Vec<BookSyncReport> = Vec::new();

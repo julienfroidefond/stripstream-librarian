@@ -2,9 +2,10 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { Icon, Modal } from "@/app/components/ui";
-import { ProviderIcon, PROVIDERS } from "@/app/components/ProviderIcon";
+import { ProviderIcon } from "@/app/components/ProviderIcon";
 import { useTranslation } from "@/lib/i18n/context";
 import { getBookCoverUrl } from "@/lib/api";
+import type { MetadataProviderDto } from "@/lib/api";
 import type { SeriesCandidateDto, SeriesDto } from "@/lib/api";
 import type { DiscoverySuggestion } from "../page";
 
@@ -108,6 +109,7 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
 
   const [searchInput, setSearchInput] = useState(seriesTitle);
   const [searchProvider, setSearchProvider] = useState(seriesProvider);
+  const [providers, setProviders] = useState<MetadataProviderDto[]>([]);
   const [searching, setSearching] = useState(false);
   const [metaCandidates, setMetaCandidates] = useState<SeriesCandidateDto[]>([]);
   const [existingSeries, setExistingSeries] = useState<SeriesDto[]>([]);
@@ -119,6 +121,13 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/metadata/providers")
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("provider list failed")))
+      .then((data: MetadataProviderDto[]) => setProviders(data))
+      .catch(() => setProviders([]));
+  }, []);
 
   async function runSearch(libId: string, query: string, provider?: string) {
     setSearching(true);
@@ -370,17 +379,17 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
 
               {/* Provider pills */}
               <div className="flex flex-wrap gap-1">
-                {PROVIDERS.map((p) => (
+                {providers.map((p) => (
                   <button
-                    key={p.value}
-                    onClick={() => handleProviderClick(p.value)}
+                    key={p.id}
+                    onClick={() => handleProviderClick(p.id)}
                     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs border transition-colors ${
-                      searchProvider === p.value
+                      searchProvider === p.id
                         ? "bg-primary/15 text-primary border-primary/30"
                         : "bg-card text-muted-foreground border-border hover:border-primary/30"
                     }`}
                   >
-                    <ProviderIcon provider={p.value} size={10} />
+                    <ProviderIcon provider={p.id} size={10} />
                     {p.label}
                   </button>
                 ))}

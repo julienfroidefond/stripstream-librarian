@@ -1,27 +1,32 @@
 ---
 title: Providers de métadonnées
-description: Les 6 sources supportées pour enrichir vos séries
+description: Les 7 sources supportées pour enrichir vos séries
 ---
 
 ## Sources disponibles
 
-Stripstream peut enrichir vos séries en allant chercher des informations sur 6 sources différentes :
+Stripstream peut enrichir vos séries en allant chercher des informations sur 7 sources différentes :
 
 | Source | Idéal pour | Remarques |
 |--------|-----------|-----------|
 | **Google Books** | Livres, romans, BD en français | Utilisé par défaut si aucun provider n'est configuré |
 | **ComicVine** | Comics anglophones | Clé API requise (gratuite) |
-| **Bédéthèque** | BD franco-belge | Scraping du site — top 3 résultats enrichis en détail |
+| **BDTheque** | BD franco-belge | Volumes, ISBN et métadonnées de série ; top 8 résultats enrichis en détail |
+| **BDphile** | BD franco-belge | Éditions, EAN et métadonnées détaillées d’albums ; top 8 résultats enrichis en détail |
 | **AniList** | Manga, manhwa, manhua | Également utilisé pour la synchronisation de progression |
 | **Open Library** | Livres généraux | Données ouvertes, catalogue mondial |
 | **SensCritique** | BD et manga en français | Distingue les éditions d'une même série |
+
+:::caution
+Le provider **Bédéthèque** (`bedetheque.com`) a été retiré : le site est désormais protégé par un challenge Cloudflare qui empêche le scraping. Les bibliothèques configurées dessus basculent automatiquement vers **BDTheque**.
+:::
 
 ## Choisir le bon provider
 
 Chaque bibliothèque peut avoir son propre provider principal et un provider de secours. Configurez-les dans les paramètres de la bibliothèque (icône ⚙️ → section **Métadonnées**).
 
 :::tip
-Si votre bibliothèque contient des mangas, utilisez **AniList** en priorité et **SensCritique** en secours. Pour la BD franco-belge, **Bédéthèque** donne généralement les résultats les plus précis.
+Si votre bibliothèque contient des mangas, utilisez **AniList** en priorité et **SensCritique** en secours. Pour la BD franco-belge, utilisez **BDTheque** en priorité, avec **BDphile** en secours.
 :::
 
 ## Configurer ComicVine
@@ -53,7 +58,8 @@ Pour une édition SensCritique, les métadonnées de série sont celles du tome 
 | Google Books | Description du premier volume rencontré |
 | AniList | Description au niveau série (GraphQL) |
 | ComicVine | Description du volume (HTML nettoyé) |
-| Bédéthèque | Meta description de la page série |
+| BDTheque | Meta description de la page série |
+| BDphile | Synopsis de la page série |
 | Open Library | Description du premier volume rencontré |
 
 Tous les providers stockent la `description` dans `metadata_json` pour garantir sa persistance lors du cycle match → approve → sync.

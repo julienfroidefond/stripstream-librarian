@@ -1,4 +1,4 @@
-import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, getBookCoverUrl, LibraryDto, SeriesDto, SeriesPageDto } from "@/lib/api";
+import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, fetchMetadataProviders, getBookCoverUrl, LibraryDto, SeriesDto, SeriesPageDto } from "@/lib/api";
 import { cookies } from "next/headers";
 import { OffsetPagination } from "@/app/components/ui";
 import { MarkSeriesReadButton } from "@/app/components/MarkSeriesReadButton";
@@ -40,6 +40,7 @@ export default async function LibrarySeriesPage({
     ),
     fetchSeriesStatuses().catch(() => [] as string[]),
   ]);
+  const metadataProviders = await fetchMetadataProviders().catch(() => []);
 
   if (!library) {
     notFound();
@@ -83,12 +84,7 @@ export default async function LibrarySeriesPage({
     { value: "", label: t("series.metadataAll") },
     { value: "linked", label: t("series.metadataLinked") },
     { value: "unlinked", label: t("series.metadataUnlinked") },
-    { value: "google_books", label: "Google Books" },
-    { value: "open_library", label: "Open Library" },
-    { value: "comicvine", label: "ComicVine" },
-    { value: "anilist", label: "AniList" },
-    { value: "bedetheque", label: "Bédéthèque" },
-    { value: "senscritique", label: "SensCritique" },
+    ...metadataProviders.map((provider) => ({ value: provider.id, label: provider.label })),
   ];
 
   const hasFilters = readingStatus || sort || seriesStatus || hasMissing || metadataProvider;

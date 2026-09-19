@@ -8,7 +8,6 @@ use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::metadata_providers::anilist;
-use crate::metadata_providers::bedetheque;
 use crate::metadata_providers::senscritique;
 use crate::state::AppState;
 
@@ -145,7 +144,6 @@ pub async fn trending(
 
     let supported = [
         "anilist",
-        "bedetheque",
         "senscritique",
         "senscritique_bd",
         "sc_trending_bd",
@@ -214,7 +212,6 @@ async fn fetch_and_cache_trending(
 ) -> Result<Vec<DiscoverySuggestionDto>, ApiError> {
     // Fetch maximum from provider
     let fetch_limit = match provider {
-        "bedetheque" => 100,
         "senscritique" | "senscritique_bd" | "sc_trending_bd" | "sc_trending_manga"
         | "sc_best_bd" | "sc_best_manga" => 100,
         _ => 50,
@@ -223,9 +220,6 @@ async fn fetch_and_cache_trending(
         "anilist" => anilist::fetch_trending(fetch_limit)
             .await
             .map_err(|e| ApiError::internal(format!("trending fetch failed: {e}")))?,
-        "bedetheque" => bedetheque::fetch_indispensables(None, fetch_limit as usize)
-            .await
-            .map_err(|e| ApiError::internal(format!("indispensables fetch failed: {e}")))?,
         "senscritique" => senscritique::fetch_top_mangas(fetch_limit as usize)
             .await
             .map_err(|e| ApiError::internal(format!("senscritique fetch failed: {e}")))?,

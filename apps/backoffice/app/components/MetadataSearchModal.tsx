@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Icon, Modal } from "./ui";
-import { ProviderIcon, PROVIDERS, providerLabel } from "./ProviderIcon";
-import type { ExternalMetadataLinkDto, SeriesCandidateDto, MissingBooksDto, SyncReport } from "../../lib/api";
+import { ProviderIcon, providerLabel } from "./ProviderIcon";
+import type { ExternalMetadataLinkDto, SeriesCandidateDto, MissingBooksDto, SyncReport, MetadataProviderDto } from "../../lib/api";
 import { useTranslation } from "../../lib/i18n/context";
 
 const FIELD_KEYS: string[] = [
@@ -67,8 +67,16 @@ export function MetadataSearchModal({
   const [activeProvider, setActiveProvider] = useState("");
   const [hiddenProviders] = useState<Set<string>>(new Set(initialHiddenProviders ?? []));
   const [searchInput, setSearchInput] = useState(seriesName);
+  const [providers, setProviders] = useState<MetadataProviderDto[]>([]);
 
-  const visibleProviders = PROVIDERS.filter((p) => !hiddenProviders.has(p.value));
+  useEffect(() => {
+    fetch("/api/metadata/providers")
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("provider list failed")))
+      .then((data: MetadataProviderDto[]) => setProviders(data))
+      .catch(() => setProviders([]));
+  }, []);
+
+  const visibleProviders = providers.filter((p) => !hiddenProviders.has(p.id));
 
   const handleOpen = useCallback(() => {
     setIsOpen(true);
@@ -287,20 +295,20 @@ export function MetadataSearchModal({
                       <div className="flex gap-1 flex-wrap">
                         {visibleProviders.map((p) => (
                           <button
-                            key={p.value}
+                            key={p.id}
                             type="button"
                             disabled={step === "searching"}
                             onClick={() => {
-                              setSearchProvider(p.value);
-                              doSearch(p.value);
+                              setSearchProvider(p.id);
+                              doSearch(p.id);
                             }}
                             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
-                              (activeProvider || searchProvider) === p.value
+                              (activeProvider || searchProvider) === p.id
                                 ? "border-primary bg-primary/10 text-primary"
                                 : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/50"
                             }`}
                           >
-                            <ProviderIcon provider={p.value} size={14} />
+                            <ProviderIcon provider={p.id} size={14} />
                             {p.label}
                           </button>
                         ))}
