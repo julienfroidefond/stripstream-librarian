@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useTranslation } from "@/lib/i18n/context";
 import type { ReadingListDto } from "@/lib/api";
 import { Modal } from "@/app/components/ui/Modal";
-import { ReadingListCover } from "@/app/components/ReadingListCover";
+import { ReadingListCard } from "@/app/components/ReadingListCard";
+import { Button, Card } from "@/app/components/ui";
 
 type Props = {
   initialLists: ReadingListDto[];
@@ -58,72 +58,60 @@ export function ReadingListsClient({ initialLists }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
           <svg className="w-8 h-8 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
           </svg>
           {t("readingLists.title")}
         </h1>
-        <button
+        <Button
           type="button"
           onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm font-medium"
+          className="shrink-0 gap-2"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
           {t("readingLists.create")}
-        </button>
+        </Button>
       </div>
 
       {lists.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 gap-4 text-muted-foreground">
-          <svg className="w-16 h-16 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-          </svg>
-          <p className="text-sm">{t("readingLists.empty")}</p>
-        </div>
+        <Card hover={false} className="border-dashed">
+          <div className="flex flex-col items-center justify-center py-20 gap-4 text-muted-foreground">
+            <svg className="w-14 h-14 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+            </svg>
+            <p className="text-sm">{t("readingLists.empty")}</p>
+            <Button type="button" variant="outline" size="sm" onClick={() => setShowCreate(true)}>{t("readingLists.create")}</Button>
+          </div>
+        </Card>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {lists.map((list) => (
-            <Link
+            <ReadingListCard
               key={list.id}
-              href={`/reading-lists/${list.id}`}
-              className="group relative flex flex-col rounded-xl overflow-hidden border border-border/50 bg-card hover:border-border hover:shadow-lg transition-all duration-200"
-            >
-              {/* Cover mosaic */}
-              <div className="relative">
-                <ReadingListCover covers={list.preview_covers} name={list.name} />
-                {/* Hover overlay with delete button */}
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200" />
-                <button
+              list={list}
+              seriesCountLabel={t("readingLists.seriesCount", { count: list.series_count, plural: list.series_count !== 1 ? "s" : "" })}
+              booksLabel={t("dashboard.books")}
+              readLabel={t("status.read")}
+              action={(
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={(e) => handleDelete(e, list.id)}
                   disabled={deletingId === list.id}
-                  className="absolute top-2 right-2 p-1.5 rounded-lg bg-background/80 text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-all duration-200 backdrop-blur-sm"
+                  className="shrink-0 px-2 text-muted-foreground hover:text-destructive"
                   title={t("common.delete")}
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
-                </button>
-              </div>
-
-              {/* Info */}
-              <div className="p-3 flex flex-col gap-1">
-                <p className="font-semibold text-foreground text-sm leading-tight line-clamp-2">{list.name}</p>
-                {list.description && (
-                  <p className="text-xs text-muted-foreground line-clamp-1">{list.description}</p>
-                )}
-                <p className="text-xs text-muted-foreground/70 mt-0.5">
-                  {t("readingLists.seriesCount", {
-                    count: list.series_count,
-                    plural: list.series_count !== 1 ? "s" : "",
-                  })}
-                </p>
-              </div>
-            </Link>
+                </Button>
+              )}
+            />
           ))}
         </div>
       )}

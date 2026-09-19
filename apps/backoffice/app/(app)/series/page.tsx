@@ -1,6 +1,6 @@
 import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, fetchReadingLists, fetchSeriesMemberships, fetchSeriesRecommendations, LibraryDto, SeriesDto, SeriesPageDto, ReadingListDto, RecommendedSeriesDto, getBookCoverUrl } from "@/lib/api";
 import { cookies } from "next/headers";
-import { ReadingListCover } from "@/app/components/ReadingListCover";
+import { ReadingListCard } from "@/app/components/ReadingListCard";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { paramString, paramStringOr, paramInt, paramBool } from "@/lib/searchParams";
 import { MarkSeriesReadButton } from "@/app/components/MarkSeriesReadButton";
@@ -234,25 +234,16 @@ export default async function SeriesPage({
             <Link href="/reading-lists" className="text-sm text-primary hover:underline">{t("readingLists.title")}</Link>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
-            {readingLists.map((list) => {
-              const covers = list.preview_covers;
-              return (
-                <Link
-                  key={list.id}
-                  href={`/reading-lists/${list.id}`}
-                  className="group flex flex-col rounded-xl overflow-hidden border border-border/50 bg-card hover:border-border hover:shadow-lg transition-all duration-200"
-                >
-                  <ReadingListCover covers={covers} name={list.name} />
-                  <div className="px-2 py-1.5">
-                    <h3 className="font-medium text-foreground truncate text-xs" title={list.name}>{list.name}</h3>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {t("readingLists.seriesCount", { count: list.series_count, plural: list.series_count !== 1 ? "s" : "" })}
-                    </p>
-                  </div>
-                </Link>
-              );
-            })}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {readingLists.map((list) => (
+              <ReadingListCard
+                key={list.id}
+                list={list}
+                seriesCountLabel={t("readingLists.seriesCount", { count: list.series_count, plural: list.series_count !== 1 ? "s" : "" })}
+                booksLabel={t("dashboard.books")}
+                readLabel={t("status.read")}
+              />
+            ))}
           </div>
         )
       ) : isRecommendationsView ? (

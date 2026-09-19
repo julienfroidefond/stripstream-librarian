@@ -9,7 +9,7 @@ import { LibraryForm } from "@/app/components/LibraryForm";
 import { ProviderIcon } from "@/app/components/ProviderIcon";
 import {
   Card, CardHeader, CardTitle, CardDescription, CardContent,
-  Button, Badge
+  Button, Badge, CoverFan
 } from "@/app/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -88,44 +88,14 @@ export default async function LibrariesPage() {
             <Card key={lib.id} className="flex flex-col overflow-hidden">
               {/* Thumbnail fan */}
               {thumbnails.length > 0 ? (
-                <Link href={`/libraries/${lib.id}/series`} className="block relative h-48 overflow-hidden bg-muted/10">
-                  <Image
-                    src={thumbnails[0]}
-                    alt=""
-                    fill
-                    className="object-cover blur-xl scale-110 opacity-40"
-                    sizes="(max-width: 768px) 100vw, 33vw"
-                    loading="lazy"
+                <Link href={`/libraries/${lib.id}/series`} className="block">
+                  <CoverFan
+                    className="h-48"
+                    background={<Image src={thumbnails[0]} alt="" fill className="object-cover blur-xl scale-110 opacity-40" sizes="(max-width: 768px) 100vw, 33vw" loading="lazy" />}
+                    covers={thumbnails.map((url) => (
+                      <Image key={url} src={url} alt="" width={96} height={144} className="h-full w-full object-cover" sizes="96px" loading="lazy" />
+                    ))}
                   />
-                  <div className="absolute inset-0 flex items-end justify-center">
-                    {thumbnails.map((url, i) => {
-                      const count = thumbnails.length;
-                      const mid = (count - 1) / 2;
-                      const angle = (i - mid) * 12;
-                      const radius = 220;
-                      const rad = ((angle - 90) * Math.PI) / 180;
-                      const cx = Math.cos(rad) * radius;
-                      const cy = Math.sin(rad) * radius;
-                      return (
-                        <Image
-                          key={i}
-                          src={url}
-                          alt=""
-                          width={96}
-                          height={144}
-                          className="absolute object-cover shadow-lg"
-                          style={{
-                            transform: `translate(${cx}px, ${cy}px) rotate(${angle}deg)`,
-                            transformOrigin: 'bottom center',
-                            zIndex: count - Math.abs(Math.round(i - mid)),
-                            bottom: '-185px',
-                          }}
-                          sizes="96px"
-                          loading="lazy"
-                        />
-                      );
-                    })}
-                  </div>
                 </Link>
               ) : (
                 <div className="h-8 bg-muted/10" />
