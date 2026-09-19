@@ -59,8 +59,11 @@ function formatSize(bytes: number | null): string {
 
 export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, initialEnabled, initialQuery, children }: TelegramSearchModalProps) {
   const { t } = useTranslation();
+  const strippedName = stripLeadingArticle(seriesName);
+  // Telegram search doesn't support Prowlarr/Newznab quoted-phrase syntax.
+  const defaultQuery = initialQuery?.replace(/"/g, "").trim() || strippedName;
   const [isOpen, setIsOpen] = useState(false);
-  const [searchInput, setSearchInput] = useState(initialQuery ?? seriesName);
+  const [searchInput, setSearchInput] = useState(defaultQuery);
   const [isSearching, setIsSearching] = useState(false);
   const [results, setResults] = useState<TelegramSearchResultDto[]>([]);
   const [searched, setSearched] = useState(false);
@@ -85,11 +88,6 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
       setIsSearching(false);
     }
   }, []);
-
-  const strippedName = stripLeadingArticle(seriesName);
-  // Telegram search doesn't support Prowlarr/Newznab quoted-phrase syntax.
-  const cleanInitialQuery = initialQuery?.replace(/"/g, "").trim();
-  const defaultQuery = cleanInitialQuery || strippedName;
 
   function handleOpen() {
     setIsOpen(true);

@@ -261,7 +261,7 @@ function MissingBookCard({ book }: { book: MissingBook }) {
   if (book.href) {
     return (
       <Link
-        href={book.href as any}
+        href={book.href as `/books/missing?${string}`}
         className={`${baseClass} hover:opacity-100 hover:shadow-md hover:-translate-y-1 transition-all duration-200`}
       >
         {content}

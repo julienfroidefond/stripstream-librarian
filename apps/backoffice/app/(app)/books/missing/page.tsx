@@ -15,7 +15,8 @@ export default async function MissingBookDetailPage({
   const sp = await searchParams;
   const seriesId = typeof sp.seriesId === "string" ? sp.seriesId : null;
   const linkId = typeof sp.linkId === "string" ? sp.linkId : null;
-  const volume = typeof sp.volume === "string" ? parseInt(sp.volume, 10) : null;
+  const parsedVolume = typeof sp.volume === "string" ? Number.parseInt(sp.volume, 10) : Number.NaN;
+  const volume = Number.isFinite(parsedVolume) ? parsedVolume : null;
   const titleParam = typeof sp.title === "string" ? sp.title : null;
 
   if (!seriesId || !linkId) {
@@ -44,9 +45,9 @@ export default async function MissingBookDetailPage({
 
   const missingList = missingData?.missing_books ?? [];
   const missing =
-    missingList.find((m) => (volume != null ? m.volume_number === volume : titleParam != null && m.title === titleParam)) ??
-    missingList.find((m) => volume != null && m.volume_number === volume) ??
-    null;
+    missingList.find((m) =>
+      volume != null ? m.volume_number === volume : titleParam != null && m.title === titleParam
+    ) ?? null;
 
   const title = missing?.title ?? titleParam ?? (volume != null ? `${seriesName} T${volume}` : seriesName);
   const coverUrl = missing?.cover_url ?? null;
