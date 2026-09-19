@@ -26,38 +26,35 @@ export function Modal({ isOpen, onClose, title, children, maxWidth = "2xl", disa
   if (!isOpen) return null;
 
   return createPortal(
-    <>
-      {/* Backdrop */}
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm"
+      onClick={() => !disableClose && onClose()}
+    >
       <div
-        className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50"
-        onClick={() => !disableClose && onClose()}
-      />
+        className={`bg-card border border-border/50 rounded-xl shadow-2xl w-full ${MAX_WIDTH_MAP[maxWidth]} max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        {/* Header */}
+        {title && (
+          <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-muted/30 sticky top-0 z-10">
+            <h3 className="font-semibold text-foreground">{title}</h3>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={disableClose}
+              className="text-muted-foreground hover:text-foreground transition-colors p-1 hover:bg-accent rounded"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
 
-      {/* Container */}
-      <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
-        <div className={`bg-card border border-border/50 rounded-xl shadow-2xl w-full ${MAX_WIDTH_MAP[maxWidth]} max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200`}>
-          {/* Header */}
-          {title && (
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-muted/30 sticky top-0 z-10">
-              <h3 className="font-semibold text-foreground">{title}</h3>
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={disableClose}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1 hover:bg-accent rounded"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          )}
-
-          {/* Body */}
-          {children}
-        </div>
+        {/* Body */}
+        {children}
       </div>
-    </>,
+    </div>,
     document.body
   );
 }

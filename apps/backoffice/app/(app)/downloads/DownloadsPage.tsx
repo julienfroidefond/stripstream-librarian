@@ -556,8 +556,11 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
 
       {showConfirm && createPortal(
         <>
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50" onClick={() => setShowConfirm(false)} />
-          <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none" />
+          <div
+            className="fixed inset-0 flex items-center justify-center z-50 p-4"
+            onClick={(event) => { if (event.target === event.currentTarget) setShowConfirm(false); }}
+          >
             <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
               <div className="p-6">
                 <h3 className="text-lg font-semibold text-foreground mb-2">
@@ -712,8 +715,11 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
 
       {showConfirm && createPortal(
         <>
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50" onClick={() => setShowConfirm(false)} />
-          <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none" />
+          <div
+            className="fixed inset-0 flex items-center justify-center z-50 p-4"
+            onClick={(event) => { if (event.target === event.currentTarget) setShowConfirm(false); }}
+          >
             <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
               <div className="p-6">
                 <h3 className="text-lg font-semibold text-foreground mb-2">

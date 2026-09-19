@@ -149,10 +149,12 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
     ? createPortal(
         <>
           <div
-            className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50"
-            onClick={handleClose}
+            className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none"
           />
-          <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+          <div
+            className="fixed inset-0 flex items-center justify-center z-50 p-4"
+            onClick={(event) => { if (event.target === event.currentTarget) handleClose(); }}
+          >
             <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-muted/30 sticky top-0 z-10">

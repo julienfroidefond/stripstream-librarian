@@ -107,9 +107,15 @@ function GenreSeriesModal({
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-lg max-h-[80vh] bg-background rounded-2xl border border-border shadow-2xl flex flex-col">
+      <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm pointer-events-none" />
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
+      >
+        <div
+          className="pointer-events-auto w-full max-w-lg max-h-[80vh] bg-background rounded-2xl border border-border shadow-2xl flex flex-col"
+          onClick={(event) => event.stopPropagation()}
+        >
           <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border shrink-0">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               {editing ? (
