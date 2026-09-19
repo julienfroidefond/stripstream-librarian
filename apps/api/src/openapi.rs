@@ -381,6 +381,7 @@ pub struct ClientApiDoc;
             crate::metadata::MetadataBatchResultDto,
             crate::metadata::MetadataRefreshRequest,
             crate::metadata::MetadataRefreshReportDto,
+            crate::metadata_providers::ProviderDescriptor,
             // Downloads
             crate::downloads::prowlarr::ProwlarrSearchRequest,
             crate::downloads::prowlarr::ProwlarrRelease,

@@ -7,7 +7,11 @@ use sqlx::Row;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{error::ApiError, metadata_providers, state::AppState};
+use crate::{
+    error::ApiError,
+    metadata_providers::{self, ProviderDescriptor},
+    state::AppState,
+};
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -238,10 +242,10 @@ pub async fn search_metadata(
     get,
     path = "/metadata/providers",
     tag = "metadata",
-    responses((status = 200, body = Vec<metadata_providers::ProviderDescriptor>)),
+    responses((status = 200, body = Vec<ProviderDescriptor>)),
     security(("Bearer" = []))
 )]
-pub async fn list_metadata_providers() -> Json<Vec<metadata_providers::ProviderDescriptor>> {
+pub async fn list_metadata_providers() -> Json<Vec<ProviderDescriptor>> {
     Json(metadata_providers::available_providers())
 }
 
