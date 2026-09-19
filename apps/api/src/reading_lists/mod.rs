@@ -660,3 +660,6 @@ pub async fn get_reading_list(
         updated_at: dto.updated_at,
     }))
 }
+
+#[cfg(test)]
+mod tests;
