@@ -624,3 +624,7 @@ pub async fn update_tags(
 
     Ok(Json(serde_json::json!({ "tags": input.tags })))
 }
+
+#[cfg(test)]
+#[path = "tests/libraries.rs"]
+mod tests;
