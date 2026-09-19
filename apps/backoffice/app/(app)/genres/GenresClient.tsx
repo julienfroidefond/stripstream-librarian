@@ -7,6 +7,7 @@ import Link from "next/link";
 import { getBookCoverUrl } from "@/lib/api";
 import type { SeriesDto, LibraryDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
+import { toast, Toaster } from "@/app/components/ui";
 import { LibraryMultiBadgeSelector } from "../jobs/components/LibraryBadgeSelector";
 
 export type GenreDto = {
@@ -191,7 +192,6 @@ function GenreSeriesModal({
 export function GenresClient({ initialGenres, initialUntagged, libraries, initialTotalSeries }: Props) {
   const { t } = useTranslation();
   const [genres, setGenres] = useState<GenreDto[]>(initialGenres);
-  const [toast, setToast] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [activeGenreModal, setActiveGenreModal] = useState<string | null>(null);
   const [genreFilter, setGenreFilter] = useState("");
@@ -234,11 +234,6 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
   const [aiSuggestions, setAiSuggestions] = useState<AiSuggestion[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
-
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 3000);
-  };
 
   const refreshGenres = useCallback(async () => {
     const [res, ...libraryResponses] = await Promise.all([
@@ -357,7 +352,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
         return next;
       });
       await refreshGenres();
-      showToast(t("genres.renameSuccess"));
+      toast(t("genres.renameSuccess"));
       return true;
     } finally {
       setBusy(false);
@@ -381,7 +376,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
       } else {
         await refreshGenres();
       }
-      showToast(t("genres.deleteSuccess"));
+      toast(t("genres.deleteSuccess"));
       return true;
     } finally {
       setBusy(false);
@@ -401,7 +396,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
       const count = selected.size;
       await Promise.all([refreshGenres(), fetchSeriesForFilter(seriesFilter, libraryFilter, excludedGenres)]);
       setAssignInput("");
-      showToast(t("genres.assignSuccess", { count: String(count), plural: count !== 1 ? "s" : "" }));
+      toast(t("genres.assignSuccess", { count: String(count), plural: count !== 1 ? "s" : "" }));
     } finally {
       setBusy(false);
     }
@@ -417,11 +412,11 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
         body: JSON.stringify({ series_ids: Array.from(selected) }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
+      if (!response.ok) throw new Error(data.error ?? t("genres.aiError"));
       setAiSuggestions(data.suggestions ?? []);
-      if ((data.suggestions ?? []).length === 0) showToast(t("genres.aiError"));
-    } catch {
-      showToast(t("genres.aiError"));
+      if ((data.suggestions ?? []).length === 0) toast(t("genres.aiNoSuggestions"), "info");
+    } catch (error) {
+      toast(error instanceof Error && error.message ? error.message : t("genres.aiError"), "error");
     } finally {
       setAiLoading(false);
     }
@@ -438,9 +433,9 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
       if (!response.ok) throw new Error();
       setAiSuggestions(prev => prev.map(s => s.series_id === seriesId ? { ...s, tags: s.tags.filter(tag => tag !== genre) } : s).filter(s => s.tags.length > 0));
       await Promise.all([refreshGenres(), fetchSeriesForFilter(seriesFilter, libraryFilter, excludedGenres)]);
-      showToast(t("genres.assignSuccess", { count: "1", plural: "" }));
+      toast(t("genres.assignSuccess", { count: "1", plural: "" }));
     } catch {
-      showToast(t("genres.aiError"));
+      toast(t("genres.aiError"), "error");
     } finally {
       setBusy(false);
     }
@@ -488,12 +483,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
 
   return (
     <div className="space-y-6">
-      {/* Toast */}
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-success text-success-foreground px-4 py-3 rounded-xl shadow-lg text-sm font-medium">
-          {toast}
-        </div>
-      )}
+      <Toaster />
 
       {/* Genre detail modal */}
       {activeGenreModal && (

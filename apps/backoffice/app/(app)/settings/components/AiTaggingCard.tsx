@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, FormField, FormInput, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 
-const DEFAULT_PROMPT = "Suggest up to {{max_tags}} relevant genres for each comic or manga series. Usually return only 1 to 3 genres; do not fill the limit when fewer genres fit.\n\nYou MUST choose tags only from this existing genre list, preserving the exact spelling and casing: {{genres}}. Never create or paraphrase a genre.\n\nUse the supplied metadata only, do not invent facts. Do not select a format, medium, age category, or generic label merely because the series is a comic (for example 'BD' or 'Books/Comics'). Select those labels only if they are genuinely relevant genres for the series. Return only JSON in the form {\"suggestions\":[{\"series_id\":\"uuid\",\"tags\":[\"existing genre\"]}]}.\n\nSeries: {{series}}";
+const DEFAULT_PROMPT = "Suggest up to {{max_tags}} relevant genres for each comic or manga series. Usually return only 1 to 3 genres; do not fill the limit when fewer genres fit.\n\nYou MUST choose tags only from this existing genre list, preserving the exact spelling and casing: {{genres}}. Never create or paraphrase a genre.\n\nUse the supplied metadata to disambiguate the series. For a recognizable, well-known title, you may use reliable general knowledge even when its metadata is sparse. Do not make uncertain associations: omit a series if you cannot identify it with confidence. Do not select a format, medium, age category, or generic label merely because the series is a comic (for example 'BD' or 'Books/Comics'). Select those labels only if they are genuinely relevant genres for the series. Return only JSON in the form {\"suggestions\":[{\"series_id\":\"uuid\",\"tags\":[\"existing genre\"]}]}.\n\nSeries: {{series}}";
 type AiTagging = { enabled?: boolean; base_url?: string; api_key?: string; model?: string; max_tags?: number; prompt?: string };
 
 export function AiTaggingCard({ initialData, handleUpdateSetting }: { initialData: AiTagging | null; handleUpdateSetting: (key: string, value: unknown) => Promise<void> }) {
@@ -24,6 +24,8 @@ export function AiTaggingCard({ initialData, handleUpdateSetting }: { initialDat
     setData(next);
     void handleUpdateSetting("ai_tagging", next);
   };
+
+  const restoreDefaultPrompt = () => save({ ...data, prompt: DEFAULT_PROMPT });
 
   const testConnection = async () => {
     setTesting(true);
@@ -82,7 +84,17 @@ export function AiTaggingCard({ initialData, handleUpdateSetting }: { initialDat
               rows={9}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm leading-6 text-foreground focus:outline-none focus:ring-2 focus:ring-primary font-mono"
             />
-            <p className="mt-1 text-xs text-muted-foreground">{t("settings.aiPromptHelp")}</p>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">{t("settings.aiPromptHelp")}</p>
+              <button
+                type="button"
+                onClick={restoreDefaultPrompt}
+                disabled={data.prompt === DEFAULT_PROMPT}
+                className="text-xs font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {t("settings.aiRestoreDefaultPrompt")}
+              </button>
+            </div>
           </FormField>
           <div className="flex flex-wrap items-center gap-3 pt-2">
             <button type="button" onClick={testConnection} disabled={testing} className="rounded-lg border border-primary/40 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/10 disabled:opacity-50">

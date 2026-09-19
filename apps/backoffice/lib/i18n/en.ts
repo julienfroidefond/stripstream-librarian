@@ -1266,6 +1266,7 @@ const en: Record<TranslationKey, string> = {
   "genres.aiSuggestions": "Tag suggestions",
   "genres.aiApply": "Assign",
   "genres.aiSuggested": "Suggested tags",
+  "genres.aiNoSuggestions": "No relevant genres were suggested for this selection.",
   "genres.aiError": "Could not generate tags. Check the AI configuration.",
 
   // Settings - Torrent Import
@@ -1281,6 +1282,7 @@ const en: Record<TranslationKey, string> = {
   "settings.aiMaxTags": "Maximum tags",
   "settings.aiPrompt": "Classification prompt",
   "settings.aiPromptHelp": "Available variables: {{max_tags}}, {{genres}}, and {{series}}.",
+  "settings.aiRestoreDefaultPrompt": "Restore default prompt",
   "settings.aiTest": "Test connection",
   "settings.aiTesting": "Testing...",
   "settings.aiTestError": "Connection test failed.",

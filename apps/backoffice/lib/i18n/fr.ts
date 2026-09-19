@@ -1264,6 +1264,7 @@ const fr = {
   "genres.aiSuggestions": "Suggestions de tags",
   "genres.aiApply": "Affecter",
   "genres.aiSuggested": "Tags proposés",
+  "genres.aiNoSuggestions": "Aucun genre pertinent n'a été proposé pour cette sélection.",
   "genres.aiError": "Impossible de générer les tags. Vérifiez la configuration IAG.",
 
   // Settings - Torrent Import
@@ -1279,6 +1280,7 @@ const fr = {
   "settings.aiMaxTags": "Nombre maximum de tags",
   "settings.aiPrompt": "Prompt de classification",
   "settings.aiPromptHelp": "Variables disponibles : {{max_tags}}, {{genres}} et {{series}}.",
+  "settings.aiRestoreDefaultPrompt": "Rétablir le prompt par défaut",
   "settings.aiTest": "Tester la connexion",
   "settings.aiTesting": "Test en cours...",
   "settings.aiTestError": "Le test de connexion a échoué.",
