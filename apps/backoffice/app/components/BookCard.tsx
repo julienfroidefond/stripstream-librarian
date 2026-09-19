@@ -218,20 +218,21 @@ export interface MissingBook {
   title: string | null;
   volume_number: number | null;
   cover_url: string | null;
+  href?: string;
 }
 
 function MissingBookCard({ book }: { book: MissingBook }) {
   const { t } = useTranslation();
 
-  return (
-    <div className="group bg-card rounded-xl border border-dashed border-border/60 shadow-sm overflow-hidden opacity-50">
+  const content = (
+    <>
       <div className="relative aspect-[2/3] overflow-hidden bg-muted">
         {book.cover_url ? (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
             src={book.cover_url}
             alt={book.title || t("books.missing")}
-            className="w-full h-full object-cover grayscale"
+            className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-200"
           />
         ) : (
           <div className="flex items-center justify-center h-full">
@@ -252,8 +253,23 @@ function MissingBookCard({ book }: { book: MissingBook }) {
           <span className="text-[10px] text-muted-foreground">#{book.volume_number}</span>
         )}
       </div>
-    </div>
+    </>
   );
+
+  const baseClass = "group bg-card rounded-xl border border-dashed border-border/60 shadow-sm overflow-hidden opacity-50";
+
+  if (book.href) {
+    return (
+      <Link
+        href={book.href as any}
+        className={`${baseClass} hover:opacity-100 hover:shadow-md hover:-translate-y-1 transition-all duration-200`}
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return <div className={baseClass}>{content}</div>;
 }
 
 export function BooksGridWithMissing({

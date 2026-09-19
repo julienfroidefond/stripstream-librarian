@@ -44,6 +44,8 @@ interface TelegramSearchModalProps {
   missingBooks?: MissingBookItem[] | null;
   ownedVolumes?: number[];
   initialEnabled?: boolean;
+  /** Pre-fill and run the search with this query. Defaults to the series name. */
+  initialQuery?: string;
   children?: (open: () => void) => React.ReactNode;
 }
 
@@ -55,10 +57,10 @@ function formatSize(bytes: number | null): string {
   return bytes + " B";
 }
 
-export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, initialEnabled, children }: TelegramSearchModalProps) {
+export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, initialEnabled, initialQuery, children }: TelegramSearchModalProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
-  const [searchInput, setSearchInput] = useState(seriesName);
+  const [searchInput, setSearchInput] = useState(initialQuery ?? seriesName);
   const [isSearching, setIsSearching] = useState(false);
   const [results, setResults] = useState<TelegramSearchResultDto[]>([]);
   const [searched, setSearched] = useState(false);
@@ -85,13 +87,16 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
   }, []);
 
   const strippedName = stripLeadingArticle(seriesName);
+  // Telegram search doesn't support Prowlarr/Newznab quoted-phrase syntax.
+  const cleanInitialQuery = initialQuery?.replace(/"/g, "").trim();
+  const defaultQuery = cleanInitialQuery || strippedName;
 
   function handleOpen() {
     setIsOpen(true);
-    setSearchInput(strippedName);
+    setSearchInput(defaultQuery);
     setResults([]);
     setSearched(false);
-    doSearch(strippedName);
+    doSearch(defaultQuery);
   }
 
   function handleClose() {
@@ -181,11 +186,25 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
 
             {/* Quick badges: series name (original + stripped if different) + missing volumes */}
             <div className="flex flex-wrap items-center gap-2 max-h-24 overflow-y-auto">
+              {defaultQuery !== strippedName && (
+                <button
+                  type="button"
+                  onClick={() => { setSearchInput(defaultQuery); doSearch(defaultQuery); }}
+                  disabled={isSearching}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border disabled:opacity-50 transition-colors border-primary/50 bg-primary/10 text-primary hover:bg-primary/20"
+                >
+                  {defaultQuery}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => { setSearchInput(strippedName); doSearch(strippedName); }}
                 disabled={isSearching}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border disabled:opacity-50 transition-colors border-primary/50 bg-primary/10 text-primary hover:bg-primary/20"
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border disabled:opacity-50 transition-colors ${
+                  defaultQuery !== strippedName
+                    ? "border-primary/30 bg-primary/5 text-primary/70 hover:bg-primary/15"
+                    : "border-primary/50 bg-primary/10 text-primary hover:bg-primary/20"
+                }`}
               >
                 {strippedName}
               </button>

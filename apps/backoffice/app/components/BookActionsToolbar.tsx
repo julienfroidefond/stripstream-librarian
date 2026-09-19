@@ -2,7 +2,7 @@
 
 import nextDynamic from "next/dynamic";
 import type { BookDto } from "@/lib/api";
-import { ActionsMenu, ActionsMenuItem, ActionsMenuSection } from "./ui";
+import { ActionsMenu, ActionsMenuItem, ActionsMenuSection, Icon } from "./ui";
 import { MarkBookReadButton } from "./MarkBookReadButton";
 import { ConvertButton } from "./ConvertButton";
 import { DeleteBookButton } from "./DeleteBookButton";
@@ -16,6 +16,10 @@ const EditBookForm = nextDynamic(
 
 const ProwlarrSearchModal = nextDynamic(
   () => import("./ProwlarrSearchModal").then(m => m.ProwlarrSearchModal)
+);
+
+const TelegramSearchModal = nextDynamic(
+  () => import("./TelegramSearchModal").then(m => m.TelegramSearchModal)
 );
 
 const RefreshIcon = ({ spinning }: { spinning: boolean }) => (
@@ -35,7 +39,7 @@ const RefreshIcon = ({ spinning }: { spinning: boolean }) => (
   </svg>
 );
 
-export function BookActionsToolbar({ book, hasActiveUser = true }: { book: BookDto; hasActiveUser?: boolean }) {
+export function BookActionsToolbar({ book, hasActiveUser = true, telegramEnabled = false }: { book: BookDto; hasActiveUser?: boolean; telegramEnabled?: boolean }) {
   const { t } = useTranslation();
 
   // Prowlarr search context for this book
@@ -69,6 +73,21 @@ export function BookActionsToolbar({ book, hasActiveUser = true }: { book: BookD
               </ActionsMenuItem>
             )}
           </ProwlarrSearchModal>
+          {telegramEnabled && (
+            <TelegramSearchModal
+              seriesName={searchSeries}
+              missingBooks={null}
+              ownedVolumes={book.volume != null ? [book.volume] : undefined}
+              initialEnabled={telegramEnabled}
+              initialQuery={initialQuery}
+            >
+              {(open) => (
+                <ActionsMenuItem icon={<Icon name="send" size="sm" className="text-sky-500" />} onClick={open}>
+                  {t("telegramMonitor.searchButton")}
+                </ActionsMenuItem>
+              )}
+            </TelegramSearchModal>
+          )}
         </ActionsMenuSection>
         <ActionsMenuSection label={t("actionsMenu.actions")}>
           <RefreshButton target="book-detail">

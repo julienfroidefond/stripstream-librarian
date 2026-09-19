@@ -342,11 +342,17 @@ export default async function SeriesDetailPage({
         const mainBooks = books.filter((b) => b.volume_type === "regular" || b.volume_type === "integral");
         const hsBooks = books.filter((b) => b.volume_type === "hs");
         const oneshotBooks = books.filter((b) => b.volume_type === "oneshot");
-        const missingForGrid = (missingData?.missing_books ?? []).map((mb) => ({
-          title: mb.title,
-          volume_number: mb.volume_number,
-          cover_url: mb.cover_url,
-        }));
+        const missingForGrid = (missingData?.missing_books ?? []).map((mb) => {
+          const params = new URLSearchParams({ seriesId, linkId: existingLink?.id ?? "" });
+          if (mb.volume_number != null) params.set("volume", String(mb.volume_number));
+          if (mb.title) params.set("title", mb.title);
+          return {
+            title: mb.title,
+            volume_number: mb.volume_number,
+            cover_url: mb.cover_url,
+            href: existingLink ? `/books/missing?${params.toString()}` : undefined,
+          };
+        });
 
         return (books.length > 0 || missingForGrid.length > 0) ? (
           <>
