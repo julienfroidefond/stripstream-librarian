@@ -10,3 +10,7 @@ apps/backoffice/next-env.d.ts
 apps/backoffice/tsconfig.tsbuildinfo
 data/thumbnails
 *.pem
+.pnpm-store/
+pnpm-lock.yaml
+pnpm-workspace.yaml
+.opencode/package-lock.json
