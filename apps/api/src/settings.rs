@@ -520,3 +520,7 @@ pub async fn delete_status_mapping(
         None => Err(ApiError::not_found("status mapping not found")),
     }
 }
+
+#[cfg(test)]
+#[path = "tests/settings.rs"]
+mod tests;
