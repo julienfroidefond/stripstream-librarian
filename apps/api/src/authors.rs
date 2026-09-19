@@ -73,25 +73,34 @@ pub async fn list_authors(
         .filter(|s| !s.trim().is_empty())
         .map(|s| format!("%{s}%"));
 
-    // Single query: collect all authors with counts using a windowed total
+    // Single query: collect authors from both book-level and series-level
+    // metadata, with counts using a windowed total. Series like Astérix store
+    // their authors on the series row and may have no local books.
     let sql = format!(
         r#"
-        WITH author_books AS (
+        WITH author_rows AS (
             SELECT UNNEST(
                 COALESCE(
-                    NULLIF(authors, '{{}}'),
-                    CASE WHEN author IS NOT NULL AND author != '' THEN ARRAY[author] ELSE ARRAY[]::text[] END
+                    NULLIF(b.authors, '{{}}'),
+                    CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END
                 )
-            ) AS author_name, id AS book_id, series_id
-            FROM books
+            ) AS author_name, b.id AS book_id, b.series_id
+            FROM books b
+            UNION ALL
+            SELECT UNNEST(COALESCE(s.authors, ARRAY[]::text[])) AS author_name,
+                   NULL::uuid AS book_id,
+                   s.id AS series_id
+            FROM series s
         ),
         author_agg AS (
             SELECT
                 author_name AS name,
                 COUNT(DISTINCT book_id) AS book_count,
                 COUNT(DISTINCT series_id) AS series_count
-            FROM author_books
-            WHERE ($1::text IS NULL OR author_name ILIKE $1)
+            FROM author_rows
+            WHERE author_name IS NOT NULL
+              AND author_name <> ''
+              AND ($1::text IS NULL OR author_name ILIKE $1)
             GROUP BY author_name
         )
         SELECT name, book_count, series_count, COUNT(*) OVER() AS total
