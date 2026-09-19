@@ -1489,3 +1489,7 @@ pub async fn get_reading_overview(
 
     Ok(Json(overview))
 }
+
+#[cfg(test)]
+#[path = "tests/stats.rs"]
+mod tests;
