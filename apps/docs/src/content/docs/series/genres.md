@@ -30,6 +30,8 @@ Sur la page détail d'une série, les genres sont modifiables directement dans l
 
 Dans **Paramètres → IAG**, configurez l'endpoint OpenAI-compatible, la clé API, le modèle et le prompt (OpenRouter est préconfiguré). Sélectionnez les séries à analyser puis lancez les propositions. L'IAG choisit uniquement parmi les genres déjà existants ; aucun nouveau genre ne peut être créé par cette fonctionnalité. Les suggestions sont regroupées dans une zone de révision par série et doivent être affectées individuellement : aucune modification n'est appliquée automatiquement.
 
+Le prompt par défaut autorise les connaissances générales fiables pour les titres connus, même lorsque leurs métadonnées sont limitées. Les séries qui ne peuvent pas être identifiées avec confiance sont omises. Lors de la mise à jour, seul l’ancien prompt par défaut est remplacé ; les prompts personnalisés et les autres paramètres IAG sont conservés.
+
 ## Filtrer les séries par genre
 
 Sur la page **Séries**, un filtre par genre est disponible. Les séries peuvent être filtrées par un ou plusieurs genres.
