@@ -29,6 +29,30 @@ Chaque bibliothèque peut avoir son propre provider principal et un provider de 
 Si votre bibliothèque contient des mangas, utilisez **AniList** en priorité et **SensCritique** en secours. Pour la BD franco-belge, utilisez **BDTheque** en priorité, avec **BDphile** en secours.
 :::
 
+## Providers BD franco-belge
+
+### BDTheque
+
+[BDTheque](https://www.bdtheque.com) couvre les séries de BD franco-belge.
+
+- Recherche par titre, puis enrichissement des 8 meilleurs résultats avec le détail complet de la série.
+- Métadonnées : scénariste(s), dessinateur(s), éditeur, année de début, statut, nombre de tomes, couverture et description.
+- Les noms d'auteurs sont normalisés au format `Prénom Nom` (la source renvoie `Nom (Prénom)`).
+- `external_id` : identifiant et slug de la série dans l'URL (ex. `207/asterix`).
+
+### BDphile
+
+[BDphile](https://www.bdphile.fr) couvre également la BD franco-belge, avec un focus sur les éditions.
+
+- Recherche via l'endpoint AJAX du site, puis enrichissement des 8 meilleurs résultats.
+- Métadonnées : auteurs, éditeurs, date de parution, résumé, couverture et nombre de tomes.
+- Seuls les crédits **scénario** et **dessin** sont conservés côté auteurs.
+- `external_id` : slug de la série (ex. `bd/124-asterix`).
+
+### Matching par ISBN / EAN
+
+BDTheque et BDphile exposent l'ISBN (BDTheque) ou l'EAN (BDphile) des albums. Ce matching est **additif** : il rattache un tome local au bon album par ISBN/EAN, mais ne remplace jamais un match provider existant.
+
 ## Configurer ComicVine
 
 ComicVine nécessite une clé API gratuite :

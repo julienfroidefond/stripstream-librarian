@@ -5,7 +5,7 @@ description: Ajouter des séries découvertes à votre bibliothèque
 
 ## Depuis les tendances
 
-Quand vous cliquez sur "+" sur une carte de découverte (tendances SensCritique, AniList, Bédéthèque…), Stripstream crée immédiatement la série avec ses métadonnées complètes : description, auteurs, genres, statut, couverture, et liste des tomes.
+Quand vous cliquez sur "+" sur une carte de découverte (tendances SensCritique, AniList…), Stripstream crée immédiatement la série avec ses métadonnées complètes : description, auteurs, genres, statut, couverture, et liste des tomes.
 
 La série est directement prête pour la détection de volumes manquants.
 
@@ -39,7 +39,7 @@ Sur la page **Séries**, le bouton **Nouvelle série** vous permet de :
 3. Créer la série avec un répertoire physique sur le disque
 
 :::note[Détails techniques]
-**Depuis les tendances** : pour Bédéthèque et SensCritique, un metadata link est créé automatiquement. AniList ne crée pas de metadata link lors de l'ajout depuis la découverte. Les providers `sc_*` (sc_trending_bd, sc_best_manga, etc.) sont normalisés vers `senscritique`.
+**Depuis les tendances** : pour SensCritique, un metadata link est créé automatiquement. AniList ne crée pas de metadata link lors de l'ajout depuis la découverte. Les providers `sc_*` (sc_trending_bd, sc_best_manga, etc.) sont normalisés vers `senscritique`.
 
 **Depuis Prowlarr** : le téléchargement est envoyé à qBittorrent avec `series_name` et `expected_volumes` issus de la release Prowlarr.
 

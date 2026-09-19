@@ -70,10 +70,11 @@ Tous les champs verrouillés sont systématiquement ignorés par la synchronisat
 
 ## Comment les livres sont appariés
 
-Quand Stripstream récupère la liste des tomes d'un provider, il les rapproche de vos livres locaux en deux étapes :
+Quand Stripstream récupère la liste des tomes d'un provider, il les rapproche de vos livres locaux en deux ou trois étapes :
 
 1. **Par numéro de volume** — si le provider indique "tome 5", Stripstream cherche votre tome 5
 2. **Par titre** — si le numéro de volume ne suffit pas, il compare les titres (insensible à la casse)
+3. **Par ISBN / EAN** — uniquement avec **BDTheque** et **BDphile**, et seulement si les deux étapes précédentes n'ont rien trouvé : Stripstream compare l'ISBN/EAN du provider à celui de vos livres (chiffres et `X` seuls). Ce rapprochement est **additif** : il ne déplace jamais un tome déjà apparié par numéro ou par titre.
 
 Seuls les tomes réguliers et les intégrales participent à ce matching.
 

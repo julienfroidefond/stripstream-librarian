@@ -64,7 +64,8 @@ Source utilisée pour récupérer automatiquement les informations de vos série
 | ComicVine | Comics anglophones |
 | Open Library | Catalogue mondial (livres anciens, domaine public) |
 | AniList | Manga, manhwa, manhua |
-| Bédéthèque | BD franco-belge |
+| BDTheque | BD franco-belge |
+| BDphile | BD franco-belge |
 | SensCritique | BD et manga en français |
 
 **Fournisseur de secours**

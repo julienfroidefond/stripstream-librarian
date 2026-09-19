@@ -90,7 +90,7 @@ La sync complète effectue une **recherche active par série** sur chaque channe
 :::note[Quelles séries sont recherchées ?]
 La sync complète ne recherche **pas** toutes les séries de votre bibliothèque. Pour être incluse, une série doit remplir deux conditions :
 
-1. **Lien metadata approuvé** — un lien vers un provider externe (Anilist, Bedetheque…) avec statut *approuvé*
+1. **Lien metadata approuvé** — un lien vers un provider externe (AniList, BDTheque…) avec statut *approuvé*
 2. **Volumes manquants** — au moins un tome référencé dans les metadata mais absent de votre bibliothèque
 
 Une série qui possède une **intégrale** est considérée complète et n'est pas recherchée automatiquement.

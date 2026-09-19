@@ -13,7 +13,6 @@ La page **Découverte** vous permet de parcourir des listes de séries populaire
 | **Nouveautés Manga** | Mangas récents triés par popularité |
 | **Meilleures BD** | BD les mieux notées |
 | **Meilleurs Manga** | Mangas les mieux notés |
-| **Bédéthèque** | Les incontournables de la BD franco-belge selon Bédéthèque |
 | **SensCritique Top BD** | Classement BD de SensCritique |
 | **SensCritique Top Manga** | Classement manga de SensCritique |
 | **AniList** | Mangas en tendance sur AniList |
@@ -39,7 +38,6 @@ L'onglet **Recommandations** propose des séries de votre bibliothèque que vous
 :::note[Détails techniques]
 **Sources** :
 - Nouveautés / Meilleures : SensCritique `productsByRelease` (popularité ou note)
-- Bédéthèque : scraping des indispensables
 - Tops SensCritique : requêtes `top` et `poll`
 - AniList : trending manga
 - Prowlarr : releases individuelles (titre, catégorie, indexer, seeders)

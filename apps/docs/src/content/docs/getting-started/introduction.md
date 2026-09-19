@@ -10,8 +10,8 @@ description: Présentation de Stripstream Librarian
 - **Gérer plusieurs bibliothèques** : organisez vos collections en bibliothèques indépendantes (mangas, BD franco-belge, comics…)
 - **Lire tous les formats courants** : CBZ, CBR, PDF et EPUB sont supportés nativement
 - **Indexer automatiquement** : ajoutez des fichiers dans un dossier, ils apparaissent dans la bibliothèque en quelques secondes
-- **Enrichir avec des métadonnées** : récupérez automatiquement descriptions, couvertures, auteurs et liste des tomes depuis 6 sources externes (AniList, SensCritique, Bédéthèque, ComicVine, Google Books, Open Library)
-- **Découvrir de nouvelles séries** : parcourez les tendances et tops depuis SensCritique, AniList et Bédéthèque
+- **Enrichir avec des métadonnées** : récupérez automatiquement descriptions, couvertures, auteurs et liste des tomes depuis 7 sources externes (AniList, SensCritique, BDTheque, BDphile, ComicVine, Google Books, Open Library)
+- **Découvrir de nouvelles séries** : parcourez les tendances et tops depuis SensCritique et AniList
 - **Télécharger automatiquement** : détectez les volumes manquants, téléchargez-les via qBittorrent, et importez-les automatiquement dans la bibliothèque
 - **Suivre votre progression de lecture** : marquez vos livres tome par tome, synchronisez avec AniList
 - **Interface web complète** : dashboard, recherche, gestion des séries, des genres, des listes de lecture

@@ -29,7 +29,7 @@ Accessibles avec un token de scope `read` :
 - Pages de livres et miniatures
 - Progression de lecture (lecture et mise à jour)
 - Recherche full-text, statistiques
-- Métadonnées : liens (`GET /metadata/links?series_id=...`) et volumes manquants avec couvertures (`GET /metadata/missing/{link_id}`)
+- Métadonnées : liens (`GET /metadata/links?series_id=...`), volumes manquants avec couvertures (`GET /metadata/missing/{link_id}`) et liste des providers (`GET /metadata/providers`)
 
 ## Endpoints admin (token admin)
 
