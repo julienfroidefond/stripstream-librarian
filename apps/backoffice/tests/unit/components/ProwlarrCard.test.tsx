@@ -55,6 +55,19 @@ describe("ProwlarrCard", () => {
     });
   });
 
+  it("saves the api key on blur", () => {
+    const { handleUpdateSetting } = renderCard();
+
+    const key = screen.getByPlaceholderText("settings.prowlarrApiKeyPlaceholder");
+    fireEvent.change(key, { target: { value: "secret" } });
+    fireEvent.blur(key);
+
+    expect(handleUpdateSetting).toHaveBeenCalledWith(
+      "prowlarr",
+      expect.objectContaining({ api_key: "secret" })
+    );
+  });
+
   it("drops invalid category entries", () => {
     const { handleUpdateSetting } = renderCard();
 

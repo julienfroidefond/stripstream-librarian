@@ -66,6 +66,19 @@ describe("TelegramCard", () => {
     );
   });
 
+  it("saves the chat id on blur", () => {
+    const { handleUpdateSetting } = renderCard();
+
+    const chat = screen.getByPlaceholderText("settings.chatIdPlaceholder");
+    fireEvent.change(chat, { target: { value: "-100" } });
+    fireEvent.blur(chat);
+
+    expect(handleUpdateSetting).toHaveBeenCalledWith(
+      "telegram",
+      expect.objectContaining({ chat_id: "-100" })
+    );
+  });
+
   it("updates a single event flag and saves the whole event map", () => {
     const { handleUpdateSetting, container } = renderCard();
     const boxes = checkboxes(container);

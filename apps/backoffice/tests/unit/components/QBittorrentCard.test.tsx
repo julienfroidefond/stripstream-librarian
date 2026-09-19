@@ -54,6 +54,28 @@ describe("QBittorrentCard", () => {
     });
   });
 
+  it("saves the username and password on blur", () => {
+    const { handleUpdateSetting } = renderCard();
+
+    const username = screen.getAllByRole("textbox")[1];
+    fireEvent.change(username, { target: { value: "admin" } });
+    fireEvent.blur(username);
+    expect(handleUpdateSetting).toHaveBeenLastCalledWith("qbittorrent", {
+      url: "",
+      username: "admin",
+      password: "",
+    });
+
+    const password = document.querySelector('input[type="password"]') as HTMLInputElement;
+    fireEvent.change(password, { target: { value: "pw" } });
+    fireEvent.blur(password);
+    expect(handleUpdateSetting).toHaveBeenLastCalledWith("qbittorrent", {
+      url: "",
+      username: "admin",
+      password: "pw",
+    });
+  });
+
   it("saves the torrent import toggle and reveals the polling info", () => {
     const { handleUpdateSetting } = renderCard();
 
