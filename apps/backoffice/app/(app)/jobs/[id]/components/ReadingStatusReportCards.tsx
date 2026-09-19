@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, StatBox } from "@/app/components/ui";
 import type { ReadingStatusMatchReportDto, ReadingStatusMatchResultDto, ReadingStatusPushReportDto, ReadingStatusPushResultDto } from "@/lib/api";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
+import { SeriesResultRow, ResultStatusBadge } from "./SeriesResultRow";
 
 export function ReadingStatusMatchReportCard({ report, t }: { report: ReadingStatusMatchReportDto; t: TranslateFunction }) {
   return (
@@ -38,43 +38,37 @@ export function ReadingStatusMatchResultsCard({ results, libraryId, t }: {
       </CardHeader>
       <CardContent className="space-y-2 max-h-[600px] overflow-y-auto">
         {results.map((r) => (
-          <div
+          <SeriesResultRow
             key={r.id}
-            className={`p-3 rounded-lg border ${
+            seriesId={r.series_id}
+            seriesName={r.series_name}
+            libraryId={libraryId}
+            tone={
               r.status === "linked" ? "bg-success/10 border-success/20" :
               r.status === "already_linked" ? "bg-primary/10 border-primary/20" :
               r.status === "error" ? "bg-destructive/10 border-destructive/20" :
               r.status === "ambiguous" ? "bg-amber-500/10 border-amber-500/20" :
               "bg-muted/50 border-border/60"
-            }`}
-          >
-            <div className="flex items-center justify-between gap-2">
-              {libraryId && r.series_id ? (
-                <Link
-                  href={`/series/${r.series_id}`}
-                  className="font-medium text-sm text-primary hover:underline truncate"
-                >
-                  {r.series_name}
-                </Link>
-              ) : (
-                <span className="font-medium text-sm text-foreground truncate">{r.series_name}</span>
-              )}
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${
+            }
+            badge={
+              <ResultStatusBadge className={
                 r.status === "linked" ? "bg-success/20 text-success" :
                 r.status === "already_linked" ? "bg-primary/20 text-primary" :
                 r.status === "no_results" ? "bg-muted text-muted-foreground" :
                 r.status === "ambiguous" ? "bg-amber-500/15 text-amber-600" :
                 r.status === "error" ? "bg-destructive/20 text-destructive" :
                 "bg-muted text-muted-foreground"
-              }`}>
+              }>
                 {r.status === "linked" ? t("jobDetail.linked") :
                  r.status === "already_linked" ? t("jobDetail.alreadyLinked") :
                  r.status === "no_results" ? t("jobDetail.noResults") :
                  r.status === "ambiguous" ? t("jobDetail.ambiguous") :
                  r.status === "error" ? t("common.error") :
                  r.status}
-              </span>
-            </div>
+              </ResultStatusBadge>
+            }
+            errorMessage={r.error_message}
+          >
             {r.status === "linked" && r.anilist_title && (
               <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <svg className="w-3 h-3 text-success shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -90,10 +84,7 @@ export function ReadingStatusMatchResultsCard({ results, libraryId, t }: {
                 {r.anilist_id && <span className="text-muted-foreground/60">#{r.anilist_id}</span>}
               </div>
             )}
-            {r.error_message && (
-              <p className="text-xs text-destructive/80 mt-1">{r.error_message}</p>
-            )}
-          </div>
+          </SeriesResultRow>
         ))}
       </CardContent>
     </Card>
@@ -134,40 +125,34 @@ export function ReadingStatusPushResultsCard({ results, libraryId, t }: {
       </CardHeader>
       <CardContent className="space-y-2 max-h-[600px] overflow-y-auto">
         {results.map((r) => (
-          <div
+          <SeriesResultRow
             key={r.id}
-            className={`p-3 rounded-lg border ${
+            seriesId={r.series_id}
+            seriesName={r.series_name}
+            libraryId={libraryId}
+            tone={
               r.status === "pushed" ? "bg-success/10 border-success/20" :
               r.status === "error" ? "bg-destructive/10 border-destructive/20" :
               r.status === "skipped" ? "bg-primary/10 border-primary/20" :
               "bg-muted/50 border-border/60"
-            }`}
-          >
-            <div className="flex items-center justify-between gap-2">
-              {libraryId && r.series_id ? (
-                <Link
-                  href={`/series/${r.series_id}`}
-                  className="font-medium text-sm text-primary hover:underline truncate"
-                >
-                  {r.series_name}
-                </Link>
-              ) : (
-                <span className="font-medium text-sm text-foreground truncate">{r.series_name}</span>
-              )}
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${
+            }
+            badge={
+              <ResultStatusBadge className={
                 r.status === "pushed" ? "bg-success/20 text-success" :
                 r.status === "skipped" ? "bg-primary/20 text-primary" :
                 r.status === "no_books" ? "bg-muted text-muted-foreground" :
                 r.status === "error" ? "bg-destructive/20 text-destructive" :
                 "bg-muted text-muted-foreground"
-              }`}>
+              }>
                 {r.status === "pushed" ? t("jobDetail.pushed") :
                  r.status === "skipped" ? t("jobDetail.skipped") :
                  r.status === "no_books" ? t("jobDetail.noBooks") :
                  r.status === "error" ? t("common.error") :
                  r.status}
-              </span>
-            </div>
+              </ResultStatusBadge>
+            }
+            errorMessage={r.error_message}
+          >
             {r.status === "pushed" && r.anilist_title && (
               <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <svg className="w-3 h-3 text-success shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -184,10 +169,7 @@ export function ReadingStatusPushResultsCard({ results, libraryId, t }: {
                 {r.progress_volumes != null && <span className="text-muted-foreground/60">vol. {r.progress_volumes}</span>}
               </div>
             )}
-            {r.error_message && (
-              <p className="text-xs text-destructive/80 mt-1">{r.error_message}</p>
-            )}
-          </div>
+          </SeriesResultRow>
         ))}
       </CardContent>
     </Card>

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "../../lib/i18n/context";
 import { StatusBadge, Badge, ProgressBar } from "./ui";
+import { isPhase2Status } from "@/lib/jobStatus";
 
 interface ProgressEvent {
   job_id: string;
@@ -97,7 +98,7 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
   const percent = progress.progress_percent ?? 0;
   const processed = progress.processed_files ?? 0;
   const total = progress.total_files ?? 0;
-  const isPhase2 = progress.status === "extracting_pages" || progress.status === "generating_thumbnails";
+  const isPhase2 = isPhase2Status(progress.status);
   const unitLabel = progress.status === "extracting_pages" ? t("jobProgress.pages") : progress.status === "generating_thumbnails" ? t("jobProgress.thumbnails") : t("jobProgress.filesUnit");
 
   return (

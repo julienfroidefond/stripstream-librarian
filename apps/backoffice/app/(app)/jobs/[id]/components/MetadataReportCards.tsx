@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, StatBox } from "@/app/components/ui";
 import type { MetadataBatchReportDto, MetadataBatchResultDto, MetadataRefreshReportDto } from "@/lib/api";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
+import { SeriesResultRow, ResultStatusBadge } from "./SeriesResultRow";
 
 export function MetadataBatchReportCard({ report, t }: { report: MetadataBatchReportDto; t: TranslateFunction }) {
   return (
@@ -39,27 +40,19 @@ export function MetadataBatchResultsCard({ results, libraryId, t }: {
       </CardHeader>
       <CardContent className="space-y-2 max-h-[600px] overflow-y-auto">
         {results.map((r) => (
-          <div
+          <SeriesResultRow
             key={r.id}
-            className={`p-3 rounded-lg border ${
+            seriesId={r.series_id}
+            seriesName={r.series_name}
+            libraryId={libraryId}
+            tone={
               r.status === "auto_matched" ? "bg-success/10 border-success/20" :
               r.status === "already_linked" ? "bg-primary/10 border-primary/20" :
               r.status === "error" ? "bg-destructive/10 border-destructive/20" :
               "bg-muted/50 border-border/60"
-            }`}
-          >
-            <div className="flex items-center justify-between gap-2">
-              {libraryId && r.series_id ? (
-                <Link
-                  href={`/series/${r.series_id}`}
-                  className="font-medium text-sm text-primary hover:underline truncate"
-                >
-                  {r.series_name}
-                </Link>
-              ) : (
-                <span className="font-medium text-sm text-foreground truncate">{r.series_name}</span>
-              )}
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${
+            }
+            badge={
+              <ResultStatusBadge className={
                 r.status === "auto_matched" ? "bg-success/20 text-success" :
                 r.status === "already_linked" ? "bg-primary/20 text-primary" :
                 r.status === "no_results" ? "bg-muted text-muted-foreground" :
@@ -67,7 +60,7 @@ export function MetadataBatchResultsCard({ results, libraryId, t }: {
                 r.status === "low_confidence" ? "bg-amber-500/15 text-amber-600" :
                 r.status === "error" ? "bg-destructive/20 text-destructive" :
                 "bg-muted text-muted-foreground"
-              }`}>
+              }>
                 {r.status === "auto_matched" ? t("jobDetail.autoMatched") :
                  r.status === "already_linked" ? t("jobDetail.alreadyLinked") :
                  r.status === "no_results" ? t("jobDetail.noResults") :
@@ -75,8 +68,10 @@ export function MetadataBatchResultsCard({ results, libraryId, t }: {
                  r.status === "low_confidence" ? t("jobDetail.lowConfidence") :
                  r.status === "error" ? t("common.error") :
                  r.status}
-              </span>
-            </div>
+              </ResultStatusBadge>
+            }
+            errorMessage={r.error_message}
+          >
             <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
               {r.provider_used && (
                 <span>{r.provider_used}{r.fallback_used ? ` ${t("metadata.fallbackUsed")}` : ""}</span>
@@ -93,10 +88,7 @@ export function MetadataBatchResultsCard({ results, libraryId, t }: {
                 {t("jobDetail.match", { title: (r.best_candidate_json as { title?: string }).title || r.best_candidate_json.toString() })}
               </p>
             )}
-            {r.error_message && (
-              <p className="text-xs text-destructive/80 mt-1">{r.error_message}</p>
-            )}
-          </div>
+          </SeriesResultRow>
         ))}
       </CardContent>
     </Card>
@@ -146,43 +138,32 @@ export function MetadataRefreshChangesCard({ report, libraryId, t }: {
       </CardHeader>
       <CardContent className="space-y-3 max-h-[600px] overflow-y-auto">
         {report.changes.map((r, idx) => (
-          <div
+          <SeriesResultRow
             key={idx}
-            className={`p-3 rounded-lg border ${
+            seriesId={r.series_id}
+            seriesName={r.series_name}
+            libraryId={libraryId}
+            tone={
               r.status === "updated" ? "bg-success/10 border-success/20" :
               r.status === "error" ? "bg-destructive/10 border-destructive/20" :
               "bg-muted/50 border-border/60"
-            }`}
-          >
-            <div className="flex items-center justify-between gap-2">
-              {libraryId && r.series_id ? (
-                <Link
-                  href={`/series/${r.series_id}`}
-                  className="font-medium text-sm text-primary hover:underline truncate"
-                >
-                  {r.series_name}
-                </Link>
-              ) : (
-                <span className="font-medium text-sm text-foreground truncate">{r.series_name}</span>
-              )}
+            }
+            badge={
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-muted-foreground">{r.provider}</span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${
+                <ResultStatusBadge className={
                   r.status === "updated" ? "bg-success/20 text-success" :
                   r.status === "error" ? "bg-destructive/20 text-destructive" :
                   "bg-muted text-muted-foreground"
-                }`}>
+                }>
                   {r.status === "updated" ? t("jobDetail.refreshed") :
                    r.status === "error" ? t("common.error") :
                    t("jobDetail.unchanged")}
-                </span>
+                </ResultStatusBadge>
               </div>
-            </div>
-
-            {r.error && (
-              <p className="text-xs text-destructive/80 mt-1">{r.error}</p>
-            )}
-
+            }
+            errorMessage={r.error}
+          >
             {r.series_changes.length > 0 && (
               <div className="mt-2">
                 <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">{t("metadata.seriesLabel")}</span>
@@ -237,7 +218,7 @@ export function MetadataRefreshChangesCard({ report, libraryId, t }: {
                 </div>
               </div>
             )}
-          </div>
+          </SeriesResultRow>
         ))}
       </CardContent>
     </Card>

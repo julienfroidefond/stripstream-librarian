@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Button, Icon } from "./ui";
+import { Button, Icon, Modal } from "./ui";
 import { useTranslation } from "../../lib/i18n/context";
 import type { AnilistMediaResultDto, AnilistSeriesLinkDto } from "../../lib/api";
 
@@ -128,26 +127,18 @@ export function ReadingStatusModal({
         </button>
       )}
 
-      {isOpen && createPortal(
-        <>
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none" />
-          <div
-            className="fixed inset-0 flex items-center justify-center z-50 p-4"
-            onClick={(event) => { if (event.target === event.currentTarget) handleClose(); }}
-          >
-            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-              {/* Header */}
-              <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-muted/30">
-                <div className="flex items-center gap-2.5">
-                  <Icon name="link" size="md" className="text-cyan-500" />
-                  <span className="font-semibold text-lg">{providerLabel} — {seriesName}</span>
-                </div>
-                <button type="button" onClick={handleClose} className="text-muted-foreground hover:text-foreground transition-colors p-1.5 hover:bg-accent rounded-lg">
-                  <Icon name="x" size="md" />
-                </button>
-              </div>
-
-              <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+      <Modal
+        isOpen={isOpen}
+        onClose={handleClose}
+        maxWidth="lg"
+        title={
+          <span className="flex items-center gap-2.5">
+            <Icon name="link" size="md" className="text-cyan-500" />
+            {providerLabel} — {seriesName}
+          </span>
+        }
+      >
+        <div className="p-6 space-y-4">
                 {/* Linked state */}
                 {step === "linked" && link && (
                   <div className="space-y-4">
@@ -236,12 +227,8 @@ export function ReadingStatusModal({
                 )}
 
                 {error && <p className="text-sm text-destructive">{error}</p>}
-              </div>
-            </div>
-          </div>
-        </>,
-        document.body
-      )}
+        </div>
+      </Modal>
     </>
   );
 }

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, Icon } from "@/app/components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, FormField, FormInput, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
+import { TestConnectionButton } from "./TestConnectionButton";
 
 export const DEFAULT_EVENTS = {
   scan_completed: true,
@@ -33,8 +34,6 @@ export function TelegramCard({ handleUpdateSetting, initialData }: { handleUpdat
   const [events, setEvents] = useState(
     initialData?.events ? { ...DEFAULT_EVENTS, ...(initialData.events as Record<string, boolean>) } : DEFAULT_EVENTS
   );
-  const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showHelp, setShowHelp] = useState(false);
 
   function saveTelegram(token?: string, chat?: string, en?: boolean, ev?: typeof events) {
@@ -44,24 +43,6 @@ export function TelegramCard({ handleUpdateSetting, initialData }: { handleUpdat
       enabled: en ?? enabled,
       events: ev ?? events,
     });
-  }
-
-  async function handleTestConnection() {
-    setIsTesting(true);
-    setTestResult(null);
-    try {
-      const resp = await fetch("/api/telegram/test");
-      const data = await resp.json();
-      if (data.error) {
-        setTestResult({ success: false, message: data.error });
-      } else {
-        setTestResult(data);
-      }
-    } catch {
-      setTestResult({ success: false, message: "Failed to connect" });
-    } finally {
-      setIsTesting(false);
-    }
   }
 
   return (
@@ -235,27 +216,10 @@ export function TelegramCard({ handleUpdateSetting, initialData }: { handleUpdat
           </div>
 
           <div className="flex items-center gap-3">
-            <Button
-              onClick={handleTestConnection}
-              disabled={isTesting || !botToken || !chatId || !enabled}
-            >
-              {isTesting ? (
-                <>
-                  <Icon name="spinner" size="sm" className="animate-spin -ml-1 mr-2" />
-                  {t("settings.testing")}
-                </>
-              ) : (
-                <>
-                  <Icon name="refresh" size="sm" className="mr-2" />
-                  {t("settings.testConnection")}
-                </>
-              )}
-            </Button>
-            {testResult && (
-              <span className={`text-sm font-medium ${testResult.success ? "text-success" : "text-destructive"}`}>
-                {testResult.message}
-              </span>
-            )}
+            <TestConnectionButton
+              endpoint="/api/telegram/test"
+              disabled={!botToken || !chatId || !enabled}
+            />
           </div>
         </div>
       </CardContent>

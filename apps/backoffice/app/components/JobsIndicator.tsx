@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "../../lib/i18n/context";
 import { refreshAfterJobAction } from "../actions/cache";
 import { Badge } from "./ui/Badge";
-import { ProgressBar } from "./ui/ProgressBar";
+import { MiniProgressBar, ProgressBar } from "./ui/ProgressBar";
+import { isActiveJobStatus, isRunningJobStatus } from "@/lib/jobStatus";
+import { useEventSource } from "@/lib/useEventSource";
+import { usePopin } from "@/lib/usePopin";
 
 interface Job {
   id: string;
@@ -51,150 +54,26 @@ export function JobsIndicator() {
   const { t } = useTranslation();
   const router = useRouter();
   const [activeJobs, setActiveJobs] = useState<Job[]>([]);
-  const [isOpen, setIsOpen] = useState(false);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const popinRef = useRef<HTMLDivElement>(null);
-  const [popinStyle, setPopinStyle] = useState<React.CSSProperties>({});
+  const { isOpen, setIsOpen, buttonRef, popinRef, popinStyle } = usePopin();
   const prevActiveIdsRef = useRef<Set<string>>(new Set());
 
-  useEffect(() => {
-    let eventSource: EventSource | null = null;
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-    let staleTimeout: ReturnType<typeof setTimeout> | null = null;
-
-    const resetStaleTimer = () => {
-      if (staleTimeout) clearTimeout(staleTimeout);
-      // If no message received in 30s, reconnect (heartbeat should come every 15s)
-      staleTimeout = setTimeout(() => {
-        eventSource?.close();
-        eventSource = null;
-        connect();
-      }, 30000);
-    };
-
-    const connect = () => {
-      if (eventSource) {
-        eventSource.close();
+  useEventSource<Job[]>({
+    url: "/api/jobs/stream",
+    onMessage: (allJobs) => {
+      const active = allJobs.filter(j => isActiveJobStatus(j.status));
+      const newIds = new Set(active.map(j => j.id));
+      const finishedSome = [...prevActiveIdsRef.current].some(id => !newIds.has(id));
+      prevActiveIdsRef.current = newIds;
+      if (finishedSome) {
+        refreshAfterJobAction()
+          .catch(() => {})
+          .finally(() => router.refresh());
       }
-      eventSource = new EventSource("/api/jobs/stream");
-      resetStaleTimer();
+      setActiveJobs(active);
+    },
+  });
 
-      eventSource.onmessage = (event) => {
-        resetStaleTimer();
-        try {
-          const allJobs: Job[] = JSON.parse(event.data);
-          const active = allJobs.filter(j =>
-            j.status === "running" || j.status === "pending" ||
-            j.status === "extracting_pages" || j.status === "generating_thumbnails"
-          );
-          const newIds = new Set(active.map(j => j.id));
-          const finishedSome = [...prevActiveIdsRef.current].some(id => !newIds.has(id));
-          prevActiveIdsRef.current = newIds;
-          if (finishedSome) {
-            refreshAfterJobAction()
-              .catch(() => {})
-              .finally(() => router.refresh());
-          }
-          setActiveJobs(active);
-        } catch {
-          // ignore malformed data
-        }
-      };
-
-      eventSource.onerror = () => {
-        eventSource?.close();
-        eventSource = null;
-        // Reconnect after 3s on error
-        reconnectTimeout = setTimeout(connect, 3000);
-      };
-    };
-
-    const disconnect = () => {
-      if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
-      if (staleTimeout) { clearTimeout(staleTimeout); staleTimeout = null; }
-      if (eventSource) { eventSource.close(); eventSource = null; }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        disconnect();
-      } else {
-        connect();
-      }
-    };
-
-    connect();
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      disconnect();
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, []);
-
-  // Position the popin relative to the button
-  const updatePosition = useCallback(() => {
-    if (!buttonRef.current) return;
-    const rect = buttonRef.current.getBoundingClientRect();
-    const isMobile = window.innerWidth < 640;
-
-    if (isMobile) {
-      setPopinStyle({
-        position: "fixed",
-        top: `${rect.bottom + 8}px`,
-        left: "12px",
-        right: "12px",
-      });
-    } else {
-      // Align right edge of popin with right edge of button
-      const rightEdge = window.innerWidth - rect.right;
-      setPopinStyle({
-        position: "fixed",
-        top: `${rect.bottom + 8}px`,
-        right: `${Math.max(rightEdge, 12)}px`,
-        width: "384px", // w-96
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [isOpen, updatePosition]);
-
-  // Close when clicking outside
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (
-        buttonRef.current && !buttonRef.current.contains(target) &&
-        popinRef.current && !popinRef.current.contains(target)
-      ) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setIsOpen(false);
-    };
-    document.addEventListener("keydown", handleEsc);
-    return () => document.removeEventListener("keydown", handleEsc);
-  }, [isOpen]);
-
-  const runningJobs = activeJobs.filter(j => j.status === "running" || j.status === "extracting_pages" || j.status === "generating_thumbnails");
+  const runningJobs = activeJobs.filter(j => isRunningJobStatus(j.status));
   const pendingJobs = activeJobs.filter(j => j.status === "pending");
   const totalCount = activeJobs.length;
 
@@ -297,7 +176,7 @@ export function JobsIndicator() {
                   >
                     <div className="flex items-start gap-3">
                       <div className="mt-0.5">
-                        {(job.status === "running" || job.status === "extracting_pages" || job.status === "generating_thumbnails") && <span className="animate-spin inline-block">⏳</span>}
+                        {isRunningJobStatus(job.status) && <span className="animate-spin inline-block">⏳</span>}
                         {job.status === "pending" && <span>⏸</span>}
                       </div>
 
@@ -311,9 +190,9 @@ export function JobsIndicator() {
                           )}
                         </div>
 
-                        {(job.status === "running" || job.status === "extracting_pages" || job.status === "generating_thumbnails") && job.progress_percent != null && (
+                        {isRunningJobStatus(job.status) && job.progress_percent != null && (
                           <div className="flex items-center gap-2 mt-2">
-                            <MiniProgressBar value={job.progress_percent} />
+                            <MiniProgressBar value={job.progress_percent} variant="success" />
                             <span className="text-xs font-medium text-muted-foreground">{job.progress_percent}%</span>
                           </div>
                         )}
@@ -394,14 +273,3 @@ export function JobsIndicator() {
   );
 }
 
-// Mini progress bar for dropdown
-function MiniProgressBar({ value }: { value: number }) {
-  return (
-    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-      <div
-        className="h-full bg-success rounded-full transition-all duration-300"
-        style={{ width: `${value}%` }}
-      />
-    </div>
-  );
-}

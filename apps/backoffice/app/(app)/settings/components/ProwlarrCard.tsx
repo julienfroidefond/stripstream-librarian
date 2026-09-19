@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, Icon } from "@/app/components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, FormField, FormInput, FormSelect, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
+import { TestConnectionButton } from "./TestConnectionButton";
 
 export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdateSetting: (key: string, value: unknown) => Promise<void>; initialData: Record<string, unknown> | null }) {
   const { t } = useTranslation();
@@ -24,9 +25,6 @@ export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdat
     { value: "1440",  label: t("settings.prowlarrRssInterval1d") },
     { value: "10080", label: t("settings.prowlarrRssInterval1w") },
   ];
-  const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-
   function saveProwlarr(url?: string, apiKey?: string, cats?: string, interval?: string) {
     const categories = (cats ?? prowlarrCategories)
       .split(",")
@@ -39,24 +37,6 @@ export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdat
       categories,
       rss_poll_interval_minutes: isNaN(parsedInterval) ? 30 : parsedInterval,
     });
-  }
-
-  async function handleTestConnection() {
-    setIsTesting(true);
-    setTestResult(null);
-    try {
-      const resp = await fetch("/api/prowlarr/test");
-      const data = await resp.json();
-      if (data.error) {
-        setTestResult({ success: false, message: data.error });
-      } else {
-        setTestResult(data);
-      }
-    } catch {
-      setTestResult({ success: false, message: "Failed to connect" });
-    } finally {
-      setIsTesting(false);
-    }
   }
 
   return (
@@ -122,27 +102,10 @@ export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdat
             </FormField>
           </div>
           <div className="flex items-center gap-3">
-            <Button
-              onClick={handleTestConnection}
-              disabled={isTesting || !prowlarrUrl || !prowlarrApiKey}
-            >
-              {isTesting ? (
-                <>
-                  <Icon name="spinner" size="sm" className="animate-spin -ml-1 mr-2" />
-                  {t("settings.testing")}
-                </>
-              ) : (
-                <>
-                  <Icon name="refresh" size="sm" className="mr-2" />
-                  {t("settings.testConnection")}
-                </>
-              )}
-            </Button>
-            {testResult && (
-              <span className={`text-sm font-medium ${testResult.success ? "text-success" : "text-destructive"}`}>
-                {testResult.message}
-              </span>
-            )}
+            <TestConnectionButton
+              endpoint="/api/prowlarr/test"
+              disabled={!prowlarrUrl || !prowlarrApiKey}
+            />
           </div>
         </div>
       </CardContent>

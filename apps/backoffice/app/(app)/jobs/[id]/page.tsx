@@ -18,6 +18,8 @@ import { TelegramSyncResultsCard } from "./components/TelegramSyncResultsCard";
 import { TelegramIncrementalResultsCard } from "./components/TelegramIncrementalResultsCard";
 import { JobErrorsCard } from "./components/JobErrorsCard";
 import { JobEventsCard, type JobEvent } from "./components/JobEventsCard";
+import { formatDuration, formatRate } from "@/lib/format";
+import { isCancelledJobStatus, isCompletedJobStatus, isFailedJobStatus, isPhase2Status, isTerminalJobStatus } from "@/lib/jobStatus";
 
 interface JobDetailPageProps {
   params: Promise<{ id: string }>;
@@ -79,21 +81,6 @@ async function getJobErrors(jobId: string): Promise<JobError[]> {
   } catch {
     return [];
   }
-}
-
-function formatDuration(start: string, end: string | null): string {
-  const startDate = new Date(start);
-  const endDate = end ? new Date(end) : new Date();
-  const diff = endDate.getTime() - startDate.getTime();
-
-  if (diff < 60000) return `${Math.floor(diff / 1000)}s`;
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ${Math.floor((diff % 60000) / 1000)}s`;
-  return `${Math.floor(diff / 3600000)}h ${Math.floor((diff % 3600000) / 60000)}m`;
-}
-
-function formatSpeed(count: number, durationMs: number): string {
-  if (durationMs === 0 || count === 0) return "-";
-  return `${(count / (durationMs / 1000)).toFixed(1)}/s`;
 }
 
 export default async function JobDetailPage({ params }: JobDetailPageProps) {
@@ -194,13 +181,13 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     ? new Date(job.finished_at || new Date()).getTime() - new Date(job.started_at).getTime()
     : 0;
 
-  const isCompleted = job.status === "success";
-  const isFailed = job.status === "failed";
-  const isCancelled = job.status === "cancelled";
-  const isTerminal = isCompleted || isFailed || isCancelled;
+  const isCompleted = isCompletedJobStatus(job.status);
+  const isFailed = isFailedJobStatus(job.status);
+  const isCancelled = isCancelledJobStatus(job.status);
+  const isTerminal = isTerminalJobStatus(job.status);
   const isExtractingPages = job.status === "extracting_pages";
   const isThumbnailPhase = job.status === "generating_thumbnails";
-  const isPhase2 = isExtractingPages || isThumbnailPhase;
+  const isPhase2 = isPhase2Status(job.status);
 
   const progressTitle = isMetadataBatch
     ? t("jobDetail.metadataSearch")
@@ -285,18 +272,18 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
             progressDescription={progressDescription}
             t={t}
             formatDuration={formatDuration}
-            formatSpeed={formatSpeed}
+            formatSpeed={formatRate}
           />
         )}
 
         {/* Index Statistics */}
         {job.stats_json && !isThumbnailOnly && !isMetadataBatch && !isMetadataRefresh && !isReadingStatusMatch && !isReadingStatusPush && !isDownloadDetection && !isRssPoll && !isTelegramSync && (
-          <IndexStatsCard job={job} t={t} formatDuration={formatDuration} formatSpeed={formatSpeed} durationMs={durationMs} />
+          <IndexStatsCard job={job} t={t} formatDuration={formatDuration} formatSpeed={formatRate} durationMs={durationMs} />
         )}
 
         {/* Thumbnail statistics */}
         {isThumbnailOnly && isCompleted && job.total_files != null && (
-          <ThumbnailStatsCard job={job} t={t} formatDuration={formatDuration} formatSpeed={formatSpeed} durationMs={durationMs} />
+          <ThumbnailStatsCard job={job} t={t} formatDuration={formatDuration} formatSpeed={formatRate} durationMs={durationMs} />
         )}
 
         {/* Metadata batch */}

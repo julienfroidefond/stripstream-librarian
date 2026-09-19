@@ -5,41 +5,9 @@ import { Modal } from "./ui/Modal";
 import { useRouter } from "next/navigation";
 import { BookDto } from "@/lib/api";
 import { FormField, FormLabel, FormInput } from "./ui/Form";
-import { Icon } from "./ui";
+import { Icon, TagInput } from "./ui";
+import { LockButton } from "./LockButton";
 import { useTranslation } from "../../lib/i18n/context";
-
-function LockButton({
-  locked,
-  onToggle,
-  disabled,
-}: {
-  locked: boolean;
-  onToggle: () => void;
-  disabled?: boolean;
-}) {
-  const { t } = useTranslation();
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      disabled={disabled}
-      className={`p-1 rounded transition-colors ${
-        locked
-          ? "text-amber-500 hover:text-amber-600"
-          : "text-muted-foreground/40 hover:text-muted-foreground"
-      }`}
-      title={locked ? t("editBook.lockedField") : t("editBook.clickToLock")}
-    >
-      {locked ? (
-        <Icon name="lock" size="sm" />
-      ) : (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-        </svg>
-      )}
-    </button>
-  );
-}
 
 interface EditBookFormProps {
   book: BookDto;
@@ -176,48 +144,18 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
                   <FormLabel>{t("editBook.authors")}</FormLabel>
                   <LockButton locked={!!lockedFields.authors} onToggle={() => toggleLock("authors")} disabled={isPending} />
                 </div>
-                <div className="space-y-2">
-                  {authors.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {authors.map((a, i) => (
-                        <span
-                          key={i}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium"
-                        >
-                          {a}
-                          <button
-                            type="button"
-                            onClick={() => removeAuthor(i)}
-                            disabled={isPending}
-                            className="hover:text-destructive transition-colors ml-0.5"
-                            aria-label={t("editBook.removeAuthor", { name: a })}
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className="flex gap-2">
-                    <input
-                      ref={setAuthorInputEl}
-                      value={authorInput}
-                      onChange={(e) => setAuthorInput(e.target.value)}
-                      onKeyDown={handleAuthorKeyDown}
-                      disabled={isPending}
-                      placeholder={t("editBook.addAuthor")}
-                      className="flex h-10 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    />
-                    <button
-                      type="button"
-                      onClick={addAuthor}
-                      disabled={isPending || !authorInput.trim()}
-                      className="px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
+                <TagInput
+                  values={authors}
+                  input={authorInput}
+                  onInputChange={setAuthorInput}
+                  onAdd={addAuthor}
+                  onRemove={removeAuthor}
+                  removeLabel={(name) => t("editBook.removeAuthor", { name })}
+                  onKeyDown={handleAuthorKeyDown}
+                  placeholder={t("editBook.addAuthor")}
+                  disabled={isPending}
+                  inputRef={setAuthorInputEl}
+                />
               </FormField>
 
               <FormField>

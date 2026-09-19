@@ -1,5 +1,6 @@
 import { Card, CardHeader, CardTitle, CardContent } from "@/app/components/ui";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
+import { isCompletedJobStatus, isFailedJobStatus } from "@/lib/jobStatus";
 
 interface JobTimelineCardProps {
   job: {
@@ -21,8 +22,8 @@ interface JobTimelineCardProps {
 }
 
 export function JobTimelineCard({ job, isThumbnailOnly, t, locale, formatDuration }: JobTimelineCardProps) {
-  const isCompleted = job.status === "success";
-  const isFailed = job.status === "failed";
+  const isCompleted = isCompletedJobStatus(job.status);
+  const isFailed = isFailedJobStatus(job.status);
   const isExtractingPages = job.status === "extracting_pages";
   const isThumbnailPhase = job.status === "generating_thumbnails";
 

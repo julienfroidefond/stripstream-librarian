@@ -47,21 +47,19 @@ export function ActionsMenu({ children, label, align = "right" }: ActionsMenuPro
   const updatePosition = useCallback(() => {
     if (!buttonRef.current || isMobile) return;
     const rect = buttonRef.current.getBoundingClientRect();
+    const top = rect.bottom + 8;
+    const maxHeight = Math.max(160, window.innerHeight - top - 12);
+    const base: React.CSSProperties = {
+      position: "fixed",
+      top: `${top}px`,
+      minWidth: "240px",
+      maxHeight: `${maxHeight}px`,
+      overflowY: "auto",
+    };
     if (align === "right") {
-      const rightEdge = window.innerWidth - rect.right;
-      setPopinStyle({
-        position: "fixed",
-        top: `${rect.bottom + 8}px`,
-        right: `${Math.max(rightEdge, 12)}px`,
-        minWidth: "240px",
-      });
+      setPopinStyle({ ...base, right: `${Math.max(window.innerWidth - rect.right, 12)}px` });
     } else {
-      setPopinStyle({
-        position: "fixed",
-        top: `${rect.bottom + 8}px`,
-        left: `${rect.left}px`,
-        minWidth: "240px",
-      });
+      setPopinStyle({ ...base, left: `${rect.left}px` });
     }
   }, [align, isMobile]);
 

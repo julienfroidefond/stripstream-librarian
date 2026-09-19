@@ -17,6 +17,7 @@ export {
   FormField, FormLabel, FormInput, FormSelect, FormRow, 
   FormSection, FormError, FormDescription 
 } from "./Form";
+export { TagInput } from "./TagInput";
 export { PageIcon, NavIcon, Icon } from "./Icon";
 export { OffsetPagination } from "./Pagination";
 export { Tooltip } from "./Tooltip";

@@ -5,41 +5,9 @@ import { createPortal } from "react-dom";
 import { Modal } from "./ui/Modal";
 import { useRouter } from "next/navigation";
 import { FormField, FormLabel, FormInput } from "./ui/Form";
-import { Icon } from "./ui";
+import { Icon, TagInput } from "./ui";
+import { LockButton } from "./LockButton";
 import { useTranslation } from "../../lib/i18n/context";
-
-function LockButton({
-  locked,
-  onToggle,
-  disabled,
-}: {
-  locked: boolean;
-  onToggle: () => void;
-  disabled?: boolean;
-}) {
-  const { t } = useTranslation();
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      disabled={disabled}
-      className={`p-1 rounded transition-colors ${
-        locked
-          ? "text-amber-500 hover:text-amber-600"
-          : "text-muted-foreground/40 hover:text-muted-foreground"
-      }`}
-      title={locked ? t("editBook.lockedField") : t("editBook.clickToLock")}
-    >
-      {locked ? (
-        <Icon name="lock" size="sm" />
-      ) : (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-        </svg>
-      )}
-    </button>
-  );
-}
 
 const SERIES_STATUS_VALUES = ["", "ongoing", "ended", "hiatus", "cancelled", "upcoming"] as const;
 
@@ -347,46 +315,18 @@ export function EditSeriesForm({
                   <FormLabel>{t("editSeries.authors")}</FormLabel>
                   <LockButton locked={!!lockedFields.authors} onToggle={() => toggleLock("authors")} disabled={isPending} />
                 </div>
-                <div className="space-y-2">
-                  {authors.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {authors.map((a, i) => (
-                        <span
-                          key={i}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium"
-                        >
-                          {a}
-                          <button
-                            type="button"
-                            onClick={() => removeAuthor(i)}
-                            disabled={isPending}
-                            className="hover:text-destructive transition-colors ml-0.5"
-                            aria-label={t("editBook.removeAuthor", { name: a })}
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className="flex gap-2">
-                    <input
-                      ref={setAuthorInputEl}
-                      value={authorInput}
-                      onChange={(e) => setAuthorInput(e.target.value)}
-                      onKeyDown={handleAuthorKeyDown}
-                      disabled={isPending}
-                      placeholder={t("editBook.addAuthor")}
-                      className="flex h-10 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    />
-                    <button
-                      type="button"
-                      onClick={addAuthor}
-                      disabled={isPending || !authorInput.trim()}
-                      className="px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
-                    >
-                      +
-                    </button>
+                <TagInput
+                  values={authors}
+                  input={authorInput}
+                  onInputChange={setAuthorInput}
+                  onAdd={addAuthor}
+                  onRemove={removeAuthor}
+                  removeLabel={(name) => t("editBook.removeAuthor", { name })}
+                  onKeyDown={handleAuthorKeyDown}
+                  placeholder={t("editBook.addAuthor")}
+                  disabled={isPending}
+                  inputRef={setAuthorInputEl}
+                  extra={
                     <button
                       type="button"
                       onClick={() => setShowApplyToBooks(!showApplyToBooks)}
@@ -400,8 +340,8 @@ export function EditSeriesForm({
                     >
                       {t("editSeries.applyToBooks")}
                     </button>
-                  </div>
-                </div>
+                  }
+                />
               </FormField>
 
               {showApplyToBooks && (
@@ -433,48 +373,19 @@ export function EditSeriesForm({
                   <FormLabel>{t("editSeries.publishers")}</FormLabel>
                   <LockButton locked={!!lockedFields.publishers} onToggle={() => toggleLock("publishers")} disabled={isPending} />
                 </div>
-                <div className="space-y-2">
-                  {publishers.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {publishers.map((p, i) => (
-                        <span
-                          key={i}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-secondary/50 text-secondary-foreground text-xs font-medium"
-                        >
-                          {p}
-                          <button
-                            type="button"
-                            onClick={() => removePublisher(i)}
-                            disabled={isPending}
-                            className="hover:text-destructive transition-colors ml-0.5"
-                            aria-label={t("editBook.removeAuthor", { name: p })}
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className="flex gap-2">
-                    <input
-                      ref={setPublisherInputEl}
-                      value={publisherInput}
-                      onChange={(e) => setPublisherInput(e.target.value)}
-                      onKeyDown={handlePublisherKeyDown}
-                      disabled={isPending}
-                      placeholder={t("editSeries.addPublisher")}
-                      className="flex h-10 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    />
-                    <button
-                      type="button"
-                      onClick={addPublisher}
-                      disabled={isPending || !publisherInput.trim()}
-                      className="px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
+                <TagInput
+                  values={publishers}
+                  input={publisherInput}
+                  onInputChange={setPublisherInput}
+                  onAdd={addPublisher}
+                  onRemove={removePublisher}
+                  removeLabel={(name) => t("editBook.removeAuthor", { name })}
+                  onKeyDown={handlePublisherKeyDown}
+                  placeholder={t("editSeries.addPublisher")}
+                  disabled={isPending}
+                  variant="secondary"
+                  inputRef={setPublisherInputEl}
+                />
               </FormField>
 
               {/* Genres — multi-valeur avec autocomplete */}
@@ -483,86 +394,55 @@ export function EditSeriesForm({
                   <FormLabel>{t("editSeries.genres")}</FormLabel>
                   <LockButton locked={!!lockedFields.genres} onToggle={() => toggleLock("genres")} disabled={isPending} />
                 </div>
-                <div className="space-y-2">
-                  {genres.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {genres.map((g, i) => (
-                        <span
-                          key={i}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-success/10 text-success text-xs font-medium"
-                        >
-                          {g}
-                          <button
-                            type="button"
-                            onClick={() => removeGenre(i)}
-                            disabled={isPending}
-                            className="hover:text-destructive transition-colors ml-0.5"
-                            aria-label={t("editBook.removeAuthor", { name: g })}
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <input
-                        ref={genreInputRef}
-                        value={genreInput}
-                        onChange={(e) => { setGenreInput(e.target.value); setShowGenreSuggestions(true); }}
-                        onFocus={() => setShowGenreSuggestions(true)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") { e.preventDefault(); addGenre(); }
-                          if (e.key === "Escape") setShowGenreSuggestions(false);
-                        }}
-                        disabled={isPending}
-                        placeholder={t("editSeries.addGenre")}
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        autoComplete="off"
-                      />
-                      {showGenreSuggestions && (() => {
-                        const rect = genreInputRef.current?.getBoundingClientRect();
-                        if (!rect) return null;
-                        const q = genreInput.toLowerCase();
-                        const suggestions = allGenres.filter(
-                          (g) => !genres.includes(g) && (q === "" || g.toLowerCase().includes(q))
-                        );
-                        if (!suggestions.length) return null;
-                        return createPortal(
-                          <ul
-                            style={{ position: "fixed", top: rect.bottom + 6, left: rect.left, width: rect.width, zIndex: 9999 }}
-                            className="overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
-                          >
-                            <div className="max-h-52 overflow-y-auto">
-                              {suggestions.map((g) => (
-                                <li key={g}>
-                                  <button
-                                    type="button"
-                                    onMouseDown={(e) => { e.preventDefault(); addGenre(g); }}
-                                    className="w-full px-3 py-2.5 text-left text-sm text-foreground hover:bg-success/10 hover:text-success transition-colors flex items-center gap-2 group"
-                                  >
-                                    <span className="w-1.5 h-1.5 rounded-full bg-success/40 group-hover:bg-success transition-colors flex-shrink-0" />
-                                    {g}
-                                  </button>
-                                </li>
-                              ))}
-                            </div>
-                          </ul>,
-                          document.body
-                        );
-                      })()}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => addGenre()}
-                      disabled={isPending || !genreInput.trim()}
-                      className="px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
+                <TagInput
+                  values={genres}
+                  input={genreInput}
+                  onInputChange={(v) => { setGenreInput(v); setShowGenreSuggestions(true); }}
+                  onAdd={() => addGenre()}
+                  onRemove={removeGenre}
+                  removeLabel={(name) => t("editBook.removeAuthor", { name })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); addGenre(); }
+                    if (e.key === "Escape") setShowGenreSuggestions(false);
+                  }}
+                  onFocus={() => setShowGenreSuggestions(true)}
+                  placeholder={t("editSeries.addGenre")}
+                  disabled={isPending}
+                  variant="success"
+                  autoComplete="off"
+                  inputRef={(el) => { genreInputRef.current = el; }}
+                  suggestions={showGenreSuggestions && (() => {
+                    const rect = genreInputRef.current?.getBoundingClientRect();
+                    if (!rect) return null;
+                    const q = genreInput.toLowerCase();
+                    const suggestions = allGenres.filter(
+                      (g) => !genres.includes(g) && (q === "" || g.toLowerCase().includes(q))
+                    );
+                    if (!suggestions.length) return null;
+                    return createPortal(
+                      <ul
+                        style={{ position: "fixed", top: rect.bottom + 6, left: rect.left, width: rect.width, zIndex: 9999 }}
+                        className="overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+                      >
+                        <div className="max-h-52 overflow-y-auto">
+                          {suggestions.map((g) => (
+                            <li key={g}>
+                              <button
+                                type="button"
+                                onMouseDown={(e) => { e.preventDefault(); addGenre(g); }}
+                                className="w-full px-3 py-2.5 text-left text-sm text-foreground hover:bg-success/10 hover:text-success transition-colors flex items-center gap-2 group"
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-success/40 group-hover:bg-success transition-colors flex-shrink-0" />
+                                {g}
+                              </button>
+                            </li>
+                          ))}
+                        </div>
+                      </ul>,
+                      document.body
+                    );
+                  })()}
+                />
               </FormField>
 
               <FormField className="sm:col-span-2">

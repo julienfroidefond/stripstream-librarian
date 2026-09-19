@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useTranslation } from "../../lib/i18n/context";
-import { ProgressBar } from "./ui/ProgressBar";
+import { MiniProgressBar, ProgressBar } from "./ui/ProgressBar";
+import { formatEta, formatSpeed, formatVolumes } from "@/lib/format";
+import { useEventSource } from "@/lib/useEventSource";
+import { usePopin } from "@/lib/usePopin";
 
 interface Download {
   id: string;
@@ -85,220 +88,33 @@ const ChevronIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-function formatSpeed(bytesPerSec: number): string {
-  if (bytesPerSec < 1024) return `${bytesPerSec} B/s`;
-  if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
-  return `${(bytesPerSec / 1024 / 1024).toFixed(1)} MB/s`;
-}
-
-function formatEta(seconds: number): string {
-  if (seconds <= 0 || seconds >= 8640000) return "";
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) return `${h}h${String(m).padStart(2, "0")}m`;
-  if (m > 0) return `${m}m${String(s).padStart(2, "0")}s`;
-  return `${s}s`;
-}
-
 export function DownloadsIndicator() {
   const { t } = useTranslation();
   const [activeTorrentDownloads, setActiveTorrentDownloads] = useState<Download[]>([]);
   const [activeTelegramDownloads, setActiveTelegramDownloads] = useState<Download[]>([]);
-  const [isOpen, setIsOpen] = useState(false);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const popinRef = useRef<HTMLDivElement>(null);
-  const [popinStyle, setPopinStyle] = useState<React.CSSProperties>({});
+  const { isOpen, setIsOpen, buttonRef, popinRef, popinStyle } = usePopin();
 
-  useEffect(() => {
-    let eventSource: EventSource | null = null;
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-    let staleTimeout: ReturnType<typeof setTimeout> | null = null;
+  useEventSource<Omit<Download, "source">[]>({
+    url: "/api/torrent-downloads/stream",
+    onMessage: (allDownloads) => {
+      setActiveTorrentDownloads(
+        allDownloads
+          .filter(d => STATUS_ACTIVE.has(d.status))
+          .map(normalizeTorrentDownload)
+      );
+    },
+  });
 
-    const resetStaleTimer = () => {
-      if (staleTimeout) clearTimeout(staleTimeout);
-      staleTimeout = setTimeout(() => {
-        eventSource?.close();
-        eventSource = null;
-        connect();
-      }, 30000);
-    };
-
-    const connect = () => {
-      if (eventSource) {
-        eventSource.close();
-      }
-      eventSource = new EventSource("/api/torrent-downloads/stream");
-      resetStaleTimer();
-
-      eventSource.onmessage = (event) => {
-        resetStaleTimer();
-        try {
-          const allDownloads: Omit<Download, "source">[] = JSON.parse(event.data);
-          const active = allDownloads
-            .filter(d => STATUS_ACTIVE.has(d.status))
-            .map(normalizeTorrentDownload);
-          setActiveTorrentDownloads(active);
-        } catch {
-          // ignore malformed data
-        }
-      };
-
-      eventSource.onerror = () => {
-        eventSource?.close();
-        eventSource = null;
-        reconnectTimeout = setTimeout(connect, 3000);
-      };
-    };
-
-    const disconnect = () => {
-      if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
-      if (staleTimeout) { clearTimeout(staleTimeout); staleTimeout = null; }
-      if (eventSource) { eventSource.close(); eventSource = null; }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        disconnect();
-      } else {
-        connect();
-      }
-    };
-
-    connect();
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      disconnect();
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, []);
-
-  useEffect(() => {
-    let eventSource: EventSource | null = null;
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-    let staleTimeout: ReturnType<typeof setTimeout> | null = null;
-
-    const resetStaleTimer = () => {
-      if (staleTimeout) clearTimeout(staleTimeout);
-      staleTimeout = setTimeout(() => {
-        eventSource?.close();
-        eventSource = null;
-        connect();
-      }, 30000);
-    };
-
-    const connect = () => {
-      if (eventSource) {
-        eventSource.close();
-      }
-      eventSource = new EventSource("/api/telegram-monitor/downloads/stream");
-      resetStaleTimer();
-
-      eventSource.onmessage = (event) => {
-        resetStaleTimer();
-        try {
-          const allDownloads: TelegramDownload[] = JSON.parse(event.data);
-          setActiveTelegramDownloads(
-            allDownloads
-              .filter(download => download.status === "downloading")
-              .map(normalizeTelegramDownload)
-          );
-        } catch {
-          // ignore malformed data
-        }
-      };
-
-      eventSource.onerror = () => {
-        eventSource?.close();
-        eventSource = null;
-        reconnectTimeout = setTimeout(connect, 3000);
-      };
-    };
-
-    const disconnect = () => {
-      if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
-      if (staleTimeout) { clearTimeout(staleTimeout); staleTimeout = null; }
-      if (eventSource) { eventSource.close(); eventSource = null; }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        disconnect();
-      } else {
-        connect();
-      }
-    };
-
-    connect();
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      disconnect();
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, []);
-
-  // Position the popin relative to the button
-  const updatePosition = useCallback(() => {
-    if (!buttonRef.current) return;
-    const rect = buttonRef.current.getBoundingClientRect();
-    const isMobile = window.innerWidth < 640;
-
-    if (isMobile) {
-      setPopinStyle({
-        position: "fixed",
-        top: `${rect.bottom + 8}px`,
-        left: "12px",
-        right: "12px",
-      });
-    } else {
-      const rightEdge = window.innerWidth - rect.right;
-      setPopinStyle({
-        position: "fixed",
-        top: `${rect.bottom + 8}px`,
-        right: `${Math.max(rightEdge, 12)}px`,
-        width: "384px",
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [isOpen, updatePosition]);
-
-  // Close when clicking outside
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (
-        buttonRef.current && !buttonRef.current.contains(target) &&
-        popinRef.current && !popinRef.current.contains(target)
-      ) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setIsOpen(false);
-    };
-    document.addEventListener("keydown", handleEsc);
-    return () => document.removeEventListener("keydown", handleEsc);
-  }, [isOpen]);
+  useEventSource<TelegramDownload[]>({
+    url: "/api/telegram-monitor/downloads/stream",
+    onMessage: (allDownloads) => {
+      setActiveTelegramDownloads(
+        allDownloads
+          .filter(download => download.status === "downloading")
+          .map(normalizeTelegramDownload)
+      );
+    },
+  });
 
   const activeDownloads = [...activeTorrentDownloads, ...activeTelegramDownloads];
   const downloadingItems = activeDownloads.filter(d => d.status === "downloading");
@@ -514,18 +330,3 @@ function statusLabel(status: string, t: (key: any, vars?: Record<string, string 
   return t(map[status] ?? status);
 }
 
-function formatVolumes(vols: number[]): string {
-  return [...vols].sort((a, b) => a - b).map(v => `T${String(v).padStart(2, "0")}`).join(", ");
-}
-
-// Mini progress bar for dropdown
-function MiniProgressBar({ value }: { value: number }) {
-  return (
-    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-      <div
-        className="h-full bg-primary rounded-full transition-all duration-300"
-        style={{ width: `${value}%` }}
-      />
-    </div>
-  );
-}

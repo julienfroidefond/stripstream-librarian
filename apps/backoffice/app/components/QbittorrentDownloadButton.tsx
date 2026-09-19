@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, createContext, useContext, type ReactNode } from "react";
-import { createPortal } from "react-dom";
-import { Icon, Button } from "./ui";
+import { Icon, Button, Modal } from "./ui";
 import { useTranslation } from "@/lib/i18n/context";
 
 interface QbContextValue {
@@ -135,41 +134,30 @@ export function QbittorrentDownloadButton({
         )}
       </div>
 
-      {confirmMode && createPortal(
-        <>
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none" />
-          <div
-            className="fixed inset-0 flex items-center justify-center z-50 p-4"
-            onClick={(event) => { if (event.target === event.currentTarget) setConfirmMode(null); }}
-          >
-            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-              <div className="p-6">
-                <h3 className="text-lg font-semibold text-foreground mb-2">
-                  {confirmMode === "review" ? "Correspondance à vérifier" : t("prowlarr.replaceAndDownload")}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  {confirmMode === "review"
-                    ? "Le titre ou le numéro de tome est ambigu. Confirmer l’envoi à qBittorrent ?"
-                    : t("prowlarr.confirmReplace")}
-                </p>
-              </div>
-              <div className="flex justify-end gap-2 px-6 pb-6">
-                <Button variant="outline" size="sm" onClick={() => setConfirmMode(null)}>
-                  {t("common.cancel")}
-                </Button>
-                <Button variant={confirmMode === "review" ? "default" : "destructive"} size="sm" onClick={() => {
-                  const mode = confirmMode;
-                  setConfirmMode(null);
-                  if (mode === "review") handleSend(); else handleSend(allVolumes, true);
-                }}>
-                  {confirmMode === "review" ? t("prowlarr.sendToQbittorrent") : t("prowlarr.replaceAndDownload")}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </>,
-        document.body
-      )}
+      <Modal isOpen={confirmMode !== null} onClose={() => setConfirmMode(null)} maxWidth="sm">
+        <div className="p-6">
+          <h3 className="text-lg font-semibold text-foreground mb-2">
+            {confirmMode === "review" ? "Correspondance à vérifier" : t("prowlarr.replaceAndDownload")}
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            {confirmMode === "review"
+              ? "Le titre ou le numéro de tome est ambigu. Confirmer l’envoi à qBittorrent ?"
+              : t("prowlarr.confirmReplace")}
+          </p>
+        </div>
+        <div className="flex justify-end gap-2 px-6 pb-6">
+          <Button variant="outline" size="sm" onClick={() => setConfirmMode(null)}>
+            {t("common.cancel")}
+          </Button>
+          <Button variant={confirmMode === "review" ? "default" : "destructive"} size="sm" onClick={() => {
+            const mode = confirmMode;
+            setConfirmMode(null);
+            if (mode === "review") handleSend(); else handleSend(allVolumes, true);
+          }}>
+            {confirmMode === "review" ? t("prowlarr.sendToQbittorrent") : t("prowlarr.replaceAndDownload")}
+          </Button>
+        </div>
+      </Modal>
     </>
   );
 }

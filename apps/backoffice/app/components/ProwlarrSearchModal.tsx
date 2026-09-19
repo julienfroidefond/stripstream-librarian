@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { createPortal } from "react-dom";
-import { Icon } from "./ui";
+import { Icon, Modal } from "./ui";
 import type { ProwlarrRelease, ProwlarrSearchResponse } from "../../lib/api";
 import { useTranslation } from "../../lib/i18n/context";
 import { QbittorrentProvider, QbittorrentDownloadButton } from "./QbittorrentDownloadButton";
@@ -145,30 +144,9 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
   if (isConfigured === false) return null;
   if (isConfigured === null) return null;
 
-  const modal = isOpen
-    ? createPortal(
-        <>
-          <div
-            className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none"
-          />
-          <div
-            className="fixed inset-0 flex items-center justify-center z-50 p-4"
-            onClick={(event) => { if (event.target === event.currentTarget) handleClose(); }}
-          >
-            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
-              {/* Header */}
-              <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-muted/30 sticky top-0 z-10">
-                <div className="flex items-center gap-3">
-                  <h3 className="font-semibold text-foreground">{t("prowlarr.modalTitle")}</h3>
-                </div>
-                <button type="button" onClick={handleClose}>
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-muted-foreground hover:text-foreground">
-                    <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="p-5 space-y-4">
+  const modal = (
+    <Modal isOpen={isOpen} onClose={handleClose} maxWidth="5xl" title={t("prowlarr.modalTitle")}>
+      <div className="p-5 space-y-4">
               {/* Search input */}
               <form
                 onSubmit={(e) => {
@@ -376,13 +354,9 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
               {!isSearching && !error && query && results.length === 0 && (
                 <p className="text-sm text-muted-foreground">{t("prowlarr.noResults")}</p>
               )}
-              </div>
-            </div>
-          </div>
-        </>,
-        document.body,
-      )
-    : null;
+      </div>
+    </Modal>
+  );
 
   return (
     <>

@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle, Button, Icon, toast } from "@
 import { QbittorrentProvider, QbittorrentDownloadButton } from "@/app/components/QbittorrentDownloadButton";
 import { useTranslation } from "@/lib/i18n/context";
 import { compressVolumes } from "@/lib/volumeRanges";
+import { formatDateTime, formatEta, formatSpeed, formatVolumes } from "@/lib/format";
 import type { TranslationKey } from "@/lib/i18n/fr";
 
 type TFunction = (key: TranslationKey, vars?: Record<string, string | number>) => string;
@@ -63,33 +64,6 @@ function statusClass(status: string): string {
     case "error":       return "bg-destructive/10 text-destructive";
     default:            return "bg-muted/30 text-muted-foreground";
   }
-}
-
-function formatVolumes(vols: number[]): string {
-  return [...vols].sort((a, b) => a - b).map(v => `T${String(v).padStart(2, "0")}`).join(", ");
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString("fr-FR", {
-    day: "2-digit", month: "2-digit", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
-}
-
-function formatSpeed(bytesPerSec: number): string {
-  if (bytesPerSec < 1024) return `${bytesPerSec} B/s`;
-  if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
-  return `${(bytesPerSec / 1024 / 1024).toFixed(1)} MB/s`;
-}
-
-function formatEta(seconds: number): string {
-  if (seconds <= 0 || seconds >= 8640000) return "";
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) return `${h}h${String(m).padStart(2, "0")}m`;
-  if (m > 0) return `${m}m${String(s).padStart(2, "0")}s`;
-  return `${s}s`;
 }
 
 interface DownloadsPageProps {
@@ -501,7 +475,7 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
               {dl.status === "imported" && importedCount === 0 && alreadyExistedCount > 0 && (
                 <span>{alreadyExistedCount} {t("downloads.alreadyExisted")}</span>
               )}
-              <span className="tabular-nums">{formatDate(dl.created_at)}</span>
+              <span className="tabular-nums">{formatDateTime(dl.created_at, "fr")}</span>
             </div>
           </div>
 
@@ -530,7 +504,7 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
           )}
         </div>
 
-        <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums hidden sm:block">{formatDate(dl.created_at)}</span>
+        <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums hidden sm:block">{formatDateTime(dl.created_at, "fr")}</span>
 
         {canRetry && (
           <button
@@ -664,7 +638,7 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
             </div>
             <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
               {volLabel && <span>{volLabel}</span>}
-              <span className="tabular-nums">{formatDate(item.updated_at)}</span>
+              <span className="tabular-nums">{formatDateTime(item.updated_at, "fr")}</span>
             </div>
           </div>
           {/* Filename secondary */}
@@ -689,7 +663,7 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
           )}
         </div>
 
-        <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums hidden sm:block">{formatDate(item.updated_at)}</span>
+        <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums hidden sm:block">{formatDateTime(item.updated_at, "fr")}</span>
 
         {(item.status === "failed" || item.status === "imported") && (
           <button
@@ -1029,7 +1003,7 @@ export function AvailableDownloadsSection({
                   {(() => {
                     const newest = newestDetectedAt(r);
                     return newest ? (
-                      <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{formatDate(newest)}</span>
+                      <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{formatDateTime(newest, "fr")}</span>
                     ) : null;
                   })()}
                   {failedReleaseCount > 0 && (

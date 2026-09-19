@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "../../lib/i18n/context";
 import { JobRow } from "./JobRow";
+import { formatDateTime, formatDuration } from "@/lib/format";
 
 const PAGE_SIZE = 25;
 
@@ -42,16 +43,6 @@ interface JobsListProps {
   highlightJobId?: string;
 }
 
-function formatDuration(start: string, end: string | null): string {
-  const startDate = new Date(start);
-  const endDate = end ? new Date(end) : new Date();
-  const diff = endDate.getTime() - startDate.getTime();
-  
-  if (diff < 60000) return `${Math.floor(diff / 1000)}s`;
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ${Math.floor((diff % 60000) / 1000)}s`;
-  return `${Math.floor(diff / 3600000)}h ${Math.floor((diff % 3600000) / 60000)}m`;
-}
-
 export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListProps) {
   const { t, locale } = useTranslation();
   const [jobs, setJobs] = useState(initialJobs);
@@ -71,18 +62,7 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
     : 1;
   const [currentPage, setCurrentPage] = useState(initialPage);
 
-  const formatDate = (dateStr: string): string => {
-    const date = new Date(dateStr);
-    if (isNaN(date.getTime())) return dateStr;
-    const loc = locale === "fr" ? "fr-FR" : "en-US";
-    return date.toLocaleString(loc, {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  const formatDate = (dateStr: string): string => formatDateTime(dateStr, locale);
 
   // Derive unique types, statuses, libraries for filter options
   const jobTypes = [...new Set(jobs.map(j => j.type))].sort();

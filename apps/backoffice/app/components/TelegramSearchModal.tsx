@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { createPortal } from "react-dom";
-import { Icon, toast } from "./ui";
+import { Icon, Modal, toast } from "./ui";
 import { useTranslation } from "../../lib/i18n/context";
 import { stripLeadingArticle } from "../../lib/volumeRanges";
 import type { TelegramSearchResultDto } from "../../lib/api";
@@ -136,30 +135,19 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
 
   if (initialEnabled === false) return null;
 
-  const modal = isOpen ? createPortal(
-    <>
-      <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none" />
-      <div
-        className="fixed inset-0 flex items-center justify-center z-50 p-4"
-        onClick={(event) => { if (event.target === event.currentTarget) handleClose(); }}
-      >
-        <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
-
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-muted/30 rounded-t-xl sticky top-0 z-10">
-            <div className="flex items-center gap-2">
-              <Icon name="send" size="sm" className="text-sky-500" />
-              <h3 className="font-semibold text-foreground">{t("telegramMonitor.searchModalTitle", { series: seriesName })}</h3>
-            </div>
-            <button type="button" onClick={handleClose} className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Body */}
-          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+  const modal = (
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      maxWidth="5xl"
+      title={
+        <span className="flex items-center gap-2">
+          <Icon name="send" size="sm" className="text-sky-500" />
+          {t("telegramMonitor.searchModalTitle", { series: seriesName })}
+        </span>
+      }
+    >
+      <div className="p-5 space-y-4">
             {/* Search input */}
             <form
               onSubmit={(e) => { e.preventDefault(); doSearch(searchInput); }}
@@ -346,12 +334,9 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
                 <p className="text-sm">{t("telegramMonitor.noAvailableForSeries")}</p>
               </div>
             )}
-          </div>
-        </div>
       </div>
-    </>,
-    document.body,
-  ) : null;
+    </Modal>
+  );
 
   return (
     <>

@@ -56,7 +56,42 @@ npm install
 npm run dev    # http://localhost:7082
 npm run build
 npm run start  # Production sur http://localhost:7082
+npx tsc --noEmit
 ```
+
+## Tests unitaires (Vitest)
+
+Tests unitaires et de composants dans `tests/unit/` (logique pure, hooks, composants UI extraits). Environnement `jsdom`, alias `@/` résolu via `vitest.config.mts`. Aucune stack requise.
+
+```bash
+npm run test:unit        # exécution unique
+npm run test:unit:watch  # mode watch
+npm run test:coverage    # rapport de couverture (text + html dans coverage/)
+```
+
+- `tests/setup.ts` mocke `next/link`, `next/image`, `next/navigation` et `@/lib/i18n/context` (`t` renvoie la clé) ; `@testing-library/jest-dom` est chargé globalement.
+- Couvre `lib/format.ts`, `lib/jobStatus.ts`, `lib/ratings.ts`, `lib/searchParams.ts`, `lib/session.ts`, `lib/volumeRanges.ts`, `lib/useEventSource`, `lib/usePopin`, `lib/i18n` (dictionnaires, parité fr/en, interpolation, résolution serveur), `lib/api` (`apiFetch`, `config`, `getBookCoverUrl`) et les composants `TagInput`, `Modal`, `DeleteConfirmButton`, `MarkReadButton`, `MarkBookReadButton`, `MarkSeriesReadButton`, `TestConnectionButton`, `SeriesResultRow`, `StatCard`, `SeriesGrid`, `MetadataReportCards`, `ReadingStatusReportCards`, `RatingStars`, `JobProgress`, `Pagination`, `ProgressBar`, `ActionsMenu`.
+- Les tests de `lib/session.ts` utilisent `// @vitest-environment node` (`jose` compare les `Uint8Array` par realm, incompatible avec jsdom).
+- Importer explicitement `describe`/`it`/`expect`/`vi` depuis `vitest` (pas de globals).
+
+## Tests E2E (Playwright)
+
+Smoke tests bout-en-bout dans `tests/e2e/`. Ils nécessitent l'API (7080), l'indexer et la base Postgres démarrés (la stack tourne sous Docker), et lisent `ADMIN_USERNAME`/`ADMIN_PASSWORD` depuis `.env.local`.
+
+```bash
+npm run test:e2e         # headless, réutilise le dev server sur 7082 s'il tourne
+npm run test:e2e:headed  # avec navigateur visible
+npm run test:e2e:ui      # mode UI Playwright
+```
+
+- `helpers.ts` expose `openFirstSeries(page)` (partagé par les specs).
+- `auth.setup.ts` se connecte via `/api/auth/login` et enregistre la session dans `tests/e2e/.auth/state.json` (ignoré par git). Il ajoute aussi un cookie `as_user_id` pour rendre les UI « utilisateur actif ».
+- `smoke.spec.ts` vérifie que chaque page se rend (HTTP < 400, `main`/`header` visibles, zéro `pageerror`).
+- `interactions.spec.ts` couvre `ui/Modal` (ouverture/Escape/bouton), `DeleteConfirmButton`, `MarkReadButton`, `TestConnectionButton`, `JobsIndicator`.
+- `flows.spec.ts` couvre la recherche de séries (`?q=`), l'ajout/retrait d'un tag dans le formulaire d'édition (sans enregistrer) et l'ouverture d'une modale via le menu d'actions.
+- `flows-business.spec.ts` couvre liste → détail pour les livres et les jobs, les filtres de `/downloads`, la navigation `/libraries` → séries et la navigation par onglets de `/settings` (jusqu'au formulaire de tokens).
+- Tests conditionnels : `test.skip(await locator.count() === 0, "raison")` quand une donnée ou une fonctionnalité n'est pas configurée (ex. provider de statut de lecture, base vide).
+- Cibler un test : `npx playwright test smoke.spec.ts -g "series"`. Débug : `npx playwright test --debug`.
 
 ## Gotchas
 

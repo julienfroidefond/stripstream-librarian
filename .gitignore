@@ -14,3 +14,7 @@ data/thumbnails
 pnpm-lock.yaml
 pnpm-workspace.yaml
 .opencode/package-lock.json
+apps/backoffice/tests/e2e/.auth/
+apps/backoffice/tests/e2e/.report/
+apps/backoffice/test-results/
+apps/backoffice/coverage/

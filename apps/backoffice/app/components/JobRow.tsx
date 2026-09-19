@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useTranslation } from "../../lib/i18n/context";
 import { JobProgress } from "./JobProgress";
 import { StatusBadge, JobTypeBadge, Button, MiniProgressBar, Icon, Tooltip } from "./ui";
+import { isActiveJobStatus, isPhase2Status, isRunningJobStatus } from "@/lib/jobStatus";
 
 interface JobRowProps {
   job: {
@@ -48,7 +49,7 @@ const REPLAYABLE_TYPES = new Set(["rebuild", "full_rebuild", "rescan", "scan", "
 
 export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, formatDate, formatDuration }: JobRowProps) {
   const { t } = useTranslation();
-  const isActive = job.status === "running" || job.status === "pending" || job.status === "extracting_pages" || job.status === "generating_thumbnails";
+  const isActive = isActiveJobStatus(job.status);
   const [showProgress, setShowProgress] = useState(highlighted || isActive);
 
   const handleComplete = () => {
@@ -66,7 +67,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
   const removed = job.stats_json?.removed_files ?? 0;
   const errors = job.stats_json?.errors ?? 0;
 
-  const isPhase2 = job.status === "extracting_pages" || job.status === "generating_thumbnails";
+  const isPhase2 = isPhase2Status(job.status);
   const isThumbnailPhase = job.status === "generating_thumbnails";
   const isThumbnailJob = job.type === "thumbnail_rebuild" || job.type === "thumbnail_regenerate";
   const hasThumbnailPhase = isPhase2 || isThumbnailJob;
@@ -81,7 +82,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
   const isTelegramSync = isTelegramFullSync || isTelegramIncremental;
 
   // Thumbnails progress (Phase 2: extracting_pages + generating_thumbnails)
-  const thumbInProgress = hasThumbnailPhase && (job.status === "running" || isPhase2);
+  const thumbInProgress = hasThumbnailPhase && isRunningJobStatus(job.status);
 
   return (
     <>

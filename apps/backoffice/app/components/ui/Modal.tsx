@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react";
 
 const MAX_WIDTH_MAP = {
   sm: "max-w-sm",
@@ -10,19 +10,31 @@ const MAX_WIDTH_MAP = {
   xl: "max-w-xl",
   "2xl": "max-w-2xl",
   "3xl": "max-w-3xl",
+  "4xl": "max-w-4xl",
+  "5xl": "max-w-5xl",
 } as const;
 
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
-  title?: string;
+  title?: ReactNode;
   children: ReactNode;
+  footer?: ReactNode;
   maxWidth?: keyof typeof MAX_WIDTH_MAP;
-  /** Disable closing via backdrop click (e.g. while a form is submitting) */
+  /** Disable closing via backdrop click or Escape (e.g. while a form is submitting) */
   disableClose?: boolean;
 }
 
-export function Modal({ isOpen, onClose, title, children, maxWidth = "2xl", disableClose = false }: ModalProps) {
+export function Modal({ isOpen, onClose, title, children, footer, maxWidth = "2xl", disableClose = false }: ModalProps) {
+  useEffect(() => {
+    if (!isOpen || disableClose) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, [isOpen, disableClose, onClose]);
+
   if (!isOpen) return null;
 
   return createPortal(
@@ -31,6 +43,7 @@ export function Modal({ isOpen, onClose, title, children, maxWidth = "2xl", disa
       onClick={() => !disableClose && onClose()}
     >
       <div
+        data-testid="modal-panel"
         className={`bg-card border border-border/50 rounded-xl shadow-2xl w-full ${MAX_WIDTH_MAP[maxWidth]} max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200`}
         onClick={(event) => event.stopPropagation()}
       >
@@ -40,6 +53,7 @@ export function Modal({ isOpen, onClose, title, children, maxWidth = "2xl", disa
             <h3 className="font-semibold text-foreground">{title}</h3>
             <button
               type="button"
+              data-testid="modal-close"
               onClick={onClose}
               disabled={disableClose}
               className="text-muted-foreground hover:text-foreground transition-colors p-1 hover:bg-accent rounded"
@@ -53,6 +67,13 @@ export function Modal({ isOpen, onClose, title, children, maxWidth = "2xl", disa
 
         {/* Body */}
         {children}
+
+        {/* Footer */}
+        {footer && (
+          <div className="px-5 py-4 border-t border-border/50 bg-muted/30 sticky bottom-0">
+            {footer}
+          </div>
+        )}
       </div>
     </div>,
     document.body

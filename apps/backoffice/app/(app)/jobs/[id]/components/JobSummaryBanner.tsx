@@ -1,5 +1,6 @@
 import type { MetadataBatchReportDto, MetadataRefreshReportDto, ReadingStatusMatchReportDto, ReadingStatusPushReportDto, DownloadDetectionReportDto } from "@/lib/api";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
+import { isCancelledJobStatus, isCompletedJobStatus, isFailedJobStatus } from "@/lib/jobStatus";
 
 interface JobSummaryBannerProps {
   job: {
@@ -24,9 +25,9 @@ interface JobSummaryBannerProps {
 export function JobSummaryBanner({
   job, batchReport, refreshReport, readingStatusReport, readingStatusPushReport, downloadDetectionReport, t, formatDuration,
 }: JobSummaryBannerProps) {
-  const isCompleted = job.status === "success";
-  const isFailed = job.status === "failed";
-  const isCancelled = job.status === "cancelled";
+  const isCompleted = isCompletedJobStatus(job.status);
+  const isFailed = isFailedJobStatus(job.status);
+  const isCancelled = isCancelledJobStatus(job.status);
   const isMetadataBatch = job.type === "metadata_batch" || job.type === "metadata_batch_rematch";
   const isMetadataRefresh = job.type === "metadata_refresh" || job.type === "metadata_refresh_all";
   const isReadingStatusMatch = job.type === "reading_status_match";

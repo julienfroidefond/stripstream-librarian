@@ -1,10 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { createPortal } from "react-dom";
 import { FolderBrowser } from "./FolderBrowser";
 import { FolderItem } from "../../lib/api";
-import { Button, Icon } from "./ui";
+import { Button, Icon, Modal } from "./ui";
 import { useTranslation } from "../../lib/i18n/context";
 
 interface FolderPickerProps {
@@ -61,64 +60,40 @@ export function FolderPicker({ initialFolders, selectedPath, onSelect }: FolderP
       </div>
 
       {/* Popup Modal */}
-      {isOpen && createPortal(
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none"
-          />
-
-          {/* Modal */}
-          <div
-            className="fixed inset-0 flex items-center justify-center z-50 p-4"
-            onClick={(event) => { if (event.target === event.currentTarget) setIsOpen(false); }}
-          >
-            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-              {/* Header */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 bg-muted/30">
-                <div className="flex items-center gap-2">
-                  <Icon name="folder" size="md" className="text-primary" />
-                  <span className="font-medium">{t("folder.selectFolderTitle")}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsOpen(false)}
-                  className="text-muted-foreground hover:text-foreground transition-colors p-1 hover:bg-accent rounded"
-                >
-                  <Icon name="x" size="md" />
-                </button>
-              </div>
-
-              {/* Folder Browser */}
-              <div className="p-0">
-                <FolderBrowser
-                  initialFolders={initialFolders}
-                  selectedPath={selectedPath}
-                  onSelect={handleSelect}
-                />
-              </div>
-
-              {/* Footer */}
-              <div className="flex items-center justify-between px-4 py-3 border-t border-border/50 bg-muted/30">
-                <span className="text-xs text-muted-foreground">
-                  {t("folder.clickToSelect")}
-                </span>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setIsOpen(false)}
-                  >
-                    {t("common.cancel")}
-                  </Button>
-                </div>
-              </div>
+      <Modal
+        isOpen={isOpen}
+        onClose={() => setIsOpen(false)}
+        maxWidth="lg"
+        title={
+          <span className="flex items-center gap-2">
+            <Icon name="folder" size="md" className="text-primary" />
+            {t("folder.selectFolderTitle")}
+          </span>
+        }
+        footer={
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
+              {t("folder.clickToSelect")}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsOpen(false)}
+              >
+                {t("common.cancel")}
+              </Button>
             </div>
           </div>
-        </>,
-        document.body
-      )}
+        }
+      >
+        <FolderBrowser
+          initialFolders={initialFolders}
+          selectedPath={selectedPath}
+          onSelect={handleSelect}
+        />
+      </Modal>
     </div>
   );
 }

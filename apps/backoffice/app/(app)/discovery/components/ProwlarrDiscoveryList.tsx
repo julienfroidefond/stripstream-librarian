@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 import { SeriesAddModal, type ProwlarrItem } from "./SeriesAddModal";
+import { formatVolumeRange } from "@/lib/format";
 
 
 const PAGE_SIZE = 25;
@@ -38,14 +39,6 @@ function formatPublishDate(iso: string | null): string {
 function categoryShortId(cat: string): string {
   const m = cat.match(/\((\d+)\)$/);
   return m ? m[1] : cat;
-}
-
-function formatVolumes(volumes: number[]): string {
-  if (volumes.length === 0) return "—";
-  if (volumes.length <= 3) return volumes.join(", ");
-  const min = volumes[0];
-  const max = volumes[volumes.length - 1];
-  return `${min}-${max} (${volumes.length})`;
 }
 
 export function ProwlarrDiscoveryList({ libraries, nocache = false }: { libraries: Library[]; nocache?: boolean }) {
@@ -347,7 +340,7 @@ function ProwlarrRow({ item, idx, libraries, onAdded }: {
           ))}
         </div>
       </td>
-      <td className="px-3 py-2 text-center text-xs text-muted-foreground">{formatVolumes(item.volumes_found ?? [])}</td>
+      <td className="px-3 py-2 text-center text-xs text-muted-foreground">{formatVolumeRange(item.volumes_found ?? [])}</td>
       <td className="px-3 py-2 text-right">
         <span className={`font-medium ${item.best_seeders >= 10 ? "text-green-600" : item.best_seeders >= 3 ? "text-amber-600" : "text-red-500"}`}>
           {item.best_seeders}
