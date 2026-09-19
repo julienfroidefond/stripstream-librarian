@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createTranslateFunction, getDictionarySync } from "@/lib/i18n/dictionaries";
+import { createTranslateFunction, getDictionary, getDictionarySync } from "@/lib/i18n/dictionaries";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 
 type Dict = Parameters<typeof createTranslateFunction>[0];
@@ -57,5 +57,15 @@ describe("getDictionarySync", () => {
       const dict = getDictionarySync(locale);
       expect(Object.keys(dict).length).toBeGreaterThan(100);
     }
+  });
+});
+
+describe("getDictionary", () => {
+  it("lazily loads the requested locale", async () => {
+    const fr = await getDictionary("fr");
+    const en = await getDictionary("en");
+
+    expect(fr["nav.tokens"]).toBe("Jetons");
+    expect(en["nav.tokens"]).toBe("Tokens");
   });
 });
