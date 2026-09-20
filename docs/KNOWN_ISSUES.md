@@ -48,17 +48,22 @@ Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code 
 |---|----------|---------------------|---------------------|
 | 12 | `get_setting` documente 404 mais renvoie 200/null | L'annotation OpenAPI du handler déclare `(status = 404, description = "Setting not found")`, mais une clé absente répond **200** avec `null` — l'erreur 404 n'est jamais produite. | `settings::tests::get_setting_returns_null_for_unknown_key` |
 
+### `apps/api/src/genres.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 13 | `rename_genre` peut créer un doublon | `array_replace` remplace l'ancien nom par le nouveau sans vérifier sa présence : renommer `Aventure` en `Action` sur une série qui a déjà `Action` produit `{Action, Action}` au lieu de fusionner. | `genres::tests::rename_genre_merge_creates_duplicate` |
+
 ---
 
 ## 2. Couverture de tests — modules API encore sans tests
 
-État au 2026-09-19 (après couverture de `libraries.rs`, `reading_lists.rs`, `stats.rs` et `settings.rs`).
+État au 2026-09-19 (après couverture de `libraries.rs`, `reading_lists.rs`, `stats.rs`, `settings.rs` et `genres.rs`).
 Les sous-modules (`downloads/`, `metadata/`, `metadata_providers/`, `series/`,
 `reading/`, `integrations/`, `books/`, `jobs/`, `users/`, …) disposent déjà de tests.
 
 | Module | LOC (fichier) | Priorité |
 |--------|---------------|----------|
-| `genres.rs` | ~284 | 2 |
 | `ai_tagging.rs` | ~284 | 2 |
 | `authors.rs` | ~138 | 3 |
 | `handlers.rs` | ~83 | 3 |

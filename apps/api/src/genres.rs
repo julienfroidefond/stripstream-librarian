@@ -282,3 +282,7 @@ pub async fn untagged_series(
 
     Ok(Json(items))
 }
+
+#[cfg(test)]
+#[path = "tests/genres.rs"]
+mod tests;
