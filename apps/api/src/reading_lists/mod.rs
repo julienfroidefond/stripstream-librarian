@@ -372,16 +372,24 @@ pub async fn reorder_series(
         )));
     }
 
-    for (pos, series_id) in body.series_ids.iter().enumerate() {
-        sqlx::query(
-            "UPDATE reading_list_items SET position = $3 WHERE list_id = $1 AND series_id = $2",
-        )
-        .bind(id)
-        .bind(series_id)
-        .bind(pos as i32)
-        .execute(&mut *tx)
-        .await?;
-    }
+    let positions: Vec<i32> = (0..body.series_ids.len() as i32).collect();
+
+    sqlx::query(
+        r#"
+        UPDATE reading_list_items AS rli
+        SET position = data.position
+        FROM (
+            SELECT * FROM UNNEST($1::uuid[], $2::int[])
+            AS t(series_id, position)
+        ) AS data
+        WHERE rli.list_id = $3 AND rli.series_id = data.series_id
+        "#,
+    )
+    .bind(&body.series_ids)
+    .bind(&positions)
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
 
     tx.commit().await?;
 
