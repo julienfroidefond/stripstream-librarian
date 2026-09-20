@@ -114,36 +114,11 @@ pub async fn list_series(
 
     let missing_cte = helpers::build_missing_counts_cte(Some("$1"));
 
-    let title_order_clause = "lower(sc.name) ASC";
+    let title_order_clause = "lower(name) ASC";
     let series_order_clause = match query.sort.as_deref() {
-        Some("release_date") => format!("s.start_year DESC NULLS LAST, {title_order_clause}"),
+        Some("release_date") => format!("start_year DESC NULLS LAST, {title_order_clause}"),
         _ => title_order_clause.to_string(),
     };
-
-    let count_sql = format!(
-        r#"
-        WITH series_counts AS (
-            SELECT s.id as series_id, s.name,
-                COUNT(b.id) as book_count,
-                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
-            FROM series s
-            LEFT JOIN books b ON b.series_id = s.id
-            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
-            WHERE s.library_id = $1
-            GROUP BY s.id, s.name
-        ),
-        {missing_cte}
-        SELECT COUNT(*) FROM series_counts sc
-        LEFT JOIN series s ON s.id = sc.series_id
-        LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
-        LEFT JOIN LATERAL (
-            SELECT eml.provider FROM external_metadata_links eml
-            WHERE eml.series_id = sc.series_id AND eml.library_id = $1 AND eml.status = 'approved'
-            ORDER BY eml.created_at DESC LIMIT 1
-        ) ml ON TRUE
-        WHERE TRUE {q_cond} {count_rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {has_books_cond} {genre_restriction_cond}
-        "#
-    );
 
     let data_sql = format!(
         r#"
@@ -171,98 +146,101 @@ pub async fn list_series(
             WHERE s.library_id = $1
             GROUP BY s.id, s.name
         ),
-        {missing_cte}
-        SELECT
-            sc.name,
-            sc.series_id,
-            sc.book_count,
-            sc.books_read_count,
-            sb.id as first_book_id,
-            sb.updated_at as first_book_updated_at,
-            s.status as series_status,
-            mc.missing_count,
-            ml.provider as metadata_provider,
-            asl.anilist_id,
-            asl.anilist_url,
-            s.cover_url, s.start_year, s.genres, s.authors, s.description
-        FROM series_counts sc
-        LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id
-        LEFT JOIN series s ON s.id = sc.series_id
-        LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
+        {missing_cte},
+        filtered AS (
+            SELECT
+                sc.name,
+                sc.series_id,
+                sc.book_count,
+                sc.books_read_count,
+                sb.id as first_book_id,
+                sb.updated_at as first_book_updated_at,
+                s.status as series_status,
+                mc.missing_count,
+                ml.provider as metadata_provider,
+                asl.anilist_id,
+                asl.anilist_url,
+                s.cover_url, s.start_year, s.genres, s.authors, s.description
+            FROM series_counts sc
+            LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id
+            LEFT JOIN series s ON s.id = sc.series_id
+            LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
+            LEFT JOIN LATERAL (
+                SELECT eml.provider FROM external_metadata_links eml
+                WHERE eml.series_id = sc.series_id AND eml.library_id = $1 AND eml.status = 'approved'
+                ORDER BY eml.created_at DESC LIMIT 1
+            ) ml ON TRUE
+            LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
+            WHERE TRUE
+              {q_cond}
+              {count_rs_cond}
+              {ss_cond}
+              {missing_cond}
+              {metadata_provider_cond}
+              {has_books_cond}
+              {genre_restriction_cond}
+        ),
+        total AS (SELECT COUNT(*) AS total_count FROM filtered)
+        SELECT f.*, t.total_count
+        FROM total t
         LEFT JOIN LATERAL (
-            SELECT eml.provider FROM external_metadata_links eml
-            WHERE eml.series_id = sc.series_id AND eml.library_id = $1 AND eml.status = 'approved'
-            ORDER BY eml.created_at DESC LIMIT 1
-        ) ml ON TRUE
-        LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
-        WHERE TRUE
-          {q_cond}
-          {count_rs_cond}
-          {ss_cond}
-          {missing_cond}
-          {metadata_provider_cond}
-          {has_books_cond}
-          {genre_restriction_cond}
-        ORDER BY {series_order_clause}
-        LIMIT ${limit_p} OFFSET ${offset_p}
+            SELECT * FROM filtered
+            ORDER BY {series_order_clause}
+            LIMIT ${limit_p} OFFSET ${offset_p}
+        ) f ON TRUE
         "#
     );
 
     let q_pattern = query.q.as_deref().map(|q| format!("%{}%", q));
 
-    let mut count_builder = sqlx::query(&count_sql).bind(library_id);
     let mut data_builder = sqlx::query(&data_sql).bind(library_id);
 
     if let Some(ref pat) = q_pattern {
-        count_builder = count_builder.bind(pat);
         data_builder = data_builder.bind(pat);
     }
     if let Some(ref statuses) = reading_statuses {
-        count_builder = count_builder.bind(statuses.clone());
         data_builder = data_builder.bind(statuses.clone());
     }
     if let Some(ref ss) = query.series_status {
-        count_builder = count_builder.bind(ss);
         data_builder = data_builder.bind(ss);
     }
     if let Some(ref mp) = query.metadata_provider {
         if mp != "linked" && mp != "unlinked" {
-            count_builder = count_builder.bind(mp);
             data_builder = data_builder.bind(mp);
         }
     }
 
-    count_builder = count_builder.bind(user_id);
     data_builder = data_builder.bind(user_id).bind(limit).bind(offset);
 
-    let (count_row, rows) = tokio::try_join!(
-        count_builder.fetch_one(&state.pool),
-        data_builder.fetch_all(&state.pool),
-    )?;
-    let total: i64 = count_row.get(0);
+    let rows = data_builder.fetch_all(&state.pool).await?;
+    let total: i64 = rows.first().map(|r| r.get("total_count")).unwrap_or(0);
 
     let items: Vec<SeriesItem> = rows
         .iter()
-        .map(|row| SeriesItem {
-            name: row.get("name"),
-            series_id: row.get("series_id"),
-            book_count: row.get("book_count"),
-            books_read_count: row.get("books_read_count"),
-            first_book_id: row.get("first_book_id"),
-            first_book_updated_at: row.get("first_book_updated_at"),
-            library_id,
-            series_status: row.get("series_status"),
-            missing_count: row.get("missing_count"),
-            metadata_provider: row.get("metadata_provider"),
-            anilist_id: row.get("anilist_id"),
-            anilist_url: row.get("anilist_url"),
-            cover_url: row.get("cover_url"),
-            start_year: row.get("start_year"),
-            genres: row.get::<Vec<String>, _>("genres"),
-            authors: row.get::<Vec<String>, _>("authors"),
-            description: row.get("description"),
-            user_rating: None,
-            community_score: None,
+        .filter_map(|row| {
+            let series_id: Option<Uuid> = row.get("series_id");
+            let series_id = series_id?;
+            Some(SeriesItem {
+                name: row.get("name"),
+                series_id,
+                book_count: row.get("book_count"),
+                books_read_count: row.get("books_read_count"),
+                first_book_id: row.get("first_book_id"),
+                first_book_updated_at: row.get("first_book_updated_at"),
+                library_id,
+                series_status: row.get("series_status"),
+                missing_count: row.get("missing_count"),
+                metadata_provider: row.get("metadata_provider"),
+                anilist_id: row.get("anilist_id"),
+                anilist_url: row.get("anilist_url"),
+                cover_url: row.get("cover_url"),
+                start_year: row.get("start_year"),
+                genres: row.get::<Vec<String>, _>("genres"),
+                authors: row.get::<Vec<String>, _>("authors"),
+                description: row.get("description"),
+                user_rating: None,
+                community_score: None,
+            })
         })
         .collect();
 
@@ -442,42 +420,16 @@ pub async fn list_all_series(
         "AND (${user_id_p}::uuid IS NULL OR NOT EXISTS (SELECT 1 FROM user_genre_restrictions ugr WHERE ugr.user_id = ${user_id_p} AND ugr.genre = ANY(s.genres)))"
     );
 
-    let count_sql = format!(
-        r#"
-        WITH series_counts AS (
-            SELECT s.id as series_id, s.name, s.library_id,
-                COUNT(b.id) as book_count,
-                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
-            FROM series s
-            LEFT JOIN books b ON b.series_id = s.id
-            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${user_id_p}::uuid IS NOT NULL AND brp.user_id = ${user_id_p}
-            {lib_cond}
-            GROUP BY s.id, s.name, s.library_id, s.created_at
-        ),
-        {missing_cte}
-        SELECT COUNT(*) FROM series_counts sc
-        LEFT JOIN series s ON s.id = sc.series_id
-        LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
-        LEFT JOIN LATERAL (
-            SELECT eml.provider FROM external_metadata_links eml
-            WHERE eml.series_id = sc.series_id AND eml.library_id = sc.library_id AND eml.status = 'approved'
-            ORDER BY eml.created_at DESC LIMIT 1
-        ) ml ON TRUE
-        LEFT JOIN series_user_ratings sur ON sur.series_id = sc.series_id AND sur.user_id = ${user_id_p}::uuid
-        WHERE TRUE {q_cond} {rs_cond} {ss_cond} {missing_cond} {metadata_provider_cond} {author_cond} {has_books_cond} {no_books_cond} {genre_cond} {oneshot_cond} {rated_only_cond} {genre_restriction_cond}
-        "#
-    );
-
-    let title_order_clause = "lower(sc.name) ASC";
+    let title_order_clause = "lower(name) ASC";
     let series_order_clause = match query.sort.as_deref() {
         Some("latest") => {
             // For series without books, latest_created_at falls back to s.created_at
             // (see series_counts CTE), so the value is never NULL.
-            "sc.latest_created_at DESC".to_string()
+            "latest_created_at DESC".to_string()
         }
-        Some("release_date") => format!("s.start_year DESC NULLS LAST, {title_order_clause}"),
+        Some("release_date") => format!("start_year DESC NULLS LAST, {title_order_clause}"),
         Some("community_score") => {
-            format!("cs.community_score DESC NULLS LAST, {title_order_clause}")
+            format!("community_score DESC NULLS LAST, {title_order_clause}")
         }
         _ => title_order_clause.to_string(),
     };
@@ -512,120 +464,121 @@ pub async fn list_all_series(
             {lib_cond}
             GROUP BY s.id, s.name, s.library_id, s.created_at
         ),
-        {missing_cte}
-        SELECT
-            sc.name,
-            sc.series_id,
-            sc.book_count,
-            sc.books_read_count,
-            sb.id as first_book_id,
-            sb.updated_at as first_book_updated_at,
-            sc.library_id,
-            s.status as series_status,
-            mc.missing_count,
-            ml.provider as metadata_provider,
-            asl.anilist_id,
-            asl.anilist_url,
-            s.cover_url, s.start_year, s.genres, s.authors, s.description,
-            cs.community_score,
-            sur.rating as user_rating
-        FROM series_counts sc
-        LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id
-        LEFT JOIN series s ON s.id = sc.series_id
-        LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
+        {missing_cte},
+        filtered AS (
+            SELECT
+                sc.name,
+                sc.series_id,
+                sc.book_count,
+                sc.books_read_count,
+                sb.id as first_book_id,
+                sb.updated_at as first_book_updated_at,
+                sc.library_id,
+                s.status as series_status,
+                mc.missing_count,
+                ml.provider as metadata_provider,
+                asl.anilist_id,
+                asl.anilist_url,
+                s.cover_url, s.start_year, s.genres, s.authors, s.description,
+                cs.community_score,
+                sur.rating as user_rating,
+                sc.latest_created_at
+            FROM series_counts sc
+            LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id
+            LEFT JOIN series s ON s.id = sc.series_id
+            LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
+            LEFT JOIN LATERAL (
+                SELECT eml.provider FROM external_metadata_links eml
+                WHERE eml.series_id = sc.series_id AND eml.library_id = sc.library_id AND eml.status = 'approved'
+                ORDER BY eml.created_at DESC LIMIT 1
+            ) ml ON TRUE
+            LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
+            {community_score_lateral}
+            LEFT JOIN series_user_ratings sur ON sur.series_id = sc.series_id AND sur.user_id = ${user_id_p}::uuid
+            WHERE TRUE
+              {q_cond}
+              {rs_cond}
+              {ss_cond}
+              {missing_cond}
+              {metadata_provider_cond}
+              {author_cond}
+              {has_books_cond}
+              {no_books_cond}
+              {genre_cond}
+              {oneshot_cond}
+              {rated_only_cond}
+              {genre_restriction_cond}
+        ),
+        total AS (SELECT COUNT(*) AS total_count FROM filtered)
+        SELECT f.*, t.total_count
+        FROM total t
         LEFT JOIN LATERAL (
-            SELECT eml.provider FROM external_metadata_links eml
-            WHERE eml.series_id = sc.series_id AND eml.library_id = sc.library_id AND eml.status = 'approved'
-            ORDER BY eml.created_at DESC LIMIT 1
-        ) ml ON TRUE
-        LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
-        {community_score_lateral}
-        LEFT JOIN series_user_ratings sur ON sur.series_id = sc.series_id AND sur.user_id = ${user_id_p}::uuid
-        WHERE TRUE
-          {q_cond}
-          {rs_cond}
-          {ss_cond}
-          {missing_cond}
-          {metadata_provider_cond}
-          {author_cond}
-          {has_books_cond}
-          {no_books_cond}
-          {genre_cond}
-          {oneshot_cond}
-          {rated_only_cond}
-          {genre_restriction_cond}
-        ORDER BY {series_order_clause}
-        LIMIT ${limit_p} OFFSET ${offset_p}
+            SELECT * FROM filtered
+            ORDER BY {series_order_clause}
+            LIMIT ${limit_p} OFFSET ${offset_p}
+        ) f ON TRUE
         "#
     );
 
     let q_pattern = query.q.as_deref().map(|q| format!("%{}%", q));
 
-    let mut count_builder = sqlx::query(&count_sql);
     let mut data_builder = sqlx::query(&data_sql);
 
     if let Some(lib_id) = query.library_id {
-        count_builder = count_builder.bind(lib_id);
         data_builder = data_builder.bind(lib_id);
     }
     if let Some(ref pat) = q_pattern {
-        count_builder = count_builder.bind(pat);
         data_builder = data_builder.bind(pat);
     }
     if let Some(ref statuses) = reading_statuses {
-        count_builder = count_builder.bind(statuses.clone());
         data_builder = data_builder.bind(statuses.clone());
     }
     if let Some(ref ss) = query.series_status {
-        count_builder = count_builder.bind(ss);
         data_builder = data_builder.bind(ss);
     }
     if let Some(ref mp) = query.metadata_provider {
         if mp != "linked" && mp != "unlinked" {
-            count_builder = count_builder.bind(mp);
             data_builder = data_builder.bind(mp);
         }
     }
     if let Some(ref author) = query.author {
-        count_builder = count_builder.bind(author.clone());
         data_builder = data_builder.bind(author.clone());
     }
     if let Some(ref genre) = query.genre {
-        count_builder = count_builder.bind(genre.clone());
         data_builder = data_builder.bind(genre.clone());
     }
 
-    count_builder = count_builder.bind(user_id);
     data_builder = data_builder.bind(user_id).bind(limit).bind(offset);
 
-    let (count_row, rows) = tokio::try_join!(
-        count_builder.fetch_one(&state.pool),
-        data_builder.fetch_all(&state.pool),
-    )?;
-    let total: i64 = count_row.get(0);
+    let rows = data_builder.fetch_all(&state.pool).await?;
+    let total: i64 = rows.first().map(|r| r.get("total_count")).unwrap_or(0);
 
     let items: Vec<SeriesItem> = rows
         .iter()
-        .map(|row| SeriesItem {
-            name: row.get("name"),
-            series_id: row.get("series_id"),
-            book_count: row.get("book_count"),
-            books_read_count: row.get("books_read_count"),
-            first_book_id: row.get("first_book_id"),
-            first_book_updated_at: row.get("first_book_updated_at"),
-            library_id: row.get("library_id"),
-            series_status: row.get("series_status"),
-            missing_count: row.get("missing_count"),
-            metadata_provider: row.get("metadata_provider"),
-            anilist_id: row.get("anilist_id"),
-            anilist_url: row.get("anilist_url"),
-            cover_url: row.get("cover_url"),
-            start_year: row.get("start_year"),
-            genres: row.get::<Vec<String>, _>("genres"),
-            authors: row.get::<Vec<String>, _>("authors"),
-            description: row.get("description"),
-            user_rating: row.get("user_rating"),
-            community_score: row.get("community_score"),
+        .filter_map(|row| {
+            let series_id: Option<Uuid> = row.get("series_id");
+            let series_id = series_id?;
+            Some(SeriesItem {
+                name: row.get("name"),
+                series_id,
+                book_count: row.get("book_count"),
+                books_read_count: row.get("books_read_count"),
+                first_book_id: row.get("first_book_id"),
+                first_book_updated_at: row.get("first_book_updated_at"),
+                library_id: row.get("library_id"),
+                series_status: row.get("series_status"),
+                missing_count: row.get("missing_count"),
+                metadata_provider: row.get("metadata_provider"),
+                anilist_id: row.get("anilist_id"),
+                anilist_url: row.get("anilist_url"),
+                cover_url: row.get("cover_url"),
+                start_year: row.get("start_year"),
+                genres: row.get::<Vec<String>, _>("genres"),
+                authors: row.get::<Vec<String>, _>("authors"),
+                description: row.get("description"),
+                user_rating: row.get("user_rating"),
+                community_score: row.get("community_score"),
+            })
         })
         .collect();
 
