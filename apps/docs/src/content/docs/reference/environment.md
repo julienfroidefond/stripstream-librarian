@@ -31,6 +31,13 @@ Exemples :
 Les chemins de fichiers stockés en base de données commencent par `/libraries/`. En développement local sans Docker, définissez `LIBRARIES_ROOT_PATH` pour pointer vers le dossier réel de vos fichiers.
 :::
 
+## API
+
+| Variable | Description | Valeur par défaut |
+|----------|-------------|------------------|
+| `API_LISTEN_ADDR` | Adresse d'écoute du service API | `0.0.0.0:7080` |
+| `API_DB_MAX_CONNECTIONS` | Taille maximale du pool de connexions PostgreSQL | `10` |
+
 ## Niveaux de log
 
 | Variable | Description |

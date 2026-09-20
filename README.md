@@ -170,6 +170,7 @@ Variables marquées **required** doivent être définies. Les autres ont une val
 |----------|-------------|--------|
 | `API_BOOTSTRAP_TOKEN` | **required** — Token admin initial | — |
 | `API_LISTEN_ADDR` | Adresse d'écoute | `0.0.0.0:7080` |
+| `API_DB_MAX_CONNECTIONS` | Taille maximale du pool de connexions PostgreSQL | `10` |
 
 ### Indexer
 

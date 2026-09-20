@@ -65,7 +65,7 @@ La valeur **Manuel** désactive l'automatisation pour une tâche donnée.
 ## Nettoyage des tâches bloquées
 
 Au démarrage, les tâches bloquées sont automatiquement marquées comme échouées :
-- Tâches "en cours" depuis le redémarrage précédent (crash ou redémarrage du service)
+- Tâches "en cours" depuis le redémarrage précédent (crash ou redémarrage du service), pour l'indexer comme pour l'API
 - Tâches "en attente" depuis plus de 30 minutes (probablement bloquées par une tâche exclusive)
 
 ---

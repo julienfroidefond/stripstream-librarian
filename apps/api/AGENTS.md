@@ -68,6 +68,6 @@ Chargé au démarrage dans `load_concurrent_renders`.
 ## Gotchas
 
 - **LIBRARIES_ROOT_PATH** : les `abs_path` en DB commencent par `/libraries/`. Appeler `remap_libraries_path()` avant tout accès fichier.
-- **Rate limit lecture** : middleware `read_rate_limit` sur les routes read (100 req/5s par défaut).
+- **Rate limit lecture** : middleware `read_rate_limit` sur les routes read, fenêtre de 1s **par client** (clé = token `Authorization`), limite `rate_limit_per_second` (défaut 120). Dépassement → `429` JSON `{"error":"rate limit exceeded"}` + `Retry-After: 1`.
 - **Métriques** : `/metrics` expose `requests_total`, `page_cache_hits`, `page_cache_misses` (atomics dans `AppState.metrics`).
 - **Swagger** : accessible sur `/swagger-ui`, spec JSON sur `/openapi.json`.
