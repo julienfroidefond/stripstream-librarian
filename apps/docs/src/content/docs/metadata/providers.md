@@ -18,7 +18,7 @@ Stripstream peut enrichir vos séries en allant chercher des informations sur 7 
 | **SensCritique** | BD et manga en français | Distingue les éditions d'une même série |
 
 :::caution
-Le provider **Bédéthèque** (`bedetheque.com`) a été retiré : le site est désormais protégé par un challenge Cloudflare qui empêche le scraping. Les bibliothèques configurées dessus basculent automatiquement vers **BDTheque**.
+Le provider **Bédéthèque** (`bedetheque.com`) a été retiré : le site est désormais protégé par un challenge Cloudflare qui empêche le scraping. Les bibliothèques configurées dessus basculent automatiquement vers **BDTheque**, et les liens de métadonnées restants sont supprimés par la migration `0114`.
 :::
 
 ## Choisir le bon provider

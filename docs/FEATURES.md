@@ -292,7 +292,7 @@ All providers persist `description` in `metadata_json` so it survives the DB rou
 - Non-destructive: only updates when provider has new data
 - Uses the same shared sync functions as approve and batch
 - BDTheque and BDphile use ISBN/EAN only as an additive fallback for new links; historical provider matches are not displaced
-- Bédéthèque (`bedetheque.com`) is retired: the site is now behind a Cloudflare challenge. It is no longer exposed as a provider; existing library settings are migrated to BDTheque.
+- Bédéthèque (`bedetheque.com`) is retired: the site is now behind a Cloudflare challenge. The provider code has been removed, existing library settings are migrated to BDTheque, and any remaining `bedetheque` metadata links are force-unlinked by migration `0114`.
 
 ### Field Locking
 - Individual series and book fields can be locked to prevent external sync from overwriting manual edits

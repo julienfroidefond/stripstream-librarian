@@ -175,59 +175,7 @@ async fn anilist_search_ongoing() {
     println!("  total_volumes: {:?}", best.total_volumes);
 }
 
-// --- Bédéthèque ---
-
-#[tokio::test]
-#[ignore]
-async fn bedetheque_search_and_books() {
-    let p = get_provider("bedetheque").unwrap();
-    let cfg = config_fr();
-
-    let candidates = p.search_series("De Cape et de Crocs", &cfg).await.unwrap();
-    assert!(!candidates.is_empty(), "bedetheque: no results");
-    print_candidate("bedetheque", &candidates[0]);
-
-    let best = &candidates[0];
-    assert!(
-        best.description.is_some(),
-        "bedetheque: should have description"
-    );
-    assert!(!best.authors.is_empty(), "bedetheque: should have authors");
-    assert!(
-        !best.publishers.is_empty(),
-        "bedetheque: should have publishers"
-    );
-    assert!(
-        best.start_year.is_some(),
-        "bedetheque: should have start_year"
-    );
-    assert!(
-        best.total_volumes.is_some(),
-        "bedetheque: should have total_volumes"
-    );
-
-    // Enriched metadata_json
-    let mj = &best.metadata_json;
-    assert!(
-        mj.get("genres")
-            .and_then(|g| g.as_array())
-            .map(|a| !a.is_empty())
-            .unwrap_or(false),
-        "bedetheque: should have genres"
-    );
-    assert!(
-        mj.get("status").and_then(|s| s.as_str()).is_some(),
-        "bedetheque: should have status"
-    );
-
-    let books = p.get_series_books(&best.external_id, &cfg).await.unwrap();
-    print_books("bedetheque", &books);
-    assert!(
-        books.len() >= 12,
-        "bedetheque: De Cape et de Crocs should have ≥12 volumes, got {}",
-        books.len()
-    );
-}
+// --- BDTheque ---
 
 #[tokio::test]
 #[ignore]
@@ -395,7 +343,6 @@ async fn cross_provider_blacksad() {
         ("google_books", config_en()),
         ("open_library", config_en()),
         ("anilist", config_fr()),
-        ("bedetheque", config_fr()),
     ];
 
     for (name, cfg) in &providers {

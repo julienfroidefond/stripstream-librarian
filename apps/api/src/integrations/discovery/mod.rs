@@ -969,7 +969,7 @@ pub async fn add_to_library(
     };
 
     // Only create metadata links for providers that offer useful data
-    let is_linkable = metadata_provider == "bedetheque" || metadata_provider == "senscritique";
+    let is_linkable = metadata_provider == "senscritique";
 
     // Build metadata_json with all the discovery-specific fields
     let metadata_json = serde_json::json!({

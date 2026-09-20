@@ -1,7 +1,6 @@
 pub mod anilist;
 pub mod bdphile;
 pub mod bdtheque;
-pub mod bedetheque;
 pub mod comicvine;
 pub mod google_books;
 pub mod open_library;
@@ -120,7 +119,6 @@ pub fn get_provider(name: &str) -> Option<Box<dyn MetadataProvider>> {
         "open_library" => Some(Box::new(open_library::OpenLibraryProvider)),
         "comicvine" => Some(Box::new(comicvine::ComicVineProvider)),
         "anilist" => Some(Box::new(anilist::AniListProvider)),
-        "bedetheque" => Some(Box::new(bedetheque::BedethequeProvider)),
         "bdphile" => Some(Box::new(bdphile::BdphileProvider)),
         "bdtheque" => Some(Box::new(bdtheque::BdthequeProvider)),
         "senscritique" => Some(Box::new(senscritique::SensCritiqueProvider)),

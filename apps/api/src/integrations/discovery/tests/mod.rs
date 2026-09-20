@@ -72,9 +72,9 @@ fn make_request(
     }
 }
 
-// 1. Basic add from bedetheque — series + metadata link created
+// 1. Retired provider (bedetheque) — series created, no metadata link
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn test_add_to_library_basic_bedetheque(pool: sqlx::PgPool) {
+async fn test_add_to_library_retired_provider_no_link(pool: sqlx::PgPool) {
     let library_id = create_test_library(&pool).await;
     let state = test_state(pool.clone());
     let req = make_request(library_id, "bedetheque", "ext-123", "Test BD Series");
@@ -84,8 +84,9 @@ async fn test_add_to_library_basic_bedetheque(pool: sqlx::PgPool) {
 
     let resp = result.unwrap().0;
 
-    // Verify series was created
-    let series_row = sqlx::query("SELECT name, description, start_year, total_volumes, status, cover_url FROM series WHERE id = $1")
+    // Verify series was created with only the base fields: without a metadata
+    // link, no provider metadata is synced onto the series row.
+    let series_row = sqlx::query("SELECT name, description, start_year, cover_url FROM series WHERE id = $1")
         .bind(resp.series_id)
         .fetch_one(&pool)
         .await
@@ -93,30 +94,26 @@ async fn test_add_to_library_basic_bedetheque(pool: sqlx::PgPool) {
     let name: String = series_row.get("name");
     assert_eq!(name, "Test BD Series");
     let desc: Option<String> = series_row.get("description");
-    assert_eq!(desc, Some("A test description".to_string()));
+    assert_eq!(desc, None, "no metadata link means no synced description");
     let start_year: Option<i32> = series_row.get("start_year");
-    assert_eq!(start_year, Some(2020));
+    assert_eq!(start_year, None, "no metadata link means no synced start_year");
     let cover_url: Option<String> = series_row.get("cover_url");
     assert_eq!(
-        cover_url,
-        Some("https://example.com/cover.jpg".to_string()),
-        "cover_url should be synced"
+        cover_url, None,
+        "no metadata link means no synced cover_url"
     );
 
-    // Verify metadata link was created
-    let link_row = sqlx::query(
-        "SELECT provider, external_id, status FROM external_metadata_links WHERE series_id = $1 AND provider = 'bedetheque'"
-    )
-    .bind(resp.series_id)
-    .fetch_one(&pool)
-    .await
-    .expect("metadata link should exist");
-    let provider: String = link_row.get("provider");
-    assert_eq!(provider, "bedetheque");
-    let ext_id: String = link_row.get("external_id");
-    assert_eq!(ext_id, "ext-123");
-    let status: String = link_row.get("status");
-    assert_eq!(status, "approved");
+    // No metadata link: bedetheque is no longer linkable
+    let link_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1")
+            .bind(resp.series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        link_count, 0,
+        "retired provider should not create a metadata link"
+    );
 }
 
 // 2. Duplicate series — same series_id returned, no duplicate
@@ -125,13 +122,13 @@ async fn test_add_to_library_duplicate_series(pool: sqlx::PgPool) {
     let library_id = create_test_library(&pool).await;
     let state = test_state(pool.clone());
 
-    let req1 = make_request(library_id, "bedetheque", "ext-100", "Duplicate Series");
+    let req1 = make_request(library_id, "senscritique", "ext-100", "Duplicate Series");
     let resp1 = add_to_library(State(state.clone()), Json(req1))
         .await
         .unwrap()
         .0;
 
-    let req2 = make_request(library_id, "bedetheque", "ext-200", "Duplicate Series");
+    let req2 = make_request(library_id, "senscritique", "ext-200", "Duplicate Series");
     let resp2 = add_to_library(State(state), Json(req2)).await.unwrap().0;
 
     // Same series_id should be returned
@@ -152,7 +149,7 @@ async fn test_add_to_library_duplicate_series(pool: sqlx::PgPool) {
 
     // Metadata link should have been upserted (ON CONFLICT updates external_id)
     let link_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1 AND provider = 'bedetheque'"
+        "SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1 AND provider = 'senscritique'"
     )
     .bind(resp1.series_id)
     .fetch_one(&pool)
@@ -167,7 +164,7 @@ async fn test_add_to_library_duplicate_series(pool: sqlx::PgPool) {
     // (ext-100 → ext-200), losing the original provider identity.
     // See docs/KNOWN_ISSUES.md §1.
     let external_id: String = sqlx::query_scalar(
-        "SELECT external_id FROM external_metadata_links WHERE series_id = $1 AND provider = 'bedetheque'",
+        "SELECT external_id FROM external_metadata_links WHERE series_id = $1 AND provider = 'senscritique'",
     )
     .bind(resp1.series_id)
     .fetch_one(&pool)
@@ -200,7 +197,7 @@ async fn test_add_to_library_anilist_no_metadata_link(pool: sqlx::PgPool) {
             .fetch_one(&pool)
             .await
             .unwrap();
-    // LOCKED: only a hard-coded allowlist (bedetheque/senscritique) creates a
+    // LOCKED: only a hard-coded allowlist (senscritique) creates a
     // metadata link; other providers added via discovery create none, so
     // metadata sync is impossible for them. See docs/KNOWN_ISSUES.md §1.
     assert_eq!(

@@ -78,7 +78,6 @@ export function ProviderIcon({ provider, size = 16, className = "" }: ProviderIc
         </svg>
       );
 
-    case "bedetheque":
     case "bdtheque":
     case "bdphile":
       // French flag-inspired book (Bédéthèque)

@@ -98,12 +98,7 @@ Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code 
 | # | Problème | Comportement actuel | Test qui verrouille |
 |---|----------|---------------------|---------------------|
 | 25 | `external_id` écrasé sur doublon | Deux entités provider de même titre fusionnent en une série ; le lien est `ON CONFLICT DO UPDATE` → l'`external_id` d'origine est perdu. | `integrations::discovery::tests::test_add_to_library_duplicate_series` |
-| 26 | Allowlist de liens codée en dur | Seuls `bedetheque`/`senscritique` créent un `external_metadata_links` ; les autres providers ajoutés via discovery n'en créent aucun → sync metadata impossible. | `integrations::discovery::tests::test_add_to_library_anilist_no_metadata_link` |
-
-### `apps/api/src/metadata_providers/bedetheque.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
+| 26 | Allowlist de liens codée en dur | Seul `senscritique` crée un `external_metadata_links` ; les autres providers ajoutés via discovery n'en créent aucun → sync metadata impossible. | `integrations::discovery::tests::test_add_to_library_anilist_no_metadata_link` |
 
 ### `apps/api/src/metadata_providers/bdtheque.rs`
 
@@ -180,9 +175,6 @@ avant tout commit (`cargo test -p api`, `cargo clippy -p api --tests`).
 | 20 | `is_field_locked` échouait en mode ouvert | Les valeurs `"true"` (insensible à la casse) et les nombres non nuls sont désormais traités comme verrouillés. | `metadata::handlers::tests::field_locked_when_string_true`, `field_locked_when_nonzero_number` |
 | 27 | Date invalide → `ended` | Une date non parseable renvoie désormais `"unknown"` au lieu du statut terminal `"ended"`. | `metadata_providers::senscritique::tests::infer_status_invalid_date_is_unknown` |
 | 33 | Apostrophe → token parasite | `normalize_title` supprime l'apostrophe (`"JoJo's"` → `"jojos"`) au lieu de la remplacer par un espace. | `reading::status_match::tests::normalize_replaces_special_chars` |
-| 28 | Page vide → « rate-limited » | La détection de blacklist exige désormais un titre **et** un body vides ; une page « aucun résultat » n'est plus classée « rate-limited ». | `metadata_providers::bedetheque::tests::search_series_detects_rate_limiting` |
-| 29 | Cover URL fabriquée | Plus aucune URL de couverture n'est fabriquée depuis l'id de série ; la cover reste `None` si l'enrichissement échoue. | `metadata_providers::bedetheque::tests::search_series_cover_url_uses_base_url` |
-| 34 | Covers associées par index positionnel | Les couvertures sont appariées aux albums par **id d'album** (map `id → cover`), plus par position. | `metadata_providers::bedetheque::tests::get_series_books_parses_albums` |
 | 30 | Pagination absente | `get_series_books_impl` itère sur `/ajax/series/tomes/{id}/{page}` jusqu'à une page vide. | `metadata_providers::bdtheque::tests::parses_series_and_volume_metadata` |
 | 35 | `authors.sort()` réordonne les rôles | Le tri alphabétique est retiré : l'ordre scénariste/dessinateur de la source est conservé. | `metadata_providers::bdtheque::tests::parses_series_and_volume_metadata` |
 | 31 | `external_book_id` = URL complète | Un id stable est extrait de l'URL d'album (`bd/138208-les-geants-1-erin`). | `metadata_providers::bdphile::tests::parses_series_and_album_details` |

@@ -24,7 +24,7 @@ API et Indexer partagent un seul Dockerfile (`apps/api/Dockerfile`) avec deux ta
 
 ### Metadata Providers
 
-Providers exposés via `available_providers()` : `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`, `bdphile`, `senscritique`. Tous implémentent le trait `MetadataProvider` (`search_series` + `get_series_books`). SensCritique utilise l'API GraphQL (`apollo.senscritique.com`) ; BDTheque, BDphile et le module `bedetheque` font du scraping HTML. Le provider `bedetheque` n'est plus exposé (site bloqué par Cloudflare) mais son code reste pour la compatibilité des liens existants.
+Providers exposés via `available_providers()` : `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`, `bdphile`, `senscritique`. Tous implémentent le trait `MetadataProvider` (`search_series` + `get_series_books`). SensCritique utilise l'API GraphQL (`apollo.senscritique.com`) ; BDTheque et BDphile font du scraping HTML. Le provider `bedetheque` a été retiré (site bloqué par Cloudflare) : son code est supprimé et les liens existants sont déliés par la migration `0114`.
 
 ### Indexer 2-Phase Pipeline
 
