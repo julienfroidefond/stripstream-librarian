@@ -56,8 +56,13 @@ npm install
 npm run dev    # http://localhost:7082
 npm run build
 npm run start  # Production sur http://localhost:7082
+npm run lint   # ESLint (eslint.config.mjs, flat config next/core-web-vitals)
 npx tsc --noEmit
 ```
+
+Gestionnaire de paquets : **npm** uniquement (`package-lock.json` est suivi et utilisé par la
+build Docker `npm ci`). Ne pas introduire `pnpm`/`yarn` (les lockfiles alternatifs sont ignorés
+par git mais désynchronisent la CI).
 
 ## Tests unitaires (Vitest)
 
@@ -81,6 +86,7 @@ npm run test:coverage    # rapport de couverture (text + html dans coverage/)
 - Le test de `lib/i18n/context` appelle `vi.unmock("@/lib/i18n/context")` pour rétablir le vrai provider (le setup le mocke globalement).
 - Les tests de `lib/session.ts` utilisent `// @vitest-environment node` (`jose` compare les `Uint8Array` par realm, incompatible avec jsdom).
 - Importer explicitement `describe`/`it`/`expect`/`vi` depuis `vitest` (pas de globals).
+- La CI (`.gitea/workflows/deploy.yml`) lance `npm ci`, `tsc --noEmit`, `npm run lint` et `npm run test:unit` sur tout changement `apps/backoffice/`, avant tout build d'image.
 
 ## Tests E2E (Playwright)
 

@@ -126,26 +126,22 @@ export function TelegramMonitorCard({
   }
 
   async function loadAll() {
-    try {
-      const [s, srcs] = await Promise.all([
-        tgFetch<TelegramMonitorStatus>("status").catch(() => null),
-        tgFetch<TelegramSourceDto[]>("sources").catch(() => []),
-      ]);
-      if (s) {
-        setStatus(s);
-        if (s.phone) setPhone(s.phone);
-        if (s.api_id) setApiId(String(s.api_id));
-        const interval = String(s.sync_interval_minutes || 30);
-        setSyncInterval(SYNC_INTERVAL_VALUES.has(interval) ? interval : "30");
-        // Collapse credentials if already connected
-        setCredentialsOpen(!s.authorized);
-      } else {
-        setCredentialsOpen(true);
-      }
-      setSources(srcs);
-    } catch {
+    const [s, srcs] = await Promise.all([
+      tgFetch<TelegramMonitorStatus>("status").catch(() => null),
+      tgFetch<TelegramSourceDto[]>("sources").catch(() => []),
+    ]);
+    if (s) {
+      setStatus(s);
+      if (s.phone) setPhone(s.phone);
+      if (s.api_id) setApiId(String(s.api_id));
+      const interval = String(s.sync_interval_minutes || 30);
+      setSyncInterval(SYNC_INTERVAL_VALUES.has(interval) ? interval : "30");
+      // Collapse credentials if already connected
+      setCredentialsOpen(!s.authorized);
+    } else {
       setCredentialsOpen(true);
     }
+    setSources(srcs);
   }
 
   async function handleSaveSettings() {

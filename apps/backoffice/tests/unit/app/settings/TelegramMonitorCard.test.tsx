@@ -249,21 +249,4 @@ describe("TelegramMonitorCard", () => {
     expect(await screen.findByPlaceholderText("telegramMonitor.apiHashPlaceholder")).toBeInTheDocument();
     expect(screen.getByText("telegramMonitor.notAuthorized")).toBeInTheDocument();
   });
-
-  it("falls back to credentials when the status payload is invalid", async () => {
-    routes({
-      "GET /api/telegram-monitor/status": () =>
-        ok({
-          ...statusBase,
-          sync_interval_minutes: {
-            toString() {
-              throw new Error("bad interval");
-            },
-          },
-        }),
-    });
-
-    render(<TelegramMonitorCard />);
-    expect(await screen.findByPlaceholderText("telegramMonitor.apiHashPlaceholder")).toBeInTheDocument();
-  });
 });

@@ -38,6 +38,16 @@ jobs:
             echo "BUILD_API=false" >> "$GITHUB_ENV"
           fi
           if echo "$changed" | grep -qE "^apps/backoffice/"; then
+            echo "CHANGED_BACKOFFICE=true" >> "$GITHUB_ENV"
+          else
+            echo "CHANGED_BACKOFFICE=false" >> "$GITHUB_ENV"
+          fi
+          # Test/config-only changes run the test job but must not rebuild the
+          # production image nor redeploy the stack.
+          bo_build=$(echo "$changed" | grep -E "^apps/backoffice/" \
+            | grep -vE "(^apps/backoffice/tests/|\.test\.(ts|tsx)$|^apps/backoffice/playwright\.config\.|^apps/backoffice/vitest\.config\.|^apps/backoffice/eslint\.config\.)" \
+            || true)
+          if [ -n "$bo_build" ]; then
             echo "BUILD_BACKOFFICE=true" >> "$GITHUB_ENV"
             echo "backoffice → build"
           else
@@ -49,6 +59,16 @@ jobs:
           else
             echo "BUILD_DOCS=false" >> "$GITHUB_ENV"
           fi
+
+      - name: Backoffice checks
+        if: env.CHANGED_BACKOFFICE == 'true'
+        run: |
+          set -e
+          cd "$REPO_DIR/apps/backoffice"
+          npm ci
+          npx tsc --noEmit
+          npm run lint
+          npm run test:unit
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -123,6 +143,7 @@ jobs:
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:buildcache,mode=max
 
       - name: Pull images and restart stack
+        if: env.BUILD_API == 'true' || env.BUILD_BACKOFFICE == 'true' || env.BUILD_DOCS == 'true'
         run: |
           set -e
           cd /Users/julienfroidefond/Sites/docker-stack
