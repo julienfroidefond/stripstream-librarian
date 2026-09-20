@@ -95,25 +95,47 @@ pub async fn get_related_series(
             WHERE rli1.series_id = $1 AND rli2.series_id != $1
             GROUP BY rli2.series_id
         ),
+        candidates AS (
+            SELECT s.id, s.authors, s.genres, s.publishers
+            FROM series s, ref
+            WHERE s.id != $1
+              AND (
+                s.authors && ref.authors
+                OR s.genres && ref.genres
+                OR s.publishers && ref.publishers
+                OR EXISTS (
+                    SELECT 1 FROM reading_list_items rli1
+                    JOIN reading_list_items rli2 ON rli2.list_id = rli1.list_id
+                    WHERE rli1.series_id = $1 AND rli2.series_id = s.id
+                )
+              )
+              AND ($3::uuid IS NULL OR NOT EXISTS (
+                  SELECT 1 FROM user_genre_restrictions ugr
+                  WHERE ugr.user_id = $3 AND ugr.genre = ANY(s.genres)
+              ))
+        ),
         book_counts AS (
-            SELECT series_id, COUNT(*) AS book_count
-            FROM books
-            GROUP BY series_id
+            SELECT b.series_id, COUNT(*) AS book_count
+            FROM books b
+            JOIN candidates c ON c.id = b.series_id
+            GROUP BY b.series_id
         ),
         first_books AS (
-            SELECT DISTINCT ON (series_id)
-                series_id, id AS first_book_id, updated_at AS first_book_updated_at
-            FROM books
-            ORDER BY series_id,
-                CASE WHEN volume_type = 'regular' THEN 0 ELSE 1 END,
-                volume ASC NULLS LAST,
-                created_at ASC
+            SELECT DISTINCT ON (b.series_id)
+                b.series_id, b.id AS first_book_id, b.updated_at AS first_book_updated_at
+            FROM books b
+            JOIN candidates c ON c.id = b.series_id
+            ORDER BY b.series_id,
+                CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
+                b.volume ASC NULLS LAST,
+                b.created_at ASC
         ),
         meta_links AS (
-            SELECT DISTINCT ON (series_id) series_id, provider
-            FROM external_metadata_links
-            WHERE status = 'approved'
-            ORDER BY series_id, created_at DESC
+            SELECT DISTINCT ON (eml.series_id) eml.series_id, eml.provider
+            FROM external_metadata_links eml
+            JOIN candidates c ON c.id = eml.series_id
+            WHERE eml.status = 'approved'
+            ORDER BY eml.series_id, eml.created_at DESC
         )
         SELECT
             s.id AS series_id,
