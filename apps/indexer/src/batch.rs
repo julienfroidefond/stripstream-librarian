@@ -101,6 +101,89 @@ pub async fn flush_events(pool: &PgPool, events: &mut Vec<EventInsert>) -> Resul
     Ok(())
 }
 
+/// Set `books.page_count` for many books in one statement.
+pub async fn flush_page_counts(pool: &PgPool, updates: &mut Vec<(Uuid, i32)>) -> Result<()> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+
+    let book_ids: Vec<Uuid> = updates.iter().map(|(id, _)| *id).collect();
+    let page_counts: Vec<i32> = updates.iter().map(|(_, pc)| *pc).collect();
+
+    sqlx::query(
+        r#"
+        UPDATE books SET page_count = data.page_count, updated_at = NOW()
+        FROM (
+            SELECT * FROM UNNEST($1::uuid[], $2::int[]) AS t(book_id, page_count)
+        ) AS data
+        WHERE books.id = data.book_id
+        "#,
+    )
+    .bind(&book_ids)
+    .bind(&page_counts)
+    .execute(pool)
+    .await?;
+
+    updates.clear();
+    Ok(())
+}
+
+/// Set `books.page_count` and `books.thumbnail_path` for many books in one statement.
+pub async fn flush_thumbnails(pool: &PgPool, updates: &mut Vec<(Uuid, i32, String)>) -> Result<()> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+
+    let book_ids: Vec<Uuid> = updates.iter().map(|(id, _, _)| *id).collect();
+    let page_counts: Vec<i32> = updates.iter().map(|(_, pc, _)| *pc).collect();
+    let thumb_paths: Vec<String> = updates.iter().map(|(_, _, p)| p.clone()).collect();
+
+    sqlx::query(
+        r#"
+        UPDATE books SET page_count = data.page_count, thumbnail_path = data.thumbnail_path, updated_at = NOW()
+        FROM (
+            SELECT * FROM UNNEST($1::uuid[], $2::int[], $3::text[]) AS t(book_id, page_count, thumbnail_path)
+        ) AS data
+        WHERE books.id = data.book_id
+        "#,
+    )
+    .bind(&book_ids)
+    .bind(&page_counts)
+    .bind(&thumb_paths)
+    .execute(pool)
+    .await?;
+
+    updates.clear();
+    Ok(())
+}
+
+/// Mark many book files as parse errors in one statement.
+pub async fn flush_parse_errors(pool: &PgPool, updates: &mut Vec<(Uuid, String)>) -> Result<()> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+
+    let book_ids: Vec<Uuid> = updates.iter().map(|(id, _)| *id).collect();
+    let errors: Vec<String> = updates.iter().map(|(_, e)| e.clone()).collect();
+
+    sqlx::query(
+        r#"
+        UPDATE book_files SET parse_status = 'error', parse_error_opt = data.parse_error, updated_at = NOW()
+        FROM (
+            SELECT * FROM UNNEST($1::uuid[], $2::text[]) AS t(book_id, parse_error)
+        ) AS data
+        WHERE book_files.book_id = data.book_id
+        "#,
+    )
+    .bind(&book_ids)
+    .bind(&errors)
+    .execute(pool)
+    .await?;
+
+    updates.clear();
+    Ok(())
+}
+
 pub async fn flush_all_batches(
     pool: &PgPool,
     books_update: &mut Vec<BookUpdate>,
@@ -474,5 +557,133 @@ mod tests {
         assert_eq!(entity_types[0], Some("book".to_string()));
         assert_eq!(entity_types[1], Some("series".to_string()));
         assert_eq!(entity_types[2], None);
+    }
+
+    async fn create_test_library(pool: &PgPool) -> Uuid {
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
+            .bind(library_id)
+            .bind("Test Library")
+            .bind(format!("/tmp/{}", library_id))
+            .execute(pool)
+            .await
+            .unwrap();
+        library_id
+    }
+
+    async fn create_test_book(pool: &PgPool, library_id: Uuid) -> Uuid {
+        let book_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO books (id, library_id, kind, title, format) VALUES ($1, $2, 'comic', 'Test', 'cbz')",
+        )
+        .bind(book_id)
+        .bind(library_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        book_id
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn flush_page_counts_updates_all_books(pool: PgPool) {
+        let library_id = create_test_library(&pool).await;
+        let book_a = create_test_book(&pool, library_id).await;
+        let book_b = create_test_book(&pool, library_id).await;
+
+        let mut updates = vec![(book_a, 42), (book_b, 7)];
+        flush_page_counts(&pool, &mut updates).await.unwrap();
+        assert!(updates.is_empty());
+
+        let counts: Vec<(Uuid, Option<i32>)> =
+            sqlx::query_as("SELECT id, page_count FROM books WHERE id = ANY($1) ORDER BY id")
+                .bind(&[book_a, book_b][..])
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+
+        assert_eq!(counts.len(), 2);
+        let map: std::collections::HashMap<Uuid, Option<i32>> = counts.into_iter().collect();
+        assert_eq!(map[&book_a], Some(42));
+        assert_eq!(map[&book_b], Some(7));
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn flush_page_counts_with_empty_vec_is_noop(pool: PgPool) {
+        let mut updates: Vec<(Uuid, i32)> = vec![];
+        flush_page_counts(&pool, &mut updates).await.unwrap();
+        assert!(updates.is_empty());
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn flush_thumbnails_updates_page_count_and_path(pool: PgPool) {
+        let library_id = create_test_library(&pool).await;
+        let book_a = create_test_book(&pool, library_id).await;
+        let book_b = create_test_book(&pool, library_id).await;
+
+        let mut updates = vec![
+            (book_a, 10, "/data/thumbnails/a.webp".to_string()),
+            (book_b, 20, "/data/thumbnails/b.webp".to_string()),
+        ];
+        flush_thumbnails(&pool, &mut updates).await.unwrap();
+        assert!(updates.is_empty());
+
+        let rows: Vec<(Uuid, Option<i32>, Option<String>)> = sqlx::query_as(
+            "SELECT id, page_count, thumbnail_path FROM books WHERE id = ANY($1) ORDER BY id",
+        )
+        .bind(&[book_a, book_b][..])
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        let map: std::collections::HashMap<Uuid, (Option<i32>, Option<String>)> = rows
+            .into_iter()
+            .map(|(id, pc, tp)| (id, (pc, tp)))
+            .collect();
+        assert_eq!(map[&book_a].0, Some(10));
+        assert_eq!(map[&book_a].1.as_deref(), Some("/data/thumbnails/a.webp"));
+        assert_eq!(map[&book_b].0, Some(20));
+        assert_eq!(map[&book_b].1.as_deref(), Some("/data/thumbnails/b.webp"));
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn flush_parse_errors_marks_files(pool: PgPool) {
+        let library_id = create_test_library(&pool).await;
+        let book_a = create_test_book(&pool, library_id).await;
+        let book_b = create_test_book(&pool, library_id).await;
+
+        for (i, book_id) in [book_a, book_b].iter().enumerate() {
+            sqlx::query(
+                "INSERT INTO book_files (id, book_id, format, abs_path, size_bytes, mtime, fingerprint)
+                 VALUES ($1, $2, 'cbz', $3, 100, NOW(), 'fp')",
+            )
+            .bind(Uuid::new_v4())
+            .bind(book_id)
+            .bind(format!("/tmp/{}/file{}.cbz", library_id, i))
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let mut updates = vec![
+            (book_a, "corrupt archive".to_string()),
+            (book_b, "timed out".to_string()),
+        ];
+        flush_parse_errors(&pool, &mut updates).await.unwrap();
+        assert!(updates.is_empty());
+
+        let rows: Vec<(Uuid, String, Option<String>)> = sqlx::query_as(
+            "SELECT book_id, parse_status, parse_error_opt FROM book_files WHERE book_id = ANY($1) ORDER BY book_id",
+        )
+        .bind(&[book_a, book_b][..])
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        let map: std::collections::HashMap<Uuid, (String, Option<String>)> =
+            rows.into_iter().map(|(id, s, e)| (id, (s, e))).collect();
+        assert_eq!(map[&book_a].0, "error");
+        assert_eq!(map[&book_a].1.as_deref(), Some("corrupt archive"));
+        assert_eq!(map[&book_b].0, "error");
+        assert_eq!(map[&book_b].1.as_deref(), Some("timed out"));
     }
 }

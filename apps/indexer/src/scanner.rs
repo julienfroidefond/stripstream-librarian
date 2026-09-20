@@ -32,6 +32,17 @@ pub struct JobStats {
 const BATCH_SIZE: usize = 100;
 const NOTIFICATION_ITEMS_LIMIT: usize = 10;
 
+/// A file already present in the DB, with the book fields the scan loop compares against.
+struct ExistingFile {
+    file_id: Uuid,
+    book_id: Uuid,
+    fingerprint: String,
+    title: String,
+    volume: Option<i32>,
+    volume_type: String,
+    series_id: Option<Uuid>,
+}
+
 fn push_capped_item(items: &mut Vec<String>, value: String) {
     if items.len() < NOTIFICATION_ITEMS_LIMIT {
         items.push(value);
@@ -112,10 +123,11 @@ pub async fn scan_library_discovery(
         is_full_rebuild
     );
 
-    // Load existing files from DB
+    // Carries book fields so unchanged files are compared in memory (avoids a SELECT per file).
     let existing_rows = sqlx::query(
         r#"
-        SELECT bf.id AS file_id, bf.book_id, bf.abs_path, bf.fingerprint
+        SELECT bf.id AS file_id, bf.book_id, bf.abs_path, bf.fingerprint,
+               b.title, b.volume, b.volume_type, b.series_id
         FROM book_files bf
         JOIN books b ON b.id = bf.book_id
         WHERE b.library_id = $1
@@ -125,18 +137,22 @@ pub async fn scan_library_discovery(
     .fetch_all(&state.pool)
     .await?;
 
-    let mut existing: HashMap<String, (Uuid, Uuid, String)> = HashMap::new();
+    let mut existing: HashMap<String, ExistingFile> = HashMap::new();
     if !is_full_rebuild {
         for row in existing_rows {
             let abs_path: String = row.get("abs_path");
             let remapped_path = utils::remap_libraries_path(&abs_path);
             existing.insert(
                 remapped_path,
-                (
-                    row.get("file_id"),
-                    row.get("book_id"),
-                    row.get("fingerprint"),
-                ),
+                ExistingFile {
+                    file_id: row.get("file_id"),
+                    book_id: row.get("book_id"),
+                    fingerprint: row.get("fingerprint"),
+                    title: row.get("title"),
+                    volume: row.get("volume"),
+                    volume_type: row.get("volume_type"),
+                    series_id: row.get("series_id"),
+                },
             );
         }
         info!(
@@ -328,7 +344,10 @@ pub async fn scan_library_discovery(
             let lookup_path = utils::remap_libraries_path(&abs_path);
             seen.insert(lookup_path.clone(), true);
 
-            if let Some((file_id, book_id, old_fingerprint)) = existing.get(&lookup_path).cloned() {
+            if let Some(existing_file) = existing.get(&lookup_path) {
+                let file_id = existing_file.file_id;
+                let book_id = existing_file.book_id;
+                let old_fingerprint = existing_file.fingerprint.clone();
                 let Some(format) = detect_format(&path) else {
                     continue;
                 };
@@ -444,41 +463,37 @@ pub async fn scan_library_discovery(
 
                 // Fingerprint unchanged — still check if title/volume need updating
                 // (e.g., file renamed, or volume not extracted on a previous scan)
-                let row: Option<(String, Option<i32>, String)> =
-                    sqlx::query_as("SELECT title, volume, volume_type FROM books WHERE id = $1")
-                        .bind(book_id)
-                        .fetch_optional(&state.pool)
-                        .await?;
-                if let Some((ref db_title, db_volume, ref db_volume_type)) = row {
-                    let parsed_vt = parsed.volume_type.as_str();
-                    if db_title != &parsed.title
-                        || db_volume != parsed.volume
-                        || db_volume_type != parsed_vt
-                    {
-                        debug!("[SCAN] Title/volume/type mismatch (skipped dir) for {:?}: DB=('{}', {:?}, '{}') vs parsed=('{}', {:?}, '{}'), updating",
-                            path.file_name().unwrap_or_default(), db_title, db_volume, db_volume_type, parsed.title, parsed.volume, parsed_vt);
-                        let update_series_id = if let Some(ref series_name) = parsed.series {
-                            Some(
-                                get_or_create_series_id(
-                                    &state.pool,
-                                    library_id,
-                                    series_name,
-                                    &mut series_map,
-                                )
-                                .await?,
+                let db_title = &existing_file.title;
+                let db_volume = existing_file.volume;
+                let db_volume_type = &existing_file.volume_type;
+                let parsed_vt = parsed.volume_type.as_str();
+                if db_title != &parsed.title
+                    || db_volume != parsed.volume
+                    || db_volume_type != parsed_vt
+                {
+                    debug!("[SCAN] Title/volume/type mismatch (skipped dir) for {:?}: DB=('{}', {:?}, '{}') vs parsed=('{}', {:?}, '{}'), updating",
+                        path.file_name().unwrap_or_default(), db_title, db_volume, db_volume_type, parsed.title, parsed.volume, parsed_vt);
+                    let update_series_id = if let Some(ref series_name) = parsed.series {
+                        Some(
+                            get_or_create_series_id(
+                                &state.pool,
+                                library_id,
+                                series_name,
+                                &mut series_map,
                             )
-                        } else {
-                            None
-                        };
-                        sqlx::query("UPDATE books SET title = $1, volume = $2, volume_type = $3, series_id = COALESCE($4, series_id), updated_at = NOW() WHERE id = $5")
-                            .bind(&parsed.title)
-                            .bind(parsed.volume)
-                            .bind(parsed_vt)
-                            .bind(update_series_id)
-                            .bind(book_id)
-                            .execute(&state.pool)
-                            .await?;
-                    }
+                            .await?,
+                        )
+                    } else {
+                        None
+                    };
+                    sqlx::query("UPDATE books SET title = $1, volume = $2, volume_type = $3, series_id = COALESCE($4, series_id), updated_at = NOW() WHERE id = $5")
+                        .bind(&parsed.title)
+                        .bind(parsed.volume)
+                        .bind(parsed_vt)
+                        .bind(update_series_id)
+                        .bind(book_id)
+                        .execute(&state.pool)
+                        .await?;
                 }
             }
             continue;
@@ -591,60 +606,59 @@ pub async fn scan_library_discovery(
             }
         }
 
-        if let Some((file_id, book_id, old_fingerprint)) = existing.get(&lookup_path).cloned() {
+        if let Some(existing_file) = existing.get(&lookup_path) {
+            let file_id = existing_file.file_id;
+            let book_id = existing_file.book_id;
+            let old_fingerprint = existing_file.fingerprint.clone();
             if !is_full_rebuild && old_fingerprint == fingerprint {
                 // Even if fingerprint hasn't changed, check if title/volume need updating
                 // (e.g., after a rename, the file was renamed but title in books table is stale,
                 // or volume was not extracted on a previous scan)
-                let row: Option<(String, Option<i32>, String)> =
-                    sqlx::query_as("SELECT title, volume, volume_type FROM books WHERE id = $1")
-                        .bind(book_id)
-                        .fetch_optional(&state.pool)
-                        .await?;
-                if let Some((ref db_title, db_volume, ref db_volume_type)) = row {
-                    let parsed_vt = parsed.volume_type.as_str();
-                    if db_title != &parsed.title
-                        || db_volume != parsed.volume
-                        || db_volume_type != parsed_vt
-                    {
-                        debug!("[SCAN] Title/volume/type mismatch for {}: DB=('{}', {:?}, '{}') vs parsed=('{}', {:?}, '{}'), updating",
-                            file_name, db_title, db_volume, db_volume_type, parsed.title, parsed.volume, parsed_vt);
-                        let update_series_id = if let Some(ref series_name) = parsed.series {
-                            Some(
-                                get_or_create_series_id(
-                                    &state.pool,
-                                    library_id,
-                                    series_name,
-                                    &mut series_map,
-                                )
-                                .await?,
+                let db_title = &existing_file.title;
+                let db_volume = existing_file.volume;
+                let db_volume_type = &existing_file.volume_type;
+                let parsed_vt = parsed.volume_type.as_str();
+                if db_title != &parsed.title
+                    || db_volume != parsed.volume
+                    || db_volume_type != parsed_vt
+                {
+                    debug!("[SCAN] Title/volume/type mismatch for {}: DB=('{}', {:?}, '{}') vs parsed=('{}', {:?}, '{}'), updating",
+                        file_name, db_title, db_volume, db_volume_type, parsed.title, parsed.volume, parsed_vt);
+                    let update_series_id = if let Some(ref series_name) = parsed.series {
+                        Some(
+                            get_or_create_series_id(
+                                &state.pool,
+                                library_id,
+                                series_name,
+                                &mut series_map,
                             )
-                        } else {
-                            None
-                        };
-                        sqlx::query("UPDATE books SET title = $1, volume = $2, volume_type = $3, series_id = COALESCE($4, series_id), updated_at = NOW() WHERE id = $5")
-                            .bind(&parsed.title)
-                            .bind(parsed.volume)
-                            .bind(parsed_vt)
-                            .bind(update_series_id)
-                            .bind(book_id)
-                            .execute(&state.pool)
-                            .await?;
+                            .await?,
+                        )
+                    } else {
+                        None
+                    };
+                    sqlx::query("UPDATE books SET title = $1, volume = $2, volume_type = $3, series_id = COALESCE($4, series_id), updated_at = NOW() WHERE id = $5")
+                        .bind(&parsed.title)
+                        .bind(parsed.volume)
+                        .bind(parsed_vt)
+                        .bind(update_series_id)
+                        .bind(book_id)
+                        .execute(&state.pool)
+                        .await?;
 
-                        events_to_insert.push(EventInsert {
-                            job_id,
-                            event_type: "book_updated".to_string(),
-                            level: "info".to_string(),
-                            entity_type: Some("book".to_string()),
-                            entity_id: Some(book_id),
-                            entity_name: Some(abs_path.clone()),
-                            message: Some(format!(
-                                "Title/volume updated: ('{}', {:?}) → ('{}', {:?})",
-                                db_title, db_volume, parsed.title, parsed.volume
-                            )),
-                            detail: None,
-                        });
-                    }
+                    events_to_insert.push(EventInsert {
+                        job_id,
+                        event_type: "book_updated".to_string(),
+                        level: "info".to_string(),
+                        entity_type: Some("book".to_string()),
+                        entity_id: Some(book_id),
+                        entity_name: Some(abs_path.clone()),
+                        message: Some(format!(
+                            "Title/volume updated: ('{}', {:?}) → ('{}', {:?})",
+                            db_title, db_volume, parsed.title, parsed.volume
+                        )),
+                        detail: None,
+                    });
                 }
                 continue;
             }
@@ -850,8 +864,8 @@ pub async fn scan_library_discovery(
     Ok(())
 }
 
-/// Archive a single book + its file + its reading progress before deletion.
-async fn archive_book(pool: &sqlx::PgPool, book_id: Uuid, file_id: Uuid) -> Result<()> {
+/// Archive books + their files + their reading progress before deletion, in set-based statements.
+async fn archive_books(pool: &sqlx::PgPool, book_ids: &[Uuid], file_ids: &[Uuid]) -> Result<()> {
     sqlx::query(
         r#"
         INSERT INTO archived_books (id, library_id, series_id, series_name, kind, format, title,
@@ -864,11 +878,11 @@ async fn archive_book(pool: &sqlx::PgPool, book_id: Uuid, file_id: Uuid) -> Resu
                b.created_at, b.updated_at
         FROM books b
         LEFT JOIN series s ON s.id = b.series_id
-        WHERE b.id = $1
+        WHERE b.id = ANY($1)
         ON CONFLICT (id) DO NOTHING
         "#,
     )
-    .bind(book_id)
+    .bind(book_ids)
     .execute(pool)
     .await?;
 
@@ -876,11 +890,11 @@ async fn archive_book(pool: &sqlx::PgPool, book_id: Uuid, file_id: Uuid) -> Resu
         r#"
         INSERT INTO archived_book_files (id, archived_book_id, format, abs_path, size_bytes, mtime, fingerprint, created_at)
         SELECT id, book_id, format, abs_path, size_bytes, mtime, fingerprint, created_at
-        FROM book_files WHERE id = $1
+        FROM book_files WHERE id = ANY($1)
         ON CONFLICT (id) DO NOTHING
         "#,
     )
-    .bind(file_id)
+    .bind(file_ids)
     .execute(pool)
     .await?;
 
@@ -888,11 +902,11 @@ async fn archive_book(pool: &sqlx::PgPool, book_id: Uuid, file_id: Uuid) -> Resu
         r#"
         INSERT INTO archived_book_reading_progress (archived_book_id, user_id, status, current_page, last_read_at, updated_at)
         SELECT book_id, user_id, status, current_page, last_read_at, updated_at
-        FROM book_reading_progress WHERE book_id = $1
+        FROM book_reading_progress WHERE book_id = ANY($1)
         ON CONFLICT (archived_book_id, user_id) DO NOTHING
         "#,
     )
-    .bind(book_id)
+    .bind(book_ids)
     .execute(pool)
     .await?;
 
@@ -1093,7 +1107,7 @@ async fn handle_stale_deletions(
     job_id: Uuid,
     library_id: Uuid,
     root: &Path,
-    existing: &HashMap<String, (Uuid, Uuid, String)>,
+    existing: &HashMap<String, ExistingFile>,
     seen: &HashMap<String, bool>,
     stats: &mut JobStats,
 ) -> Result<()> {
@@ -1124,40 +1138,20 @@ async fn handle_stale_deletions(
     // Track series that lost books so we can clean up newly-empty ones
     let mut affected_series_ids: HashSet<Uuid> = HashSet::new();
 
-    for (abs_path, (file_id, book_id, _)) in existing {
+    let mut stale_books: Vec<(Uuid, Uuid)> = Vec::new();
+
+    for (abs_path, existing_file) in existing {
         if seen.contains_key(abs_path) {
             continue;
         }
-        // Fetch series_id before deleting the book
-        let series_id: Option<Uuid> =
-            sqlx::query_scalar("SELECT series_id FROM books WHERE id = $1")
-                .bind(book_id)
-                .fetch_optional(&state.pool)
-                .await?
-                .flatten();
+        let file_id = existing_file.file_id;
+        let book_id = existing_file.book_id;
 
-        // Archive book + file + reading progress before deletion
-        if let Err(e) = archive_book(&state.pool, *book_id, *file_id).await {
-            warn!(
-                "[SCAN] Failed to archive book {} before deletion: {}",
-                book_id, e
-            );
-        }
-
-        sqlx::query("DELETE FROM book_files WHERE id = $1")
-            .bind(file_id)
-            .execute(&state.pool)
-            .await?;
-        sqlx::query(
-            "DELETE FROM books WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM book_files WHERE book_id = $1)",
-        )
-        .bind(book_id)
-        .execute(&state.pool)
-        .await?;
+        stale_books.push((book_id, file_id));
         stats.removed_files += 1;
         removed_count += 1;
 
-        if let Some(sid) = series_id {
+        if let Some(sid) = existing_file.series_id {
             affected_series_ids.insert(sid);
         }
 
@@ -1166,11 +1160,35 @@ async fn handle_stale_deletions(
             event_type: "book_removed".to_string(),
             level: "info".to_string(),
             entity_type: Some("book".to_string()),
-            entity_id: Some(*book_id),
+            entity_id: Some(book_id),
             entity_name: Some(abs_path.clone()),
             message: Some(format!("Stale book removed: {}", abs_path)),
             detail: None,
         });
+    }
+
+    for chunk in stale_books.chunks(BATCH_SIZE) {
+        let book_ids: Vec<Uuid> = chunk.iter().map(|(b, _)| *b).collect();
+        let file_ids: Vec<Uuid> = chunk.iter().map(|(_, f)| *f).collect();
+
+        if let Err(e) = archive_books(&state.pool, &book_ids, &file_ids).await {
+            warn!(
+                "[SCAN] Failed to archive {} books before deletion: {}",
+                chunk.len(),
+                e
+            );
+        }
+
+        sqlx::query("DELETE FROM book_files WHERE id = ANY($1)")
+            .bind(&file_ids)
+            .execute(&state.pool)
+            .await?;
+        sqlx::query(
+            "DELETE FROM books WHERE id = ANY($1) AND NOT EXISTS (SELECT 1 FROM book_files WHERE book_id = books.id)",
+        )
+        .bind(&book_ids)
+        .execute(&state.pool)
+        .await?;
     }
 
     if !removal_events.is_empty() {

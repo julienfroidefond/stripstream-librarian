@@ -387,21 +387,43 @@ async fn cleanup_available_downloads(pool: &sqlx::PgPool, library_id: Uuid) {
         }
     };
 
+    // Preload present volumes for every series referenced by these rows in one query.
+    let series_ids: Vec<Uuid> = rows.iter().map(|r| r.get("series_id")).collect();
+    let present_by_series: std::collections::HashMap<Uuid, std::collections::HashSet<i32>> =
+        match sqlx::query(
+            "SELECT series_id, volume FROM books \
+             WHERE series_id = ANY($1) AND volume IS NOT NULL \
+             AND volume_type IN ('regular', 'integral', 'oneshot')",
+        )
+        .bind(&series_ids)
+        .fetch_all(pool)
+        .await
+        {
+            Ok(vol_rows) => {
+                let mut map: std::collections::HashMap<Uuid, std::collections::HashSet<i32>> =
+                    std::collections::HashMap::new();
+                for vr in vol_rows {
+                    let sid: Uuid = vr.get("series_id");
+                    let vol: i32 = vr.get("volume");
+                    map.entry(sid).or_default().insert(vol);
+                }
+                map
+            }
+            Err(e) => {
+                error!("[CLEANUP] Failed to fetch present volumes: {e}");
+                return;
+            }
+        };
+
     for row in rows {
         let ad_id: Uuid = row.get("id");
         let series_id: Uuid = row.get("series_id");
         let releases_json: Option<serde_json::Value> = row.get("available_releases");
         let old_missing: i32 = row.get("missing_count");
 
-        let present_volumes: Vec<i32> = sqlx::query_scalar(
-            "SELECT volume FROM books \
-             WHERE series_id = $1 AND volume IS NOT NULL \
-             AND volume_type IN ('regular', 'integral', 'oneshot')",
-        )
-        .bind(series_id)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default();
+        let Some(present_volumes) = present_by_series.get(&series_id) else {
+            continue;
+        };
 
         if present_volumes.is_empty() {
             continue;

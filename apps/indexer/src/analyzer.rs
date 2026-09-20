@@ -9,7 +9,11 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::{batch::EventInsert, job::is_job_cancelled, utils, AppState};
+use crate::{
+    batch::{flush_events, flush_page_counts, flush_parse_errors, flush_thumbnails, EventInsert},
+    job::is_job_cancelled,
+    utils, AppState,
+};
 
 #[derive(Clone)]
 struct ThumbnailConfig {
@@ -20,6 +24,35 @@ struct ThumbnailConfig {
     quality: u8,
     directory: String,
     timeout_secs: u64,
+}
+
+/// Result of extracting one book, collected per batch so DB writes can be batched.
+enum ExtractOutcome {
+    Skipped,
+    ResourceFork {
+        book_id: Uuid,
+    },
+    Error {
+        book_id: Uuid,
+        local_path: String,
+        parse_error: String,
+        message: String,
+    },
+    EventOnly {
+        book_id: Uuid,
+        local_path: String,
+        message: String,
+    },
+    PageCountOnly {
+        book_id: Uuid,
+        local_path: String,
+        page_count: i32,
+    },
+    Thumbnail {
+        book_id: Uuid,
+        raw_path: String,
+        page_count: i32,
+    },
 }
 
 async fn load_thumbnail_config(pool: &sqlx::PgPool) -> ThumbnailConfig {
@@ -307,29 +340,6 @@ fn resize_raw_to_thumbnail(
     Ok(thumb_path.to_string_lossy().to_string())
 }
 
-/// Insert a single event into the index_job_events table.
-async fn insert_event(pool: &sqlx::PgPool, event: &EventInsert) {
-    if let Err(e) = sqlx::query(
-        r#"
-        INSERT INTO index_job_events (job_id, event_type, level, entity_type, entity_id, entity_name, message, detail)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        "#,
-    )
-    .bind(event.job_id)
-    .bind(&event.event_type)
-    .bind(&event.level)
-    .bind(&event.entity_type)
-    .bind(event.entity_id)
-    .bind(&event.entity_name)
-    .bind(&event.message)
-    .bind(&event.detail)
-    .execute(pool)
-    .await
-    {
-        warn!("[ANALYZER] Failed to insert event: {}", e);
-    }
-}
-
 fn book_format_from_str(s: &str) -> Option<BookFormat> {
     match s {
         "cbz" => Some(BookFormat::Cbz),
@@ -459,16 +469,14 @@ pub async fn analyze_library_books(
             batch_tasks.len()
         );
 
-        let batch_extracted: Vec<(Uuid, String, i32)> = stream::iter(batch_tasks)
+        let batch_outcomes: Vec<ExtractOutcome> = stream::iter(batch_tasks)
             .map(|task| {
-                let pool = state.pool.clone();
                 let config = config.clone();
                 let cancelled = cancelled_flag.clone();
-                let extracted_count = extracted_count.clone();
 
                 async move {
                     if cancelled.load(Ordering::Relaxed) {
-                        return None;
+                        return ExtractOutcome::Skipped;
                     }
 
                     let local_path = utils::remap_libraries_path(&task.abs_path);
@@ -484,24 +492,14 @@ pub async fn analyze_library_books(
                         .unwrap_or(false)
                     {
                         warn!("[ANALYZER] Removing macOS resource fork from DB: {}", local_path);
-                        let _ = sqlx::query("DELETE FROM book_files WHERE book_id = $1")
-                            .bind(book_id)
-                            .execute(&pool)
-                            .await;
-                        let _ = sqlx::query(
-                            "DELETE FROM books WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM book_files WHERE book_id = $1)",
-                        )
-                        .bind(book_id)
-                        .execute(&pool)
-                        .await;
-                        return None;
+                        return ExtractOutcome::ResourceFork { book_id };
                     }
 
                     let format = match book_format_from_str(&task.format) {
                         Some(f) => f,
                         None => {
                             warn!("[ANALYZER] Unknown format '{}' for book {}", task.format, book_id);
-                            return None;
+                            return ExtractOutcome::Skipped;
                         }
                     };
 
@@ -525,59 +523,29 @@ pub async fn analyze_library_books(
                         Ok(Ok(Ok(result))) => result,
                         Ok(Ok(Err(e))) => {
                             warn!(target: "extraction", "[EXTRACTION] Failed: {} — {}", file_name, e);
-                            let _ = sqlx::query(
-                                "UPDATE book_files SET parse_status = 'error', parse_error_opt = $2 WHERE book_id = $1",
-                            )
-                            .bind(book_id)
-                            .bind(e.to_string())
-                            .execute(&pool)
-                            .await;
-                            insert_event(&pool, &EventInsert {
-                                job_id,
-                                event_type: "error".to_string(),
-                                level: "error".to_string(),
-                                entity_type: Some("book".to_string()),
-                                entity_id: Some(book_id),
-                                entity_name: Some(local_path.clone()),
-                                message: Some(format!("Extraction failed: {}", e)),
-                                detail: None,
-                            }).await;
-                            return None;
+                            return ExtractOutcome::Error {
+                                book_id,
+                                local_path,
+                                parse_error: e.to_string(),
+                                message: format!("Extraction failed: {}", e),
+                            };
                         }
                         Ok(Err(e)) => {
                             warn!(target: "extraction", "[EXTRACTION] spawn error: {} — {}", file_name, e);
-                            insert_event(&pool, &EventInsert {
-                                job_id,
-                                event_type: "error".to_string(),
-                                level: "error".to_string(),
-                                entity_type: Some("book".to_string()),
-                                entity_id: Some(book_id),
-                                entity_name: Some(local_path.clone()),
-                                message: Some(format!("Spawn error: {}", e)),
-                                detail: None,
-                            }).await;
-                            return None;
+                            return ExtractOutcome::EventOnly {
+                                book_id,
+                                local_path,
+                                message: format!("Spawn error: {}", e),
+                            };
                         }
                         Err(_) => {
                             warn!(target: "extraction", "[EXTRACTION] Timeout ({}s): {}", timeout_secs, file_name);
-                            let _ = sqlx::query(
-                                "UPDATE book_files SET parse_status = 'error', parse_error_opt = $2 WHERE book_id = $1",
-                            )
-                            .bind(book_id)
-                            .bind(format!("analyze_book timed out after {}s", timeout_secs))
-                            .execute(&pool)
-                            .await;
-                            insert_event(&pool, &EventInsert {
-                                job_id,
-                                event_type: "error".to_string(),
-                                level: "error".to_string(),
-                                entity_type: Some("book".to_string()),
-                                entity_id: Some(book_id),
-                                entity_name: Some(local_path.clone()),
-                                message: Some(format!("Extraction timed out after {}s", timeout_secs)),
-                                detail: None,
-                            }).await;
-                            return None;
+                            return ExtractOutcome::Error {
+                                book_id,
+                                local_path,
+                                parse_error: format!("analyze_book timed out after {}s", timeout_secs),
+                                message: format!("Extraction timed out after {}s", timeout_secs),
+                            };
                         }
                     };
 
@@ -592,45 +560,11 @@ pub async fn analyze_library_books(
                     // If thumbnail already exists, just update page_count and skip thumbnail generation
                     if !needs_thumbnail {
                         debug!(target: "extraction", "[EXTRACTION] Page count only: {} — {} pages", file_name, page_count);
-                        if let Err(e) = sqlx::query("UPDATE books SET page_count = $1 WHERE id = $2")
-                            .bind(page_count)
-                            .bind(book_id)
-                            .execute(&pool)
-                            .await
-                        {
-                            warn!(target: "extraction", "[EXTRACTION] DB page_count update failed for {}: {}", file_name, e);
-                        }
-                        insert_event(&pool, &EventInsert {
-                            job_id,
-                            event_type: "pages_extracted".to_string(),
-                            level: "info".to_string(),
-                            entity_type: Some("book".to_string()),
-                            entity_id: Some(book_id),
-                            entity_name: Some(local_path.clone()),
-                            message: Some(format!("Extracted {} pages", page_count)),
-                            detail: Some(serde_json::json!({"page_count": page_count})),
-                        }).await;
-                        let processed = extracted_count.fetch_add(1, Ordering::Relaxed) + 1;
-                        let percent = (processed as f64 / total as f64 * 50.0) as i32;
-                        if let Err(e) = sqlx::query(
-                            "UPDATE index_jobs SET processed_files = $2, progress_percent = $3 WHERE id = $1",
-                        )
-                        .bind(job_id)
-                        .bind(processed)
-                        .bind(percent)
-                        .execute(&pool)
-                        .await {
-                            warn!("[ANALYZER] Failed to update job progress: {e}");
-                        }
-
-                        if processed % 25 == 0 || processed == total {
-                            info!(
-                                target: "extraction",
-                                "[EXTRACTION] Progress: {}/{} books extracted ({}%)",
-                                processed, total, percent
-                            );
-                        }
-                        return None; // don't enqueue for thumbnail sub-phase
+                        return ExtractOutcome::PageCountOnly {
+                            book_id,
+                            local_path,
+                            page_count,
+                        };
                     }
 
                     // Save raw bytes to disk (no resize, no encode) — moves raw_bytes, no clone
@@ -643,67 +577,140 @@ pub async fn analyze_library_books(
                         Ok(Ok(p)) => p,
                         Ok(Err(e)) => {
                             warn!("[ANALYZER] save_raw_image failed for book {}: {}", book_id, e);
-                            return None;
+                            return ExtractOutcome::Skipped;
                         }
                         Err(e) => {
                             warn!("[ANALYZER] spawn_blocking save_raw error for book {}: {}", book_id, e);
-                            return None;
+                            return ExtractOutcome::Skipped;
                         }
                     };
 
-                    // Update page_count in DB
-                    if let Err(e) = sqlx::query("UPDATE books SET page_count = $1 WHERE id = $2")
-                        .bind(page_count)
-                        .bind(book_id)
-                        .execute(&pool)
-                        .await
-                    {
-                        warn!("[ANALYZER] DB page_count update failed for book {}: {}", book_id, e);
-                        return None;
+                    ExtractOutcome::Thumbnail {
+                        book_id,
+                        raw_path,
+                        page_count,
                     }
+                }
+            })
+            .buffer_unordered(concurrency)
+            .collect()
+            .await;
 
-                    insert_event(&pool, &EventInsert {
+        let mut page_count_updates: Vec<(Uuid, i32)> = Vec::new();
+        let mut parse_errors: Vec<(Uuid, String)> = Vec::new();
+        let mut events: Vec<EventInsert> = Vec::new();
+        let mut resource_forks: Vec<Uuid> = Vec::new();
+
+        let batch_outcomes_len = batch_outcomes.len() as i32;
+
+        for outcome in batch_outcomes {
+            match outcome {
+                ExtractOutcome::Skipped => {}
+                ExtractOutcome::ResourceFork { book_id } => resource_forks.push(book_id),
+                ExtractOutcome::Error {
+                    book_id,
+                    local_path,
+                    parse_error,
+                    message,
+                } => {
+                    parse_errors.push((book_id, parse_error));
+                    events.push(EventInsert {
+                        job_id,
+                        event_type: "error".to_string(),
+                        level: "error".to_string(),
+                        entity_type: Some("book".to_string()),
+                        entity_id: Some(book_id),
+                        entity_name: Some(local_path),
+                        message: Some(message),
+                        detail: None,
+                    });
+                }
+                ExtractOutcome::EventOnly {
+                    book_id,
+                    local_path,
+                    message,
+                } => {
+                    events.push(EventInsert {
+                        job_id,
+                        event_type: "error".to_string(),
+                        level: "error".to_string(),
+                        entity_type: Some("book".to_string()),
+                        entity_id: Some(book_id),
+                        entity_name: Some(local_path),
+                        message: Some(message),
+                        detail: None,
+                    });
+                }
+                ExtractOutcome::PageCountOnly {
+                    book_id,
+                    local_path,
+                    page_count,
+                } => {
+                    page_count_updates.push((book_id, page_count));
+                    events.push(EventInsert {
                         job_id,
                         event_type: "pages_extracted".to_string(),
                         level: "info".to_string(),
                         entity_type: Some("book".to_string()),
                         entity_id: Some(book_id),
-                        entity_name: Some(local_path.clone()),
+                        entity_name: Some(local_path),
                         message: Some(format!("Extracted {} pages", page_count)),
                         detail: Some(serde_json::json!({"page_count": page_count})),
-                    }).await;
-
-                    let processed = extracted_count.fetch_add(1, Ordering::Relaxed) + 1;
-                    let percent = (processed as f64 / total as f64 * 50.0) as i32; // first 50%
-                    if let Err(e) = sqlx::query(
-                        "UPDATE index_jobs SET processed_files = $2, progress_percent = $3 WHERE id = $1",
-                    )
-                    .bind(job_id)
-                    .bind(processed)
-                    .bind(percent)
-                    .execute(&pool)
-                    .await {
-                        warn!("[ANALYZER] Failed to update job progress: {e}");
-                    }
-
-                    if processed % 25 == 0 || processed == total {
-                        info!(
-                            target: "extraction",
-                            "[EXTRACTION] Progress: {}/{} books extracted ({}%)",
-                            processed, total, percent
-                        );
-                    }
-
-                    Some((book_id, raw_path, page_count))
+                    });
                 }
-            })
-            .buffer_unordered(concurrency)
-            .filter_map(|x| async move { x })
-            .collect()
-            .await;
+                ExtractOutcome::Thumbnail {
+                    book_id,
+                    raw_path,
+                    page_count,
+                } => {
+                    all_extracted.push((book_id, raw_path, page_count));
+                }
+            }
+        }
 
-        // Collect lightweight results; raw_bytes already saved to disk and freed
-        all_extracted.extend(batch_extracted);
+        if !resource_forks.is_empty() {
+            sqlx::query("DELETE FROM book_files WHERE book_id = ANY($1)")
+                .bind(&resource_forks)
+                .execute(&state.pool)
+                .await?;
+            sqlx::query(
+                "DELETE FROM books WHERE id = ANY($1) AND NOT EXISTS (SELECT 1 FROM book_files WHERE book_id = books.id)",
+            )
+            .bind(&resource_forks)
+            .execute(&state.pool)
+            .await?;
+        }
+
+        if let Err(e) = flush_page_counts(&state.pool, &mut page_count_updates).await {
+            warn!("[ANALYZER] Failed to flush page counts: {e}");
+        }
+        if let Err(e) = flush_parse_errors(&state.pool, &mut parse_errors).await {
+            warn!("[ANALYZER] Failed to flush parse errors: {e}");
+        }
+        if let Err(e) = flush_events(&state.pool, &mut events).await {
+            warn!("[ANALYZER] Failed to flush events: {e}");
+        }
+
+        let processed =
+            extracted_count.fetch_add(batch_outcomes_len, Ordering::Relaxed) + batch_outcomes_len;
+        let percent = (processed as f64 / total as f64 * 50.0) as i32;
+        if let Err(e) = sqlx::query(
+            "UPDATE index_jobs SET processed_files = $2, progress_percent = $3 WHERE id = $1",
+        )
+        .bind(job_id)
+        .bind(processed)
+        .bind(percent)
+        .execute(&state.pool)
+        .await
+        {
+            warn!("[ANALYZER] Failed to update job progress: {e}");
+        }
+
+        info!(
+            target: "extraction",
+            "[EXTRACTION] Progress: {}/{} books extracted ({}%)",
+            processed, total, percent
+        );
 
         // Log RSS to track memory growth between batches
         if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
@@ -758,85 +765,102 @@ pub async fn analyze_library_books(
 
     let resize_count = Arc::new(AtomicI32::new(0));
 
-    stream::iter(all_extracted)
-        .for_each_concurrent(concurrency, |(book_id, raw_path, page_count)| {
-            let pool = state.pool.clone();
-            let config = config.clone();
-            let cancelled = cancelled_flag.clone();
-            let resize_count = resize_count.clone();
+    let resize_chunks: Vec<Vec<(Uuid, String, i32)>> = all_extracted
+        .chunks(BATCH_SIZE)
+        .map(|c| c.to_vec())
+        .collect();
 
-            async move {
-                if cancelled.load(Ordering::Relaxed) {
-                    return;
-                }
+    for chunk in resize_chunks {
+        if cancelled_flag.load(Ordering::Relaxed) {
+            break;
+        }
 
-                let raw_path_clone = raw_path.clone();
-                let thumb_result = tokio::task::spawn_blocking(move || {
-                    resize_raw_to_thumbnail(book_id, &raw_path_clone, &config)
-                })
-                .await;
+        let results: Vec<(Uuid, i32, String)> = stream::iter(chunk)
+            .map(|(book_id, raw_path, page_count)| {
+                let config = config.clone();
+                let cancelled = cancelled_flag.clone();
 
-                let thumb_path = match thumb_result {
-                    Ok(Ok(p)) => p,
-                    Ok(Err(e)) => {
-                        warn!("[ANALYZER] resize_raw_to_webp failed for book {}: {}", book_id, e);
-                        // page_count is already set; thumbnail stays NULL
-                        return;
+                async move {
+                    if cancelled.load(Ordering::Relaxed) {
+                        return None;
                     }
-                    Err(e) => {
-                        warn!("[ANALYZER] spawn_blocking resize error for book {}: {}", book_id, e);
-                        return;
+
+                    let raw_path_clone = raw_path.clone();
+                    let thumb_result = tokio::task::spawn_blocking(move || {
+                        resize_raw_to_thumbnail(book_id, &raw_path_clone, &config)
+                    })
+                    .await;
+
+                    match thumb_result {
+                        Ok(Ok(p)) => Some((book_id, page_count, p)),
+                        Ok(Err(e)) => {
+                            warn!(
+                                "[ANALYZER] resize_raw_to_webp failed for book {}: {}",
+                                book_id, e
+                            );
+                            None
+                        }
+                        Err(e) => {
+                            warn!(
+                                "[ANALYZER] spawn_blocking resize error for book {}: {}",
+                                book_id, e
+                            );
+                            None
+                        }
                     }
-                };
-
-                if let Err(e) = sqlx::query(
-                    "UPDATE books SET page_count = $1, thumbnail_path = $2 WHERE id = $3",
-                )
-                .bind(page_count)
-                .bind(&thumb_path)
-                .bind(book_id)
-                .execute(&pool)
-                .await
-                {
-                    warn!("[ANALYZER] DB thumbnail update failed for book {}: {}", book_id, e);
-                    return;
                 }
+            })
+            .buffer_unordered(concurrency)
+            .filter_map(|x| async move { x })
+            .collect()
+            .await;
 
-                insert_event(&pool, &EventInsert {
-                    job_id,
-                    event_type: "thumbnail_generated".to_string(),
-                    level: "info".to_string(),
-                    entity_type: Some("book".to_string()),
-                    entity_id: Some(book_id),
-                    entity_name: None,
-                    message: Some(format!("Thumbnail generated: {}", thumb_path)),
-                    detail: None,
-                }).await;
+        let mut thumb_updates: Vec<(Uuid, i32, String)> = Vec::new();
+        let mut events: Vec<EventInsert> = Vec::new();
 
-                let processed = resize_count.fetch_add(1, Ordering::Relaxed) + 1;
-                let percent =
-                    50 + (processed as f64 / extracted_total as f64 * 50.0) as i32; // last 50%
-                if let Err(e) = sqlx::query(
-                    "UPDATE index_jobs SET processed_files = $2, progress_percent = $3 WHERE id = $1",
-                )
-                .bind(job_id)
-                .bind(processed)
-                .bind(percent)
-                .execute(&pool)
-                .await {
-                    warn!("[ANALYZER] Failed to update job progress: {e}");
-                }
+        for (book_id, page_count, thumb_path) in results {
+            events.push(EventInsert {
+                job_id,
+                event_type: "thumbnail_generated".to_string(),
+                level: "info".to_string(),
+                entity_type: Some("book".to_string()),
+                entity_id: Some(book_id),
+                entity_name: None,
+                message: Some(format!("Thumbnail generated: {}", thumb_path)),
+                detail: None,
+            });
+            thumb_updates.push((book_id, page_count, thumb_path));
+        }
 
-                if processed % 25 == 0 || processed == extracted_total {
-                    info!(
-                        target: "thumbnail",
-                        "[THUMBNAIL] Progress: {}/{} thumbnails generated ({}%)",
-                        processed, extracted_total, percent
-                    );
-                }
-            }
-        })
-        .await;
+        if let Err(e) = flush_thumbnails(&state.pool, &mut thumb_updates).await {
+            warn!("[ANALYZER] Failed to flush thumbnails: {e}");
+        }
+        if let Err(e) = flush_events(&state.pool, &mut events).await {
+            warn!("[ANALYZER] Failed to flush events: {e}");
+        }
+
+        let thumb_updates_len = thumb_updates.len() as i32;
+        let processed =
+            resize_count.fetch_add(thumb_updates_len, Ordering::Relaxed) + thumb_updates_len;
+        let percent = 50 + (processed as f64 / extracted_total as f64 * 50.0) as i32;
+        if let Err(e) = sqlx::query(
+            "UPDATE index_jobs SET processed_files = $2, progress_percent = $3 WHERE id = $1",
+        )
+        .bind(job_id)
+        .bind(processed)
+        .bind(percent)
+        .execute(&state.pool)
+        .await
+        {
+            warn!("[ANALYZER] Failed to update job progress: {e}");
+        }
+
+        info!(
+            target: "thumbnail",
+            "[THUMBNAIL] Progress: {}/{} thumbnails generated ({}%)",
+            processed, extracted_total, percent
+        );
+    }
 
     cancel_handle.abort();
 
