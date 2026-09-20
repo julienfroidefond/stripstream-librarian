@@ -81,3 +81,7 @@ pub async fn metrics(State(state): State<AppState>) -> String {
         state.metrics.page_cache_misses.load(Ordering::Relaxed),
     )
 }
+
+#[cfg(test)]
+#[path = "tests/handlers.rs"]
+mod tests;
