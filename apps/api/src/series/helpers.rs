@@ -24,23 +24,13 @@ pub(crate) async fn get_or_create_series(
         return Ok(id);
     }
 
-    // Create new
     let id = Uuid::new_v4();
-    sqlx::query(
+    sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO series (id, library_id, name) VALUES ($1, $2, $3) \
          ON CONFLICT (library_id, name) DO UPDATE SET name = EXCLUDED.name \
          RETURNING id",
     )
     .bind(id)
-    .bind(library_id)
-    .bind(name)
-    .execute(pool)
-    .await?;
-
-    // Re-fetch in case of conflict (ON CONFLICT won't return the existing id via execute)
-    sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM series WHERE library_id = $1 AND norm_text(name) = norm_text($2)",
-    )
     .bind(library_id)
     .bind(name)
     .fetch_one(pool)
