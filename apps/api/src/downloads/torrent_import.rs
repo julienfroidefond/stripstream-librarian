@@ -5,6 +5,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
+use std::path::{Component, Path as FsPath, PathBuf};
 use std::time::Duration;
 use tracing::{info, trace, warn};
 use uuid::Uuid;
@@ -72,6 +73,50 @@ pub(super) struct ImportResult {
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
+/// Downloads root as seen by qBittorrent inside the container (`%F`).
+const DOWNLOADS_CONTAINER_ROOT: &str = "/downloads";
+
+/// Validate the content path reported by qBittorrent.
+///
+/// The webhook is unauthenticated, so the body must not be able to point the
+/// import pipeline at an arbitrary filesystem location. Only paths inside the
+/// downloads root are accepted; `..` segments are resolved lexically.
+fn validate_torrent_content_path(raw: &str) -> Result<String, ApiError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(ApiError::bad_request("save_path is required"));
+    }
+
+    let path = FsPath::new(trimmed);
+    if !path.is_absolute() {
+        return Err(ApiError::bad_request("save_path must be an absolute path"));
+    }
+
+    let normalized = normalize_lexically(path);
+    let root = FsPath::new(DOWNLOADS_CONTAINER_ROOT);
+    if normalized.as_path() == root || !normalized.starts_with(root) {
+        return Err(ApiError::forbidden(
+            "save_path is outside the downloads directory",
+        ));
+    }
+
+    Ok(trimmed.to_string())
+}
+
+fn normalize_lexically(path: &FsPath) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::CurDir => {}
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    normalized
+}
+
 /// Webhook called by qBittorrent when a torrent completes (no auth required).
 pub async fn notify_torrent_done(
     State(state): State<AppState>,
@@ -80,6 +125,8 @@ pub async fn notify_torrent_done(
     if body.hash.is_empty() {
         return Err(ApiError::bad_request("hash is required"));
     }
+
+    let content_path = validate_torrent_content_path(&body.save_path)?;
 
     if !is_torrent_import_enabled(&state.pool).await {
         info!(
@@ -109,14 +156,14 @@ pub async fn notify_torrent_done(
     sqlx::query(
         "UPDATE torrent_downloads SET status = 'completed', content_path = $1, updated_at = NOW() WHERE id = $2",
     )
-    .bind(&body.save_path)
+    .bind(&content_path)
     .bind(torrent_id)
     .execute(&state.pool)
     .await?;
 
     info!(
         "Torrent {} completed, content at {}",
-        body.hash, body.save_path
+        body.hash, content_path
     );
 
     let pool = state.pool.clone();
@@ -913,3 +960,37 @@ use super::import_pipeline::{do_import, remap_downloads_path};
 
 // do_import, filesystem helpers, naming helpers, format dedup, and path remapping
 // are now in super::import_pipeline
+
+#[cfg(test)]
+mod content_path_tests {
+    use super::*;
+    use axum::http::StatusCode;
+
+    #[test]
+    fn accepts_paths_inside_downloads_root() {
+        assert!(validate_torrent_content_path("/downloads/sl-42/vol-1.cbz").is_ok());
+    }
+
+    #[test]
+    fn rejects_paths_outside_downloads_root() {
+        let err = validate_torrent_content_path("/libraries/secret.cbz").unwrap_err();
+        assert_eq!(err.status, StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn rejects_traversal_escaping_downloads_root() {
+        let err = validate_torrent_content_path("/downloads/../libraries/x.cbz").unwrap_err();
+        assert_eq!(err.status, StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn rejects_downloads_root_itself() {
+        assert!(validate_torrent_content_path("/downloads").is_err());
+    }
+
+    #[test]
+    fn rejects_empty_and_relative_paths() {
+        assert!(validate_torrent_content_path("").is_err());
+        assert!(validate_torrent_content_path("relative/path").is_err());
+    }
+}
