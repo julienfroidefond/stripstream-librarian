@@ -9,7 +9,6 @@
 
 use std::collections::HashMap;
 use std::sync::{atomic::AtomicU64, Arc};
-use std::time::Instant;
 
 use sqlx::PgPool;
 use tokio::sync::{Mutex, RwLock, Semaphore};
@@ -37,10 +36,7 @@ fn test_state(pool: PgPool) -> AppState {
             page_cache_hits: AtomicU64::new(0),
             page_cache_misses: AtomicU64::new(0),
         }),
-        read_rate_limit: Arc::new(Mutex::new(ReadRateLimit {
-            window_started_at: Instant::now(),
-            requests_in_window: 0,
-        })),
+        read_rate_limit: Arc::new(Mutex::new(ReadRateLimit::new())),
         settings: Arc::new(RwLock::new(DynamicSettings::default())),
         prowlarr_fetch_lock: Arc::new(Mutex::new(())),
         pending_tg_auth: Arc::new(Mutex::new(None)),

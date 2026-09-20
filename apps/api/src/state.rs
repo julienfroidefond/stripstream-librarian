@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{atomic::AtomicU64, Arc};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use lru::LruCache;
 use sqlx::{Pool, Postgres, Row};
@@ -74,9 +74,64 @@ pub struct Metrics {
     pub page_cache_misses: AtomicU64,
 }
 
+#[derive(Default)]
 pub struct ReadRateLimit {
-    pub window_started_at: Instant,
-    pub requests_in_window: u32,
+    windows: HashMap<String, RateWindow>,
+    last_sweep: Option<Instant>,
+}
+
+struct RateWindow {
+    started_at: Instant,
+    requests: u32,
+}
+
+impl ReadRateLimit {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns `true` when the caller may proceed, advancing its 1-second window.
+    pub fn check(&mut self, key: &str, limit: u32) -> bool {
+        let now = Instant::now();
+        self.sweep(now);
+
+        let window = self.windows.entry(key.to_string()).or_insert(RateWindow {
+            started_at: now,
+            requests: 0,
+        });
+
+        if now.duration_since(window.started_at) >= Duration::from_secs(1) {
+            window.started_at = now;
+            window.requests = 0;
+        }
+
+        if window.requests >= limit {
+            return false;
+        }
+        window.requests += 1;
+        true
+    }
+
+    fn sweep(&mut self, now: Instant) {
+        let due = match self.last_sweep {
+            None => true,
+            Some(last) => now.duration_since(last) >= Duration::from_secs(60),
+        };
+        if !due {
+            return;
+        }
+        self.windows
+            .retain(|_, window| now.duration_since(window.started_at) < Duration::from_secs(60));
+        self.last_sweep = Some(now);
+    }
+
+    #[cfg(test)]
+    pub fn expire_all(&mut self, age: Duration) {
+        let now = Instant::now();
+        for window in self.windows.values_mut() {
+            window.started_at = now - age;
+        }
+    }
 }
 
 impl Metrics {

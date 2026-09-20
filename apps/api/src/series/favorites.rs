@@ -168,7 +168,6 @@ mod tests {
     use std::{
         collections::HashMap,
         sync::{atomic::AtomicU64, Arc},
-        time::Instant,
     };
 
     use tokio::sync::{Mutex, RwLock, Semaphore};
@@ -192,10 +191,7 @@ mod tests {
                 page_cache_hits: AtomicU64::new(0),
                 page_cache_misses: AtomicU64::new(0),
             }),
-            read_rate_limit: Arc::new(Mutex::new(ReadRateLimit {
-                window_started_at: Instant::now(),
-                requests_in_window: 0,
-            })),
+            read_rate_limit: Arc::new(Mutex::new(ReadRateLimit::new())),
             settings: Arc::new(RwLock::new(DynamicSettings::default())),
             prowlarr_fetch_lock: Arc::new(Mutex::new(())),
             pending_tg_auth: Arc::new(Mutex::new(None)),

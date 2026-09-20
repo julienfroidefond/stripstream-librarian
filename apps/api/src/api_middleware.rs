@@ -1,10 +1,14 @@
 use axum::{
     extract::State,
+    http::{
+        header::{AUTHORIZATION, RETRY_AFTER},
+        HeaderValue, StatusCode,
+    },
     middleware::Next,
     response::{IntoResponse, Response},
+    Json,
 };
 use std::sync::atomic::Ordering;
-use std::time::Duration;
 use tracing::{debug, info};
 
 use crate::state::AppState;
@@ -40,24 +44,40 @@ pub async fn read_rate_limit(
     req: axum::extract::Request,
     next: Next,
 ) -> Response {
-    let mut limiter = state.read_rate_limit.lock().await;
-    if limiter.window_started_at.elapsed() >= Duration::from_secs(1) {
-        limiter.window_started_at = std::time::Instant::now();
-        limiter.requests_in_window = 0;
-    }
-
+    let key = client_key(&req);
     let rate_limit = state.settings.read().await.rate_limit_per_second;
-    if limiter.requests_in_window >= rate_limit {
-        return (
-            axum::http::StatusCode::TOO_MANY_REQUESTS,
-            "rate limit exceeded",
-        )
-            .into_response();
+
+    if !state.read_rate_limit.lock().await.check(&key, rate_limit) {
+        return rate_limited();
     }
 
-    limiter.requests_in_window += 1;
-    drop(limiter);
     next.run(req).await
+}
+
+fn client_key(req: &axum::extract::Request) -> String {
+    use std::hash::{Hash, Hasher};
+
+    let token = req
+        .headers()
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("anonymous");
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    token.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn rate_limited() -> Response {
+    let mut response = (
+        StatusCode::TOO_MANY_REQUESTS,
+        Json(serde_json::json!({ "error": "rate limit exceeded" })),
+    )
+        .into_response();
+    response
+        .headers_mut()
+        .insert(RETRY_AFTER, HeaderValue::from_static("1"));
+    response
 }
 
 #[cfg(test)]
