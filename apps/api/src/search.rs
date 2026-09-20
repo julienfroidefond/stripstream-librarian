@@ -76,15 +76,27 @@ pub(crate) const BOOKS_SEARCH_SQL: &str = r#"
 
 /// Series search SQL, shared with the search tests so they cannot diverge.
 pub(crate) const SERIES_SEARCH_SQL: &str = r#"
-        WITH sorted_books AS (
+        WITH matched_series AS (
+            SELECT s.id AS series_id, s.library_id, s.name
+            FROM series s
+            WHERE s.name ILIKE $1
+              AND ($2::uuid IS NULL OR s.library_id = $2)
+              AND ($5::uuid IS NULL OR NOT EXISTS (
+                  SELECT 1 FROM user_genre_restrictions ugr
+                  WHERE ugr.user_id = $5 AND ugr.genre = ANY(s.genres)
+              ))
+            ORDER BY s.name ASC
+            LIMIT $4
+        ),
+        sorted_books AS (
             SELECT
                 b.library_id,
-                s.id as series_id,
-                COALESCE(s.name, 'unclassified') as name,
+                ms.series_id,
+                ms.name,
                 b.id,
                 b.updated_at,
                 ROW_NUMBER() OVER (
-                    PARTITION BY b.library_id, COALESCE(s.name, 'unclassified')
+                    PARTITION BY b.library_id, ms.series_id
                     ORDER BY
                         CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
                         REGEXP_REPLACE(LOWER(b.title), '[0-9]+', '', 'g'),
@@ -92,9 +104,7 @@ pub(crate) const SERIES_SEARCH_SQL: &str = r#"
                         b.title ASC
                 ) as rn
             FROM books b
-            LEFT JOIN series s ON s.id = b.series_id
-            WHERE ($2::uuid IS NULL OR b.library_id = $2)
-              AND b.series_id IS NOT NULL
+            JOIN matched_series ms ON ms.series_id = b.series_id
         ),
         series_counts AS (
             SELECT
@@ -102,22 +112,17 @@ pub(crate) const SERIES_SEARCH_SQL: &str = r#"
                 sb.series_id,
                 sb.name,
                 COUNT(*) as book_count,
-                COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
+                COUNT(*) FILTER (WHERE EXISTS (
+                    SELECT 1 FROM book_reading_progress brp
+                    WHERE brp.book_id = sb.id AND brp.user_id = $5 AND brp.status = 'read'
+                )) as books_read_count
             FROM sorted_books sb
-            LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
             GROUP BY sb.library_id, sb.series_id, sb.name
         )
         SELECT sc.series_id, sc.library_id, sc.name, sc.book_count, sc.books_read_count, sb.id as first_book_id, sb.updated_at as first_book_updated_at
         FROM series_counts sc
-        JOIN sorted_books sb ON sb.library_id = sc.library_id AND sb.name = sc.name AND sb.rn = 1
-        WHERE sc.name ILIKE $1
-          AND ($5::uuid IS NULL OR NOT EXISTS (
-              SELECT 1 FROM user_genre_restrictions ugr
-              JOIN series sg ON sg.id = sc.series_id
-              WHERE ugr.user_id = $5 AND ugr.genre = ANY(sg.genres)
-          ))
+        JOIN sorted_books sb ON sb.series_id = sc.series_id AND sb.rn = 1
         ORDER BY sc.name ASC
-        LIMIT $4
     "#;
 
 /// Search books across all libraries

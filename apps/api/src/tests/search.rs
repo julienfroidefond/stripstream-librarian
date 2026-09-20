@@ -90,6 +90,16 @@ async fn create_test_book(
 
 use crate::search::{BOOKS_SEARCH_SQL as BOOKS_SQL, SERIES_SEARCH_SQL as SERIES_SQL};
 
+async fn set_reading_status(pool: &sqlx::PgPool, book_id: Uuid, user_id: Uuid, status: &str) {
+    sqlx::query("INSERT INTO book_reading_progress (book_id, user_id, status) VALUES ($1, $2, $3)")
+        .bind(book_id)
+        .bind(user_id)
+        .bind(status)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn search_by_book_title(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "comics").await;
@@ -374,4 +384,128 @@ async fn search_series_genre_restriction_hides_blocked(pool: sqlx::PgPool) {
         .unwrap();
 
     assert_eq!(rows.len(), 2);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_series_book_count_not_inflated_by_multiple_readers(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "comics").await;
+    let series_id = create_test_series(&pool, lib_id, "Dragon Ball").await;
+    let book1 = create_test_book(
+        &pool,
+        lib_id,
+        Some(series_id),
+        "Dragon Ball Vol 1",
+        "comic",
+        None,
+        &[],
+    )
+    .await;
+    let book2 = create_test_book(
+        &pool,
+        lib_id,
+        Some(series_id),
+        "Dragon Ball Vol 2",
+        "comic",
+        None,
+        &[],
+    )
+    .await;
+
+    let user1 = create_test_user(&pool, "alice").await;
+    let user2 = create_test_user(&pool, "bob").await;
+    set_reading_status(&pool, book1, user1, "read").await;
+    set_reading_status(&pool, book2, user1, "read").await;
+    set_reading_status(&pool, book1, user2, "read").await;
+
+    let rows = sqlx::query(SERIES_SQL)
+        .bind("%Dragon%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .bind(Some(user1))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<i64, _>("book_count"), 2);
+    assert_eq!(rows[0].get::<i64, _>("books_read_count"), 2);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_series_read_count_scoped_to_user(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "comics").await;
+    let series_id = create_test_series(&pool, lib_id, "Dragon Ball").await;
+    let book1 = create_test_book(
+        &pool,
+        lib_id,
+        Some(series_id),
+        "Dragon Ball Vol 1",
+        "comic",
+        None,
+        &[],
+    )
+    .await;
+    create_test_book(
+        &pool,
+        lib_id,
+        Some(series_id),
+        "Dragon Ball Vol 2",
+        "comic",
+        None,
+        &[],
+    )
+    .await;
+
+    let user1 = create_test_user(&pool, "alice").await;
+    let user2 = create_test_user(&pool, "bob").await;
+    set_reading_status(&pool, book1, user1, "read").await;
+    set_reading_status(&pool, book1, user2, "read").await;
+
+    let rows = sqlx::query(SERIES_SQL)
+        .bind("%Dragon%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .bind(Some(user2))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<i64, _>("book_count"), 2);
+    assert_eq!(rows[0].get::<i64, _>("books_read_count"), 1);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_series_read_count_zero_for_anonymous(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "comics").await;
+    let series_id = create_test_series(&pool, lib_id, "Dragon Ball").await;
+    let book1 = create_test_book(
+        &pool,
+        lib_id,
+        Some(series_id),
+        "Dragon Ball Vol 1",
+        "comic",
+        None,
+        &[],
+    )
+    .await;
+
+    let user1 = create_test_user(&pool, "alice").await;
+    set_reading_status(&pool, book1, user1, "read").await;
+
+    let rows = sqlx::query(SERIES_SQL)
+        .bind("%Dragon%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .bind(None::<Uuid>)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<i64, _>("book_count"), 1);
+    assert_eq!(rows[0].get::<i64, _>("books_read_count"), 0);
 }
