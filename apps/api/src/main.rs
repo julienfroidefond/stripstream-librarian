@@ -543,6 +543,10 @@ async fn main() -> anyhow::Result<()> {
             "/reading-lists/:id/series/reorder",
             axum::routing::put(reading_lists::reorder_series),
         )
+        .route(
+            "/libraries/:id/scan",
+            axum::routing::post(libraries::scan_library),
+        )
         .merge(settings::settings_routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
@@ -551,10 +555,6 @@ async fn main() -> anyhow::Result<()> {
 
     let read_routes = Router::new()
         .route("/libraries", get(libraries::list_libraries))
-        .route(
-            "/libraries/:id/scan",
-            axum::routing::post(libraries::scan_library),
-        )
         .route("/books", get(books::list_books))
         .route("/books/ongoing", get(series::ongoing_books))
         .route("/books/:id", get(books::get_book))
