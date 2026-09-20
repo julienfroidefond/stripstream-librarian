@@ -47,43 +47,8 @@ pub struct SearchResponse {
     pub processing_time_ms: Option<u64>,
 }
 
-/// Search books across all libraries
-#[utoipa::path(
-    get,
-    path = "/search",
-    tag = "search",
-    params(
-        ("q" = String, Query, description = "Search query (books + series via PostgreSQL full-text)"),
-        ("library_id" = Option<String>, Query, description = "Filter by library ID"),
-        ("type" = Option<String>, Query, description = "Filter by type (cbz, cbr, pdf, epub)"),
-        ("kind" = Option<String>, Query, description = "Filter by kind (alias for type)"),
-        ("limit" = Option<usize>, Query, description = "Max results per type (max 100)"),
-    ),
-    responses(
-        (status = 200, body = SearchResponse),
-        (status = 401, description = "Unauthorized"),
-    ),
-    security(("Bearer" = []))
-)]
-pub async fn search_books(
-    State(state): State<AppState>,
-    user: Option<Extension<AuthUser>>,
-    Query(query): Query<SearchQuery>,
-) -> Result<Json<SearchResponse>, ApiError> {
-    let user_id: Option<Uuid> = user.map(|u| u.0.user_id);
-    if query.q.trim().is_empty() {
-        return Err(ApiError::bad_request("q is required"));
-    }
-
-    let limit_val = query.limit.unwrap_or(20).clamp(1, 100) as i64;
-    let q_pattern = format!("%{}%", query.q);
-    let library_id_uuid: Option<Uuid> = query.library_id.as_deref().and_then(|s| s.parse().ok());
-    let kind_filter: Option<&str> = query.r#type.as_deref().or(query.kind.as_deref());
-
-    let start = std::time::Instant::now();
-
-    // Book search via PostgreSQL ILIKE on title, authors, series
-    let books_sql = r#"
+/// Book search SQL, shared with the search tests so they cannot diverge.
+pub(crate) const BOOKS_SEARCH_SQL: &str = r#"
         SELECT b.id, b.library_id, b.kind, b.title,
             COALESCE(b.authors, CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END) as authors,
             s.name AS series, b.volume, b.volume_type, b.language
@@ -109,7 +74,8 @@ pub async fn search_books(
         LIMIT $4
     "#;
 
-    let series_sql = r#"
+/// Series search SQL, shared with the search tests so they cannot diverge.
+pub(crate) const SERIES_SEARCH_SQL: &str = r#"
         WITH sorted_books AS (
             SELECT
                 b.library_id,
@@ -154,15 +120,50 @@ pub async fn search_books(
         LIMIT $4
     "#;
 
+/// Search books across all libraries
+#[utoipa::path(
+    get,
+    path = "/search",
+    tag = "search",
+    params(
+        ("q" = String, Query, description = "Search query (books + series via PostgreSQL full-text)"),
+        ("library_id" = Option<String>, Query, description = "Filter by library ID"),
+        ("type" = Option<String>, Query, description = "Filter by type (cbz, cbr, pdf, epub)"),
+        ("kind" = Option<String>, Query, description = "Filter by kind (alias for type)"),
+        ("limit" = Option<usize>, Query, description = "Max results per type (max 100)"),
+    ),
+    responses(
+        (status = 200, body = SearchResponse),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn search_books(
+    State(state): State<AppState>,
+    user: Option<Extension<AuthUser>>,
+    Query(query): Query<SearchQuery>,
+) -> Result<Json<SearchResponse>, ApiError> {
+    let user_id: Option<Uuid> = user.map(|u| u.0.user_id);
+    if query.q.trim().is_empty() {
+        return Err(ApiError::bad_request("q is required"));
+    }
+
+    let limit_val = query.limit.unwrap_or(20).clamp(1, 100) as i64;
+    let q_pattern = format!("%{}%", query.q);
+    let library_id_uuid: Option<Uuid> = query.library_id.as_deref().and_then(|s| s.parse().ok());
+    let kind_filter: Option<&str> = query.r#type.as_deref().or(query.kind.as_deref());
+
+    let start = std::time::Instant::now();
+
     let (books_rows, series_rows) = tokio::join!(
-        sqlx::query(books_sql)
+        sqlx::query(BOOKS_SEARCH_SQL)
             .bind(&q_pattern)
             .bind(library_id_uuid)
             .bind(kind_filter)
             .bind(limit_val)
             .bind(user_id)
             .fetch_all(&state.pool),
-        sqlx::query(series_sql)
+        sqlx::query(SERIES_SEARCH_SQL)
             .bind(&q_pattern)
             .bind(library_id_uuid)
             .bind(kind_filter) // unused in series query but keeps bind positions consistent

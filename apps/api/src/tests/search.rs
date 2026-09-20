@@ -88,76 +88,7 @@ async fn create_test_book(
     id
 }
 
-/// The series search SQL from the handler, extracted for testing.
-// LOCKED: this is a copy of the handler's SQL, not the handler itself — the two
-// can diverge silently. See docs/KNOWN_ISSUES.md §1.
-const SERIES_SQL: &str = r#"
-    WITH sorted_books AS (
-        SELECT
-            b.library_id,
-            s.id as series_id,
-            COALESCE(s.name, 'unclassified') as name,
-            b.id,
-            ROW_NUMBER() OVER (
-                PARTITION BY b.library_id, COALESCE(s.name, 'unclassified')
-                ORDER BY
-                    REGEXP_REPLACE(LOWER(b.title), '[0-9]+', '', 'g'),
-                    COALESCE((REGEXP_MATCH(LOWER(b.title), '\d+'))[1]::int, 0),
-                    b.title ASC
-            ) as rn
-        FROM books b
-        LEFT JOIN series s ON s.id = b.series_id
-        WHERE ($2::uuid IS NULL OR b.library_id = $2)
-          AND b.series_id IS NOT NULL
-    ),
-    series_counts AS (
-        SELECT
-            sb.library_id,
-            sb.series_id,
-            sb.name,
-            COUNT(*) as book_count,
-            COUNT(brp.book_id) FILTER (WHERE brp.status = 'read') as books_read_count
-        FROM sorted_books sb
-        LEFT JOIN book_reading_progress brp ON brp.book_id = sb.id
-        GROUP BY sb.library_id, sb.series_id, sb.name
-    )
-    SELECT sc.series_id, sc.library_id, sc.name, sc.book_count, sc.books_read_count, sb.id as first_book_id
-    FROM series_counts sc
-    JOIN sorted_books sb ON sb.library_id = sc.library_id AND sb.name = sc.name AND sb.rn = 1
-    WHERE sc.name ILIKE $1
-      AND ($5::uuid IS NULL OR NOT EXISTS (
-          SELECT 1 FROM user_genre_restrictions ugr
-          JOIN series sg ON sg.id = sc.series_id
-          WHERE ugr.user_id = $5 AND ugr.genre = ANY(sg.genres)
-      ))
-    ORDER BY sc.name ASC
-    LIMIT $4
-"#;
-
-/// The books search SQL from the handler, extracted for testing.
-// LOCKED: this is a copy of the handler's SQL, not the handler itself — the two
-// can diverge silently. See docs/KNOWN_ISSUES.md §1.
-const BOOKS_SQL: &str = r#"
-    SELECT b.id, b.library_id, b.kind, b.title,
-        COALESCE(b.authors, CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END) as authors,
-        s.name AS series, b.volume, b.volume_type, b.language
-    FROM books b
-    LEFT JOIN series s ON s.id = b.series_id
-    WHERE (
-        b.title ILIKE $1
-        OR s.name ILIKE $1
-        OR EXISTS (SELECT 1 FROM unnest(
-            COALESCE(b.authors, CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END)
-            || COALESCE(s.authors, ARRAY[]::text[])
-        ) AS a WHERE a ILIKE $1)
-    )
-    AND ($2::uuid IS NULL OR b.library_id = $2)
-    AND ($3::text IS NULL OR b.kind = $3)
-    ORDER BY
-        CASE WHEN b.title ILIKE $1 THEN 0 ELSE 1 END,
-        b.title ASC
-    LIMIT $4
-"#;
+use crate::search::{BOOKS_SEARCH_SQL as BOOKS_SQL, SERIES_SEARCH_SQL as SERIES_SQL};
 
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn search_by_book_title(pool: sqlx::PgPool) {
@@ -170,6 +101,7 @@ async fn search_by_book_title(pool: sqlx::PgPool) {
         .bind(None::<Uuid>)
         .bind(None::<&str>)
         .bind(20i64)
+        .bind(None::<Uuid>)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -199,6 +131,7 @@ async fn search_by_series_name(pool: sqlx::PgPool) {
         .bind(None::<Uuid>)
         .bind(None::<&str>)
         .bind(20i64)
+        .bind(None::<Uuid>)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -240,6 +173,7 @@ async fn search_by_author(pool: sqlx::PgPool) {
         .bind(None::<Uuid>)
         .bind(None::<&str>)
         .bind(20i64)
+        .bind(None::<Uuid>)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -259,6 +193,7 @@ async fn search_case_insensitive(pool: sqlx::PgPool) {
         .bind(None::<Uuid>)
         .bind(None::<&str>)
         .bind(20i64)
+        .bind(None::<Uuid>)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -270,6 +205,7 @@ async fn search_case_insensitive(pool: sqlx::PgPool) {
         .bind(None::<Uuid>)
         .bind(None::<&str>)
         .bind(20i64)
+        .bind(None::<Uuid>)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -289,6 +225,7 @@ async fn search_library_scoped(pool: sqlx::PgPool) {
         .bind(Some(lib1))
         .bind(None::<&str>)
         .bind(20i64)
+        .bind(None::<Uuid>)
         .fetch_all(&pool)
         .await
         .unwrap();
@@ -311,6 +248,7 @@ async fn search_empty_query_returns_nothing(pool: sqlx::PgPool) {
         .bind(None::<Uuid>)
         .bind(None::<&str>)
         .bind(20i64)
+        .bind(None::<Uuid>)
         .fetch_all(&pool)
         .await
         .unwrap();

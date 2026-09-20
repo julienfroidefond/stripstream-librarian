@@ -27,14 +27,7 @@ Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code 
 | # | Problème | Comportement actuel | Test qui verrouille |
 |---|----------|---------------------|---------------------|
 
-### `apps/api/src/tests/search.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 37 | SQL dupliqué dans les tests | Défaut de **test** (pas de prod) : `SERIES_SQL`/`BOOKS_SQL` recopient le SQL du handler au lieu de l'appeler → divergence silencieuse possible. | `tests::search::*` (constantes annotées `// LOCKED:`) |
-
-Tous les candidats relevés lors de l'audit sont désormais verrouillés par un test
-`// LOCKED:`.
+Tous les candidats relevés lors de l'audit ont été corrigés (voir §5).
 
 
 ---
@@ -114,3 +107,4 @@ avant tout commit (`cargo test -p api`, `cargo clippy -p api --tests`).
 | 25 | `external_id` écrasé sur doublon | `ON CONFLICT (series_id, provider)` ne réécrit plus `external_id`/`external_url` : l'identité provider d'origine est préservée. | `integrations::discovery::tests::test_add_to_library_duplicate_series` |
 | 26 | Allowlist de liens codée en dur | Tous les providers créent un `external_metadata_links` via discovery. | `integrations::discovery::tests::test_add_to_library_anilist_creates_metadata_link` |
 | 36 | Erreurs de fetch album avalées | `fetch_album(...)` propage l'erreur : un album en échec fait échouer `get_series_books` au lieu de produire un livre vide. | `metadata_providers::bdphile::tests::album_fetch_error_is_propagated` |
+| 37 | SQL dupliqué dans les tests | Le SQL de recherche est extrait en constantes `pub(crate)` (`BOOKS_SEARCH_SQL`, `SERIES_SEARCH_SQL`) dans `search.rs` et importé par les tests. | `tests::search::*` |
