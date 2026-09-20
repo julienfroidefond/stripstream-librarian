@@ -394,7 +394,8 @@ All three sync paths (approve, batch auto-match, refresh) share factored code:
 `available_providers()`: `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`,
 `bdphile`, `senscritique`. All implement `MetadataProvider` (`search_series` + `get_series_books`).
 SensCritique uses a GraphQL API; BDTheque/BDphile scrape HTML. `bedetheque` was removed (Cloudflare
-blocking) — migration `0114` unlinks existing links.
+blocking) — migration `0114` unlinks existing links. Discovery providers (`sc_trending_bd`,
+`sc_best_manga`, ...) are normalized to the provider name `senscritique` when creating metadata links.
 
 ### Indexer 2-Phase Pipeline
 
@@ -419,17 +420,24 @@ Fingerprint = `SHA256(size + mtime + filename)` — detects changes without re-r
 - **`volume_type`** (`regular`, `hs`, `oneshot`, `integral`): all metadata matching, missing-volume
   counting, and AniList progress logic MUST filter on `volume_type = 'regular'`. HS/oneshot/integral
   do not participate in tome numbering.
+- **Scanner propagates `volume_type`**: on both skipped-directory and fingerprint-unchanged updates, the
+  scanner re-compares and rewrites `books.volume_type` (`apps/indexer/src/scanner.rs`). A plain rescan is
+  enough to fix misclassified HS/oneshot/integral books.
 - **Series matching**: always compare with `LOWER(unaccent(name))`. Never match exactly — torrents,
   providers, and the UI use different casing/accents.
 - **Series extraction**: the parser uses the **immediate parent** directory as the series name (not the
   first directory). If the parent is an HS/Specials/Bonus/Intégrales subfolder, it walks up one level.
 - **Auth tokens**: format `stl_<prefix>_<secret>`, argon2 hash in DB, scopes `admin` or `read`.
 - **OpenAPI dual spec**: Client API (`/openapi.json`, read scope) and Admin API (`/admin/openapi.json`, all).
+  `GET /metadata/links` and `GET /metadata/missing/:id` are on the **read** router (`apps/api/src/main.rs`),
+  so they only require a `read`-scoped token.
 - **Search**: PostgreSQL full-text (`ILIKE` + `pg_trgm`) — no external search engine.
 - **Stale pending jobs**: jobs `pending` for > 30 min are marked `failed` by cleanup (otherwise they block
   the scheduler's `NOT EXISTS` and prevent future scheduled jobs).
 - **Torrent import replace mode**: when `replace_existing = true`, do NOT filter by `expected_volumes` —
   import every file in the torrent.
+- **Import counts**: `ImportedFile.already_existed` (`apps/api/src/downloads/torrent_import.rs`) separates
+  files actually copied from those already on disk. Counts and notifications only include real new files.
 - **Duplicate torrent detection**: when an existing torrent is found by magnet hash, verify `content_path`
   exists on disk before starting the import. Old `sl-*` directories are cleaned up after import.
 - **Missing books dedup**: `external_book_metadata` can contain duplicates per `volume_number` (multiple
