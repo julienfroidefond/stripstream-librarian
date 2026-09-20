@@ -48,4 +48,6 @@ Si un import échoue, vous pouvez le **relancer** depuis la page Téléchargemen
 **Cleanup** : suppression du torrent et de son répertoire de téléchargement après import réussi. Les anciens répertoires `sl-*` temporaires sont nettoyés.
 
 **Retry** : vérifie que les fichiers source existent avant de relancer (évite les imports bloqués en boucle).
+
+**Webhook de fin de téléchargement** : l'appel `POST /torrent-downloads/notify` envoyé par qBittorrent n'accepte que les chemins situés dans le dossier de téléchargements (`/downloads`). Tout chemin hors de ce dossier (ou contenant une traversée `..`) est refusé, afin qu'un appel non authentifié ne puisse pas diriger l'import vers un autre emplacement du système de fichiers.
 :::

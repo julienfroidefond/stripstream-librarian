@@ -60,5 +60,7 @@ curl -H "Authorization: Bearer stl_abc_votre_token_complet" \
 
 **Rate limiting** : fenêtre glissante configurable, défaut 120 req/s.
 
-**Dual spec OpenAPI** : Client API (`/openapi.json`, scope read) et Admin API (`/admin/openapi.json`, tous scopes). La Client API inclut notamment les endpoints de progression, favoris et notations associés à l'utilisateur du token.
+**Validation des paramètres** : `POST /settings/{key}` valide les clés sensibles avant écriture. Pour `limits`, les valeurs `concurrent_renders`, `concurrent_telegram_downloads`, `rate_limit_per_second` et `timeout_seconds` doivent être strictement positives ; pour `cache`, `memory_max_size_mb` doit être positif et `directory` un chemin absolu en dehors des dossiers protégés (racine, `/etc`, `/usr`, bibliothèques, thumbnails). Toute valeur invalide est rejetée avec `400 Bad Request`.
+
+**Dual spec OpenAPI** : Client API (`/openapi.json`, scope read) et Admin API (`/admin/openapi.json`, tous scopes). La Client API inclut notamment les endpoints de progression, favoris et notations associés à l'utilisateur du token. Le déclenchement de scan (`POST /libraries/{id}/scan`) relève du scope `admin`.
 :::
