@@ -60,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
 
     let config = ApiConfig::from_env()?;
     let pool = PgPoolOptions::new()
-        .max_connections(10)
+        .max_connections(config.db_max_connections.max(1))
         .connect(&config.database_url)
         .await?;
 

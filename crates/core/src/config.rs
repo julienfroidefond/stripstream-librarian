@@ -5,6 +5,7 @@ pub struct ApiConfig {
     pub listen_addr: String,
     pub database_url: String,
     pub api_bootstrap_token: String,
+    pub db_max_connections: u32,
 }
 
 impl ApiConfig {
@@ -15,6 +16,7 @@ impl ApiConfig {
             database_url: std::env::var("DATABASE_URL").context("DATABASE_URL is required")?,
             api_bootstrap_token: std::env::var("API_BOOTSTRAP_TOKEN")
                 .context("API_BOOTSTRAP_TOKEN is required")?,
+            db_max_connections: env_or("API_DB_MAX_CONNECTIONS", 10),
         })
     }
 }
