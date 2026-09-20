@@ -65,13 +65,15 @@ Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code 
 
 ## 2. Couverture de tests — modules API encore sans tests
 
-État au 2026-09-19 (après couverture de `libraries.rs`, `reading_lists.rs`, `stats.rs`, `settings.rs`, `genres.rs`, `ai_tagging.rs`, `authors.rs` et `handlers.rs`).
+État au 2026-09-19 (après couverture de `libraries.rs`, `reading_lists.rs`, `stats.rs`, `settings.rs`, `genres.rs`, `ai_tagging.rs`, `authors.rs`, `handlers.rs` et `api_middleware.rs`).
 Les sous-modules (`downloads/`, `metadata/`, `metadata_providers/`, `series/`,
 `reading/`, `integrations/`, `books/`, `jobs/`, `users/`, …) disposent déjà de tests.
 
 | Module | LOC (fichier) | Priorité |
 |--------|---------------|----------|
-| `api_middleware.rs` | ~61 | 3 |
+| — | — | — |
+
+Tous les modules de premier niveau listés lors de l'audit sont désormais couverts.
 
 Aucun test HTTP/router de bout en bout n'existe : les tests appellent les handlers
 directement avec un `AppState` construit à la main.

@@ -59,3 +59,7 @@ pub async fn read_rate_limit(
     drop(limiter);
     next.run(req).await
 }
+
+#[cfg(test)]
+#[path = "tests/api_middleware.rs"]
+mod tests;
