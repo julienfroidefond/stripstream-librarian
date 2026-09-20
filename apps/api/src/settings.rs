@@ -384,30 +384,7 @@ pub async fn get_cache_stats(State(state): State<AppState>) -> Result<Json<Cache
                 };
             }
 
-            let mut total_size: u64 = 0;
-            let mut file_count: u64 = 0;
-
-            fn visit_dirs(
-                dir: &std::path::Path,
-                total_size: &mut u64,
-                file_count: &mut u64,
-            ) -> std::io::Result<()> {
-                if dir.is_dir() {
-                    for entry in std::fs::read_dir(dir)? {
-                        let entry = entry?;
-                        let path = entry.path();
-                        if path.is_dir() {
-                            visit_dirs(&path, total_size, file_count)?;
-                        } else {
-                            *total_size += entry.metadata()?.len();
-                            *file_count += 1;
-                        }
-                    }
-                }
-                Ok(())
-            }
-
-            let _ = visit_dirs(path, &mut total_size, &mut file_count);
+            let (total_size, file_count) = compute_dir_stats(path);
 
             DiskCacheStatsSnapshot {
                 total_size_bytes: total_size,
@@ -432,6 +409,11 @@ pub async fn get_cache_stats(State(state): State<AppState>) -> Result<Json<Cache
     }))
 }
 
+/// Totals the size and file count under `path`, ignoring symlinks.
+///
+/// Symlinked directories are skipped rather than followed: the cache and
+/// thumbnail directories are user-configurable, and a symlink loop (or a link
+/// to `/`) would otherwise make this walk recurse without bound.
 fn compute_dir_stats(path: &std::path::Path) -> (u64, u64) {
     let mut total_size: u64 = 0;
     let mut file_count: u64 = 0;
@@ -441,16 +423,17 @@ fn compute_dir_stats(path: &std::path::Path) -> (u64, u64) {
         total_size: &mut u64,
         file_count: &mut u64,
     ) -> std::io::Result<()> {
-        if dir.is_dir() {
-            for entry in std::fs::read_dir(dir)? {
-                let entry = entry?;
-                let path = entry.path();
-                if path.is_dir() {
-                    visit_dirs(&path, total_size, file_count)?;
-                } else {
-                    *total_size += entry.metadata()?.len();
-                    *file_count += 1;
-                }
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
+                visit_dirs(&entry.path(), total_size, file_count)?;
+            } else if file_type.is_file() {
+                *total_size += entry.metadata()?.len();
+                *file_count += 1;
             }
         }
         Ok(())
