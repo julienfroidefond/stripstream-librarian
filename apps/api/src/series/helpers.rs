@@ -164,8 +164,6 @@ pub(crate) async fn create_series_with_metadata(
             VALUES ($1, $2, $3, $4, $5, 'approved', $6, $7, $8)
             ON CONFLICT (series_id, provider)
             DO UPDATE SET
-                external_id = EXCLUDED.external_id,
-                external_url = EXCLUDED.external_url,
                 status = 'approved',
                 confidence = EXCLUDED.confidence,
                 metadata_json = EXCLUDED.metadata_json,

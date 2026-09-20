@@ -22,24 +22,6 @@ au lieu de passer inaperçu. Les défauts corrigés sont listés en §5.
 
 Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code PG 23505 → `ApiError::conflict`).
 
-### `apps/api/src/integrations/discovery/mod.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 25 | `external_id` écrasé sur doublon | Deux entités provider de même titre fusionnent en une série ; le lien est `ON CONFLICT DO UPDATE` → l'`external_id` d'origine est perdu. | `integrations::discovery::tests::test_add_to_library_duplicate_series` |
-| 26 | Allowlist de liens codée en dur | Seul `senscritique` crée un `external_metadata_links` ; les autres providers ajoutés via discovery n'en créent aucun → sync metadata impossible. | `integrations::discovery::tests::test_add_to_library_anilist_no_metadata_link` |
-
-### `apps/api/src/metadata_providers/bdtheque.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-
-### `apps/api/src/metadata_providers/bdphile.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 36 | Erreurs de fetch album avalées | `fetch_album(...).unwrap_or_default()` masque les erreurs : un album en 500 produit quand même un livre, avec `authors`/`isbn`/`cover_url` vides. | `metadata_providers::bdphile::tests::album_fetch_error_is_swallowed` |
-
 ### `apps/api/src/metadata_providers/comicvine.rs`
 
 | # | Problème | Comportement actuel | Test qui verrouille |
@@ -129,3 +111,6 @@ avant tout commit (`cargo test -p api`, `cargo clippy -p api --tests`).
 | 22 | Chapitres comptés comme tomes | `total_volumes` ne retombe plus sur le nombre de chapitres : `volumes` null → `None`, `volume_source = "unknown"`. | `metadata_providers::anilist::tests::wiremock_fetch_trending_parses_results` |
 | 23 | Livres synthétiques depuis les chapitres | `get_series_books` ne génère des livres que depuis `volumes` ; `volumes` null → liste vide. | `metadata_providers::anilist::tests::wiremock_get_series_books_chapters_fallback` |
 | 24 | `total_volumes` = nombre de résultats | `total_volumes = None` ; le nombre de résultats locaux est conservé dans `metadata_json["local_volume_count"]`. | `metadata_providers::google_books::tests::search_series_parses_candidates`, `metadata_providers::open_library::tests::search_series_parses_candidates` |
+| 25 | `external_id` écrasé sur doublon | `ON CONFLICT (series_id, provider)` ne réécrit plus `external_id`/`external_url` : l'identité provider d'origine est préservée. | `integrations::discovery::tests::test_add_to_library_duplicate_series` |
+| 26 | Allowlist de liens codée en dur | Tous les providers créent un `external_metadata_links` via discovery. | `integrations::discovery::tests::test_add_to_library_anilist_creates_metadata_link` |
+| 36 | Erreurs de fetch album avalées | `fetch_album(...)` propage l'erreur : un album en échec fait échouer `get_series_books` au lieu de produire un livre vide. | `metadata_providers::bdphile::tests::album_fetch_error_is_propagated` |

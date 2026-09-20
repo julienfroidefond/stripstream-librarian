@@ -968,9 +968,6 @@ pub async fn add_to_library(
         req.provider.clone()
     };
 
-    // Only create metadata links for providers that offer useful data
-    let is_linkable = metadata_provider == "senscritique";
-
     // Build metadata_json with all the discovery-specific fields
     let metadata_json = serde_json::json!({
         "description": req.description,
@@ -987,16 +984,8 @@ pub async fn add_to_library(
         CreateSeriesParams {
             library_id: req.library_id,
             name: req.title.clone(),
-            provider: if is_linkable {
-                Some(metadata_provider.clone())
-            } else {
-                None
-            },
-            external_id: if is_linkable {
-                Some(req.external_id.clone())
-            } else {
-                None
-            },
+            provider: Some(metadata_provider.clone()),
+            external_id: Some(req.external_id.clone()),
             external_url: req.external_url.clone(),
             confidence: Some(1.0),
             total_volumes: req.total_volumes,

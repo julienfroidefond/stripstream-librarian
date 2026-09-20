@@ -407,7 +407,7 @@ async fn get_series_books_impl(
         let publish_date = cells.get(3).cloned();
         let album_url = absolute(base, &href);
         let external_book_id = album_external_id(&album_url).unwrap_or_else(|| album_url.clone());
-        let detail = fetch_album(&c, &album_url).await.unwrap_or_default();
+        let detail = fetch_album(&c, &album_url).await?;
         let isbn = detail.get("isbn").cloned();
         let cover_url = detail.get("cover_url").cloned();
         let authors = detail

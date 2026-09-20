@@ -72,11 +72,8 @@ async fn propagates_http_errors() {
     assert!(error.contains("404"));
 }
 
-// LOCKED: a failing album fetch is swallowed by `unwrap_or_default()`, so the
-// book is still produced with empty authors/isbn/cover instead of surfacing the
-// error. See docs/KNOWN_ISSUES.md §1.
 #[tokio::test]
-async fn album_fetch_error_is_swallowed() {
+async fn album_fetch_error_is_propagated() {
     let server = MockServer::start().await;
     let search_body = format!(
         r#"{{"bests":[{{"url":"{uri}/series/bd/36511-les-geants","text":"Les Géants (fr)"}}],"series":[]}}"#,
@@ -100,12 +97,10 @@ async fn album_fetch_error_is_swallowed() {
         .mount(&server)
         .await;
 
-    let books = get_series_books_impl("bd/36511-les-geants", &server.uri())
-        .await
-        .unwrap();
+    let result = get_series_books_impl("bd/36511-les-geants", &server.uri()).await;
 
-    assert_eq!(books.len(), 1);
-    assert!(books[0].authors.is_empty());
-    assert!(books[0].isbn.is_none());
-    assert!(books[0].cover_url.is_none());
+    assert!(
+        result.is_err(),
+        "a failing album fetch must surface the error, not produce an empty book"
+    );
 }

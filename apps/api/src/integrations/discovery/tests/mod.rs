@@ -72,55 +72,7 @@ fn make_request(
     }
 }
 
-// 1. Retired provider (bedetheque) — series created, no metadata link
-#[sqlx::test(migrations = "../../infra/migrations")]
-async fn test_add_to_library_retired_provider_no_link(pool: sqlx::PgPool) {
-    let library_id = create_test_library(&pool).await;
-    let state = test_state(pool.clone());
-    let req = make_request(library_id, "bedetheque", "ext-123", "Test BD Series");
-
-    let result = add_to_library(State(state), Json(req)).await;
-    assert!(result.is_ok(), "add_to_library should succeed");
-
-    let resp = result.unwrap().0;
-
-    // Verify series was created with only the base fields: without a metadata
-    // link, no provider metadata is synced onto the series row.
-    let series_row =
-        sqlx::query("SELECT name, description, start_year, cover_url FROM series WHERE id = $1")
-            .bind(resp.series_id)
-            .fetch_one(&pool)
-            .await
-            .expect("series should exist");
-    let name: String = series_row.get("name");
-    assert_eq!(name, "Test BD Series");
-    let desc: Option<String> = series_row.get("description");
-    assert_eq!(desc, None, "no metadata link means no synced description");
-    let start_year: Option<i32> = series_row.get("start_year");
-    assert_eq!(
-        start_year, None,
-        "no metadata link means no synced start_year"
-    );
-    let cover_url: Option<String> = series_row.get("cover_url");
-    assert_eq!(
-        cover_url, None,
-        "no metadata link means no synced cover_url"
-    );
-
-    // No metadata link: bedetheque is no longer linkable
-    let link_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1")
-            .bind(resp.series_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(
-        link_count, 0,
-        "retired provider should not create a metadata link"
-    );
-}
-
-// 2. Duplicate series — same series_id returned, no duplicate
+// 1. Duplicate series — same series_id returned, no duplicate
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn test_add_to_library_duplicate_series(pool: sqlx::PgPool) {
     let library_id = create_test_library(&pool).await;
@@ -151,7 +103,7 @@ async fn test_add_to_library_duplicate_series(pool: sqlx::PgPool) {
     .unwrap();
     assert_eq!(count, 1, "should have exactly one series row");
 
-    // Metadata link should have been upserted (ON CONFLICT updates external_id)
+    // Metadata link should have been upserted (ON CONFLICT keeps the original identity)
     let link_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1 AND provider = 'senscritique'"
     )
@@ -164,9 +116,6 @@ async fn test_add_to_library_duplicate_series(pool: sqlx::PgPool) {
         "should have exactly one metadata link per (series_id, provider)"
     );
 
-    // LOCKED: the second add overwrites the existing link's external_id
-    // (ext-100 → ext-200), losing the original provider identity.
-    // See docs/KNOWN_ISSUES.md §1.
     let external_id: String = sqlx::query_scalar(
         "SELECT external_id FROM external_metadata_links WHERE series_id = $1 AND provider = 'senscritique'",
     )
@@ -174,12 +123,15 @@ async fn test_add_to_library_duplicate_series(pool: sqlx::PgPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(external_id, "ext-200");
+    assert_eq!(
+        external_id, "ext-100",
+        "the original provider identity must be preserved on conflict"
+    );
 }
 
-// 3. Non-linkable provider (anilist) — no metadata link created
+// 3. Any provider (anilist) — metadata link created
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn test_add_to_library_anilist_no_metadata_link(pool: sqlx::PgPool) {
+async fn test_add_to_library_anilist_creates_metadata_link(pool: sqlx::PgPool) {
     let library_id = create_test_library(&pool).await;
     let state = test_state(pool.clone());
     let req = make_request(library_id, "anilist", "ani-456", "Anilist Series");
@@ -194,25 +146,20 @@ async fn test_add_to_library_anilist_no_metadata_link(pool: sqlx::PgPool) {
         .unwrap();
     assert_eq!(count, 1, "series should be created");
 
-    // No metadata link should be created
     let link_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1")
             .bind(resp.series_id)
             .fetch_one(&pool)
             .await
             .unwrap();
-    // LOCKED: only a hard-coded allowlist (senscritique) creates a
-    // metadata link; other providers added via discovery create none, so
-    // metadata sync is impossible for them. See docs/KNOWN_ISSUES.md §1.
     assert_eq!(
-        link_count, 0,
-        "anilist provider should not create metadata link"
+        link_count, 1,
+        "every provider should create a metadata link so sync is possible"
     );
 
-    // metadata_link_id should fall back to series_id
-    assert_eq!(
+    assert_ne!(
         resp.metadata_link_id, resp.series_id,
-        "metadata_link_id should equal series_id when no link created"
+        "metadata_link_id should be the created link, not the series id"
     );
 }
 
