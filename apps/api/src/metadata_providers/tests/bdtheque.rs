@@ -26,6 +26,8 @@ async fn parses_series_and_volume_metadata() {
         Some("https://www.bdtheque.com/repupload/T/T_53064.JPG")
     );
     assert_eq!(results[0].authors, vec!["Lylian", "Paul Drouin"]);
+    // LOCKED: authors are sorted alphabetically, so the scénariste/dessinateur
+    // order from the source page is not preserved. See docs/KNOWN_ISSUES.md §1.
     assert_eq!(results[0].publishers, vec!["Glénat"]);
     assert_eq!(results[0].start_year, Some(2020));
     assert_eq!(results[0].total_volumes, Some(12));

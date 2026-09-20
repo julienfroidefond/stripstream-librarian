@@ -76,3 +76,41 @@ async fn propagates_http_errors() {
         .unwrap_err();
     assert!(error.contains("404"));
 }
+
+// LOCKED: a failing album fetch is swallowed by `unwrap_or_default()`, so the
+// book is still produced with empty authors/isbn/cover instead of surfacing the
+// error. See docs/KNOWN_ISSUES.md §1.
+#[tokio::test]
+async fn album_fetch_error_is_swallowed() {
+    let server = MockServer::start().await;
+    let search_body = format!(
+        r#"{{"bests":[{{"url":"{uri}/series/bd/36511-les-geants","text":"Les Géants (fr)"}}],"series":[]}}"#,
+        uri = server.uri()
+    );
+    Mock::given(method("GET"))
+        .and(path_regex(r"/search/ajax"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(search_body))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"/series/bd/36511-les-geants"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"<h1>Les Géants</h1><div id="detail_view"><table><tbody><tr><td>1</td><td><a href="/album/bd/138208-les-geants-1-erin">Erin</a></td><td>Glénat</td><td>26 août 2020</td></tr></tbody></table></div>"#,
+        ))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"/album/bd/138208-les-geants-1-erin"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let books = get_series_books_impl("bd/36511-les-geants", &server.uri())
+        .await
+        .unwrap();
+
+    assert_eq!(books.len(), 1);
+    assert!(books[0].authors.is_empty());
+    assert!(books[0].isbn.is_none());
+    assert!(books[0].cover_url.is_none());
+}

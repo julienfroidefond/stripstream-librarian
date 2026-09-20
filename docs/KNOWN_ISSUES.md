@@ -149,17 +149,32 @@ Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code 
 |---|----------|---------------------|---------------------|
 | 33 | Apostrophe → token parasite | `normalize_title` transforme `"JoJo's"` en `"jojo s"` (apostrophe → espace), ce qui peut casser le matching de titres. | `reading::status_match::tests::normalize_replaces_special_chars` |
 
-### Candidats relevés mais non verrouillés
+### `apps/api/src/metadata_providers/bedetheque.rs`
 
-Comportements suspects identifiés lors de l'audit, non encore couverts par un
-test `// LOCKED:` dédié :
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 34 | Covers associées par index positionnel | Les couvertures pré-collectées sont appariées aux albums par leur **position** ; tout décalage d'ordre désaligne les couvertures. | `metadata_providers::bedetheque::tests::get_series_books_parses_albums` |
 
-| Zone | Comportement suspect |
-|------|----------------------|
-| `metadata_providers/bedetheque.rs` | Covers associées par **index positionnel** (désalignement possible si l'ordre diffère). |
-| `metadata_providers/bdtheque.rs` | `authors.sort()` réordonne scénariste/dessinateur. |
-| `metadata_providers/bdphile.rs` | Erreurs de fetch album avalées (`unwrap_or_default()`). |
-| `apps/api/src/tests/search.rs` | Défaut de **test** (pas de prod) : le SQL du handler est recopié en constantes (`SERIES_SQL`/`BOOKS_SQL`) au lieu d'appeler le handler → divergence silencieuse possible. |
+### `apps/api/src/metadata_providers/bdtheque.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 35 | `authors.sort()` réordonne les rôles | Les auteurs sont triés alphabétiquement, l'ordre scénariste/dessinateur de la source n'est pas conservé. | `metadata_providers::bdtheque::tests::parses_series_and_volume_metadata` |
+
+### `apps/api/src/metadata_providers/bdphile.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 36 | Erreurs de fetch album avalées | `fetch_album(...).unwrap_or_default()` masque les erreurs : un album en 500 produit quand même un livre, avec `authors`/`isbn`/`cover_url` vides. | `metadata_providers::bdphile::tests::album_fetch_error_is_swallowed` |
+
+### `apps/api/src/tests/search.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 37 | SQL dupliqué dans les tests | Défaut de **test** (pas de prod) : `SERIES_SQL`/`BOOKS_SQL` recopient le SQL du handler au lieu de l'appeler → divergence silencieuse possible. | `tests::search::*` (constantes annotées `// LOCKED:`) |
+
+Tous les candidats relevés lors de l'audit sont désormais verrouillés par un test
+`// LOCKED:`.
 
 
 ---

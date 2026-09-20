@@ -195,6 +195,9 @@ async fn get_series_books_parses_albums() {
 
     // Cover URL from pre-collected covers
     let cover = books[0].cover_url.as_ref().unwrap();
+    // LOCKED: covers are matched to albums by positional index, so any ordering
+    // difference between the cover list and the album list misaligns them.
+    // See docs/KNOWN_ISSUES.md §1.
     assert!(
         cover.contains("Couv_100"),
         "first book should get first cover, got: {cover}"

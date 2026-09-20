@@ -89,6 +89,8 @@ async fn create_test_book(
 }
 
 /// The series search SQL from the handler, extracted for testing.
+// LOCKED: this is a copy of the handler's SQL, not the handler itself — the two
+// can diverge silently. See docs/KNOWN_ISSUES.md §1.
 const SERIES_SQL: &str = r#"
     WITH sorted_books AS (
         SELECT
@@ -133,6 +135,8 @@ const SERIES_SQL: &str = r#"
 "#;
 
 /// The books search SQL from the handler, extracted for testing.
+// LOCKED: this is a copy of the handler's SQL, not the handler itself — the two
+// can diverge silently. See docs/KNOWN_ISSUES.md §1.
 const BOOKS_SQL: &str = r#"
     SELECT b.id, b.library_id, b.kind, b.title,
         COALESCE(b.authors, CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END) as authors,
