@@ -22,6 +22,7 @@ fn sqlx_other_error_maps_to_500() {
 fn api_error_constructors() {
     assert_eq!(ApiError::bad_request("x").status, StatusCode::BAD_REQUEST);
     assert_eq!(ApiError::not_found("x").status, StatusCode::NOT_FOUND);
+    assert_eq!(ApiError::conflict("x").status, StatusCode::CONFLICT);
     assert_eq!(ApiError::unauthorized("x").status, StatusCode::UNAUTHORIZED);
     assert_eq!(ApiError::forbidden("x").status, StatusCode::FORBIDDEN);
     assert_eq!(

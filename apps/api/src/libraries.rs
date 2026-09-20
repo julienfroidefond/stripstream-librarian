@@ -144,35 +144,49 @@ pub async fn create_library(
     let id = Uuid::new_v4();
     let root_path = canonical.to_string_lossy().to_string();
 
-    sqlx::query("INSERT INTO libraries (id, name, root_path, enabled) VALUES ($1, $2, $3, TRUE)")
-        .bind(id)
-        .bind(input.name.trim())
-        .bind(&root_path)
-        .execute(&state.pool)
-        .await?;
+    let existing: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM libraries WHERE root_path = $1")
+            .bind(&root_path)
+            .fetch_optional(&state.pool)
+            .await?;
+    if existing.is_some() {
+        return Err(ApiError::conflict(format!(
+            "a library already uses root_path {root_path}"
+        )));
+    }
+
+    let row = sqlx::query(
+        "INSERT INTO libraries (id, name, root_path, enabled) VALUES ($1, $2, $3, TRUE)
+         RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at, reading_status_provider, reading_status_push_mode, next_reading_status_push_at, download_detection_mode, next_download_detection_at, tags",
+    )
+    .bind(id)
+    .bind(input.name.trim())
+    .bind(&root_path)
+    .fetch_one(&state.pool)
+    .await?;
 
     Ok(Json(LibraryResponse {
-        id,
-        name: input.name.trim().to_string(),
-        root_path,
-        enabled: true,
+        id: row.get("id"),
+        name: row.get("name"),
+        root_path: row.get("root_path"),
+        enabled: row.get("enabled"),
         book_count: 0,
         series_count: 0,
-        monitor_enabled: false,
-        scan_mode: "manual".to_string(),
-        next_scan_at: None,
-        watcher_enabled: false,
-        metadata_provider: None,
-        fallback_metadata_provider: None,
-        metadata_refresh_mode: "manual".to_string(),
-        next_metadata_refresh_at: None,
+        monitor_enabled: row.get("monitor_enabled"),
+        scan_mode: row.get("scan_mode"),
+        next_scan_at: row.get("next_scan_at"),
+        watcher_enabled: row.get("watcher_enabled"),
+        metadata_provider: row.get("metadata_provider"),
+        fallback_metadata_provider: row.get("fallback_metadata_provider"),
+        metadata_refresh_mode: row.get("metadata_refresh_mode"),
+        next_metadata_refresh_at: row.get("next_metadata_refresh_at"),
         thumbnail_book_ids: vec![],
-        reading_status_provider: None,
-        reading_status_push_mode: "manual".to_string(),
-        next_reading_status_push_at: None,
-        download_detection_mode: "manual".to_string(),
-        next_download_detection_at: None,
-        tags: vec![],
+        reading_status_provider: row.get("reading_status_provider"),
+        reading_status_push_mode: row.get("reading_status_push_mode"),
+        next_reading_status_push_at: row.get("next_reading_status_push_at"),
+        download_detection_mode: row.get("download_detection_mode"),
+        next_download_detection_at: row.get("next_download_detection_at"),
+        tags: row.get("tags"),
     }))
 }
 
@@ -264,6 +278,11 @@ pub async fn scan_library(
 
     let is_full = payload.as_ref().and_then(|p| p.full).unwrap_or(false);
     let is_rescan = payload.as_ref().and_then(|p| p.rescan).unwrap_or(false);
+    if is_full && is_rescan {
+        return Err(ApiError::bad_request(
+            "full and rescan are mutually exclusive",
+        ));
+    }
     let job_type = if is_full {
         "full_rebuild"
     } else if is_rescan {
@@ -373,16 +392,14 @@ pub async fn update_monitoring(
         None
     };
 
-    let watcher_enabled = input.watcher_enabled.unwrap_or(false);
-
     let result = sqlx::query(
-        "UPDATE libraries SET monitor_enabled = $2, scan_mode = $3, next_scan_at = $4, watcher_enabled = $5, metadata_refresh_mode = $6, next_metadata_refresh_at = $7, download_detection_mode = $8, next_download_detection_at = $9 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at, reading_status_provider, reading_status_push_mode, next_reading_status_push_at, download_detection_mode, next_download_detection_at, tags"
+        "UPDATE libraries SET monitor_enabled = $2, scan_mode = $3, next_scan_at = $4, watcher_enabled = COALESCE($5, watcher_enabled), metadata_refresh_mode = $6, next_metadata_refresh_at = $7, download_detection_mode = $8, next_download_detection_at = $9 WHERE id = $1 RETURNING id, name, root_path, enabled, monitor_enabled, scan_mode, next_scan_at, watcher_enabled, metadata_provider, fallback_metadata_provider, metadata_refresh_mode, next_metadata_refresh_at, reading_status_provider, reading_status_push_mode, next_reading_status_push_at, download_detection_mode, next_download_detection_at, tags"
     )
     .bind(library_id)
     .bind(input.monitor_enabled)
     .bind(input.scan_mode)
     .bind(next_scan_at)
-    .bind(watcher_enabled)
+    .bind(input.watcher_enabled)
     .bind(metadata_refresh_mode)
     .bind(next_metadata_refresh_at)
     .bind(download_detection_mode)
@@ -405,11 +422,17 @@ pub async fn update_monitoring(
         .await?;
 
     let thumbnail_book_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT b.id FROM books b
-         LEFT JOIN series s ON s.id = b.series_id
-         WHERE b.library_id = $1
-         ORDER BY COALESCE(s.name, 'unclassified'), b.volume NULLS LAST, b.title ASC
-         LIMIT 5",
+        "SELECT first_id FROM (
+             SELECT DISTINCT ON (COALESCE(s.name, 'unclassified'))
+                 COALESCE(s.name, 'unclassified') as series_name,
+                 b.id as first_id
+             FROM books b
+             LEFT JOIN series s ON s.id = b.series_id
+             WHERE b.library_id = $1
+             ORDER BY COALESCE(s.name, 'unclassified'), b.volume NULLS LAST, b.title ASC
+             LIMIT 5
+         ) sub
+         ORDER BY series_name",
     )
     .bind(library_id)
     .fetch_all(&state.pool)
@@ -499,11 +522,17 @@ pub async fn update_metadata_provider(
         .await?;
 
     let thumbnail_book_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT b.id FROM books b
-         LEFT JOIN series s ON s.id = b.series_id
-         WHERE b.library_id = $1
-         ORDER BY COALESCE(s.name, 'unclassified'), b.volume NULLS LAST, b.title ASC
-         LIMIT 5",
+        "SELECT first_id FROM (
+             SELECT DISTINCT ON (COALESCE(s.name, 'unclassified'))
+                 COALESCE(s.name, 'unclassified') as series_name,
+                 b.id as first_id
+             FROM books b
+             LEFT JOIN series s ON s.id = b.series_id
+             WHERE b.library_id = $1
+             ORDER BY COALESCE(s.name, 'unclassified'), b.volume NULLS LAST, b.title ASC
+             LIMIT 5
+         ) sub
+         ORDER BY series_name",
     )
     .bind(library_id)
     .fetch_all(&state.pool)

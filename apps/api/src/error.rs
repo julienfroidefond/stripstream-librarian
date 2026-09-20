@@ -52,6 +52,13 @@ impl ApiError {
         }
     }
 
+    pub fn conflict(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
+            message: message.into(),
+        }
+    }
+
     pub fn internal(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -84,7 +91,7 @@ impl From<sqlx::Error> for ApiError {
                 // PostgreSQL unique_violation = 23505, foreign_key_violation = 23503
                 let code = db_err.code().unwrap_or_default();
                 if code == "23505" {
-                    Self::bad_request(format!("duplicate entry: {}", db_err.message()))
+                    Self::conflict(format!("duplicate entry: {}", db_err.message()))
                 } else if code == "23503" {
                     Self::bad_request(format!("foreign key violation: {}", db_err.message()))
                 } else {

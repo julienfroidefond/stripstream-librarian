@@ -86,17 +86,21 @@ async fn test_add_to_library_retired_provider_no_link(pool: sqlx::PgPool) {
 
     // Verify series was created with only the base fields: without a metadata
     // link, no provider metadata is synced onto the series row.
-    let series_row = sqlx::query("SELECT name, description, start_year, cover_url FROM series WHERE id = $1")
-        .bind(resp.series_id)
-        .fetch_one(&pool)
-        .await
-        .expect("series should exist");
+    let series_row =
+        sqlx::query("SELECT name, description, start_year, cover_url FROM series WHERE id = $1")
+            .bind(resp.series_id)
+            .fetch_one(&pool)
+            .await
+            .expect("series should exist");
     let name: String = series_row.get("name");
     assert_eq!(name, "Test BD Series");
     let desc: Option<String> = series_row.get("description");
     assert_eq!(desc, None, "no metadata link means no synced description");
     let start_year: Option<i32> = series_row.get("start_year");
-    assert_eq!(start_year, None, "no metadata link means no synced start_year");
+    assert_eq!(
+        start_year, None,
+        "no metadata link means no synced start_year"
+    );
     let cover_url: Option<String> = series_row.get("cover_url");
     assert_eq!(
         cover_url, None,

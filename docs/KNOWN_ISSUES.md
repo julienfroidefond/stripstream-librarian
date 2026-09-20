@@ -19,13 +19,8 @@ au lieu de passer inaperçu. Les défauts corrigés sont listés en §5.
 
 | # | Problème | Comportement actuel | Test qui verrouille |
 |---|----------|---------------------|---------------------|
-| 1 | Doublon de `root_path` | La contrainte `UNIQUE` remonte en **HTTP 400** (`bad_request`) via le mapping sqlx 23505, et non 409 Conflict. Aucun pré-check d'unicité dans le handler. | `libraries::tests::create_library_rejects_duplicate_root_path` |
-| 2 | `scan_library` avec `full` + `rescan` | `full` gagne silencieusement → type de job `full_rebuild`, le deep rescan est perdu. | `libraries::tests::scan_library_full_takes_precedence_over_rescan` |
-| 3 | `update_monitoring` et `watcher_enabled` omis | Traité comme `false` → le watcher est **désactivé** alors que le client ne l'a pas demandé. | `libraries::tests::update_monitoring_enables_schedule_and_defaults_watcher_off` |
-| 4 | `thumbnail_book_ids` incohérent | `list_libraries` applique `DISTINCT ON` (série) + `LIMIT 5`, mais `update_monitoring` / `update_metadata_provider` utilisent un `LIMIT 5` simple → peuvent renvoyer plusieurs tomes de la **même** série. | `libraries::tests::update_monitoring_returns_refreshed_counts_without_distinct_series` (et `list_libraries_thumbnail_ids_pick_first_book_per_series`) |
-| 5 | `create_library` renvoie un DTO synthétique | La réponse est construite en dur (défauts `monitor_enabled=false`, `scan_mode="manual"`, compteurs 0) au lieu de relire la ligne insérée → peut mentir si les défauts DB changent. | `libraries::tests::create_library_trims_name_and_applies_defaults` |
 
-Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code PG 23505 → `ApiError::bad_request`).
+Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code PG 23505 → `ApiError::conflict`).
 
 ### `apps/api/src/reading_lists/`
 
@@ -179,3 +174,8 @@ avant tout commit (`cargo test -p api`, `cargo clippy -p api --tests`).
 | 35 | `authors.sort()` réordonne les rôles | Le tri alphabétique est retiré : l'ordre scénariste/dessinateur de la source est conservé. | `metadata_providers::bdtheque::tests::parses_series_and_volume_metadata` |
 | 31 | `external_book_id` = URL complète | Un id stable est extrait de l'URL d'album (`bd/138208-les-geants-1-erin`). | `metadata_providers::bdphile::tests::parses_series_and_album_details` |
 | 32 | Métadonnées d'issue vides | `authors` est désormais rempli depuis `person_credits` ; `isbn`/`page_count` restent absents (non exposés par l'API issues). | `metadata_providers::comicvine::tests::get_series_books_parses_issues` |
+| 1 | Doublon de `root_path` → 400 | Pré-check d'unicité dans `create_library` → **409 Conflict** ; le mapping sqlx 23505 renvoie aussi `conflict`. | `libraries::tests::create_library_rejects_duplicate_root_path` |
+| 2 | `full` + `rescan` silencieux | La combinaison est rejetée en **400** (`full and rescan are mutually exclusive`) au lieu de préférer `full`. | `libraries::tests::scan_library_rejects_full_and_rescan_together` |
+| 3 | `watcher_enabled` omis → `false` | Sémantique PATCH : `None` conserve la valeur stockée (`COALESCE($5, watcher_enabled)`). | `libraries::tests::update_monitoring_preserves_watcher_when_omitted` |
+| 4 | `thumbnail_book_ids` sans `DISTINCT ON` | `update_monitoring` / `update_metadata_provider` appliquent le même `DISTINCT ON` (série) que `list_libraries`. | `libraries::tests::update_monitoring_returns_refreshed_counts_with_distinct_series` |
+| 5 | `create_library` renvoyait un DTO synthétique | La réponse relit la ligne insérée (`RETURNING`) au lieu de la construire en dur. | `libraries::tests::create_library_trims_name_and_applies_defaults` |

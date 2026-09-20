@@ -248,18 +248,19 @@ async fn create_library_trims_name_and_applies_defaults(pool: PgPool) {
     assert!(dto.thumbnail_book_ids.is_empty());
     assert!(dto.tags.is_empty());
 
-    let (name, enabled): (String, bool) =
-        sqlx::query_as("SELECT name, enabled FROM libraries WHERE id = $1")
-            .bind(dto.id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let (name, enabled, scan_mode, watcher_enabled): (String, bool, String, bool) = sqlx::query_as(
+        "SELECT name, enabled, scan_mode, watcher_enabled FROM libraries WHERE id = $1",
+    )
+    .bind(dto.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(name, "Comics");
     assert!(enabled);
+    assert_eq!(dto.scan_mode, scan_mode);
+    assert_eq!(dto.watcher_enabled, watcher_enabled);
 }
 
-// LOCKED: a duplicate root_path surfaces as HTTP 400 (bad_request) through the
-// sqlx error mapping, not 409 Conflict.
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn create_library_rejects_duplicate_root_path(pool: PgPool) {
     let dir = tempfile::tempdir().unwrap();
@@ -287,9 +288,9 @@ async fn create_library_rejects_duplicate_root_path(pool: PgPool) {
         .await,
     );
 
-    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+    assert_eq!(err.status, StatusCode::CONFLICT);
     assert!(
-        err.message.contains("duplicate"),
+        err.message.contains("root_path"),
         "message: {}",
         err.message
     );
@@ -472,9 +473,8 @@ async fn scan_library_rescan_creates_rescan_job(pool: PgPool) {
     assert_eq!(job.r#type, "rescan");
 }
 
-// LOCKED: when both flags are set the handler silently prefers `full`.
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn scan_library_full_takes_precedence_over_rescan(pool: PgPool) {
+async fn scan_library_rejects_full_and_rescan_together(pool: PgPool) {
     let lib = create_library_row(&pool, "scan-both").await;
     let payload = Some(Json(RebuildRequest {
         library_id: None,
@@ -482,11 +482,14 @@ async fn scan_library_full_takes_precedence_over_rescan(pool: PgPool) {
         rescan: Some(true),
     }));
 
-    let Json(job) = scan_library(State(test_state(pool)), AxumPath(lib), payload)
-        .await
-        .unwrap();
+    let err = expect_err(scan_library(State(test_state(pool)), AxumPath(lib), payload).await);
 
-    assert_eq!(job.r#type, "full_rebuild");
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+    assert!(
+        err.message.contains("mutually exclusive"),
+        "message: {}",
+        err.message
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -595,10 +598,36 @@ async fn update_monitoring_enables_schedule_and_defaults_watcher_off(pool: PgPoo
     assert!(dto.monitor_enabled);
     assert_eq!(dto.scan_mode, "hourly");
     assert!(dto.next_scan_at.is_some());
-    // LOCKED: an omitted watcher_enabled is treated as `false`.
     assert!(!dto.watcher_enabled);
     assert!(dto.next_metadata_refresh_at.is_none());
     assert!(dto.next_download_detection_at.is_none());
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn update_monitoring_preserves_watcher_when_omitted(pool: PgPool) {
+    let lib = create_library_row(&pool, "mon-watcher").await;
+    let state = test_state(pool);
+
+    let Json(enabled) = update_monitoring(
+        State(state.clone()),
+        AxumPath(lib),
+        Json(monitoring_request(true, "daily", Some(true), None, None)),
+    )
+    .await
+    .unwrap();
+    assert!(enabled.watcher_enabled);
+
+    let Json(omitted) = update_monitoring(
+        State(state),
+        AxumPath(lib),
+        Json(monitoring_request(true, "daily", None, None, None)),
+    )
+    .await
+    .unwrap();
+    assert!(
+        omitted.watcher_enabled,
+        "an omitted watcher_enabled must keep the stored value"
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -643,14 +672,12 @@ async fn update_monitoring_sets_next_refresh_when_not_manual(pool: PgPool) {
     assert!(dto.next_download_detection_at.is_some());
 }
 
-// LOCKED: unlike `list_libraries`, the update response does not apply
-// DISTINCT ON series, so it can return several books from the same series.
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn update_monitoring_returns_refreshed_counts_without_distinct_series(pool: PgPool) {
+async fn update_monitoring_returns_refreshed_counts_with_distinct_series(pool: PgPool) {
     let lib = create_library_row(&pool, "mon-counts").await;
     let series = create_series_row(&pool, lib, "Counts Series").await;
     let first = create_book_row(&pool, lib, Some(series), "Counts Vol 1", Some(1)).await;
-    let second = create_book_row(&pool, lib, Some(series), "Counts Vol 2", Some(2)).await;
+    let _second = create_book_row(&pool, lib, Some(series), "Counts Vol 2", Some(2)).await;
 
     let Json(dto) = update_monitoring(
         State(test_state(pool)),
@@ -662,9 +689,11 @@ async fn update_monitoring_returns_refreshed_counts_without_distinct_series(pool
 
     assert_eq!(dto.book_count, 2);
     assert_eq!(dto.series_count, 1);
-    assert_eq!(dto.thumbnail_book_ids.len(), 2);
-    assert!(dto.thumbnail_book_ids.contains(&first));
-    assert!(dto.thumbnail_book_ids.contains(&second));
+    assert_eq!(
+        dto.thumbnail_book_ids,
+        vec![first],
+        "only the first book of each series is used as a thumbnail"
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]

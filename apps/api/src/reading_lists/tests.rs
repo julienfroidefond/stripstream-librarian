@@ -469,10 +469,12 @@ async fn get_memberships_returns_every_item(pool: PgPool) {
     let Json(memberships) = get_memberships(State(state)).await.unwrap();
 
     assert_eq!(memberships.len(), 2);
-    assert!(memberships
-        .iter()
-        .all(|m| m.series_id == series_id
-            && (m.list_id == first_list || m.list_id == second_list)));
+    assert!(
+        memberships
+            .iter()
+            .all(|m| m.series_id == series_id
+                && (m.list_id == first_list || m.list_id == second_list))
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
