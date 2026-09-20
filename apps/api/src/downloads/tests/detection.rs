@@ -327,7 +327,7 @@ async fn series_id_returned_when_series_exists(pool: sqlx::PgPool) {
     let rows = sqlx::query(
         "SELECT e.id, e.entity_name, e.event_type, e.message, e.detail, s.id AS series_id
          FROM index_job_events e
-         LEFT JOIN series s ON s.library_id = $2 AND LOWER(unaccent(s.name)) = LOWER(unaccent(e.entity_name))
+         LEFT JOIN series s ON s.library_id = $2 AND norm_text(s.name) = norm_text(e.entity_name)
          WHERE e.job_id = $1
          ORDER BY e.event_type, e.entity_name",
     )
@@ -346,7 +346,7 @@ async fn series_id_returned_when_series_exists(pool: sqlx::PgPool) {
     );
 }
 
-/// Regression: LEFT JOIN with LOWER(unaccent()) resolves series_id even when
+/// Regression: LEFT JOIN with norm_text() resolves series_id even when
 /// the event entity_name has different accents/casing than the series name.
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn series_id_resolved_with_unaccent_in_results(pool: sqlx::PgPool) {
@@ -390,7 +390,7 @@ async fn series_id_resolved_with_unaccent_in_results(pool: sqlx::PgPool) {
     let rows = sqlx::query(
         "SELECT e.id, e.entity_name, e.event_type, e.message, e.detail, s.id AS series_id
          FROM index_job_events e
-         LEFT JOIN series s ON s.library_id = $2 AND LOWER(unaccent(s.name)) = LOWER(unaccent(e.entity_name))
+         LEFT JOIN series s ON s.library_id = $2 AND norm_text(s.name) = norm_text(e.entity_name)
          WHERE e.job_id = $1
          ORDER BY e.event_type, e.entity_name",
     )
@@ -550,7 +550,7 @@ async fn series_id_none_when_series_missing(pool: sqlx::PgPool) {
     let rows = sqlx::query(
         "SELECT e.id, e.entity_name, e.event_type, e.message, e.detail, s.id AS series_id
          FROM index_job_events e
-         LEFT JOIN series s ON s.library_id = $2 AND LOWER(unaccent(s.name)) = LOWER(unaccent(e.entity_name))
+         LEFT JOIN series s ON s.library_id = $2 AND norm_text(s.name) = norm_text(e.entity_name)
          WHERE e.job_id = $1
          ORDER BY e.event_type, e.entity_name",
     )

@@ -41,7 +41,7 @@ Si un import échoue, vous pouvez le **relancer** depuis la page Téléchargemen
 :::note[Détails techniques]
 **Détection des doublons** : si un torrent est déjà présent dans qBittorrent (détection par hash magnet), Stripstream lit le `content_path` réel et lance directement l'import si le torrent est déjà complété.
 
-**Pipeline d'import** : extraction des volumes depuis les noms de fichiers (supporte `Tome_01` avec underscore) ; matching de série via `LOWER(unaccent())` ; nommage des fichiers depuis le livre de référence existant ; déduplication par format (cbz > cbr > pdf > epub) ; one-shots importés tels quels (sans numéro de volume).
+**Pipeline d'import** : extraction des volumes depuis les noms de fichiers (supporte `Tome_01` avec underscore) ; matching de série via `norm_text()` ; nommage des fichiers depuis le livre de référence existant ; déduplication par format (cbz > cbr > pdf > epub) ; one-shots importés tels quels (sans numéro de volume).
 
 **Statuts de téléchargement** : `importing`, `imported`, `partial`, `no_files_imported`, `failed`.
 

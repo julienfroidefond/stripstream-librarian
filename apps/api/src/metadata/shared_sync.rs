@@ -145,7 +145,7 @@ pub(crate) async fn upsert_series_metadata(
     // Fetch existing state for callers that need before/after comparison
     let existing = sqlx::query(
         r#"SELECT description, publishers, start_year, total_volumes, status, authors, locked_fields
-           FROM series WHERE library_id = $1 AND LOWER(unaccent(name)) = LOWER(unaccent($2))"#,
+           FROM series WHERE library_id = $1 AND norm_text(name) = norm_text($2)"#,
     )
     .bind(library_id)
     .bind(series_name)

@@ -109,7 +109,7 @@ Les séries qui n'ont plus aucun livre après un scan sont automatiquement suppr
 
 **Verrouillage** : stocké dans la colonne JSONB `locked_fields` (ex: `{"description": true}`).
 
-**Déduplication** : `get_or_create_series` vérifie `name` et `original_name` pour éviter les doublons. Matching `LOWER(unaccent())` sur les deux champs.
+**Déduplication** : `get_or_create_series` vérifie `name` et `original_name` pour éviter les doublons. Matching `norm_text()` sur les deux champs.
 
 **Fusion** : transfère livres, metadata links, downloads disponibles, liens AniList. Conserve les metadata links de la cible en cas de conflit (même provider). Supprime la série source après fusion.
 

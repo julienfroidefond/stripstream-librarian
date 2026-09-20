@@ -30,7 +30,7 @@ pub(super) async fn do_import(
          JOIN books b ON b.id = bf.book_id \
          LEFT JOIN series s ON s.id = b.series_id \
          WHERE b.library_id = $1 \
-           AND LOWER(unaccent(s.name)) = LOWER(unaccent($2)) \
+           AND norm_text(s.name) = norm_text($2) \
            AND b.volume IS NOT NULL \
          ORDER BY b.volume DESC LIMIT 1",
     )
@@ -133,7 +133,7 @@ pub(super) async fn do_import(
             let existing_volumes: Vec<i32> = sqlx::query_scalar(
                 "SELECT DISTINCT b.volume FROM books b \
                  LEFT JOIN series s ON s.id = b.series_id \
-                 WHERE b.library_id = $1 AND LOWER(unaccent(s.name)) = LOWER(unaccent($2)) AND b.volume IS NOT NULL"
+                 WHERE b.library_id = $1 AND norm_text(s.name) = norm_text($2) AND b.volume IS NOT NULL"
             )
             .bind(library_id)
             .bind(series_name)

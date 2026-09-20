@@ -259,7 +259,7 @@ async fn series_id_returned_when_series_exists(pool: sqlx::PgPool) {
         SELECT ije.id, ije.event_type, ije.entity_id, ije.entity_name, ije.message, ije.detail,
                s.id AS series_id
         FROM index_job_events ije
-        LEFT JOIN series s ON s.library_id = $5 AND LOWER(unaccent(s.name)) = LOWER(unaccent(ije.entity_name))
+        LEFT JOIN series s ON s.library_id = $5 AND norm_text(s.name) = norm_text(ije.entity_name)
         WHERE ije.job_id = $1
           AND (ije.event_type LIKE 'metadata_%' OR ije.event_type = 'error')
           AND ($2::text IS NULL OR ije.event_type = $2)
@@ -315,7 +315,7 @@ async fn series_id_none_when_series_missing(pool: sqlx::PgPool) {
         SELECT ije.id, ije.event_type, ije.entity_id, ije.entity_name, ije.message, ije.detail,
                s.id AS series_id
         FROM index_job_events ije
-        LEFT JOIN series s ON s.library_id = $5 AND LOWER(unaccent(s.name)) = LOWER(unaccent(ije.entity_name))
+        LEFT JOIN series s ON s.library_id = $5 AND norm_text(s.name) = norm_text(ije.entity_name)
         WHERE ije.job_id = $1
           AND (ije.event_type LIKE 'metadata_%' OR ije.event_type = 'error')
           AND ($2::text IS NULL OR ije.event_type = $2)
@@ -493,7 +493,7 @@ async fn best_candidate_json_contains_enriched_fields(pool: sqlx::PgPool) {
     assert_eq!(json["confidence"], 0.65);
 }
 
-/// Regression: LEFT JOIN with LOWER(unaccent()) resolves series_id even when
+/// Regression: LEFT JOIN with norm_text() resolves series_id even when
 /// the event entity_name has different accents/casing than the series name.
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn series_id_resolved_with_unaccent_in_results(pool: sqlx::PgPool) {
@@ -519,7 +519,7 @@ async fn series_id_resolved_with_unaccent_in_results(pool: sqlx::PgPool) {
         SELECT ije.id, ije.event_type, ije.entity_id, ije.entity_name, ije.message, ije.detail,
                s.id AS series_id
         FROM index_job_events ije
-        LEFT JOIN series s ON s.library_id = $5 AND LOWER(unaccent(s.name)) = LOWER(unaccent(ije.entity_name))
+        LEFT JOIN series s ON s.library_id = $5 AND norm_text(s.name) = norm_text(ije.entity_name)
         WHERE ije.job_id = $1
           AND (ije.event_type LIKE 'metadata_%' OR ije.event_type = 'error')
           AND ($2::text IS NULL OR ije.event_type = $2)
@@ -742,7 +742,7 @@ async fn results_mapped_from_event_detail(pool: sqlx::PgPool) {
         SELECT ije.id, ije.event_type, ije.entity_id, ije.entity_name, ije.message, ije.detail,
                s.id AS series_id
         FROM index_job_events ije
-        LEFT JOIN series s ON s.library_id = $5 AND LOWER(unaccent(s.name)) = LOWER(unaccent(ije.entity_name))
+        LEFT JOIN series s ON s.library_id = $5 AND norm_text(s.name) = norm_text(ije.entity_name)
         WHERE ije.job_id = $1
           AND (ije.event_type LIKE 'metadata_%' OR ije.event_type = 'error')
           AND ($2::text IS NULL OR ije.event_type = $2)

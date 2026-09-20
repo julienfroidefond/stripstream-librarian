@@ -58,8 +58,8 @@ async fn get_or_create_series_id(
     // Also checks original_name to prevent duplicates after user renames
     let existing: Option<Uuid> = sqlx::query_scalar(
         "SELECT id FROM series WHERE library_id = $1 \
-         AND (LOWER(unaccent(name)) = LOWER(unaccent($2)) \
-              OR LOWER(unaccent(original_name)) = LOWER(unaccent($2)))",
+         AND (norm_text(name) = norm_text($2) \
+              OR norm_text(original_name) = norm_text($2))",
     )
     .bind(library_id)
     .bind(name)
@@ -1033,7 +1033,7 @@ pub async fn restore_archived_data(pool: &sqlx::PgPool, library_id: Uuid) -> Res
         FROM archived_series aseries
         WHERE s.library_id = $1
           AND s.library_id = aseries.library_id
-          AND LOWER(unaccent(s.name)) = LOWER(unaccent(aseries.name))
+          AND norm_text(s.name) = norm_text(aseries.name)
         "#,
     )
     .bind(library_id)
@@ -1062,7 +1062,7 @@ pub async fn restore_archived_data(pool: &sqlx::PgPool, library_id: Uuid) -> Res
           AND EXISTS (
               SELECT 1 FROM series s
               WHERE s.library_id = aseries.library_id
-                AND LOWER(unaccent(s.name)) = LOWER(unaccent(aseries.name))
+                AND norm_text(s.name) = norm_text(aseries.name)
           )
         "#,
     )

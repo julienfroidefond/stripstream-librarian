@@ -467,7 +467,7 @@ async fn series_matching_unaccent_query(pool: sqlx::PgPool) {
          JOIN books b ON b.id = bf.book_id \
          LEFT JOIN series s ON s.id = b.series_id \
          WHERE b.library_id = $1 \
-           AND LOWER(unaccent(s.name)) = LOWER(unaccent($2)) \
+           AND norm_text(s.name) = norm_text($2) \
            AND b.volume IS NOT NULL \
          ORDER BY b.volume DESC LIMIT 1",
     )
@@ -544,7 +544,7 @@ async fn db_reference_query_returns_correct_data(pool: sqlx::PgPool) {
          JOIN books b ON b.id = bf.book_id \
          LEFT JOIN series s ON s.id = b.series_id \
          WHERE b.library_id = $1 \
-           AND LOWER(unaccent(s.name)) = LOWER(unaccent($2)) \
+           AND norm_text(s.name) = norm_text($2) \
            AND b.volume IS NOT NULL \
          ORDER BY b.volume DESC LIMIT 1",
     )
@@ -600,7 +600,7 @@ async fn expand_expected_volumes_with_missing(pool: sqlx::PgPool) {
     let existing_volumes: Vec<i32> = sqlx::query_scalar(
         "SELECT DISTINCT b.volume FROM books b \
          LEFT JOIN series s ON s.id = b.series_id \
-         WHERE b.library_id = $1 AND LOWER(unaccent(s.name)) = LOWER(unaccent($2)) AND b.volume IS NOT NULL"
+         WHERE b.library_id = $1 AND norm_text(s.name) = norm_text($2) AND b.volume IS NOT NULL",
     )
     .bind(lib_id)
     .bind("Tom-Tom et Nana")

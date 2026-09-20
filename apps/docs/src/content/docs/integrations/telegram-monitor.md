@@ -132,7 +132,7 @@ Le suffixe `@channel` ajouté par certains channels Telegram (`@BD_fr`, `@manga_
 
 **Attribution `@channel`** : certains channels ajoutent automatiquement un suffixe `@username` au nom des fichiers (ex. `Berserk - 32@BD_fr.cbz`). Ce suffixe est ignoré lors de l'extraction du nom de série et du numéro de volume.
 
-**Correspondance de séries** : comparaison `LOWER(unaccent(series_name)) = LOWER(unaccent(name))` — insensible à la casse et aux accents.
+**Correspondance de séries** : comparaison `norm_text(series_name) = norm_text(name)` — insensible à la casse et aux accents.
 
 **Job de sync** : type `telegram_sync`, `library_id = NULL`. Un seul job actif à la fois — les doublons sont ignorés.
 :::

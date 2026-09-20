@@ -118,7 +118,7 @@ pub(crate) async fn load_rename_max_volume(
          FROM series s
          LEFT JOIN books b ON b.series_id = s.id AND b.volume IS NOT NULL
          WHERE s.library_id = $1
-           AND LOWER(unaccent(s.name)) = LOWER(unaccent($2))",
+           AND norm_text(s.name) = norm_text($2)",
     )
     .bind(library_id)
     .bind(series_name)

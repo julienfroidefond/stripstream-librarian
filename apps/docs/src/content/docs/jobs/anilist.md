@@ -83,7 +83,7 @@ Les deux tâches sont exécutées par l'API (job poller), non-exclusives. Rate l
 
 **Matching** (`reading_status_match`) :
 - Ignore les séries `"unclassified"` et celles déjà dans `anilist_series_links` pour cette bibliothèque
-- Correspondance exacte : après normalisation `LOWER(unaccent())` du titre
+- Correspondance exacte : après normalisation `norm_text()` du titre
 - `API : POST /reading-status/match { "library_id": "uuid" }`
 
 Événements :

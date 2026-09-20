@@ -848,7 +848,7 @@ async fn annotate_local_matches(
         "SELECT s.id::text, s.name, inputs.raw_name \
          FROM series s \
          JOIN (SELECT unnest($1::text[]) AS raw_name) AS inputs \
-           ON LOWER(unaccent(s.name)) = LOWER(unaccent(inputs.raw_name))",
+           ON norm_text(s.name) = norm_text(inputs.raw_name)",
     )
     .bind(&item_names)
     .fetch_all(pool)

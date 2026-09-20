@@ -368,7 +368,7 @@ pub async fn get_batch_results(
         SELECT ije.id, ije.event_type, ije.entity_id, ije.entity_name, ije.message, ije.detail,
                s.id AS series_id
         FROM index_job_events ije
-        LEFT JOIN series s ON s.library_id = $5 AND LOWER(unaccent(s.name)) = LOWER(unaccent(ije.entity_name))
+        LEFT JOIN series s ON s.library_id = $5 AND norm_text(s.name) = norm_text(ije.entity_name)
         WHERE ije.job_id = $1
           AND (ije.event_type LIKE 'metadata_%' OR ije.event_type = 'error')
           AND ($2::text IS NULL OR ije.event_type = $2)

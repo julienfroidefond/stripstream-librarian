@@ -1,0 +1,12 @@
+DROP INDEX IF EXISTS idx_archived_series_library_norm_name;
+DROP INDEX IF EXISTS idx_series_library_norm_original;
+DROP INDEX IF EXISTS idx_series_library_norm_name;
+DROP FUNCTION IF EXISTS norm_text(text);
+DROP INDEX IF EXISTS idx_eml_series_library_status;
+DROP INDEX IF EXISTS idx_book_files_book_updated;
+DROP INDEX IF EXISTS idx_series_publishers_gin;
+DROP INDEX IF EXISTS idx_ebm_link_unlinked_volume;
+DROP INDEX IF EXISTS idx_books_series_id_volume;
+DROP INDEX IF EXISTS idx_books_pending_thumbnail;
+DROP INDEX IF EXISTS idx_books_pending_analysis;
+DROP INDEX IF EXISTS idx_index_jobs_library_status;

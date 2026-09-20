@@ -203,7 +203,7 @@ pub async fn search_metadata(
     let local_count: Option<i64> = sqlx::query_scalar(
         "SELECT COUNT(*) FROM books b \
          JOIN series s ON s.id = b.series_id \
-         WHERE b.library_id = $1 AND LOWER(unaccent(s.name)) = LOWER(unaccent($2)) \
+         WHERE b.library_id = $1 AND norm_text(s.name) = norm_text($2) \
          AND b.volume_type IN ('regular', 'integral', 'oneshot')",
     )
     .bind(library_id)

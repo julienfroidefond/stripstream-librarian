@@ -13,8 +13,8 @@ pub(crate) async fn get_or_create_series(
     // Try to find existing by current name OR original_name (prevents duplicates after rename)
     if let Some(id) = sqlx::query_scalar::<_, Uuid>(
         "SELECT id FROM series WHERE library_id = $1 \
-         AND (LOWER(unaccent(name)) = LOWER(unaccent($2)) \
-              OR LOWER(unaccent(original_name)) = LOWER(unaccent($2)))",
+         AND (norm_text(name) = norm_text($2) \
+              OR norm_text(original_name) = norm_text($2))",
     )
     .bind(library_id)
     .bind(name)
@@ -39,7 +39,7 @@ pub(crate) async fn get_or_create_series(
 
     // Re-fetch in case of conflict (ON CONFLICT won't return the existing id via execute)
     sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM series WHERE library_id = $1 AND LOWER(unaccent(name)) = LOWER(unaccent($2))",
+        "SELECT id FROM series WHERE library_id = $1 AND norm_text(name) = norm_text($2)",
     )
     .bind(library_id)
     .bind(name)
@@ -97,8 +97,8 @@ async fn restore_series_from_archive(pool: &sqlx::PgPool, library_id: Uuid, name
         FROM archived_series aseries
         WHERE s.library_id = $1
           AND aseries.library_id = $1
-          AND LOWER(unaccent(s.name)) = LOWER(unaccent($2))
-          AND LOWER(unaccent(aseries.name)) = LOWER(unaccent($2))
+          AND norm_text(s.name) = norm_text($2)
+          AND norm_text(aseries.name) = norm_text($2)
         "#,
     )
     .bind(library_id)
@@ -107,7 +107,7 @@ async fn restore_series_from_archive(pool: &sqlx::PgPool, library_id: Uuid, name
     .await;
 
     let _ = sqlx::query(
-        "DELETE FROM archived_series WHERE library_id = $1 AND LOWER(unaccent(name)) = LOWER(unaccent($2))",
+        "DELETE FROM archived_series WHERE library_id = $1 AND norm_text(name) = norm_text($2)",
     )
     .bind(library_id)
     .bind(name)

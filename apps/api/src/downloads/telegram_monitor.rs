@@ -186,7 +186,7 @@ async fn resolve_target_dir(
          JOIN books b ON b.id = bf.book_id \
          LEFT JOIN series s ON s.id = b.series_id \
          WHERE b.library_id = $1 \
-           AND LOWER(unaccent(s.name)) = LOWER(unaccent($2)) \
+           AND norm_text(s.name) = norm_text($2) \
          LIMIT 1",
     )
     .bind(library_id)
@@ -623,7 +623,7 @@ pub async fn process_telegram_sync(pool: &sqlx::PgPool, job_id: Uuid) -> Result<
                 COUNT(*) AS book_count \
          FROM telegram_book_links b \
          JOIN telegram_sources src ON src.id = b.source_id \
-         JOIN series s ON LOWER(unaccent(s.name)) = LOWER(unaccent(b.series_name)) \
+         JOIN series s ON norm_text(s.name) = norm_text(b.series_name) \
            AND s.library_id = COALESCE(b.library_id, src.library_id) \
          WHERE b.status = 'available' \
          GROUP BY b.series_name, s.id, s.name \
@@ -783,7 +783,7 @@ pub async fn process_telegram_sync_incremental(
            AND EXISTS ( \
              SELECT 1 FROM series sr \
              WHERE sr.library_id = COALESCE(b.library_id, s.library_id) \
-               AND LOWER(unaccent(sr.name)) = LOWER(unaccent(b.series_name)) \
+               AND norm_text(sr.name) = norm_text(b.series_name) \
            ) \
          ORDER BY b.created_at DESC \
          LIMIT 200",
@@ -1503,7 +1503,7 @@ async fn refresh_reimportable_telegram_links(pool: &sqlx::PgPool) -> Result<(), 
              FROM series s
              JOIN books bk ON bk.series_id = s.id
              WHERE s.library_id = COALESCE(b.library_id, src.library_id)
-               AND LOWER(unaccent(s.name)) = LOWER(unaccent(b.series_name))
+               AND norm_text(s.name) = norm_text(b.series_name)
                AND (
                  b.volume_number IS NULL
                  OR bk.volume = b.volume_number
@@ -1654,7 +1654,7 @@ pub async fn list_available_by_series(
             "SELECT q.sn AS series_name, q.lid AS library_id, s.id AS series_id \
              FROM UNNEST($1::text[], $2::uuid[]) AS q(sn, lid) \
              LEFT JOIN series s ON s.library_id = q.lid \
-               AND LOWER(unaccent(s.name)) = LOWER(unaccent(q.sn))",
+               AND norm_text(s.name) = norm_text(q.sn)",
         )
         .bind(&names)
         .bind(&libs)
@@ -1767,7 +1767,7 @@ pub async fn list_downloads(
          FROM telegram_book_links b
          JOIN telegram_sources src ON src.id = b.source_id
          LEFT JOIN libraries l ON l.id = COALESCE(b.library_id, src.library_id)
-         LEFT JOIN series sr ON LOWER(unaccent(sr.name)) = LOWER(unaccent(b.series_name))
+         LEFT JOIN series sr ON norm_text(sr.name) = norm_text(b.series_name)
            AND sr.library_id = COALESCE(b.library_id, src.library_id)
          WHERE b.status IN ('queued', 'downloading', 'imported', 'failed')
          ORDER BY b.created_at DESC
@@ -2266,7 +2266,7 @@ async fn search_books_by_pattern(
          JOIN telegram_sources s ON s.id = b.source_id \
          WHERE b.status != 'dismissed' \
            AND b.series_name IS NOT NULL \
-           AND LOWER(unaccent(b.series_name)) LIKE LOWER(unaccent($1)) \
+           AND norm_text(b.series_name) LIKE norm_text($1) \
          ORDER BY b.volume_number NULLS LAST, b.created_at DESC \
          LIMIT 200",
     )
