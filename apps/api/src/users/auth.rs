@@ -33,16 +33,13 @@ pub async fn require_admin(
         return Err(ApiError::forbidden("admin scope required"));
     }
 
-    // Inject AuthUser when the backoffice specifies which user is acting (X-As-User header)
-    if let Some(as_user_id) = req
+    let as_user = req
         .headers()
         .get("X-As-User")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| uuid::Uuid::parse_str(v).ok())
-    {
-        req.extensions_mut().insert(AuthUser {
-            user_id: as_user_id,
-        });
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    if let Some(user_id) = requested_impersonation(&state, as_user).await? {
+        req.extensions_mut().insert(AuthUser { user_id });
     }
 
     req.extensions_mut().insert(scope);
@@ -60,21 +57,48 @@ pub async fn require_read(
     if let Scope::Read { user_id } = &scope {
         req.extensions_mut().insert(AuthUser { user_id: *user_id });
     } else if matches!(scope, Scope::Admin) {
-        // Admin peut s'impersonifier via le header X-As-User
-        if let Some(as_user_id) = req
+        let as_user = req
             .headers()
             .get("X-As-User")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| uuid::Uuid::parse_str(v).ok())
-        {
-            req.extensions_mut().insert(AuthUser {
-                user_id: as_user_id,
-            });
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        if let Some(user_id) = requested_impersonation(&state, as_user).await? {
+            req.extensions_mut().insert(AuthUser { user_id });
         }
     }
 
     req.extensions_mut().insert(scope);
     Ok(next.run(req).await)
+}
+
+/// Resolves the `X-As-User` impersonation header, if present, to an existing user.
+///
+/// The header is only meaningful for admin callers (the backoffice sets it when
+/// an operator is acting on behalf of a user), so it is rejected unless it names
+/// a user that actually exists.
+async fn requested_impersonation(
+    state: &AppState,
+    raw: Option<String>,
+) -> Result<Option<uuid::Uuid>, ApiError> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+
+    let user_id = uuid::Uuid::parse_str(&raw)
+        .map_err(|_| ApiError::bad_request("X-As-User must be a valid user id"))?;
+
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+        .bind(user_id)
+        .fetch_one(&state.pool)
+        .await?;
+
+    if !exists {
+        return Err(ApiError::bad_request(
+            "X-As-User references an unknown user",
+        ));
+    }
+
+    Ok(Some(user_id))
 }
 
 fn bearer_token(req: &Request) -> Option<&str> {
@@ -86,8 +110,23 @@ fn bearer_token(req: &Request) -> Option<&str> {
     scheme.eq_ignore_ascii_case("Bearer").then_some(token)
 }
 
+/// Compares two secrets without short-circuiting on the first differing byte, so
+/// the bootstrap token cannot be recovered by timing how many leading bytes a
+/// guess got right. Only the length is compared directly, and token length is
+/// not a secret.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
 async fn authenticate(state: &AppState, token: &str) -> Result<Scope, ApiError> {
-    if token == state.bootstrap_token.as_ref() {
+    if constant_time_eq(token.as_bytes(), state.bootstrap_token.as_bytes()) {
         return Ok(Scope::Admin);
     }
 
