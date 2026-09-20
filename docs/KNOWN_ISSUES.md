@@ -58,13 +58,12 @@ Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code 
 
 ## 2. Couverture de tests — modules API encore sans tests
 
-État au 2026-09-19 (après couverture de `libraries.rs`, `reading_lists.rs`, `stats.rs`, `settings.rs` et `genres.rs`).
+État au 2026-09-19 (après couverture de `libraries.rs`, `reading_lists.rs`, `stats.rs`, `settings.rs`, `genres.rs` et `ai_tagging.rs`).
 Les sous-modules (`downloads/`, `metadata/`, `metadata_providers/`, `series/`,
 `reading/`, `integrations/`, `books/`, `jobs/`, `users/`, …) disposent déjà de tests.
 
 | Module | LOC (fichier) | Priorité |
 |--------|---------------|----------|
-| `ai_tagging.rs` | ~284 | 2 |
 | `authors.rs` | ~138 | 3 |
 | `handlers.rs` | ~83 | 3 |
 | `api_middleware.rs` | ~61 | 3 |

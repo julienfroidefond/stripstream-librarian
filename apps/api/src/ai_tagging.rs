@@ -282,3 +282,7 @@ pub async fn suggest_tags(
 
     Ok(Json(SuggestTagsResponse { suggestions }))
 }
+
+#[cfg(test)]
+#[path = "tests/ai_tagging.rs"]
+mod tests;
