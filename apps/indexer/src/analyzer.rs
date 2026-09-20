@@ -381,9 +381,9 @@ pub async fn analyze_library_books(
         "b.page_count IS NULL"
     };
 
-    let sql = format!(
+    let count_sql = format!(
         r#"
-        SELECT b.id AS book_id, bf.abs_path, bf.format, (b.thumbnail_path IS NULL) AS needs_thumbnail
+        SELECT COUNT(*)
         FROM books b
         JOIN book_files bf ON bf.book_id = b.id
         WHERE (b.library_id = $1 OR $1 IS NULL)
@@ -392,17 +392,16 @@ pub async fn analyze_library_books(
         query_filter
     );
 
-    let rows = sqlx::query(&sql)
+    let total: i32 = sqlx::query_scalar::<_, i64>(&count_sql)
         .bind(library_id)
-        .fetch_all(&state.pool)
-        .await?;
+        .fetch_one(&state.pool)
+        .await? as i32;
 
-    if rows.is_empty() {
+    if total == 0 {
         info!("[ANALYZER] No books to analyze");
         return Ok(());
     }
 
-    let total = rows.len() as i32;
     info!(
         "[ANALYZER] Analyzing {} books (thumbnail_only={}, concurrency={})",
         total, thumbnail_only, concurrency
@@ -418,22 +417,13 @@ pub async fn analyze_library_books(
         needs_thumbnail: bool,
     }
 
-    let tasks: Vec<BookTask> = rows
-        .into_iter()
-        .map(|row| BookTask {
-            book_id: row.get("book_id"),
-            abs_path: row.get("abs_path"),
-            format: row.get("format"),
-            needs_thumbnail: row.get("needs_thumbnail"),
-        })
-        .collect();
-
     // -------------------------------------------------------------------------
     // Sub-phase A: extract first page from each archive and store raw image
     // Processed in batches of 500 to limit memory — raw_bytes are freed between batches.
     // The collected results (Uuid, String, i32) are lightweight (~100 bytes each).
     // -------------------------------------------------------------------------
     const BATCH_SIZE: usize = 200;
+    const FETCH_BATCH: i64 = 500;
 
     let phase_a_start = std::time::Instant::now();
     if let Err(e) = sqlx::query(
@@ -448,281 +438,328 @@ pub async fn analyze_library_books(
 
     let extracted_count = Arc::new(AtomicI32::new(0));
     let mut all_extracted: Vec<(Uuid, String, i32)> = Vec::new();
+    let mut attempted: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
 
-    let num_batches = tasks.len().div_ceil(BATCH_SIZE);
-    let task_chunks: Vec<Vec<BookTask>> = tasks
-        .into_iter()
-        .collect::<Vec<_>>()
-        .chunks(BATCH_SIZE)
-        .map(|c| c.to_vec())
-        .collect();
+    // Failed books keep matching the filter; excluding attempted ids guarantees termination.
+    let fetch_sql = format!(
+        r#"
+        SELECT b.id AS book_id, bf.abs_path, bf.format, (b.thumbnail_path IS NULL) AS needs_thumbnail
+        FROM books b
+        JOIN book_files bf ON bf.book_id = b.id
+        WHERE (b.library_id = $1 OR $1 IS NULL)
+          AND {}
+          AND NOT (b.id = ANY($3))
+        LIMIT $2
+        "#,
+        query_filter
+    );
 
-    for (batch_idx, batch_tasks) in task_chunks.into_iter().enumerate() {
+    loop {
         if cancelled_flag.load(Ordering::Relaxed) {
             break;
         }
 
-        info!(
-            "[ANALYZER] Extraction batch {}/{} — {} books",
-            batch_idx + 1,
-            num_batches,
-            batch_tasks.len()
-        );
+        let attempted_ids: Vec<Uuid> = attempted.iter().copied().collect();
+        let rows = sqlx::query(&fetch_sql)
+            .bind(library_id)
+            .bind(FETCH_BATCH)
+            .bind(&attempted_ids)
+            .fetch_all(&state.pool)
+            .await?;
 
-        let batch_outcomes: Vec<ExtractOutcome> = stream::iter(batch_tasks)
-            .map(|task| {
-                let config = config.clone();
-                let cancelled = cancelled_flag.clone();
+        if rows.is_empty() {
+            break;
+        }
 
-                async move {
-                    if cancelled.load(Ordering::Relaxed) {
-                        return ExtractOutcome::Skipped;
-                    }
+        let tasks: Vec<BookTask> = rows
+            .into_iter()
+            .map(|row| BookTask {
+                book_id: row.get("book_id"),
+                abs_path: row.get("abs_path"),
+                format: row.get("format"),
+                needs_thumbnail: row.get("needs_thumbnail"),
+            })
+            .collect();
 
-                    let local_path = utils::remap_libraries_path(&task.abs_path);
-                    let path = std::path::Path::new(&local_path);
-                    let book_id = task.book_id;
-                    let needs_thumbnail = task.needs_thumbnail;
+        for task in &tasks {
+            attempted.insert(task.book_id);
+        }
 
-                    // Remove macOS Apple Double resource fork files (._*) that were indexed before the scanner filter was added
-                    if path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .map(|n| n.starts_with("._"))
-                        .unwrap_or(false)
-                    {
-                        warn!("[ANALYZER] Removing macOS resource fork from DB: {}", local_path);
-                        return ExtractOutcome::ResourceFork { book_id };
-                    }
+        let num_batches = tasks.len().div_ceil(BATCH_SIZE);
+        let task_chunks: Vec<Vec<BookTask>> = tasks
+            .into_iter()
+            .collect::<Vec<_>>()
+            .chunks(BATCH_SIZE)
+            .map(|c| c.to_vec())
+            .collect();
 
-                    let format = match book_format_from_str(&task.format) {
-                        Some(f) => f,
-                        None => {
-                            warn!("[ANALYZER] Unknown format '{}' for book {}", task.format, book_id);
+        for (batch_idx, batch_tasks) in task_chunks.into_iter().enumerate() {
+            if cancelled_flag.load(Ordering::Relaxed) {
+                break;
+            }
+
+            info!(
+                "[ANALYZER] Extraction batch {}/{} — {} books",
+                batch_idx + 1,
+                num_batches,
+                batch_tasks.len()
+            );
+
+            let batch_outcomes: Vec<ExtractOutcome> = stream::iter(batch_tasks)
+                .map(|task| {
+                    let config = config.clone();
+                    let cancelled = cancelled_flag.clone();
+
+                    async move {
+                        if cancelled.load(Ordering::Relaxed) {
                             return ExtractOutcome::Skipped;
                         }
-                    };
 
-                    let pdf_scale = config.width.max(config.height);
-                    let path_owned = path.to_path_buf();
-                    let timeout_secs = config.timeout_secs;
-                    let file_name = path.file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| local_path.clone());
+                        let local_path = utils::remap_libraries_path(&task.abs_path);
+                        let path = std::path::Path::new(&local_path);
+                        let book_id = task.book_id;
+                        let needs_thumbnail = task.needs_thumbnail;
 
-                    debug!(target: "extraction", "[EXTRACTION] Starting: {} ({})", file_name, task.format);
-                    let extract_start = std::time::Instant::now();
-
-                    let analyze_result = tokio::time::timeout(
-                        std::time::Duration::from_secs(timeout_secs),
-                        tokio::task::spawn_blocking(move || analyze_book(&path_owned, format, pdf_scale)),
-                    )
-                    .await;
-
-                    let (page_count, raw_bytes) = match analyze_result {
-                        Ok(Ok(Ok(result))) => result,
-                        Ok(Ok(Err(e))) => {
-                            warn!(target: "extraction", "[EXTRACTION] Failed: {} — {}", file_name, e);
-                            return ExtractOutcome::Error {
-                                book_id,
-                                local_path,
-                                parse_error: e.to_string(),
-                                message: format!("Extraction failed: {}", e),
-                            };
+                        // Remove macOS Apple Double resource fork files (._*) that were indexed before the scanner filter was added
+                        if path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .map(|n| n.starts_with("._"))
+                            .unwrap_or(false)
+                        {
+                            warn!("[ANALYZER] Removing macOS resource fork from DB: {}", local_path);
+                            return ExtractOutcome::ResourceFork { book_id };
                         }
-                        Ok(Err(e)) => {
-                            warn!(target: "extraction", "[EXTRACTION] spawn error: {} — {}", file_name, e);
-                            return ExtractOutcome::EventOnly {
-                                book_id,
-                                local_path,
-                                message: format!("Spawn error: {}", e),
-                            };
-                        }
-                        Err(_) => {
-                            warn!(target: "extraction", "[EXTRACTION] Timeout ({}s): {}", timeout_secs, file_name);
-                            return ExtractOutcome::Error {
-                                book_id,
-                                local_path,
-                                parse_error: format!("analyze_book timed out after {}s", timeout_secs),
-                                message: format!("Extraction timed out after {}s", timeout_secs),
-                            };
-                        }
-                    };
 
-                    let extract_elapsed = extract_start.elapsed();
-                    debug!(
-                        target: "extraction",
-                        "[EXTRACTION] Done: {} — {} pages, image={}KB in {:.0}ms",
-                        file_name, page_count, raw_bytes.len() / 1024,
-                        extract_elapsed.as_secs_f64() * 1000.0,
-                    );
-
-                    // If thumbnail already exists, just update page_count and skip thumbnail generation
-                    if !needs_thumbnail {
-                        debug!(target: "extraction", "[EXTRACTION] Page count only: {} — {} pages", file_name, page_count);
-                        return ExtractOutcome::PageCountOnly {
-                            book_id,
-                            local_path,
-                            page_count,
+                        let format = match book_format_from_str(&task.format) {
+                            Some(f) => f,
+                            None => {
+                                warn!("[ANALYZER] Unknown format '{}' for book {}", task.format, book_id);
+                                return ExtractOutcome::Skipped;
+                            }
                         };
+
+                        let pdf_scale = config.width.max(config.height);
+                        let path_owned = path.to_path_buf();
+                        let timeout_secs = config.timeout_secs;
+                        let file_name = path.file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| local_path.clone());
+
+                        debug!(target: "extraction", "[EXTRACTION] Starting: {} ({})", file_name, task.format);
+                        let extract_start = std::time::Instant::now();
+
+                        let analyze_result = tokio::time::timeout(
+                            std::time::Duration::from_secs(timeout_secs),
+                            tokio::task::spawn_blocking(move || analyze_book(&path_owned, format, pdf_scale)),
+                        )
+                        .await;
+
+                        let (page_count, raw_bytes) = match analyze_result {
+                            Ok(Ok(Ok(result))) => result,
+                            Ok(Ok(Err(e))) => {
+                                warn!(target: "extraction", "[EXTRACTION] Failed: {} — {}", file_name, e);
+                                return ExtractOutcome::Error {
+                                    book_id,
+                                    local_path,
+                                    parse_error: e.to_string(),
+                                    message: format!("Extraction failed: {}", e),
+                                };
+                            }
+                            Ok(Err(e)) => {
+                                warn!(target: "extraction", "[EXTRACTION] spawn error: {} — {}", file_name, e);
+                                return ExtractOutcome::EventOnly {
+                                    book_id,
+                                    local_path,
+                                    message: format!("Spawn error: {}", e),
+                                };
+                            }
+                            Err(_) => {
+                                warn!(target: "extraction", "[EXTRACTION] Timeout ({}s): {}", timeout_secs, file_name);
+                                return ExtractOutcome::Error {
+                                    book_id,
+                                    local_path,
+                                    parse_error: format!("analyze_book timed out after {}s", timeout_secs),
+                                    message: format!("Extraction timed out after {}s", timeout_secs),
+                                };
+                            }
+                        };
+
+                        let extract_elapsed = extract_start.elapsed();
+                        debug!(
+                            target: "extraction",
+                            "[EXTRACTION] Done: {} — {} pages, image={}KB in {:.0}ms",
+                            file_name, page_count, raw_bytes.len() / 1024,
+                            extract_elapsed.as_secs_f64() * 1000.0,
+                        );
+
+                        // If thumbnail already exists, just update page_count and skip thumbnail generation
+                        if !needs_thumbnail {
+                            debug!(target: "extraction", "[EXTRACTION] Page count only: {} — {} pages", file_name, page_count);
+                            return ExtractOutcome::PageCountOnly {
+                                book_id,
+                                local_path,
+                                page_count,
+                            };
+                        }
+
+                        // Save raw bytes to disk (no resize, no encode) — moves raw_bytes, no clone
+                        let raw_path = match tokio::task::spawn_blocking({
+                            let dir = config.directory.clone();
+                            move || save_raw_image(book_id, &raw_bytes, &dir)
+                        })
+                        .await
+                        {
+                            Ok(Ok(p)) => p,
+                            Ok(Err(e)) => {
+                                warn!("[ANALYZER] save_raw_image failed for book {}: {}", book_id, e);
+                                return ExtractOutcome::Skipped;
+                            }
+                            Err(e) => {
+                                warn!("[ANALYZER] spawn_blocking save_raw error for book {}: {}", book_id, e);
+                                return ExtractOutcome::Skipped;
+                            }
+                        };
+
+                        ExtractOutcome::Thumbnail {
+                            book_id,
+                            raw_path,
+                            page_count,
+                        }
                     }
+                })
+                .buffer_unordered(concurrency)
+                .collect()
+                .await;
 
-                    // Save raw bytes to disk (no resize, no encode) — moves raw_bytes, no clone
-                    let raw_path = match tokio::task::spawn_blocking({
-                        let dir = config.directory.clone();
-                        move || save_raw_image(book_id, &raw_bytes, &dir)
-                    })
-                    .await
-                    {
-                        Ok(Ok(p)) => p,
-                        Ok(Err(e)) => {
-                            warn!("[ANALYZER] save_raw_image failed for book {}: {}", book_id, e);
-                            return ExtractOutcome::Skipped;
-                        }
-                        Err(e) => {
-                            warn!("[ANALYZER] spawn_blocking save_raw error for book {}: {}", book_id, e);
-                            return ExtractOutcome::Skipped;
-                        }
-                    };
+            let mut page_count_updates: Vec<(Uuid, i32)> = Vec::new();
+            let mut parse_errors: Vec<(Uuid, String)> = Vec::new();
+            let mut events: Vec<EventInsert> = Vec::new();
+            let mut resource_forks: Vec<Uuid> = Vec::new();
 
+            let batch_outcomes_len = batch_outcomes.len() as i32;
+
+            for outcome in batch_outcomes {
+                match outcome {
+                    ExtractOutcome::Skipped => {}
+                    ExtractOutcome::ResourceFork { book_id } => resource_forks.push(book_id),
+                    ExtractOutcome::Error {
+                        book_id,
+                        local_path,
+                        parse_error,
+                        message,
+                    } => {
+                        parse_errors.push((book_id, parse_error));
+                        events.push(EventInsert {
+                            job_id,
+                            event_type: "error".to_string(),
+                            level: "error".to_string(),
+                            entity_type: Some("book".to_string()),
+                            entity_id: Some(book_id),
+                            entity_name: Some(local_path),
+                            message: Some(message),
+                            detail: None,
+                        });
+                    }
+                    ExtractOutcome::EventOnly {
+                        book_id,
+                        local_path,
+                        message,
+                    } => {
+                        events.push(EventInsert {
+                            job_id,
+                            event_type: "error".to_string(),
+                            level: "error".to_string(),
+                            entity_type: Some("book".to_string()),
+                            entity_id: Some(book_id),
+                            entity_name: Some(local_path),
+                            message: Some(message),
+                            detail: None,
+                        });
+                    }
+                    ExtractOutcome::PageCountOnly {
+                        book_id,
+                        local_path,
+                        page_count,
+                    } => {
+                        page_count_updates.push((book_id, page_count));
+                        events.push(EventInsert {
+                            job_id,
+                            event_type: "pages_extracted".to_string(),
+                            level: "info".to_string(),
+                            entity_type: Some("book".to_string()),
+                            entity_id: Some(book_id),
+                            entity_name: Some(local_path),
+                            message: Some(format!("Extracted {} pages", page_count)),
+                            detail: Some(serde_json::json!({"page_count": page_count})),
+                        });
+                    }
                     ExtractOutcome::Thumbnail {
                         book_id,
                         raw_path,
                         page_count,
+                    } => {
+                        all_extracted.push((book_id, raw_path, page_count));
                     }
                 }
-            })
-            .buffer_unordered(concurrency)
-            .collect()
-            .await;
-
-        let mut page_count_updates: Vec<(Uuid, i32)> = Vec::new();
-        let mut parse_errors: Vec<(Uuid, String)> = Vec::new();
-        let mut events: Vec<EventInsert> = Vec::new();
-        let mut resource_forks: Vec<Uuid> = Vec::new();
-
-        let batch_outcomes_len = batch_outcomes.len() as i32;
-
-        for outcome in batch_outcomes {
-            match outcome {
-                ExtractOutcome::Skipped => {}
-                ExtractOutcome::ResourceFork { book_id } => resource_forks.push(book_id),
-                ExtractOutcome::Error {
-                    book_id,
-                    local_path,
-                    parse_error,
-                    message,
-                } => {
-                    parse_errors.push((book_id, parse_error));
-                    events.push(EventInsert {
-                        job_id,
-                        event_type: "error".to_string(),
-                        level: "error".to_string(),
-                        entity_type: Some("book".to_string()),
-                        entity_id: Some(book_id),
-                        entity_name: Some(local_path),
-                        message: Some(message),
-                        detail: None,
-                    });
-                }
-                ExtractOutcome::EventOnly {
-                    book_id,
-                    local_path,
-                    message,
-                } => {
-                    events.push(EventInsert {
-                        job_id,
-                        event_type: "error".to_string(),
-                        level: "error".to_string(),
-                        entity_type: Some("book".to_string()),
-                        entity_id: Some(book_id),
-                        entity_name: Some(local_path),
-                        message: Some(message),
-                        detail: None,
-                    });
-                }
-                ExtractOutcome::PageCountOnly {
-                    book_id,
-                    local_path,
-                    page_count,
-                } => {
-                    page_count_updates.push((book_id, page_count));
-                    events.push(EventInsert {
-                        job_id,
-                        event_type: "pages_extracted".to_string(),
-                        level: "info".to_string(),
-                        entity_type: Some("book".to_string()),
-                        entity_id: Some(book_id),
-                        entity_name: Some(local_path),
-                        message: Some(format!("Extracted {} pages", page_count)),
-                        detail: Some(serde_json::json!({"page_count": page_count})),
-                    });
-                }
-                ExtractOutcome::Thumbnail {
-                    book_id,
-                    raw_path,
-                    page_count,
-                } => {
-                    all_extracted.push((book_id, raw_path, page_count));
-                }
             }
-        }
 
-        if !resource_forks.is_empty() {
-            sqlx::query("DELETE FROM book_files WHERE book_id = ANY($1)")
+            if !resource_forks.is_empty() {
+                sqlx::query("DELETE FROM book_files WHERE book_id = ANY($1)")
+                    .bind(&resource_forks)
+                    .execute(&state.pool)
+                    .await?;
+                sqlx::query(
+                    "DELETE FROM books WHERE id = ANY($1) AND NOT EXISTS (SELECT 1 FROM book_files WHERE book_id = books.id)",
+                )
                 .bind(&resource_forks)
                 .execute(&state.pool)
                 .await?;
-            sqlx::query(
-                "DELETE FROM books WHERE id = ANY($1) AND NOT EXISTS (SELECT 1 FROM book_files WHERE book_id = books.id)",
+            }
+
+            if let Err(e) = flush_page_counts(&state.pool, &mut page_count_updates).await {
+                warn!("[ANALYZER] Failed to flush page counts: {e}");
+            }
+            if let Err(e) = flush_parse_errors(&state.pool, &mut parse_errors).await {
+                warn!("[ANALYZER] Failed to flush parse errors: {e}");
+            }
+            if let Err(e) = flush_events(&state.pool, &mut events).await {
+                warn!("[ANALYZER] Failed to flush events: {e}");
+            }
+
+            let processed = extracted_count.fetch_add(batch_outcomes_len, Ordering::Relaxed)
+                + batch_outcomes_len;
+            let percent = (processed as f64 / total as f64 * 50.0) as i32;
+            if let Err(e) = sqlx::query(
+                "UPDATE index_jobs SET processed_files = $2, progress_percent = $3 WHERE id = $1",
             )
-            .bind(&resource_forks)
+            .bind(job_id)
+            .bind(processed)
+            .bind(percent)
             .execute(&state.pool)
-            .await?;
-        }
+            .await
+            {
+                warn!("[ANALYZER] Failed to update job progress: {e}");
+            }
 
-        if let Err(e) = flush_page_counts(&state.pool, &mut page_count_updates).await {
-            warn!("[ANALYZER] Failed to flush page counts: {e}");
-        }
-        if let Err(e) = flush_parse_errors(&state.pool, &mut parse_errors).await {
-            warn!("[ANALYZER] Failed to flush parse errors: {e}");
-        }
-        if let Err(e) = flush_events(&state.pool, &mut events).await {
-            warn!("[ANALYZER] Failed to flush events: {e}");
-        }
+            info!(
+                target: "extraction",
+                "[EXTRACTION] Progress: {}/{} books extracted ({}%)",
+                processed, total, percent
+            );
 
-        let processed =
-            extracted_count.fetch_add(batch_outcomes_len, Ordering::Relaxed) + batch_outcomes_len;
-        let percent = (processed as f64 / total as f64 * 50.0) as i32;
-        if let Err(e) = sqlx::query(
-            "UPDATE index_jobs SET processed_files = $2, progress_percent = $3 WHERE id = $1",
-        )
-        .bind(job_id)
-        .bind(processed)
-        .bind(percent)
-        .execute(&state.pool)
-        .await
-        {
-            warn!("[ANALYZER] Failed to update job progress: {e}");
-        }
-
-        info!(
-            target: "extraction",
-            "[EXTRACTION] Progress: {}/{} books extracted ({}%)",
-            processed, total, percent
-        );
-
-        // Log RSS to track memory growth between batches
-        if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
-            for line in status.lines() {
-                if line.starts_with("VmRSS:") {
-                    info!(
-                        "[ANALYZER] Memory after batch {}/{}: {}",
-                        batch_idx + 1,
-                        num_batches,
-                        line.trim()
-                    );
-                    break;
+            // Log RSS to track memory growth between batches
+            if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
+                for line in status.lines() {
+                    if line.starts_with("VmRSS:") {
+                        info!(
+                            "[ANALYZER] Memory after batch {}/{}: {}",
+                            batch_idx + 1,
+                            num_batches,
+                            line.trim()
+                        );
+                        break;
+                    }
                 }
             }
         }
@@ -740,12 +777,15 @@ pub async fn analyze_library_books(
     let extracted_total = all_extracted.len() as i32;
     let phase_a_elapsed = phase_a_start.elapsed();
     info!(
-        "[ANALYZER] Sub-phase A complete: {}/{} books extracted in {:.1}s ({:.0} ms/book, {} batches)",
+        "[ANALYZER] Sub-phase A complete: {}/{} books extracted in {:.1}s ({:.0} ms/book)",
         extracted_total,
         total,
         phase_a_elapsed.as_secs_f64(),
-        if extracted_total > 0 { phase_a_elapsed.as_millis() as f64 / extracted_total as f64 } else { 0.0 },
-        num_batches,
+        if extracted_total > 0 {
+            phase_a_elapsed.as_millis() as f64 / extracted_total as f64
+        } else {
+            0.0
+        },
     );
 
     // -------------------------------------------------------------------------
