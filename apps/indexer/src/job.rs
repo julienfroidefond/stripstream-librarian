@@ -103,6 +103,26 @@ pub async fn cleanup_stale_jobs(pool: &PgPool) -> Result<()> {
         );
     }
 
+    // Purge terminal jobs older than the retention window. Child rows
+    // (index_job_events, *_results, index_job_errors) cascade on delete.
+    // Only terminal statuses are purged so in-flight jobs are never removed.
+    let purged = sqlx::query(
+        r#"
+        DELETE FROM index_jobs
+        WHERE status IN ('success', 'failed', 'cancelled')
+          AND created_at < NOW() - INTERVAL '90 days'
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    if purged.rows_affected() > 0 {
+        info!(
+            "[CLEANUP] Purged {} job(s) older than 90 days",
+            purged.rows_affected()
+        );
+    }
+
     Ok(())
 }
 

@@ -54,6 +54,8 @@ Depuis la page **Tâches**, sélectionnez une bibliothèque (ou Toutes) puis cli
 
 L'historique liste toutes les tâches avec leur type, statut, statistiques (livres ajoutés/supprimés, liens créés…), durée et date. Filtres disponibles : type, statut, bibliothèque. Chaque tâche peut être consultée (rapport détaillé) ou relancée.
 
+Les tâches terminées (réussies, échouées ou annulées) sont automatiquement purgées après **90 jours**, avec leurs événements et rapports associés. Les tâches en attente ou en cours ne sont jamais purgées.
+
 ## Cycle de vie
 
 ```
