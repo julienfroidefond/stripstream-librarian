@@ -594,3 +594,69 @@ async fn delete_status_mapping_unknown_id_is_not_found(pool: PgPool) {
     assert_eq!(err.status, StatusCode::NOT_FOUND);
     assert_eq!(err.message, "status mapping not found");
 }
+
+// ---------------------------------------------------------------------------
+// Setting validation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn validate_limits_rejects_zero_renders() {
+    let err = expect_err(validate_setting(
+        "limits",
+        &json!({ "concurrent_renders": 0 }),
+    ));
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+}
+
+#[test]
+fn validate_limits_rejects_zero_rate_limit_and_timeout() {
+    assert!(validate_setting("limits", &json!({ "rate_limit_per_second": 0 })).is_err());
+    assert!(validate_setting("limits", &json!({ "timeout_seconds": 0 })).is_err());
+    assert!(validate_setting("limits", &json!({ "concurrent_telegram_downloads": 0 })).is_err());
+}
+
+#[test]
+fn validate_limits_accepts_positive_values() {
+    assert!(validate_setting(
+        "limits",
+        &json!({ "concurrent_renders": 2, "rate_limit_per_second": 7, "timeout_seconds": 42 })
+    )
+    .is_ok());
+}
+
+#[test]
+fn validate_setting_leaves_unknown_keys_untouched() {
+    assert!(validate_setting("custom_noop", &json!({ "x": 1 })).is_ok());
+}
+
+#[test]
+fn validate_cache_rejects_system_and_root_directories() {
+    for dir in ["/", "/etc", "/usr/bin", "relative/cache"] {
+        let err = expect_err(validate_setting("cache", &json!({ "directory": dir })));
+        assert_eq!(
+            err.status,
+            StatusCode::BAD_REQUEST,
+            "expected {dir} to be rejected"
+        );
+    }
+}
+
+#[test]
+fn validate_cache_accepts_a_temp_directory() {
+    let dir = TempDir::new().unwrap();
+    let dir = dir.path().to_string_lossy().to_string();
+
+    assert!(validate_setting("cache", &json!({ "directory": dir })).is_ok());
+}
+
+#[test]
+fn validate_cache_rejects_zero_memory_size() {
+    assert!(validate_setting("cache", &json!({ "memory_max_size_mb": 0 })).is_err());
+}
+
+#[test]
+fn is_safe_cache_directory_rejects_protected_roots() {
+    assert!(!is_safe_cache_directory("/"));
+    assert!(!is_safe_cache_directory("/etc"));
+    assert!(!is_safe_cache_directory(""));
+}

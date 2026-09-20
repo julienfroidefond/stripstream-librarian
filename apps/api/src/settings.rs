@@ -6,6 +6,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::Row;
+use std::path::{Path as FsPath, PathBuf};
 use std::time::Duration;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -123,6 +124,113 @@ pub async fn get_setting(
     }
 }
 
+/// Validate a setting value before it is persisted.
+///
+/// Only the runtime keys whose values directly control resource allocation,
+/// filesystem access or request admission are validated; unknown keys are left
+/// untouched so the Backoffice can store arbitrary configuration.
+fn validate_setting(key: &str, value: &Value) -> Result<(), ApiError> {
+    match key {
+        "limits" => validate_limits(value),
+        "cache" => validate_cache(value),
+        _ => Ok(()),
+    }
+}
+
+fn validate_limits(value: &Value) -> Result<(), ApiError> {
+    for field in [
+        "concurrent_renders",
+        "concurrent_telegram_downloads",
+        "rate_limit_per_second",
+        "timeout_seconds",
+    ] {
+        if let Some(n) = value.get(field) {
+            let n = n.as_u64().ok_or_else(|| {
+                ApiError::bad_request(format!("limits.{field} must be a positive integer"))
+            })?;
+            if n == 0 {
+                return Err(ApiError::bad_request(format!(
+                    "limits.{field} must be greater than 0"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_cache(value: &Value) -> Result<(), ApiError> {
+    if let Some(max_mb) = value.get("memory_max_size_mb") {
+        let max_mb = max_mb
+            .as_u64()
+            .ok_or_else(|| ApiError::bad_request("cache.memory_max_size_mb must be an integer"))?;
+        if max_mb == 0 {
+            return Err(ApiError::bad_request(
+                "cache.memory_max_size_mb must be greater than 0",
+            ));
+        }
+    }
+    if let Some(dir) = value.get("directory") {
+        let dir = dir
+            .as_str()
+            .ok_or_else(|| ApiError::bad_request("cache.directory must be a string"))?;
+        if !is_safe_cache_directory(dir) {
+            return Err(ApiError::bad_request(
+                "cache.directory must be an absolute path outside protected directories",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Reject cache directories that would make `clear_cache` destructive if pointed
+/// at a system or data root (`remove_dir_all` runs on this path).
+fn is_safe_cache_directory(path: &str) -> bool {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    let path = FsPath::new(trimmed);
+    if !path.is_absolute() {
+        return false;
+    }
+
+    let normalized = normalize_lexically(path);
+    if normalized.parent().is_none() {
+        return false;
+    }
+
+    let protected = [
+        std::env::var("LIBRARIES_ROOT_PATH").unwrap_or_else(|_| "/libraries".to_string()),
+        std::env::var("THUMBNAIL_DIRECTORY").unwrap_or_else(|_| "/data/thumbnails".to_string()),
+    ];
+
+    const SYSTEM_ROOTS: &[&str] = &[
+        "/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc", "/sbin", "/sys", "/usr",
+    ];
+
+    !SYSTEM_ROOTS
+        .iter()
+        .copied()
+        .chain(protected.iter().map(|s| s.as_str()))
+        .any(|root| normalized.starts_with(root))
+}
+
+/// Resolve `.`/`..` lexically so traversal is caught without touching the filesystem.
+fn normalize_lexically(path: &FsPath) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    normalized
+}
+
 /// Create or update a setting
 #[utoipa::path(
     post,
@@ -141,6 +249,8 @@ pub async fn update_setting(
     axum::extract::Path(key): axum::extract::Path<String>,
     Json(body): Json<UpdateSettingRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    validate_setting(&key, &body.value)?;
+
     let row = sqlx::query(
         r#"
         INSERT INTO app_settings (key, value, updated_at)
@@ -190,6 +300,12 @@ pub async fn clear_cache(
 ) -> Result<Json<ClearCacheResponse>, ApiError> {
     state.page_cache.lock().await.clear();
     let cache_dir = state.settings.read().await.cache_directory.clone();
+
+    if !is_safe_cache_directory(&cache_dir) {
+        return Err(ApiError::bad_request(format!(
+            "refusing to clear unsafe cache directory '{cache_dir}'"
+        )));
+    }
 
     let result = tokio::task::spawn_blocking(move || {
         if std::path::Path::new(&cache_dir).exists() {

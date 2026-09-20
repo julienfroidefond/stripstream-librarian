@@ -101,7 +101,8 @@ pub async fn load_concurrent_renders(pool: &Pool<Postgres>) -> usize {
             value
                 .get("concurrent_renders")
                 .and_then(|v: &serde_json::Value| v.as_u64())
-                .map(|v| v as usize)
+                // Clamp to >= 1: `Semaphore::new(0)` would block every page render forever.
+                .map(|v| (v as usize).max(1))
                 .unwrap_or(default_concurrency)
         }
         _ => default_concurrency,
@@ -136,10 +137,11 @@ pub async fn load_dynamic_settings(pool: &Pool<Postgres>) -> DynamicSettings {
     {
         let v: serde_json::Value = row.get("value");
         if let Some(n) = v.get("rate_limit_per_second").and_then(|x| x.as_u64()) {
-            s.rate_limit_per_second = n as u32;
+            // A rate limit of 0 would reject every read request (429) permanently.
+            s.rate_limit_per_second = (n as u32).max(1);
         }
         if let Some(n) = v.get("timeout_seconds").and_then(|x| x.as_u64()) {
-            s.timeout_seconds = n;
+            s.timeout_seconds = n.max(1);
         }
     }
 
@@ -159,7 +161,7 @@ pub async fn load_dynamic_settings(pool: &Pool<Postgres>) -> DynamicSettings {
             s.image_filter = s2.to_string();
         }
         if let Some(n) = v.get("max_width").and_then(|x| x.as_u64()) {
-            s.image_max_width = n as u32;
+            s.image_max_width = (n as u32).max(1);
         }
     }
 
