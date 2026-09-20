@@ -115,6 +115,88 @@ async fn failed_download_count_query(pool: sqlx::PgPool) {
     assert_eq!(series_name, "Naruto");
 }
 
+// LOCKED: the production query in `get_latest_found` counts `unnest(expected_volumes)`
+// rows, so `failed_download_count` is the number of failed VOLUMES, not downloads.
+// The test above uses a stale query without `unnest` and asserts 2. See docs/KNOWN_ISSUES.md §1.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn failed_download_count_counts_volumes_not_downloads(pool: sqlx::PgPool) {
+    let library_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Test Lib', '/libraries/test')",
+    )
+    .bind(library_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let series_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Naruto')")
+        .bind(series_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let ad_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO available_downloads (id, library_id, series_id, missing_count, available_releases, updated_at) \
+         VALUES ($1, $2, $3, 5, '[]'::jsonb, NOW())",
+    )
+    .bind(ad_id)
+    .bind(library_id)
+    .bind(series_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, status, error_message) \
+         VALUES ($1, $2, 'naruto', '{1,2}', 'error', 'stalled')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(library_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, status, error_message) \
+         VALUES ($1, $2, 'Naruto', '{3}', 'error', 'timeout')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(library_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let rows = sqlx::query(
+        "SELECT ad.id, ad.library_id, s.name AS series_name, ad.series_id, ad.missing_count, ad.available_releases, ad.updated_at, \
+                l.name as library_name, \
+                COALESCE(td_err.failed_count, 0) AS failed_download_count \
+         FROM available_downloads ad \
+         JOIN libraries l ON l.id = ad.library_id \
+         JOIN series s ON s.id = ad.series_id \
+         LEFT JOIN LATERAL ( \
+             SELECT COUNT(*) AS failed_count \
+             FROM torrent_downloads td, unnest(td.expected_volumes) AS vol \
+             WHERE td.library_id = ad.library_id \
+               AND LOWER(td.series_name) = LOWER(s.name) \
+               AND td.status = 'error' \
+         ) td_err ON TRUE \
+         ORDER BY l.name, s.name",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    let failed_count: i64 = rows[0].get("failed_download_count");
+    assert_eq!(
+        failed_count, 3,
+        "2 error torrents covering 3 volumes total are counted as 3, not 2"
+    );
+}
+
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn has_failed_flag_on_releases(pool: sqlx::PgPool) {
     // Setup: library + series

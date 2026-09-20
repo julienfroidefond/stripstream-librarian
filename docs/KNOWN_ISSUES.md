@@ -61,11 +61,62 @@ Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code 
 | 14 | Noms d'auteur blancs conservés | Le filtre SQL n'exclut que `NULL` et `''` (`author_name <> ''`), pas les chaînes d'espaces : un auteur `"  "` apparaît comme une entrée à part entière. | `authors::tests::list_authors_keeps_whitespace_only_names` |
 | 15 | `total` = 0 hors plage | Le total fenêtré (`COUNT(*) OVER()`) est lu sur la première ligne renvoyée ; une page hors plage ne renvoie aucune ligne → `total` vaut **0** alors que des auteurs existent. | `authors::tests::list_authors_out_of_range_page_returns_empty_with_total` |
 
+### `apps/api/src/books/rename.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 16 | `sanitize_filename` panique sur UTF-8 | La troncature utilise `trimmed.len()` (octets) puis `trimmed[..200]` (slice d'octets) : un caractère multi-octets à cheval sur l'octet 200 provoque un **panic**. Le test ASCII existant masque le bug. | `books::rename::tests::sanitize_panics_on_multibyte_boundary` |
+
+### `apps/api/src/downloads/detection.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 17 | `failed_download_count` compte des volumes | La requête de `get_latest_found` fait `COUNT(*)` sur `unnest(td.expected_volumes)` → le champ compte les **volumes** échoués, pas les téléchargements. Le test historique utilise une requête sans `unnest` et valide donc une requête obsolète. | `downloads::detection::tests::failed_download_count_counts_volumes_not_downloads` |
+
+### `apps/api/src/series/helpers.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 18 | Une intégrale masque tous les tomes manquants | `COUNT(...) FILTER (WHERE volume_type='integral') > 0 THEN 0` : une intégrale partielle (1 tome sur 10) marque la série **complète**. `get_missing_books` met en plus `total_local = total_external` et vide `missing_books`. | `series::tests::missing_count_zero_when_integral_plus_regular` |
+
+### `apps/api/src/users/auth.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 19 | Schéma `Bearer` sensible à la casse | `strip_prefix("Bearer ")` rejette `bearer xxx` en 401. RFC 7235 §2.1 définit le schéma comme **insensible à la casse**. | `users::auth::tests::bearer_token_lowercase_scheme_is_rejected` |
+
+### `apps/api/src/metadata/handlers.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 20 | `is_field_locked` échoue en mode ouvert | Une valeur `locked_fields` non booléenne (`"true"`, `1`) est traitée comme **non verrouillée** → la sync provider peut écraser une édition manuelle. | `metadata::handlers::tests::field_not_locked_when_string_true` |
+
+### Candidats relevés mais non verrouillés
+
+Comportements suspects identifiés lors de l'audit des tests pré-existants, non
+encore couverts par un test `// LOCKED:` dédié :
+
+| Zone | Comportement suspect |
+|------|----------------------|
+| `metadata_providers/anilist.rs` | `total_volumes` = nombre de **chapitres** quand `volumes` est null (Berserk → 376 « tomes ») ; `get_series_books` génère N livres synthétiques depuis les chapitres. |
+| `metadata_providers/google_books.rs`, `open_library.rs` | `total_volumes` = nombre de résultats de recherche (plafonné à ~20) → une série de 40 tomes est annoncée à 20. |
+| `integrations/discovery/mod.rs` | Deux entités provider distinctes de même titre fusionnent en une série ; le lien existant est `ON CONFLICT DO UPDATE` → l'`external_id` d'origine est perdu. |
+| `integrations/discovery/mod.rs` | Allowlist de liens codée en dur (`bedetheque`/`senscritique`) : les autres providers ajoutés via discovery ne créent aucun `external_metadata_links`. |
+| `metadata_providers/senscritique.rs` | `infer_status_from_date` : date invalide → `"ended"` (statut terminal) au lieu d'`"unknown"`. |
+| `metadata_providers/bedetheque.rs` | Page 200 vide classée « rate-limited » ; cover URL fabriquée même quand l'enrichissement 404 ; covers associées par index positionnel. |
+| `metadata_providers/bdtheque.rs` | `authors.sort()` réordonne scénariste/dessinateur ; pagination absente (`/tomes/{id}/0` seulement). |
+| `metadata_providers/bdphile.rs` | Erreurs de fetch album avalées (`unwrap_or_default()`) ; `external_book_id` = URL complète. |
+| `metadata_providers/comicvine.rs` | `authors`/`isbn`/`page_count` toujours vides pour les issues. |
+| `reading/status_match.rs` | `normalize_title` : `"JoJo's"` → `"jojo s"` (apostrophe → token parasite). |
+| `metadata/handlers.rs` | `classify_field_change` / `diff_opt_str` : `new=None` = « pas de changement » → sync purement additive, jamais de suppression. |
+| `apps/api/src/tests/search.rs` | Défaut de **test** (pas de prod) : le SQL du handler est recopié en constantes (`SERIES_SQL`/`BOOKS_SQL`) au lieu d'appeler le handler → divergence silencieuse possible. |
+
+
 ---
 
 ## 2. Couverture de tests — modules API encore sans tests
 
-État au 2026-09-19 (après couverture de `libraries.rs`, `reading_lists.rs`, `stats.rs`, `settings.rs`, `genres.rs`, `ai_tagging.rs`, `authors.rs`, `handlers.rs` et `api_middleware.rs`).
+État au 2026-09-20 (après couverture de `libraries.rs`, `reading_lists.rs`, `stats.rs`, `settings.rs`, `genres.rs`, `ai_tagging.rs`, `authors.rs`, `handlers.rs` et `api_middleware.rs`, puis audit des tests pré-existants).
 Les sous-modules (`downloads/`, `metadata/`, `metadata_providers/`, `series/`,
 `reading/`, `integrations/`, `books/`, `jobs/`, `users/`, …) disposent déjà de tests.
 

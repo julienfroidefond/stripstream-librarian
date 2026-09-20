@@ -101,6 +101,19 @@ fn bearer_token_case_sensitive_bearer() {
     assert_eq!(bearer_token(&req), None);
 }
 
+// LOCKED: RFC 7235 §2.1 defines the auth-scheme as case-insensitive, so
+// "bearer" should be accepted. The test above locks the case-sensitive
+// behaviour. See docs/KNOWN_ISSUES.md §1.
+#[test]
+fn bearer_token_lowercase_scheme_is_rejected() {
+    let req = HttpRequest::builder()
+        .header(AUTHORIZATION, "bearer my_token")
+        .body(())
+        .unwrap();
+    let req = Request::from_parts(req.into_parts().0, axum::body::Body::empty());
+    assert_eq!(bearer_token(&req), None);
+}
+
 #[test]
 fn bearer_token_empty_token_value() {
     let req = HttpRequest::builder()

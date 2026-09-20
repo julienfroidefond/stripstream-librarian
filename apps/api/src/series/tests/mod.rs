@@ -709,6 +709,8 @@ async fn missing_count_zero_when_integral_plus_regular(pool: sqlx::PgPool) {
     create_book_with_type(&pool, lib_id, sid, "INT 1", Some(1), "integral").await;
 
     let missing = query_missing_count(&pool, lib_id, sid).await;
+    // LOCKED: a single integral book suppresses ALL missing-volume reporting,
+    // even when it covers only part of a 10-volume series. See docs/KNOWN_ISSUES.md §1.
     assert_eq!(
         missing, 0,
         "integral present → 0 missing regardless of total_volumes"

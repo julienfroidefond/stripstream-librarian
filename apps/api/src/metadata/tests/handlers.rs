@@ -35,6 +35,15 @@ fn field_not_locked_when_non_boolean() {
     assert!(!is_field_locked(&locked, "description"));
 }
 
+// LOCKED: a non-boolean lock value (e.g. the string "true") is treated as
+// unlocked, so a provider sync can overwrite a manually edited field.
+// See docs/KNOWN_ISSUES.md §1.
+#[test]
+fn field_not_locked_when_string_true() {
+    let locked = json!({"description": "true"});
+    assert!(!is_field_locked(&locked, "description"));
+}
+
 // -----------------------------------------------------------------------
 // classify_field_change
 // -----------------------------------------------------------------------

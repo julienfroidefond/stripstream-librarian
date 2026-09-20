@@ -162,6 +162,16 @@ fn sanitize_truncates_long_names() {
     assert_eq!(result.len(), 200);
 }
 
+// LOCKED: `sanitize_filename` slices by byte index (`trimmed[..200]`), so a
+// multi-byte character straddling byte 200 panics. The ASCII-only test above
+// hides this. See docs/KNOWN_ISSUES.md §1.
+#[test]
+#[should_panic]
+fn sanitize_panics_on_multibyte_boundary() {
+    let long_name = format!("{}é", "a".repeat(199));
+    let _ = sanitize_filename(&long_name);
+}
+
 #[test]
 fn sanitize_normal_name_unchanged() {
     assert_eq!(
