@@ -307,7 +307,8 @@ async fn wiremock_fetch_trending_parses_results() {
     let berserk = &results[1];
     assert_eq!(berserk.external_id, "30002");
     assert_eq!(berserk.title, "Berserk");
-    // volumes is null, should fall back to chapters
+    // LOCKED: volumes is null, so total_volumes falls back to the CHAPTER count
+    // (376), not a volume count. See docs/KNOWN_ISSUES.md §1.
     assert_eq!(berserk.total_volumes, Some(376));
     assert_eq!(berserk.metadata_json["volume_source"], "chapters");
     assert_eq!(berserk.metadata_json["status"], "RELEASING");
@@ -407,6 +408,8 @@ async fn wiremock_get_series_books_chapters_fallback() {
     let books = get_series_books_impl_url("999", &server.uri())
         .await
         .unwrap();
+    // LOCKED: with no volumes, N synthetic books are generated from the CHAPTER
+    // count (5 chapters → 5 "Vol." books). See docs/KNOWN_ISSUES.md §1.
     assert_eq!(books.len(), 5, "should fall back to chapters count");
     assert_eq!(books[0].title, "Web Comic Vol. 1");
     assert_eq!(books[4].title, "Web Comic Vol. 5");

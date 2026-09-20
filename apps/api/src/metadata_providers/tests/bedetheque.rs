@@ -96,6 +96,8 @@ async fn search_series_detects_rate_limiting() {
 
     let result = search_series_impl("test", &config(), &server.uri()).await;
 
+    // LOCKED: an empty 200 page is classified as "rate-limited" rather than
+    // "no results". See docs/KNOWN_ISSUES.md §1.
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("rate-limited"));
 }
@@ -136,6 +138,8 @@ async fn search_series_cover_url_uses_base_url() {
         cover.starts_with(&server.uri()),
         "cover URL should use mock base URL, got: {cover}"
     );
+    // LOCKED: the cover URL is fabricated from the series id even though the
+    // enrichment request returned 404. See docs/KNOWN_ISSUES.md §1.
     assert!(cover.contains("/cache/thb_series/PlancheS_99.jpg"));
 }
 

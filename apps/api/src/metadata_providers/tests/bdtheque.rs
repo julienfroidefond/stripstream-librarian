@@ -53,6 +53,8 @@ async fn parses_series_and_volume_metadata() {
 
     Mock::given(method("GET")).and(path_regex(r"/ajax/series/tomes/22444/0"))
         .respond_with(ResponseTemplate::new(200).set_body_string(r#"<div class="card"><h5>1 - Erin</h5><img class="cover" src="/erin.jpg"><small>Date de parution : 26 Août 2020 | Pagination : 48 | ISBN : 9782344039403</small><p class="card-text">Scénario : Lylian</p></div>"#)).mount(&server).await;
+    // LOCKED: only page 0 of the tomes endpoint is fetched — no pagination, so
+    // series with more volumes than one page are truncated. See docs/KNOWN_ISSUES.md §1.
     let books = get_series_books_impl("22444/les-geants", &server.uri())
         .await
         .unwrap();

@@ -216,6 +216,8 @@ async fn get_series_books_parses_issues() {
         Some("https://comicvine.example.com/issue1.jpg".to_string())
     );
     assert_eq!(books[0].publish_date, Some("2010-03-15".to_string()));
+    // LOCKED: authors/isbn/page_count are always empty for ComicVine issues.
+    // See docs/KNOWN_ISSUES.md §1.
     assert!(books[0].authors.is_empty());
     assert!(books[0].isbn.is_none());
     assert!(books[0].page_count.is_none());

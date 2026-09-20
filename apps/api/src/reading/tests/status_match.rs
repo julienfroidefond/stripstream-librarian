@@ -24,6 +24,8 @@ fn normalize_collapses_whitespace() {
 #[test]
 fn normalize_replaces_special_chars() {
     assert_eq!(normalize_title("Dragon-Ball_Z"), "dragon ball z");
+    // LOCKED: the apostrophe becomes a space, leaving a stray "s" token
+    // ("jojo s ...") that can break title matching. See docs/KNOWN_ISSUES.md §1.
     assert_eq!(
         normalize_title("JoJo's Bizarre Adventure"),
         "jojo s bizarre adventure"

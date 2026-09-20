@@ -51,6 +51,8 @@ fn field_not_locked_when_string_true() {
 #[test]
 fn classify_returns_none_when_new_is_none() {
     let locked = json!({});
+    // LOCKED: a None new_value means "no change", so a provider sync can never
+    // clear a field — the sync is purely additive. See docs/KNOWN_ISSUES.md §1.
     let result = classify_field_change("title", Some(json!("old")), None, &locked);
     assert!(result.is_none());
 }

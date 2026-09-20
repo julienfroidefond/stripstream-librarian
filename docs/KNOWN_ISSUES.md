@@ -90,25 +90,75 @@ Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code 
 | # | Problème | Comportement actuel | Test qui verrouille |
 |---|----------|---------------------|---------------------|
 | 20 | `is_field_locked` échoue en mode ouvert | Une valeur `locked_fields` non booléenne (`"true"`, `1`) est traitée comme **non verrouillée** → la sync provider peut écraser une édition manuelle. | `metadata::handlers::tests::field_not_locked_when_string_true` |
+| 21 | Sync purement additive | `classify_field_change` renvoie `None` quand `new_value` est `None` : une sync provider ne peut jamais **effacer** un champ. | `metadata::handlers::tests::classify_returns_none_when_new_is_none` |
+
+### `apps/api/src/metadata_providers/anilist.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 22 | Chapitres comptés comme tomes | Quand `volumes` est null, `total_volumes` retombe sur le nombre de **chapitres** (Berserk → 376 « tomes »). | `metadata_providers::anilist::tests::wiremock_fetch_trending_parses_results` |
+| 23 | Livres synthétiques depuis les chapitres | `get_series_books` génère N livres « Vol. » à partir du nombre de chapitres (5 chapitres → 5 tomes). | `metadata_providers::anilist::tests::wiremock_get_series_books_chapters_fallback` |
+
+### `apps/api/src/metadata_providers/google_books.rs`, `open_library.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 24 | `total_volumes` = nombre de résultats | Le total est le nombre de docs groupés par titre (plafonné à ~20) → une série de 40 tomes est annoncée à 20. | `metadata_providers::google_books::tests::search_series_parses_candidates`, `metadata_providers::open_library::tests::search_series_parses_candidates` |
+
+### `apps/api/src/integrations/discovery/mod.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 25 | `external_id` écrasé sur doublon | Deux entités provider de même titre fusionnent en une série ; le lien est `ON CONFLICT DO UPDATE` → l'`external_id` d'origine est perdu. | `integrations::discovery::tests::test_add_to_library_duplicate_series` |
+| 26 | Allowlist de liens codée en dur | Seuls `bedetheque`/`senscritique` créent un `external_metadata_links` ; les autres providers ajoutés via discovery n'en créent aucun → sync metadata impossible. | `integrations::discovery::tests::test_add_to_library_anilist_no_metadata_link` |
+
+### `apps/api/src/metadata_providers/senscritique.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 27 | Date invalide → `ended` | `infer_status_from_date` renvoie le statut terminal `"ended"` pour une date non parseable, au lieu d'`"unknown"`. | `metadata_providers::senscritique::tests::infer_status_invalid_date_is_ended` |
+
+### `apps/api/src/metadata_providers/bedetheque.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 28 | Page vide → « rate-limited » | Une page 200 vide est classée « rate-limited » plutôt que « aucun résultat ». | `metadata_providers::bedetheque::tests::search_series_detects_rate_limiting` |
+| 29 | Cover URL fabriquée | L'URL de couverture est construite depuis l'id de série même quand l'enrichissement renvoie 404. | `metadata_providers::bedetheque::tests::search_series_cover_url_uses_base_url` |
+
+### `apps/api/src/metadata_providers/bdtheque.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 30 | Pagination absente | Seule la page 0 de `/ajax/series/tomes/{id}/0` est lue → les séries dépassant une page sont tronquées. | `metadata_providers::bdtheque::tests::parses_series_and_volume_metadata` |
+
+### `apps/api/src/metadata_providers/bdphile.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 31 | `external_book_id` = URL complète | L'identifiant de livre est l'URL complète de l'album, pas un id stable. | `metadata_providers::bdphile::tests::parses_series_and_album_details` |
+
+### `apps/api/src/metadata_providers/comicvine.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 32 | Métadonnées d'issue vides | `authors`/`isbn`/`page_count` sont toujours vides pour les issues ComicVine. | `metadata_providers::comicvine::tests::get_series_books_parses_issues` |
+
+### `apps/api/src/reading/status_match.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 33 | Apostrophe → token parasite | `normalize_title` transforme `"JoJo's"` en `"jojo s"` (apostrophe → espace), ce qui peut casser le matching de titres. | `reading::status_match::tests::normalize_replaces_special_chars` |
 
 ### Candidats relevés mais non verrouillés
 
-Comportements suspects identifiés lors de l'audit des tests pré-existants, non
-encore couverts par un test `// LOCKED:` dédié :
+Comportements suspects identifiés lors de l'audit, non encore couverts par un
+test `// LOCKED:` dédié :
 
 | Zone | Comportement suspect |
 |------|----------------------|
-| `metadata_providers/anilist.rs` | `total_volumes` = nombre de **chapitres** quand `volumes` est null (Berserk → 376 « tomes ») ; `get_series_books` génère N livres synthétiques depuis les chapitres. |
-| `metadata_providers/google_books.rs`, `open_library.rs` | `total_volumes` = nombre de résultats de recherche (plafonné à ~20) → une série de 40 tomes est annoncée à 20. |
-| `integrations/discovery/mod.rs` | Deux entités provider distinctes de même titre fusionnent en une série ; le lien existant est `ON CONFLICT DO UPDATE` → l'`external_id` d'origine est perdu. |
-| `integrations/discovery/mod.rs` | Allowlist de liens codée en dur (`bedetheque`/`senscritique`) : les autres providers ajoutés via discovery ne créent aucun `external_metadata_links`. |
-| `metadata_providers/senscritique.rs` | `infer_status_from_date` : date invalide → `"ended"` (statut terminal) au lieu d'`"unknown"`. |
-| `metadata_providers/bedetheque.rs` | Page 200 vide classée « rate-limited » ; cover URL fabriquée même quand l'enrichissement 404 ; covers associées par index positionnel. |
-| `metadata_providers/bdtheque.rs` | `authors.sort()` réordonne scénariste/dessinateur ; pagination absente (`/tomes/{id}/0` seulement). |
-| `metadata_providers/bdphile.rs` | Erreurs de fetch album avalées (`unwrap_or_default()`) ; `external_book_id` = URL complète. |
-| `metadata_providers/comicvine.rs` | `authors`/`isbn`/`page_count` toujours vides pour les issues. |
-| `reading/status_match.rs` | `normalize_title` : `"JoJo's"` → `"jojo s"` (apostrophe → token parasite). |
-| `metadata/handlers.rs` | `classify_field_change` / `diff_opt_str` : `new=None` = « pas de changement » → sync purement additive, jamais de suppression. |
+| `metadata_providers/bedetheque.rs` | Covers associées par **index positionnel** (désalignement possible si l'ordre diffère). |
+| `metadata_providers/bdtheque.rs` | `authors.sort()` réordonne scénariste/dessinateur. |
+| `metadata_providers/bdphile.rs` | Erreurs de fetch album avalées (`unwrap_or_default()`). |
 | `apps/api/src/tests/search.rs` | Défaut de **test** (pas de prod) : le SQL du handler est recopié en constantes (`SERIES_SQL`/`BOOKS_SQL`) au lieu d'appeler le handler → divergence silencieuse possible. |
 
 

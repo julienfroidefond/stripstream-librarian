@@ -18,6 +18,8 @@ fn infer_status_old_date_is_ended() {
 
 #[test]
 fn infer_status_invalid_date_is_ended() {
+    // LOCKED: an unparseable date silently yields the terminal status "ended"
+    // instead of "unknown". See docs/KNOWN_ISSUES.md §1.
     assert_eq!(infer_status_from_date("not-a-date"), "ended");
     assert_eq!(infer_status_from_date(""), "ended");
     assert_eq!(infer_status_from_date("2024/01/01"), "ended"); // wrong format

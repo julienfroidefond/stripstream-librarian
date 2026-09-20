@@ -162,6 +162,18 @@ async fn test_add_to_library_duplicate_series(pool: sqlx::PgPool) {
         link_count, 1,
         "should have exactly one metadata link per (series_id, provider)"
     );
+
+    // LOCKED: the second add overwrites the existing link's external_id
+    // (ext-100 → ext-200), losing the original provider identity.
+    // See docs/KNOWN_ISSUES.md §1.
+    let external_id: String = sqlx::query_scalar(
+        "SELECT external_id FROM external_metadata_links WHERE series_id = $1 AND provider = 'bedetheque'",
+    )
+    .bind(resp1.series_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(external_id, "ext-200");
 }
 
 // 3. Non-linkable provider (anilist) — no metadata link created
@@ -188,6 +200,9 @@ async fn test_add_to_library_anilist_no_metadata_link(pool: sqlx::PgPool) {
             .fetch_one(&pool)
             .await
             .unwrap();
+    // LOCKED: only a hard-coded allowlist (bedetheque/senscritique) creates a
+    // metadata link; other providers added via discovery create none, so
+    // metadata sync is impossible for them. See docs/KNOWN_ISSUES.md §1.
     assert_eq!(
         link_count, 0,
         "anilist provider should not create metadata link"
