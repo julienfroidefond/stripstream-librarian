@@ -55,7 +55,12 @@ enum ExtractOutcome {
     },
 }
 
-async fn load_thumbnail_config(pool: &sqlx::PgPool) -> ThumbnailConfig {
+struct ThumbnailSettings {
+    config: ThumbnailConfig,
+    concurrency: usize,
+}
+
+async fn load_thumbnail_settings(pool: &sqlx::PgPool) -> ThumbnailSettings {
     let fallback = ThumbnailConfig {
         enabled: true,
         format: Some("webp".to_string()),
@@ -65,85 +70,83 @@ async fn load_thumbnail_config(pool: &sqlx::PgPool) -> ThumbnailConfig {
         directory: "/data/thumbnails".to_string(),
         timeout_secs: 120,
     };
-    let thumb_row = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'thumbnail'"#)
-        .fetch_optional(pool)
-        .await;
-    let limits_row = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'limits'"#)
-        .fetch_optional(pool)
-        .await;
 
-    let timeout_secs = limits_row
-        .ok()
-        .flatten()
-        .and_then(|r| {
-            r.get::<serde_json::Value, _>("value")
-                .get("timeout_seconds")
-                .and_then(|v| v.as_u64())
-        })
+    let rows =
+        sqlx::query(r#"SELECT key, value FROM app_settings WHERE key IN ('thumbnail', 'limits')"#)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+    let mut thumb_value: Option<serde_json::Value> = None;
+    let mut limits_value: Option<serde_json::Value> = None;
+    for row in rows {
+        let key: String = row.get("key");
+        let value: serde_json::Value = row.get("value");
+        match key.as_str() {
+            "thumbnail" => thumb_value = Some(value),
+            "limits" => limits_value = Some(value),
+            _ => {}
+        }
+    }
+
+    let timeout_secs = limits_value
+        .as_ref()
+        .and_then(|v| v.get("timeout_seconds"))
+        .and_then(|v| v.as_u64())
         .unwrap_or(fallback.timeout_secs);
 
-    match thumb_row {
-        Ok(Some(row)) => {
-            let value: serde_json::Value = row.get("value");
-            ThumbnailConfig {
-                enabled: value
-                    .get("enabled")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(fallback.enabled),
-                format: value
-                    .get("format")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-                    .or_else(|| fallback.format.clone()),
-                width: value
-                    .get("width")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as u32)
-                    .unwrap_or(fallback.width),
-                height: value
-                    .get("height")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as u32)
-                    .unwrap_or(fallback.height),
-                quality: value
-                    .get("quality")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as u8)
-                    .unwrap_or(fallback.quality),
-                directory: value
-                    .get("directory")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| fallback.directory.clone()),
-                timeout_secs,
-            }
-        }
-        _ => ThumbnailConfig {
+    // Default: half the logical CPUs, clamped between 2 and 8.
+    // Archive extraction is I/O bound but benefits from moderate parallelism.
+    let default_concurrency = (num_cpus::get() / 2).clamp(1, 2);
+    let concurrency = limits_value
+        .as_ref()
+        .and_then(|v| v.get("concurrent_renders"))
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)
+        .unwrap_or(default_concurrency);
+
+    let config = match thumb_value {
+        Some(value) => ThumbnailConfig {
+            enabled: value
+                .get("enabled")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(fallback.enabled),
+            format: value
+                .get("format")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .or_else(|| fallback.format.clone()),
+            width: value
+                .get("width")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32)
+                .unwrap_or(fallback.width),
+            height: value
+                .get("height")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32)
+                .unwrap_or(fallback.height),
+            quality: value
+                .get("quality")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u8)
+                .unwrap_or(fallback.quality),
+            directory: value
+                .get("directory")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| fallback.directory.clone()),
+            timeout_secs,
+        },
+        None => ThumbnailConfig {
             timeout_secs,
             ..fallback
         },
-    }
-}
+    };
 
-async fn load_thumbnail_concurrency(pool: &sqlx::PgPool) -> usize {
-    // Default: half the logical CPUs, clamped between 2 and 8.
-    // Archive extraction is I/O bound but benefits from moderate parallelism.
-    let cpus = num_cpus::get();
-    let default_concurrency = (cpus / 2).clamp(1, 2);
-    let row = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'limits'"#)
-        .fetch_optional(pool)
-        .await;
-
-    match row {
-        Ok(Some(row)) => {
-            let value: serde_json::Value = row.get("value");
-            value
-                .get("concurrent_renders")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as usize)
-                .unwrap_or(default_concurrency)
-        }
-        _ => default_concurrency,
+    ThumbnailSettings {
+        config,
+        concurrency,
     }
 }
 
@@ -366,14 +369,14 @@ pub async fn analyze_library_books(
     library_id: Option<Uuid>,
     thumbnail_only: bool,
 ) -> Result<()> {
-    let config = load_thumbnail_config(&state.pool).await;
+    let settings = load_thumbnail_settings(&state.pool).await;
+    let config = settings.config;
+    let concurrency = settings.concurrency;
 
     if !config.enabled {
         info!("[ANALYZER] Thumbnails disabled, skipping analysis phase");
         return Ok(());
     }
-
-    let concurrency = load_thumbnail_concurrency(&state.pool).await;
 
     let query_filter = if thumbnail_only {
         "b.thumbnail_path IS NULL"
@@ -938,7 +941,7 @@ pub async fn regenerate_thumbnails(
     job_id: Uuid,
     library_id: Option<Uuid>,
 ) -> Result<()> {
-    let config = load_thumbnail_config(&state.pool).await;
+    let config = load_thumbnail_settings(&state.pool).await.config;
 
     let book_ids_to_clear: Vec<Uuid> = sqlx::query_scalar(
         r#"SELECT id FROM books WHERE (library_id = $1 OR $1 IS NULL) AND thumbnail_path IS NOT NULL"#,
@@ -981,7 +984,7 @@ pub async fn regenerate_thumbnails(
 
 /// Delete orphaned thumbnail files (books deleted in full_rebuild get new UUIDs).
 pub async fn cleanup_orphaned_thumbnails(state: &AppState) -> Result<()> {
-    let config = load_thumbnail_config(&state.pool).await;
+    let config = load_thumbnail_settings(&state.pool).await.config;
 
     let existing_book_ids: std::collections::HashSet<Uuid> =
         sqlx::query_scalar(r#"SELECT id FROM books"#)
