@@ -1,4 +1,35 @@
 use super::*;
+use sqlx::PgPool;
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn fail_orphaned_api_jobs_only_touches_api_types(pool: PgPool) {
+    sqlx::query(
+        "INSERT INTO index_jobs (id, type, status) VALUES
+         ('00000000-0000-0000-0000-0000000000a1', 'metadata_batch', 'running'),
+         ('00000000-0000-0000-0000-0000000000a2', 'scan', 'running'),
+         ('00000000-0000-0000-0000-0000000000a3', 'metadata_batch', 'success')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let affected = fail_orphaned_api_jobs(&pool).await.unwrap();
+    assert_eq!(affected, 1);
+
+    let api_status: String = sqlx::query_scalar("SELECT status FROM index_jobs WHERE id = $1")
+        .bind(uuid::Uuid::parse_str("00000000-0000-0000-0000-0000000000a1").unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(api_status, "failed");
+
+    let indexer_status: String = sqlx::query_scalar("SELECT status FROM index_jobs WHERE id = $1")
+        .bind(uuid::Uuid::parse_str("00000000-0000-0000-0000-0000000000a2").unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(indexer_status, "running");
+}
 
 #[test]
 fn api_job_types_contains_metadata_refresh_all() {

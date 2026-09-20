@@ -634,6 +634,13 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("Failed to reset stale telegram downloads: {e}");
     }
 
+    // Mark API jobs left running by a previous process as failed
+    match job_poller::fail_orphaned_api_jobs(&state.pool).await {
+        Ok(0) => {}
+        Ok(n) => tracing::warn!("Marked {n} orphaned API job(s) as failed after restart"),
+        Err(e) => tracing::warn!("Failed to recover orphaned API jobs: {e}"),
+    }
+
     // Clone pool before state is moved into the router
     let poller_pool = state.pool.clone();
     let torrent_poller_pool = state.pool.clone();

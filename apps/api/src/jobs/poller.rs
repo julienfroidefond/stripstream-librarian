@@ -229,6 +229,29 @@ async fn claim_next_api_job(
     Ok(Some((id, job_type, library_id)))
 }
 
+/// Marks API jobs left `running` by a previous process as failed.
+///
+/// The API runs its job types in-process, so a restart mid-job would otherwise
+/// leave the row `running` forever. Only API job types are touched, leaving
+/// indexer-owned jobs intact.
+pub async fn fail_orphaned_api_jobs(pool: &PgPool) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        UPDATE index_jobs
+        SET status = 'failed',
+            error_opt = 'interrupted by API restart',
+            finished_at = NOW()
+        WHERE status = 'running'
+          AND type = ANY($1)
+        "#,
+    )
+    .bind(API_JOB_TYPES)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected())
+}
+
 #[cfg(test)]
 #[path = "tests/poller.rs"]
 mod tests;
