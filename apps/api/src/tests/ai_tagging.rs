@@ -261,5 +261,5 @@ async fn test_connection_unreachable_provider_is_internal_error(pool: PgPool) {
     );
 
     assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert!(err.message.starts_with("HTTP client error:"));
+    assert_eq!(err.message, "upstream HTTP request failed");
 }

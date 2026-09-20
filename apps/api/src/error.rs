@@ -89,29 +89,41 @@ impl From<sqlx::Error> for ApiError {
             },
             sqlx::Error::Database(db_err) => {
                 // PostgreSQL unique_violation = 23505, foreign_key_violation = 23503
-                let code = db_err.code().unwrap_or_default();
-                if code == "23505" {
-                    Self::conflict(format!("duplicate entry: {}", db_err.message()))
-                } else if code == "23503" {
-                    Self::bad_request(format!("foreign key violation: {}", db_err.message()))
-                } else {
-                    Self::internal(format!("database error: {err}"))
+                match db_err.code().unwrap_or_default().as_ref() {
+                    "23505" => {
+                        tracing::warn!("database unique violation: {db_err}");
+                        Self::conflict("resource already exists")
+                    }
+                    "23503" => {
+                        tracing::warn!("database foreign key violation: {db_err}");
+                        Self::bad_request("referenced resource does not exist")
+                    }
+                    _ => {
+                        tracing::error!("database error: {err}");
+                        Self::internal("internal database error")
+                    }
                 }
             }
-            _ => Self::internal(format!("database error: {err}")),
+            _ => {
+                tracing::error!("database error: {err}");
+                Self::internal("internal database error")
+            }
         }
     }
 }
 
 impl From<std::io::Error> for ApiError {
     fn from(err: std::io::Error) -> Self {
-        Self::internal(format!("IO error: {err}"))
+        tracing::error!("IO error: {err}");
+        Self::internal("internal IO error")
     }
 }
 
 impl From<reqwest::Error> for ApiError {
     fn from(err: reqwest::Error) -> Self {
-        Self::internal(format!("HTTP client error: {err}"))
+        // reqwest errors embed the request URL (which may carry API keys in the query string).
+        tracing::error!("HTTP client error: {err}");
+        Self::internal("upstream HTTP request failed")
     }
 }
 
