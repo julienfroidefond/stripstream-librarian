@@ -228,6 +228,7 @@ async fn search_series_impl(
             if let Some(c) = b.rating_count {
                 metadata_json["rating_count"] = serde_json::json!(c);
             }
+            metadata_json["local_volume_count"] = serde_json::json!(b.volume_count);
             SeriesCandidate {
                 external_id: b.external_id,
                 title: b.title,
@@ -235,11 +236,7 @@ async fn search_series_impl(
                 description: b.description,
                 publishers: b.publishers,
                 start_year: b.start_year,
-                total_volumes: if b.volume_count > 1 {
-                    Some(b.volume_count)
-                } else {
-                    None
-                },
+                total_volumes: None,
                 cover_url: b.cover_url,
                 external_url: b.external_url,
                 confidence,

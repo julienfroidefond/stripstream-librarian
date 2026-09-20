@@ -22,19 +22,6 @@ au lieu de passer inaperçu. Les défauts corrigés sont listés en §5.
 
 Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code PG 23505 → `ApiError::conflict`).
 
-### `apps/api/src/metadata_providers/anilist.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 22 | Chapitres comptés comme tomes | Quand `volumes` est null, `total_volumes` retombe sur le nombre de **chapitres** (Berserk → 376 « tomes »). | `metadata_providers::anilist::tests::wiremock_fetch_trending_parses_results` |
-| 23 | Livres synthétiques depuis les chapitres | `get_series_books` génère N livres « Vol. » à partir du nombre de chapitres (5 chapitres → 5 tomes). | `metadata_providers::anilist::tests::wiremock_get_series_books_chapters_fallback` |
-
-### `apps/api/src/metadata_providers/google_books.rs`, `open_library.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 24 | `total_volumes` = nombre de résultats | Le total est le nombre de docs groupés par titre (plafonné à ~20) → une série de 40 tomes est annoncée à 20. | `metadata_providers::google_books::tests::search_series_parses_candidates`, `metadata_providers::open_library::tests::search_series_parses_candidates` |
-
 ### `apps/api/src/integrations/discovery/mod.rs`
 
 | # | Problème | Comportement actuel | Test qui verrouille |
@@ -139,3 +126,6 @@ avant tout commit (`cargo test -p api`, `cargo clippy -p api --tests`).
 | 17 | `failed_download_count` comptait des volumes | `COUNT(DISTINCT td.id)` compte les téléchargements, pas les volumes (`unnest`). | `downloads::detection::tests::failed_download_count_counts_downloads_not_volumes` |
 | 18 | Une intégrale masquait tous les tomes manquants | Une intégrale numérotée ne couvre que son tome ; une intégrale sans numéro couvre toute la série. | `series::tests::missing_count_partial_integral_does_not_complete_series` |
 | 21 | Sync purement additive | `classify_field_change` traite `new_value = None` comme un effacement quand `old_value` est présent. | `metadata::handlers::tests::classify_returns_cleared_when_new_is_none_and_old_is_some` |
+| 22 | Chapitres comptés comme tomes | `total_volumes` ne retombe plus sur le nombre de chapitres : `volumes` null → `None`, `volume_source = "unknown"`. | `metadata_providers::anilist::tests::wiremock_fetch_trending_parses_results` |
+| 23 | Livres synthétiques depuis les chapitres | `get_series_books` ne génère des livres que depuis `volumes` ; `volumes` null → liste vide. | `metadata_providers::anilist::tests::wiremock_get_series_books_chapters_fallback` |
+| 24 | `total_volumes` = nombre de résultats | `total_volumes = None` ; le nombre de résultats locaux est conservé dans `metadata_json["local_volume_count"]`. | `metadata_providers::google_books::tests::search_series_parses_candidates`, `metadata_providers::open_library::tests::search_series_parses_candidates` |

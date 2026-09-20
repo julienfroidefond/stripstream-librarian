@@ -56,9 +56,8 @@ async fn search_series_parses_candidates() {
     assert!(best.authors.contains(&"Neil Gaiman".to_string()));
     assert!(best.publishers.contains(&"DC Comics".to_string()));
     assert_eq!(best.start_year, Some(1989));
-    // LOCKED: total_volumes is the number of search results grouped by title
-    // (here 2), not the real series length. See docs/KNOWN_ISSUES.md §1.
-    assert_eq!(best.total_volumes, Some(2));
+    assert_eq!(best.total_volumes, None);
+    assert_eq!(best.metadata_json["local_volume_count"], 2);
     assert!(best.cover_url.is_some());
     assert!(best
         .cover_url

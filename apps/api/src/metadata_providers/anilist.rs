@@ -203,13 +203,9 @@ async fn search_series_impl_url(query: &str, url: &str) -> Result<Vec<SeriesCand
 
             let confidence = compute_confidence(&title, &query_lower);
 
-            // Use volumes if known, otherwise fall back to chapters count
             let (total_volumes, volume_source) = match volumes {
                 Some(v) => (Some(v), "volumes"),
-                None => match chapters {
-                    Some(c) => (Some(c), "chapters"),
-                    None => (None, "unknown"),
-                },
+                None => (None, "unknown"),
             };
 
             Some(SeriesCandidate {
@@ -312,14 +308,6 @@ async fn get_series_books_impl_url(
         .and_then(|v| v.as_i64())
         .map(|v| v as i32);
 
-    let chapters = media
-        .get("chapters")
-        .and_then(|v| v.as_i64())
-        .map(|v| v as i32);
-
-    // Use volumes if known, otherwise fall back to chapters count
-    let total = volumes.or(chapters);
-
     let cover_url = media
         .get("coverImage")
         .and_then(|ci| ci.get("large").or_else(|| ci.get("medium")))
@@ -333,9 +321,9 @@ async fn get_series_books_impl_url(
 
     let authors = extract_authors(media);
 
-    // AniList doesn't have per-volume data — generate entries from volumes count (or chapters as fallback)
+    // AniList doesn't have per-volume data — generate entries from the volume count only
     let mut books = Vec::new();
-    if let Some(total) = total {
+    if let Some(total) = volumes {
         for vol in 1..=total {
             books.push(BookCandidate {
                 external_book_id: format!("{}-vol-{}", external_id, vol),
@@ -499,10 +487,7 @@ fn parse_media_to_candidate(
 
     let (total_volumes, volume_source) = match volumes {
         Some(v) => (Some(v), "volumes"),
-        None => match chapters {
-            Some(c) => (Some(c), "chapters"),
-            None => (None, "unknown"),
-        },
+        None => (None, "unknown"),
     };
 
     Some(SeriesCandidate {

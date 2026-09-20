@@ -307,10 +307,9 @@ async fn wiremock_fetch_trending_parses_results() {
     let berserk = &results[1];
     assert_eq!(berserk.external_id, "30002");
     assert_eq!(berserk.title, "Berserk");
-    // LOCKED: volumes is null, so total_volumes falls back to the CHAPTER count
-    // (376), not a volume count. See docs/KNOWN_ISSUES.md §1.
-    assert_eq!(berserk.total_volumes, Some(376));
-    assert_eq!(berserk.metadata_json["volume_source"], "chapters");
+    assert_eq!(berserk.total_volumes, None);
+    assert_eq!(berserk.metadata_json["volume_source"], "unknown");
+    assert_eq!(berserk.metadata_json["chapters"], 376);
     assert_eq!(berserk.metadata_json["status"], "RELEASING");
 }
 
@@ -408,11 +407,10 @@ async fn wiremock_get_series_books_chapters_fallback() {
     let books = get_series_books_impl_url("999", &server.uri())
         .await
         .unwrap();
-    // LOCKED: with no volumes, N synthetic books are generated from the CHAPTER
-    // count (5 chapters → 5 "Vol." books). See docs/KNOWN_ISSUES.md §1.
-    assert_eq!(books.len(), 5, "should fall back to chapters count");
-    assert_eq!(books[0].title, "Web Comic Vol. 1");
-    assert_eq!(books[4].title, "Web Comic Vol. 5");
+    assert!(
+        books.is_empty(),
+        "no volumes → no synthetic books, even with chapters"
+    );
 }
 
 // ─── Pure function tests ────────────────────────────────────────────────
@@ -489,7 +487,7 @@ fn test_parse_media_to_candidate_volumes_source() {
     assert_eq!(c.total_volumes, Some(10));
     assert_eq!(c.metadata_json["volume_source"], "volumes");
 
-    // Without volumes, falls back to chapters
+    // Without volumes, chapters are not used as a volume count
     let media2 = serde_json::json!({
         "id": 2, "title": { "romaji": "Test2" },
         "description": null, "coverImage": {}, "startDate": {},
@@ -497,8 +495,9 @@ fn test_parse_media_to_candidate_volumes_source() {
         "staff": { "edges": [] }, "siteUrl": null, "genres": []
     });
     let c2 = parse_media_to_candidate(&media2, 0.5).unwrap();
-    assert_eq!(c2.total_volumes, Some(50));
-    assert_eq!(c2.metadata_json["volume_source"], "chapters");
+    assert_eq!(c2.total_volumes, None);
+    assert_eq!(c2.metadata_json["volume_source"], "unknown");
+    assert_eq!(c2.metadata_json["chapters"], 50);
 
     // Neither volumes nor chapters
     let media3 = serde_json::json!({

@@ -63,9 +63,8 @@ async fn search_series_parses_candidates() {
     assert!(best.authors.contains(&"Juanjo Guarnido".to_string()));
     assert_eq!(best.publishers, vec!["Dark Horse Comics".to_string()]);
     assert_eq!(best.start_year, Some(2010));
-    // LOCKED: total_volumes is the number of search results grouped by title
-    // (here 2), not the real series length. See docs/KNOWN_ISSUES.md §1.
-    assert_eq!(best.total_volumes, Some(2));
+    assert_eq!(best.total_volumes, None);
+    assert_eq!(best.metadata_json["local_volume_count"], 2);
     assert!(best.cover_url.is_some());
     // HTTP should be upgraded to HTTPS
     assert!(best.cover_url.as_ref().unwrap().starts_with("https://"));
