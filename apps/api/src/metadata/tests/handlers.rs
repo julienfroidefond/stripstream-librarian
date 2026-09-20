@@ -31,16 +31,31 @@ fn field_not_locked_when_null() {
 
 #[test]
 fn field_not_locked_when_non_boolean() {
-    let locked = json!({"description": "true"});
+    let locked = json!({"description": "yes"});
     assert!(!is_field_locked(&locked, "description"));
 }
 
-// LOCKED: a non-boolean lock value (e.g. the string "true") is treated as
-// unlocked, so a provider sync can overwrite a manually edited field.
-// See docs/KNOWN_ISSUES.md §1.
 #[test]
-fn field_not_locked_when_string_true() {
+fn field_locked_when_string_true() {
     let locked = json!({"description": "true"});
+    assert!(is_field_locked(&locked, "description"));
+}
+
+#[test]
+fn field_locked_when_string_true_uppercase() {
+    let locked = json!({"description": "TRUE"});
+    assert!(is_field_locked(&locked, "description"));
+}
+
+#[test]
+fn field_locked_when_nonzero_number() {
+    let locked = json!({"description": 1});
+    assert!(is_field_locked(&locked, "description"));
+}
+
+#[test]
+fn field_not_locked_when_zero_number() {
+    let locked = json!({"description": 0});
     assert!(!is_field_locked(&locked, "description"));
 }
 

@@ -831,10 +831,12 @@ pub(crate) async fn normalize_series_status(pool: &sqlx::PgPool, raw: &str) -> S
 /// Extracted for testability.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn is_field_locked(locked_fields: &serde_json::Value, field: &str) -> bool {
-    locked_fields
-        .get(field)
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
+    match locked_fields.get(field) {
+        Some(serde_json::Value::Bool(b)) => *b,
+        Some(serde_json::Value::String(s)) => s.eq_ignore_ascii_case("true"),
+        Some(serde_json::Value::Number(n)) => n.as_i64().is_some_and(|v| v != 0),
+        _ => false,
+    }
 }
 
 /// Build a FieldChange and classify it as updated or skipped based on lock status.

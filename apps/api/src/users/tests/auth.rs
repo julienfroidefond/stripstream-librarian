@@ -91,27 +91,13 @@ fn bearer_token_wrong_scheme() {
 }
 
 #[test]
-fn bearer_token_case_sensitive_bearer() {
-    // "bearer " (lowercase) should NOT match — the spec says "Bearer"
+fn bearer_token_lowercase_scheme_is_accepted() {
     let req = HttpRequest::builder()
         .header(AUTHORIZATION, "bearer my_token")
         .body(())
         .unwrap();
     let req = Request::from_parts(req.into_parts().0, axum::body::Body::empty());
-    assert_eq!(bearer_token(&req), None);
-}
-
-// LOCKED: RFC 7235 §2.1 defines the auth-scheme as case-insensitive, so
-// "bearer" should be accepted. The test above locks the case-sensitive
-// behaviour. See docs/KNOWN_ISSUES.md §1.
-#[test]
-fn bearer_token_lowercase_scheme_is_rejected() {
-    let req = HttpRequest::builder()
-        .header(AUTHORIZATION, "bearer my_token")
-        .body(())
-        .unwrap();
-    let req = Request::from_parts(req.into_parts().0, axum::body::Body::empty());
-    assert_eq!(bearer_token(&req), None);
+    assert_eq!(bearer_token(&req), Some("my_token"));
 }
 
 #[test]

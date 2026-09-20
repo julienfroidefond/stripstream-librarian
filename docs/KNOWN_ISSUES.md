@@ -3,12 +3,13 @@
 Ce document recense les défauts potentiels et incohérences de comportement relevés
 lors des audits de couverture de tests de l'API (Rust) en septembre 2026.
 
-**Rien n'est corrigé ici.** Les comportements concernés sont volontairement
-*verrouillés* par des tests marqués `// LOCKED:` afin qu'un changement de
-comportement fasse échouer la suite au lieu de passer inaperçu.
+Les comportements encore ouverts sont volontairement *verrouillés* par des tests
+marqués `// LOCKED:` afin qu'un changement de comportement fasse échouer la suite
+au lieu de passer inaperçu. Les défauts corrigés sont listés en §5.
 
 > Convention : lorsqu'un point ci-dessous est corrigé, retirer le commentaire
-> `// LOCKED:` du/des test(s) concerné(s) et adapter les assertions.
+> `// LOCKED:` du/des test(s) concerné(s), adapter les assertions, puis déplacer
+> l'entrée vers §5.
 
 ---
 
@@ -61,12 +62,6 @@ Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code 
 | 14 | Noms d'auteur blancs conservés | Le filtre SQL n'exclut que `NULL` et `''` (`author_name <> ''`), pas les chaînes d'espaces : un auteur `"  "` apparaît comme une entrée à part entière. | `authors::tests::list_authors_keeps_whitespace_only_names` |
 | 15 | `total` = 0 hors plage | Le total fenêtré (`COUNT(*) OVER()`) est lu sur la première ligne renvoyée ; une page hors plage ne renvoie aucune ligne → `total` vaut **0** alors que des auteurs existent. | `authors::tests::list_authors_out_of_range_page_returns_empty_with_total` |
 
-### `apps/api/src/books/rename.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 16 | `sanitize_filename` panique sur UTF-8 | La troncature utilise `trimmed.len()` (octets) puis `trimmed[..200]` (slice d'octets) : un caractère multi-octets à cheval sur l'octet 200 provoque un **panic**. Le test ASCII existant masque le bug. | `books::rename::tests::sanitize_panics_on_multibyte_boundary` |
-
 ### `apps/api/src/downloads/detection.rs`
 
 | # | Problème | Comportement actuel | Test qui verrouille |
@@ -79,17 +74,10 @@ Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code 
 |---|----------|---------------------|---------------------|
 | 18 | Une intégrale masque tous les tomes manquants | `COUNT(...) FILTER (WHERE volume_type='integral') > 0 THEN 0` : une intégrale partielle (1 tome sur 10) marque la série **complète**. `get_missing_books` met en plus `total_local = total_external` et vide `missing_books`. | `series::tests::missing_count_zero_when_integral_plus_regular` |
 
-### `apps/api/src/users/auth.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 19 | Schéma `Bearer` sensible à la casse | `strip_prefix("Bearer ")` rejette `bearer xxx` en 401. RFC 7235 §2.1 définit le schéma comme **insensible à la casse**. | `users::auth::tests::bearer_token_lowercase_scheme_is_rejected` |
-
 ### `apps/api/src/metadata/handlers.rs`
 
 | # | Problème | Comportement actuel | Test qui verrouille |
 |---|----------|---------------------|---------------------|
-| 20 | `is_field_locked` échoue en mode ouvert | Une valeur `locked_fields` non booléenne (`"true"`, `1`) est traitée comme **non verrouillée** → la sync provider peut écraser une édition manuelle. | `metadata::handlers::tests::field_not_locked_when_string_true` |
 | 21 | Sync purement additive | `classify_field_change` renvoie `None` quand `new_value` est `None` : une sync provider ne peut jamais **effacer** un champ. | `metadata::handlers::tests::classify_returns_none_when_new_is_none` |
 
 ### `apps/api/src/metadata_providers/anilist.rs`
@@ -112,60 +100,33 @@ Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code 
 | 25 | `external_id` écrasé sur doublon | Deux entités provider de même titre fusionnent en une série ; le lien est `ON CONFLICT DO UPDATE` → l'`external_id` d'origine est perdu. | `integrations::discovery::tests::test_add_to_library_duplicate_series` |
 | 26 | Allowlist de liens codée en dur | Seuls `bedetheque`/`senscritique` créent un `external_metadata_links` ; les autres providers ajoutés via discovery n'en créent aucun → sync metadata impossible. | `integrations::discovery::tests::test_add_to_library_anilist_no_metadata_link` |
 
-### `apps/api/src/metadata_providers/senscritique.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 27 | Date invalide → `ended` | `infer_status_from_date` renvoie le statut terminal `"ended"` pour une date non parseable, au lieu d'`"unknown"`. | `metadata_providers::senscritique::tests::infer_status_invalid_date_is_ended` |
-
 ### `apps/api/src/metadata_providers/bedetheque.rs`
 
 | # | Problème | Comportement actuel | Test qui verrouille |
 |---|----------|---------------------|---------------------|
 | 28 | Page vide → « rate-limited » | Une page 200 vide est classée « rate-limited » plutôt que « aucun résultat ». | `metadata_providers::bedetheque::tests::search_series_detects_rate_limiting` |
 | 29 | Cover URL fabriquée | L'URL de couverture est construite depuis l'id de série même quand l'enrichissement renvoie 404. | `metadata_providers::bedetheque::tests::search_series_cover_url_uses_base_url` |
-
-### `apps/api/src/metadata_providers/bdtheque.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 30 | Pagination absente | Seule la page 0 de `/ajax/series/tomes/{id}/0` est lue → les séries dépassant une page sont tronquées. | `metadata_providers::bdtheque::tests::parses_series_and_volume_metadata` |
-
-### `apps/api/src/metadata_providers/bdphile.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 31 | `external_book_id` = URL complète | L'identifiant de livre est l'URL complète de l'album, pas un id stable. | `metadata_providers::bdphile::tests::parses_series_and_album_details` |
-
-### `apps/api/src/metadata_providers/comicvine.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 32 | Métadonnées d'issue vides | `authors`/`isbn`/`page_count` sont toujours vides pour les issues ComicVine. | `metadata_providers::comicvine::tests::get_series_books_parses_issues` |
-
-### `apps/api/src/reading/status_match.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 33 | Apostrophe → token parasite | `normalize_title` transforme `"JoJo's"` en `"jojo s"` (apostrophe → espace), ce qui peut casser le matching de titres. | `reading::status_match::tests::normalize_replaces_special_chars` |
-
-### `apps/api/src/metadata_providers/bedetheque.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
 | 34 | Covers associées par index positionnel | Les couvertures pré-collectées sont appariées aux albums par leur **position** ; tout décalage d'ordre désaligne les couvertures. | `metadata_providers::bedetheque::tests::get_series_books_parses_albums` |
 
 ### `apps/api/src/metadata_providers/bdtheque.rs`
 
 | # | Problème | Comportement actuel | Test qui verrouille |
 |---|----------|---------------------|---------------------|
+| 30 | Pagination absente | Seule la page 0 de `/ajax/series/tomes/{id}/0` est lue → les séries dépassant une page sont tronquées. | `metadata_providers::bdtheque::tests::parses_series_and_volume_metadata` |
 | 35 | `authors.sort()` réordonne les rôles | Les auteurs sont triés alphabétiquement, l'ordre scénariste/dessinateur de la source n'est pas conservé. | `metadata_providers::bdtheque::tests::parses_series_and_volume_metadata` |
 
 ### `apps/api/src/metadata_providers/bdphile.rs`
 
 | # | Problème | Comportement actuel | Test qui verrouille |
 |---|----------|---------------------|---------------------|
+| 31 | `external_book_id` = URL complète | L'identifiant de livre est l'URL complète de l'album, pas un id stable. | `metadata_providers::bdphile::tests::parses_series_and_album_details` |
 | 36 | Erreurs de fetch album avalées | `fetch_album(...).unwrap_or_default()` masque les erreurs : un album en 500 produit quand même un livre, avec `authors`/`isbn`/`cover_url` vides. | `metadata_providers::bdphile::tests::album_fetch_error_is_swallowed` |
+
+### `apps/api/src/metadata_providers/comicvine.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 32 | Métadonnées d'issue vides | `authors`/`isbn`/`page_count` sont toujours vides pour les issues ComicVine. | `metadata_providers::comicvine::tests::get_series_books_parses_issues` |
 
 ### `apps/api/src/tests/search.rs`
 
@@ -202,6 +163,10 @@ directement avec un `AppState` construit à la main.
 Les garanties apportées par la suite de tests et les lints ne sont donc pas
 vérifiées avant publication.
 
+**Décision assumée** : les tests ne sont pas exécutés en CI, faute de ressources
+suffisantes sur le runner. La suite de tests doit être lancée **localement**
+avant tout commit (`cargo test -p api`, `cargo clippy -p api --tests`).
+
 ---
 
 ## 4. Comment ces éléments sont maintenus
@@ -209,4 +174,16 @@ vérifiées avant publication.
 - Chaque comportement listé en §1 est couvert par un test annoté `// LOCKED:` ;
   modifier le comportement casse le test (signal explicite).
 - Corriger un défaut = retirer l'annotation `// LOCKED:` + ajuster l'assertion,
-  puis mettre à jour ce document.
+  puis déplacer l'entrée vers §5.
+
+---
+
+## 5. Défauts corrigés
+
+| # | Défaut | Correction | Test |
+|---|--------|------------|------|
+| 16 | `sanitize_filename` paniquait sur une frontière UTF-8 | Troncature sur frontière de caractère (`chars().take(200)`) au lieu d'un slice d'octets. | `books::rename::tests::sanitize_truncates_on_char_boundary` |
+| 19 | Schéma `Bearer` sensible à la casse | Comparaison insensible à la casse (`eq_ignore_ascii_case`) du schéma d'authentification. | `users::auth::tests::bearer_token_lowercase_scheme_is_accepted` |
+| 20 | `is_field_locked` échouait en mode ouvert | Les valeurs `"true"` (insensible à la casse) et les nombres non nuls sont désormais traités comme verrouillés. | `metadata::handlers::tests::field_locked_when_string_true`, `field_locked_when_nonzero_number` |
+| 27 | Date invalide → `ended` | Une date non parseable renvoie désormais `"unknown"` au lieu du statut terminal `"ended"`. | `metadata_providers::senscritique::tests::infer_status_invalid_date_is_unknown` |
+| 33 | Apostrophe → token parasite | `normalize_title` supprime l'apostrophe (`"JoJo's"` → `"jojos"`) au lieu de la remplacer par un espace. | `reading::status_match::tests::normalize_replaces_special_chars` |

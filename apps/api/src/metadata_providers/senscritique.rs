@@ -923,13 +923,15 @@ async fn fetch_franchise_latest_dates(
 }
 
 /// Infer series status from the latest release date.
-/// If the latest volume was released within the last 18 months → "ongoing", otherwise "ended".
+/// If the latest volume was released within the last 18 months → "ongoing",
+/// otherwise "ended". An unparseable date yields "unknown".
 fn infer_status_from_date(date_str: &str) -> &'static str {
     use chrono::{NaiveDate, Utc};
     let cutoff = Utc::now().date_naive() - chrono::Duration::days(18 * 30);
     match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
         Ok(date) if date > cutoff => "ongoing",
-        _ => "ended",
+        Ok(_) => "ended",
+        Err(_) => "unknown",
     }
 }
 

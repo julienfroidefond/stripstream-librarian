@@ -796,7 +796,8 @@ async fn search_and_link(
 
 fn normalize_title(s: &str) -> String {
     s.to_lowercase()
-        .replace([':', '!', '?', '.', ',', '\'', '"', '-', '_'], " ")
+        .replace(['\'', '"'], "")
+        .replace([':', '!', '?', '.', ',', '-', '_'], " ")
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")

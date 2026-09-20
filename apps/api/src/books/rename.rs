@@ -256,8 +256,8 @@ fn sanitize_filename(name: &str) -> String {
     let trimmed = sanitized.trim().trim_matches('.').to_string();
 
     // Truncate to 200 chars to leave room for extension
-    if trimmed.len() > 200 {
-        trimmed[..200].to_string()
+    if trimmed.chars().count() > 200 {
+        trimmed.chars().take(200).collect()
     } else {
         trimmed
     }

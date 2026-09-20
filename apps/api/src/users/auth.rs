@@ -78,10 +78,12 @@ pub async fn require_read(
 }
 
 fn bearer_token(req: &Request) -> Option<&str> {
-    req.headers()
+    let value = req
+        .headers()
         .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
+        .and_then(|value| value.to_str().ok())?;
+    let (scheme, token) = value.split_once(' ')?;
+    scheme.eq_ignore_ascii_case("Bearer").then_some(token)
 }
 
 async fn authenticate(state: &AppState, token: &str) -> Result<Scope, ApiError> {
