@@ -1179,3 +1179,48 @@ async fn get_reading_overview_includes_users_without_progress(pool: PgPool) {
     assert_eq!(s1_progress.books[0].book_id, b1.to_string());
     assert_eq!(s1_progress.books[0].status, "unread");
 }
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_reading_overview_series_progress_is_per_user(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let s1 = create_series(&pool, library, "S1").await;
+    let alice = create_user(&pool, "alice").await;
+    let bob = create_user(&pool, "bob").await;
+
+    let b1 = create_simple_book(&pool, library, Some(s1), "B1", 10).await;
+    let b2 = create_simple_book(&pool, library, Some(s1), "B2", 20).await;
+
+    set_progress(&pool, b1, alice, "read", None, None).await;
+    set_progress(&pool, b2, alice, "reading", Some(5), None).await;
+    set_progress(&pool, b1, bob, "reading", Some(2), None).await;
+
+    let Json(resp) = get_reading_overview(State(state)).await.unwrap();
+
+    let a = resp.iter().find(|u| u.username == "alice").unwrap();
+    let a_s1 = find_series(&a.series_progress, "S1");
+    assert_eq!(a_s1.books_total, 2);
+    assert_eq!(a_s1.books_read, 1);
+    assert_eq!(a_s1.books_reading, 1);
+    assert_eq!(a_s1.books_unread, 0);
+
+    let b = resp.iter().find(|u| u.username == "bob").unwrap();
+    let b_s1 = find_series(&b.series_progress, "S1");
+    assert_eq!(b_s1.books_total, 2);
+    assert_eq!(b_s1.books_read, 0);
+    assert_eq!(b_s1.books_reading, 1);
+    assert_eq!(b_s1.books_unread, 1);
+    let b_b1 = b_s1
+        .books
+        .iter()
+        .find(|bk| bk.book_id == b1.to_string())
+        .unwrap();
+    assert_eq!(b_b1.status, "reading");
+    assert_eq!(b_b1.current_page, 2);
+    let b_b2 = b_s1
+        .books
+        .iter()
+        .find(|bk| bk.book_id == b2.to_string())
+        .unwrap();
+    assert_eq!(b_b2.status, "unread");
+}

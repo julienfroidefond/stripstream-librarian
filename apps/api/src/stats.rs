@@ -1364,6 +1364,27 @@ pub async fn get_reading_overview(
 ) -> Result<Json<Vec<UserReadingOverview>>, ApiError> {
     let rows = sqlx::query(
         r#"
+        WITH series_books AS (
+            SELECT
+                b.series_id,
+                COALESCE(s.name, 'Sans série') AS series_name,
+                json_agg(
+                    json_build_object(
+                        'book_id', b.id::text,
+                        'title', b.title,
+                        'volume', b.volume,
+                        'volume_type', b.volume_type,
+                        'page_count', COALESCE(b.page_count, 0)
+                    )
+                    ORDER BY
+                        CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
+                        b.volume NULLS LAST,
+                        b.title
+                ) AS books
+            FROM books b
+            LEFT JOIN series s ON s.id = b.series_id
+            GROUP BY b.series_id, s.name
+        )
         SELECT
             u.id AS user_id,
             u.username,
@@ -1412,47 +1433,38 @@ pub async fn get_reading_overview(
                 )
                 FROM (
                     SELECT
-                        COALESCE(s3.name, 'Sans série') AS series_name,
-                        MAX(brp3.last_read_at) AS sort_last_read_at,
+                        sb.series_name,
+                        MAX(up.last_read_at) AS sort_last_read_at,
                         json_build_object(
-                            'series_id', s3.id::text,
-                            'series_name', COALESCE(s3.name, 'Sans série'),
+                            'series_id', sb.series_id::text,
+                            'series_name', sb.series_name,
                             'books_total', COUNT(*),
-                            'books_read', COUNT(*) FILTER (WHERE COALESCE(brp3.status, 'unread') = 'read'),
-                            'books_reading', COUNT(*) FILTER (WHERE COALESCE(brp3.status, 'unread') = 'reading'),
-                            'books_unread', COUNT(*) FILTER (WHERE COALESCE(brp3.status, 'unread') = 'unread'),
-                            'last_read_at', TO_CHAR(MAX(brp3.last_read_at), 'YYYY-MM-DD'),
-                            'books', (
-                                SELECT COALESCE(
-                                    json_agg(
-                                        json_build_object(
-                                            'book_id', b4.id::text,
-                                            'title', b4.title,
-                                            'volume', b4.volume,
-                                            'volume_type', b4.volume_type,
-                                            'status', COALESCE(brp4.status, 'unread'),
-                                            'current_page', COALESCE(brp4.current_page, 0),
-                                            'page_count', COALESCE(b4.page_count, 0),
-                                            'last_read_at', TO_CHAR(brp4.last_read_at, 'YYYY-MM-DD')
-                                        )
-                                        ORDER BY
-                                            CASE WHEN b4.volume_type = 'regular' THEN 0 ELSE 1 END,
-                                            b4.volume NULLS LAST,
-                                            b4.title
-                                    ),
-                                    '[]'::json
+                            'books_read', COUNT(*) FILTER (WHERE COALESCE(up.status, 'unread') = 'read'),
+                            'books_reading', COUNT(*) FILTER (WHERE COALESCE(up.status, 'unread') = 'reading'),
+                            'books_unread', COUNT(*) FILTER (WHERE COALESCE(up.status, 'unread') = 'unread'),
+                            'last_read_at', TO_CHAR(MAX(up.last_read_at), 'YYYY-MM-DD'),
+                            'books', json_agg(
+                                json_build_object(
+                                    'book_id', bk->>'book_id',
+                                    'title', bk->>'title',
+                                    'volume', bk->'volume',
+                                    'volume_type', bk->>'volume_type',
+                                    'status', COALESCE(up.status, 'unread'),
+                                    'current_page', COALESCE(up.current_page, 0),
+                                    'page_count', (bk->>'page_count')::int,
+                                    'last_read_at', TO_CHAR(up.last_read_at, 'YYYY-MM-DD')
                                 )
-                                FROM books b4
-                                LEFT JOIN book_reading_progress brp4
-                                    ON brp4.book_id = b4.id AND brp4.user_id = u.id
-                                WHERE b4.series_id IS NOT DISTINCT FROM b3.series_id
+                                ORDER BY
+                                    CASE WHEN bk->>'volume_type' = 'regular' THEN 0 ELSE 1 END,
+                                    (bk->>'volume')::int NULLS LAST,
+                                    bk->>'title'
                             )
                         ) AS series_row
-                    FROM books b3
-                    LEFT JOIN series s3 ON s3.id = b3.series_id
-                    LEFT JOIN book_reading_progress brp3
-                        ON brp3.book_id = b3.id AND brp3.user_id = u.id
-                    GROUP BY b3.series_id, s3.id, s3.name
+                    FROM series_books sb
+                    CROSS JOIN LATERAL json_array_elements(sb.books) AS bk
+                    LEFT JOIN book_reading_progress up
+                        ON up.book_id = (bk->>'book_id')::uuid AND up.user_id = u.id
+                    GROUP BY sb.series_id, sb.series_name
                 ) series_rows
             ) AS series_progress
         FROM users u
