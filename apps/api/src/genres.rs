@@ -111,7 +111,17 @@ pub async fn rename_genre(
     }
 
     sqlx::query(
-        "UPDATE series SET genres = array_replace(genres, $1, $2), updated_at = NOW() WHERE $1 = ANY(genres)",
+        r#"
+        UPDATE series
+        SET genres = ARRAY(
+                SELECT g
+                FROM unnest(array_replace(genres, $1, $2)) WITH ORDINALITY AS t(g, ord)
+                GROUP BY g
+                ORDER BY MIN(ord)
+            ),
+            updated_at = NOW()
+        WHERE $1 = ANY(genres)
+        "#,
     )
     .bind(&name)
     .bind(&new_name)

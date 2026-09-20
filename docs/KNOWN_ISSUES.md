@@ -22,25 +22,6 @@ au lieu de passer inaperçu. Les défauts corrigés sont listés en §5.
 
 Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code PG 23505 → `ApiError::conflict`).
 
-### `apps/api/src/settings.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 12 | `get_setting` documente 404 mais renvoie 200/null | L'annotation OpenAPI du handler déclare `(status = 404, description = "Setting not found")`, mais une clé absente répond **200** avec `null` — l'erreur 404 n'est jamais produite. | `settings::tests::get_setting_returns_null_for_unknown_key` |
-
-### `apps/api/src/genres.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 13 | `rename_genre` peut créer un doublon | `array_replace` remplace l'ancien nom par le nouveau sans vérifier sa présence : renommer `Aventure` en `Action` sur une série qui a déjà `Action` produit `{Action, Action}` au lieu de fusionner. | `genres::tests::rename_genre_merge_creates_duplicate` |
-
-### `apps/api/src/authors.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 14 | Noms d'auteur blancs conservés | Le filtre SQL n'exclut que `NULL` et `''` (`author_name <> ''`), pas les chaînes d'espaces : un auteur `"  "` apparaît comme une entrée à part entière. | `authors::tests::list_authors_keeps_whitespace_only_names` |
-| 15 | `total` = 0 hors plage | Le total fenêtré (`COUNT(*) OVER()`) est lu sur la première ligne renvoyée ; une page hors plage ne renvoie aucune ligne → `total` vaut **0** alors que des auteurs existent. | `authors::tests::list_authors_out_of_range_page_returns_empty_with_total` |
-
 ### `apps/api/src/downloads/detection.rs`
 
 | # | Problème | Comportement actuel | Test qui verrouille |
@@ -169,3 +150,7 @@ avant tout commit (`cargo test -p api`, `cargo clippy -p api --tests`).
 | 9 | `jobs_over_time` : `ELSE 'metadata'` | `prowlarr_rss` → `downloads`, `metadata_refresh_all` → `metadata`, tout le reste → `other`. | `stats::tests::get_stats_jobs_over_time_categorizes_job_types` |
 | 10 | `users_reading_over_time` non scopé | Filtré sur l'utilisateur authentifié (`WHERE ($1::uuid IS NULL OR u.id = $1)`). | `stats::tests::get_stats_scopes_reading_to_authenticated_user` |
 | 11 | Période invalide → `month` silencieux | Une `period` hors `{day, week, month}` est rejetée en **400**. | `stats::tests::get_stats_period_shapes_and_rejects_invalid` |
+| 12 | `get_setting` documentait 404 mais renvoyait 200/null | Une clé absente renvoie désormais **404**, aligné sur l'annotation OpenAPI. | `settings::tests::get_setting_returns_not_found_for_unknown_key` |
+| 13 | `rename_genre` créait un doublon | Le remplacement déduplique en préservant l'ordre d'origine (`WITH ORDINALITY`). | `genres::tests::rename_genre_merge_deduplicates` |
+| 14 | Noms d'auteur blancs conservés | Le filtre utilise `btrim(author_name) <> ''`. | `authors::tests::list_authors_excludes_whitespace_only_names` |
+| 15 | `total` = 0 hors plage | Le total est calculé par une requête dédiée, indépendante de la pagination. | `authors::tests::list_authors_out_of_range_page_returns_empty_with_total` |

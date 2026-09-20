@@ -99,11 +99,11 @@ pub async fn list_authors(
                 COUNT(DISTINCT series_id) AS series_count
             FROM author_rows
             WHERE author_name IS NOT NULL
-              AND author_name <> ''
+              AND btrim(author_name) <> ''
               AND ($1::text IS NULL OR author_name ILIKE $1)
             GROUP BY author_name
         )
-        SELECT name, book_count, series_count, COUNT(*) OVER() AS total
+        SELECT name, book_count, series_count
         FROM author_agg
         ORDER BY {order_clause}
         LIMIT $2 OFFSET $3
@@ -118,7 +118,31 @@ pub async fn list_authors(
         .await
         .map_err(|e| ApiError::internal(format!("authors query failed: {e}")))?;
 
-    let total: i64 = rows.first().map(|r| r.get("total")).unwrap_or(0);
+    let total: i64 = sqlx::query_scalar(
+        r#"
+        WITH author_rows AS (
+            SELECT UNNEST(
+                COALESCE(
+                    NULLIF(b.authors, '{}'),
+                    CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END
+                )
+            ) AS author_name
+            FROM books b
+            UNION ALL
+            SELECT UNNEST(COALESCE(s.authors, ARRAY[]::text[])) AS author_name
+            FROM series s
+        )
+        SELECT COUNT(DISTINCT author_name)
+        FROM author_rows
+        WHERE author_name IS NOT NULL
+          AND btrim(author_name) <> ''
+          AND ($1::text IS NULL OR author_name ILIKE $1)
+        "#,
+    )
+    .bind(q_pattern.as_deref())
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|e| ApiError::internal(format!("authors count query failed: {e}")))?;
 
     let items: Vec<AuthorItem> = rows
         .iter()

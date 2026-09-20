@@ -119,7 +119,7 @@ pub async fn get_setting(
             let value: Value = row.get("value");
             Ok(Json(value))
         }
-        None => Ok(Json(Value::Null)),
+        None => Err(ApiError::not_found("setting not found")),
     }
 }
 

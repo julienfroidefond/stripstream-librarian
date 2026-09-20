@@ -232,7 +232,7 @@ async fn list_authors_ignores_empty_and_null_names(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn list_authors_keeps_whitespace_only_names(pool: PgPool) {
+async fn list_authors_excludes_whitespace_only_names(pool: PgPool) {
     let state = test_state(pool.clone());
     let library = create_library(&pool, "main").await;
     create_book(&pool, library, None, "blank", &["  "], None).await;
@@ -242,9 +242,7 @@ async fn list_authors_keeps_whitespace_only_names(pool: PgPool) {
         .await
         .unwrap();
 
-    // LOCKED: the filter only excludes NULL and '' (not whitespace-only), so a
-    // blank author name is surfaced as a real author entry.
-    assert_eq!(names(&response), vec!["  ", "Real"]);
+    assert_eq!(names(&response), vec!["Real"]);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -416,7 +414,5 @@ async fn list_authors_out_of_range_page_returns_empty_with_total(pool: PgPool) {
         .unwrap();
 
     assert!(response.items.is_empty());
-    // LOCKED: the windowed total is read from the first returned row, so an
-    // out-of-range page reports total = 0 even though authors exist.
-    assert_eq!(response.total, 0);
+    assert_eq!(response.total, 1);
 }

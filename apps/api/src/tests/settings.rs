@@ -126,15 +126,12 @@ async fn get_settings_includes_newly_written_key(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn get_setting_returns_null_for_unknown_key(pool: PgPool) {
+async fn get_setting_returns_not_found_for_unknown_key(pool: PgPool) {
     let state = test_state(pool);
 
-    // LOCKED: the OpenAPI path documents a 404, but a missing key yields 200/null.
-    let Json(value) = get_setting(State(state), key_path("does-not-exist"))
-        .await
-        .unwrap();
+    let err = expect_err(get_setting(State(state), key_path("does-not-exist")).await);
 
-    assert_eq!(value, Value::Null);
+    assert_eq!(err.status, StatusCode::NOT_FOUND);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]

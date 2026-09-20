@@ -336,7 +336,7 @@ async fn rename_genre_unknown_is_noop(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn rename_genre_merge_creates_duplicate(pool: PgPool) {
+async fn rename_genre_merge_deduplicates(pool: PgPool) {
     let state = test_state(pool.clone());
     let library = create_library(&pool, "main").await;
     let series = create_series(&pool, library, "S1", &["Action", "Aventure"]).await;
@@ -345,9 +345,7 @@ async fn rename_genre_merge_creates_duplicate(pool: PgPool) {
         .await
         .unwrap();
 
-    // LOCKED: renaming a genre onto an already-present one produces a duplicate
-    // instead of merging the two entries.
-    assert_eq!(genres_of(&pool, series).await, vec!["Action", "Action"]);
+    assert_eq!(genres_of(&pool, series).await, vec!["Action"]);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
