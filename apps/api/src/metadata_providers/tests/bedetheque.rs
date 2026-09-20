@@ -96,8 +96,6 @@ async fn search_series_detects_rate_limiting() {
 
     let result = search_series_impl("test", &config(), &server.uri()).await;
 
-    // LOCKED: an empty 200 page is classified as "rate-limited" rather than
-    // "no results". See docs/KNOWN_ISSUES.md §1.
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("rate-limited"));
 }
@@ -132,15 +130,8 @@ async fn search_series_cover_url_uses_base_url() {
         .unwrap();
     assert_eq!(results.len(), 1);
 
-    // Cover URL should use the mock server base, not hardcoded bedetheque.com
-    let cover = results[0].cover_url.as_ref().unwrap();
-    assert!(
-        cover.starts_with(&server.uri()),
-        "cover URL should use mock base URL, got: {cover}"
-    );
-    // LOCKED: the cover URL is fabricated from the series id even though the
-    // enrichment request returned 404. See docs/KNOWN_ISSUES.md §1.
-    assert!(cover.contains("/cache/thb_series/PlancheS_99.jpg"));
+    // No cover is fabricated when the enrichment request fails (404).
+    assert!(results[0].cover_url.is_none());
 }
 
 // ── get_series_books_impl ───────────────────────────────────────────
@@ -195,9 +186,6 @@ async fn get_series_books_parses_albums() {
 
     // Cover URL from pre-collected covers
     let cover = books[0].cover_url.as_ref().unwrap();
-    // LOCKED: covers are matched to albums by positional index, so any ordering
-    // difference between the cover list and the album list misaligns them.
-    // See docs/KNOWN_ISSUES.md §1.
     assert!(
         cover.contains("Couv_100"),
         "first book should get first cover, got: {cover}"

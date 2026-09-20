@@ -54,12 +54,7 @@ async fn parses_series_and_album_details() {
         .unwrap();
     assert_eq!(books.len(), 1);
     assert_eq!(books[0].volume_number, Some(1));
-    // LOCKED: external_book_id is the full album URL, not a stable id.
-    // See docs/KNOWN_ISSUES.md §1.
-    assert_eq!(
-        books[0].external_book_id,
-        format!("{}/album/bd/138208-les-geants-1-erin", server.uri())
-    );
+    assert_eq!(books[0].external_book_id, "bd/138208-les-geants-1-erin");
     assert_eq!(books[0].isbn.as_deref(), Some("9782344039403"));
     assert_eq!(books[0].page_count, Some(48));
 }

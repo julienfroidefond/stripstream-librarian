@@ -171,7 +171,11 @@ async fn get_series_books_parses_issues() {
                     "medium_url": "https://comicvine.example.com/issue1.jpg"
                 },
                 "cover_date": "2010-03-15",
-                "site_detail_url": "https://comicvine.example.com/issue/100/"
+                "site_detail_url": "https://comicvine.example.com/issue/100/",
+                "person_credits": [
+                    { "name": "Juan Diaz Canales" },
+                    { "name": "Juanjo Guarnido" }
+                ]
             },
             {
                 "id": 101,
@@ -216,9 +220,15 @@ async fn get_series_books_parses_issues() {
         Some("https://comicvine.example.com/issue1.jpg".to_string())
     );
     assert_eq!(books[0].publish_date, Some("2010-03-15".to_string()));
-    // LOCKED: authors/isbn/page_count are always empty for ComicVine issues.
+    assert_eq!(
+        books[0].authors,
+        vec![
+            "Juan Diaz Canales".to_string(),
+            "Juanjo Guarnido".to_string()
+        ]
+    );
+    // LOCKED: ComicVine issues expose neither ISBN nor page count.
     // See docs/KNOWN_ISSUES.md §1.
-    assert!(books[0].authors.is_empty());
     assert!(books[0].isbn.is_none());
     assert!(books[0].page_count.is_none());
 

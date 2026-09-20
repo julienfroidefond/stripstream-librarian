@@ -26,8 +26,6 @@ async fn parses_series_and_volume_metadata() {
         Some("https://www.bdtheque.com/repupload/T/T_53064.JPG")
     );
     assert_eq!(results[0].authors, vec!["Lylian", "Paul Drouin"]);
-    // LOCKED: authors are sorted alphabetically, so the scénariste/dessinateur
-    // order from the source page is not preserved. See docs/KNOWN_ISSUES.md §1.
     assert_eq!(results[0].publishers, vec!["Glénat"]);
     assert_eq!(results[0].start_year, Some(2020));
     assert_eq!(results[0].total_volumes, Some(12));
@@ -55,14 +53,21 @@ async fn parses_series_and_volume_metadata() {
 
     Mock::given(method("GET")).and(path_regex(r"/ajax/series/tomes/22444/0"))
         .respond_with(ResponseTemplate::new(200).set_body_string(r#"<div class="card"><h5>1 - Erin</h5><img class="cover" src="/erin.jpg"><small>Date de parution : 26 Août 2020 | Pagination : 48 | ISBN : 9782344039403</small><p class="card-text">Scénario : Lylian</p></div>"#)).mount(&server).await;
-    // LOCKED: only page 0 of the tomes endpoint is fetched — no pagination, so
-    // series with more volumes than one page are truncated. See docs/KNOWN_ISSUES.md §1.
+    Mock::given(method("GET")).and(path_regex(r"/ajax/series/tomes/22444/1"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"<div class="card"><h5>2 - Tome 2</h5><img class="cover" src="/t2.jpg"><small>ISBN : 9782344039404</small></div>"#)).mount(&server).await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"/ajax/series/tomes/22444/2"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(""))
+        .mount(&server)
+        .await;
     let books = get_series_books_impl("22444/les-geants", &server.uri())
         .await
         .unwrap();
-    assert_eq!(books.len(), 1);
+    assert_eq!(books.len(), 2);
     assert_eq!(books[0].volume_number, Some(1));
     assert_eq!(books[0].isbn.as_deref(), Some("9782344039403"));
+    assert_eq!(books[1].volume_number, Some(2));
+    assert_eq!(books[1].isbn.as_deref(), Some("9782344039404"));
 }
 
 #[test]

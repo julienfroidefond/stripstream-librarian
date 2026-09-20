@@ -141,8 +141,12 @@ async fn search_series_impl(
         .await
         .map_err(|e| format!("Failed to read Bedetheque response: {e}"))?;
 
-    // Detect IP blacklist
-    if html.contains("<title></title>") || html.contains("<title> </title>") {
+    // Detect IP blacklist: the site returns a fully empty page (no title, no
+    // body content) when the client is rate-limited. A normal "no results"
+    // page still carries a title and page chrome, so it must not be flagged.
+    let has_empty_title = html.contains("<title></title>") || html.contains("<title> </title>");
+    let has_no_body = !html.contains("<body") || html.contains("<body></body>");
+    if has_empty_title && has_no_body {
         return Err("Bedetheque: IP may be rate-limited, please retry later".to_string());
     }
 
@@ -177,7 +181,6 @@ async fn search_series_impl(
             }
 
             let confidence = compute_confidence(&title, &query_lower);
-            let cover_url = format!("{}/cache/thb_series/PlancheS_{}.jpg", base_url, series_id);
 
             let absolute_href = if href.starts_with("http") {
                 href.clone()
@@ -193,7 +196,7 @@ async fn search_series_impl(
                 publishers: vec![],
                 start_year: None,
                 total_volumes: None,
-                cover_url: Some(cover_url),
+                cover_url: None,
                 external_url: Some(absolute_href),
                 confidence,
                 metadata_json: serde_json::json!({}),
@@ -607,7 +610,18 @@ async fn get_series_books_impl(
     static RE_VOLUME: std::sync::LazyLock<regex::Regex> =
         std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)Tome-(\d+)-").unwrap());
 
-    for (idx, album_el) in doc.select(&album_sel).enumerate() {
+    // Map each album id to its cover by pairing the pre-collected covers with the
+    // album anchors in document order. This keeps covers aligned even when some
+    // .album-main blocks are filtered out (non-tomes) or an image is orphaned.
+    let anchor_sel = Selector::parse("a.titre").map_err(|e| format!("selector: {e}"))?;
+    let cover_by_id: std::collections::HashMap<String, String> = doc
+        .select(&anchor_sel)
+        .filter_map(|a| a.value().attr("href"))
+        .filter_map(|href| RE_BOOK_ID.captures(href).map(|c| c[1].to_string()))
+        .zip(covers.iter().cloned())
+        .collect();
+
+    for album_el in doc.select(&album_sel) {
         // Title from <a class="titre" title="..."> — the title attribute is clean
         let title_sel = Selector::parse("a.titre").ok();
         let title_el = title_sel.as_ref().and_then(|s| album_el.select(s).next());
@@ -636,6 +650,9 @@ async fn get_series_books_impl(
             .captures(album_url)
             .map(|c| c[1].to_string())
             .unwrap_or_default();
+
+        // Cover matched by album id, not by position
+        let cover_url = cover_by_id.get(&external_book_id).cloned();
 
         // Volume number from URL pattern "Tome-{N}-" or from itemprop name
         let volume_number = RE_VOLUME
@@ -684,9 +701,6 @@ async fn get_series_books_impl(
             .and_then(|s| album_el.select(&s).next())
             .and_then(|el| el.value().attr("content").map(|c| c.trim().to_string()))
             .filter(|s| !s.is_empty());
-
-        // Cover from pre-collected covers (same index)
-        let cover_url = covers.get(idx).cloned();
 
         books.push(BookCandidate {
             external_book_id,

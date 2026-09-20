@@ -337,7 +337,6 @@ async fn get_series_impl(external_id: &str, base: &str) -> Result<SeriesCandidat
                 .and_then(|v| v.parse().ok());
         }
     }
-    authors.sort();
     authors.dedup();
     publishers.sort();
     publishers.dedup();
@@ -362,9 +361,23 @@ async fn get_series_books_impl(
 ) -> Result<Vec<BookCandidate>, String> {
     let c = client()?;
     let id = series_id(external_id).ok_or("invalid BDTheque series ID")?;
-    let url = format!("{base}/ajax/series/tomes/{id}/0");
-    let body = get_html(&c, &url).await?;
-    let doc = Html::parse_document(&body);
+    let mut books = Vec::new();
+    let mut page = 0u32;
+    loop {
+        let url = format!("{base}/ajax/series/tomes/{id}/{page}");
+        let body = get_html(&c, &url).await?;
+        let page_books = parse_tomes_page(&body, &id);
+        if page_books.is_empty() {
+            break;
+        }
+        books.extend(page_books);
+        page += 1;
+    }
+    Ok(books)
+}
+
+fn parse_tomes_page(body: &str, id: &str) -> Vec<BookCandidate> {
+    let doc = Html::parse_document(body);
     let card = Selector::parse("div.card").unwrap();
     let mut books = Vec::new();
     for item in doc.select(&card) {
@@ -434,7 +447,7 @@ async fn get_series_books_impl(
             metadata_json: serde_json::json!({"provider": "bdtheque"}),
         });
     }
-    Ok(books)
+    books
 }
 
 #[cfg(test)]

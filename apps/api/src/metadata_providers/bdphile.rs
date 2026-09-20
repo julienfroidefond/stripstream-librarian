@@ -406,6 +406,7 @@ async fn get_series_books_impl(
         let publisher = cells.get(2).cloned().unwrap_or_default();
         let publish_date = cells.get(3).cloned();
         let album_url = absolute(base, &href);
+        let external_book_id = album_external_id(&album_url).unwrap_or_else(|| album_url.clone());
         let detail = fetch_album(&c, &album_url).await.unwrap_or_default();
         let isbn = detail.get("isbn").cloned();
         let cover_url = detail.get("cover_url").cloned();
@@ -422,9 +423,17 @@ async fn get_series_books_impl(
         let page_count = detail.get("page_count").and_then(|v| v.parse().ok());
         let summary = detail.get("summary").cloned();
         let date = detail.get("publish_date").cloned().or(publish_date);
-        books.push(BookCandidate { external_book_id: album_url.clone(), title, volume_number, authors, isbn, summary, cover_url, page_count, language: Some("fr".into()), publish_date: date, metadata_json: serde_json::json!({"provider": "bdphile", "publisher": publisher, "source_url": album_url, "oneshot": volume_number.is_none()}) });
+        books.push(BookCandidate { external_book_id, title, volume_number, authors, isbn, summary, cover_url, page_count, language: Some("fr".into()), publish_date: date, metadata_json: serde_json::json!({"provider": "bdphile", "publisher": publisher, "source_url": album_url, "oneshot": volume_number.is_none()}) });
     }
     Ok(books)
+}
+
+/// Extract a stable album identifier from a BDphile album URL, e.g.
+/// "https://www.bdphile.fr/album/bd/138208-les-geants-1-erin" → "bd/138208-les-geants-1-erin".
+fn album_external_id(url: &str) -> Option<String> {
+    let parsed = reqwest::Url::parse(url).ok()?;
+    let path = parsed.path().trim_matches('/');
+    path.strip_prefix("album/").map(str::to_string)
 }
 
 async fn fetch_album(

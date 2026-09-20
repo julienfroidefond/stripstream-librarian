@@ -259,7 +259,7 @@ async fn get_series_books_impl(
     let client = build_client()?;
 
     let url = format!(
-        "{}/api/issues/?api_key={}&format=json&filter=volume:{}&sort=issue_number:asc&limit=100&field_list=id,name,issue_number,description,image,cover_date,site_detail_url",
+        "{}/api/issues/?api_key={}&format=json&filter=volume:{}&sort=issue_number:asc&limit=100&field_list=id,name,issue_number,description,image,cover_date,site_detail_url,person_credits",
         base_url,
         api_key,
         external_id
@@ -314,12 +314,23 @@ async fn get_series_books_impl(
                 .get("cover_date")
                 .and_then(|d| d.as_str())
                 .map(String::from);
+            let authors = issue
+                .get("person_credits")
+                .and_then(|credits| credits.as_array())
+                .map(|credits| {
+                    credits
+                        .iter()
+                        .filter_map(|credit| credit.get("name").and_then(|n| n.as_str()))
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
 
             Some(BookCandidate {
                 external_book_id: id.to_string(),
                 title: name,
                 volume_number: issue_number,
-                authors: vec![],
+                authors,
                 isbn: None,
                 summary: description,
                 cover_url,
