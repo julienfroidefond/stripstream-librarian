@@ -19,12 +19,12 @@ Stripstream gère nativement quatre formats :
 Stripstream essaie de gérer les archives endommagées ou atypiques sans bloquer le reste de l'indexation :
 
 - **CBZ endommagé** : utilise un lecteur alternatif si le répertoire central est corrompu
-- **CBR** : extraction via `unar` avec fallback vers une lecture CBZ si nécessaire
-- **PDF** : `pdfinfo` pour le comptage de pages, `pdftoppm` pour le rendu des pages
+- **CBR** : lecture RAR **in-process** via le crate `unrar` (aucun binaire externe), avec repli sur une lecture ZIP si nécessaire
+- **PDF** : comptage de pages et rendu via **pdfium** (bibliothèque `libpdfium`) — pas de `pdfinfo`/`pdftoppm`
 - **EPUB** : extraction ZIP standard
 
 Si trop d'erreurs surviennent en rafale lors d'un scan, celui-ci s'interrompt automatiquement pour éviter de surcharger le système.
 
 :::note[Détails techniques]
-La détection du format utilise l'extension du fichier et les magic bytes (signature binaire). La protection contre les erreurs en rafale détecte un épuisement de descripteurs de fichiers (FD exhaustion) via un compteur d'erreurs I/O consécutives.
+La détection du format se fait **uniquement par extension** de fichier. Les magic bytes ne sont utilisés qu'en interne pour choisir le bon lecteur (ZIP vs RAR) sur les archives atypiques. La protection contre les erreurs en rafale détecte un épuisement de descripteurs de fichiers (FD exhaustion) via un compteur d'erreurs I/O consécutives.
 :::
