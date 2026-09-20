@@ -51,18 +51,17 @@ fn push_capped_item(items: &mut Vec<String>, value: String) {
 
 /// Look up a series by name in the local cache, or INSERT INTO series ... ON CONFLICT DO NOTHING
 /// then SELECT to get the id. Updates the cache on creation.
+///
+/// Cache keys are lowercased so lookups stay O(1) rather than scanning every entry.
 async fn get_or_create_series_id(
     pool: &sqlx::PgPool,
     library_id: Uuid,
     name: &str,
     cache: &mut HashMap<String, Uuid>,
 ) -> Result<Uuid> {
-    // Check local cache first (case-insensitive)
-    let name_lower = name.to_lowercase();
-    for (cached_name, &id) in cache.iter() {
-        if cached_name.to_lowercase() == name_lower {
-            return Ok(id);
-        }
+    let cache_key = name.to_lowercase();
+    if let Some(&id) = cache.get(&cache_key) {
+        return Ok(id);
     }
 
     // Look for existing series with case-insensitive + accent-insensitive match
@@ -78,7 +77,7 @@ async fn get_or_create_series_id(
     .await?;
 
     if let Some(id) = existing {
-        cache.insert(name.to_string(), id);
+        cache.insert(cache_key, id);
         return Ok(id);
     }
 
@@ -98,7 +97,7 @@ async fn get_or_create_series_id(
         .fetch_one(pool)
         .await?;
 
-    cache.insert(name.to_string(), id);
+    cache.insert(cache_key, id);
     Ok(id)
 }
 
@@ -403,6 +402,7 @@ pub async fn scan_library_discovery(
                                 volume: parsed.volume,
                                 volume_type: parsed.volume_type.as_str().to_string(),
                                 page_count: None,
+                                clear_thumbnail: true,
                             });
 
                             files_to_update.push(FileUpdate {
@@ -426,18 +426,6 @@ pub async fn scan_library_discovery(
                                 )),
                                 detail: None,
                             });
-
-                            if let Err(e) =
-                                sqlx::query("UPDATE books SET thumbnail_path = NULL WHERE id = $1")
-                                    .bind(book_id)
-                                    .execute(&state.pool)
-                                    .await
-                            {
-                                warn!(
-                                    "[BDD] Failed to clear thumbnail for book {}: {}",
-                                    book_id, e
-                                );
-                            }
 
                             stats.indexed_files += 1;
 
@@ -690,6 +678,7 @@ pub async fn scan_library_discovery(
                 volume_type: parsed.volume_type.as_str().to_string(),
                 // Reset page_count so analyzer re-processes this book
                 page_count: None,
+                clear_thumbnail: true,
             });
 
             files_to_update.push(FileUpdate {
@@ -710,18 +699,6 @@ pub async fn scan_library_discovery(
                 message: Some(format!("Book updated (fingerprint changed): {}", file_name)),
                 detail: None,
             });
-
-            // Also clear thumbnail so it gets regenerated
-            if let Err(e) = sqlx::query("UPDATE books SET thumbnail_path = NULL WHERE id = $1")
-                .bind(book_id)
-                .execute(&state.pool)
-                .await
-            {
-                warn!(
-                    "[BDD] Failed to clear thumbnail for book {}: {}",
-                    book_id, e
-                );
-            }
 
             stats.indexed_files += 1;
 
@@ -854,11 +831,13 @@ pub async fn scan_library_discovery(
     handle_stale_deletions(state, job_id, library_id, root, &existing, &seen, stats).await?;
     upsert_directory_mtimes(state, library_id, &new_dir_mtimes).await;
 
-    if let Err(e) = restore_archived_data(&state.pool, library_id).await {
-        warn!(
-            "[SCAN] Failed to restore archived data for library {}: {}",
-            library_id, e
-        );
+    if stats.indexed_files > 0 || stats.removed_files > 0 {
+        if let Err(e) = restore_archived_data(&state.pool, library_id).await {
+            warn!(
+                "[SCAN] Failed to restore archived data for library {}: {}",
+                library_id, e
+            );
+        }
     }
 
     Ok(())
@@ -1357,6 +1336,7 @@ mod tests {
             volume: None,
             volume_type: "regular".to_string(),
             page_count: None,
+            clear_thumbnail: false,
         };
         assert_eq!(update.series_id, None);
     }

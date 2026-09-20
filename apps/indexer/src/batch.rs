@@ -13,6 +13,7 @@ pub struct BookUpdate {
     pub volume: Option<i32>,
     pub volume_type: String,
     pub page_count: Option<i32>,
+    pub clear_thumbnail: bool,
 }
 
 pub struct FileUpdate {
@@ -217,6 +218,7 @@ pub async fn flush_all_batches(
         let volume_types: Vec<String> =
             books_update.iter().map(|b| b.volume_type.clone()).collect();
         let page_counts: Vec<Option<i32>> = books_update.iter().map(|b| b.page_count).collect();
+        let clear_thumbnails: Vec<bool> = books_update.iter().map(|b| b.clear_thumbnail).collect();
 
         sqlx::query(
             r#"
@@ -228,10 +230,11 @@ pub async fn flush_all_batches(
                 volume = data.volume,
                 volume_type = data.volume_type,
                 page_count = data.page_count,
+                thumbnail_path = CASE WHEN data.clear_thumbnail THEN NULL ELSE books.thumbnail_path END,
                 updated_at = NOW()
             FROM (
-                SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::text[], $5::uuid[], $6::int[], $7::text[], $8::int[])
-                AS t(book_id, title, kind, format, series_id, volume, volume_type, page_count)
+                SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::text[], $5::uuid[], $6::int[], $7::text[], $8::int[], $9::bool[])
+                AS t(book_id, title, kind, format, series_id, volume, volume_type, page_count, clear_thumbnail)
             ) AS data
             WHERE books.id = data.book_id
             "#
@@ -244,6 +247,7 @@ pub async fn flush_all_batches(
         .bind(&volumes)
         .bind(&volume_types)
         .bind(&page_counts)
+        .bind(&clear_thumbnails)
         .execute(&mut *tx)
         .await?;
 
