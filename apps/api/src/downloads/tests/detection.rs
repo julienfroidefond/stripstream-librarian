@@ -91,8 +91,8 @@ async fn failed_download_count_query(pool: sqlx::PgPool) {
          JOIN libraries l ON l.id = ad.library_id \
          JOIN series s ON s.id = ad.series_id \
          LEFT JOIN LATERAL ( \
-             SELECT COUNT(*) AS failed_count \
-             FROM torrent_downloads td \
+             SELECT COUNT(DISTINCT td.id) AS failed_count \
+             FROM torrent_downloads td, unnest(td.expected_volumes) AS vol \
              WHERE td.library_id = ad.library_id \
                AND LOWER(td.series_name) = LOWER(s.name) \
                AND td.status = 'error' \
@@ -115,11 +115,8 @@ async fn failed_download_count_query(pool: sqlx::PgPool) {
     assert_eq!(series_name, "Naruto");
 }
 
-// LOCKED: the production query in `get_latest_found` counts `unnest(expected_volumes)`
-// rows, so `failed_download_count` is the number of failed VOLUMES, not downloads.
-// The test above uses a stale query without `unnest` and asserts 2. See docs/KNOWN_ISSUES.md §1.
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn failed_download_count_counts_volumes_not_downloads(pool: sqlx::PgPool) {
+async fn failed_download_count_counts_downloads_not_volumes(pool: sqlx::PgPool) {
     let library_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO libraries (id, name, root_path) VALUES ($1, 'Test Lib', '/libraries/test')",
@@ -177,7 +174,7 @@ async fn failed_download_count_counts_volumes_not_downloads(pool: sqlx::PgPool) 
          JOIN libraries l ON l.id = ad.library_id \
          JOIN series s ON s.id = ad.series_id \
          LEFT JOIN LATERAL ( \
-             SELECT COUNT(*) AS failed_count \
+             SELECT COUNT(DISTINCT td.id) AS failed_count \
              FROM torrent_downloads td, unnest(td.expected_volumes) AS vol \
              WHERE td.library_id = ad.library_id \
                AND LOWER(td.series_name) = LOWER(s.name) \
@@ -192,8 +189,8 @@ async fn failed_download_count_counts_volumes_not_downloads(pool: sqlx::PgPool) 
     assert_eq!(rows.len(), 1);
     let failed_count: i64 = rows[0].get("failed_download_count");
     assert_eq!(
-        failed_count, 3,
-        "2 error torrents covering 3 volumes total are counted as 3, not 2"
+        failed_count, 2,
+        "2 error torrents covering 3 volumes are counted as 2 downloads"
     );
 }
 

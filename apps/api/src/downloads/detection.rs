@@ -471,7 +471,7 @@ pub async fn get_latest_found(
          JOIN libraries l ON l.id = ad.library_id \
          JOIN series s ON s.id = ad.series_id \
          LEFT JOIN LATERAL ( \
-             SELECT COUNT(*) AS failed_count, \
+             SELECT COUNT(DISTINCT td.id) AS failed_count, \
                     array_agg(DISTINCT vol) FILTER (WHERE vol IS NOT NULL) AS failed_volumes \
              FROM torrent_downloads td, unnest(td.expected_volumes) AS vol \
              WHERE td.library_id = ad.library_id \

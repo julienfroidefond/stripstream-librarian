@@ -64,11 +64,20 @@ fn field_not_locked_when_zero_number() {
 // -----------------------------------------------------------------------
 
 #[test]
-fn classify_returns_none_when_new_is_none() {
+fn classify_returns_cleared_when_new_is_none_and_old_is_some() {
     let locked = json!({});
-    // LOCKED: a None new_value means "no change", so a provider sync can never
-    // clear a field — the sync is purely additive. See docs/KNOWN_ISSUES.md §1.
     let result = classify_field_change("title", Some(json!("old")), None, &locked);
+    let (is_skipped, change) = result.expect("should return Some");
+    assert!(!is_skipped);
+    assert_eq!(change.field, "title");
+    assert_eq!(change.old_value, Some(json!("old")));
+    assert_eq!(change.new_value, None);
+}
+
+#[test]
+fn classify_returns_none_when_both_values_are_none() {
+    let locked = json!({});
+    let result = classify_field_change("title", None, None, &locked);
     assert!(result.is_none());
 }
 

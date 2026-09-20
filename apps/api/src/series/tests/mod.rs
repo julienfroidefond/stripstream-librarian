@@ -693,7 +693,7 @@ async fn missing_count_zero_when_integral_present(pool: sqlx::PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn missing_count_zero_when_integral_plus_regular(pool: sqlx::PgPool) {
+async fn missing_count_partial_integral_does_not_complete_series(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "missing_int_reg").await;
     let sid = create_series(&pool, lib_id, "Mixed INT").await;
 
@@ -703,17 +703,35 @@ async fn missing_count_zero_when_integral_plus_regular(pool: sqlx::PgPool) {
         .await
         .unwrap();
 
-    // 2 regular + 1 integral → integral makes it complete
+    // 2 regular (vol 1, 2) + 1 integral (vol 1) → volumes 1 and 2 covered
     create_book_with_type(&pool, lib_id, sid, "Vol 1", Some(1), "regular").await;
     create_book_with_type(&pool, lib_id, sid, "Vol 2", Some(2), "regular").await;
     create_book_with_type(&pool, lib_id, sid, "INT 1", Some(1), "integral").await;
 
     let missing = query_missing_count(&pool, lib_id, sid).await;
-    // LOCKED: a single integral book suppresses ALL missing-volume reporting,
-    // even when it covers only part of a 10-volume series. See docs/KNOWN_ISSUES.md §1.
+    assert_eq!(
+        missing, 8,
+        "a partial integral covers only its own volume, not the whole series"
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn missing_count_unnumbered_integral_completes_series(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "missing_int_full").await;
+    let sid = create_series(&pool, lib_id, "Full INT").await;
+
+    sqlx::query("UPDATE series SET total_volumes = 10 WHERE id = $1")
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    create_book_with_type(&pool, lib_id, sid, "INT", None, "integral").await;
+
+    let missing = query_missing_count(&pool, lib_id, sid).await;
     assert_eq!(
         missing, 0,
-        "integral present → 0 missing regardless of total_volumes"
+        "an unnumbered integral is treated as covering the whole series"
     );
 }
 

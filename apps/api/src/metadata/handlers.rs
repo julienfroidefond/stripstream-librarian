@@ -848,15 +848,17 @@ pub(crate) fn classify_field_change(
     new_value: Option<serde_json::Value>,
     locked_fields: &serde_json::Value,
 ) -> Option<(bool, FieldChange)> {
-    let new_value = new_value?;
+    if new_value.is_none() && old_value.is_none() {
+        return None;
+    }
     let change = FieldChange {
         field: field.to_string(),
         old_value: old_value.clone(),
-        new_value: Some(new_value.clone()),
+        new_value: new_value.clone(),
     };
     if is_field_locked(locked_fields, field) {
         Some((true, change)) // skipped
-    } else if old_value.as_ref() != Some(&new_value) {
+    } else if old_value != new_value {
         Some((false, change)) // updated
     } else {
         None // no change

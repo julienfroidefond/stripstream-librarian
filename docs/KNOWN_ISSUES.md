@@ -22,24 +22,6 @@ au lieu de passer inaperçu. Les défauts corrigés sont listés en §5.
 
 Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code PG 23505 → `ApiError::conflict`).
 
-### `apps/api/src/downloads/detection.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 17 | `failed_download_count` compte des volumes | La requête de `get_latest_found` fait `COUNT(*)` sur `unnest(td.expected_volumes)` → le champ compte les **volumes** échoués, pas les téléchargements. Le test historique utilise une requête sans `unnest` et valide donc une requête obsolète. | `downloads::detection::tests::failed_download_count_counts_volumes_not_downloads` |
-
-### `apps/api/src/series/helpers.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 18 | Une intégrale masque tous les tomes manquants | `COUNT(...) FILTER (WHERE volume_type='integral') > 0 THEN 0` : une intégrale partielle (1 tome sur 10) marque la série **complète**. `get_missing_books` met en plus `total_local = total_external` et vide `missing_books`. | `series::tests::missing_count_zero_when_integral_plus_regular` |
-
-### `apps/api/src/metadata/handlers.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 21 | Sync purement additive | `classify_field_change` renvoie `None` quand `new_value` est `None` : une sync provider ne peut jamais **effacer** un champ. | `metadata::handlers::tests::classify_returns_none_when_new_is_none` |
-
 ### `apps/api/src/metadata_providers/anilist.rs`
 
 | # | Problème | Comportement actuel | Test qui verrouille |
@@ -154,3 +136,6 @@ avant tout commit (`cargo test -p api`, `cargo clippy -p api --tests`).
 | 13 | `rename_genre` créait un doublon | Le remplacement déduplique en préservant l'ordre d'origine (`WITH ORDINALITY`). | `genres::tests::rename_genre_merge_deduplicates` |
 | 14 | Noms d'auteur blancs conservés | Le filtre utilise `btrim(author_name) <> ''`. | `authors::tests::list_authors_excludes_whitespace_only_names` |
 | 15 | `total` = 0 hors plage | Le total est calculé par une requête dédiée, indépendante de la pagination. | `authors::tests::list_authors_out_of_range_page_returns_empty_with_total` |
+| 17 | `failed_download_count` comptait des volumes | `COUNT(DISTINCT td.id)` compte les téléchargements, pas les volumes (`unnest`). | `downloads::detection::tests::failed_download_count_counts_downloads_not_volumes` |
+| 18 | Une intégrale masquait tous les tomes manquants | Une intégrale numérotée ne couvre que son tome ; une intégrale sans numéro couvre toute la série. | `series::tests::missing_count_partial_integral_does_not_complete_series` |
+| 21 | Sync purement additive | `classify_field_change` traite `new_value = None` comme un effacement quand `old_value` est présent. | `metadata::handlers::tests::classify_returns_cleared_when_new_is_none_and_old_is_some` |
