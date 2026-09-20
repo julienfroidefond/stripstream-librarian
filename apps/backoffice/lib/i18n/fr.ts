@@ -1171,6 +1171,14 @@ const fr = {
   "rename.unchanged": "Inchangé",
   "rename.examplePreview": "Aperçu d'exemple",
   "rename.examplePreviewHs": "Aperçu hors-série",
+  "rename.templateInt": "Modèle intégrale",
+  "rename.templateOneshot": "Modèle one-shot",
+  "rename.examplePreviewInt": "Aperçu intégrale",
+  "rename.examplePreviewOneshot": "Aperçu one-shot",
+  "rename.templates": "Modèles de nommage",
+  "rename.volumeType": "Type",
+  "rename.volume": "Tome",
+  "rename.overrideHint": "Corrigez le type ou le numéro de tome d'un livre avant d'appliquer. Le titre en base n'est pas modifié.",
 
   // Discovery
   "nav.discovery": "Découvrir",

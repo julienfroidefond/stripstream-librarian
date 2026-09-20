@@ -24,8 +24,24 @@ pub struct RenameRequest {
     pub format: Option<String>,
     /// Template pattern for hors-série books. If null, HS books use the main format.
     pub format_hs: Option<String>,
+    /// Template pattern for integral books. If null, uses the saved `rename_format_int` setting.
+    pub format_int: Option<String>,
+    /// Template pattern for oneshot books. If null, uses the saved `rename_format_oneshot` setting.
+    pub format_oneshot: Option<String>,
     /// "preview" for dry-run, "execute" to perform renames.
     pub mode: RenameMode,
+    /// Per-book metadata overrides applied before rendering and executing.
+    #[serde(default)]
+    pub overrides: Vec<RenameOverride>,
+}
+
+#[derive(Deserialize)]
+pub struct RenameOverride {
+    pub book_id: Uuid,
+    /// Corrected volume number. `None` leaves the stored volume untouched.
+    pub volume: Option<i32>,
+    /// Corrected volume type (`regular`, `hs`, `integral`, `oneshot`).
+    pub volume_type: Option<String>,
 }
 
 #[derive(Deserialize, PartialEq)]
@@ -51,6 +67,10 @@ pub struct RenameEntry {
     pub old_path: String,
     pub new_path: String,
     pub changed: bool,
+    /// Effective volume after overrides (used by the UI to prefill the editor).
+    pub volume: Option<i32>,
+    /// Effective volume type after overrides.
+    pub volume_type: String,
 }
 
 #[derive(Serialize)]
@@ -66,6 +86,7 @@ pub(crate) struct RenameTemplates {
     pub(crate) regular: String,
     pub(crate) hs: String,
     pub(crate) integral: String,
+    pub(crate) oneshot: String,
 }
 
 pub(crate) struct RenameTemplateBook {
@@ -89,17 +110,25 @@ struct BookFileData {
 pub(crate) const DEFAULT_RENAME_TEMPLATE: &str = "{series_name} - T{volume_padded} - {title}";
 pub(crate) const DEFAULT_RENAME_TEMPLATE_HS: &str = "{series_name} - HS {volume_padded}";
 pub(crate) const DEFAULT_RENAME_TEMPLATE_INT: &str = "{series_name} - INT {volume_padded}";
+pub(crate) const DEFAULT_RENAME_TEMPLATE_ONESHOT: &str = "{series_name}";
 
 pub(crate) async fn load_rename_templates(pool: &PgPool) -> Result<RenameTemplates, sqlx::Error> {
     let regular = load_rename_template(pool, "rename_format", DEFAULT_RENAME_TEMPLATE).await?;
     let hs = load_rename_template(pool, "rename_format_hs", DEFAULT_RENAME_TEMPLATE_HS).await?;
     let integral =
         load_rename_template(pool, "rename_format_int", DEFAULT_RENAME_TEMPLATE_INT).await?;
+    let oneshot = load_rename_template(
+        pool,
+        "rename_format_oneshot",
+        DEFAULT_RENAME_TEMPLATE_ONESHOT,
+    )
+    .await?;
 
     Ok(RenameTemplates {
         regular,
         hs,
         integral,
+        oneshot,
     })
 }
 
@@ -225,6 +254,7 @@ pub(crate) fn render_rename_filename(
     let effective_template = match book.volume_type.as_str() {
         "hs" => &templates.hs,
         "integral" => &templates.integral,
+        "oneshot" => &templates.oneshot,
         _ => &templates.regular,
     };
     let new_stem = apply_template(effective_template, series_name, book, max_volume);
@@ -317,6 +347,30 @@ pub async fn rename_books(
             templates.hs = f.clone();
         }
     }
+    if let Some(ref f) = req.format_int {
+        if !f.is_empty() {
+            templates.integral = f.clone();
+        }
+    }
+    if let Some(ref f) = req.format_oneshot {
+        if !f.is_empty() {
+            templates.oneshot = f.clone();
+        }
+    }
+
+    // Validate per-book overrides before doing any work.
+    for ov in &req.overrides {
+        if let Some(ref vt) = ov.volume_type {
+            if !matches!(vt.as_str(), "regular" | "hs" | "integral" | "oneshot") {
+                return Err(ApiError::bad_request(format!(
+                    "invalid volume_type override: {}",
+                    vt
+                )));
+            }
+        }
+    }
+    let overrides: HashMap<Uuid, &RenameOverride> =
+        req.overrides.iter().map(|o| (o.book_id, o)).collect();
 
     // 2. Get series info
     let series_row = sqlx::query("SELECT id, name FROM series WHERE id = $1")
@@ -351,18 +405,24 @@ pub async fn rename_books(
         }));
     }
 
-    // Parse book data
+    // Parse book data, applying per-book overrides.
     let books: Vec<BookFileData> = rows
         .iter()
         .map(|row| {
             let authors_raw: Vec<String> = row.get("authors");
+            let book_id: Uuid = row.get("book_id");
+            let ov = overrides.get(&book_id);
+            let volume = ov.and_then(|o| o.volume).or_else(|| row.get("volume"));
+            let volume_type = ov
+                .and_then(|o| o.volume_type.clone())
+                .unwrap_or_else(|| row.get("volume_type"));
             BookFileData {
-                book_id: row.get("book_id"),
+                book_id,
                 template_book: RenameTemplateBook {
                     title: row.get("title"),
                     authors: authors_raw,
-                    volume: row.get("volume"),
-                    volume_type: row.get("volume_type"),
+                    volume,
+                    volume_type,
                     publish_date: row.get("publish_date"),
                     isbn: row.get("isbn"),
                     abs_path: row.get("abs_path"),
@@ -417,6 +477,8 @@ pub async fn rename_books(
                 old_path: book.template_book.abs_path.clone(),
                 new_path,
                 changed,
+                volume: book.template_book.volume,
+                volume_type: book.template_book.volume_type.clone(),
             }
         })
         .collect();
@@ -464,8 +526,8 @@ pub async fn rename_books(
         }
     }
 
-    // Build a lookup from book_id to file_id
-    let file_id_map: HashMap<Uuid, Uuid> = books.iter().map(|b| (b.book_id, b.file_id)).collect();
+    // Build a lookup from book_id to book data
+    let book_map: HashMap<Uuid, &BookFileData> = books.iter().map(|b| (b.book_id, b)).collect();
 
     // Perform renames in a transaction
     let mut tx = state.pool.begin().await?;
@@ -507,43 +569,41 @@ pub async fn rename_books(
                     _ => (String::new(), Utc::now()),
                 };
 
-                // Update book_files
-                let file_id = file_id_map.get(&entry.book_id);
-                if let Some(fid) = file_id {
+                if let Some(book) = book_map.get(&entry.book_id) {
+                    // Update book_files
                     sqlx::query(
                         "UPDATE book_files SET abs_path = $1, fingerprint = $2, mtime = $3 WHERE id = $4",
                     )
                     .bind(&entry.new_path)
                     .bind(&new_fingerprint)
                     .bind(new_mtime)
-                    .bind(fid)
+                    .bind(book.file_id)
                     .execute(&mut *tx)
                     .await
                     .map_err(|e| {
                         tracing::error!("[RENAME] DB update failed for {}: {}", entry.new_filename, e);
                         e
                     })?;
-                }
 
-                // Update book title and volume from the new filename
-                let new_stem = new_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                let new_volume = parsers::extract_volume(new_stem);
-                sqlx::query(
-                    "UPDATE books SET title = $1, volume = $2, updated_at = NOW() WHERE id = $3",
-                )
-                .bind(new_stem)
-                .bind(new_volume)
-                .bind(entry.book_id)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| {
-                    tracing::error!(
-                        "[RENAME] Book update failed for {}: {}",
-                        entry.new_filename,
+                    // Preserve book metadata: only volume / volume_type are synced
+                    // (from explicit overrides or the stored values), never the title.
+                    sqlx::query(
+                        "UPDATE books SET volume = $1, volume_type = $2, updated_at = NOW() WHERE id = $3",
+                    )
+                    .bind(book.template_book.volume)
+                    .bind(&book.template_book.volume_type)
+                    .bind(entry.book_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(
+                            "[RENAME] Book update failed for {}: {}",
+                            entry.new_filename,
+                            e
+                        );
                         e
-                    );
-                    e
-                })?;
+                    })?;
+                }
             }
             Ok(Err(e)) => {
                 tracing::error!(

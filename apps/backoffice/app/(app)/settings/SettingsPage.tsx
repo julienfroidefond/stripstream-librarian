@@ -37,13 +37,15 @@ interface SettingsPageProps {
   initialProviderStatuses: string[];
   initialRenameFormat: string | null;
   initialRenameFormatHs: string | null;
+  initialRenameFormatInt?: string | null;
+  initialRenameFormatOneshot?: string | null;
   initialDownloadsEnabled: boolean;
   initialLibraries: import("@/lib/api").LibraryDto[];
   versions?: { api: string; indexer: string; backoffice: string };
   tokensContent?: ReactNode;
 }
 
-export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, initialRenameFormatHs, initialDownloadsEnabled, initialLibraries, versions, tokensContent }: SettingsPageProps) {
+export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, initialRenameFormatHs, initialRenameFormatInt, initialRenameFormatOneshot, initialDownloadsEnabled, initialLibraries, versions, tokensContent }: SettingsPageProps) {
   const { t, locale, setLocale } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -271,7 +273,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       </Card>
 
       {/* Rename Format */}
-      <RenameFormatCard handleUpdateSetting={handleUpdateSetting} initialRenameFormat={initialRenameFormat} initialRenameFormatHs={initialRenameFormatHs} />
+      <RenameFormatCard handleUpdateSetting={handleUpdateSetting} initialRenameFormat={initialRenameFormat} initialRenameFormatHs={initialRenameFormatHs} initialRenameFormatInt={initialRenameFormatInt} initialRenameFormatOneshot={initialRenameFormatOneshot} />
 
       {/* About */}
       <Card>

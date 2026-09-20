@@ -40,7 +40,7 @@ export default async function SeriesDetailPage({
   }
   const libraryId = seriesDto.library_id;
 
-  const [library, seriesMeta, metadataLinks, readingStatusLink, prowlarrConfigured, qbConfigured, metadataProviders, renameFormat, renameFormatHs, telegramStatus] = await Promise.all([
+  const [library, seriesMeta, metadataLinks, readingStatusLink, prowlarrConfigured, qbConfigured, metadataProviders, renameFormat, renameFormatHs, renameFormatInt, renameFormatOneshot, telegramStatus] = await Promise.all([
     fetchLibraries().then((libs) => libs.find((l) => l.id === libraryId)),
     fetchSeriesMetadata(seriesId).catch(() => null as SeriesMetadataDto | null),
     getMetadataLink(seriesId).catch(() => [] as ExternalMetadataLinkDto[]),
@@ -52,6 +52,8 @@ export default async function SeriesDetailPage({
     apiFetch<{ comicvine?: { api_key?: string } }>("/settings/metadata_providers", { next: { revalidate: 3600 } }).catch(() => null),
     apiFetch<string>("/settings/rename_format", { next: { revalidate: 3600 } }).catch(() => null),
     apiFetch<string>("/settings/rename_format_hs", { next: { revalidate: 3600 } }).catch(() => null),
+    apiFetch<string>("/settings/rename_format_int", { next: { revalidate: 3600 } }).catch(() => null),
+    apiFetch<string>("/settings/rename_format_oneshot", { next: { revalidate: 3600 } }).catch(() => null),
     apiFetch<TelegramMonitorStatus>("/telegram-monitor/status", { next: { revalidate: 60 } }).catch(() => null),
   ]);
   const telegramEnabled = !!(telegramStatus?.configured && telegramStatus?.authorized);
@@ -332,6 +334,8 @@ export default async function SeriesDetailPage({
             ownedVolumes={ownedVolumes}
             renameFormat={typeof renameFormat === "string" ? renameFormat : null}
             renameFormatHs={typeof renameFormatHs === "string" ? renameFormatHs : null}
+            renameFormatInt={typeof renameFormatInt === "string" ? renameFormatInt : null}
+            renameFormatOneshot={typeof renameFormatOneshot === "string" ? renameFormatOneshot : null}
             hasActiveUser={hasActiveUser}
           />
         </div>

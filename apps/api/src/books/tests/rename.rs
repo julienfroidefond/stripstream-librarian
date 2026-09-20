@@ -188,6 +188,8 @@ fn make_entry(old: &str, new: &str, new_path: &str) -> RenameEntry {
         old_path: format!("/libraries/BD/{}", old),
         new_path: new_path.to_string(),
         changed: old != new,
+        volume: None,
+        volume_type: "regular".to_string(),
     }
 }
 
@@ -443,37 +445,60 @@ fn volume_none_and_no_volume_in_filename() {
     assert_eq!(result, "Frieren");
 }
 
-// --- Post-rename DB update: title + volume extraction ---
+// --- Template dispatch per volume_type (render_rename_filename) ---
 
-#[test]
-fn post_rename_extracts_title_and_volume() {
-    let new_path = std::path::Path::new("/libraries/BD/Frieren/Frieren - T05.cbz");
-    let new_stem = new_path.file_stem().and_then(|s| s.to_str()).unwrap();
-    let new_volume = parsers::extract_volume(new_stem);
-    assert_eq!(new_stem, "Frieren - T05");
-    assert_eq!(new_volume, Some(5));
+fn templates() -> RenameTemplates {
+    RenameTemplates {
+        regular: "{series_name} - T{volume_padded} - {title}".to_string(),
+        hs: "{series_name} - HS {volume_padded}".to_string(),
+        integral: "{series_name} - INT {volume_padded}".to_string(),
+        oneshot: "{series_name}".to_string(),
+    }
 }
 
 #[test]
-fn post_rename_extracts_volume_from_tome_pattern() {
-    let new_path = std::path::Path::new("/libraries/BD/Series/Series - Tome 12.cbz");
-    let new_stem = new_path.file_stem().and_then(|s| s.to_str()).unwrap();
-    let new_volume = parsers::extract_volume(new_stem);
-    assert_eq!(new_volume, Some(12));
+fn oneshot_book_uses_oneshot_template() {
+    let book = make_book_with_type(
+        "Le Monde sans fin",
+        None,
+        vec![],
+        "/libraries/BD/old.cbz",
+        "oneshot",
+    );
+    let result = render_rename_filename(&templates(), "Le Monde sans fin", &book, 1, "cbz");
+    assert_eq!(result, Some("Le Monde sans fin.cbz".to_string()));
 }
 
 #[test]
-fn post_rename_no_volume_in_special_edition() {
-    let new_path = std::path::Path::new("/libraries/BD/Series/Series - Special.cbz");
-    let new_stem = new_path.file_stem().and_then(|s| s.to_str()).unwrap();
-    let new_volume = parsers::extract_volume(new_stem);
-    assert_eq!(new_volume, None);
+fn integral_book_uses_integral_template() {
+    let book = make_book_with_type(
+        "Int\u{00e9}grale",
+        Some(1),
+        vec![],
+        "/libraries/BD/old.cbz",
+        "integral",
+    );
+    let result = render_rename_filename(&templates(), "Dragon Ball", &book, 10, "cbz");
+    assert_eq!(result, Some("Dragon Ball - INT 01.cbz".to_string()));
 }
 
 #[test]
-fn post_rename_padded_volume() {
-    let new_path = std::path::Path::new("/libraries/BD/One Piece/One Piece - T001.cbz");
-    let new_stem = new_path.file_stem().and_then(|s| s.to_str()).unwrap();
-    let new_volume = parsers::extract_volume(new_stem);
-    assert_eq!(new_volume, Some(1));
+fn hs_book_uses_hs_template_via_dispatch() {
+    let book = make_book_with_type("Bonus", Some(4), vec![], "/libraries/BD/old.cbz", "hs");
+    let result = render_rename_filename(&templates(), "Naruto", &book, 10, "cbz");
+    assert_eq!(result, Some("Naruto - HS 04.cbz".to_string()));
+}
+
+#[test]
+fn regular_book_uses_regular_template_via_dispatch() {
+    let book = make_book("Tome 5", Some(5), vec![], "/libraries/BD/old.cbz");
+    let result = render_rename_filename(&templates(), "Frieren", &book, 10, "cbz");
+    assert_eq!(result, Some("Frieren - T05 - Tome 5.cbz".to_string()));
+}
+
+#[test]
+fn unknown_volume_type_falls_back_to_regular_template() {
+    let book = make_book_with_type("Mystère", Some(2), vec![], "/libraries/BD/old.cbz", "weird");
+    let result = render_rename_filename(&templates(), "Frieren", &book, 10, "cbz");
+    assert_eq!(result, Some("Frieren - T02 - Mystère.cbz".to_string()));
 }

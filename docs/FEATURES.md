@@ -59,17 +59,22 @@
 
 ### Book Renaming
 - Rename all books in a series using a template pattern
-- Three separate templates: regular, hors-série, intégrale
+- Four separate templates: regular, hors-série, intégrale, one-shot
 - Default templates:
   - Regular: `{series_name} - T{volume_padded} - {title}`
   - HS: `{series_name} - HS {volume_padded}` (space before volume so HS without number gives "Series - HS")
   - Integral: `{series_name} - INT {volume_padded}`
+  - One-shot: `{series_name}`
 - Available variables: `{series_name}`, `{volume}`, `{volume_padded}`, `{title}`, `{authors}`, `{publish_date}`, `{isbn}`
-- Volume padding auto-adjusts to match the widest volume in the series
-- Preview mode (dry-run) before execution
+- Volume padding auto-adjusts to match the widest volume in the series (after per-book overrides)
+- Preview mode (dry-run) before execution, editable per book:
+  - **Type**: requalify a book (`regular`/`hs`/`integral`/`oneshot`) and re-render with the matching template
+  - **Volume**: correct a wrong volume number (falls back to the stored value; disabled for one-shots)
+- Per-book overrides are applied to the preview, the on-disk rename and the DB
+- Rename preserves `books.title`; only `books.volume` / `books.volume_type` are synced (no destructive title overwrite)
 - Deduplication: suffixed filenames when template produces duplicates
 - Null-variable cleanup: segments containing undefined variables are removed cleanly
-- Templates saved globally in `app_settings` (keys: `rename_format`, `rename_format_hs`, `rename_format_int`)
+- Templates saved globally in `app_settings` (keys: `rename_format`, `rename_format_hs`, `rename_format_int`, `rename_format_oneshot`)
 
 ### CBR to CBZ Conversion
 - Convert RAR archives to ZIP format

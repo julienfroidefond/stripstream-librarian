@@ -157,6 +157,7 @@ fn template_filename_without_reference_uses_regular_rename_format() {
         regular: "{series_name} - T{volume_padded} - {title}".to_string(),
         hs: "{series_name} - HS {volume_padded}".to_string(),
         integral: "{series_name} - INT {volume_padded}".to_string(),
+        oneshot: "{series_name}".to_string(),
     };
 
     let result = build_target_filename_from_template(
@@ -180,6 +181,7 @@ fn template_filename_without_reference_does_not_add_title_when_template_omits_it
         regular: "{series_name} - T{volume_padded}".to_string(),
         hs: "{series_name} - HS {volume_padded}".to_string(),
         integral: "{series_name} - INT {volume_padded}".to_string(),
+        oneshot: "{series_name}".to_string(),
     };
 
     let result = build_target_filename_from_template(
@@ -200,6 +202,7 @@ fn template_filename_without_reference_uses_hs_rename_format() {
         regular: "{series_name} - T{volume_padded} - {title}".to_string(),
         hs: "{series_name} - HS {volume_padded}".to_string(),
         integral: "{series_name} - INT {volume_padded}".to_string(),
+        oneshot: "{series_name}".to_string(),
     };
 
     let result = build_target_filename_from_template(

@@ -1173,6 +1173,14 @@ const en: Record<TranslationKey, string> = {
   "rename.unchanged": "Unchanged",
   "rename.examplePreview": "Example preview",
   "rename.examplePreviewHs": "Hors-série preview",
+  "rename.templateInt": "Integral (omnibus) template",
+  "rename.templateOneshot": "One-shot template",
+  "rename.examplePreviewInt": "Integral preview",
+  "rename.examplePreviewOneshot": "One-shot preview",
+  "rename.templates": "Naming templates",
+  "rename.volumeType": "Type",
+  "rename.volume": "Volume",
+  "rename.overrideHint": "Fix a book's type or volume number before applying. The stored title is left untouched.",
 
   // Discovery
   "nav.discovery": "Discover",

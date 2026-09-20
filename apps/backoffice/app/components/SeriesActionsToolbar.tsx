@@ -67,6 +67,8 @@ interface Props {
   // Rename
   renameFormat: string | null;
   renameFormatHs: string | null;
+  renameFormatInt?: string | null;
+  renameFormatOneshot?: string | null;
 }
 
 export function SeriesActionsToolbar(props: Props) {
@@ -165,6 +167,8 @@ export function SeriesActionsToolbar(props: Props) {
             seriesName={props.seriesName}
             initialFormat={props.renameFormat}
             initialFormatHs={props.renameFormatHs}
+            initialFormatInt={props.renameFormatInt}
+            initialFormatOneshot={props.renameFormatOneshot}
           >
             {(open) => (
               <ActionsMenuItem icon="📝" onClick={open}>
