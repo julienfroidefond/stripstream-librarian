@@ -3,9 +3,7 @@
 //! Handlers are called directly with a hand-built [`AppState`] backed by an
 //! ephemeral Postgres provisioned by `#[sqlx::test]`. This exercises the real SQL
 //! (positions, cascade, per-user progress, genre restrictions) without starting an
-//! HTTP server. Two tests intentionally lock current behaviour flagged as
-//! suspicious (see `update_reading_list_cannot_clear_description` and
-//! `reorder_series_ignores_unknown_ids`).
+//! HTTP server.
 
 use std::collections::HashMap;
 use std::sync::{atomic::AtomicU64, Arc};
@@ -236,7 +234,7 @@ async fn update_reading_list_updates_name_and_description(pool: PgPool) {
         Path(list_id),
         Json(UpdateReadingListRequest {
             name: Some("  Renamed  ".to_string()),
-            description: Some("Updated".to_string()),
+            description: Some(Some("Updated".to_string())),
         }),
     )
     .await
@@ -249,10 +247,26 @@ async fn update_reading_list_updates_name_and_description(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn update_reading_list_cannot_clear_description(pool: PgPool) {
-    // Locks current behavior: `description: Option<String>` collapses both a
-    // missing field and JSON `null` to `None`, so `description.is_some()` is false
-    // and the stored value is preserved. A description cannot be cleared.
+async fn update_reading_list_clears_description_on_explicit_null(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let list_id = create_list_with(&state, "Keep me", Some("keep-me-description")).await;
+
+    let Json(dto) = update_reading_list(
+        State(state),
+        Path(list_id),
+        Json(UpdateReadingListRequest {
+            name: None,
+            description: Some(None),
+        }),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(dto.description, None);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn update_reading_list_keeps_description_when_omitted(pool: PgPool) {
     let state = test_state(pool.clone());
     let list_id = create_list_with(&state, "Keep me", Some("keep-me-description")).await;
 
@@ -417,9 +431,7 @@ async fn reorder_series_rewrites_positions(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn reorder_series_ignores_unknown_ids(pool: PgPool) {
-    // Locks current behavior: an id absent from the list is silently skipped, so
-    // remaining ids keep their payload index, leaving a gap in `position`.
+async fn reorder_series_rejects_unknown_ids(pool: PgPool) {
     let state = test_state(pool.clone());
     let library_id = create_library(&pool, "reorder-unknown").await;
     let a = create_series(&pool, library_id, "A", &[]).await;
@@ -428,7 +440,7 @@ async fn reorder_series_ignores_unknown_ids(pool: PgPool) {
     add(&state, list_id, a).await.unwrap();
     add(&state, list_id, b).await.unwrap();
 
-    let status = reorder_series(
+    let err = reorder_series(
         State(state),
         Path(list_id),
         Json(ReorderSeriesRequest {
@@ -436,11 +448,11 @@ async fn reorder_series_ignores_unknown_ids(pool: PgPool) {
         }),
     )
     .await
-    .unwrap();
+    .unwrap_err();
 
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
     assert_eq!(position_of(&pool, list_id, a).await, Some(0));
-    assert_eq!(position_of(&pool, list_id, b).await, Some(2));
+    assert_eq!(position_of(&pool, list_id, b).await, Some(1));
 }
 
 // ---------------------------------------------------------------------------

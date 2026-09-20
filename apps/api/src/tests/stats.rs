@@ -5,13 +5,12 @@
 //! aggregation SQL (overview counters, per-period time series, per-user
 //! scoping, reading overview JSON aggregation) without starting an HTTP
 //! server.
-//!
-//! No production fix is included: every assertion locks current behaviour.
 
 use std::collections::HashMap;
 use std::sync::{atomic::AtomicU64, Arc};
 use std::time::Instant;
 
+use axum::http::StatusCode;
 use chrono::{DateTime, Duration, Utc};
 use sqlx::PgPool;
 use tokio::sync::{Mutex, RwLock, Semaphore};
@@ -580,8 +579,6 @@ async fn get_stats_users_reading_over_time_is_not_scoped_to_user(pool: PgPool) {
     let own_read: i64 = scoped.reading_over_time.iter().map(|p| p.books_read).sum();
     assert_eq!(own_read, 1);
 
-    // LOCKED: users_reading_over_time is global and lists every user regardless of
-    // the authenticated user, unlike reading_status / reading_over_time.
     let mut usernames: Vec<String> = scoped
         .users_reading_over_time
         .iter()
@@ -589,13 +586,13 @@ async fn get_stats_users_reading_over_time_is_not_scoped_to_user(pool: PgPool) {
         .collect();
     usernames.sort();
     usernames.dedup();
-    assert_eq!(usernames, vec!["alice".to_string(), "bob".to_string()]);
-    let all_read: i64 = scoped
+    assert_eq!(usernames, vec!["alice".to_string()]);
+    let own_users_read: i64 = scoped
         .users_reading_over_time
         .iter()
         .map(|p| p.books_read)
         .sum();
-    assert_eq!(all_read, 2);
+    assert_eq!(own_users_read, 1);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -615,10 +612,9 @@ async fn get_stats_by_format_uses_latest_file_then_kind_fallback(pool: PgPool) {
         .await
         .unwrap();
 
-    // LOCKED: books without files fall back to `kind` ("comic") inside the format breakdown.
     assert_eq!(
         formats(&resp.by_format),
-        vec![("comic".to_string(), 2), ("cbr".to_string(), 1)]
+        vec![("unknown".to_string(), 2), ("cbr".to_string(), 1)]
     );
     // Only the most recent file per book counts toward the total size.
     assert_eq!(resp.overview.total_size_bytes, 200);
@@ -754,7 +750,7 @@ async fn get_stats_metadata_tracks_links_summaries_and_providers(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn get_stats_period_shapes_and_invalid_falls_back_to_month(pool: PgPool) {
+async fn get_stats_period_shapes_and_rejects_invalid(pool: PgPool) {
     let state = test_state(pool.clone());
     let library = create_library(&pool, "main").await;
     let _b1 = create_simple_book(&pool, library, None, "B1", 10).await;
@@ -780,13 +776,11 @@ async fn get_stats_period_shapes_and_invalid_falls_back_to_month(pool: PgPool) {
     assert!(month.additions_over_time.iter().all(|p| p.month.len() == 7));
     assert_eq!(month.additions_over_time.last().unwrap().books_added, 1);
 
-    // LOCKED: unknown period falls back to monthly granularity.
-    let Json(invalid) = get_stats(State(state), stats_query(Some("yearly")), None)
+    let err = get_stats(State(state), stats_query(Some("yearly")), None)
         .await
+        .err()
         .unwrap();
-    assert_eq!(invalid.additions_over_time.len(), 12);
-    assert_eq!(invalid.jobs_over_time.len(), 12);
-    assert!(invalid.jobs_over_time.iter().all(|p| p.label.len() == 7));
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -814,10 +808,8 @@ async fn get_stats_jobs_over_time_categorizes_job_types(pool: PgPool) {
         create_job(&pool, Some(library), job_type, "success", Some(now)).await;
     }
     create_job(&pool, Some(library), "scan", "failed", Some(now)).await;
-    // LOCKED: prowlarr_rss is absent from the CASE list, so it lands in ELSE ("metadata").
     create_job(&pool, Some(library), "prowlarr_rss", "success", Some(now)).await;
 
-    // LOCKED: running jobs and jobs with a NULL finished_at are excluded.
     create_job(&pool, Some(library), "scan", "running", Some(now)).await;
     create_job(&pool, Some(library), "scan", "success", None).await;
 
@@ -825,7 +817,7 @@ async fn get_stats_jobs_over_time_categorizes_job_types(pool: PgPool) {
         .await
         .unwrap();
 
-    assert_eq!(job_totals(&resp.jobs_over_time), (2, 3, 2, 5, 1, 2, 1));
+    assert_eq!(job_totals(&resp.jobs_over_time), (2, 3, 2, 4, 2, 2, 1));
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]

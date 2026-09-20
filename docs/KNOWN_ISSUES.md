@@ -22,22 +22,6 @@ au lieu de passer inaperçu. Les défauts corrigés sont listés en §5.
 
 Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code PG 23505 → `ApiError::conflict`).
 
-### `apps/api/src/reading_lists/`
-
-| # | Problème | Cause | Test qui verrouille |
-|---|----------|-------|---------------------|
-| 6 | Impossible d'effacer une description | `description: Option<String>` confond « champ absent » et `null` ; le handler ne met à jour que si `is_some()`. Aucune sentinelle pour « clear ». | `reading_lists::tests::update_reading_list_cannot_clear_description` |
-| 7 | `reorder_series` ignore les ids inconnus | Les ids absents sont silencieusement sautés, les autres gardent l'index du payload → trous dans `position`. Aucune erreur renvoyée. | `reading_lists::tests::reorder_series_ignores_unknown_ids` |
-
-### `apps/api/src/stats.rs`
-
-| # | Problème | Comportement actuel | Test qui verrouille |
-|---|----------|---------------------|---------------------|
-| 8 | `by_format` mélange `kind` et `format` | `COALESCE(bf.format, b.kind)` : les livres sans `book_files` sont comptés sous `comic` / `ebook` / `bd`, qui ne sont pas des formats de fichier → le breakdown de formats mélange deux nomenclatures. | `stats::tests::get_stats_by_format_uses_latest_file_then_kind_fallback` |
-| 9 | `jobs_over_time` : bucket `ELSE 'metadata'` | Tout `index_jobs.type` absent du `CASE` (`prowlarr_rss`, `torrent_import`, `rating_pull`, `telegram_sync`, `telegram_sync_incremental`) est silencieusement compté comme `metadata`. | `stats::tests::get_stats_jobs_over_time_categorizes_job_types` |
-| 10 | `users_reading_over_time` non scopé | Sur `/stats`, `reading_status`, `currently_reading`, `recently_read` et `reading_over_time` sont filtrés sur l'utilisateur authentifié, mais `users_reading_over_time` (`CROSS JOIN users`) renvoie les lectures de **tous** les utilisateurs. | `stats::tests::get_stats_users_reading_over_time_is_not_scoped_to_user` |
-| 11 | Période invalide → `month` silencieux | Une valeur `period` inconnue (`yearly`, …) tombe dans la branche `_` et repart sur une granularité mensuelle, sans erreur ni indication. | `stats::tests::get_stats_period_shapes_and_invalid_falls_back_to_month` |
-
 ### `apps/api/src/settings.rs`
 
 | # | Problème | Comportement actuel | Test qui verrouille |
@@ -179,3 +163,9 @@ avant tout commit (`cargo test -p api`, `cargo clippy -p api --tests`).
 | 3 | `watcher_enabled` omis → `false` | Sémantique PATCH : `None` conserve la valeur stockée (`COALESCE($5, watcher_enabled)`). | `libraries::tests::update_monitoring_preserves_watcher_when_omitted` |
 | 4 | `thumbnail_book_ids` sans `DISTINCT ON` | `update_monitoring` / `update_metadata_provider` appliquent le même `DISTINCT ON` (série) que `list_libraries`. | `libraries::tests::update_monitoring_returns_refreshed_counts_with_distinct_series` |
 | 5 | `create_library` renvoyait un DTO synthétique | La réponse relit la ligne insérée (`RETURNING`) au lieu de la construire en dur. | `libraries::tests::create_library_trims_name_and_applies_defaults` |
+| 6 | Description impossible à effacer | `description: Option<Option<String>>` distingue champ absent (conserve) de `null` explicite (efface). | `reading_lists::tests::update_reading_list_clears_description_on_explicit_null` |
+| 7 | `reorder_series` ignorait les ids inconnus | Un id absent de la liste est rejeté en **400** au lieu d'être sauté silencieusement. | `reading_lists::tests::reorder_series_rejects_unknown_ids` |
+| 8 | `by_format` mélangeait `kind` et `format` | Les livres sans `book_files` sont comptés sous `unknown` au lieu de `kind`. | `stats::tests::get_stats_by_format_uses_latest_file_then_kind_fallback` |
+| 9 | `jobs_over_time` : `ELSE 'metadata'` | `prowlarr_rss` → `downloads`, `metadata_refresh_all` → `metadata`, tout le reste → `other`. | `stats::tests::get_stats_jobs_over_time_categorizes_job_types` |
+| 10 | `users_reading_over_time` non scopé | Filtré sur l'utilisateur authentifié (`WHERE ($1::uuid IS NULL OR u.id = $1)`). | `stats::tests::get_stats_scopes_reading_to_authenticated_user` |
+| 11 | Période invalide → `month` silencieux | Une `period` hors `{day, week, month}` est rejetée en **400**. | `stats::tests::get_stats_period_shapes_and_rejects_invalid` |

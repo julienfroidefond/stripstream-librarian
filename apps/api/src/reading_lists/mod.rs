@@ -75,7 +75,17 @@ pub struct CreateReadingListRequest {
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateReadingListRequest {
     pub name: Option<String>,
-    pub description: Option<String>,
+    /// Distinguishes an omitted field (keep) from an explicit `null` (clear).
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    #[schema(value_type = Option<String>, nullable = true)]
+    pub description: Option<Option<String>>,
+}
+
+fn deserialize_double_option<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -173,7 +183,7 @@ pub async fn update_reading_list(
     .bind(id)
     .bind(body.name.as_deref().map(str::trim))
     .bind(body.description.is_some())
-    .bind(body.description.as_deref())
+    .bind(body.description.flatten().as_deref())
     .fetch_optional(&state.pool)
     .await?
     .ok_or_else(|| ApiError::not_found("reading list not found"))?;
@@ -345,6 +355,22 @@ pub async fn reorder_series(
     }
 
     let mut tx = state.pool.begin().await?;
+
+    let known: Vec<Uuid> =
+        sqlx::query_scalar("SELECT series_id FROM reading_list_items WHERE list_id = $1")
+            .bind(id)
+            .fetch_all(&mut *tx)
+            .await?;
+
+    if let Some(unknown) = body
+        .series_ids
+        .iter()
+        .find(|series_id| !known.contains(series_id))
+    {
+        return Err(ApiError::bad_request(format!(
+            "series {unknown} is not part of this reading list"
+        )));
+    }
 
     for (pos, series_id) in body.series_ids.iter().enumerate() {
         sqlx::query(

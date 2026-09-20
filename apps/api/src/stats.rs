@@ -186,6 +186,11 @@ pub async fn get_stats(
 ) -> Result<Json<StatsResponse>, ApiError> {
     let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
     let period = query.period.as_deref().unwrap_or("week");
+    if !matches!(period, "day" | "week" | "month") {
+        return Err(ApiError::bad_request(
+            "period must be one of: day, week, month",
+        ));
+    }
     let pool = &state.pool;
 
     // Build period-dependent futures upfront so they can run concurrently
@@ -355,9 +360,11 @@ pub async fn get_stats(
                       AND brp.last_read_at >= CURRENT_DATE - INTERVAL '6 days'
                     GROUP BY brp.last_read_at::date, brp.user_id
                 ) cnt ON cnt.dt = d.dt AND cnt.user_id = u.id
+                WHERE ($1::uuid IS NULL OR u.id = $1)
                 ORDER BY month ASC, u.username
                 "#,
             )
+            .bind(user_id)
             .fetch_all(pool)
             .await,
             "week" => sqlx::query(
@@ -382,9 +389,11 @@ pub async fn get_stats(
                       AND brp.last_read_at >= DATE_TRUNC('week', NOW() - INTERVAL '2 months')
                     GROUP BY DATE_TRUNC('week', brp.last_read_at), brp.user_id
                 ) cnt ON cnt.dt = d.dt AND cnt.user_id = u.id
+                WHERE ($1::uuid IS NULL OR u.id = $1)
                 ORDER BY month ASC, u.username
                 "#,
             )
+            .bind(user_id)
             .fetch_all(pool)
             .await,
             _ => sqlx::query(
@@ -409,9 +418,11 @@ pub async fn get_stats(
                       AND brp.last_read_at >= DATE_TRUNC('month', NOW()) - INTERVAL '11 months'
                     GROUP BY DATE_TRUNC('month', brp.last_read_at), brp.user_id
                 ) cnt ON cnt.dt = d.dt AND cnt.user_id = u.id
+                WHERE ($1::uuid IS NULL OR u.id = $1)
                 ORDER BY month ASC, u.username
                 "#,
             )
+            .bind(user_id)
             .fetch_all(pool)
             .await,
         }
@@ -438,11 +449,11 @@ pub async fn get_stats(
                             WHEN type = 'scan' THEN 'scan'
                             WHEN type IN ('rebuild', 'full_rebuild', 'rescan') THEN 'rebuild'
                             WHEN type IN ('thumbnail_rebuild', 'thumbnail_regenerate') THEN 'thumbnail'
-                            WHEN type IN ('metadata_batch', 'metadata_batch_rematch', 'metadata_refresh') THEN 'metadata'
-                            WHEN type = 'download_detection' THEN 'downloads'
+                            WHEN type IN ('metadata_batch', 'metadata_batch_rematch', 'metadata_refresh', 'metadata_refresh_all') THEN 'metadata'
+                            WHEN type IN ('download_detection', 'prowlarr_rss') THEN 'downloads'
                             WHEN type IN ('reading_status_match', 'reading_status_push') THEN 'reading'
                             WHEN type = 'cbr_to_cbz' THEN 'conversion'
-                            ELSE 'metadata'
+                            ELSE 'other'
                         END AS cat,
                         COUNT(*) AS c
                     FROM index_jobs
@@ -479,11 +490,11 @@ pub async fn get_stats(
                             WHEN type = 'scan' THEN 'scan'
                             WHEN type IN ('rebuild', 'full_rebuild', 'rescan') THEN 'rebuild'
                             WHEN type IN ('thumbnail_rebuild', 'thumbnail_regenerate') THEN 'thumbnail'
-                            WHEN type IN ('metadata_batch', 'metadata_batch_rematch', 'metadata_refresh') THEN 'metadata'
-                            WHEN type = 'download_detection' THEN 'downloads'
+                            WHEN type IN ('metadata_batch', 'metadata_batch_rematch', 'metadata_refresh', 'metadata_refresh_all') THEN 'metadata'
+                            WHEN type IN ('download_detection', 'prowlarr_rss') THEN 'downloads'
                             WHEN type IN ('reading_status_match', 'reading_status_push') THEN 'reading'
                             WHEN type = 'cbr_to_cbz' THEN 'conversion'
-                            ELSE 'metadata'
+                            ELSE 'other'
                         END AS cat,
                         COUNT(*) AS c
                     FROM index_jobs
@@ -520,11 +531,11 @@ pub async fn get_stats(
                             WHEN type = 'scan' THEN 'scan'
                             WHEN type IN ('rebuild', 'full_rebuild', 'rescan') THEN 'rebuild'
                             WHEN type IN ('thumbnail_rebuild', 'thumbnail_regenerate') THEN 'thumbnail'
-                            WHEN type IN ('metadata_batch', 'metadata_batch_rematch', 'metadata_refresh') THEN 'metadata'
-                            WHEN type = 'download_detection' THEN 'downloads'
+                            WHEN type IN ('metadata_batch', 'metadata_batch_rematch', 'metadata_refresh', 'metadata_refresh_all') THEN 'metadata'
+                            WHEN type IN ('download_detection', 'prowlarr_rss') THEN 'downloads'
                             WHEN type IN ('reading_status_match', 'reading_status_push') THEN 'reading'
                             WHEN type = 'cbr_to_cbz' THEN 'conversion'
-                            ELSE 'metadata'
+                            ELSE 'other'
                         END AS cat,
                         COUNT(*) AS c
                     FROM index_jobs
@@ -595,7 +606,7 @@ pub async fn get_stats(
         .fetch_one(pool),
         sqlx::query(
             r#"
-            SELECT COALESCE(bf.format, b.kind) AS fmt, COUNT(*) AS count
+            SELECT COALESCE(bf.format, 'unknown') AS fmt, COUNT(*) AS count
             FROM books b
             LEFT JOIN LATERAL (
                 SELECT format FROM book_files WHERE book_id = b.id ORDER BY updated_at DESC LIMIT 1
@@ -1020,7 +1031,7 @@ pub async fn get_stats_overview(
         .fetch_one(pool),
         sqlx::query(
             r#"
-            SELECT COALESCE(bf.format, b.kind) AS fmt, COUNT(*) AS count
+            SELECT COALESCE(bf.format, 'unknown') AS fmt, COUNT(*) AS count
             FROM books b
             LEFT JOIN LATERAL (
                 SELECT format FROM book_files WHERE book_id = b.id ORDER BY updated_at DESC LIMIT 1
