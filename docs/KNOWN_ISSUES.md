@@ -54,17 +54,23 @@ Mapping d'erreur concerné : `apps/api/src/error.rs` (`From<sqlx::Error>`, code 
 |---|----------|---------------------|---------------------|
 | 13 | `rename_genre` peut créer un doublon | `array_replace` remplace l'ancien nom par le nouveau sans vérifier sa présence : renommer `Aventure` en `Action` sur une série qui a déjà `Action` produit `{Action, Action}` au lieu de fusionner. | `genres::tests::rename_genre_merge_creates_duplicate` |
 
+### `apps/api/src/authors.rs`
+
+| # | Problème | Comportement actuel | Test qui verrouille |
+|---|----------|---------------------|---------------------|
+| 14 | Noms d'auteur blancs conservés | Le filtre SQL n'exclut que `NULL` et `''` (`author_name <> ''`), pas les chaînes d'espaces : un auteur `"  "` apparaît comme une entrée à part entière. | `authors::tests::list_authors_keeps_whitespace_only_names` |
+| 15 | `total` = 0 hors plage | Le total fenêtré (`COUNT(*) OVER()`) est lu sur la première ligne renvoyée ; une page hors plage ne renvoie aucune ligne → `total` vaut **0** alors que des auteurs existent. | `authors::tests::list_authors_out_of_range_page_returns_empty_with_total` |
+
 ---
 
 ## 2. Couverture de tests — modules API encore sans tests
 
-État au 2026-09-19 (après couverture de `libraries.rs`, `reading_lists.rs`, `stats.rs`, `settings.rs`, `genres.rs` et `ai_tagging.rs`).
+État au 2026-09-19 (après couverture de `libraries.rs`, `reading_lists.rs`, `stats.rs`, `settings.rs`, `genres.rs`, `ai_tagging.rs` et `authors.rs`).
 Les sous-modules (`downloads/`, `metadata/`, `metadata_providers/`, `series/`,
 `reading/`, `integrations/`, `books/`, `jobs/`, `users/`, …) disposent déjà de tests.
 
 | Module | LOC (fichier) | Priorité |
 |--------|---------------|----------|
-| `authors.rs` | ~138 | 3 |
 | `handlers.rs` | ~83 | 3 |
 | `api_middleware.rs` | ~61 | 3 |
 

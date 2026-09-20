@@ -136,3 +136,7 @@ pub async fn list_authors(
         limit,
     }))
 }
+
+#[cfg(test)]
+#[path = "tests/authors.rs"]
+mod tests;
