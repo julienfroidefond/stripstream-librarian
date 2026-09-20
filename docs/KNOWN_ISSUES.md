@@ -97,7 +97,7 @@ avant tout commit (`cargo test -p api`, `cargo clippy -p api --tests`).
 | 12 | `get_setting` documentait 404 mais renvoyait 200/null | Une clé absente renvoie désormais **404**, aligné sur l'annotation OpenAPI. | `settings::tests::get_setting_returns_not_found_for_unknown_key` |
 | 13 | `rename_genre` créait un doublon | Le remplacement déduplique en préservant l'ordre d'origine (`WITH ORDINALITY`). | `genres::tests::rename_genre_merge_deduplicates` |
 | 14 | Noms d'auteur blancs conservés | Le filtre utilise `btrim(author_name) <> ''`. | `authors::tests::list_authors_excludes_whitespace_only_names` |
-| 15 | `total` = 0 hors plage | Le total est calculé par une requête dédiée, indépendante de la pagination. | `authors::tests::list_authors_out_of_range_page_returns_empty_with_total` |
+| 15 | `total` = 0 hors plage | Le total est calculé dans la même requête (CTE `total`), indépendant de la pagination. | `authors::tests::list_authors_out_of_range_page_returns_empty_with_total` |
 | 17 | `failed_download_count` comptait des volumes | `COUNT(DISTINCT td.id)` compte les téléchargements, pas les volumes (`unnest`). | `downloads::detection::tests::failed_download_count_counts_downloads_not_volumes` |
 | 18 | Une intégrale masquait tous les tomes manquants | Une intégrale numérotée ne couvre que son tome ; une intégrale sans numéro couvre toute la série. | `series::tests::missing_count_partial_integral_does_not_complete_series` |
 | 21 | Sync purement additive | `classify_field_change` traite `new_value = None` comme un effacement quand `old_value` est présent. | `metadata::handlers::tests::classify_returns_cleared_when_new_is_none_and_old_is_some` |

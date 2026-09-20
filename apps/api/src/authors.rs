@@ -76,6 +76,9 @@ pub async fn list_authors(
     // Single query: collect authors from both book-level and series-level
     // metadata, with counts using a windowed total. Series like Astérix store
     // their authors on the series row and may have no local books.
+    //
+    // `author_agg` is aggregated once; the lateral join keeps the real total
+    // even when the requested page is empty.
     let sql = format!(
         r#"
         WITH author_rows AS (
@@ -102,11 +105,15 @@ pub async fn list_authors(
               AND btrim(author_name) <> ''
               AND ($1::text IS NULL OR author_name ILIKE $1)
             GROUP BY author_name
-        )
-        SELECT name, book_count, series_count
-        FROM author_agg
-        ORDER BY {order_clause}
-        LIMIT $2 OFFSET $3
+        ),
+        total AS (SELECT COUNT(*) AS total_count FROM author_agg)
+        SELECT a.*, t.total_count
+        FROM total t
+        LEFT JOIN LATERAL (
+            SELECT * FROM author_agg
+            ORDER BY {order_clause}
+            LIMIT $2 OFFSET $3
+        ) a ON TRUE
         "#
     );
 
@@ -118,38 +125,18 @@ pub async fn list_authors(
         .await
         .map_err(|e| ApiError::internal(format!("authors query failed: {e}")))?;
 
-    let total: i64 = sqlx::query_scalar(
-        r#"
-        WITH author_rows AS (
-            SELECT UNNEST(
-                COALESCE(
-                    NULLIF(b.authors, '{}'),
-                    CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END
-                )
-            ) AS author_name
-            FROM books b
-            UNION ALL
-            SELECT UNNEST(COALESCE(s.authors, ARRAY[]::text[])) AS author_name
-            FROM series s
-        )
-        SELECT COUNT(DISTINCT author_name)
-        FROM author_rows
-        WHERE author_name IS NOT NULL
-          AND btrim(author_name) <> ''
-          AND ($1::text IS NULL OR author_name ILIKE $1)
-        "#,
-    )
-    .bind(q_pattern.as_deref())
-    .fetch_one(&state.pool)
-    .await
-    .map_err(|e| ApiError::internal(format!("authors count query failed: {e}")))?;
+    let total: i64 = rows.first().map(|r| r.get("total_count")).unwrap_or(0);
 
     let items: Vec<AuthorItem> = rows
         .iter()
-        .map(|r| AuthorItem {
-            name: r.get("name"),
-            book_count: r.get("book_count"),
-            series_count: r.get("series_count"),
+        .filter_map(|r| {
+            let name: Option<String> = r.get("name");
+            let name = name?;
+            Some(AuthorItem {
+                name,
+                book_count: r.get("book_count"),
+                series_count: r.get("series_count"),
+            })
         })
         .collect();
 
