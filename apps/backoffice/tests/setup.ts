@@ -20,6 +20,7 @@ vi.mock("next/link", async () => {
         },
         children
       ),
+    useLinkStatus: () => ({ pending: false }),
   };
 });
 

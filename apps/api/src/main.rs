@@ -610,6 +610,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/search", get(search::search_books))
         .route("/metadata/links", get(metadata::get_metadata_links))
         .route("/metadata/missing/:id", get(metadata::get_missing_books))
+        .route("/metadata/gaps/summary", get(metadata::get_gap_summary))
         .route("/reading-lists", get(reading_lists::list_reading_lists))
         .route(
             "/reading-lists/memberships",

@@ -66,7 +66,10 @@ fn list_query(library_id: Option<Uuid>) -> Query<ListGenresQuery> {
 }
 
 fn untagged_query(library_id: Option<Uuid>) -> Query<UntaggedSeriesQuery> {
-    Query(UntaggedSeriesQuery { library_id, q: None })
+    Query(UntaggedSeriesQuery {
+        library_id,
+        q: None,
+    })
 }
 
 fn untagged_query_q(library_id: Option<Uuid>, q: &str) -> Query<UntaggedSeriesQuery> {

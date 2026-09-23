@@ -48,6 +48,9 @@ pub struct ListBooksQuery {
     /// Filter by metadata provider: "linked" (any provider), "unlinked" (no provider), or a specific provider name
     #[schema(value_type = Option<String>, example = "linked")]
     pub metadata_provider: Option<String>,
+    /// Filter by metadata gap: "no_summary", "no_isbn", "no_cover", "no_author", "no_publish_date", "no_language", or "no_volume"
+    #[schema(value_type = Option<String>, example = "no_cover")]
+    pub gap: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -137,6 +140,7 @@ pub struct BookDetails {
         ("limit" = Option<i64>, Query, description = "Items per page (max 200, default 50)"),
         ("sort" = Option<String>, Query, description = "Sort order: 'title' (default) or 'latest' (most recently added first)"),
         ("metadata_provider" = Option<String>, Query, description = "Filter by metadata provider: 'linked' (any provider), 'unlinked' (no provider), or a specific provider name"),
+        ("gap" = Option<String>, Query, description = "Filter by metadata gap: 'no_summary', 'no_isbn', 'no_cover', 'no_author', 'no_publish_date', 'no_language', or 'no_volume'"),
     ),
     responses(
         (status = 200, body = BooksPage),
@@ -193,6 +197,16 @@ pub async fn list_books(
         }
         None => String::new(),
     };
+    let gap_cond = match query.gap.as_deref() {
+        Some("no_summary") => "AND (b.summary IS NULL OR b.summary = '')".to_string(),
+        Some("no_isbn") => "AND (b.isbn IS NULL OR b.isbn = '')".to_string(),
+        Some("no_cover") => "AND b.thumbnail_path IS NULL".to_string(),
+        Some("no_author") => "AND COALESCE(NULLIF(b.authors, '{}'), CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END) = ARRAY[]::text[]".to_string(),
+        Some("no_publish_date") => "AND (b.publish_date IS NULL OR b.publish_date = '')".to_string(),
+        Some("no_language") => "AND (b.language IS NULL OR b.language = '')".to_string(),
+        Some("no_volume") => "AND b.volume IS NULL".to_string(),
+        _ => String::new(),
+    };
     let q_cond = if query.q.is_some() {
         p += 1;
         format!("AND (b.title ILIKE ${p} OR s.name ILIKE ${p} OR b.author ILIKE ${p})")
@@ -202,15 +216,32 @@ pub async fn list_books(
     p += 1;
     let uid_p = p;
 
-    let count_sql = format!(
-        r#"SELECT COUNT(*) FROM books b
-           LEFT JOIN series s ON s.id = b.series_id
-           LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${uid_p}::uuid IS NOT NULL AND brp.user_id = ${uid_p}
-           LEFT JOIN LATERAL (
+    // Perf: `eml` is read by nothing but the metadata-provider filter, so when that
+    // filter is absent the LATERAL is a per-row subquery + sort for no reason.
+    let eml_lateral_join = if metadata_cond.is_empty() {
+        String::new()
+    } else {
+        r#"LEFT JOIN LATERAL (
                SELECT eml.provider, eml.id FROM external_metadata_links eml
                WHERE eml.series_id = b.series_id AND eml.library_id = b.library_id AND eml.status = 'approved'
                ORDER BY eml.created_at DESC LIMIT 1
-           ) eml ON TRUE
+           ) eml ON TRUE"#
+            .to_string()
+    };
+
+    // Correctness: brp's PK is (book_id, user_id), so omitting this join when the
+    // reading-status filter is unused cannot change COUNT(*).
+    let count_brp_join = if rs_cond.is_empty() {
+        String::new()
+    } else {
+        format!("LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${uid_p}::uuid IS NOT NULL AND brp.user_id = ${uid_p}")
+    };
+
+    let count_sql = format!(
+        r#"SELECT COUNT(*) FROM books b
+           LEFT JOIN series s ON s.id = b.series_id
+           {count_brp_join}
+           {eml_lateral_join}
            WHERE ($1::uuid IS NULL OR b.library_id = $1)
              AND ($2::text IS NULL OR b.kind = $2)
              AND ($3::text IS NULL OR b.format = $3)
@@ -218,6 +249,7 @@ pub async fn list_books(
              {rs_cond}
              {author_cond}
              {metadata_cond}
+             {gap_cond}
              {q_cond}
              AND (${uid_p}::uuid IS NULL OR NOT EXISTS (
                  SELECT 1 FROM user_genre_restrictions ugr
@@ -243,11 +275,7 @@ pub async fn list_books(
         FROM books b
         LEFT JOIN series s ON s.id = b.series_id
         LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${uid_p}::uuid IS NOT NULL AND brp.user_id = ${uid_p}
-        LEFT JOIN LATERAL (
-            SELECT eml.provider, eml.id FROM external_metadata_links eml
-            WHERE eml.series_id = b.series_id AND eml.library_id = b.library_id AND eml.status = 'approved'
-            ORDER BY eml.created_at DESC LIMIT 1
-        ) eml ON TRUE
+        {eml_lateral_join}
         WHERE ($1::uuid IS NULL OR b.library_id = $1)
           AND ($2::text IS NULL OR b.kind = $2)
           AND ($3::text IS NULL OR b.format = $3)
@@ -255,6 +283,7 @@ pub async fn list_books(
           {rs_cond}
           {author_cond}
           {metadata_cond}
+          {gap_cond}
           {q_cond}
           AND (${uid_p}::uuid IS NULL OR NOT EXISTS (
               SELECT 1 FROM user_genre_restrictions ugr

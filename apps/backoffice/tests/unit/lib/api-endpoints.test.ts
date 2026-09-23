@@ -15,6 +15,7 @@ import {
   fetchAuthors,
   fetchBooks,
   fetchDownloadsEnabled,
+  fetchGapSummary,
   fetchLibraries,
   fetchRelatedSeries,
   fetchSeriesById,
@@ -194,6 +195,11 @@ describe("books", () => {
     expect(lastCall().url).toBe("http://api:7080/books?page=1&limit=50");
   });
 
+  it("adds the metadata gap filter", async () => {
+    await fetchBooks("lib-1", undefined, 1, 24, undefined, undefined, undefined, undefined, undefined, undefined, "no_isbn");
+    expect(lastCall().url).toBe("http://api:7080/books?library_id=lib-1&gap=no_isbn&page=1&limit=24");
+  });
+
   it("patches a book with the raw payload", async () => {
     const data = {
       title: "Berserk",
@@ -237,6 +243,11 @@ describe("series", () => {
       "http://api:7080/series?q=Berserk&has_missing=true&no_books=true&has_books=true&volume_type=volume&rated_only=true&page=1&limit=50"
     );
     expect(lastCall().init.next).toEqual({ revalidate: 15, tags: ["series"] });
+  });
+
+  it("adds the metadata gap filter", async () => {
+    await fetchAllSeries("lib-1", undefined, undefined, 1, 24, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, "no_description");
+    expect(lastCall().url).toBe("http://api:7080/series?library_id=lib-1&gap=no_description&page=1&limit=24");
   });
 
   it("fetches a series detail", async () => {
@@ -339,5 +350,18 @@ describe("komga", () => {
       method: "POST",
       body: req,
     });
+  });
+});
+
+describe("metadata gaps", () => {
+  it("fetches the gap summary without a library filter", async () => {
+    await fetchGapSummary();
+    expect(lastCall().url).toBe("http://api:7080/metadata/gaps/summary");
+    expect(lastCall().init.next).toEqual({ revalidate: 15, tags: ["metadata-gaps"] });
+  });
+
+  it("scopes the gap summary to a library", async () => {
+    await fetchGapSummary("lib-1");
+    expect(lastCall().url).toBe("http://api:7080/metadata/gaps/summary?library_id=lib-1");
   });
 });

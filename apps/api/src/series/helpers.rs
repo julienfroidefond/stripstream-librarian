@@ -231,7 +231,7 @@ pub(crate) async fn create_series_with_metadata(
 
 /// Build the `missing_counts` CTE SQL fragment.
 /// `library_id_param`: e.g. "$1" to filter by library, or None for all libraries.
-pub(super) fn build_missing_counts_cte(library_id_param: Option<&str>) -> String {
+pub(crate) fn build_missing_counts_cte(library_id_param: Option<&str>) -> String {
     let where_clause = match library_id_param {
         Some(p) => format!("WHERE s.library_id = {p}"),
         None => String::new(),

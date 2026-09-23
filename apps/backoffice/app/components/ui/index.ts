@@ -19,6 +19,8 @@ export {
 } from "./Form";
 export { TagInput } from "./TagInput";
 export { PageIcon, NavIcon, Icon } from "./Icon";
+export type { IconName } from "./Icon";
+export { PendingCount } from "./PendingCount";
 export { OffsetPagination } from "./Pagination";
 export { Tooltip } from "./Tooltip";
 export { toast, Toaster } from "./Toast";

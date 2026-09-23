@@ -1,6 +1,7 @@
 pub mod batch;
 mod batch_sync;
 pub mod config;
+pub mod gaps;
 pub mod handlers;
 pub mod refresh;
 pub(crate) mod refresh_sync;
@@ -19,6 +20,9 @@ pub use handlers::{
     MetadataMatchRequest, MetadataSearchRequest, MissingBookItem, MissingBooksDto,
     SeriesCandidateDto, SeriesSyncReport, SyncReport,
 };
+
+// Re-export metadata-gap summary (used by main.rs routes and openapi.rs paths/schemas)
+pub use gaps::{get_gap_summary, GapSummary};
 
 // Re-export batch (used by main.rs routes, openapi.rs paths/schemas, job_poller.rs)
 pub(crate) use batch::process_metadata_batch;

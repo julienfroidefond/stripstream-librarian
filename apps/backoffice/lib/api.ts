@@ -516,6 +516,7 @@ export async function fetchBooks(
   format?: string,
   metadataProvider?: string,
   q?: string,
+  gap?: string,
 ): Promise<BooksPageDto> {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
@@ -526,6 +527,7 @@ export async function fetchBooks(
   if (author) params.set("author", author);
   if (format) params.set("format", format);
   if (metadataProvider) params.set("metadata_provider", metadataProvider);
+  if (gap) params.set("gap", gap);
   params.set("page", page.toString());
   params.set("limit", limit.toString());
 
@@ -556,6 +558,7 @@ export async function fetchAllSeries(
   hasBooks?: boolean,
   volumeType?: string,
   ratedOnly?: string,
+  gap?: string,
 ): Promise<SeriesPageDto> {
   const params = new URLSearchParams();
   if (libraryId) params.set("library_id", libraryId);
@@ -570,11 +573,40 @@ export async function fetchAllSeries(
   if (hasBooks) params.set("has_books", "true");
   if (volumeType) params.set("volume_type", volumeType);
   if (ratedOnly) params.set("rated_only", ratedOnly);
+  if (gap) params.set("gap", gap);
   params.set("page", page.toString());
   params.set("limit", limit.toString());
 
   return apiFetch<SeriesPageDto>(`/series?${params.toString()}`, {
     next: { revalidate: 15, tags: ["series"] },
+  });
+}
+
+export type GapSummaryDto = {
+  series_total: number;
+  series_no_description: number;
+  series_no_genre: number;
+  series_no_authors: number;
+  series_no_publishers: number;
+  series_no_year: number;
+  series_no_cover: number;
+  books_total: number;
+  books_no_summary: number;
+  books_no_isbn: number;
+  books_no_cover: number;
+  books_no_author: number;
+  books_no_publish_date: number;
+  books_no_language: number;
+  books_no_volume: number;
+};
+
+export async function fetchGapSummary(libraryId?: string): Promise<GapSummaryDto> {
+  const params = new URLSearchParams();
+  if (libraryId) params.set("library_id", libraryId);
+  const qs = params.toString();
+
+  return apiFetch<GapSummaryDto>(`/metadata/gaps/summary${qs ? `?${qs}` : ""}`, {
+    next: { revalidate: 15, tags: ["metadata-gaps"] },
   });
 }
 

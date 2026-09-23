@@ -8,25 +8,45 @@ import { JobsIndicator } from "@/app/components/JobsIndicator";
 import { DownloadsIndicator } from "@/app/components/DownloadsIndicator";
 import { NavIcon } from "@/app/components/ui";
 import { NavLink } from "@/app/components/NavLink";
+import { NavDropdown } from "@/app/components/NavDropdown";
+import type { IconName } from "@/app/components/ui/Icon";
 import { LogoutButton } from "@/app/components/LogoutButton";
 import { MobileNav } from "@/app/components/MobileNav";
 import { UserSwitcher } from "@/app/components/UserSwitcher";
 import { fetchUsers, fetchDownloadsEnabled } from "@/lib/api";
 import { getServerTranslations } from "@/lib/i18n/server";
 import type { TranslationKey } from "@/lib/i18n/fr";
+import type { NavHref } from "@/lib/navigation";
 
-type NavItem = {
-  href: "/" | "/books" | "/series" | "/authors" | "/libraries" | "/discovery" | "/jobs" | "/tokens" | "/settings" | "/downloads" | "/genres" | "/reading-lists";
+type NavLinkItem = {
+  href: NavHref;
   labelKey: TranslationKey;
-  icon: "dashboard" | "books" | "series" | "authors" | "libraries" | "search" | "jobs" | "tokens" | "settings" | "download" | "tag" | "bookmark";
+  icon: IconName;
   color?: string;
 };
 
-const navItems: NavItem[] = [
+type NavGroupItem = {
+  labelKey: TranslationKey;
+  icon: IconName;
+  color?: string;
+  children: NavLinkItem[];
+};
+
+type NavEntry = NavLinkItem | NavGroupItem;
+
+const navEntries: NavEntry[] = [
   { href: "/series", labelKey: "nav.series", icon: "series", color: "text-warning" },
   { href: "/books", labelKey: "nav.books", icon: "books", color: "text-success" },
   { href: "/authors", labelKey: "nav.authors", icon: "authors", color: "text-violet-500" },
-  { href: "/genres", labelKey: "nav.genres", icon: "tag", color: "text-pink-500" },
+  {
+    labelKey: "nav.data",
+    icon: "database",
+    color: "text-amber-500",
+    children: [
+      { href: "/genres", labelKey: "nav.genres", icon: "tag", color: "text-pink-500" },
+      { href: "/metadata", labelKey: "nav.metadata", icon: "document", color: "text-sky-500" },
+    ],
+  },
   { href: "/reading-lists", labelKey: "nav.readingLists", icon: "bookmark", color: "text-cyan-500" },
   { href: "/libraries", labelKey: "nav.libraries", icon: "libraries", color: "text-primary" },
   { href: "/discovery", labelKey: "nav.discovery", icon: "search", color: "text-rose-500" },
@@ -76,12 +96,27 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
           {/* Nav items — desktop only */}
           <nav className="hidden md:flex items-center justify-center gap-1">
-            {navItems.map((item) => (
-              <NavLink key={item.href} href={item.href} title={t(item.labelKey)}>
-                <NavIcon name={item.icon} className={item.color} />
-                <span className="ml-2 hidden xl:inline">{t(item.labelKey)}</span>
-              </NavLink>
-            ))}
+            {navEntries.map((entry) =>
+              "children" in entry ? (
+                <NavDropdown
+                  key={entry.labelKey}
+                  label={t(entry.labelKey)}
+                  icon={entry.icon}
+                  color={entry.color}
+                  items={entry.children.map((child) => ({
+                    href: child.href,
+                    label: t(child.labelKey),
+                    icon: child.icon,
+                    color: child.color,
+                  }))}
+                />
+              ) : (
+                <NavLink key={entry.href} href={entry.href} title={t(entry.labelKey)}>
+                  <NavIcon name={entry.icon} className={entry.color} />
+                  <span className="ml-2 hidden xl:inline">{t(entry.labelKey)}</span>
+                </NavLink>
+              )
+            )}
           </nav>
 
           {/* Actions */}
@@ -111,7 +146,21 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             <MobileNav
               navItems={[
                 { href: "/", label: t("nav.dashboard"), icon: "dashboard" },
-                ...navItems.map(item => ({ ...item, label: t(item.labelKey) })),
+                ...navEntries.flatMap((entry) =>
+                  "children" in entry
+                    ? entry.children.map((child) => ({
+                        href: child.href,
+                        label: t(child.labelKey),
+                        icon: child.icon,
+                        color: child.color,
+                      }))
+                    : [{
+                        href: entry.href,
+                        label: t(entry.labelKey),
+                        icon: entry.icon,
+                        color: entry.color,
+                      }]
+                ),
                 { href: "/settings", label: t("nav.settings"), icon: "settings" as const },
               ]}
               users={users}

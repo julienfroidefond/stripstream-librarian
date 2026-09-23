@@ -264,6 +264,7 @@ pub async fn list_series(
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),
         ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
         ("metadata_provider" = Option<String>, Query, description = "Filter by metadata provider: a provider name (e.g. 'google_books'), 'linked' (any provider), or 'unlinked' (no provider)"),
+        ("gap" = Option<String>, Query, description = "Filter by metadata gap: 'unlinked', 'no_genre', 'missing_volumes', or 'stale'"),
         ("author" = Option<String>, Query, description = "Filter by author name (matches in series.authors or book-level authors)"),
         ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
         ("limit" = Option<i64>, Query, description = "Items per page (max 200, default 50)"),
@@ -345,6 +346,16 @@ pub async fn list_all_series(
             format!("AND ml.provider = ${p}")
         }
         None => String::new(),
+    };
+
+    let gap_cond = match query.gap.as_deref() {
+        Some("no_description") => "AND (s.description IS NULL OR s.description = '')".to_string(),
+        Some("no_genre") => "AND COALESCE(cardinality(s.genres), 0) = 0".to_string(),
+        Some("no_authors") => "AND COALESCE(cardinality(s.authors), 0) = 0".to_string(),
+        Some("no_publishers") => "AND COALESCE(cardinality(s.publishers), 0) = 0".to_string(),
+        Some("no_year") => "AND s.start_year IS NULL".to_string(),
+        Some("no_cover") => "AND (s.cover_url IS NULL OR s.cover_url = '')".to_string(),
+        _ => String::new(),
     };
 
     let author_cond = if query.author.is_some() {
@@ -501,6 +512,7 @@ pub async fn list_all_series(
               {ss_cond}
               {missing_cond}
               {metadata_provider_cond}
+              {gap_cond}
               {author_cond}
               {has_books_cond}
               {no_books_cond}

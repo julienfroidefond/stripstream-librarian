@@ -101,6 +101,7 @@ fn all_query(page: Option<i64>, limit: Option<i64>) -> Query<ListAllSeriesQuery>
         series_status: None,
         has_missing: None,
         metadata_provider: None,
+        gap: None,
         author: None,
         page,
         limit,

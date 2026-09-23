@@ -39,6 +39,7 @@ interface LiveSearchFormProps {
   basePath: string;
   debounceMs?: number;
   initialValues?: Record<string, string>;
+  hiddenValues?: Record<string, string>;
 }
 
 /** Convert a basePath to a cookie name: /series → filters_series */
@@ -55,7 +56,7 @@ function deleteCookie(name: string) {
   document.cookie = `${name}=;path=/;expires=Thu, 01 Jan 1970 00:00:00 GMT`;
 }
 
-export function LiveSearchForm({ fields, basePath, debounceMs = 300, initialValues = {} }: LiveSearchFormProps) {
+export function LiveSearchForm({ fields, basePath, debounceMs = 300, initialValues = {}, hiddenValues = {} }: LiveSearchFormProps) {
   const router = useRouter();
   const { t } = useTranslation();
   const [isPending, startTransition] = useTransition();
@@ -66,6 +67,9 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300, initialValu
   const isFirstRender = useRef(true);
 
   const cookieName = filterCookieName(basePath);
+  const hiddenEntries = Object.entries(hiddenValues);
+  const hiddenQuery = new URLSearchParams(hiddenEntries).toString();
+  const baseWithHidden = hiddenQuery ? `${basePath}?${hiddenQuery}` : basePath;
 
   // Serialize initialValues for effect dependency
   const initialValuesKey = JSON.stringify(initialValues);
@@ -173,6 +177,9 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300, initialValu
       }}
       className="space-y-4"
     >
+      {hiddenEntries.map(([name, value]) => (
+        <input key={name} type="hidden" name={name} defaultValue={value} />
+      ))}
       {/* Search input with icon */}
       {textFields.map((field) => (
         <div key={field.name} className="relative">
@@ -237,7 +244,7 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300, initialValu
                   // Navigate to base path — server re-render will update initialValues,
                   // triggering the useEffect to remount the form with clean defaults
                   isOwnNavRef.current = false; // allow useEffect to detect this as external nav
-                  doNavigate(basePath);
+                  doNavigate(baseWithHidden);
                 }}
                 className="
                   inline-flex items-center gap-1

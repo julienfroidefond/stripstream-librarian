@@ -126,6 +126,9 @@ pub struct ListAllSeriesQuery {
     /// Filter by metadata provider: a provider name (e.g. "google_books"), "linked" (any provider), or "unlinked" (no provider)
     #[schema(value_type = Option<String>, example = "google_books")]
     pub metadata_provider: Option<String>,
+    /// Filter by metadata gap: "unlinked", "no_genre", "missing_volumes", or "stale"
+    #[schema(value_type = Option<String>, example = "no_genre")]
+    pub gap: Option<String>,
     /// Filter by author name (matches in series.authors or book-level authors)
     #[schema(value_type = Option<String>, example = "Toriyama")]
     pub author: Option<String>,
