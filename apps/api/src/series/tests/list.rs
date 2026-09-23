@@ -113,6 +113,20 @@ fn all_query(page: Option<i64>, limit: Option<i64>) -> Query<ListAllSeriesQuery>
     })
 }
 
+fn series_query_q(q: &str) -> Query<ListSeriesQuery> {
+    Query(ListSeriesQuery {
+        q: Some(q.to_string()),
+        ..series_query(None, None).0
+    })
+}
+
+fn all_query_q(q: &str) -> Query<ListAllSeriesQuery> {
+    Query(ListAllSeriesQuery {
+        q: Some(q.to_string()),
+        ..all_query(None, None).0
+    })
+}
+
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn list_series_total_counts_all_matching_rows(pool: PgPool) {
     let state = test_state(pool.clone());
@@ -263,4 +277,49 @@ async fn list_all_series_total_spans_libraries(pool: PgPool) {
 
     assert_eq!(page.total, 3);
     assert_eq!(page.items.len(), 3);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_series_q_is_accent_insensitive(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    create_series(&pool, library, "Astérix").await;
+    create_series(&pool, library, "Tintin").await;
+
+    let Json(page) = list_series(State(state), None, Path(library), series_query_q("asterix"))
+        .await
+        .unwrap();
+
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].name, "Astérix");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_all_series_q_is_accent_insensitive(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    create_series(&pool, library, "Astérix").await;
+    create_series(&pool, library, "Tintin").await;
+
+    let Json(page) = list_all_series(State(state), None, all_query_q("asterix"))
+        .await
+        .unwrap();
+
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].name, "Astérix");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_all_series_q_accepts_accented_query(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    create_series(&pool, library, "Asterix").await;
+    create_series(&pool, library, "Tintin").await;
+
+    let Json(page) = list_all_series(State(state), None, all_query_q("astérix"))
+        .await
+        .unwrap();
+
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].name, "Asterix");
 }

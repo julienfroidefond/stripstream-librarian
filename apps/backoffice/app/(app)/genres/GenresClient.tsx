@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { getBookCoverUrl } from "@/lib/api";
 import type { SeriesDto, LibraryDto } from "@/lib/api";
+import { matchesSearchText } from "@/lib/search";
 import { useTranslation } from "@/lib/i18n/context";
 import { toast, Toaster } from "@/app/components/ui";
 import { LibraryMultiBadgeSelector } from "../jobs/components/LibraryBadgeSelector";
@@ -234,12 +235,14 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
   const [untaggedCount, setUntaggedCount] = useState(initialUntagged.length);
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [seriesSearch, setSeriesSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [seriesView, setSeriesView] = useState<SeriesView>("cards");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [assignInput, setAssignInput] = useState("");
   const [aiSuggestions, setAiSuggestions] = useState<AiSuggestion[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
+  const didFetchRef = useRef(false);
 
   const refreshGenres = useCallback(async () => {
     const [res, ...libraryResponses] = await Promise.all([
@@ -253,29 +256,31 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     setBrowserGenres(mergeGenreCounts(genreGroups));
   }, [libraryFilter]);
 
-  const fetchSeriesForFilter = useCallback(async (genre: GenreFilter, libraryIds: string[], excluded: string[] = []) => {
+  const fetchSeriesForFilter = useCallback(async (genre: GenreFilter, libraryIds: string[], excluded: string[] = [], q = "") => {
     setSeriesLoading(true);
     setSelected(new Set());
-    setSeriesSearch("");
     try {
       const requestedLibraries = libraryIds.length > 0 ? libraryIds : [null];
       if (genre === null) {
         const results = await Promise.all(requestedLibraries.map(async libraryId => {
           const params = new URLSearchParams();
           if (libraryId) params.set("library_id", libraryId);
+          if (q) params.set("q", q);
           const response = await fetch(`/api/genres/untagged-series?${params}`);
           return response.ok ? response.json() as Promise<SeriesDto[]> : [];
         }));
         const series = results.flat();
         setSeriesList(series);
         setSeriesTotal(series.length);
-        setUntaggedCount(series.length);
+        // Only the unfiltered listing reflects the real untagged count.
+        if (!q) setUntaggedCount(series.length);
       } else {
         const genreFilters = genre.length > 0 ? genre : [null];
         const results = await Promise.all(requestedLibraries.flatMap(libraryId => genreFilters.map(async genreName => {
           const params = new URLSearchParams({ limit: "500" });
           if (genreName) params.set("genre", genreName);
           if (libraryId) params.set("library_id", libraryId);
+          if (q) params.set("q", q);
           const response = await fetch(`/api/series?${params}`);
           return response.ok ? response.json() as Promise<{ items: SeriesDto[] }> : { items: [] };
         })));
@@ -289,10 +294,26 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     }
   }, []);
 
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(seriesSearch.trim()), 300);
+    return () => clearTimeout(handle);
+  }, [seriesSearch]);
+
+  // Skip the mount run: the server component already provided the initial list.
+  useEffect(() => {
+    if (!didFetchRef.current) {
+      didFetchRef.current = true;
+      return;
+    }
+    fetchSeriesForFilter(seriesFilter, libraryFilter, excludedGenres, debouncedSearch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seriesFilter, libraryFilter, excludedGenres, debouncedSearch]);
+
   const handleFilterChange = (genres: GenreFilter, excluded = excludedGenres) => {
     setSeriesFilter(genres);
     setExcludedGenres(excluded);
-    fetchSeriesForFilter(genres, libraryFilter, excluded);
+    setSeriesSearch("");
+    setDebouncedSearch("");
     filterRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   };
 
@@ -331,7 +352,6 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
 
   const handleLibraryChange = (libraryIds: string[]) => {
     setLibraryFilter(libraryIds);
-    fetchSeriesForFilter(seriesFilter, libraryIds, excludedGenres);
     fetchBrowserGenres(libraryIds);
   };
 
@@ -378,7 +398,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
       if (Array.isArray(seriesFilter) && seriesFilter.includes(name)) {
         const nextFilters = seriesFilter.filter(genre => genre !== name);
         setSeriesFilter(nextFilters);
-        await Promise.all([refreshGenres(), fetchSeriesForFilter(nextFilters, libraryFilter, excludedGenres)]);
+        await Promise.all([refreshGenres(), fetchSeriesForFilter(nextFilters, libraryFilter, excludedGenres, debouncedSearch)]);
       } else {
         await refreshGenres();
       }
@@ -400,7 +420,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
         body: JSON.stringify({ genre, series_ids: Array.from(selected) }),
       });
       const count = selected.size;
-      await Promise.all([refreshGenres(), fetchSeriesForFilter(seriesFilter, libraryFilter, excludedGenres)]);
+      await Promise.all([refreshGenres(), fetchSeriesForFilter(seriesFilter, libraryFilter, excludedGenres, debouncedSearch)]);
       setAssignInput("");
       toast(t("genres.assignSuccess", { count: String(count), plural: count !== 1 ? "s" : "" }));
     } finally {
@@ -438,7 +458,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
       });
       if (!response.ok) throw new Error();
       setAiSuggestions(prev => prev.map(s => s.series_id === seriesId ? { ...s, tags: s.tags.filter(tag => tag !== genre) } : s).filter(s => s.tags.length > 0));
-      await Promise.all([refreshGenres(), fetchSeriesForFilter(seriesFilter, libraryFilter, excludedGenres)]);
+      await Promise.all([refreshGenres(), fetchSeriesForFilter(seriesFilter, libraryFilter, excludedGenres, debouncedSearch)]);
       toast(t("genres.assignSuccess", { count: "1", plural: "" }));
     } catch {
       toast(t("genres.aiError"), "error");
@@ -455,9 +475,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
     });
   };
 
-  const displayedSeries = seriesSearch
-    ? seriesList.filter(s => s.name.toLowerCase().includes(seriesSearch.toLowerCase()))
-    : seriesList;
+  const displayedSeries = seriesList;
 
   const allSelected = displayedSeries.length > 0 && displayedSeries.every(s => selected.has(s.series_id));
 
@@ -478,7 +496,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
   };
 
   const filteredGenres = (genreFilter
-    ? genres.filter(g => g.name.toLowerCase().includes(genreFilter.toLowerCase()))
+    ? genres.filter(g => matchesSearchText(g.name, genreFilter))
     : genres
   ).sort((a, b) => b.series_count - a.series_count);
   const availableGenreNames = browserGenres.filter(g => g.series_count > 0).map(g => g.name);

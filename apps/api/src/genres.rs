@@ -202,6 +202,7 @@ pub async fn assign_genre(
 pub struct UntaggedSeriesQuery {
     #[schema(value_type = Option<String>)]
     pub library_id: Option<Uuid>,
+    pub q: Option<String>,
 }
 
 /// List series without any genre (for bulk tagging)
@@ -209,7 +210,10 @@ pub struct UntaggedSeriesQuery {
     get,
     path = "/genres/untagged-series",
     tag = "genres",
-    params(("library_id" = Option<String>, Query, description = "Filter by library ID")),
+    params(
+        ("library_id" = Option<String>, Query, description = "Filter by library ID"),
+        ("q" = Option<String>, Query, description = "Filter by series name (case- and accent-insensitive, partial match)"),
+    ),
     responses(
         (status = 200, body = Vec<SeriesItem>),
         (status = 401, description = "Unauthorized"),
@@ -220,10 +224,20 @@ pub async fn untagged_series(
     State(state): State<AppState>,
     Query(query): Query<UntaggedSeriesQuery>,
 ) -> Result<Json<Vec<SeriesItem>>, ApiError> {
+    let mut p: usize = 0;
+
     let lib_cond = if query.library_id.is_some() {
-        "AND s.library_id = $1"
+        p += 1;
+        format!("AND s.library_id = ${p}")
     } else {
-        "AND TRUE"
+        "AND TRUE".to_string()
+    };
+
+    let q_cond = if query.q.is_some() {
+        p += 1;
+        format!("AND norm_text(s.name) LIKE norm_text(${p})")
+    } else {
+        String::new()
     };
 
     let sql = format!(
@@ -248,21 +262,23 @@ pub async fn untagged_series(
             s.description
         FROM series s
         LEFT JOIN books b ON b.series_id = s.id
-        WHERE cardinality(s.genres) = 0 {lib_cond}
+        WHERE cardinality(s.genres) = 0 {lib_cond} {q_cond}
         GROUP BY s.id
         ORDER BY LOWER(s.name)
         LIMIT 500
         "#
     );
 
-    let rows = if let Some(lib_id) = query.library_id {
-        sqlx::query(&sql)
-            .bind(lib_id)
-            .fetch_all(&state.pool)
-            .await?
-    } else {
-        sqlx::query(&sql).fetch_all(&state.pool).await?
-    };
+    let q_pattern = query.q.as_deref().map(|q| format!("%{}%", q));
+
+    let mut builder = sqlx::query(&sql);
+    if let Some(lib_id) = query.library_id {
+        builder = builder.bind(lib_id);
+    }
+    if let Some(ref pattern) = q_pattern {
+        builder = builder.bind(pattern);
+    }
+    let rows = builder.fetch_all(&state.pool).await?;
 
     use sqlx::Row as _;
     let items = rows

@@ -66,7 +66,14 @@ fn list_query(library_id: Option<Uuid>) -> Query<ListGenresQuery> {
 }
 
 fn untagged_query(library_id: Option<Uuid>) -> Query<UntaggedSeriesQuery> {
-    Query(UntaggedSeriesQuery { library_id })
+    Query(UntaggedSeriesQuery { library_id, q: None })
+}
+
+fn untagged_query_q(library_id: Option<Uuid>, q: &str) -> Query<UntaggedSeriesQuery> {
+    Query(UntaggedSeriesQuery {
+        library_id,
+        q: Some(q.to_string()),
+    })
 }
 
 fn rename_body(new_name: &str) -> Json<RenameGenreRequest> {
@@ -597,4 +604,51 @@ async fn untagged_series_unknown_library_returns_empty(pool: PgPool) {
         .unwrap();
 
     assert!(items.is_empty());
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn untagged_series_q_is_accent_insensitive(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let matched = create_series(&pool, library, "Astérix", &[]).await;
+    create_series(&pool, library, "Tintin", &[]).await;
+    create_series(&pool, library, "Astérix le Gaulois", &["Action"]).await;
+
+    let Json(items) = untagged_series(State(state), untagged_query_q(Some(library), "asterix"))
+        .await
+        .unwrap();
+
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].series_id, matched);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn untagged_series_q_accepts_accented_query(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let matched = create_series(&pool, library, "Asterix", &[]).await;
+    create_series(&pool, library, "Tintin", &[]).await;
+
+    let Json(items) = untagged_series(State(state), untagged_query_q(Some(library), "astérix"))
+        .await
+        .unwrap();
+
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].series_id, matched);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn untagged_series_q_respects_library_filter(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let first = create_library(&pool, "first").await;
+    let second = create_library(&pool, "second").await;
+    let in_first = create_series(&pool, first, "Astérix", &[]).await;
+    create_series(&pool, second, "Astérix", &[]).await;
+
+    let Json(items) = untagged_series(State(state), untagged_query_q(Some(first), "asterix"))
+        .await
+        .unwrap();
+
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].series_id, in_first);
 }

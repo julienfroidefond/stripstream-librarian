@@ -18,7 +18,7 @@ use crate::{auth::AuthUser, error::ApiError, state::AppState};
     tag = "series",
     params(
         ("library_id" = String, Path, description = "Library UUID"),
-        ("q" = Option<String>, Query, description = "Filter by series name (case-insensitive, partial match)"),
+        ("q" = Option<String>, Query, description = "Filter by series name (case- and accent-insensitive, partial match)"),
         ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
         ("metadata_provider" = Option<String>, Query, description = "Filter by metadata provider: a provider name (e.g. 'google_books'), 'linked' (any provider), or 'unlinked' (no provider)"),
         ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
@@ -62,7 +62,7 @@ pub async fn list_series(
 
     let q_cond = if query.q.is_some() {
         p += 1;
-        format!("AND s.name ILIKE ${p}")
+        format!("AND norm_text(s.name) LIKE norm_text(${p})")
     } else {
         String::new()
     };
@@ -260,7 +260,7 @@ pub async fn list_series(
     path = "/series",
     tag = "series",
     params(
-        ("q" = Option<String>, Query, description = "Filter by series name (case-insensitive, partial match)"),
+        ("q" = Option<String>, Query, description = "Filter by series name (case- and accent-insensitive, partial match)"),
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),
         ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
         ("metadata_provider" = Option<String>, Query, description = "Filter by metadata provider: a provider name (e.g. 'google_books'), 'linked' (any provider), or 'unlinked' (no provider)"),
@@ -312,7 +312,7 @@ pub async fn list_all_series(
 
     let q_cond = if query.q.is_some() {
         p += 1;
-        format!("AND s.name ILIKE ${p}")
+        format!("AND norm_text(s.name) LIKE norm_text(${p})")
     } else {
         String::new()
     };

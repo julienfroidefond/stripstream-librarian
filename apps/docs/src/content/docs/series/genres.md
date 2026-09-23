@@ -13,7 +13,7 @@ La page **Genres** du backoffice centralise toute la gestion :
 
 - **Bibliothèque de genres** — chaque genre affiche une couverture représentative et son nombre de séries. Cliquez dessus pour consulter les séries concernées.
 - **Renommage et suppression** — ces actions se trouvent dans la modale du genre. Le renommage s'applique à toutes les séries ; la suppression retire uniquement ce genre des séries.
-- **Espace d'attribution** — filtrez les séries par bibliothèque, genre inclus ou exclu, ou affichez uniquement les séries sans genre. Le filtre **Tous** rétablit toutes les séries du périmètre sélectionné.
+- **Espace d'attribution** — filtrez les séries par bibliothèque, genre inclus ou exclu, ou affichez uniquement les séries sans genre. Le filtre **Tous** rétablit toutes les séries du périmètre sélectionné. La recherche porte sur le nom de série, sans distinction de casse ni d'accents (par ex. `asterix` retrouve `Astérix`), et s'applique à l'ensemble du périmètre filtré — pas seulement aux séries affichées.
 - **Sélection et affichage** — choisissez plusieurs séries dans la vue cartes ou tableau, puis affectez-leur un genre existant en une opération.
 
 ## Taguer des séries
@@ -52,5 +52,5 @@ Les genres issus des providers sont écrits lors de la synchronisation des méta
 | `GET` | `/genres/untagged-series` | Séries sans aucun genre (max 500) |
 | `POST` | `/genres/ai-suggest` | Propose des tags pour 1 à 25 séries sans modifier les données |
 
-`GET /genres` et `GET /genres/untagged-series` acceptent le paramètre `library_id` (UUID) pour filtrer à une bibliothèque donnée.
+`GET /genres` et `GET /genres/untagged-series` acceptent le paramètre `library_id` (UUID) pour filtrer à une bibliothèque donnée. `GET /genres/untagged-series`, `GET /series` et `GET /libraries/{library_id}/series` acceptent aussi `q` pour filtrer par nom de série (recherche partielle, insensible à la casse et aux accents).
 :::
