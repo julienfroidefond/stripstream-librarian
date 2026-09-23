@@ -90,6 +90,62 @@ fn extract_product_authors_includes_pencillers_without_duplicates() {
     );
 }
 
+// ─── extract_product_isbn ────────────────────────────────────────────
+
+#[test]
+fn extract_product_isbn_strips_hyphens() {
+    let product = serde_json::json!({ "isbn": ["978-2505116974"] });
+    assert_eq!(
+        extract_product_isbn(&product),
+        Some("9782505116974".to_string())
+    );
+}
+
+#[test]
+fn extract_product_isbn_keeps_bare_thirteen_digits() {
+    let product = serde_json::json!({ "isbn": ["9782505117025"] });
+    assert_eq!(
+        extract_product_isbn(&product),
+        Some("9782505117025".to_string())
+    );
+}
+
+#[test]
+fn extract_product_isbn_accepts_isbn10_with_x_check_digit() {
+    let product = serde_json::json!({ "isbn": ["0-8044-2957-X"] });
+    assert_eq!(
+        extract_product_isbn(&product),
+        Some("080442957X".to_string())
+    );
+}
+
+#[test]
+fn extract_product_isbn_uses_first_non_empty_entry() {
+    let product = serde_json::json!({ "isbn": ["", "9782505117025"] });
+    assert_eq!(
+        extract_product_isbn(&product),
+        Some("9782505117025".to_string())
+    );
+}
+
+#[test]
+fn extract_product_isbn_returns_none_for_empty_array() {
+    let product = serde_json::json!({ "isbn": [] });
+    assert_eq!(extract_product_isbn(&product), None);
+}
+
+#[test]
+fn extract_product_isbn_returns_none_when_field_missing() {
+    let product = serde_json::json!({ "title": "Naruto, tome 1" });
+    assert_eq!(extract_product_isbn(&product), None);
+}
+
+#[test]
+fn extract_product_isbn_rejects_implausible_length() {
+    let product = serde_json::json!({ "isbn": ["12345"] });
+    assert_eq!(extract_product_isbn(&product), None);
+}
+
 #[test]
 fn first_volume_product_selects_tome_one() {
     let tome_two = serde_json::json!({"title": "Astérix, tome 2"});

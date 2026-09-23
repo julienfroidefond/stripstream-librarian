@@ -301,7 +301,7 @@ async fn fetch_franchise_editions(
     let gql = serde_json::json!({
         "query": format!(
             r#"{{ groupProducts(franchiseId: {franchise_id}, universe: "comicBook", limit: 200, offset: 0) {{
-                items {{ id title url dateRelease medias {{ picture }} authors {{ name }} pencillers {{ name }} synopsis }}
+                items {{ id title url dateRelease medias {{ picture }} authors {{ name }} pencillers {{ name }} synopsis isbn }}
             }} }}"#
         ),
     });
@@ -439,7 +439,11 @@ async fn get_series_impl(external_id: &str) -> Result<SeriesCandidate, String> {
         .filter_map(|date| date.get(..4))
         .filter_map(|year| year.parse().ok())
         .min();
-    let description = first.summary.clone();
+    let description = books
+        .iter()
+        .filter(|book| book.summary.as_deref().is_some_and(|s| !s.is_empty()))
+        .min_by_key(|book| book.volume_number.unwrap_or(i32::MAX))
+        .and_then(|book| book.summary.clone());
     let mut metadata_json = serde_json::json!({});
     if let Some(description) = &description {
         metadata_json["description"] = serde_json::json!(description);
@@ -506,6 +510,7 @@ async fn fetch_franchise_books(
                     authors {{ name }}
                     pencillers {{ name }}
                     synopsis
+                    isbn
                 }}
             }} }}"#
         ),
@@ -575,7 +580,7 @@ async fn fetch_franchise_books(
                 title,
                 volume_number,
                 authors,
-                isbn: None,
+                isbn: extract_product_isbn(product),
                 summary,
                 cover_url,
                 page_count: None,
@@ -624,6 +629,7 @@ async fn fetch_single_book(
                 authors {{ name }}
                 pencillers {{ name }}
                 synopsis
+                isbn
             }} }}"#
         ),
     });
@@ -669,7 +675,7 @@ async fn fetch_single_book(
         title,
         volume_number: Some(1),
         authors,
-        isbn: None,
+        isbn: extract_product_isbn(product),
         summary,
         cover_url,
         page_count: None,
@@ -1011,6 +1017,37 @@ fn extract_names(product: &serde_json::Value, field: &str) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Extract the first ISBN from a SensCritique product.
+///
+/// SensCritique returns `isbn` as an array of strings (usually one entry) and
+/// mixes hyphenated and bare formats, e.g. `["978-2505116974"]` or
+/// `["9782505117025"]`. We keep the first non-empty entry and strip separators
+/// so the value matches the normalised form used by `shared_sync::normalize_isbn`.
+fn extract_product_isbn(product: &serde_json::Value) -> Option<String> {
+    let raw = product
+        .get("isbn")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(str::trim)
+                .find(|s| !s.is_empty())
+        })?;
+
+    let normalized: String = raw
+        .chars()
+        .filter(|c| c.is_ascii_digit() || *c == 'X' || *c == 'x')
+        .map(|c| c.to_ascii_uppercase())
+        .collect();
+
+    // Guard against junk values that are not plausible ISBN-10/ISBN-13.
+    if normalized.len() == 10 || normalized.len() == 13 {
+        Some(normalized)
+    } else {
+        None
+    }
 }
 
 /// SensCritique exposes writers and pencillers as separate fields.
