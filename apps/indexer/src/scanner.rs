@@ -980,8 +980,8 @@ async fn archive_orphan_series(pool: &sqlx::PgPool, library_id: Uuid) -> Result<
 /// After a scan, restore reading progress and series metadata for re-discovered books/series.
 /// Matches archived records by file path (books) or name+library (series).
 pub async fn restore_archived_data(pool: &sqlx::PgPool, library_id: Uuid) -> Result<()> {
-    // Restore reading progress for newly-inserted books that match archived file paths
-    let restored: i64 = sqlx::query_scalar(
+    // Restore reading progress by exact file path (same file re-discovered)
+    let restored_by_path: i64 = sqlx::query_scalar(
         r#"
         WITH restored AS (
             INSERT INTO book_reading_progress (book_id, user_id, status, current_page, last_read_at, updated_at)
@@ -1000,12 +1000,61 @@ pub async fn restore_archived_data(pool: &sqlx::PgPool, library_id: Uuid) -> Res
     .bind(library_id)
     .fetch_one(pool)
     .await
-    .unwrap_or(0);
+    .unwrap_or_else(|e| {
+        warn!(
+            "[SCAN] Failed to restore reading progress by path for library {}: {}",
+            library_id, e
+        );
+        0
+    });
 
+    // Fallback: match by volume for re-downloads whose filename/extension changed
+    // (e.g. "Amulet - T2.cbr" replaced by "Amulet - 02.cbz"). A volume can have several
+    // archived rows (multiple editions); keep the most recently archived one per user.
+    let restored_by_volume: i64 = sqlx::query_scalar(
+        r#"
+        WITH restored AS (
+            INSERT INTO book_reading_progress (book_id, user_id, status, current_page, last_read_at, updated_at)
+            SELECT DISTINCT ON (b.id, abrp.user_id)
+                b.id, abrp.user_id, abrp.status, abrp.current_page, abrp.last_read_at, abrp.updated_at
+            FROM books b
+            JOIN series s ON s.id = b.series_id
+            JOIN archived_books ab
+              ON ab.library_id = b.library_id
+             AND (
+                  ab.series_id = b.series_id
+                  OR norm_text(ab.series_name) = norm_text(s.name)
+                 )
+             AND ab.volume = b.volume
+             AND ab.volume_type = b.volume_type
+             AND ab.kind = b.kind
+            JOIN archived_book_reading_progress abrp ON abrp.archived_book_id = ab.id
+            WHERE b.library_id = $1
+              AND b.volume IS NOT NULL
+              AND b.volume_type = 'regular'
+            ORDER BY b.id, abrp.user_id, ab.archived_at DESC
+            ON CONFLICT (book_id, user_id) DO NOTHING
+            RETURNING book_id
+        )
+        SELECT COUNT(*) FROM restored
+        "#,
+    )
+    .bind(library_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or_else(|e| {
+        warn!(
+            "[SCAN] Failed to restore reading progress by volume for library {}: {}",
+            library_id, e
+        );
+        0
+    });
+
+    let restored = restored_by_path + restored_by_volume;
     if restored > 0 {
         info!(
-            "[SCAN] Restored reading progress for {} books in library {}",
-            restored, library_id
+            "[SCAN] Restored reading progress for {} books in library {} ({} by path, {} by volume)",
+            restored, library_id, restored_by_path, restored_by_volume
         );
     }
 
@@ -1047,6 +1096,30 @@ pub async fn restore_archived_data(pool: &sqlx::PgPool, library_id: Uuid) -> Res
     .execute(pool)
     .await?;
 
+    // Clean up archived books matched by volume, so resetting a book's progress afterwards is
+    // not undone by the next scan re-running the volume fallback.
+    sqlx::query(
+        r#"
+        DELETE FROM archived_books ab
+        USING books b, series s
+        WHERE s.id = b.series_id
+          AND ab.library_id = b.library_id
+          AND (
+               ab.series_id = b.series_id
+               OR norm_text(ab.series_name) = norm_text(s.name)
+              )
+          AND ab.volume = b.volume
+          AND ab.volume_type = b.volume_type
+          AND ab.kind = b.kind
+          AND b.library_id = $1
+          AND b.volume IS NOT NULL
+          AND b.volume_type = 'regular'
+        "#,
+    )
+    .bind(library_id)
+    .execute(pool)
+    .await?;
+
     // Clean up archived series whose series is now active again
     sqlx::query(
         r#"
@@ -1068,15 +1141,21 @@ pub async fn restore_archived_data(pool: &sqlx::PgPool, library_id: Uuid) -> Res
 
 /// Determine whether file deletions should be skipped based on safety heuristics.
 /// Returns true if deletions should be skipped (e.g., volume not mounted).
+///
+/// The last clause catches the case where *every* known file vanished at once (a
+/// likely unmounted volume). It only fires when the stale files' parent directories
+/// are themselves gone: a library whose files were merely replaced/renamed (e.g. a
+/// re-download) still has its directory tree on disk, so deletions must proceed.
 fn should_skip_deletions(
     root_accessible: bool,
     seen_count: usize,
     existing_count: usize,
     stale_count: usize,
+    stale_parents_missing: bool,
 ) -> bool {
     !root_accessible
         || (seen_count == 0 && existing_count > 0)
-        || (stale_count > 0 && stale_count == existing_count)
+        || (stale_count > 0 && stale_count == existing_count && stale_parents_missing)
 }
 
 /// Handle deletion of stale files (files in DB but no longer on disk).
@@ -1099,7 +1178,20 @@ async fn handle_stale_deletions(
 
     let root_accessible = root.is_dir() && std::fs::read_dir(root).is_ok();
 
-    if should_skip_deletions(root_accessible, seen_count, existing_count, stale_count) {
+    // A stale file whose parent directory is gone points at an unmounted/removed volume
+    // rather than a replaced file. Only then is mass deletion treated as suspicious.
+    let stale_parents_missing = existing
+        .iter()
+        .filter(|(p, _)| !seen.contains_key(p.as_str()))
+        .all(|(p, _)| Path::new(p).parent().is_none_or(|parent| !parent.is_dir()));
+
+    if should_skip_deletions(
+        root_accessible,
+        seen_count,
+        existing_count,
+        stale_count,
+        stale_parents_missing,
+    ) {
         if stale_count > 0 {
             warn!(
                 "[SCAN] Skipping deletion of {} stale files for library {} — \
@@ -1276,36 +1368,42 @@ mod tests {
 
     #[test]
     fn skip_deletions_when_root_not_accessible() {
-        assert!(should_skip_deletions(false, 10, 10, 5));
+        assert!(should_skip_deletions(false, 10, 10, 5, false));
     }
 
     #[test]
     fn skip_deletions_when_no_files_seen_but_existing() {
         // Volume probably not mounted — saw 0 files but DB has 50
-        assert!(should_skip_deletions(true, 0, 50, 50));
+        assert!(should_skip_deletions(true, 0, 50, 50, false));
     }
 
     #[test]
-    fn skip_deletions_when_all_existing_are_stale() {
-        // Every DB file is stale — suspicious, skip
-        assert!(should_skip_deletions(true, 5, 10, 10));
+    fn skip_deletions_when_all_existing_are_stale_and_parents_missing() {
+        // Every DB file is stale AND its directory is gone — unmounted volume, skip
+        assert!(should_skip_deletions(true, 5, 10, 10, true));
+    }
+
+    #[test]
+    fn allow_deletions_when_all_existing_are_stale_but_parents_present() {
+        // All files replaced/renamed in place (e.g. re-download) — dirs still exist, delete
+        assert!(!should_skip_deletions(true, 5, 10, 10, false));
     }
 
     #[test]
     fn allow_deletions_normal_case() {
         // Some stale files but most are still present — normal
-        assert!(!should_skip_deletions(true, 45, 50, 5));
+        assert!(!should_skip_deletions(true, 45, 50, 5, false));
     }
 
     #[test]
     fn allow_deletions_no_stale() {
-        assert!(!should_skip_deletions(true, 50, 50, 0));
+        assert!(!should_skip_deletions(true, 50, 50, 0, false));
     }
 
     #[test]
     fn allow_deletions_empty_db() {
         // No existing files in DB — nothing to delete anyway
-        assert!(!should_skip_deletions(true, 10, 0, 0));
+        assert!(!should_skip_deletions(true, 10, 0, 0, false));
     }
 
     #[test]
@@ -1978,5 +2076,208 @@ mod tests {
             kept_exists,
             "series with remaining books should be preserved"
         );
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn restore_reading_progress_by_volume_after_extension_change(pool: sqlx::PgPool) {
+        let library_id = create_test_library(&pool, "restore_vol").await;
+
+        let series_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Amulet')")
+            .bind(series_id)
+            .bind(library_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // Given: a re-downloaded book for volume 2 with a new filename/extension (.cbr -> .cbz)
+        let book_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO books (id, library_id, title, volume, volume_type, kind, format, series_id) \
+             VALUES ($1, $2, 'Amulet - 02', 2, 'regular', 'comic', 'cbz', $3)",
+        )
+        .bind(book_id)
+        .bind(library_id)
+        .bind(series_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO book_files (id, book_id, abs_path, format, size_bytes, mtime, fingerprint, parse_status) \
+             VALUES ($1, $2, '/libraries/restore_vol/Amulet/Amulet - 02.cbz', 'cbz', 1024, NOW(), 'fp_new', 'ok')",
+        )
+        .bind(Uuid::new_v4())
+        .bind(book_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // And: the archived old file for the same volume with its reading progress
+        let archived_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO archived_books (id, library_id, series_id, series_name, kind, format, title, volume, volume_type) \
+             VALUES ($1, $2, $3, 'Amulet', 'comic', 'cbr', 'Amulet - T2', 2, 'regular')",
+        )
+        .bind(archived_id)
+        .bind(library_id)
+        .bind(series_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let user_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO users (id, username) VALUES ($1, $2)")
+            .bind(user_id)
+            .bind(format!("u_{}", user_id))
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query(
+            "INSERT INTO archived_book_reading_progress (archived_book_id, user_id, status, current_page) \
+             VALUES ($1, $2, 'read', 42)",
+        )
+        .bind(archived_id)
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // When: archived data is restored
+        restore_archived_data(&pool, library_id).await.unwrap();
+
+        // Then: progress is restored despite the path/extension change
+        let status: Option<String> = sqlx::query_scalar(
+            "SELECT status FROM book_reading_progress WHERE book_id = $1 AND user_id = $2",
+        )
+        .bind(book_id)
+        .bind(user_id)
+        .fetch_optional(&pool)
+        .await
+        .unwrap();
+        assert_eq!(status.as_deref(), Some("read"));
+
+        let page: Option<i32> = sqlx::query_scalar(
+            "SELECT current_page FROM book_reading_progress WHERE book_id = $1 AND user_id = $2",
+        )
+        .bind(book_id)
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(page, Some(42));
+
+        // And: the matched archived book is cleaned up so the fallback stays idempotent
+        let archived_left: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM archived_books WHERE id = $1")
+                .bind(archived_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(archived_left, 0, "matched archived book must be cleaned up");
+
+        // And: resetting progress (mark unread deletes the row) survives a later re-scan
+        sqlx::query("DELETE FROM book_reading_progress WHERE book_id = $1 AND user_id = $2")
+            .bind(book_id)
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        restore_archived_data(&pool, library_id).await.unwrap();
+
+        let status_after_reset: Option<String> = sqlx::query_scalar(
+            "SELECT status FROM book_reading_progress WHERE book_id = $1 AND user_id = $2",
+        )
+        .bind(book_id)
+        .bind(user_id)
+        .fetch_optional(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            status_after_reset, None,
+            "reset progress must not be re-injected"
+        );
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn restore_reading_progress_by_volume_when_series_renamed(pool: sqlx::PgPool) {
+        let library_id = create_test_library(&pool, "restore_renamed").await;
+
+        // Given: a series renamed since the book was archived — same id, different name
+        let series_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Amulet (nouvelle edition)')",
+        )
+        .bind(series_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let book_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO books (id, library_id, title, volume, volume_type, kind, format, series_id) \
+             VALUES ($1, $2, 'Amulet - 02', 2, 'regular', 'comic', 'cbz', $3)",
+        )
+        .bind(book_id)
+        .bind(library_id)
+        .bind(series_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // And: the archived row still carries the old series name
+        let archived_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO archived_books (id, library_id, series_id, series_name, kind, format, title, volume, volume_type) \
+             VALUES ($1, $2, $3, 'Amulet', 'comic', 'cbr', 'Amulet - T2', 2, 'regular')",
+        )
+        .bind(archived_id)
+        .bind(library_id)
+        .bind(series_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let user_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO users (id, username) VALUES ($1, $2)")
+            .bind(user_id)
+            .bind(format!("u_{}", user_id))
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query(
+            "INSERT INTO archived_book_reading_progress (archived_book_id, user_id, status, current_page) \
+             VALUES ($1, $2, 'read', 42)",
+        )
+        .bind(archived_id)
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // When: archived data is restored
+        restore_archived_data(&pool, library_id).await.unwrap();
+
+        // Then: progress is restored via series_id despite the name mismatch
+        let status: Option<String> = sqlx::query_scalar(
+            "SELECT status FROM book_reading_progress WHERE book_id = $1 AND user_id = $2",
+        )
+        .bind(book_id)
+        .bind(user_id)
+        .fetch_optional(&pool)
+        .await
+        .unwrap();
+        assert_eq!(status.as_deref(), Some("read"));
+
+        let archived_left: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM archived_books WHERE id = $1")
+                .bind(archived_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(archived_left, 0, "matched archived book must be cleaned up");
     }
 }
