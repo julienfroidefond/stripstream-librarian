@@ -662,3 +662,304 @@ async fn expand_expected_volumes_with_missing(pool: sqlx::PgPool) {
         "volume 5 exists in library, should NOT be imported"
     );
 }
+
+// ─── resolve_volume_conflict (uses temp dirs) ───────────────────────
+
+fn write_file_with_mtime(path: &std::path::Path, mtime: std::time::SystemTime) {
+    std::fs::write(path, b"fake").unwrap();
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(mtime)
+        .unwrap();
+}
+
+#[test]
+fn volume_conflict_none_when_no_existing() {
+    assert_eq!(
+        resolve_volume_conflict("/dl/new.cbz", &[], false),
+        VolumeConflict::None
+    );
+}
+
+#[test]
+fn volume_conflict_detects_tracked_dest_same_filename() {
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("Series - T02.cbz");
+    let source = dir.path().join("dl").join("Series - T02.cbz");
+    std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+    let base = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    write_file_with_mtime(&dest, base);
+    write_file_with_mtime(&source, base + std::time::Duration::from_secs(60));
+
+    let existing = vec![dest.to_string_lossy().into_owned()];
+    assert_eq!(
+        resolve_volume_conflict(source.to_str().unwrap(), &existing, false),
+        VolumeConflict::ReplaceExisting(existing)
+    );
+}
+
+#[test]
+fn volume_conflict_keeps_tracked_dest_when_newer() {
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("Series - T02.cbz");
+    let source = dir.path().join("dl").join("Series - T02.cbz");
+    std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+    let base = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    write_file_with_mtime(&dest, base + std::time::Duration::from_secs(60));
+    write_file_with_mtime(&source, base);
+
+    let existing = vec![dest.to_string_lossy().into_owned()];
+    assert_eq!(
+        resolve_volume_conflict(source.to_str().unwrap(), &existing, false),
+        VolumeConflict::KeepExisting
+    );
+}
+
+#[test]
+fn volume_conflict_replaces_when_incoming_newer() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = dir.path().join("Series - T02.cbr");
+    let new = dir.path().join("Series - T02.cbz");
+    let base = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    write_file_with_mtime(&old, base);
+    write_file_with_mtime(&new, base + std::time::Duration::from_secs(60));
+
+    let existing = vec![old.to_string_lossy().into_owned()];
+    let conflict = resolve_volume_conflict(new.to_str().unwrap(), &existing, false);
+    assert_eq!(conflict, VolumeConflict::ReplaceExisting(existing));
+}
+
+#[test]
+fn volume_conflict_keeps_existing_when_newer() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = dir.path().join("Series - T02.cbr");
+    let new = dir.path().join("Series - T02.cbz");
+    let base = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    write_file_with_mtime(&old, base + std::time::Duration::from_secs(60));
+    write_file_with_mtime(&new, base);
+
+    let existing = vec![old.to_string_lossy().into_owned()];
+    let conflict = resolve_volume_conflict(new.to_str().unwrap(), &existing, false);
+    assert_eq!(conflict, VolumeConflict::KeepExisting);
+}
+
+#[test]
+fn volume_conflict_force_replaces_even_when_existing_newer() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = dir.path().join("Series - T02.cbr");
+    let new = dir.path().join("Series - T02.cbz");
+    let base = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    write_file_with_mtime(&old, base + std::time::Duration::from_secs(60));
+    write_file_with_mtime(&new, base);
+
+    let existing = vec![old.to_string_lossy().into_owned()];
+    let conflict = resolve_volume_conflict(new.to_str().unwrap(), &existing, true);
+    assert_eq!(conflict, VolumeConflict::ReplaceExisting(existing));
+}
+
+#[test]
+fn volume_conflict_replaces_when_existing_missing_on_disk() {
+    let dir = tempfile::tempdir().unwrap();
+    let new = dir.path().join("Series - T02.cbz");
+    write_file_with_mtime(&new, std::time::SystemTime::now());
+    let missing = dir
+        .path()
+        .join("Series - T02.cbr")
+        .to_string_lossy()
+        .into_owned();
+
+    let conflict = resolve_volume_conflict(new.to_str().unwrap(), &[missing], false);
+    assert!(matches!(conflict, VolumeConflict::ReplaceExisting(p) if p.len() == 1));
+}
+
+#[test]
+fn remove_superseded_keeps_dest_same_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("Series - T02.cbz");
+    write_file_with_mtime(&dest, std::time::SystemTime::now());
+
+    let paths = vec![dest.to_string_lossy().into_owned()];
+    remove_superseded_files(&paths, dest.to_str().unwrap());
+
+    assert!(dest.exists(), "dest must survive superseded cleanup");
+}
+
+#[test]
+fn remove_superseded_deletes_other_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("Series - T02.cbz");
+    let old = dir.path().join("Series - T02.cbr");
+    write_file_with_mtime(&dest, std::time::SystemTime::now());
+    write_file_with_mtime(&old, std::time::SystemTime::now());
+
+    let paths = vec![old.to_string_lossy().into_owned()];
+    remove_superseded_files(&paths, dest.to_str().unwrap());
+
+    assert!(!old.exists(), "superseded file must be removed");
+}
+
+// ─── load_existing_files_by_volume (sqlx::test) ──────────────────────
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn load_existing_files_by_volume_groups_regular_books(pool: sqlx::PgPool) {
+    let library_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, 'L', '/libraries/l')")
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let series_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Amulet')")
+        .bind(series_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    for (vol, volume_type) in [(2, "regular"), (3, "regular"), (4, "hs")] {
+        let book_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO books (id, library_id, series_id, title, kind, volume, volume_type) \
+             VALUES ($1, $2, $3, $4, 'comic', $5, $6)",
+        )
+        .bind(book_id)
+        .bind(library_id)
+        .bind(series_id)
+        .bind(format!("Amulet - {}", vol))
+        .bind(vol)
+        .bind(volume_type)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO book_files (id, book_id, format, abs_path, size_bytes, mtime, fingerprint) \
+             VALUES ($1, $2, 'cbz', $3, 10, NOW(), 'fp')",
+        )
+        .bind(Uuid::new_v4())
+        .bind(book_id)
+        .bind(format!("/libraries/l/Amulet/Amulet - {}.cbz", vol))
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    let map = load_existing_files_by_volume(&pool, library_id, "Amulet")
+        .await
+        .unwrap();
+
+    assert_eq!(map.get(&2).map(Vec::len), Some(1));
+    assert_eq!(map.get(&3).map(Vec::len), Some(1));
+    assert!(
+        !map.contains_key(&4),
+        "HS volumes must be excluded from regular-volume replacement"
+    );
+    assert_eq!(
+        map.get(&2).unwrap()[0],
+        "/libraries/l/Amulet/Amulet - 2.cbz"
+    );
+}
+
+// ─── do_import end-to-end (sqlx::test + temp dirs) ───────────────────
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn do_import_replaces_volume_and_removes_superseded_file(pool: sqlx::PgPool) {
+    // Given: a library rooted in a temp dir (absolute path → path remapping is a no-op)
+    // holding volume 2 as an older ".cbr" file, tracked in the DB.
+    let root = tempfile::tempdir().unwrap();
+    let lib_dir = root.path().join("lib");
+    let series_dir = lib_dir.join("Amulet");
+    std::fs::create_dir_all(&series_dir).unwrap();
+
+    let old_path = series_dir.join("Amulet - T2.cbr");
+    let base = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    write_file_with_mtime(&old_path, base);
+
+    let library_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
+        .bind(library_id)
+        .bind(format!("lib_{}", library_id))
+        .bind(lib_dir.to_string_lossy().into_owned())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let series_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Amulet')")
+        .bind(series_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let book_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO books (id, library_id, series_id, title, kind, format, volume, volume_type) \
+         VALUES ($1, $2, $3, 'Amulet - T2', 'comic', 'cbr', 2, 'regular')",
+    )
+    .bind(book_id)
+    .bind(library_id)
+    .bind(series_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO book_files (id, book_id, format, abs_path, size_bytes, mtime, fingerprint, parse_status) \
+         VALUES ($1, $2, 'cbr', $3, 3, NOW(), 'fp_old', 'ok')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(book_id)
+    .bind(old_path.to_string_lossy().into_owned())
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // And: the re-download provides a newer ".cbz" for the same volume
+    let dl_dir = root.path().join("dl");
+    std::fs::create_dir_all(&dl_dir).unwrap();
+    let source = dl_dir.join("Amulet - 02.cbz");
+    write_file_with_mtime(&source, base + std::time::Duration::from_secs(60));
+
+    // When: the torrent import runs
+    let result = do_import(
+        &pool,
+        library_id,
+        "Amulet",
+        &[2],
+        dl_dir.to_str().unwrap(),
+        false,
+    )
+    .await
+    .unwrap();
+
+    // Then: exactly one file is imported and it replaces the older one in place
+    assert_eq!(
+        result.imported.len(),
+        1,
+        "expected one import, skipped {} file(s)",
+        result.skipped.len()
+    );
+    assert_eq!(result.imported[0].volume, 2);
+    assert!(!result.imported[0].already_existed);
+    assert_eq!(result.total_source_files, 1);
+
+    assert!(!old_path.exists(), "superseded .cbr must be deleted");
+    let dest = std::path::PathBuf::from(&result.imported[0].destination);
+    assert!(dest.exists(), "imported file must exist at {:?}", dest);
+    assert_eq!(std::fs::read(&dest).unwrap(), b"fake");
+
+    let remaining: Vec<String> = std::fs::read_dir(&series_dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        remaining.len(),
+        1,
+        "only the replaced file should remain, got {:?}",
+        remaining
+    );
+}

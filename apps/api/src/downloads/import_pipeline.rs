@@ -2,7 +2,7 @@ use sqlx::{PgPool, Row};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use parsers::{detect_format, extract_volumes, fold_accents, parse_metadata_fast};
+use parsers::{detect_format, extract_volumes, fold_accents, parse_metadata_fast, VolumeType};
 use stripstream_core::paths::{remap_libraries_path, unmap_libraries_path};
 
 use crate::books::rename::{
@@ -39,6 +39,13 @@ pub(super) async fn do_import(
     .fetch_optional(pool)
     .await?;
 
+    let lib_row = sqlx::query("SELECT root_path FROM libraries WHERE id = $1")
+        .bind(library_id)
+        .fetch_one(pool)
+        .await?;
+    let root_path: String = lib_row.get("root_path");
+    let physical_root = remap_libraries_path(&root_path);
+
     let (target_dir, reference) = if let Some(r) = any_row {
         let abs_path: String = r.get("abs_path");
         let volume: i32 = r.get("volume");
@@ -59,12 +66,6 @@ pub(super) async fn do_import(
             "[IMPORT] No DB reference for series '{}' in library {}",
             series_name, library_id
         );
-        let lib_row = sqlx::query("SELECT root_path FROM libraries WHERE id = $1")
-            .bind(library_id)
-            .fetch_one(pool)
-            .await?;
-        let root_path: String = lib_row.get("root_path");
-        let physical_root = remap_libraries_path(&root_path);
         let dir = find_existing_series_dir(&physical_root, series_name)
             .unwrap_or_else(|| format!("{}/{}", physical_root.trim_end_matches('/'), series_name));
         info!("[IMPORT] Target directory: {}", dir);
@@ -188,6 +189,10 @@ pub(super) async fn do_import(
     let max_template_volume =
         load_rename_max_volume(pool, library_id, series_name, max_template_volume).await?;
 
+    // Existing files per volume, so re-downloading an already-owned volume replaces the
+    // older file (keep the most recent) instead of creating a duplicate.
+    let existing_by_volume = load_existing_files_by_volume(pool, library_id, series_name).await?;
+
     for source_path in &source_files {
         let filename = std::path::Path::new(&source_path)
             .file_name()
@@ -271,7 +276,39 @@ pub(super) async fn do_import(
 
         let dest = format!("{}/{}", target_dir, target_filename);
 
-        if std::path::Path::new(&dest).exists() && !replace_existing {
+        // Re-download guard: if the library already owns this volume, keep the most recent
+        // file. Only single-volume regular books participate (HS/one-shots/integral do not
+        // share the numbering). Replace-all mode bypasses the comparison so an explicit
+        // replace always wins.
+        let conflict = match matched.as_slice() {
+            [vol] if is_incoming_regular(source_path, std::path::Path::new(&physical_root)) => {
+                existing_by_volume
+                    .get(vol)
+                    .map(|paths| resolve_volume_conflict(source_path, paths, replace_existing))
+                    .unwrap_or(VolumeConflict::None)
+            }
+            _ => VolumeConflict::None,
+        };
+
+        if conflict == VolumeConflict::KeepExisting {
+            info!(
+                "[IMPORT] Skipping '{}' (volume {:?}): a more recent library file already exists",
+                filename, matched
+            );
+            skipped.push(SkippedFile {
+                filename: filename.to_string(),
+                reason: "existing volume is more recent".to_string(),
+                extracted_volumes: matched.clone(),
+            });
+            continue;
+        }
+
+        // Untracked filename collision (e.g. a one-shot, or a file the scanner has not yet
+        // indexed): leave the existing file untouched and count it as already imported.
+        if std::path::Path::new(&dest).exists()
+            && !replace_existing
+            && conflict == VolumeConflict::None
+        {
             info!(
                 "[IMPORT] Already exists '{}' → '{}', counting as imported",
                 filename, dest
@@ -287,6 +324,9 @@ pub(super) async fn do_import(
 
         move_file(source_path, &dest)?;
         used_destinations.insert(target_filename);
+        if let VolumeConflict::ReplaceExisting(paths) = &conflict {
+            remove_superseded_files(paths, &dest);
+        }
         info!(
             "[IMPORT] Imported '{}' [{:?}] → {}",
             filename, matched, dest
@@ -396,6 +436,131 @@ pub(super) async fn do_import(
         skipped,
         total_source_files,
     })
+}
+
+// ─── Volume replacement ───────────────────────────────────────────────────────
+
+/// What to do when an incoming file targets a volume already present in the library.
+#[derive(Debug, PartialEq)]
+pub(super) enum VolumeConflict {
+    /// No library file for this volume — import normally.
+    None,
+    /// A library file for this volume is at least as recent — keep it, skip the incoming file.
+    KeepExisting,
+    /// The incoming file is more recent — import it and remove these superseded physical paths.
+    ReplaceExisting(Vec<String>),
+}
+
+fn file_mtime(path: &str) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path).ok()?.modified().ok()
+}
+
+/// Decide whether an incoming volume file should replace the library file for the same volume.
+/// The most recent file wins; `existing_abs_paths` are DB paths, remapped before stat-ing.
+/// `force_replace` (explicit replace-all import) makes the incoming file win unconditionally.
+pub(super) fn resolve_volume_conflict(
+    incoming: &str,
+    existing_abs_paths: &[String],
+    force_replace: bool,
+) -> VolumeConflict {
+    let existing: Vec<String> = existing_abs_paths
+        .iter()
+        .map(|p| remap_libraries_path(p))
+        .collect();
+
+    if existing.is_empty() {
+        return VolumeConflict::None;
+    }
+
+    if force_replace {
+        return VolumeConflict::ReplaceExisting(existing);
+    }
+
+    let newest_existing = existing.iter().filter_map(|p| file_mtime(p)).max();
+
+    match (file_mtime(incoming), newest_existing) {
+        (Some(incoming_mtime), Some(existing_mtime)) if incoming_mtime <= existing_mtime => {
+            VolumeConflict::KeepExisting
+        }
+        // Incoming wins when strictly newer, or when either file can't be stat-ed
+        // (missing library file, unreadable source) — the stale row gets cleaned up.
+        _ => VolumeConflict::ReplaceExisting(existing),
+    }
+}
+
+/// Whether the incoming file is a regular numbered volume (HS/one-shots/integral excluded).
+fn is_incoming_regular(source_path: &str, library_root: &std::path::Path) -> bool {
+    let path = std::path::Path::new(source_path);
+    let Some(format) = detect_format(path) else {
+        return false;
+    };
+    parse_metadata_fast(path, format, library_root).volume_type == VolumeType::Regular
+}
+
+fn remove_superseded_files(paths: &[String], dest: &str) {
+    for path in paths {
+        if path == dest || is_same_file(path, dest) {
+            continue;
+        }
+        if !std::path::Path::new(path).exists() {
+            continue;
+        }
+        info!("[IMPORT] Removing superseded file: {}", path);
+        if let Err(e) = std::fs::remove_file(path) {
+            warn!("[IMPORT] Failed to remove superseded file {}: {}", path, e);
+        }
+    }
+}
+
+/// Same physical file, so a DB path that differs only by case (case-insensitive filesystems)
+/// or via a symlink never causes the file we just wrote to be deleted.
+#[cfg(unix)]
+fn is_same_file(a: &str, b: &str) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (std::fs::metadata(a), std::fs::metadata(b)) {
+        (Ok(ma), Ok(mb)) => ma.dev() == mb.dev() && ma.ino() == mb.ino(),
+        _ => false,
+    }
+}
+
+#[cfg(not(unix))]
+fn is_same_file(a: &str, b: &str) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(pa), Ok(pb)) => pa == pb,
+        _ => false,
+    }
+}
+
+/// Physical paths of regular books already present for a series, grouped by volume.
+async fn load_existing_files_by_volume(
+    pool: &PgPool,
+    library_id: Uuid,
+    series_name: &str,
+) -> anyhow::Result<std::collections::HashMap<i32, Vec<String>>> {
+    let rows = sqlx::query(
+        "SELECT b.volume, bf.abs_path \
+         FROM books b \
+         JOIN book_files bf ON bf.book_id = b.id \
+         JOIN series s ON s.id = b.series_id \
+         WHERE b.library_id = $1 \
+           AND norm_text(s.name) = norm_text($2) \
+           AND b.volume IS NOT NULL \
+           AND b.volume_type = 'regular'",
+    )
+    .bind(library_id)
+    .bind(series_name)
+    .fetch_all(pool)
+    .await?;
+
+    let mut by_volume: std::collections::HashMap<i32, Vec<String>> =
+        std::collections::HashMap::new();
+    for row in rows {
+        by_volume
+            .entry(row.get("volume"))
+            .or_default()
+            .push(row.get("abs_path"));
+    }
+    Ok(by_volume)
 }
 
 // ─── Directory matching ───────────────────────────────────────────────────────
