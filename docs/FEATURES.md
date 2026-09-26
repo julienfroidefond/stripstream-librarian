@@ -408,11 +408,12 @@ Browse and add series to your library from external sources.
 5. Deduplication by format (cbz > cbr > pdf > epub)
 6. **One-shot books**: files without volume number imported as-is (not skipped)
 7. **Already-existing files**: counted as imported (not error)
-8. Detailed import result: imported files, skipped files with reasons, total source count
-9. Import status: `imported` (any file imported), `no_files_imported` (none imported)
-10. **Retry**: re-launch stuck imports via API (checks source files still exist)
-11. Cleanup: remove torrent from qBittorrent, delete download directory
-12. Post-import: scan job queued, metadata refresh if linked, `available_downloads` updated
+8. **Same-volume re-download**: for single-volume **regular** books, the most recent file wins — a newer download replaces the older library file (deleted from disk), while an older download is skipped. HS/one-shots/integrals are excluded (they do not share tome numbering). Reading progress is restored by volume after replacement, even when the filename/extension changes (`Amulet - T2.cbr` → `Amulet - 02.cbz`), and the matched archive record is consumed so a later progress reset is not re-populated.
+9. Detailed import result: imported files, skipped files with reasons, total source count
+10. Import status: `imported` (any file imported), `no_files_imported` (none imported)
+11. **Retry**: re-launch stuck imports via API (checks source files still exist)
+12. Cleanup: remove torrent from qBittorrent, delete download directory
+13. Post-import: scan job queued, metadata refresh if linked, `available_downloads` updated
 
 ---
 
