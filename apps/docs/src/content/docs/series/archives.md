@@ -44,10 +44,10 @@ Cliquez sur une ligne pour la déplier et voir le détail des livres archivés a
 Quand une série est réajoutée à la bibliothèque — que ce soit via un scan ou via **Découverte → Ajouter à la bibliothèque** — Stripstream détecte automatiquement qu'une archive correspondante existe et restaure les données :
 
 - La description, les auteurs, les éditeurs, les genres et les autres métadonnées sont réappliqués sur la nouvelle série (sans écraser les champs déjà renseignés).
-- La progression de lecture de chaque utilisateur est restaurée sur les livres retrouvés.
+- La progression de lecture de chaque utilisateur est restaurée sur les livres retrouvés, rattachée **par numéro de tome**.
 - L'entrée dans les archives est supprimée une fois la restauration effectuée.
 
-Le matching se fait sur le nom de la série (insensible à la casse et aux accents) au sein de la même bibliothèque.
+Le rapprochement de la série se fait sur le nom (insensible à la casse et aux accents) au sein de la même bibliothèque. La progression, elle, est rattachée aux livres par **numéro de tome** : même si le nom de la série a changé, la progression est restaurée sur le tome correspondant.
 
 ---
 

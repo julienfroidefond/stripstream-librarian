@@ -62,3 +62,19 @@ L'icône œil à côté du titre "Disponibles au téléchargement" ouvre le pann
 Cliquer sur **Réafficher** réactive l'élément dans la liste des volumes disponibles.
 
 ![Panneau Releases masquées — release Prowlarr blacklistée avec bouton Réafficher](/screenshots/downloads-releases-masquees.png)
+
+---
+
+## Ré-importer un tome déjà présent
+
+Quand un téléchargement apporte un volume que la bibliothèque possède déjà — version de meilleure qualité, changement de format, nouveau torrent du même tome — Stripstream **remplace** l'ancien fichier au lieu de créer un doublon :
+
+- le fichier **le plus récent** (date de modification) est conservé ;
+- l'ancien fichier est **supprimé physiquement** du disque ;
+- le livre existant et sa **progression de lecture** sont conservés — aucune nouvelle fiche n'est créée.
+
+Ce comportement vaut pour **Prowlarr + qBittorrent** comme pour **Telegram Monitor**. Avec le [mode Replace](prowlarr#mode-replace), le plus récent gagne également, quel que soit le volume attendu.
+
+:::note
+Seuls les volumes **réguliers** participent au remplacement. Les hors-séries, intégrales et one-shots ne sont pas concernés.
+:::

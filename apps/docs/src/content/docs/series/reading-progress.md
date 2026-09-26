@@ -37,6 +37,16 @@ Ce statut est affiché sur les cartes de séries, dans les filtres et dans les g
 
 ---
 
+## Progression et remplacement de fichiers
+
+La progression de lecture d'un livre est conservée même lorsque le fichier change sur le disque :
+
+- **Nouveau téléchargement d'un tome** — la progression est reprise sur le fichier remplaçant (voir [Téléchargements](/downloads/overview/)).
+- **Conversion de format** (ex. CBR → CBZ) — la progression suit la conversion.
+- **Renommage de la série** — la progression est rattachée au livre par **numéro de tome**, même si le nom de la série a changé.
+
+---
+
 ## Multi-utilisateurs
 
 Si plusieurs utilisateurs sont configurés, un sélecteur de lecteur est disponible sur la page d'une série et sur le dashboard. Chaque utilisateur a sa propre progression — les modifications pour un utilisateur n'affectent pas les autres.

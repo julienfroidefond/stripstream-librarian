@@ -111,4 +111,6 @@ Voir aussi la [gestion des séries](/series/management) pour le filtre par type 
 **Sous-dossiers spéciaux reconnus** (insensible à la casse) : `HS`, `Hors-Série`, `Hors Serie`, `Spécial`, `Specials`, `Spéciaux`, `Bonus`, `Extras`, `Extra`, `Intégrale`, `Intégrales`, `INT`.
 
 **Noms de dossier Oneshots reconnus** (insensible à la casse, préfixe `_` ou `.` accepté) : `Oneshots`, `Oneshot`, `One-Shots`, `One-Shot`, `One Shots`, `One Shot`.
+
+**Protection contre les faux volumes non montés** : le scanner ne conclut à un volume non monté que si les fichiers ont disparu **et** que leurs dossiers parents n'existent plus. Si l'arborescence est toujours présente (fichier simplement remplacé, renommé ou changé de format), le scan met à jour l'index normalement — ce qui évite les doublons lors d'un re-téléchargement.
 :::
