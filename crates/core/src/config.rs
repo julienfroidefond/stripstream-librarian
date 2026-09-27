@@ -104,3 +104,87 @@ impl AdminUiConfig {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    // Environment variables are process-global; serialise every test that mutates them.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn clear(keys: &[&str]) {
+        for key in keys {
+            std::env::remove_var(key);
+        }
+    }
+
+    #[test]
+    fn env_or_falls_back_when_unset() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear(&["STL_TEST_ENV_OR_UNSET"]);
+
+        assert_eq!(env_or::<u32>("STL_TEST_ENV_OR_UNSET", 42), 42);
+    }
+
+    #[test]
+    fn env_or_parses_override() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("STL_TEST_ENV_OR_OVERRIDE", "7");
+
+        let value = env_or::<u32>("STL_TEST_ENV_OR_OVERRIDE", 10);
+        clear(&["STL_TEST_ENV_OR_OVERRIDE"]);
+
+        assert_eq!(value, 7);
+    }
+
+    #[test]
+    fn env_or_falls_back_on_unparsable_value() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("STL_TEST_ENV_OR_INVALID", "not-a-number");
+
+        let value = env_or::<u32>("STL_TEST_ENV_OR_INVALID", 10);
+        clear(&["STL_TEST_ENV_OR_INVALID"]);
+
+        assert_eq!(value, 10);
+    }
+
+    #[test]
+    fn env_string_or_returns_default_then_override() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear(&["STL_TEST_ENV_STRING_OR"]);
+
+        let default_value = env_string_or("STL_TEST_ENV_STRING_OR", "fallback");
+        std::env::set_var("STL_TEST_ENV_STRING_OR", "custom");
+        let override_value = env_string_or("STL_TEST_ENV_STRING_OR", "fallback");
+        clear(&["STL_TEST_ENV_STRING_OR"]);
+
+        assert_eq!(default_value, "fallback");
+        assert_eq!(override_value, "custom");
+    }
+
+    #[test]
+    fn api_config_reads_pool_size_from_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("DATABASE_URL", "postgres://example/db");
+        std::env::set_var("API_BOOTSTRAP_TOKEN", "token");
+        std::env::set_var("API_DB_MAX_CONNECTIONS", "25");
+
+        let config = ApiConfig::from_env().unwrap();
+        clear(&["API_DB_MAX_CONNECTIONS"]);
+
+        assert_eq!(config.db_max_connections, 25);
+    }
+
+    #[test]
+    fn api_config_defaults_pool_size_to_ten() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("DATABASE_URL", "postgres://example/db");
+        std::env::set_var("API_BOOTSTRAP_TOKEN", "token");
+        clear(&["API_DB_MAX_CONNECTIONS"]);
+
+        let config = ApiConfig::from_env().unwrap();
+
+        assert_eq!(config.db_max_connections, 10);
+    }
+}

@@ -657,3 +657,64 @@ fn is_safe_cache_directory_rejects_protected_roots() {
     assert!(!is_safe_cache_directory("/etc"));
     assert!(!is_safe_cache_directory(""));
 }
+
+// ---------------------------------------------------------------------------
+// compute_dir_stats
+// ---------------------------------------------------------------------------
+
+#[test]
+fn compute_dir_stats_counts_regular_files_recursively() {
+    let dir = TempDir::new().unwrap();
+    write_file(dir.path(), "a.bin", 100);
+    let nested = dir.path().join("nested");
+    std::fs::create_dir(&nested).unwrap();
+    std::fs::write(nested.join("b.bin"), vec![0u8; 200]).unwrap();
+
+    let (size, count) = compute_dir_stats(dir.path());
+
+    assert_eq!(count, 2);
+    assert_eq!(size, 300);
+}
+
+#[cfg(unix)]
+#[test]
+fn compute_dir_stats_skips_symlinked_files() {
+    let dir = TempDir::new().unwrap();
+    write_file(dir.path(), "real.bin", 64);
+    std::os::unix::fs::symlink(dir.path().join("real.bin"), dir.path().join("link.bin")).unwrap();
+
+    let (size, count) = compute_dir_stats(dir.path());
+
+    assert_eq!(count, 1);
+    assert_eq!(size, 64);
+}
+
+#[cfg(unix)]
+#[test]
+fn compute_dir_stats_skips_symlinked_directories() {
+    let dir = TempDir::new().unwrap();
+    let real = dir.path().join("real");
+    std::fs::create_dir(&real).unwrap();
+    std::fs::write(real.join("a.bin"), vec![0u8; 128]).unwrap();
+    std::os::unix::fs::symlink(&real, dir.path().join("real-link")).unwrap();
+
+    let (size, count) = compute_dir_stats(dir.path());
+
+    assert_eq!(count, 1);
+    assert_eq!(size, 128);
+}
+
+#[cfg(unix)]
+#[test]
+fn compute_dir_stats_terminates_on_self_referencing_symlink() {
+    let dir = TempDir::new().unwrap();
+    let looped = dir.path().join("looped");
+    std::fs::create_dir(&looped).unwrap();
+    std::fs::write(looped.join("a.bin"), vec![0u8; 32]).unwrap();
+    std::os::unix::fs::symlink(&looped, looped.join("self")).unwrap();
+
+    let (size, count) = compute_dir_stats(dir.path());
+
+    assert_eq!(count, 1);
+    assert_eq!(size, 32);
+}
