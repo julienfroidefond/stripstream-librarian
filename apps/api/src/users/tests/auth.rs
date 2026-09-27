@@ -1,5 +1,82 @@
 use super::*;
-use axum::http::{header::AUTHORIZATION, Request as HttpRequest};
+use std::collections::HashMap;
+use std::sync::{atomic::AtomicU64, Arc};
+
+use axum::body::Body;
+use axum::http::{header::AUTHORIZATION, Request as HttpRequest, StatusCode};
+use axum::middleware;
+use axum::routing::get;
+use axum::Router;
+use sqlx::PgPool;
+use tokio::sync::{Mutex, RwLock, Semaphore};
+use tower::ServiceExt;
+
+use crate::state::{
+    DiskCacheStatsSnapshot, DynamicSettings, Metrics, PageRenderLocks, ReadRateLimit,
+};
+
+// -----------------------------------------------------------------------
+// Harness
+// -----------------------------------------------------------------------
+
+fn test_state(pool: PgPool) -> AppState {
+    AppState {
+        pool,
+        bootstrap_token: Arc::from("test-token"),
+        page_cache: Arc::new(Mutex::new(crate::state::PageCache::new(1))),
+        disk_cache_stats: Arc::new(Mutex::new(None::<DiskCacheStatsSnapshot>)),
+        page_render_locks: Arc::new(PageRenderLocks::new(1)),
+        page_render_limit: Arc::new(Semaphore::new(1)),
+        metrics: Arc::new(Metrics {
+            requests_total: AtomicU64::new(0),
+            page_cache_hits: AtomicU64::new(0),
+            page_cache_misses: AtomicU64::new(0),
+        }),
+        read_rate_limit: Arc::new(Mutex::new(ReadRateLimit::new())),
+        settings: Arc::new(RwLock::new(DynamicSettings::default())),
+        prowlarr_fetch_lock: Arc::new(Mutex::new(())),
+        pending_tg_auth: Arc::new(Mutex::new(None)),
+        telegram_download_limit: Arc::new(Semaphore::new(1)),
+        telegram_abort_handles: Arc::new(Mutex::new(HashMap::new())),
+    }
+}
+
+async fn insert_user(pool: &PgPool, username: &str) -> uuid::Uuid {
+    let id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO users (id, username) VALUES ($1, $2)")
+        .bind(id)
+        .bind(username)
+        .execute(pool)
+        .await
+        .unwrap();
+    id
+}
+
+fn admin_router(state: AppState) -> Router {
+    Router::new()
+        .route("/protected", get(|| async { "ok" }))
+        .layer(middleware::from_fn_with_state(state, require_admin))
+}
+
+fn read_router(state: AppState) -> Router {
+    Router::new()
+        .route("/protected", get(|| async { "ok" }))
+        .layer(middleware::from_fn_with_state(state, require_read))
+}
+
+async fn send_as(router: Router, token: &str, as_user: Option<&str>) -> StatusCode {
+    let mut request = HttpRequest::builder()
+        .uri("/protected")
+        .header(AUTHORIZATION, format!("Bearer {token}"));
+    if let Some(value) = as_user {
+        request = request.header("X-As-User", value);
+    }
+    router
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap()
+        .status()
+}
 
 // -----------------------------------------------------------------------
 // parse_prefix
@@ -137,4 +214,145 @@ fn scope_read_carries_user_id() {
     } else {
         panic!("expected Scope::Read");
     }
+}
+
+// -----------------------------------------------------------------------
+// constant_time_eq
+// -----------------------------------------------------------------------
+
+#[test]
+fn constant_time_eq_true_for_identical_values() {
+    assert!(constant_time_eq(b"bootstrap-secret", b"bootstrap-secret"));
+}
+
+#[test]
+fn constant_time_eq_false_for_same_length_different_values() {
+    assert!(!constant_time_eq(b"bootstrap-secret", b"bootstrap-secreT"));
+}
+
+#[test]
+fn constant_time_eq_false_for_single_differing_byte() {
+    assert!(!constant_time_eq(b"abcdefgh", b"abcdEfgh"));
+}
+
+#[test]
+fn constant_time_eq_false_for_different_lengths() {
+    assert!(!constant_time_eq(b"secret", b"secret-longer"));
+}
+
+#[test]
+fn constant_time_eq_true_for_empty_slices() {
+    assert!(constant_time_eq(b"", b""));
+}
+
+#[test]
+fn constant_time_eq_false_when_one_side_is_empty() {
+    assert!(!constant_time_eq(b"", b"x"));
+}
+
+// -----------------------------------------------------------------------
+// requested_impersonation
+// -----------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn requested_impersonation_absent_header_returns_none(pool: PgPool) {
+    let state = test_state(pool);
+
+    let resolved = requested_impersonation(&state, None).await.unwrap();
+
+    assert_eq!(resolved, None);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn requested_impersonation_existing_user_returns_id(pool: PgPool) {
+    let user_id = insert_user(&pool, "impersonated").await;
+    let state = test_state(pool);
+
+    let resolved = requested_impersonation(&state, Some(user_id.to_string()))
+        .await
+        .unwrap();
+
+    assert_eq!(resolved, Some(user_id));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn requested_impersonation_malformed_uuid_is_bad_request(pool: PgPool) {
+    let state = test_state(pool);
+
+    let err = requested_impersonation(&state, Some("not-a-uuid".to_string()))
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn requested_impersonation_unknown_user_is_bad_request(pool: PgPool) {
+    let state = test_state(pool);
+
+    let err = requested_impersonation(&state, Some(uuid::Uuid::new_v4().to_string()))
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+}
+
+// -----------------------------------------------------------------------
+// require_admin / require_read impersonation
+// -----------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn require_admin_allows_valid_impersonation(pool: PgPool) {
+    let user_id = insert_user(&pool, "target-user").await;
+    let router = admin_router(test_state(pool));
+
+    let status = send_as(router, "test-token", Some(&user_id.to_string())).await;
+
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn require_admin_without_impersonation_succeeds(pool: PgPool) {
+    let router = admin_router(test_state(pool));
+
+    let status = send_as(router, "test-token", None).await;
+
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn require_admin_rejects_malformed_impersonation(pool: PgPool) {
+    let router = admin_router(test_state(pool));
+
+    let status = send_as(router, "test-token", Some("12345")).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn require_admin_rejects_unknown_impersonation(pool: PgPool) {
+    let router = admin_router(test_state(pool));
+
+    let status = send_as(
+        router,
+        "test-token",
+        Some(&uuid::Uuid::new_v4().to_string()),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn require_read_rejects_unknown_impersonation_for_admin(pool: PgPool) {
+    let router = read_router(test_state(pool));
+
+    let status = send_as(
+        router,
+        "test-token",
+        Some(&uuid::Uuid::new_v4().to_string()),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
