@@ -300,6 +300,44 @@ fn field(doc: &Html, name: &str) -> Option<String> {
     None
 }
 
+/// Parse a "3.7 / 5" style rating, returning the numerator only when the
+/// denominator is a positive number.
+fn parse_rating_over_five(value: &str) -> Option<f64> {
+    let compact = value.replace(' ', "");
+    let (num, denom) = compact.split_once('/')?;
+    let num: f64 = num.replace(',', ".").parse().ok()?;
+    let denom: f64 = denom.trim().parse().ok()?;
+    (num > 0.0 && denom > 0.0).then_some(num)
+}
+
+/// BDphile only rates albums, not the series itself. Aggregate the per-album
+/// ratings shown in the compact album blocks into a series-level rating: a
+/// weighted average (by vote count) on the site's 5-star scale.
+/// Returns `(rating, rating_count)`.
+fn parse_album_ratings(doc: &Html) -> Option<(f64, i64)> {
+    let block_sel = Selector::parse(".albumBlocCompact").ok()?;
+    let rating_sel = Selector::parse(".album-stats div").ok()?;
+    let votes_sel = Selector::parse(".stats-details .flaticon-rate").ok()?;
+    let mut weighted = 0.0;
+    let mut votes_total = 0i64;
+    for block in doc.select(&block_sel) {
+        let rating = block
+            .select(&rating_sel)
+            .find_map(|div| parse_rating_over_five(&text(div)));
+        let votes = block
+            .select(&votes_sel)
+            .next()
+            .map(text)
+            .and_then(|t| t.split_whitespace().next().and_then(|v| v.parse().ok()))
+            .unwrap_or(0);
+        if let (Some(rating), true) = (rating, votes > 0) {
+            weighted += rating * votes as f64;
+            votes_total += votes;
+        }
+    }
+    (votes_total > 0).then(|| (weighted / votes_total as f64, votes_total))
+}
+
 async fn get_series_impl(external_id: &str, base: &str) -> Result<SeriesCandidate, String> {
     let c = client()?;
     let path = external_id.trim_start_matches('/');
@@ -355,6 +393,7 @@ async fn get_series_impl(external_id: &str, base: &str) -> Result<SeriesCandidat
             let digits: String = v.chars().filter(char::is_ascii_digit).collect();
             (digits.len() == 4).then(|| digits.parse().ok()).flatten()
         });
+    let rating = parse_album_ratings(&doc);
 
     Ok(SeriesCandidate {
         external_id: path.to_string(),
@@ -375,6 +414,9 @@ async fn get_series_impl(external_id: &str, base: &str) -> Result<SeriesCandidat
             "total_volumes": total_volumes,
             "status": status,
             "cover_url": cover_url,
+            "rating": rating.map(|(r, _)| r),
+            "rating_count": rating.map(|(_, c)| c),
+            "rating_scale": rating.map(|_| 5.0_f64),
         }),
     })
 }

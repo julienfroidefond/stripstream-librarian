@@ -37,6 +37,7 @@ Si votre bibliothèque contient des mangas, utilisez **AniList** en priorité et
 
 - Recherche par titre, puis enrichissement des 8 meilleurs résultats avec le détail complet de la série.
 - Métadonnées : scénariste(s), dessinateur(s), éditeur, année de début, statut, nombre de tomes, couverture et description.
+- Note communauté : note de série sur 5 (`aggregateRating` schema.org exposé en JSON-LD).
 - Les noms d'auteurs sont normalisés au format `Prénom Nom` (la source renvoie `Nom (Prénom)`).
 - `external_id` : identifiant et slug de la série dans l'URL (ex. `207/asterix`).
 
@@ -46,6 +47,7 @@ Si votre bibliothèque contient des mangas, utilisez **AniList** en priorité et
 
 - Recherche via l'endpoint AJAX du site, puis enrichissement des 8 meilleurs résultats.
 - Métadonnées : auteurs, éditeurs, date de parution, résumé, couverture et nombre de tomes.
+- Note communauté : le site note les albums, pas la série ; Stripstream agrège les notes d'albums en moyenne pondérée par le nombre de votes (échelle 5).
 - Seuls les crédits **scénario** et **dessin** sont conservés côté auteurs.
 - `external_id` : slug de la série (ex. `bd/124-asterix`).
 

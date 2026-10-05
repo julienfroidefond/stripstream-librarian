@@ -264,6 +264,47 @@ async fn enrich_series_details(base: &str, candidates: &mut [SeriesCandidate]) {
     }
 }
 
+/// Read a number that may be encoded as a JSON number or a string.
+fn json_number(value: &serde_json::Value) -> Option<f64> {
+    value.as_f64().or_else(|| {
+        value
+            .as_str()
+            .and_then(|s| s.replace(',', ".").parse().ok())
+    })
+}
+
+/// BDTheque exposes the series community rating as a schema.org
+/// `AggregateRating` inside a JSON-LD block. Returns `(rating, count, scale)`.
+fn parse_aggregate_rating(doc: &Html) -> Option<(f64, i64, f64)> {
+    let sel = Selector::parse("script[type='application/ld+json']").ok()?;
+    for script in doc.select(&sel) {
+        let raw = script.text().collect::<Vec<_>>().join(" ");
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            continue;
+        };
+        let Some(agg) = json.get("aggregateRating") else {
+            continue;
+        };
+        let Some(rating) = agg.get("ratingValue").and_then(json_number) else {
+            continue;
+        };
+        let count = agg
+            .get("ratingCount")
+            .and_then(json_number)
+            .map(|c| c.round() as i64)
+            .unwrap_or(0);
+        let scale = agg
+            .get("bestRating")
+            .and_then(json_number)
+            .filter(|s| *s > 0.0)
+            .unwrap_or(5.0);
+        if rating > 0.0 && count > 0 {
+            return Some((rating, count, scale));
+        }
+    }
+    None
+}
+
 async fn get_series_impl(external_id: &str, base: &str) -> Result<SeriesCandidate, String> {
     let c = client()?;
     let path = external_id.trim_start_matches('/');
@@ -340,6 +381,7 @@ async fn get_series_impl(external_id: &str, base: &str) -> Result<SeriesCandidat
     authors.dedup();
     publishers.sort();
     publishers.dedup();
+    let rating = parse_aggregate_rating(&doc);
     Ok(SeriesCandidate {
         external_id: path.to_string(),
         title,
@@ -351,7 +393,18 @@ async fn get_series_impl(external_id: &str, base: &str) -> Result<SeriesCandidat
         cover_url: cover_url.clone(),
         external_url: Some(url),
         confidence: 1.0,
-        metadata_json: serde_json::json!({"description": description, "authors": authors, "publishers": publishers, "start_year": start_year, "total_volumes": total_volumes, "status": status, "cover_url": cover_url}),
+        metadata_json: serde_json::json!({
+            "description": description,
+            "authors": authors,
+            "publishers": publishers,
+            "start_year": start_year,
+            "total_volumes": total_volumes,
+            "status": status,
+            "cover_url": cover_url,
+            "rating": rating.map(|(r, _, _)| r),
+            "rating_count": rating.map(|(_, c, _)| c),
+            "rating_scale": rating.map(|(_, _, s)| s),
+        }),
     })
 }
 

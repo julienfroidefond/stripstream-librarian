@@ -15,7 +15,7 @@ async fn parses_series_and_album_details() {
         .mount(&server)
         .await;
     Mock::given(method("GET")).and(path_regex(r"/series/bd/36511-les-geants"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(r#"<style>.background-series { background: url("https://static.bdphile.fr/images/media/cover/0138/138208.jpg") rgba(246, 246, 246, 0.8); }</style><h1>Les Géants</h1><div class="synopsis">Une aventure.</div><dl><dt><span class="tooltip" title="Auteurs"></span></dt><dd><div><a href="https://www.bdphile.fr/author/view/123-lylian">Lylian</a> (Scénario)</div><div><a href="https://www.bdphile.fr/author/view/456-paul-drouin">Paul Drouin</a> (Dessin)</div><div><a href="https://www.bdphile.fr/author/view/789-coloriste">Coloriste</a> (Couleurs)</div><div><a href="https://www.bdphile.fr/author/view/790-studio">Studio X</a> (Encrage)</div></dd><dt><span class="tooltip" title="Publication"></span></dt><dd>De 2020 à aujourd'hui <br/> En cours - 12 tomes parus (6 prévus)</dd><dt><span class="tooltip" title="Éditeurs"></span></dt><dd><a href="https://www.bdphile.fr/publisher/view/25-glenat">Glénat</a></dd></dl><div id="detail_view"><table><tbody><tr><td>1</td><td><a href="/album/bd/138208-les-geants-1-erin">Erin</a></td><td>Glénat</td><td>26 août 2020</td></tr></tbody></table></div>"#)).mount(&server).await;
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"<style>.background-series { background: url("https://static.bdphile.fr/images/media/cover/0138/138208.jpg") rgba(246, 246, 246, 0.8); }</style><h1>Les Géants</h1><div class="synopsis">Une aventure.</div><div class="albumBlocCompact"><div class="album-stats right"><div class="right"><div class="bar-wrapper"><div class="bar"></div></div></div><div style="font-size: 72px;">3.7<span style="font-size: 20px;">/ 5</span></div><div class="stats-details text-right clear"><span class="flaticon-rate tooltip" title="11 votes">11</span></div></div></div><div class="albumBlocCompact"><div class="album-stats right"><div style="font-size: 72px;">4.0<span style="font-size: 20px;">/ 5</span></div><div class="stats-details text-right clear"><span class="flaticon-rate tooltip" title="9 votes">9</span></div></div></div><dl><dt><span class="tooltip" title="Auteurs"></span></dt><dd><div><a href="https://www.bdphile.fr/author/view/123-lylian">Lylian</a> (Scénario)</div><div><a href="https://www.bdphile.fr/author/view/456-paul-drouin">Paul Drouin</a> (Dessin)</div><div><a href="https://www.bdphile.fr/author/view/789-coloriste">Coloriste</a> (Couleurs)</div><div><a href="https://www.bdphile.fr/author/view/790-studio">Studio X</a> (Encrage)</div></dd><dt><span class="tooltip" title="Publication"></span></dt><dd>De 2020 à aujourd'hui <br/> En cours - 12 tomes parus (6 prévus)</dd><dt><span class="tooltip" title="Éditeurs"></span></dt><dd><a href="https://www.bdphile.fr/publisher/view/25-glenat">Glénat</a></dd></dl><div id="detail_view"><table><tbody><tr><td>1</td><td><a href="/album/bd/138208-les-geants-1-erin">Erin</a></td><td>Glénat</td><td>26 août 2020</td></tr></tbody></table></div>"#)).mount(&server).await;
     let results = search_series_impl("Les Géants", &server.uri())
         .await
         .unwrap();
@@ -41,6 +41,29 @@ async fn parses_series_and_album_details() {
     assert_eq!(
         series.metadata_json.get("status").and_then(|v| v.as_str()),
         Some("En cours")
+    );
+    let series_rating = series
+        .metadata_json
+        .get("rating")
+        .and_then(|v| v.as_f64())
+        .expect("series rating");
+    assert!(
+        (series_rating - 3.835).abs() < 1e-9,
+        "expected weighted average 3.835, got {series_rating}"
+    );
+    assert_eq!(
+        series
+            .metadata_json
+            .get("rating_count")
+            .and_then(|v| v.as_i64()),
+        Some(20)
+    );
+    assert_eq!(
+        series
+            .metadata_json
+            .get("rating_scale")
+            .and_then(|v| v.as_f64()),
+        Some(5.0)
     );
     assert_eq!(
         series.cover_url.as_deref(),
@@ -103,4 +126,28 @@ async fn album_fetch_error_is_propagated() {
         result.is_err(),
         "a failing album fetch must surface the error, not produce an empty book"
     );
+}
+
+#[test]
+fn parses_weighted_album_ratings() {
+    let html = r#"<div class="albumBlocCompact"><div class="album-stats"><div style="font-size:72px">3.7<span>/ 5</span></div><div class="stats-details"><span class="flaticon-rate" title="11 votes">11</span></div></div></div><div class="albumBlocCompact"><div class="album-stats"><div style="font-size:72px">4.0<span>/ 5</span></div><div class="stats-details"><span class="flaticon-rate" title="9 votes">9</span></div></div></div>"#;
+    let doc = scraper::Html::parse_document(html);
+    let (rating, count) = parse_album_ratings(&doc).expect("aggregated rating");
+    assert!((rating - 3.835).abs() < 1e-9, "got {rating}");
+    assert_eq!(count, 20);
+}
+
+#[test]
+fn ignores_album_blocks_without_votes() {
+    let html = r#"<div class="albumBlocCompact"><div class="album-stats"><div style="font-size:72px">3.7<span>/ 5</span></div><div class="stats-details"><span class="flaticon-rate" title="0 vote">0</span></div></div></div>"#;
+    let doc = scraper::Html::parse_document(html);
+    assert!(parse_album_ratings(&doc).is_none());
+}
+
+#[test]
+fn parses_rating_over_five() {
+    assert_eq!(parse_rating_over_five("3.7 / 5"), Some(3.7));
+    assert_eq!(parse_rating_over_five("4/5"), Some(4.0));
+    assert_eq!(parse_rating_over_five("11 0 0"), None);
+    assert_eq!(parse_rating_over_five(""), None);
 }

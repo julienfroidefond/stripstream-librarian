@@ -41,8 +41,12 @@ Sous votre note se trouvent les notes moyennes remontées par les providers de m
 | SensCritique | 0–10 | `rating` |
 | Google Books | 0–5 | `averageRating` |
 | OpenLibrary | 0–5 | `ratings_average` |
+| BDTheque | 0–5 | `aggregateRating` (JSON-LD) |
+| BDphile | 0–5 | moyenne pondérée des notes d'albums |
 
 Ces notes sont mises à jour à chaque synchronisation ou rafraîchissement de métadonnées. Le nombre de votes est affiché entre parenthèses quand il est disponible.
+
+> **BDphile** ne note pas la série elle-même : Stripstream agrège les notes de ses albums (moyenne pondérée par le nombre de votes) pour en déduire une note de série. **BDTheque** expose une note de série directement.
 
 ## Notes communauté dans la liste des séries
 

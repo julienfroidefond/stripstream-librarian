@@ -15,7 +15,7 @@ async fn parses_series_and_volume_metadata() {
         .mount(&server)
         .await;
     Mock::given(method("GET")).and(path_regex(r"/series/22444/les-geants"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(r#"<html><meta name="Description" content="Une aventure."><meta property="og:image" content="https://www.bdtheque.com/repupload/T/T_53064.JPG"><h1>Les Géants</h1><table><tr><td>Scénario</td><td><a href="/recherche/series/auteurs=Lylian">Lylian</a></td></tr><tr><td>Dessin</td><td><a href="/recherche/series/auteurs=Paul%20Drouin">Drouin (Paul)</a></td></tr><tr><td>Editeur / Collection</td><td><a href="/recherche/series/editeur=Glenat">Glénat</a> <a href="/recherche/series/collection=tcho">Tchô ! la collec...</a></td></tr><tr><td>Date de parution</td><td>26 Août <a href="/recherche/series/annee=2020">2020</a></td></tr><tr><td>Statut histoire</td><td><a href="/recherche/series/histoire=cycles-termines">Série en cours - cycle(s) terminé(s)</a> <span>12 tomes parus</span></td></tr></table></html>"#)).mount(&server).await;
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"<html><meta name="Description" content="Une aventure."><meta property="og:image" content="https://www.bdtheque.com/repupload/T/T_53064.JPG"><h1>Les Géants</h1><script type="application/ld+json">{"@context":"https://schema.org/","@type":"Book","name":"Les Géants","aggregateRating":{"@type":"AggregateRating","ratingValue":"3","bestRating":"5","worstRating":"1","ratingCount":"2"}}</script><table><tr><td>Scénario</td><td><a href="/recherche/series/auteurs=Lylian">Lylian</a></td></tr><tr><td>Dessin</td><td><a href="/recherche/series/auteurs=Paul%20Drouin">Drouin (Paul)</a></td></tr><tr><td>Editeur / Collection</td><td><a href="/recherche/series/editeur=Glenat">Glénat</a> <a href="/recherche/series/collection=tcho">Tchô ! la collec...</a></td></tr><tr><td>Date de parution</td><td>26 Août <a href="/recherche/series/annee=2020">2020</a></td></tr><tr><td>Statut histoire</td><td><a href="/recherche/series/histoire=cycles-termines">Série en cours - cycle(s) terminé(s)</a> <span>12 tomes parus</span></td></tr></table></html>"#)).mount(&server).await;
     let results = search_series_impl("Les Géants", &server.uri())
         .await
         .unwrap();
@@ -49,6 +49,24 @@ async fn parses_series_and_volume_metadata() {
     assert_eq!(
         series.metadata_json.get("status").and_then(|v| v.as_str()),
         Some("Série en cours - cycle(s) terminé(s)")
+    );
+    assert_eq!(
+        series.metadata_json.get("rating").and_then(|v| v.as_f64()),
+        Some(3.0)
+    );
+    assert_eq!(
+        series
+            .metadata_json
+            .get("rating_count")
+            .and_then(|v| v.as_i64()),
+        Some(2)
+    );
+    assert_eq!(
+        series
+            .metadata_json
+            .get("rating_scale")
+            .and_then(|v| v.as_f64()),
+        Some(5.0)
     );
 
     Mock::given(method("GET")).and(path_regex(r"/ajax/series/tomes/22444/0"))
@@ -93,4 +111,32 @@ async fn propagates_http_errors() {
         .await
         .unwrap_err();
     assert!(error.contains("403"));
+}
+
+#[test]
+fn parses_json_ld_aggregate_rating() {
+    let html = r#"<script type="application/ld+json">{"@type":"Book","name":"X","aggregateRating":{"ratingValue":"3","bestRating":"5","worstRating":"1","ratingCount":"2"}}</script>"#;
+    let doc = scraper::Html::parse_document(html);
+    assert_eq!(parse_aggregate_rating(&doc), Some((3.0, 2, 5.0)));
+}
+
+#[test]
+fn parses_json_ld_numeric_aggregate_rating() {
+    let html = r#"<script type="application/ld+json">{"aggregateRating":{"ratingValue":4.2,"bestRating":5,"ratingCount":10}}</script>"#;
+    let doc = scraper::Html::parse_document(html);
+    assert_eq!(parse_aggregate_rating(&doc), Some((4.2, 10, 5.0)));
+}
+
+#[test]
+fn missing_aggregate_rating_returns_none() {
+    let html = r#"<script type="application/ld+json">{"@type":"Book","name":"X"}</script>"#;
+    let doc = scraper::Html::parse_document(html);
+    assert_eq!(parse_aggregate_rating(&doc), None);
+}
+
+#[test]
+fn zero_vote_aggregate_rating_is_ignored() {
+    let html = r#"<script type="application/ld+json">{"aggregateRating":{"ratingValue":"0","bestRating":"5","ratingCount":"0"}}</script>"#;
+    let doc = scraper::Html::parse_document(html);
+    assert_eq!(parse_aggregate_rating(&doc), None);
 }
