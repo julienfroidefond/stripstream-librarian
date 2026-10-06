@@ -15,20 +15,20 @@ license = "MIT"
 
 [workspace.dependencies]
 anyhow = "1.0"
-argon2 = "0.5"
-axum = "0.7"
-base64 = "0.22"
+argon2 = "0.6"
+axum = "0.8"
+base64 = "0.23"
 chrono = { version = "0.4", features = ["serde"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 jpeg-decoder = "0.3"
-lru = "0.12"
+lru = "0.18"
 rayon = "1.12"
-reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
-rand = "0.8"
+reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "rustls-tls"] }
+rand = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sha2 = "0.10"
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "migrate"] }
+sha2 = "0.11"
+sqlx = { version = "0.9", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "migrate"] }
 tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "signal"] }
 tower = { version = "0.5", features = ["limit"] }
 tracing = "0.1"
@@ -36,15 +36,15 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1.27", features = ["serde", "v4"] }
 natord = "1.0"
 num_cpus = "1.16"
-pdfium-render = { version = "0.8", default-features = false, features = ["pdfium_latest", "image_latest", "thread_safe"] }
+pdfium-render = { version = "0.9", default-features = false, features = ["pdfium_latest", "image_latest", "thread_safe"] }
 unrar = "0.5"
 walkdir = "2.5"
 webp = "0.3"
 utoipa = "4.0"
 utoipa-swagger-ui = "6.0"
-scraper = "0.21"
-grammers-client = "0.7"
-grammers-session = "0.7"
+scraper = "0.27"
+grammers-client = "0.10"
+grammers-session = "0.10"
 
 [patch.crates-io]
 core2 = { path = "crates/core2-shim" }
