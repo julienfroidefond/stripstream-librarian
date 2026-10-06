@@ -2,5 +2,71 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "description": "Regroupe les mises à jour non majeures des crates Rust dans une seule PR",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
+      "groupName": "rust non-major"
+    },
+    {
+      "description": "Regroupe les mises à jour non majeures du backoffice dans une seule PR",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchFileNames": [
+        "apps/backoffice/**"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
+      "groupName": "backoffice non-major"
+    },
+    {
+      "description": "Regroupe les mises à jour non majeures de la doc et de la racine dans une seule PR",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchFileNames": [
+        "apps/docs/**",
+        "package.json"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
+      "groupName": "docs & root non-major"
+    },
+    {
+      "description": "Regroupe les mises à jour non majeures de la CI (GitHub Actions & images Docker)",
+      "matchManagers": [
+        "github-actions",
+        "docker"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "pinDigest",
+        "digest"
+      ],
+      "groupName": "ci non-major"
+    }
   ]
 }
