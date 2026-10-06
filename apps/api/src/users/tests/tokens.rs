@@ -70,9 +70,8 @@ fn build_token_round_trip_with_real_random_bytes() {
 #[test]
 fn token_hash_verifies_correctly() {
     let (token, _) = build_token(&[0xDE; 24]);
-    let salt = SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
     let hash = Argon2::default()
-        .hash_password(token.as_bytes(), &salt)
+        .hash_password(token.as_bytes())
         .expect("hash should succeed")
         .to_string();
 
@@ -84,9 +83,8 @@ fn token_hash_verifies_correctly() {
 #[test]
 fn token_hash_rejects_wrong_token() {
     let (token, _) = build_token(&[0xDE; 24]);
-    let salt = SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
     let hash = Argon2::default()
-        .hash_password(token.as_bytes(), &salt)
+        .hash_password(token.as_bytes())
         .expect("hash should succeed")
         .to_string();
 

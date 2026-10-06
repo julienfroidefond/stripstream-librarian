@@ -1,4 +1,4 @@
-use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
+use argon2::{Argon2, PasswordHasher};
 use axum::{
     extract::{Path, State},
     Json,
@@ -91,9 +91,8 @@ pub async fn create_token(
     let prefix: String = secret.chars().take(8).collect();
     let token = format!("stl_{prefix}_{secret}");
 
-    let salt = SaltString::generate(&mut argon2::password_hash::rand_core::OsRng);
     let token_hash = Argon2::default()
-        .hash_password(token.as_bytes(), &salt)
+        .hash_password(token.as_bytes())
         .map_err(|_| ApiError::internal("failed to hash token"))?
         .to_string();
 
