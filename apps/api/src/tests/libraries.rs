@@ -118,7 +118,7 @@ async fn library_exists(pool: &PgPool, id: Uuid) -> bool {
 
 async fn count_rows(pool: &PgPool, table: &str, library_id: Uuid) -> i64 {
     let sql = format!("SELECT COUNT(*) FROM {table} WHERE library_id = $1");
-    sqlx::query_scalar(&sql)
+    sqlx::query_scalar(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(library_id)
         .fetch_one(pool)
         .await

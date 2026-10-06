@@ -271,7 +271,7 @@ pub async fn untagged_series(
 
     let q_pattern = query.q.as_deref().map(|q| format!("%{}%", q));
 
-    let mut builder = sqlx::query(&sql);
+    let mut builder = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()));
     if let Some(lib_id) = query.library_id {
         builder = builder.bind(lib_id);
     }

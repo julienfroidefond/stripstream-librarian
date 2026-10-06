@@ -278,7 +278,7 @@ pub async fn mark_series_read(
 
     let result = if body.series == "unclassified" {
         // $1 = user_id (no series bind needed)
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
             .bind(auth_user.user_id)
             .execute(&state.pool)
             .await?
@@ -288,7 +288,7 @@ pub async fn mark_series_read(
             .series
             .parse()
             .map_err(|_| ApiError::bad_request("invalid series id"))?;
-        sqlx::query(&sql)
+        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
             .bind(series_uuid)
             .bind(auth_user.user_id)
             .execute(&state.pool)

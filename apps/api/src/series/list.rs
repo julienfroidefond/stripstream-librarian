@@ -193,7 +193,7 @@ pub async fn list_series(
 
     let q_pattern = query.q.as_deref().map(|q| format!("%{}%", q));
 
-    let mut data_builder = sqlx::query(&data_sql).bind(library_id);
+    let mut data_builder = sqlx::query(sqlx::AssertSqlSafe(data_sql.as_str())).bind(library_id);
 
     if let Some(ref pat) = q_pattern {
         data_builder = data_builder.bind(pat);
@@ -534,7 +534,7 @@ pub async fn list_all_series(
 
     let q_pattern = query.q.as_deref().map(|q| format!("%{}%", q));
 
-    let mut data_builder = sqlx::query(&data_sql);
+    let mut data_builder = sqlx::query(sqlx::AssertSqlSafe(data_sql.as_str()));
 
     if let Some(lib_id) = query.library_id {
         data_builder = data_builder.bind(lib_id);
