@@ -1,7 +1,10 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { jsonRequest, routeCtx } from "./helpers";
+
+const revalidateTag = vi.hoisted(() => vi.fn());
+vi.mock("next/cache", () => ({ revalidateTag }));
 
 vi.mock("@/lib/api", async () => {
   const { createApiMock } = await import("./helpers");
@@ -25,6 +28,10 @@ import { GET as links, DELETE as deleteLink, PATCH as patchLink } from "@/app/ap
 
 const mockApi = vi.mocked(apiFetch);
 
+beforeEach(() => {
+  revalidateTag.mockClear();
+});
+
 describe("metadata approve/reject", () => {
   it("approve strips the id and forwards the rest", async () => {
     mockApi.mockResolvedValue({ status: "ok", books_synced: 2 });
@@ -33,6 +40,7 @@ describe("metadata approve/reject", () => {
       method: "POST",
       body: JSON.stringify({ volume: 1 }),
     });
+    expect(revalidateTag).toHaveBeenCalledWith("metadata", { expire: 0 });
     expect(res.status).toBe(200);
   });
 
@@ -45,6 +53,7 @@ describe("metadata approve/reject", () => {
     mockApi.mockResolvedValue({ status: "rejected" });
     const res = await reject(jsonRequest("/api/metadata/reject", { method: "POST", body: { id: "7" } }));
     expect(mockApi).toHaveBeenCalledWith("/metadata/reject/7", { method: "POST" });
+    expect(revalidateTag).toHaveBeenCalledWith("metadata", { expire: 0 });
     expect(res.status).toBe(200);
   });
 });
@@ -153,6 +162,7 @@ describe("metadata providers & search & links", () => {
     mockApi.mockResolvedValue({ deleted: true });
     await deleteLink(jsonRequest("/api/metadata/links?id=9", { method: "DELETE" }));
     expect(mockApi).toHaveBeenCalledWith("/metadata/links/9", { method: "DELETE" });
+    expect(revalidateTag).toHaveBeenCalledWith("metadata", { expire: 0 });
   });
 
   it("PATCH links requires an id", async () => {
@@ -173,5 +183,6 @@ describe("metadata providers & search & links", () => {
       method: "PATCH",
       body: JSON.stringify({ is_primary: true, sync_series: true, sync_books: true }),
     });
+    expect(revalidateTag).toHaveBeenCalledWith("metadata", { expire: 0 });
   });
 });

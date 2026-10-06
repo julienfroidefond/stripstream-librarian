@@ -597,7 +597,10 @@ pub async fn get_metadata_links(
         JOIN series s ON s.id = eml.series_id
         WHERE ($1::uuid IS NULL OR eml.library_id = $1)
           AND ($2::uuid IS NULL OR eml.series_id = $2)
-        ORDER BY eml.updated_at DESC
+        -- Stable order, independent of `updated_at` (which changes on every
+        -- sync or primary toggle) so the linked-providers list never reorders
+        -- under the user's feet. Oldest approval first, pending links last.
+        ORDER BY eml.approved_at ASC NULLS LAST, eml.matched_at ASC, eml.id ASC
         "#,
     )
     .bind(library_id)

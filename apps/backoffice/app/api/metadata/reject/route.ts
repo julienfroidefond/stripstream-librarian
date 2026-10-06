@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { apiFetch } from "@/lib/api";
 
 export async function POST(request: NextRequest) {
@@ -7,6 +8,7 @@ export async function POST(request: NextRequest) {
     const data = await apiFetch<{ status: string }>(`/metadata/reject/${body.id}`, {
       method: "POST",
     });
+    revalidateTag("metadata", { expire: 0 });
     return NextResponse.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to reject metadata";

@@ -957,3 +957,53 @@ async fn reject_unknown_link_returns_not_found(pool: PgPool) {
 
     assert_eq!(error.status, axum::http::StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_order_stable_when_primary_changes(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let (_lib, series, links) = seed_series_with_links(&pool, &["provider_a", "provider_b"]).await;
+
+    approve(&state, links[0], None).await;
+    approve(&state, links[1], None).await;
+
+    let series_query = || MetadataLinkQuery {
+        library_id: None,
+        series_id: Some(series.to_string()),
+    };
+    let before: Vec<Uuid> = get_metadata_links(State(state.clone()), Query(series_query()))
+        .await
+        .unwrap()
+        .0
+        .iter()
+        .map(|l| l.id)
+        .collect();
+    assert_eq!(before, vec![links[0], links[1]]);
+
+    // Promoting the second link must not reorder the list: `updated_at` is
+    // bumped by both the primary toggle and the sync, but the order only
+    // depends on approval/match time.
+    let _ = patch_metadata_link(
+        State(state.clone()),
+        AxumPath(links[1]),
+        Json(PatchLinkRequest {
+            is_primary: Some(true),
+            sync_series: false,
+            sync_books: false,
+        }),
+    )
+    .await
+    .unwrap();
+
+    assert!(link_is_primary(&pool, links[1]).await);
+    let after: Vec<Uuid> = get_metadata_links(State(state.clone()), Query(series_query()))
+        .await
+        .unwrap()
+        .0
+        .iter()
+        .map(|l| l.id)
+        .collect();
+    assert_eq!(
+        after, before,
+        "list order stays stable after promoting a new primary"
+    );
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Icon, Modal } from "./ui";
 import { ProviderIcon, providerLabel } from "./ProviderIcon";
@@ -80,9 +80,20 @@ export function MetadataSearchModal({
   }, []);
 
   const visibleProviders = providers.filter((p) => !hiddenProviders.has(p.id));
-  const approvedLinks = (links ?? (existingLink ? [existingLink] : [])).filter(
-    (l) => l.status === "approved",
+  // Keep a local, optimistically-updated copy of the links so primary/unlink
+  // actions feel instant. Re-sync whenever the server props change (e.g. after
+  // router.refresh()).
+  const propsLinks = useMemo(
+    () => links ?? (existingLink ? [existingLink] : []),
+    [links, existingLink],
   );
+  const [localLinks, setLocalLinks] = useState<ExternalMetadataLinkDto[]>(propsLinks);
+  const [prevPropsLinks, setPrevPropsLinks] = useState(propsLinks);
+  if (propsLinks !== prevPropsLinks) {
+    setPrevPropsLinks(propsLinks);
+    setLocalLinks(propsLinks);
+  }
+  const approvedLinks = localLinks.filter((l) => l.status === "approved");
   const primaryLink = approvedLinks.find((l) => l.is_primary) ?? null;
 
   const handleOpen = useCallback(() => {
@@ -224,6 +235,9 @@ export function MetadataSearchModal({
       }
 
       setStep("done");
+      // Refresh the server-rendered link list so the new provider shows up
+      // immediately (the modal derives `approvedLinks` from its `links` prop).
+      router.refresh();
     } catch {
       setError(t("common.networkError"));
       setStep("results");
@@ -233,6 +247,9 @@ export function MetadataSearchModal({
   async function handleSetPrimary(id: string) {
     setBusyId(id);
     setError(null);
+    const previous = localLinks;
+    // Optimistic: mark this link primary and clear the flag on the others.
+    setLocalLinks((prev) => prev.map((l) => ({ ...l, is_primary: l.id === id })));
     try {
       const resp = await fetch(`/api/metadata/links?id=${id}`, {
         method: "PATCH",
@@ -242,10 +259,12 @@ export function MetadataSearchModal({
       if (resp.ok) {
         router.refresh();
       } else {
+        setLocalLinks(previous);
         const body = await resp.json().catch(() => ({}));
         setError(body?.error ?? t("common.networkError"));
       }
     } catch {
+      setLocalLinks(previous);
       setError(t("common.networkError"));
     } finally {
       setBusyId(null);
@@ -255,6 +274,9 @@ export function MetadataSearchModal({
   async function handleUnlink(id: string) {
     setUnlinking(true);
     setError(null);
+    const previous = localLinks;
+    // Optimistic: drop the link from the list immediately.
+    setLocalLinks((prev) => prev.filter((l) => l.id !== id));
     try {
       const resp = await fetch(`/api/metadata/links?id=${id}`, { method: "DELETE" });
       if (resp.ok) {
@@ -264,10 +286,12 @@ export function MetadataSearchModal({
         }
         router.refresh();
       } else {
+        setLocalLinks(previous);
         const body = await resp.json().catch(() => ({}));
         setError(body?.error ?? t("common.networkError"));
       }
     } catch {
+      setLocalLinks(previous);
       setError(t("common.networkError"));
     } finally {
       setUnlinking(false);

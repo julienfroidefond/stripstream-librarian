@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { apiFetch, ExternalMetadataLinkDto } from "@/lib/api";
 
 export async function GET(request: NextRequest) {
@@ -27,6 +28,7 @@ export async function DELETE(request: NextRequest) {
     const data = await apiFetch<{ deleted: boolean }>(`/metadata/links/${id}`, {
       method: "DELETE",
     });
+    revalidateTag("metadata", { expire: 0 });
     return NextResponse.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to delete metadata link";
@@ -46,6 +48,7 @@ export async function PATCH(request: NextRequest) {
       `/metadata/links/${id}`,
       { method: "PATCH", body: JSON.stringify(body) },
     );
+    revalidateTag("metadata", { expire: 0 });
     return NextResponse.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update metadata link";
