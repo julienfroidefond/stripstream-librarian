@@ -1,0 +1,47 @@
+name: Debug mac-mini runner
+
+# Temporary diagnostic workflow — runs on the self-hosted mac-mini runner and
+# prints what the deploy job needs to know (DOCKER_CONFIG handling, docker
+# binary, ~/.docker/config.json, keychain state). Delete once resolved.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  debug:
+    name: Debug
+    runs-on: [self-hosted, mac-mini]
+    steps:
+      - name: Diagnostics
+        run: |
+          echo "===== env ====="
+          echo "HOME=$HOME"
+          echo "USER=$(id -un)"
+          echo "DOCKER_CONFIG=${DOCKER_CONFIG:-<unset>}"
+          echo "DOCKER_HOST=${DOCKER_HOST:-<unset>}"
+
+          echo "===== docker binaries ====="
+          which -a docker || true
+          ls -la "$(command -v docker)" 2>/dev/null || true
+
+          echo "===== docker contexts ====="
+          docker context ls 2>&1 || true
+
+          echo "===== ~/.docker ====="
+          ls -la "$HOME/.docker" 2>&1 || true
+          echo "----- config.json -----"
+          cat "$HOME/.docker/config.json" 2>&1 || echo "(none)"
+
+          echo "===== keychain ====="
+          security list-keychains 2>&1 || true
+          security show-keychain-info "$HOME/Library/Keychains/login.keychain-db" 2>&1 || true
+
+          echo "===== pull with isolated (empty) DOCKER_CONFIG ====="
+          D="$(mktemp -d)"
+          printf '{}' > "$D/config.json"
+          echo "temp config dir: $D"
+          DOCKER_CONFIG="$D" docker pull hello-world 2>&1 | tail -6
+          echo "isolated_pull_exit=${PIPESTATUS[0]}"
