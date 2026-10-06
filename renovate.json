@@ -8,6 +8,29 @@
   },
   "packageRules": [
     {
+      "description": "Dépendances Cargo/npm pré-1.0 : un bump mineur (0.x → 0.y) est cassant. Pas de PR automatique ; à approuver depuis le Dependency Dashboard (traitement manuel, une PR par majeur).",
+      "matchManagers": [
+        "cargo",
+        "npm"
+      ],
+      "matchCurrentVersion": "<1.0.0",
+      "matchUpdateTypes": [
+        "minor"
+      ],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Majeurs Cargo/npm traités manuellement (une PR par majeur) : pas de PR automatique, visibles sur le Dependency Dashboard.",
+      "matchManagers": [
+        "cargo",
+        "npm"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "dependencyDashboardApproval": true
+    },
+    {
       "description": "Regroupe les mises à jour non majeures des crates Rust dans une seule PR",
       "matchManagers": [
         "cargo"
