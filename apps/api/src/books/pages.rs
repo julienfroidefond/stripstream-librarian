@@ -48,7 +48,11 @@ fn get_cache_key(
     hasher.update(format.as_bytes());
     hasher.update(quality.to_le_bytes());
     hasher.update(width.to_le_bytes());
-    format!("{:x}", hasher.finalize())
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// Read the file mtime as nanoseconds since UNIX epoch. Returns 0 if unavailable
@@ -528,7 +532,14 @@ fn image_response(
     } else {
         let mut hasher = Sha256::new();
         hasher.update(&*bytes);
-        format!("\"{:x}\"", hasher.finalize())
+        format!(
+            "\"{}\"",
+            hasher
+                .finalize()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
+        )
     };
 
     // Check If-None-Match for 304

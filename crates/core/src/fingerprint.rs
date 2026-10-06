@@ -14,7 +14,11 @@ pub fn compute_fingerprint(path: &Path, size: u64, mtime: &DateTime<Utc>) -> Res
         hasher.update(filename.as_encoded_bytes());
     }
 
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
 #[cfg(test)]
