@@ -5,13 +5,35 @@ name: CI
 #
 # The Gitea pipeline (.gitea/workflows/deploy.yml) historically ran neither
 # clippy nor `cargo test` (see docs/KNOWN_ISSUES.md §3); this workflow adds
-# that coverage on GitHub, on every push to main and every pull request.
+# that coverage on GitHub.
+#
+# It only triggers when Rust sources, the workspace manifests or the DB
+# migrations change — a docs-only or backoffice-only push/PR does not spin up
+# the (expensive, several-minute) Rust job.
 
 on:
   push:
     branches:
       - main
+    paths:
+      - "apps/api/**"
+      - "apps/indexer/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "infra/migrations/**"
+      - "rust-toolchain*"
+      - ".github/workflows/ci.yml"
   pull_request:
+    paths:
+      - "apps/api/**"
+      - "apps/indexer/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "infra/migrations/**"
+      - "rust-toolchain*"
+      - ".github/workflows/ci.yml"
   workflow_dispatch:
 
 env:

@@ -62,10 +62,12 @@ lancée **localement** avant tout commit (`cargo test -p api`,
 
 **Depuis, la CI GitHub comble ce manque** : `.github/workflows/ci.yml` exécute
 `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` et
-`cargo test --workspace` sur chaque push vers `main` et chaque pull request, avec
-un service PostgreSQL. Il reste recommandé de lancer les tests localement avant
-de pousser vers Gitea, puisque la pipeline de déploiement Gitea ne les exécute
-toujours pas.
+`cargo test --workspace` sur les push vers `main` et les pull requests qui
+touchent le code Rust, les manifestes du workspace ou les migrations, avec un
+service PostgreSQL. Les changements purement `apps/backoffice/` ou `apps/docs/`
+ne déclenchent pas ce workflow. Il reste recommandé de lancer les tests
+localement avant de pousser vers Gitea, puisque la pipeline de déploiement Gitea
+ne les exécute toujours pas.
 
 ---
 
