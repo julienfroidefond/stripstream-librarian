@@ -135,6 +135,11 @@ jobs:
       - name: Pull images & restart stack
         run: |
           set -euo pipefail
+          # The runner runs in a non-interactive launchd session, so the macOS
+          # login keychain is locked and Docker's `osxkeychain` credential
+          # helper makes every `docker pull` fail. The images are public, so
+          # point Docker at a throwaway config that has no credential helper.
+          export DOCKER_CONFIG="$(mktemp -d)"
           cd /Users/julienfroidefond/Sites/docker-stack
 
           svc="${{ github.event.inputs.service }}"
