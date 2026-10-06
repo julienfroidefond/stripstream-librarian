@@ -1,8 +1,8 @@
 name: Debug mac-mini runner
 
-# Temporary diagnostic workflow — runs on the self-hosted mac-mini runner and
-# prints what the deploy job needs to know (DOCKER_CONFIG handling, docker
-# binary, ~/.docker/config.json, keychain state). Delete once resolved.
+# Temporary diagnostic workflow — runs on the self-hosted mac-mini runner.
+# Tests which workaround actually defeats the locked-keychain credential helper
+# with OrbStack's docker CLI. Delete once resolved.
 
 on:
   workflow_dispatch:
@@ -15,33 +15,36 @@ jobs:
     name: Debug
     runs-on: [self-hosted, mac-mini]
     steps:
-      - name: Diagnostics
+      - name: Test credential workarounds
         run: |
-          echo "===== env ====="
-          echo "HOME=$HOME"
-          echo "USER=$(id -un)"
+          CFG="$HOME/.docker/config.json"
+          BAK="$HOME/.docker/config.json.sl-bak"
+          cp -f "$CFG" "$BAK" 2>/dev/null || true
+          trap 'cp -f "$BAK" "$CFG" 2>/dev/null || true' EXIT
+
+          echo "===== docker binary ====="
+          file -L "$(command -v docker)" 2>&1 || true
+
+          echo "===== runner env ====="
           echo "DOCKER_CONFIG=${DOCKER_CONFIG:-<unset>}"
-          echo "DOCKER_HOST=${DOCKER_HOST:-<unset>}"
+          env | grep -i docker || true
+          echo "--- ~/actions-runner/.env ---"
+          cat "$HOME/actions-runner/.env" 2>&1 || echo "(no .env)"
 
-          echo "===== docker binaries ====="
-          which -a docker || true
-          ls -la "$(command -v docker)" 2>/dev/null || true
+          echo "===== current config ====="
+          cat "$CFG" 2>&1 || true
 
-          echo "===== docker contexts ====="
-          docker context ls 2>&1 || true
+          echo "===== TEST A: drop credsStore from ~/.docker/config.json ====="
+          python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d.pop("credsStore",None); d.pop("credHelpers",None); json.dump(d,open(p,"w"),indent=2)' "$CFG" 2>&1 || true
+          cat "$CFG"
+          docker pull hello-world:latest > /tmp/sl_a.log 2>&1 && echo "A_RESULT=OK" || echo "A_RESULT=FAIL"
+          tail -3 /tmp/sl_a.log
+          cp -f "$BAK" "$CFG"
 
-          echo "===== ~/.docker ====="
-          ls -la "$HOME/.docker" 2>&1 || true
-          echo "----- config.json -----"
-          cat "$HOME/.docker/config.json" 2>&1 || echo "(none)"
-
-          echo "===== keychain ====="
-          security list-keychains 2>&1 || true
-          security show-keychain-info "$HOME/Library/Keychains/login.keychain-db" 2>&1 || true
-
-          echo "===== pull with isolated (empty) DOCKER_CONFIG ====="
-          D="$(mktemp -d)"
-          printf '{}' > "$D/config.json"
-          echo "temp config dir: $D"
-          DOCKER_CONFIG="$D" docker pull hello-world 2>&1 | tail -6
-          echo "isolated_pull_exit=${PIPESTATUS[0]}"
+          echo "===== TEST B: stub docker-credential-osxkeychain on PATH ====="
+          STUB="$(mktemp -d)"
+          printf '#!/bin/sh\ncase "$1" in\n  get) echo "credentials not found in native keychain" >&2; exit 1 ;;\n  store) cat >/dev/null; exit 0 ;;\n  erase) exit 0 ;;\n  list) echo "{}"; exit 0 ;;\nesac\nexit 0\n' > "$STUB/docker-credential-osxkeychain"
+          chmod +x "$STUB/docker-credential-osxkeychain"
+          cat "$STUB/docker-credential-osxkeychain"
+          PATH="$STUB:$PATH" docker pull hello-world:latest > /tmp/sl_b.log 2>&1 && echo "B_RESULT=OK" || echo "B_RESULT=FAIL"
+          tail -3 /tmp/sl_b.log
