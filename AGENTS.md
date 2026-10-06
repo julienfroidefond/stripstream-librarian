@@ -432,6 +432,12 @@ Fingerprint = `SHA256(size + mtime + filename)` — detects changes without re-r
 - **Series extraction**: the parser uses the **immediate parent** directory as the series name (not the
   first directory). If the parent is an HS/Specials/Bonus/Intégrales subfolder, it walks up one level.
 - **Auth tokens**: format `stl_<prefix>_<secret>`, argon2 hash in DB, scopes `admin` or `read`.
+- **Deploy runner keychain/compose**: on the self-hosted `mac-mini` runner, OrbStack's `docker` CLI
+  ignores `DOCKER_CONFIG`/`--config` and always reads `credsStore: osxkeychain` from
+  `~/.docker/config.json`, which is unreachable from the runner's non-interactive launchd session. The
+  `deploy` jobs prepend a stub `docker-credential-osxkeychain` (reports "no credentials") to `PATH` so
+  public image pulls run anonymously. Do **not** set `DOCKER_CONFIG` in the runner env: it hides the
+  `compose` CLI plugin (`$DOCKER_CONFIG/cli-plugins`), breaking `./scripts/stack.sh up`.
 - **OpenAPI dual spec**: Client API (`/openapi.json`, read scope) and Admin API (`/admin/openapi.json`, all).
   `GET /metadata/links` and `GET /metadata/missing/:id` are on the **read** router (`apps/api/src/main.rs`),
   so they only require a `read`-scoped token.
