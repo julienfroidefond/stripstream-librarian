@@ -54,10 +54,13 @@ directement avec un `AppState` construit à la main.
 La CI est désormais **entièrement sur GitHub Actions** ; la pipeline Gitea a été
 retirée. `.github/workflows/ci.yml` exécute `cargo fmt --check`,
 `cargo clippy --workspace --all-targets -- -D warnings` et
-`cargo test --workspace` sur les push vers `main` et les pull requests qui
-touchent le code Rust, les manifestes du workspace ou les migrations, avec un
-service PostgreSQL. Les changements purement `apps/backoffice/` ou `apps/docs/`
-ne déclenchent pas ce workflow : ils sont couverts par
+`cargo test --workspace` sur les pull requests qui touchent le code Rust, les
+manifestes du workspace ou les migrations, avec un service PostgreSQL. Le merge
+sur `main` ne rejoue plus ce workflow (pour éviter le doublon avec la PR) : il
+doit donc être configuré comme **status check requis** sur la branche protégée,
+sinon une PR pourrait être mergée sans validation — et un push direct sur `main`
+le contourne complètement. Les changements purement `apps/backoffice/` ou
+`apps/docs/` ne déclenchent pas ce workflow : ils sont couverts par
 `.github/workflows/ci-web.yml` (backoffice : `tsc` / `lint` / tests unitaires,
 docs : build), déclenché uniquement sur pull request.
 
