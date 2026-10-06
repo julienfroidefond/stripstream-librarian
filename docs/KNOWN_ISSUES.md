@@ -53,11 +53,19 @@ directement avec un `AppState` construit à la main.
 
 `.gitea/workflows/deploy.yml` ne lance **ni `cargo test` ni `cargo clippy`**.
 Les garanties apportées par la suite de tests et les lints ne sont donc pas
-vérifiées avant publication.
+vérifiées avant publication par cette pipeline.
 
-**Décision assumée** : les tests ne sont pas exécutés en CI, faute de ressources
-suffisantes sur le runner. La suite de tests doit être lancée **localement**
-avant tout commit (`cargo test -p api`, `cargo clippy -p api --tests`).
+**Décision assumée** : les tests ne sont pas exécutés sur le runner Gitea, faute
+de ressources suffisantes (runner self-hosted macOS). La suite de tests doit être
+lancée **localement** avant tout commit (`cargo test -p api`,
+`cargo clippy -p api --tests`).
+
+**Depuis, la CI GitHub comble ce manque** : `.github/workflows/ci.yml` exécute
+`cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` et
+`cargo test --workspace` sur chaque push vers `main` et chaque pull request, avec
+un service PostgreSQL. Il reste recommandé de lancer les tests localement avant
+de pousser vers Gitea, puisque la pipeline de déploiement Gitea ne les exécute
+toujours pas.
 
 ---
 

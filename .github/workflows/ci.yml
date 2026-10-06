@@ -1,0 +1,62 @@
+name: CI
+
+# Rust quality gate: formatting, lints and the full test suite (including the
+# `#[sqlx::test]` database tests, backed by the PostgreSQL service below).
+#
+# The Gitea pipeline (.gitea/workflows/deploy.yml) historically ran neither
+# clippy nor `cargo test` (see docs/KNOWN_ISSUES.md §3); this workflow adds
+# that coverage on GitHub, on every push to main and every pull request.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # Matches the service container below (host port, not the 6432 used by the
+  # local Docker stack).
+  DATABASE_URL: postgres://stripstream:stripstream@localhost:5432/stripstream
+
+jobs:
+  rust:
+    name: Rust (fmt · clippy · test)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: stripstream
+          POSTGRES_PASSWORD: stripstream
+          POSTGRES_DB: stripstream
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U stripstream"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # `#[sqlx::test]` creates a throwaway database per test, which needs the
+      # CREATEDB privilege. POSTGRES_USER is a superuser, so it already has it.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace

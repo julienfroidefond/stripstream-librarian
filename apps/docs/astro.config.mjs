@@ -10,7 +10,7 @@ export default defineConfig({
 			logo: {
 				src: './src/assets/logo.webp',
 			},
-			social: [{ icon: 'github', label: 'Sources', href: 'https://git.julienfroidefond.com/julienfroidefond/stripstream-librarian' }],
+			social: [{ icon: 'github', label: 'Sources', href: 'https://github.com/julienfroidefond/stripstream-librarian' }],
 			customCss: ['./src/styles/custom.css'],
 			sidebar: [
 				{
