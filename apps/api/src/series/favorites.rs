@@ -48,7 +48,7 @@ pub async fn list_favorites(
         LEFT JOIN LATERAL (
             SELECT provider FROM external_metadata_links
             WHERE series_id = s.id AND status = 'approved'
-            ORDER BY created_at DESC LIMIT 1
+            ORDER BY is_primary DESC, created_at DESC LIMIT 1
         ) ml ON TRUE
         LEFT JOIN anilist_series_links asl ON asl.series_id = s.id AND asl.provider = 'anilist'
         LEFT JOIN series_user_ratings sur ON sur.series_id = s.id AND sur.user_id = $1

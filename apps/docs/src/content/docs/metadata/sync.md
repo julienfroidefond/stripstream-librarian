@@ -17,10 +17,19 @@ Chaque résultat affiche le titre, les auteurs, la couverture, le nombre de tome
 
 ### 2 — Approuver ou rejeter
 
-- **Approuver** : valide le lien et synchronise immédiatement tous les champs (description, couverture, auteurs, statut, genres, liste des tomes)
+- **Approuver** : valide le lien et synchronise immédiatement tous les champs (description, couverture, auteurs, statut, liste des tomes)
 - **Rejeter** : écarte ce résultat sans synchroniser
 
-Un seul lien peut être approuvé à la fois par série.
+Vous pouvez approuver **plusieurs providers** pour une même série. Le premier lien approuvé devient automatiquement le **provider principal** de la série. Depuis la fenêtre de métadonnées, chaque provider lié est listé et vous pouvez basculer le principal via **Définir comme principal**.
+
+### Provider principal et providers de secours
+
+La synchronisation prend toujours les informations du provider **principal** en premier. Si un champ est absent chez le principal, Stripstream le complète en consultant les providers de secours (les autres liens approuvés), dans leur ordre d'approbation.
+
+- Le principal est défini **par série** (pas au niveau de la bibliothèque).
+- Si le principal est rejeté ou supprimé, le plus ancien lien approuvé restant est automatiquement promu.
+- Les **genres** ne sont jamais complétés par un provider de secours : seul le principal peut les alimenter (l'IA et l'édition manuelle restent la source de vérité).
+- Les notes de communauté agrègent tous les providers approuvés (voir [Notes](/series/ratings/)).
 
 ### 3 — Verrouiller des champs
 
@@ -50,7 +59,7 @@ Voir [Batch & Refresh](/metadata/batch-refresh/) pour le détail.
 
 ### Sur la série
 
-Lors de l'approbation, Stripstream met à jour : description, auteurs, éditeurs, année de début, nombre total de tomes, statut de publication, genres, couverture.
+Lors de l'approbation, Stripstream met à jour : description, auteurs, éditeurs, année de début, nombre total de tomes, statut de publication, genres, couverture. Les champs manquants sont complétés par les providers de secours, sauf les **genres**, qui ne proviennent que du provider principal.
 
 ### Sur les livres de la série
 
@@ -99,7 +108,7 @@ Série :
 | `start_year` | Remplace si absent en base |
 | `total_volumes` | Remplace si absent en base |
 | `status` | Remplace si absent en base (via mappings de statut) |
-| `genres` | Remplace si tableau non-vide |
+| `genres` | Remplace si tableau non-vide (provider principal uniquement) |
 | `cover_url` | Remplace si non-vide |
 
 Livres :

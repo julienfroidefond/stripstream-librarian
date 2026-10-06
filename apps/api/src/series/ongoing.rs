@@ -392,7 +392,7 @@ pub async fn get_series_by_id(
             SELECT DISTINCT ON (eml.series_id) eml.series_id, eml.provider
             FROM external_metadata_links eml
             WHERE eml.series_id = $1 AND eml.status = 'approved'
-            ORDER BY eml.series_id, eml.created_at DESC
+            ORDER BY eml.series_id, eml.is_primary DESC, eml.created_at DESC
         ) ml ON ml.series_id = sc.series_id
         LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
         WHERE ($2::uuid IS NULL OR NOT EXISTS (

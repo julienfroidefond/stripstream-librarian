@@ -1183,6 +1183,7 @@ export type ExternalMetadataLinkDto = {
   external_id: string;
   external_url: string | null;
   status: string;
+  is_primary: boolean;
   confidence: number | null;
   metadata_json: Record<string, unknown>;
   total_volumes_external: number | null;
@@ -1258,10 +1259,10 @@ export async function createMetadataMatch(data: {
   });
 }
 
-export async function approveMetadataMatch(id: string, syncSeries: boolean, syncBooks: boolean) {
+export async function approveMetadataMatch(id: string, syncSeries: boolean, syncBooks: boolean, isPrimary?: boolean) {
   return apiFetch<{ status: string; report: SyncReport }>(`/metadata/approve/${id}`, {
     method: "POST",
-    body: JSON.stringify({ sync_series: syncSeries, sync_books: syncBooks }),
+    body: JSON.stringify({ sync_series: syncSeries, sync_books: syncBooks, is_primary: isPrimary }),
   });
 }
 
@@ -1294,6 +1295,18 @@ export async function getMissingBooks(linkId: string) {
 export async function deleteMetadataLink(id: string) {
   return apiFetch<{ deleted: boolean }>(`/metadata/links/${id}`, {
     method: "DELETE",
+  });
+}
+
+export async function setMetadataLinkPrimary(
+  id: string,
+  isPrimary: boolean,
+  syncSeries = true,
+  syncBooks = true,
+) {
+  return apiFetch<{ link: ExternalMetadataLinkDto; report: SyncReport }>(`/metadata/links/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_primary: isPrimary, sync_series: syncSeries, sync_books: syncBooks }),
   });
 }
 

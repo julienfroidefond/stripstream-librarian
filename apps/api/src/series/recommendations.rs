@@ -349,7 +349,7 @@ pub async fn get_recommendations(
         LEFT JOIN LATERAL (
             SELECT eml.provider FROM external_metadata_links eml
             WHERE eml.series_id = s.id AND eml.status = 'approved'
-            ORDER BY eml.created_at DESC LIMIT 1
+            ORDER BY eml.is_primary DESC, eml.created_at DESC LIMIT 1
         ) ml ON TRUE
         LEFT JOIN LATERAL (
             SELECT COUNT(*) AS book_count FROM books b WHERE b.series_id = s.id

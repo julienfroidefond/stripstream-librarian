@@ -1,4 +1,13 @@
+use std::collections::HashMap;
+use std::sync::{atomic::AtomicU64, Arc};
+
+use sqlx::PgPool;
+use tokio::sync::{Mutex, RwLock, Semaphore};
+
 use super::*;
+use crate::state::{
+    DiskCacheStatsSnapshot, DynamicSettings, Metrics, PageRenderLocks, ReadRateLimit,
+};
 use serde_json::json;
 
 // -----------------------------------------------------------------------
@@ -302,6 +311,7 @@ fn link_dto_serializes_optional_fields() {
         external_id: "ext1".to_string(),
         external_url: None,
         status: "pending".to_string(),
+        is_primary: false,
         confidence: Some(0.95),
         metadata_json: json!({}),
         total_volumes_external: None,
@@ -703,4 +713,247 @@ async fn missing_books_integral_makes_series_complete(pool: sqlx::PgPool) {
         "integral → effective local = total_external"
     );
     assert_eq!(missing, 0, "integral → 0 missing");
+}
+
+// -----------------------------------------------------------------------
+// Primary provider selection (handler level)
+// -----------------------------------------------------------------------
+
+fn test_state(pool: PgPool) -> AppState {
+    AppState {
+        pool,
+        bootstrap_token: Arc::from("test-token"),
+        page_cache: Arc::new(Mutex::new(crate::state::PageCache::new(1))),
+        disk_cache_stats: Arc::new(Mutex::new(None::<DiskCacheStatsSnapshot>)),
+        page_render_locks: Arc::new(PageRenderLocks::new(1)),
+        page_render_limit: Arc::new(Semaphore::new(1)),
+        metrics: Arc::new(Metrics {
+            requests_total: AtomicU64::new(0),
+            page_cache_hits: AtomicU64::new(0),
+            page_cache_misses: AtomicU64::new(0),
+        }),
+        read_rate_limit: Arc::new(Mutex::new(ReadRateLimit::new())),
+        settings: Arc::new(RwLock::new(DynamicSettings::default())),
+        prowlarr_fetch_lock: Arc::new(Mutex::new(())),
+        pending_tg_auth: Arc::new(Mutex::new(None)),
+        telegram_download_limit: Arc::new(Semaphore::new(1)),
+        telegram_abort_handles: Arc::new(Mutex::new(HashMap::new())),
+    }
+}
+
+async fn seed_series_with_links(pool: &PgPool, providers: &[&str]) -> (Uuid, Uuid, Vec<Uuid>) {
+    let library_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO libraries (id, name, root_path) VALUES ($1, 'primary', '/libraries/primary')",
+    )
+    .bind(library_id)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    let series_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Primary Series')")
+        .bind(series_id)
+        .bind(library_id)
+        .execute(pool)
+        .await
+        .unwrap();
+
+    let mut links = Vec::new();
+    for (index, provider) in providers.iter().enumerate() {
+        let link_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO external_metadata_links \
+                 (id, library_id, series_id, provider, external_id, status, metadata_json) \
+             VALUES ($1, $2, $3, $4, $5, 'pending', '{}'::jsonb)",
+        )
+        .bind(link_id)
+        .bind(library_id)
+        .bind(series_id)
+        .bind(provider)
+        .bind(format!("ext:{index}"))
+        .execute(pool)
+        .await
+        .unwrap();
+        links.push(link_id);
+    }
+
+    (library_id, series_id, links)
+}
+
+async fn link_is_primary(pool: &PgPool, id: Uuid) -> bool {
+    sqlx::query_scalar("SELECT is_primary FROM external_metadata_links WHERE id = $1")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn link_status(pool: &PgPool, id: Uuid) -> String {
+    sqlx::query_scalar("SELECT status FROM external_metadata_links WHERE id = $1")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn approve(state: &AppState, id: Uuid, is_primary: Option<bool>) {
+    let _ = approve_metadata(
+        State(state.clone()),
+        AxumPath(id),
+        Json(ApproveRequest {
+            sync_series: false,
+            sync_books: false,
+            is_primary,
+        }),
+    )
+    .await
+    .unwrap();
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn approve_first_link_becomes_primary(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let (_lib, _series, links) = seed_series_with_links(&pool, &["provider_a"]).await;
+
+    approve(&state, links[0], None).await;
+
+    assert!(link_is_primary(&pool, links[0]).await);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn approve_second_provider_keeps_first_primary(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let (_lib, _series, links) = seed_series_with_links(&pool, &["provider_a", "provider_b"]).await;
+
+    approve(&state, links[0], None).await;
+    approve(&state, links[1], None).await;
+
+    assert!(
+        link_is_primary(&pool, links[0]).await,
+        "first approved link stays primary"
+    );
+    assert!(
+        !link_is_primary(&pool, links[1]).await,
+        "second approved link is a fallback"
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn approve_with_force_switches_primary(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let (_lib, _series, links) = seed_series_with_links(&pool, &["provider_a", "provider_b"]).await;
+
+    approve(&state, links[0], None).await;
+    approve(&state, links[1], Some(true)).await;
+
+    assert!(
+        !link_is_primary(&pool, links[0]).await,
+        "old primary cleared"
+    );
+    assert!(
+        link_is_primary(&pool, links[1]).await,
+        "forced primary wins"
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn reject_primary_promotes_oldest_approved(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let (_lib, _series, links) = seed_series_with_links(&pool, &["provider_a", "provider_b"]).await;
+
+    approve(&state, links[0], None).await;
+    approve(&state, links[1], None).await;
+
+    let _ = reject_metadata(State(state.clone()), AxumPath(links[0]))
+        .await
+        .unwrap();
+
+    assert_eq!(link_status(&pool, links[0]).await, "rejected");
+    assert!(
+        link_is_primary(&pool, links[1]).await,
+        "oldest approved link promoted after rejection"
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn delete_primary_promotes_oldest_approved(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let (_lib, _series, links) = seed_series_with_links(&pool, &["provider_a", "provider_b"]).await;
+
+    approve(&state, links[0], None).await;
+    approve(&state, links[1], None).await;
+
+    let _ = delete_metadata_link(State(state.clone()), AxumPath(links[0]))
+        .await
+        .unwrap();
+
+    assert!(
+        link_is_primary(&pool, links[1]).await,
+        "remaining approved link promoted after deletion"
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn patch_promotes_link_to_primary(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let (_lib, _series, links) = seed_series_with_links(&pool, &["provider_a", "provider_b"]).await;
+
+    approve(&state, links[0], None).await;
+    approve(&state, links[1], None).await;
+
+    let response = patch_metadata_link(
+        State(state.clone()),
+        AxumPath(links[1]),
+        Json(PatchLinkRequest {
+            is_primary: Some(true),
+            sync_series: false,
+            sync_books: false,
+        }),
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        response.0.link.is_primary,
+        "response reports the new primary"
+    );
+    assert!(
+        !link_is_primary(&pool, links[0]).await,
+        "previous primary cleared"
+    );
+    assert!(link_is_primary(&pool, links[1]).await);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn patch_rejects_non_approved_link(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let (_lib, _series, links) = seed_series_with_links(&pool, &["provider_a"]).await;
+
+    let error = match patch_metadata_link(
+        State(state.clone()),
+        AxumPath(links[0]),
+        Json(PatchLinkRequest {
+            is_primary: Some(true),
+            sync_series: false,
+            sync_books: false,
+        }),
+    )
+    .await
+    {
+        Ok(_) => panic!("expected non-approved link to be rejected"),
+        Err(error) => error,
+    };
+
+    assert_eq!(error.status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn reject_unknown_link_returns_not_found(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let error = reject_metadata(State(state.clone()), AxumPath(Uuid::new_v4()))
+        .await
+        .unwrap_err();
+
+    assert_eq!(error.status, axum::http::StatusCode::NOT_FOUND);
 }

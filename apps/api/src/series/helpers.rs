@@ -177,26 +177,11 @@ pub(crate) async fn create_series_with_metadata(
 
         metadata_link_id = Some(link_id);
 
-        // Sync series metadata
-        let _ = crate::metadata::sync_series_metadata(
-            state,
-            params.library_id,
-            &params.name,
-            &metadata_json,
-            params.total_volumes,
-        )
-        .await;
+        // Promote this link to primary if the series has none yet.
+        let _ = crate::metadata::shared_sync::promote_if_no_primary(pool, series_id, link_id).await;
 
-        // Sync book metadata
-        let _ = crate::metadata::sync_books_metadata(
-            state,
-            link_id,
-            params.library_id,
-            &params.name,
-            provider,
-            external_id,
-        )
-        .await;
+        // Sync the whole series from all approved links (primary + fallback).
+        let _ = crate::metadata::sync_series_from_links(pool, series_id, true, true).await;
 
         // Override series.cover_url with the provider's tome 1 cover (more authoritative
         // than the discovery thumbnail that may have been sent in the request).

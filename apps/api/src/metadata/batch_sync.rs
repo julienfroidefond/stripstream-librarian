@@ -136,89 +136,16 @@ pub(super) async fn auto_apply(
 
     let link_id: Uuid = row.get("id");
 
-    // Sync series metadata
-    sync_series_from_candidate(pool, library_id, series_name, candidate).await?;
+    // The first approved link of a series becomes the primary.
+    shared_sync::promote_if_no_primary(pool, series_id, link_id)
+        .await
+        .map_err(|e| e.to_string())?;
 
-    // Sync books
-    sync_books_from_provider(
-        pool,
-        link_id,
-        library_id,
-        series_name,
-        provider_name,
-        &candidate.external_id,
-    )
-    .await?;
+    // Sync the whole series from all approved links (primary first, secondaries
+    // as fallback), so an auto-matched secondary never overwrites the primary.
+    super::sync_series_from_links(pool, series_id, true, true)
+        .await
+        .map_err(|e| e.message)?;
 
     Ok(link_id)
-}
-
-/// Sync series metadata from a candidate (simplified version for batch use)
-async fn sync_series_from_candidate(
-    pool: &PgPool,
-    library_id: Uuid,
-    series_name: &str,
-    candidate: &metadata_providers::SeriesCandidate,
-) -> Result<(), String> {
-    let fields =
-        shared_sync::extract_series_fields(pool, &candidate.metadata_json, Some(candidate), None)
-            .await;
-
-    shared_sync::upsert_series_metadata(pool, library_id, series_name, &fields)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
-}
-
-/// Sync books from provider (simplified for batch use)
-async fn sync_books_from_provider(
-    pool: &PgPool,
-    link_id: Uuid,
-    library_id: Uuid,
-    series_name: &str,
-    provider_name: &str,
-    external_id: &str,
-) -> Result<(), String> {
-    let provider = metadata_providers::get_provider(provider_name)
-        .ok_or_else(|| format!("Unknown provider: {provider_name}"))?;
-
-    let config = super::config::load_provider_config(pool, provider_name).await;
-
-    let books = provider
-        .get_series_books(external_id, &config)
-        .await
-        .map_err(|e| format!("provider books error: {e}"))?;
-
-    shared_sync::delete_link_book_metadata(pool, link_id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let local_books = shared_sync::fetch_local_books(pool, library_id, series_name)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let matched = if provider_name == "bdtheque" || provider_name == "bdphile" {
-        shared_sync::match_books_for_new_provider(&books, &local_books)
-    } else {
-        shared_sync::match_books(&books, &local_books)
-    };
-
-    for m in &matched {
-        shared_sync::insert_external_book_metadata(pool, link_id, m.local_book_id, m.ext_book)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        if let Some(book_id) = m.local_book_id {
-            shared_sync::push_book_metadata(pool, book_id, m.ext_book)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-    }
-
-    shared_sync::update_link_synced_at(pool, link_id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
 }

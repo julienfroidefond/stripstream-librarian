@@ -47,6 +47,13 @@ pub(crate) async fn refresh_link(
 
     let config = super::config::load_provider_config(pool, provider_name).await;
 
+    let series_id: Uuid =
+        sqlx::query_scalar("SELECT series_id FROM external_metadata_links WHERE id = $1")
+            .bind(link_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
     let mut book_changes: Vec<BookDiff> = Vec::new();
 
     // -- Series-level refresh --
@@ -80,8 +87,18 @@ pub(crate) async fn refresh_link(
     .await
     .map_err(|e| e.to_string())?;
 
+    // Merge series fields across all approved links (primary first), so the
+    // result does not depend on which link triggered this refresh.
+    let links = shared_sync::fetch_approved_links(pool, series_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut fields = shared_sync::merge_series_fields(&links);
+    if let Some(raw) = fields.status.clone() {
+        fields.status = Some(super::handlers::normalize_series_status(pool, &raw).await);
+    }
+
     // Diff + sync series metadata
-    let series_changes = sync_series_with_diff(pool, library_id, series_name, &candidate).await?;
+    let series_changes = sync_series_with_diff(pool, library_id, series_name, &fields).await?;
 
     // -- Book-level refresh --
     let books = provider
@@ -107,22 +124,26 @@ pub(crate) async fn refresh_link(
         shared_sync::insert_external_book_metadata(pool, link_id, m.local_book_id, m.ext_book)
             .await
             .map_err(|e| e.to_string())?;
+    }
 
-        if let Some(book_id) = m.local_book_id {
-            let diffs = sync_book_with_diff(pool, book_id, m.ext_book).await?;
-            if !diffs.is_empty() {
-                let local_title = local_books
-                    .iter()
-                    .find(|book| book.id == book_id)
-                    .map(|book| book.title.clone())
-                    .unwrap_or_default();
-                book_changes.push(BookDiff {
-                    book_id: book_id.to_string(),
-                    title: local_title,
-                    volume: m.ext_book.volume_number,
-                    changes: diffs,
-                });
-            }
+    // Push merged book metadata across all approved links (primary first).
+    let rows = shared_sync::fetch_approved_external_books(pool, series_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    for (book_id, candidate) in shared_sync::merge_book_rows(&rows) {
+        let diffs = sync_book_with_diff(pool, book_id, &candidate).await?;
+        if !diffs.is_empty() {
+            let local_title = local_books
+                .iter()
+                .find(|book| book.id == book_id)
+                .map(|book| book.title.clone())
+                .unwrap_or_default();
+            book_changes.push(BookDiff {
+                book_id: book_id.to_string(),
+                title: local_title,
+                volume: candidate.volume_number,
+                changes: diffs,
+            });
         }
     }
 
@@ -157,13 +178,9 @@ async fn sync_series_with_diff(
     pool: &PgPool,
     library_id: Uuid,
     series_name: &str,
-    candidate: &metadata_providers::SeriesCandidate,
+    fields: &shared_sync::SeriesFields,
 ) -> Result<Vec<FieldDiff>, String> {
-    let fields =
-        shared_sync::extract_series_fields(pool, &candidate.metadata_json, Some(candidate), None)
-            .await;
-
-    let existing = shared_sync::upsert_series_metadata(pool, library_id, series_name, &fields)
+    let existing = shared_sync::upsert_series_metadata(pool, library_id, series_name, fields)
         .await
         .map_err(|e| e.to_string())?;
 

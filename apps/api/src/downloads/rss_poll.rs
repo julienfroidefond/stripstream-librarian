@@ -157,8 +157,12 @@ pub(crate) async fn process_rss_poll(
             r#"
             SELECT s.id AS series_id, s.name AS series_name, eml.id AS link_id, eml.library_id AS library_id
             FROM series s
-            JOIN external_metadata_links eml ON eml.series_id = s.id
-                AND eml.library_id = $1 AND eml.status = 'approved'
+            JOIN LATERAL (
+                SELECT id, library_id FROM external_metadata_links
+                WHERE series_id = s.id AND library_id = $1 AND status = 'approved'
+                ORDER BY is_primary DESC, approved_at ASC NULLS LAST, id ASC
+                LIMIT 1
+            ) eml ON TRUE
             WHERE EXISTS (
                 SELECT 1 FROM external_book_metadata ebm
                 WHERE ebm.link_id = eml.id AND ebm.book_id IS NULL
@@ -179,7 +183,12 @@ pub(crate) async fn process_rss_poll(
             r#"
             SELECT s.id AS series_id, s.name AS series_name, eml.id AS link_id, eml.library_id AS library_id
             FROM series s
-            JOIN external_metadata_links eml ON eml.series_id = s.id AND eml.status = 'approved'
+            JOIN LATERAL (
+                SELECT id, library_id FROM external_metadata_links
+                WHERE series_id = s.id AND status = 'approved'
+                ORDER BY is_primary DESC, approved_at ASC NULLS LAST, id ASC
+                LIMIT 1
+            ) eml ON TRUE
             WHERE EXISTS (
                 SELECT 1 FROM external_book_metadata ebm
                 WHERE ebm.link_id = eml.id AND ebm.book_id IS NULL

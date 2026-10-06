@@ -54,6 +54,7 @@ interface Props {
   editLockedFields: Record<string, boolean>;
   // Metadata
   existingLink: ExternalMetadataLinkDto | null;
+  metadataLinks?: ExternalMetadataLinkDto[];
   missingData: MissingBooksDto | null;
   hiddenProviders: string[];
   // Reading status
@@ -105,6 +106,7 @@ export function SeriesActionsToolbar(props: Props) {
             libraryId={props.libraryId}
             seriesName={props.seriesName}
             existingLink={props.existingLink}
+            links={props.metadataLinks}
             initialMissing={props.missingData}
             initialHiddenProviders={props.hiddenProviders}
           >

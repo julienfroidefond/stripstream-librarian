@@ -813,7 +813,8 @@ pub(crate) async fn process_download_detection(
     let links: Vec<(String, Uuid)> = sqlx::query(
         "SELECT s.name AS series_name, eml.id FROM external_metadata_links eml \
          JOIN series s ON s.id = eml.series_id \
-         WHERE eml.library_id = $1 AND eml.status = 'approved'",
+         WHERE eml.library_id = $1 AND eml.status = 'approved' \
+         ORDER BY eml.is_primary ASC, eml.approved_at ASC NULLS LAST, eml.id ASC",
     )
     .bind(library_id)
     .fetch_all(pool)

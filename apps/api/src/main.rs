@@ -391,7 +391,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .route(
             "/metadata/links/:id",
-            delete(metadata::delete_metadata_link),
+            delete(metadata::delete_metadata_link).patch(metadata::patch_metadata_link),
         )
         .route(
             "/metadata/batch",

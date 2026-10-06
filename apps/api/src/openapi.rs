@@ -196,6 +196,7 @@ pub struct ClientApiDoc;
         crate::metadata::handlers::get_metadata_links,
         crate::metadata::handlers::get_missing_books,
         crate::metadata::handlers::delete_metadata_link,
+        crate::metadata::handlers::patch_metadata_link,
         crate::metadata::gaps::get_gap_summary,
         crate::metadata::batch::start_batch,
         crate::metadata::batch::get_batch_report,
@@ -369,6 +370,8 @@ pub struct ClientApiDoc;
             // Metadata
             crate::metadata::ApproveRequest,
             crate::metadata::ApproveResponse,
+            crate::metadata::PatchLinkRequest,
+            crate::metadata::PatchLinkResponse,
             crate::metadata::SyncReport,
             crate::metadata::SeriesSyncReport,
             crate::metadata::BookSyncReport,

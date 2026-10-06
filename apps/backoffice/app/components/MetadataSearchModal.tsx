@@ -25,6 +25,7 @@ interface MetadataSearchModalProps {
   libraryId: string;
   seriesName: string;
   existingLink: ExternalMetadataLinkDto | null;
+  links?: ExternalMetadataLinkDto[];
   initialMissing: MissingBooksDto | null;
   initialHiddenProviders?: string[];
   children?: (open: () => void) => React.ReactNode;
@@ -36,6 +37,7 @@ export function MetadataSearchModal({
   libraryId,
   seriesName,
   existingLink,
+  links,
   initialMissing,
   initialHiddenProviders,
   children,
@@ -55,6 +57,7 @@ export function MetadataSearchModal({
   const [selectedCandidate, setSelectedCandidate] = useState<SeriesCandidateDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [linkId, setLinkId] = useState<string | null>(existingLink?.id ?? null);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [missing, setMissing] = useState<MissingBooksDto | null>(initialMissing);
   const [showMissingList, setShowMissingList] = useState(false);
   const [syncReport, setSyncReport] = useState<SyncReport | null>(null);
@@ -77,16 +80,20 @@ export function MetadataSearchModal({
   }, []);
 
   const visibleProviders = providers.filter((p) => !hiddenProviders.has(p.id));
+  const approvedLinks = (links ?? (existingLink ? [existingLink] : [])).filter(
+    (l) => l.status === "approved",
+  );
+  const primaryLink = approvedLinks.find((l) => l.is_primary) ?? null;
 
   const handleOpen = useCallback(() => {
     setIsOpen(true);
     setSearchInput(seriesName);
-    if (existingLink && existingLink.status === "approved") {
+    if (approvedLinks.length > 0) {
       setStep("linked");
     } else {
       doSearch("", seriesName);
     }
-  }, [existingLink, seriesName]);
+  }, [approvedLinks.length, seriesName]);
 
   const handleClose = useCallback(() => {
     setIsOpen(false);
@@ -223,16 +230,38 @@ export function MetadataSearchModal({
     }
   }
 
-  async function handleUnlink() {
-    if (!linkId) return;
+  async function handleSetPrimary(id: string) {
+    setBusyId(id);
+    setError(null);
+    try {
+      const resp = await fetch(`/api/metadata/links?id=${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_primary: true, sync_series: true, sync_books: true }),
+      });
+      if (resp.ok) {
+        router.refresh();
+      } else {
+        const body = await resp.json().catch(() => ({}));
+        setError(body?.error ?? t("common.networkError"));
+      }
+    } catch {
+      setError(t("common.networkError"));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleUnlink(id: string) {
     setUnlinking(true);
     setError(null);
     try {
-      const resp = await fetch(`/api/metadata/links?id=${linkId}`, { method: "DELETE" });
+      const resp = await fetch(`/api/metadata/links?id=${id}`, { method: "DELETE" });
       if (resp.ok) {
-        setLinkId(null);
-        setMissing(null);
-        handleClose();
+        if (linkId === id) {
+          setLinkId(null);
+          setMissing(null);
+        }
         router.refresh();
       } else {
         const body = await resp.json().catch(() => ({}));
@@ -604,27 +633,67 @@ export function MetadataSearchModal({
                 )}
 
                 {/* LINKED (already approved) */}
-                {step === "linked" && existingLink && (
+                {step === "linked" && approvedLinks.length > 0 && (
                   <div className="space-y-4">
-                    <div className="p-4 rounded-lg bg-primary/5 border border-primary/30">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-foreground inline-flex items-center gap-1.5">
-                            {t("metadata.linkedTo")} <ProviderIcon provider={existingLink.provider} size={16} /> {providerLabel(existingLink.provider)}
-                          </p>
-                          {existingLink.external_url && (
-                            <a
-                              href={existingLink.external_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="block mt-1 text-xs text-primary hover:underline"
-                            >
-                              {t("metadata.viewExternal")}
-                            </a>
-                          )}
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-muted-foreground">{t("metadata.linkedProviders")}</p>
+                      {approvedLinks.map((link) => (
+                        <div
+                          key={link.id}
+                          className={`p-4 rounded-lg border ${
+                            link.is_primary ? "bg-primary/5 border-primary/30" : "bg-muted/20 border-border"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="font-medium text-foreground inline-flex items-center gap-1.5 flex-wrap">
+                                <ProviderIcon provider={link.provider} size={16} />
+                                {providerLabel(link.provider)}
+                                {link.is_primary && (
+                                  <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/30">
+                                    {t("metadata.primary")}
+                                  </span>
+                                )}
+                              </p>
+                              {link.external_url && (
+                                <a
+                                  href={link.external_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block mt-1 text-xs text-primary hover:underline"
+                                >
+                                  {t("metadata.viewExternal")}
+                                </a>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {link.confidence != null && confidenceBadge(link.confidence)}
+                              {!link.is_primary && (
+                                <button
+                                  type="button"
+                                  disabled={busyId === link.id}
+                                  onClick={() => handleSetPrimary(link.id)}
+                                  className="px-2.5 py-1 rounded-lg border border-primary/30 bg-primary/5 text-xs font-medium text-primary hover:bg-primary/10 transition-colors disabled:opacity-60"
+                                >
+                                  {busyId === link.id ? (
+                                    <Icon name="spinner" size="sm" className="animate-spin" />
+                                  ) : (
+                                    t("metadata.setPrimary")
+                                  )}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                disabled={busyId === link.id || unlinking}
+                                onClick={() => handleUnlink(link.id)}
+                                className="px-2.5 py-1 rounded-lg border border-destructive/30 bg-destructive/5 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-60"
+                              >
+                                {t("metadata.unlink")}
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                        {existingLink.confidence != null && confidenceBadge(existingLink.confidence)}
-                      </div>
+                      ))}
                     </div>
 
                     {initialMissing && (
@@ -673,17 +742,18 @@ export function MetadataSearchModal({
                         onClick={() => { doSearch(""); }}
                         className="flex-1 p-2.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
                       >
-                        {t("metadata.searchAgain")}
+                        {t("metadata.addProvider")}
                       </button>
                       <button
                         type="button"
-                        disabled={refreshing}
+                        disabled={refreshing || !primaryLink}
                         onClick={async () => {
-                          if (!linkId) return;
+                          const targetId = primaryLink?.id ?? linkId;
+                          if (!targetId) return;
                           setRefreshing(true);
                           setRefreshDone(false);
                           try {
-                            const resp = await fetch(`/api/metadata/refresh-link/${linkId}`, { method: "POST" });
+                            const resp = await fetch(`/api/metadata/refresh-link/${targetId}`, { method: "POST" });
                             if (resp.ok) {
                               setRefreshDone(true);
                               setTimeout(() => setRefreshDone(false), 3000);
@@ -706,14 +776,6 @@ export function MetadataSearchModal({
                           t("metadata.refreshLink")
                         )}
                       </button>
-                      <button
-                        type="button"
-                        onClick={handleUnlink}
-                        disabled={unlinking}
-                        className="p-2.5 rounded-lg border border-destructive/30 bg-destructive/5 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-60"
-                      >
-                        {unlinking ? <Icon name="spinner" size="sm" className="animate-spin" /> : t("metadata.unlink")}
-                      </button>
                     </div>
                   </div>
                 )}
@@ -732,7 +794,7 @@ export function MetadataSearchModal({
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
         >
           <Icon name="search" size="sm" />
-          {existingLink && existingLink.status === "approved" ? t("metadata.metadataButton") : t("metadata.searchButton")}
+          {approvedLinks.length > 0 ? t("metadata.metadataButton") : t("metadata.searchButton")}
         </button>
       )}
 

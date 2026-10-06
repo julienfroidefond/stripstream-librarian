@@ -77,7 +77,11 @@ export default async function SeriesDetailPage({
   const hiddenProviders: string[] = [];
   if (!metadataProviders?.comicvine?.api_key) hiddenProviders.push("comicvine");
 
-  const existingLink = metadataLinks.find((l) => l.status === "approved") ?? metadataLinks[0] ?? null;
+  const existingLink =
+    metadataLinks.find((l) => l.status === "approved" && l.is_primary) ??
+    metadataLinks.find((l) => l.status === "approved") ??
+    metadataLinks[0] ??
+    null;
   let missingData: MissingBooksDto | null = null;
   if (existingLink && existingLink.status === "approved") {
     missingData = await getMissingBooks(existingLink.id).catch(() => null);
@@ -324,6 +328,7 @@ export default async function SeriesDetailPage({
             editStatus={seriesMeta?.status ?? null}
             editLockedFields={seriesMeta?.locked_fields ?? {}}
             existingLink={existingLink}
+            metadataLinks={metadataLinks}
             missingData={missingData}
             hiddenProviders={hiddenProviders}
             readingStatusProvider={library.reading_status_provider ?? null}

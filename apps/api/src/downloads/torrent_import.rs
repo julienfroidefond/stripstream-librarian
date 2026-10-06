@@ -761,7 +761,8 @@ pub(super) async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> an
             let link_row = sqlx::query(
                 "SELECT eml.id, eml.provider, eml.external_id FROM external_metadata_links eml \
                  JOIN series s ON s.id = eml.series_id \
-                 WHERE s.library_id = $1 AND LOWER(s.name) = LOWER($2) AND eml.status = 'approved' LIMIT 1",
+                 WHERE s.library_id = $1 AND LOWER(s.name) = LOWER($2) AND eml.status = 'approved' \
+                 ORDER BY eml.is_primary DESC, eml.approved_at ASC NULLS LAST, eml.id ASC LIMIT 1",
             )
             .bind(library_id)
             .bind(&series_name)

@@ -13,6 +13,11 @@ use crate::{
     state::AppState,
 };
 
+use super::shared_sync;
+
+// Re-exported for sibling modules; also brings the symbol into this module's scope.
+pub(crate) use super::sync::sync_series_from_links;
+
 // ---------------------------------------------------------------------------
 // DTOs
 // ---------------------------------------------------------------------------
@@ -66,6 +71,7 @@ pub struct ExternalMetadataLinkDto {
     pub external_id: String,
     pub external_url: Option<String>,
     pub status: String,
+    pub is_primary: bool,
     pub confidence: Option<f32>,
     pub metadata_json: serde_json::Value,
     pub total_volumes_external: Option<i32>,
@@ -80,6 +86,35 @@ pub struct ApproveRequest {
     pub sync_series: bool,
     #[serde(default)]
     pub sync_books: bool,
+    /// Force this link as the series' primary provider. When omitted, the link
+    /// becomes primary only if the series has no approved primary yet.
+    #[serde(default)]
+    pub is_primary: Option<bool>,
+}
+
+/// Body for `PATCH /metadata/links/:id`.
+#[derive(Deserialize, ToSchema)]
+pub struct PatchLinkRequest {
+    /// Promote this link to primary (`true`). Setting `false` is a no-op: a
+    /// series always keeps a primary as long as an approved link exists.
+    #[serde(default)]
+    pub is_primary: Option<bool>,
+    /// Re-run series sync after the change (default true).
+    #[serde(default = "default_true")]
+    pub sync_series: bool,
+    /// Re-run book sync after the change (default true).
+    #[serde(default = "default_true")]
+    pub sync_books: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PatchLinkResponse {
+    pub link: ExternalMetadataLinkDto,
+    pub report: SyncReport,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -321,7 +356,7 @@ pub async fn create_metadata_match(
     // Re-fetch with JOIN to get series_name for the DTO
     let full_row = sqlx::query(
         r#"
-        SELECT eml.id, eml.library_id, s.name AS series_name, eml.series_id, eml.provider, eml.external_id, eml.external_url, eml.status, eml.confidence,
+        SELECT eml.id, eml.library_id, s.name AS series_name, eml.series_id, eml.provider, eml.external_id, eml.external_url, eml.status, eml.is_primary, eml.confidence,
                eml.metadata_json, eml.total_volumes_external, eml.matched_at, eml.approved_at, eml.synced_at
         FROM external_metadata_links eml
         JOIN series s ON s.id = eml.series_id
@@ -356,103 +391,42 @@ pub async fn approve_metadata(
     AxumPath(id): AxumPath<Uuid>,
     Json(body): Json<ApproveRequest>,
 ) -> Result<Json<ApproveResponse>, ApiError> {
-    // Update status to approved
-    let result = sqlx::query(
+    // Mark this link approved.
+    let row = sqlx::query(
         r#"
         UPDATE external_metadata_links
         SET status = 'approved', approved_at = NOW(), updated_at = NOW()
         WHERE id = $1
-        RETURNING library_id, series_id, provider, external_id, metadata_json, total_volumes_external
+        RETURNING library_id, series_id, provider
         "#,
     )
     .bind(id)
     .fetch_optional(&state.pool)
-    .await?;
-
-    let row = result.ok_or_else(|| ApiError::not_found("link not found"))?;
+    .await?
+    .ok_or_else(|| ApiError::not_found("link not found"))?;
 
     let library_id: Uuid = row.get("library_id");
     let series_id: Uuid = row.get("series_id");
+    let provider_name: String = row.get("provider");
     let series_name: String = sqlx::query_scalar("SELECT name FROM series WHERE id = $1")
         .bind(series_id)
         .fetch_one(&state.pool)
         .await?;
 
-    // Reject any other approved links for the same series (only one active link per series)
-    // Also clean up their external_book_metadata
-    let old_link_ids: Vec<Uuid> = sqlx::query_scalar(
-        r#"
-        UPDATE external_metadata_links
-        SET status = 'rejected', updated_at = NOW()
-        WHERE series_id = $1 AND id != $2 AND status = 'approved'
-        RETURNING id
-        "#,
-    )
-    .bind(series_id)
-    .bind(id)
-    .fetch_all(&state.pool)
-    .await?;
-
-    if !old_link_ids.is_empty() {
-        sqlx::query("DELETE FROM external_book_metadata WHERE link_id = ANY($1)")
-            .bind(&old_link_ids)
-            .execute(&state.pool)
-            .await?;
+    // Multiple approved links per series are allowed. This link becomes primary
+    // if forced, or automatically when the series has no approved primary yet.
+    if body.is_primary == Some(true) {
+        shared_sync::set_primary_link(&state.pool, series_id, id).await?;
+    } else {
+        shared_sync::promote_if_no_primary(&state.pool, series_id, id).await?;
     }
 
-    let provider_name: String = row.get("provider");
-    let external_id: String = row.get("external_id");
-    let metadata_json: serde_json::Value = row.get("metadata_json");
-    let total_volumes_external: Option<i32> = row.get("total_volumes_external");
-
-    let mut report = SyncReport::default();
-
-    // Sync series metadata if requested
-    if body.sync_series {
-        report.series = Some(
-            sync_series_metadata(
-                &state,
-                library_id,
-                &series_name,
-                &metadata_json,
-                total_volumes_external,
-            )
-            .await?,
-        );
-    }
-
-    // Sync books if requested
-    if body.sync_books {
-        let (matched, book_reports, unmatched) = sync_books_metadata(
-            &state,
-            id,
-            library_id,
-            &series_name,
-            &provider_name,
-            &external_id,
-        )
-        .await?;
-        report.books_matched = matched;
-        report.books = book_reports;
-        report.books_unmatched = unmatched;
-
-        if matched == 0 && unmatched == 0 {
-            report.books_message = Some(
-                "This provider does not have volume-level data for this series. \
-                 Series metadata was synced, but book matching is not available."
-                    .to_string(),
-            );
-        }
-
-        // Update synced_at
-        sqlx::query("UPDATE external_metadata_links SET synced_at = NOW(), updated_at = NOW() WHERE id = $1")
-            .bind(id)
-            .execute(&state.pool)
-            .await?;
-    }
+    // Sync the whole series from all approved links (primary first, secondaries
+    // as fallback), so approving a secondary never overwrites the primary.
+    let report =
+        sync_series_from_links(&state.pool, series_id, body.sync_series, body.sync_books).await?;
 
     // Notify via Telegram (with first book thumbnail if available)
-    let provider_for_notif: String = row.get("provider");
     let thumbnail_path: Option<String> = sqlx::query_scalar(
         "SELECT b.thumbnail_path FROM books b JOIN series s ON s.id = b.series_id WHERE b.library_id = $1 AND s.name = $2 AND b.thumbnail_path IS NOT NULL ORDER BY b.volume NULLS LAST, b.title LIMIT 1",
     )
@@ -479,7 +453,7 @@ pub async fn approve_metadata(
         state.pool.clone(),
         notifications::NotificationEvent::MetadataApproved {
             series_name: series_name.clone(),
-            provider: provider_for_notif,
+            provider: provider_name,
             thumbnail_path,
             fields_updated: notif_fields,
             books_matched: notif_books_matched,
@@ -512,18 +486,82 @@ pub async fn reject_metadata(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
 ) -> Result<Json<crate::responses::StatusResponse>, ApiError> {
-    let result = sqlx::query(
-        "UPDATE external_metadata_links SET status = 'rejected', updated_at = NOW() WHERE id = $1",
+    let row = sqlx::query(
+        "UPDATE external_metadata_links SET status = 'rejected', is_primary = false, updated_at = NOW() \
+         WHERE id = $1 RETURNING series_id",
     )
     .bind(id)
-    .execute(&state.pool)
-    .await?;
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::not_found("link not found"))?;
 
-    if result.rows_affected() == 0 {
-        return Err(ApiError::not_found("link not found"));
-    }
+    // If the rejected link was primary, promote the oldest approved link left.
+    let series_id: Uuid = row.get("series_id");
+    shared_sync::promote_oldest_approved(&state.pool, series_id).await?;
 
     Ok(Json(crate::responses::StatusResponse::new("rejected")))
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /metadata/links/:id
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    patch,
+    path = "/metadata/links/{id}",
+    tag = "metadata",
+    params(("id" = String, Path, description = "Link UUID")),
+    request_body = PatchLinkRequest,
+    responses(
+        (status = 200, body = PatchLinkResponse),
+        (status = 404, description = "Link not found"),
+        (status = 422, description = "Link is not approved"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn patch_metadata_link(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Uuid>,
+    Json(body): Json<PatchLinkRequest>,
+) -> Result<Json<PatchLinkResponse>, ApiError> {
+    let link = sqlx::query("SELECT series_id, status FROM external_metadata_links WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| ApiError::not_found("link not found"))?;
+
+    let series_id: Uuid = link.get("series_id");
+    let status: String = link.get("status");
+
+    if body.is_primary == Some(true) {
+        if status != "approved" {
+            return Err(ApiError::unprocessable_entity(
+                "only approved links can be set as primary",
+            ));
+        }
+        shared_sync::set_primary_link(&state.pool, series_id, id).await?;
+    }
+
+    let report =
+        sync_series_from_links(&state.pool, series_id, body.sync_series, body.sync_books).await?;
+
+    let full_row = sqlx::query(
+        r#"
+        SELECT eml.id, eml.library_id, s.name AS series_name, eml.series_id, eml.provider, eml.external_id, eml.external_url, eml.status, eml.is_primary, eml.confidence,
+               eml.metadata_json, eml.total_volumes_external, eml.matched_at, eml.approved_at, eml.synced_at
+        FROM external_metadata_links eml
+        JOIN series s ON s.id = eml.series_id
+        WHERE eml.id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(PatchLinkResponse {
+        link: row_to_link_dto(&full_row),
+        report,
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -553,7 +591,7 @@ pub async fn get_metadata_links(
 
     let rows = sqlx::query(
         r#"
-        SELECT eml.id, eml.library_id, s.name AS series_name, eml.series_id, eml.provider, eml.external_id, eml.external_url, eml.status, eml.confidence,
+        SELECT eml.id, eml.library_id, s.name AS series_name, eml.series_id, eml.provider, eml.external_id, eml.external_url, eml.status, eml.is_primary, eml.confidence,
                eml.metadata_json, eml.total_volumes_external, eml.matched_at, eml.approved_at, eml.synced_at
         FROM external_metadata_links eml
         JOIN series s ON s.id = eml.series_id
@@ -701,30 +739,51 @@ pub async fn delete_metadata_link(
     let mut tx = state.pool.begin().await?;
 
     // Fetch series_id before deleting so we can clear cover_url
-    let row = sqlx::query("DELETE FROM external_metadata_links WHERE id = $1 RETURNING series_id")
-        .bind(id)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or_else(|| ApiError::not_found("link not found"))?;
+    let row = sqlx::query(
+        "DELETE FROM external_metadata_links WHERE id = $1 RETURNING series_id, is_primary",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::not_found("link not found"))?;
 
     let series_id: uuid::Uuid = row.get("series_id");
-
-    // Clear stale external fields on the series (respect locked_fields)
-    sqlx::query(
-        r#"UPDATE series SET
-            cover_url = NULL,
-            description = CASE WHEN (locked_fields->>'description')::boolean IS TRUE THEN description ELSE NULL END,
-            authors = CASE WHEN (locked_fields->>'authors')::boolean IS TRUE THEN authors ELSE '{}' END,
-            status = CASE WHEN (locked_fields->>'status')::boolean IS TRUE THEN status ELSE NULL END,
-            total_volumes = CASE WHEN (locked_fields->>'total_volumes')::boolean IS TRUE THEN total_volumes ELSE NULL END,
-            start_year = CASE WHEN (locked_fields->>'start_year')::boolean IS TRUE THEN start_year ELSE NULL END
-        WHERE id = $1"#,
-    )
-    .bind(series_id)
-    .execute(&mut *tx)
-    .await?;
+    let was_primary: bool = row.get("is_primary");
 
     tx.commit().await?;
+
+    // If the deleted link was primary, promote the oldest approved link left.
+    if was_primary {
+        shared_sync::promote_oldest_approved(&state.pool, series_id).await?;
+    }
+
+    // If approved links remain, re-sync the series from them (no provider fetch
+    // needed for the series fields). Otherwise clear stale external fields.
+    let remaining: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1 AND status = 'approved'",
+    )
+    .bind(series_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    if remaining > 0 {
+        let _ = sync_series_from_links(&state.pool, series_id, true, false).await;
+    } else {
+        // Clear stale external fields on the series (respect locked_fields)
+        sqlx::query(
+            r#"UPDATE series SET
+                cover_url = NULL,
+                description = CASE WHEN (locked_fields->>'description')::boolean IS TRUE THEN description ELSE NULL END,
+                authors = CASE WHEN (locked_fields->>'authors')::boolean IS TRUE THEN authors ELSE '{}' END,
+                status = CASE WHEN (locked_fields->>'status')::boolean IS TRUE THEN status ELSE NULL END,
+                total_volumes = CASE WHEN (locked_fields->>'total_volumes')::boolean IS TRUE THEN total_volumes ELSE NULL END,
+                start_year = CASE WHEN (locked_fields->>'start_year')::boolean IS TRUE THEN start_year ELSE NULL END
+            WHERE id = $1"#,
+        )
+        .bind(series_id)
+        .execute(&state.pool)
+        .await?;
+    }
 
     Ok(Json(crate::responses::DeletedResponse::new(id)))
 }
@@ -746,6 +805,7 @@ fn row_to_link_dto(row: &sqlx::postgres::PgRow) -> ExternalMetadataLinkDto {
         external_id: row.get("external_id"),
         external_url: row.get("external_url"),
         status: row.get("status"),
+        is_primary: row.get("is_primary"),
         confidence: row.get("confidence"),
         metadata_json: row.get("metadata_json"),
         total_volumes_external: row.get("total_volumes_external"),
@@ -792,9 +852,6 @@ pub(crate) async fn get_provider_for_library(
 }
 
 // Provider config loading is in super::config::load_provider_config
-// sync_series_metadata and sync_books_metadata are in super::sync
-
-pub(crate) use super::sync::{sync_books_metadata, sync_series_metadata};
 
 /// Normalize provider-specific status strings using the status_mappings table.
 /// Returns None if no mapping is found -- unknown statuses are not stored.

@@ -135,7 +135,7 @@ pub async fn get_related_series(
             FROM external_metadata_links eml
             JOIN candidates c ON c.id = eml.series_id
             WHERE eml.status = 'approved'
-            ORDER BY eml.series_id, eml.created_at DESC
+            ORDER BY eml.series_id, eml.is_primary DESC, eml.created_at DESC
         )
         SELECT
             s.id AS series_id,

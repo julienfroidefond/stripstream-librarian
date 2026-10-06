@@ -56,6 +56,7 @@ import {
   reorderReadingListSeries,
   saveTelegramMonitorSettings,
   searchMetadata,
+  setMetadataLinkPrimary,
   startDownloadDetection,
   startMetadataBatch,
   startMetadataRefresh,
@@ -152,6 +153,13 @@ describe("metadata links", () => {
     expect(lastCall()).toMatchObject({ url: "/metadata/approve/m-1", method: "POST" });
     expect(lastCall().body).toEqual({ sync_series: true, sync_books: false });
 
+    await approveMetadataMatch("m-1", true, true, true);
+    expect(lastCall().body).toEqual({
+      sync_series: true,
+      sync_books: true,
+      is_primary: true,
+    });
+
     await rejectMetadataMatch("m-1");
     expect(lastCall()).toMatchObject({ url: "/metadata/reject/m-1", method: "POST" });
     expect(lastCall().body).toBeUndefined();
@@ -184,6 +192,23 @@ describe("metadata links", () => {
   it("deletes a metadata link", async () => {
     await deleteMetadataLink("link-1");
     expect(lastCall()).toMatchObject({ url: "/metadata/links/link-1", method: "DELETE" });
+  });
+
+  it("sets a metadata link as primary", async () => {
+    await setMetadataLinkPrimary("link-1", true);
+    expect(lastCall()).toMatchObject({ url: "/metadata/links/link-1", method: "PATCH" });
+    expect(lastCall().body).toEqual({
+      is_primary: true,
+      sync_series: true,
+      sync_books: true,
+    });
+
+    await setMetadataLinkPrimary("link-1", false, false, false);
+    expect(lastCall().body).toEqual({
+      is_primary: false,
+      sync_series: false,
+      sync_books: false,
+    });
   });
 
   it("patches the library metadata provider with its fallback", async () => {

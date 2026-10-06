@@ -88,11 +88,11 @@ pub async fn list_series(
     };
 
     let metadata_provider_cond = match query.metadata_provider.as_deref() {
-        Some("unlinked") => "AND ml.provider IS NULL".to_string(),
-        Some("linked") => "AND ml.provider IS NOT NULL".to_string(),
+        Some("unlinked") => "AND NOT EXISTS (SELECT 1 FROM external_metadata_links eml WHERE eml.series_id = sc.series_id AND eml.library_id = $1 AND eml.status = 'approved')".to_string(),
+        Some("linked") => "AND EXISTS (SELECT 1 FROM external_metadata_links eml WHERE eml.series_id = sc.series_id AND eml.library_id = $1 AND eml.status = 'approved')".to_string(),
         Some(_) => {
             p += 1;
-            format!("AND ml.provider = ${p}")
+            format!("AND EXISTS (SELECT 1 FROM external_metadata_links eml WHERE eml.series_id = sc.series_id AND eml.library_id = $1 AND eml.status = 'approved' AND eml.provider = ${p})")
         }
         None => String::new(),
     };
@@ -168,7 +168,7 @@ pub async fn list_series(
             LEFT JOIN LATERAL (
                 SELECT eml.provider FROM external_metadata_links eml
                 WHERE eml.series_id = sc.series_id AND eml.library_id = $1 AND eml.status = 'approved'
-                ORDER BY eml.created_at DESC LIMIT 1
+                ORDER BY eml.is_primary DESC, eml.created_at DESC LIMIT 1
             ) ml ON TRUE
             LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
             WHERE TRUE
@@ -339,11 +339,11 @@ pub async fn list_all_series(
     };
 
     let metadata_provider_cond = match query.metadata_provider.as_deref() {
-        Some("unlinked") => "AND ml.provider IS NULL".to_string(),
-        Some("linked") => "AND ml.provider IS NOT NULL".to_string(),
+        Some("unlinked") => "AND NOT EXISTS (SELECT 1 FROM external_metadata_links eml WHERE eml.series_id = sc.series_id AND eml.library_id = sc.library_id AND eml.status = 'approved')".to_string(),
+        Some("linked") => "AND EXISTS (SELECT 1 FROM external_metadata_links eml WHERE eml.series_id = sc.series_id AND eml.library_id = sc.library_id AND eml.status = 'approved')".to_string(),
         Some(_) => {
             p += 1;
-            format!("AND ml.provider = ${p}")
+            format!("AND EXISTS (SELECT 1 FROM external_metadata_links eml WHERE eml.series_id = sc.series_id AND eml.library_id = sc.library_id AND eml.status = 'approved' AND eml.provider = ${p})")
         }
         None => String::new(),
     };
@@ -501,7 +501,7 @@ pub async fn list_all_series(
             LEFT JOIN LATERAL (
                 SELECT eml.provider FROM external_metadata_links eml
                 WHERE eml.series_id = sc.series_id AND eml.library_id = sc.library_id AND eml.status = 'approved'
-                ORDER BY eml.created_at DESC LIMIT 1
+                ORDER BY eml.is_primary DESC, eml.created_at DESC LIMIT 1
             ) ml ON TRUE
             LEFT JOIN anilist_series_links asl ON asl.series_id = sc.series_id AND asl.provider = 'anilist'
             {community_score_lateral}

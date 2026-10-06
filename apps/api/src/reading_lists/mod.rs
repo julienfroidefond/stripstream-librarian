@@ -476,7 +476,7 @@ async fn fetch_list_items(
             FROM external_metadata_links
             WHERE series_id = s.id
               AND status = 'approved'
-            ORDER BY approved_at DESC NULLS LAST
+            ORDER BY is_primary DESC, approved_at DESC NULLS LAST
             LIMIT 1
         ) eml ON true
         LEFT JOIN LATERAL (

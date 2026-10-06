@@ -33,3 +33,22 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    if (!id) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+    const body = await request.json().catch(() => ({}));
+    const data = await apiFetch<{ link: ExternalMetadataLinkDto; report: unknown }>(
+      `/metadata/links/${id}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+    );
+    return NextResponse.json(data);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to update metadata link";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

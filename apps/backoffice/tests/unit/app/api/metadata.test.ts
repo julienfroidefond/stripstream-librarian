@@ -21,7 +21,7 @@ import { POST as match } from "@/app/api/metadata/match/route";
 import { POST as refreshLink } from "@/app/api/metadata/refresh-link/[id]/route";
 import { GET as providers } from "@/app/api/metadata/providers/route";
 import { POST as search } from "@/app/api/metadata/search/route";
-import { GET as links, DELETE as deleteLink } from "@/app/api/metadata/links/route";
+import { GET as links, DELETE as deleteLink, PATCH as patchLink } from "@/app/api/metadata/links/route";
 
 const mockApi = vi.mocked(apiFetch);
 
@@ -153,5 +153,25 @@ describe("metadata providers & search & links", () => {
     mockApi.mockResolvedValue({ deleted: true });
     await deleteLink(jsonRequest("/api/metadata/links?id=9", { method: "DELETE" }));
     expect(mockApi).toHaveBeenCalledWith("/metadata/links/9", { method: "DELETE" });
+  });
+
+  it("PATCH links requires an id", async () => {
+    expect(
+      (await patchLink(jsonRequest("/api/metadata/links", { method: "PATCH", body: { is_primary: true } }))).status,
+    ).toBe(400);
+  });
+
+  it("PATCH links proxies the primary flag", async () => {
+    mockApi.mockResolvedValue({ link: { id: "9" }, report: {} });
+    await patchLink(
+      jsonRequest("/api/metadata/links?id=9", {
+        method: "PATCH",
+        body: { is_primary: true, sync_series: true, sync_books: true },
+      }),
+    );
+    expect(mockApi).toHaveBeenCalledWith("/metadata/links/9", {
+      method: "PATCH",
+      body: JSON.stringify({ is_primary: true, sync_series: true, sync_books: true }),
+    });
   });
 });

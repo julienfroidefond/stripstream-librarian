@@ -23,11 +23,17 @@ Le provider **Bédéthèque** (`bedetheque.com`) a été retiré : le site est d
 
 ## Choisir le bon provider
 
-Chaque bibliothèque peut avoir son propre provider principal et un provider de secours. Configurez-les dans les paramètres de la bibliothèque (icône ⚙️ → section **Métadonnées**).
+Chaque bibliothèque peut avoir son propre provider principal et un provider de secours. Configurez-les dans les paramètres de la bibliothèque (icône ⚙️ → section **Métadonnées**). Ce réglage détermine la source interrogée par défaut lors d'une recherche.
 
 :::tip
 Si votre bibliothèque contient des mangas, utilisez **AniList** en priorité et **SensCritique** en secours. Pour la BD franco-belge, utilisez **BDTheque** en priorité, avec **BDphile** en secours.
 :::
+
+## Plusieurs providers liés par série
+
+Indépendamment du provider par défaut de la bibliothèque, vous pouvez lier **plusieurs providers à une même série** depuis la fenêtre **Rechercher des métadonnées**. Le premier lien approuvé devient le **provider principal** de la série ; vous pouvez changer le principal à tout moment.
+
+Lors de la synchronisation, Stripstream applique les valeurs du provider principal puis complète les champs manquants avec les providers de secours. Les **genres** ne sont jamais repris d'un provider de secours : seul le principal les alimente. Voir [Synchronisation des métadonnées](/metadata/sync/) pour le détail du workflow.
 
 ## Providers BD franco-belge
 

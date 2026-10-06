@@ -189,11 +189,11 @@ pub async fn list_books(
         String::new()
     };
     let metadata_cond = match query.metadata_provider.as_deref() {
-        Some("unlinked") => "AND eml.id IS NULL".to_string(),
-        Some("linked") => "AND eml.id IS NOT NULL".to_string(),
+        Some("unlinked") => "AND NOT EXISTS (SELECT 1 FROM external_metadata_links eml WHERE eml.series_id = b.series_id AND eml.library_id = b.library_id AND eml.status = 'approved')".to_string(),
+        Some("linked") => "AND EXISTS (SELECT 1 FROM external_metadata_links eml WHERE eml.series_id = b.series_id AND eml.library_id = b.library_id AND eml.status = 'approved')".to_string(),
         Some(_) => {
             p += 1;
-            format!("AND eml.provider = ${p}")
+            format!("AND EXISTS (SELECT 1 FROM external_metadata_links eml WHERE eml.series_id = b.series_id AND eml.library_id = b.library_id AND eml.status = 'approved' AND eml.provider = ${p})")
         }
         None => String::new(),
     };
@@ -216,19 +216,6 @@ pub async fn list_books(
     p += 1;
     let uid_p = p;
 
-    // Perf: `eml` is read by nothing but the metadata-provider filter, so when that
-    // filter is absent the LATERAL is a per-row subquery + sort for no reason.
-    let eml_lateral_join = if metadata_cond.is_empty() {
-        String::new()
-    } else {
-        r#"LEFT JOIN LATERAL (
-               SELECT eml.provider, eml.id FROM external_metadata_links eml
-               WHERE eml.series_id = b.series_id AND eml.library_id = b.library_id AND eml.status = 'approved'
-               ORDER BY eml.created_at DESC LIMIT 1
-           ) eml ON TRUE"#
-            .to_string()
-    };
-
     // Correctness: brp's PK is (book_id, user_id), so omitting this join when the
     // reading-status filter is unused cannot change COUNT(*).
     let count_brp_join = if rs_cond.is_empty() {
@@ -241,7 +228,6 @@ pub async fn list_books(
         r#"SELECT COUNT(*) FROM books b
            LEFT JOIN series s ON s.id = b.series_id
            {count_brp_join}
-           {eml_lateral_join}
            WHERE ($1::uuid IS NULL OR b.library_id = $1)
              AND ($2::text IS NULL OR b.kind = $2)
              AND ($3::text IS NULL OR b.format = $3)
@@ -275,7 +261,6 @@ pub async fn list_books(
         FROM books b
         LEFT JOIN series s ON s.id = b.series_id
         LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${uid_p}::uuid IS NOT NULL AND brp.user_id = ${uid_p}
-        {eml_lateral_join}
         WHERE ($1::uuid IS NULL OR b.library_id = $1)
           AND ($2::text IS NULL OR b.kind = $2)
           AND ($3::text IS NULL OR b.format = $3)
