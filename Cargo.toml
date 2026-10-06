@@ -17,7 +17,7 @@ license = "MIT"
 anyhow = "1.0"
 argon2 = "0.5"
 axum = "0.7"
-base64 = "0.22"
+base64 = "0.23"
 chrono = { version = "0.4", features = ["serde"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 jpeg-decoder = "0.3"
