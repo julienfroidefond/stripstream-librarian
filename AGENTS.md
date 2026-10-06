@@ -104,13 +104,12 @@ cd apps/docs && npm install && npm run dev -- --port 7083
 The API and indexer share a single Dockerfile (`apps/api/Dockerfile`) with two targets
 (`--target api` / `--target indexer`). Build uses **cargo-chef** (planner → recipe.json → cooked deps
 layer), the **mold** linker, and a separate `sqlx-installer` stage so app rebuilds never recompile
-`sqlx-cli`. CI lives in two places. Gitea Actions (`.gitea/workflows/deploy.yml`): per-service
-change detection (`git diff HEAD~1`), conditional build, registry cache, automatic deploy.
-A GitHub Actions mirror (`/.github/workflows/`) runs the same change detection plus
-`cargo fmt` / `clippy` / `test` (`.github/workflows/ci.yml`) and builds & pushes the Docker
-images, but omits the local stack restart (GitHub-hosted runners cannot reach the deploy host).
-Web changes (`apps/backoffice`, `apps/docs`) are additionally validated on pull requests
-(`.github/workflows/ci-web.yml`).
+`sqlx-cli`. CI is entirely on GitHub Actions (`.github/workflows/`): `deploy.yml` does per-service
+change detection (`git diff HEAD~1`), conditional build and registry cache, pushes the images from
+GitHub-hosted runners, then a `deploy` job runs on the self-hosted `mac-mini` runner to pull the
+images and restart the stack from the local `docker-stack` checkout. `ci.yml` adds
+`cargo fmt` / `clippy` / `test` (Rust paths only) and `ci-web.yml` validates the web apps on pull
+requests. The former Gitea pipeline has been retired.
 
 ---
 

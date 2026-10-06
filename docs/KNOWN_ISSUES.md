@@ -51,23 +51,21 @@ directement avec un `AppState` construit à la main.
 
 ## 3. Intégration continue
 
-`.gitea/workflows/deploy.yml` ne lance **ni `cargo test` ni `cargo clippy`**.
-Les garanties apportées par la suite de tests et les lints ne sont donc pas
-vérifiées avant publication par cette pipeline.
-
-**Décision assumée** : les tests ne sont pas exécutés sur le runner Gitea, faute
-de ressources suffisantes (runner self-hosted macOS). La suite de tests doit être
-lancée **localement** avant tout commit (`cargo test -p api`,
-`cargo clippy -p api --tests`).
-
-**Depuis, la CI GitHub comble ce manque** : `.github/workflows/ci.yml` exécute
-`cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` et
+La CI est désormais **entièrement sur GitHub Actions** ; la pipeline Gitea a été
+retirée. `.github/workflows/ci.yml` exécute `cargo fmt --check`,
+`cargo clippy --workspace --all-targets -- -D warnings` et
 `cargo test --workspace` sur les push vers `main` et les pull requests qui
 touchent le code Rust, les manifestes du workspace ou les migrations, avec un
 service PostgreSQL. Les changements purement `apps/backoffice/` ou `apps/docs/`
-ne déclenchent pas ce workflow. Il reste recommandé de lancer les tests
-localement avant de pousser vers Gitea, puisque la pipeline de déploiement Gitea
-ne les exécute toujours pas.
+ne déclenchent pas ce workflow : ils sont couverts par
+`.github/workflows/ci-web.yml` (backoffice : `tsc` / `lint` / tests unitaires,
+docs : build), déclenché uniquement sur pull request.
+
+Le déploiement vit dans `.github/workflows/deploy.yml` : les images sont
+construites et poussées depuis des runners GitHub hébergés, puis un job `deploy`
+s'exécute sur le runner **self-hosted `mac-mini`** pour tirer les images et
+redémarrer le stack stripstream. Il reste recommandé de lancer `cargo test` /
+`cargo clippy` localement avant de pousser.
 
 ---
 

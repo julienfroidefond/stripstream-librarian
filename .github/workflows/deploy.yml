@@ -1,9 +1,10 @@
 name: Build & Push
 
-# GitHub Actions mirror of the Gitea pipeline (.gitea/workflows/deploy.yml).
-# Difference: GitHub-hosted runners are ephemeral Linux VMs, so this workflow
-# builds and pushes the Docker images only. The final "pull images and restart
-# stack" step of the Gitea pipeline stays on the self-hosted macOS runner.
+# Builds and pushes the Docker images on GitHub-hosted runners, then deploys
+# them on the Mac mini through the self-hosted runner (job `deploy`).
+#
+# This replaces the former Gitea pipeline (.gitea/workflows/deploy.yml):
+# GitHub is now the single deployment path.
 
 on:
   push:
@@ -16,9 +17,17 @@ env:
   OWNER: julienfroidefond32
   PLATFORMS: linux/amd64
 
+permissions:
+  contents: read
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.detect.outputs.api }}
+      backoffice: ${{ steps.detect.outputs.backoffice }}
+      docs: ${{ steps.detect.outputs.docs }}
+      any: ${{ steps.detect.outputs.any }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,6 +36,7 @@ jobs:
           fetch-depth: 2
 
       - name: Detect changes & resolve version
+        id: detect
         run: |
           set -euo pipefail
           v=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
@@ -55,15 +65,14 @@ jobs:
           }
 
           if has "^(apps/api/|apps/indexer/|crates/|Cargo\.toml|Cargo\.lock|infra/migrations/)"; then
-            echo "BUILD_API=true" >> "$GITHUB_ENV"
-            echo "api → build"
+            build_api=true
           else
-            echo "BUILD_API=false" >> "$GITHUB_ENV"
+            build_api=false
           fi
           if has "^apps/backoffice/"; then
-            echo "CHANGED_BACKOFFICE=true" >> "$GITHUB_ENV"
+            changed_backoffice=true
           else
-            echo "CHANGED_BACKOFFICE=false" >> "$GITHUB_ENV"
+            changed_backoffice=false
           fi
           if [ "$build_all" = true ]; then
             build_backoffice=true
@@ -75,17 +84,36 @@ jobs:
               || true)
             if [ -n "$bo_build" ]; then build_backoffice=true; else build_backoffice=false; fi
           fi
-          if [ "$build_backoffice" = true ]; then
-            echo "BUILD_BACKOFFICE=true" >> "$GITHUB_ENV"
-            echo "backoffice → build"
-          else
-            echo "BUILD_BACKOFFICE=false" >> "$GITHUB_ENV"
-          fi
           if has "^apps/docs/"; then
-            echo "BUILD_DOCS=true" >> "$GITHUB_ENV"
-            echo "docs → build"
+            build_docs=true
           else
-            echo "BUILD_DOCS=false" >> "$GITHUB_ENV"
+            build_docs=false
+          fi
+
+          # Consumed by the later build steps through the step environment...
+          {
+            echo "BUILD_API=$build_api"
+            echo "CHANGED_BACKOFFICE=$changed_backoffice"
+            echo "BUILD_BACKOFFICE=$build_backoffice"
+            echo "BUILD_DOCS=$build_docs"
+          } >> "$GITHUB_ENV"
+
+          # ...and by the `deploy` job through job outputs.
+          {
+            echo "api=$build_api"
+            echo "backoffice=$build_backoffice"
+            echo "docs=$build_docs"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$build_api" = true ]; then echo "api → build"; fi
+          if [ "$build_backoffice" = true ]; then echo "backoffice → build"; fi
+          if [ "$build_docs" = true ]; then echo "docs → build"; fi
+
+          if [ "$build_api" = true ] || [ "$build_backoffice" = true ] || [ "$build_docs" = true ]; then
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "any=false" >> "$GITHUB_OUTPUT"
+            echo "No image to build — deploy will be skipped."
           fi
 
       - name: Set up Node
@@ -177,3 +205,40 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:${{ env.VERSION }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:buildcache,mode=max
+
+  # Runs on the Mac mini (self-hosted runner, OrbStack). Pulls the images that
+  # were just pushed and restarts the stripstream stack from the local
+  # docker-stack checkout. The images are public, so no registry login is
+  # needed here.
+  #
+  # Guarded on the repository so a fork can never reach the self-hosted runner,
+  # and only reachable from a push to main (the workflow has no pull_request
+  # trigger).
+  deploy:
+    name: Deploy to Mac mini
+    needs: build-and-push
+    if: >-
+      needs.build-and-push.outputs.any == 'true' &&
+      github.repository == 'julienfroidefond/stripstream-librarian'
+    runs-on: [self-hosted, mac-mini]
+    steps:
+      - name: Pull images & restart stack
+        env:
+          DEPLOY_API: ${{ needs.build-and-push.outputs.api }}
+          DEPLOY_BACKOFFICE: ${{ needs.build-and-push.outputs.backoffice }}
+          DEPLOY_DOCS: ${{ needs.build-and-push.outputs.docs }}
+        run: |
+          set -euo pipefail
+          cd /Users/julienfroidefond/Sites/docker-stack
+
+          svcs=""
+          if [ "$DEPLOY_API" = "true" ]; then svcs="$svcs api indexer"; fi
+          if [ "$DEPLOY_BACKOFFICE" = "true" ]; then svcs="$svcs backoffice"; fi
+          if [ "$DEPLOY_DOCS" = "true" ]; then svcs="$svcs docs"; fi
+
+          for svc in $svcs; do
+            echo "Pulling julienfroidefond32/stripstream-$svc:latest"
+            docker pull "julienfroidefond32/stripstream-$svc:latest"
+          done
+
+          BUILDKIT_PROGRESS=plain ./scripts/stack.sh up stripstream

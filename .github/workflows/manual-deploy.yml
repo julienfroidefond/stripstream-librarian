@@ -1,8 +1,8 @@
 name: Manual Build & Push
 
-# GitHub Actions mirror of the Gitea manual pipeline
-# (.gitea/workflows/manual-deploy.yml), minus the local stack restart step
-# which requires the self-hosted macOS runner.
+# Manual per-service build & push on GitHub-hosted runners, then deploy on the
+# Mac mini through the self-hosted runner. Replaces the former Gitea manual
+# pipeline (.gitea/workflows/manual-deploy.yml).
 
 on:
   workflow_dispatch:
@@ -21,6 +21,9 @@ env:
   REGISTRY: docker.io
   OWNER: julienfroidefond32
   PLATFORMS: linux/amd64
+
+permissions:
+  contents: read
 
 jobs:
   build-and-push:
@@ -120,3 +123,30 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:${{ env.VERSION }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/stripstream-docs:buildcache,mode=max
+
+  # Same self-hosted deploy as .github/workflows/deploy.yml, driven by the
+  # manual `service` input instead of change detection.
+  deploy:
+    name: Deploy to Mac mini
+    needs: build-and-push
+    if: github.repository == 'julienfroidefond/stripstream-librarian'
+    runs-on: [self-hosted, mac-mini]
+    steps:
+      - name: Pull images & restart stack
+        run: |
+          set -euo pipefail
+          cd /Users/julienfroidefond/Sites/docker-stack
+
+          svc="${{ github.event.inputs.service }}"
+          case "$svc" in
+            all) set -- api indexer backoffice docs ;;
+            api+indexer) set -- api indexer ;;
+            *) set -- "$svc" ;;
+          esac
+
+          for s in "$@"; do
+            echo "Pulling julienfroidefond32/stripstream-$s:latest"
+            docker pull "julienfroidefond32/stripstream-$s:latest"
+          done
+
+          BUILDKIT_PROGRESS=plain ./scripts/stack.sh up stripstream
