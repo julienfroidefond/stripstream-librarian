@@ -109,6 +109,8 @@ change detection (`git diff HEAD~1`), conditional build, registry cache, automat
 A GitHub Actions mirror (`/.github/workflows/`) runs the same change detection plus
 `cargo fmt` / `clippy` / `test` (`.github/workflows/ci.yml`) and builds & pushes the Docker
 images, but omits the local stack restart (GitHub-hosted runners cannot reach the deploy host).
+Web changes (`apps/backoffice`, `apps/docs`) are additionally validated on pull requests
+(`.github/workflows/ci-web.yml`).
 
 ---
 

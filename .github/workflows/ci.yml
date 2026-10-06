@@ -23,7 +23,6 @@ on:
       - "Cargo.lock"
       - "infra/migrations/**"
       - "rust-toolchain*"
-      - ".github/workflows/ci.yml"
   pull_request:
     paths:
       - "apps/api/**"
@@ -33,7 +32,6 @@ on:
       - "Cargo.lock"
       - "infra/migrations/**"
       - "rust-toolchain*"
-      - ".github/workflows/ci.yml"
   workflow_dispatch:
 
 env:
