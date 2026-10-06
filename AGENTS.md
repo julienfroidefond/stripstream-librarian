@@ -104,8 +104,11 @@ cd apps/docs && npm install && npm run dev -- --port 7083
 The API and indexer share a single Dockerfile (`apps/api/Dockerfile`) with two targets
 (`--target api` / `--target indexer`). Build uses **cargo-chef** (planner → recipe.json → cooked deps
 layer), the **mold** linker, and a separate `sqlx-installer` stage so app rebuilds never recompile
-`sqlx-cli`. CI is Gitea Actions (`.gitea/workflows/deploy.yml`): per-service change detection
-(`dorny/paths-filter`), conditional build, registry cache, automatic deploy.
+`sqlx-cli`. CI lives in two places. Gitea Actions (`.gitea/workflows/deploy.yml`): per-service
+change detection (`git diff HEAD~1`), conditional build, registry cache, automatic deploy.
+A GitHub Actions mirror (`/.github/workflows/`) runs the same change detection plus
+`cargo fmt` / `clippy` / `test` (`.github/workflows/ci.yml`) and builds & pushes the Docker
+images, but omits the local stack restart (GitHub-hosted runners cannot reach the deploy host).
 
 ---
 
