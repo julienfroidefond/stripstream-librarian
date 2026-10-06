@@ -108,8 +108,9 @@ layer), the **mold** linker, and a separate `sqlx-installer` stage so app rebuil
 change detection (`git diff HEAD~1`), conditional build and registry cache, pushes the images from
 GitHub-hosted runners, then a `deploy` job runs on the self-hosted `mac-mini` runner to pull the
 images and restart the stack from the local `docker-stack` checkout. `ci.yml` adds
-`cargo fmt` / `clippy` / `test` (Rust paths only) and `ci-web.yml` validates the web apps on pull
-requests. The former Gitea pipeline has been retired.
+`cargo fmt` / `clippy` / `test` on **pull requests only** (Rust paths only; the merge to `main` is
+not re-validated, so the check must be required on the protected branch) and `ci-web.yml`
+validates the web apps on pull requests. The former Gitea pipeline has been retired.
 
 ---
 

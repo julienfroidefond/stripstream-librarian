@@ -8,21 +8,17 @@ name: CI
 # that coverage on GitHub.
 #
 # It only triggers when Rust sources, the workspace manifests or the DB
-# migrations change — a docs-only or backoffice-only push/PR does not spin up
+# migrations change — a docs-only or backoffice-only PR does not spin up
 # the (expensive, several-minute) Rust job.
+#
+# Pull requests only: the merge to `main` deliberately does NOT re-run this
+# workflow (it used to duplicate the PR run on a fresh commit). The corollary is
+# that `Rust (fmt · clippy · test)` MUST be configured as a required status
+# check on the protected branch, otherwise a PR could be merged without ever
+# being validated. Direct pushes to `main` bypass this gate entirely — use
+# `workflow_dispatch` below or a PR in that case.
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "apps/api/**"
-      - "apps/indexer/**"
-      - "crates/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "infra/migrations/**"
-      - "rust-toolchain*"
   pull_request:
     paths:
       - "apps/api/**"
