@@ -229,12 +229,16 @@ jobs:
           DEPLOY_DOCS: ${{ needs.build-and-push.outputs.docs }}
         run: |
           set -euo pipefail
-          # The runner runs in a non-interactive launchd session, so the macOS
-          # login keychain is locked and Docker's `osxkeychain` credential
-          # helper makes every `docker pull` fail. The images are public, so
-          # point Docker at a throwaway config that has no credential helper.
-          export DOCKER_CONFIG="$(mktemp -d)"
-          printf '{"auths":{}}' > "$DOCKER_CONFIG/config.json"
+          # OrbStack's docker CLI ignores DOCKER_CONFIG (and --config) and always
+          # uses the macOS keychain credential helper declared in
+          # ~/.docker/config.json, which is unreachable from the runner's
+          # non-interactive launchd session. Every image deployed here is public,
+          # so shadow the helper with a stub that reports "no credentials" and
+          # let the pull run anonymously.
+          HELPER_DIR="$(mktemp -d)"
+          printf '#!/bin/sh\ncase "$1" in\n  get) echo "credentials not found in native keychain" >&2; exit 1 ;;\n  store) cat >/dev/null; exit 0 ;;\n  erase) exit 0 ;;\n  list) echo "{}"; exit 0 ;;\nesac\nexit 0\n' > "$HELPER_DIR/docker-credential-osxkeychain"
+          chmod +x "$HELPER_DIR/docker-credential-osxkeychain"
+          export PATH="$HELPER_DIR:$PATH"
           cd /Users/julienfroidefond/Sites/docker-stack
 
           svcs=""
@@ -244,7 +248,7 @@ jobs:
 
           for svc in $svcs; do
             echo "Pulling julienfroidefond32/stripstream-$svc:latest"
-            docker --config "$DOCKER_CONFIG" pull "julienfroidefond32/stripstream-$svc:latest"
+            docker pull "julienfroidefond32/stripstream-$svc:latest"
           done
 
           BUILDKIT_PROGRESS=plain ./scripts/stack.sh up stripstream
