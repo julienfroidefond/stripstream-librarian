@@ -1167,7 +1167,9 @@ fn analyze_pdf(path: &Path, pdf_render_scale: u32) -> Result<(i32, Vec<u8>)> {
         .render_with_config(&config)
         .map_err(|e| anyhow::anyhow!("pdfium render failed for {}: {:?}", path.display(), e))?;
 
-    let image = bitmap.as_image();
+    let image = bitmap
+        .as_image()
+        .map_err(|e| anyhow::anyhow!("pdfium image conversion failed: {:?}", e))?;
     let mut buf = std::io::Cursor::new(Vec::new());
     image
         .write_to(&mut buf, image::ImageFormat::Png)
@@ -1636,7 +1638,7 @@ fn render_pdf_page_n(path: &Path, page_number: u32, width: u32) -> Result<Vec<u8
         .load_pdf_from_file(path, None)
         .map_err(|e| anyhow::anyhow!("pdfium load failed for {}: {:?}", path.display(), e))?;
 
-    let page_index = (page_number - 1) as u16;
+    let page_index = (page_number - 1) as i32;
     let page = document
         .pages()
         .get(page_index)
@@ -1648,7 +1650,9 @@ fn render_pdf_page_n(path: &Path, page_number: u32, width: u32) -> Result<Vec<u8
         .render_with_config(&config)
         .map_err(|e| anyhow::anyhow!("pdfium render failed for {}: {:?}", path.display(), e))?;
 
-    let image = bitmap.as_image();
+    let image = bitmap
+        .as_image()
+        .map_err(|e| anyhow::anyhow!("pdfium image conversion failed: {:?}", e))?;
     let mut buf = std::io::Cursor::new(Vec::new());
     image
         .write_to(&mut buf, image::ImageFormat::Png)
