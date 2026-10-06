@@ -140,6 +140,7 @@ jobs:
           # helper makes every `docker pull` fail. The images are public, so
           # point Docker at a throwaway config that has no credential helper.
           export DOCKER_CONFIG="$(mktemp -d)"
+          printf '{"auths":{}}' > "$DOCKER_CONFIG/config.json"
           cd /Users/julienfroidefond/Sites/docker-stack
 
           svc="${{ github.event.inputs.service }}"
@@ -151,7 +152,7 @@ jobs:
 
           for s in "$@"; do
             echo "Pulling julienfroidefond32/stripstream-$s:latest"
-            docker pull "julienfroidefond32/stripstream-$s:latest"
+            docker --config "$DOCKER_CONFIG" pull "julienfroidefond32/stripstream-$s:latest"
           done
 
           BUILDKIT_PROGRESS=plain ./scripts/stack.sh up stripstream
