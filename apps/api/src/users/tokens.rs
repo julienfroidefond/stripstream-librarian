@@ -5,7 +5,7 @@ use axum::{
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, Utc};
-use rand::{rngs::OsRng, RngCore};
+use rand::{rngs::SysRng, TryRng};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use utoipa::ToSchema;
@@ -86,7 +86,9 @@ pub async fn create_token(
     }
 
     let mut random = [0u8; 24];
-    OsRng.fill_bytes(&mut random);
+    SysRng
+        .try_fill_bytes(&mut random)
+        .map_err(|e| ApiError::internal(format!("failed to generate token secret: {e}")))?;
     let secret = URL_SAFE_NO_PAD.encode(random);
     let prefix: String = secret.chars().take(8).collect();
     let token = format!("stl_{prefix}_{secret}");
