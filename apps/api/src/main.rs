@@ -107,46 +107,46 @@ async fn main() -> anyhow::Result<()> {
 
     let admin_routes = Router::new()
         .route("/libraries", axum::routing::post(libraries::create_library))
-        .route("/libraries/:id", delete(libraries::delete_library))
+        .route("/libraries/{id}", delete(libraries::delete_library))
         .route(
-            "/libraries/:id/monitoring",
+            "/libraries/{id}/monitoring",
             axum::routing::patch(libraries::update_monitoring),
         )
         .route(
-            "/libraries/:id/metadata-provider",
+            "/libraries/{id}/metadata-provider",
             axum::routing::patch(libraries::update_metadata_provider),
         )
         .route(
-            "/libraries/:id/reading-status-provider",
+            "/libraries/{id}/reading-status-provider",
             axum::routing::patch(libraries::update_reading_status_provider),
         )
         .route(
-            "/libraries/:id/tags",
+            "/libraries/{id}/tags",
             axum::routing::patch(libraries::update_tags),
         )
         .route(
-            "/books/:id",
+            "/books/{id}",
             axum::routing::patch(books::update_book).delete(books::delete_book),
         )
         .route(
-            "/books/:id/convert",
+            "/books/{id}/convert",
             axum::routing::post(books::convert_book),
         )
         .route(
-            "/libraries/:library_id/series/:series_id",
+            "/libraries/{library_id}/series/{series_id}",
             axum::routing::patch(series::update_series).delete(series::delete_series),
         )
         .route(
-            "/series/:series_id",
+            "/series/{series_id}",
             axum::routing::patch(series::update_series_by_id).delete(series::delete_series_by_id),
         )
         .route(
-            "/series/:series_id/rename-books",
+            "/series/{series_id}/rename-books",
             axum::routing::post(books::rename_books),
         )
         .route("/series/create", axum::routing::post(series::create_series))
         .route(
-            "/series/:series_id/merge",
+            "/series/{series_id}/merge",
             axum::routing::post(series::merge_series),
         )
         .route(
@@ -163,19 +163,19 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/index/status", get(index_jobs::list_index_jobs))
         .route("/index/jobs/active", get(index_jobs::get_active_jobs))
-        .route("/index/jobs/:id", get(index_jobs::get_job_details))
+        .route("/index/jobs/{id}", get(index_jobs::get_job_details))
         .route(
-            "/index/jobs/:id/stream",
+            "/index/jobs/{id}/stream",
             get(index_jobs::stream_job_progress),
         )
-        .route("/index/jobs/:id/errors", get(index_jobs::get_job_errors))
+        .route("/index/jobs/{id}/errors", get(index_jobs::get_job_errors))
         .route(
-            "/index/jobs/:id/indexed-books",
+            "/index/jobs/{id}/indexed-books",
             get(index_jobs::get_indexed_books),
         )
-        .route("/index/jobs/:id/events", get(index_jobs::get_job_events))
+        .route("/index/jobs/{id}/events", get(index_jobs::get_job_events))
         .route(
-            "/index/cancel/:id",
+            "/index/cancel/{id}",
             axum::routing::post(index_jobs::cancel_job),
         )
         .route("/folders", get(index_jobs::list_folders))
@@ -184,17 +184,17 @@ async fn main() -> anyhow::Result<()> {
             get(users::accounts::list_users).post(users::accounts::create_user),
         )
         .route(
-            "/admin/users/:id",
+            "/admin/users/{id}",
             delete(users::accounts::delete_user).patch(users::accounts::update_user),
         )
         .route(
-            "/admin/users/:id/genre-restrictions",
+            "/admin/users/{id}/genre-restrictions",
             get(users::genre_restrictions::get_genre_restrictions)
                 .post(users::genre_restrictions::add_genre_restriction)
                 .put(users::genre_restrictions::set_genre_restrictions),
         )
         .route(
-            "/admin/users/:id/genre-restrictions/:genre",
+            "/admin/users/{id}/genre-restrictions/{genre}",
             delete(users::genre_restrictions::remove_genre_restriction),
         )
         .route(
@@ -202,11 +202,11 @@ async fn main() -> anyhow::Result<()> {
             get(tokens::list_tokens).post(tokens::create_token),
         )
         .route(
-            "/admin/tokens/:id",
+            "/admin/tokens/{id}",
             delete(tokens::revoke_token).patch(tokens::update_token),
         )
         .route(
-            "/admin/tokens/:id/delete",
+            "/admin/tokens/{id}/delete",
             axum::routing::post(tokens::delete_token),
         )
         .route(
@@ -221,11 +221,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/qbittorrent/test", get(downloads::test_qbittorrent))
         .route("/torrent-downloads", get(downloads::list_torrent_downloads))
         .route(
-            "/torrent-downloads/:id",
+            "/torrent-downloads/{id}",
             axum::routing::delete(downloads::delete_torrent_download),
         )
         .route(
-            "/torrent-downloads/:id/retry",
+            "/torrent-downloads/{id}/retry",
             axum::routing::post(downloads::retry_torrent_import),
         )
         .route("/telegram/test", get(integrations::telegram::test_telegram))
@@ -254,7 +254,7 @@ async fn main() -> anyhow::Result<()> {
             get(downloads::tg_monitor_list_sources).post(downloads::tg_monitor_add_source),
         )
         .route(
-            "/telegram-monitor/sources/:id",
+            "/telegram-monitor/sources/{id}",
             axum::routing::delete(downloads::tg_monitor_delete_source),
         )
         .route(
@@ -266,11 +266,11 @@ async fn main() -> anyhow::Result<()> {
             get(downloads::tg_monitor_list_books),
         )
         .route(
-            "/telegram-monitor/books/:id/download",
+            "/telegram-monitor/books/{id}/download",
             axum::routing::post(downloads::tg_monitor_download_book),
         )
         .route(
-            "/telegram-monitor/books/:id",
+            "/telegram-monitor/books/{id}",
             axum::routing::delete(downloads::tg_monitor_dismiss_book),
         )
         .route(
@@ -310,7 +310,7 @@ async fn main() -> anyhow::Result<()> {
             get(integrations::komga::list_sync_reports),
         )
         .route(
-            "/komga/reports/:id",
+            "/komga/reports/{id}",
             get(integrations::komga::get_sync_report),
         )
         .route("/anilist/status", get(integrations::anilist::get_status))
@@ -336,37 +336,37 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/anilist/links", get(integrations::anilist::list_links))
         .route(
-            "/anilist/libraries/:id",
+            "/anilist/libraries/{id}",
             axum::routing::patch(integrations::anilist::toggle_library),
         )
         .route(
-            "/anilist/series/:library_id/:series_name",
+            "/anilist/series/{library_id}/{series_name}",
             get(integrations::anilist::get_series_link),
         )
         .route(
-            "/anilist/series/:library_id/:series_name/link",
+            "/anilist/series/{library_id}/{series_name}/link",
             axum::routing::post(integrations::anilist::link_series),
         )
         .route(
-            "/anilist/series/:library_id/:series_name/unlink",
+            "/anilist/series/{library_id}/{series_name}/unlink",
             delete(integrations::anilist::unlink_series),
         )
         .route("/admin/series/archived", get(series::list_archived_series))
         .route(
-            "/admin/series/archived/:id",
+            "/admin/series/archived/{id}",
             get(series::get_archived_series),
         )
         .route("/admin/reading-overview", get(stats::get_reading_overview))
         .route(
-            "/series/:series_id/anilist",
+            "/series/{series_id}/anilist",
             get(integrations::anilist::get_series_link_by_id),
         )
         .route(
-            "/series/:series_id/anilist/link",
+            "/series/{series_id}/anilist/link",
             axum::routing::post(integrations::anilist::link_series_by_id),
         )
         .route(
-            "/series/:series_id/anilist/unlink",
+            "/series/{series_id}/anilist/unlink",
             delete(integrations::anilist::unlink_series_by_id),
         )
         .route(
@@ -382,15 +382,15 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::post(metadata::create_metadata_match),
         )
         .route(
-            "/metadata/approve/:id",
+            "/metadata/approve/{id}",
             axum::routing::post(metadata::approve_metadata),
         )
         .route(
-            "/metadata/reject/:id",
+            "/metadata/reject/{id}",
             axum::routing::post(metadata::reject_metadata),
         )
         .route(
-            "/metadata/links/:id",
+            "/metadata/links/{id}",
             delete(metadata::delete_metadata_link).patch(metadata::patch_metadata_link),
         )
         .route(
@@ -398,11 +398,11 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::post(metadata::start_batch),
         )
         .route(
-            "/metadata/batch/:id/report",
+            "/metadata/batch/{id}/report",
             get(metadata::get_batch_report),
         )
         .route(
-            "/metadata/batch/:id/results",
+            "/metadata/batch/{id}/results",
             get(metadata::get_batch_results),
         )
         .route(
@@ -414,11 +414,11 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::post(metadata::start_refresh_all),
         )
         .route(
-            "/metadata/refresh-link/:id",
+            "/metadata/refresh-link/{id}",
             axum::routing::post(metadata::refresh_single_link),
         )
         .route(
-            "/metadata/refresh/:id/report",
+            "/metadata/refresh/{id}/report",
             get(metadata::get_refresh_report),
         )
         .route(
@@ -426,11 +426,11 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::post(reading::start_match),
         )
         .route(
-            "/reading-status/match/:id/report",
+            "/reading-status/match/{id}/report",
             get(reading::get_match_report),
         )
         .route(
-            "/reading-status/match/:id/results",
+            "/reading-status/match/{id}/results",
             get(reading::get_match_results),
         )
         .route(
@@ -438,15 +438,15 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::post(reading::start_push),
         )
         .route(
-            "/reading-status/push/:id/report",
+            "/reading-status/push/{id}/report",
             get(reading::get_push_report),
         )
         .route(
-            "/reading-status/push/:id/results",
+            "/reading-status/push/{id}/results",
             get(reading::get_push_results),
         )
         .route("/ratings/pull", axum::routing::post(reading::start_pull))
-        .route("/ratings/pull/:id/report", get(reading::get_pull_report))
+        .route("/ratings/pull/{id}/report", get(reading::get_pull_report))
         .route(
             "/download-detection/start",
             axum::routing::post(downloads::start_detection),
@@ -460,15 +460,15 @@ async fn main() -> anyhow::Result<()> {
             get(downloads::get_latest_found),
         )
         .route(
-            "/download-detection/:id/report",
+            "/download-detection/{id}/report",
             get(downloads::get_detection_report),
         )
         .route(
-            "/download-detection/:id/results",
+            "/download-detection/{id}/results",
             get(downloads::get_detection_results),
         )
         .route(
-            "/available-downloads/:id",
+            "/available-downloads/{id}",
             axum::routing::delete(downloads::delete_available_download),
         )
         .route(
@@ -480,7 +480,7 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::post(downloads::blacklist_release),
         )
         .route(
-            "/release-blacklist/:id",
+            "/release-blacklist/{id}",
             axum::routing::delete(downloads::unblacklist_release),
         )
         .route(
@@ -515,7 +515,7 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::post(ai_tagging::suggest_tags),
         )
         .route(
-            "/genres/:name",
+            "/genres/{name}",
             axum::routing::patch(genres::rename_genre).delete(genres::delete_genre),
         )
         .route(
@@ -523,24 +523,24 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::post(reading_lists::create_reading_list),
         )
         .route(
-            "/reading-lists/:id",
+            "/reading-lists/{id}",
             axum::routing::patch(reading_lists::update_reading_list)
                 .delete(reading_lists::delete_reading_list),
         )
         .route(
-            "/reading-lists/:id/series",
+            "/reading-lists/{id}/series",
             axum::routing::post(reading_lists::add_series),
         )
         .route(
-            "/reading-lists/:id/series/:series_id",
+            "/reading-lists/{id}/series/{series_id}",
             delete(reading_lists::remove_series),
         )
         .route(
-            "/reading-lists/:id/series/reorder",
+            "/reading-lists/{id}/series/reorder",
             axum::routing::put(reading_lists::reorder_series),
         )
         .route(
-            "/libraries/:id/scan",
+            "/libraries/{id}/scan",
             axum::routing::post(libraries::scan_library),
         )
         .merge(settings::settings_routes())
@@ -553,38 +553,38 @@ async fn main() -> anyhow::Result<()> {
         .route("/libraries", get(libraries::list_libraries))
         .route("/books", get(books::list_books))
         .route("/books/ongoing", get(series::ongoing_books))
-        .route("/books/:id", get(books::get_book))
-        .route("/books/:id/thumbnail", get(books::get_thumbnail))
-        .route("/books/:id/pages/:n", get(books::get_page))
+        .route("/books/{id}", get(books::get_book))
+        .route("/books/{id}/thumbnail", get(books::get_thumbnail))
+        .route("/books/{id}/pages/{n}", get(books::get_page))
         .route(
-            "/books/:id/progress",
+            "/books/{id}/progress",
             get(reading::get_reading_progress).patch(reading::update_reading_progress),
         )
-        .route("/libraries/:library_id/series", get(series::list_series))
+        .route("/libraries/{library_id}/series", get(series::list_series))
         .route(
-            "/libraries/:library_id/series/by-name/:name",
+            "/libraries/{library_id}/series/by-name/{name}",
             get(series::get_series_by_name),
         )
         .route(
-            "/libraries/:library_id/series/:series_id/metadata",
+            "/libraries/{library_id}/series/{series_id}/metadata",
             get(series::get_series_metadata),
         )
         .route("/series", get(series::list_all_series))
-        .route("/series/:series_id/details", get(series::get_series_by_id))
+        .route("/series/{series_id}/details", get(series::get_series_by_id))
         .route(
-            "/series/:series_id/metadata",
+            "/series/{series_id}/metadata",
             get(series::get_series_metadata_by_id),
         )
         .route(
-            "/series/:series_id/related",
+            "/series/{series_id}/related",
             get(series::get_related_series),
         )
         .route(
-            "/series/:series_id/ratings",
+            "/series/{series_id}/ratings",
             get(series::get_series_ratings),
         )
         .route(
-            "/series/:series_id/rating",
+            "/series/{series_id}/rating",
             axum::routing::put(series::set_series_rating).delete(series::delete_series_rating),
         )
         .route("/series/ongoing", get(series::ongoing_series))
@@ -593,7 +593,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/series/recommendations", get(series::get_recommendations))
         .route("/favorites", get(series::list_favorites))
         .route(
-            "/series/:series_id/favorite",
+            "/series/{series_id}/favorite",
             get(series::is_favorite)
                 .put(series::add_favorite)
                 .delete(series::remove_favorite),
@@ -609,14 +609,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/stats/breakdown", get(stats::get_stats_breakdown))
         .route("/search", get(search::search_books))
         .route("/metadata/links", get(metadata::get_metadata_links))
-        .route("/metadata/missing/:id", get(metadata::get_missing_books))
+        .route("/metadata/missing/{id}", get(metadata::get_missing_books))
         .route("/metadata/gaps/summary", get(metadata::get_gap_summary))
         .route("/reading-lists", get(reading_lists::list_reading_lists))
         .route(
             "/reading-lists/memberships",
             get(reading_lists::get_memberships),
         )
-        .route("/reading-lists/:id", get(reading_lists::get_reading_list))
+        .route("/reading-lists/{id}", get(reading_lists::get_reading_list))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             api_middleware::read_rate_limit,

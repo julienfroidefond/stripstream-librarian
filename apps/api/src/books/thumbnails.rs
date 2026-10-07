@@ -3,6 +3,7 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::books::IndexJobResponse;
 use crate::{error::ApiError, index_jobs, state::AppState};
 
 #[derive(Deserialize, ToSchema)]
