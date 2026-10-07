@@ -395,7 +395,7 @@ pub async fn analyze_library_books(
         query_filter
     );
 
-    let total: i32 = sqlx::query_scalar::<_, i64>(&count_sql)
+    let total: i32 = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql.as_str()))
         .bind(library_id)
         .fetch_one(&state.pool)
         .await? as i32;
@@ -463,7 +463,7 @@ pub async fn analyze_library_books(
         }
 
         let attempted_ids: Vec<Uuid> = attempted.iter().copied().collect();
-        let rows = sqlx::query(&fetch_sql)
+        let rows = sqlx::query(sqlx::AssertSqlSafe(fetch_sql.as_str()))
             .bind(library_id)
             .bind(FETCH_BATCH)
             .bind(&attempted_ids)

@@ -445,12 +445,10 @@ async fn merge_deletes_source_series(pool: sqlx::PgPool) {
 // ─── Missing count tests ───────────────────────────────────────────
 
 async fn query_missing_count(pool: &sqlx::PgPool, lib_id: Uuid, series_id: Uuid) -> i64 {
-    sqlx::query_scalar::<_, i64>(
-        &format!(
-            "WITH {} SELECT COALESCE(mc.missing_count, 0) FROM missing_counts mc WHERE mc.series_id = $2",
-            helpers::build_missing_counts_cte(Some("$1"))
-        ),
-    )
+    sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(format!(
+        "WITH {} SELECT COALESCE(mc.missing_count, 0) FROM missing_counts mc WHERE mc.series_id = $2",
+        helpers::build_missing_counts_cte(Some("$1"))
+    )))
     .bind(lib_id)
     .bind(series_id)
     .fetch_one(pool)

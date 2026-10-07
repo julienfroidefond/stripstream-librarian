@@ -117,7 +117,7 @@ pub async fn list_authors(
         "#
     );
 
-    let rows = sqlx::query(&sql)
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(q_pattern.as_deref())
         .bind(limit)
         .bind(offset)

@@ -279,11 +279,11 @@ pub async fn list_books(
         "#
     );
 
-    let mut count_builder = sqlx::query(&count_sql)
+    let mut count_builder = sqlx::query(sqlx::AssertSqlSafe(count_sql.as_str()))
         .bind(query.library_id)
         .bind(query.kind.as_deref())
         .bind(query.format.as_deref());
-    let mut data_builder = sqlx::query(&data_sql)
+    let mut data_builder = sqlx::query(sqlx::AssertSqlSafe(data_sql.as_str()))
         .bind(query.library_id)
         .bind(query.kind.as_deref())
         .bind(query.format.as_deref());
