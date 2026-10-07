@@ -49,7 +49,7 @@ pub struct ThumbnailStats {
 pub fn settings_routes() -> Router<AppState> {
     Router::new()
         .route("/settings", get(get_settings))
-        .route("/settings/:key", get(get_setting).post(update_setting))
+        .route("/settings/{key}", get(get_setting).post(update_setting))
         .route(
             "/settings/ai_tagging/test",
             post(crate::ai_tagging::test_connection),
@@ -62,7 +62,7 @@ pub fn settings_routes() -> Router<AppState> {
             get(list_status_mappings).post(upsert_status_mapping),
         )
         .route(
-            "/settings/status-mappings/:id",
+            "/settings/status-mappings/{id}",
             delete(delete_status_mapping),
         )
 }
