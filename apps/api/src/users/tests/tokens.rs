@@ -50,7 +50,7 @@ fn build_token_prefix_matches_start_of_secret() {
 #[test]
 fn build_token_round_trip_with_real_random_bytes() {
     let mut bytes = [0u8; 24];
-    OsRng.fill_bytes(&mut bytes);
+    SysRng.try_fill_bytes(&mut bytes).unwrap();
     let (token, prefix) = build_token(&bytes);
 
     // Verify the format
