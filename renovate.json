@@ -13,9 +13,20 @@
         "cargo",
         "npm"
       ],
-      "matchCurrentVersion": "<1.0.0",
+      "matchCurrentValue": "/^[~^=v ]*0\\./",
       "matchUpdateTypes": [
         "minor"
+      ],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "grammers-client/session 0.10 : migration différée (réécriture API client/session + souci upstream glass_pumpkin). Jamais de PR automatique.",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchPackageNames": [
+        "grammers-client",
+        "grammers-session"
       ],
       "dependencyDashboardApproval": true
     },
