@@ -1144,7 +1144,7 @@ fn analyze_pdf(path: &Path, pdf_render_scale: u32) -> Result<(i32, Vec<u8>)> {
         .load_pdf_from_file(path, None)
         .map_err(|e| anyhow::anyhow!("pdfium load failed for {}: {:?}", path.display(), e))?;
 
-    let count = document.pages().len() as i32;
+    let count = document.pages().len();
     if count == 0 {
         return Err(anyhow::anyhow!("PDF has no pages: {}", path.display()));
     }
