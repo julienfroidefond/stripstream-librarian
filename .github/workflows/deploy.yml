@@ -148,7 +148,7 @@ jobs:
       # when indexer builds (only its small final stage runs).
       - name: Build & push api
         if: env.BUILD_API == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/api/Dockerfile
@@ -163,7 +163,7 @@ jobs:
 
       - name: Build & push indexer
         if: env.BUILD_API == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/api/Dockerfile
@@ -180,7 +180,7 @@ jobs:
 
       - name: Build & push backoffice
         if: env.BUILD_BACKOFFICE == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/backoffice/Dockerfile
@@ -194,7 +194,7 @@ jobs:
 
       - name: Build & push docs
         if: env.BUILD_DOCS == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/docs/Dockerfile
