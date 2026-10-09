@@ -9,9 +9,10 @@ Quand une série disparaît de votre disque (fichiers supprimés, dossier dépla
 
 ## Ce qui déclenche une archivage
 
-Une série est archivée dans deux situations :
+Une série est archivée dans trois situations :
 
 - **Suppression manuelle** depuis le backoffice — le bouton *Supprimer* dans les actions d'une série archive avant de supprimer.
+- **Suppression du dernier livre** — supprimer le dernier livre d'une série l'archive et la retire immédiatement, sans attendre un scan (sauf si la série a des métadonnées approuvées ou des volumes en wishlist, auquel cas elle est conservée).
 - **Scan** — quand le scanner détecte qu'une série n'a plus aucun livre sur le disque (et qu'elle n'a pas de métadonnées approuvées ni de volumes en wishlist), il l'archive automatiquement.
 
 ## Ce qui est conservé

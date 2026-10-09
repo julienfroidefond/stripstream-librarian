@@ -127,7 +127,10 @@ utils::unmap_libraries_path(&local_path) // filesystem local → DB
   directory_mtimes.
 - **Annulation** : vérifier `is_job_cancelled` régulièrement pour respecter les annulations utilisateur.
 - **Watcher** : ce n'est **pas** un watcher temps réel — c'est un polling de snapshot toutes les 30 s
-  (pas de crate `notify`/inotify). Il crée des jobs `rebuild` en cas de changement.
+  (pas de crate `notify`/inotify). Il crée des jobs `rebuild` en cas de changement. Les suppressions
+  déjà appliquées en base (livre/série supprimés via l'API) sont détectées et ignorées
+  (`is_already_reconciled`) : pas de rebuild redondant. Seuls les ajouts et les suppressions externes
+  (fichier toujours présent dans `book_files`) déclenchent un rebuild.
 - **Watcher + scheduler** : tournent en tâches tokio séparées dans `worker.rs`, en parallèle de la
   boucle principale. Le scheduler vérifie 6 familles de jobs toutes les 60 s.
 - **spawn_blocking** : l'ouverture d'archive (`analyze_book`) et la génération de thumbnail sont des
