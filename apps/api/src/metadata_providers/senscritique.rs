@@ -448,6 +448,11 @@ async fn get_series_impl(external_id: &str) -> Result<SeriesCandidate, String> {
     if let Some(description) = &description {
         metadata_json["description"] = serde_json::json!(description);
     }
+    if let Some((rating, count)) = aggregate_series_rating(&books) {
+        metadata_json["rating"] = serde_json::json!(rating);
+        metadata_json["rating_scale"] = serde_json::json!(10.0_f64);
+        metadata_json["rating_count"] = serde_json::json!(count);
+    }
     Ok(SeriesCandidate {
         external_id: external_id.to_string(),
         title: first.title.clone(),
@@ -575,6 +580,11 @@ async fn fetch_franchise_books(
 
             let authors = extract_product_authors(product);
 
+            let mut metadata_json = serde_json::json!({});
+            if let Some(rating) = product.get("rating").and_then(|r| r.as_f64()) {
+                metadata_json["rating"] = serde_json::json!(rating);
+            }
+
             Some(BookCandidate {
                 external_book_id: id.to_string(),
                 title,
@@ -586,7 +596,7 @@ async fn fetch_franchise_books(
                 page_count: None,
                 language: Some("fr".to_string()),
                 publish_date,
-                metadata_json: serde_json::json!({}),
+                metadata_json,
             })
         })
         .collect();
@@ -670,6 +680,11 @@ async fn fetch_single_book(
 
     let authors = extract_product_authors(product);
 
+    let mut metadata_json = serde_json::json!({});
+    if let Some(rating) = product.get("rating").and_then(|r| r.as_f64()) {
+        metadata_json["rating"] = serde_json::json!(rating);
+    }
+
     Ok(vec![BookCandidate {
         external_book_id: id.to_string(),
         title,
@@ -681,7 +696,7 @@ async fn fetch_single_book(
         page_count: None,
         language: Some("fr".to_string()),
         publish_date,
-        metadata_json: serde_json::json!({}),
+        metadata_json,
     }])
 }
 
@@ -1073,6 +1088,27 @@ fn first_volume_product<'a>(products: &[&'a serde_json::Value]) -> Option<&'a se
         })
         .min_by_key(|(volume, _)| *volume)
         .map(|(_, product)| product)
+}
+
+/// Average the non-null, strictly-positive volume ratings into a series rating.
+///
+/// SensCritique exposes ratings per product (tome); the series-level score is
+/// their average. Returns `(rating, rated_volume_count)` rounded to one decimal,
+/// or `None` when no volume carries a rating.
+fn aggregate_series_rating(books: &[BookCandidate]) -> Option<(f64, i64)> {
+    let ratings: Vec<f64> = books
+        .iter()
+        .filter_map(|book| book.metadata_json.get("rating").and_then(|v| v.as_f64()))
+        .filter(|&rating| rating > 0.0)
+        .collect();
+
+    if ratings.is_empty() {
+        return None;
+    }
+
+    let average = ratings.iter().sum::<f64>() / ratings.len() as f64;
+    let rounded = (average * 10.0).round() / 10.0;
+    Some((rounded, ratings.len() as i64))
 }
 
 /// Encode an edition name for use in external_id.

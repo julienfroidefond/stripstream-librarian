@@ -160,6 +160,55 @@ fn first_volume_product_selects_tome_one() {
     );
 }
 
+// ─── aggregate_series_rating ─────────────────────────────────────────
+
+fn book_with_rating(rating: Option<f64>) -> BookCandidate {
+    let metadata_json = match rating {
+        Some(rating) => serde_json::json!({ "rating": rating }),
+        None => serde_json::json!({}),
+    };
+    BookCandidate {
+        external_book_id: "1".to_string(),
+        title: "Volume".to_string(),
+        volume_number: Some(1),
+        authors: vec![],
+        isbn: None,
+        summary: None,
+        cover_url: None,
+        page_count: None,
+        language: None,
+        publish_date: None,
+        metadata_json,
+    }
+}
+
+#[test]
+fn aggregate_series_rating_averages_rated_volumes() {
+    let books = vec![
+        book_with_rating(Some(7.1)),
+        book_with_rating(Some(6.3)),
+        book_with_rating(None),
+    ];
+    assert_eq!(aggregate_series_rating(&books), Some((6.7, 2)));
+}
+
+#[test]
+fn aggregate_series_rating_ignores_missing_and_zero() {
+    let books = vec![book_with_rating(Some(0.0)), book_with_rating(None)];
+    assert_eq!(aggregate_series_rating(&books), None);
+}
+
+#[test]
+fn aggregate_series_rating_rounds_to_one_decimal() {
+    let books = vec![book_with_rating(Some(7.15)), book_with_rating(Some(7.16))];
+    assert_eq!(aggregate_series_rating(&books), Some((7.2, 2)));
+}
+
+#[test]
+fn aggregate_series_rating_empty_is_none() {
+    assert_eq!(aggregate_series_rating(&[]), None);
+}
+
 // ─── Wiremock integration tests ─────────────────────────────────────
 
 use wiremock::matchers::method;
