@@ -39,7 +39,9 @@ Après la reconstruction, les miniatures orphelines (liées à d'anciens livres)
 
 ## Scan par surveillance (watcher)
 
-Quand la surveillance en temps réel est activée pour une bibliothèque, chaque ajout ou suppression de fichier détecté déclenche automatiquement un scan ciblé sur le dossier concerné.
+Quand la surveillance en temps réel est activée pour une bibliothèque, les modifications détectées directement sur le disque (ajout de fichier, suppression effectuée hors de Stripstream) déclenchent automatiquement une mise à jour incrémentale de la bibliothèque.
+
+Les suppressions effectuées depuis Stripstream (livre ou série) sont appliquées directement en base et ne déclenchent **aucun scan supplémentaire**. Supprimer un livre met immédiatement à jour sa série, et si c'était le dernier livre, la série est archivée et retirée sans attendre.
 
 ---
 
