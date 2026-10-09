@@ -42,7 +42,8 @@ fn test_state(pool: PgPool) -> AppState {
             page_cache_hits: AtomicU64::new(0),
             page_cache_misses: AtomicU64::new(0),
         }),
-        read_rate_limit: Arc::new(Mutex::new(ReadRateLimit::new())),
+        read_rate_limit: Arc::new(std::sync::Mutex::new(ReadRateLimit::new())),
+        stats_cache: Arc::new(crate::stats::StatsCache::new()),
         settings: Arc::new(RwLock::new(DynamicSettings::default())),
         prowlarr_fetch_lock: Arc::new(Mutex::new(())),
         pending_tg_auth: Arc::new(Mutex::new(None)),
@@ -199,7 +200,7 @@ async fn read_rate_limit_resets_window_after_one_second(pool: PgPool) {
     state
         .read_rate_limit
         .lock()
-        .await
+        .unwrap()
         .expire_all(Duration::from_secs(2));
 
     assert_eq!(send(router, "/read").await, StatusCode::OK);

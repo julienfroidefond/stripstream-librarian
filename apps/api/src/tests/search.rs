@@ -61,6 +61,24 @@ async fn create_test_series_with_genres(
     .unwrap()
 }
 
+async fn create_test_series_with_authors(
+    pool: &sqlx::PgPool,
+    library_id: Uuid,
+    name: &str,
+    authors: &[&str],
+) -> Uuid {
+    let authors_vec: Vec<String> = authors.iter().map(|a| a.to_string()).collect();
+    sqlx::query_scalar(
+        "INSERT INTO series (id, library_id, name, authors, created_at, updated_at) VALUES (gen_random_uuid(), $1, $2, $3, NOW(), NOW()) RETURNING id",
+    )
+    .bind(library_id)
+    .bind(name)
+    .bind(&authors_vec)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
 async fn create_test_book(
     pool: &sqlx::PgPool,
     library_id: Uuid,
@@ -508,4 +526,69 @@ async fn search_series_read_count_zero_for_anonymous(pool: sqlx::PgPool) {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get::<i64, _>("book_count"), 1);
     assert_eq!(rows[0].get::<i64, _>("books_read_count"), 0);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_by_series_author(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "comics").await;
+    let series_id =
+        create_test_series_with_authors(&pool, lib_id, "Sandman", &["Neil Gaiman"]).await;
+    create_test_book(
+        &pool,
+        lib_id,
+        Some(series_id),
+        "Preludes and Nocturnes",
+        "comic",
+        None,
+        &[],
+    )
+    .await;
+    create_test_book(&pool, lib_id, None, "Unrelated Book", "comic", None, &[]).await;
+
+    let rows = sqlx::query(BOOKS_SQL)
+        .bind("%Gaiman%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .bind(None::<Uuid>)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0].get::<Option<String>, _>("series").unwrap(),
+        "Sandman"
+    );
+}
+
+/// The `candidate_ids` CTE matches authors on the concatenated text, which can
+/// spuriously match across element boundaries. The exact per-element predicate
+/// re-applied on the candidate set must reject those false positives.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_author_split_elements_not_matched_across_boundary(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "comics").await;
+    // No single author element contains "Neil Gaiman", but the concatenation does.
+    create_test_book(
+        &pool,
+        lib_id,
+        None,
+        "Split Authors",
+        "comic",
+        None,
+        &["Neil", "Gaiman"],
+    )
+    .await;
+
+    let rows = sqlx::query(BOOKS_SQL)
+        .bind("%Neil Gaiman%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .bind(None::<Uuid>)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 0);
 }

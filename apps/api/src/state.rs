@@ -8,6 +8,7 @@ use tokio::sync::{Mutex, OwnedMutexGuard, RwLock, Semaphore};
 use uuid::Uuid;
 
 use crate::downloads::telegram_monitor::PendingAuth;
+use crate::stats::StatsCache;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -20,8 +21,13 @@ pub struct AppState {
     pub page_render_locks: Arc<PageRenderLocks>,
     pub page_render_limit: Arc<Semaphore>,
     pub metrics: Arc<Metrics>,
-    pub read_rate_limit: Arc<Mutex<ReadRateLimit>>,
+    /// In-memory sliding-window limiter. A plain (non-async) mutex is used
+    /// because the critical section never awaits, avoiding serialisation on
+    /// the async runtime's timer wheel.
+    pub read_rate_limit: Arc<std::sync::Mutex<ReadRateLimit>>,
     pub settings: Arc<RwLock<DynamicSettings>>,
+    /// TTL-cached dashboard aggregates; see [`crate::stats`].
+    pub stats_cache: Arc<StatsCache>,
     /// Prevents concurrent Prowlarr discovery fetches from hammering indexers simultaneously
     pub prowlarr_fetch_lock: Arc<Mutex<()>>,
     /// Holds the in-progress Telegram MTProto auth state between send-code and verify-code calls

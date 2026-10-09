@@ -37,7 +37,8 @@ fn test_state(pool: PgPool) -> AppState {
             page_cache_hits: AtomicU64::new(0),
             page_cache_misses: AtomicU64::new(0),
         }),
-        read_rate_limit: Arc::new(Mutex::new(ReadRateLimit::new())),
+        read_rate_limit: Arc::new(std::sync::Mutex::new(ReadRateLimit::new())),
+        stats_cache: Arc::new(crate::stats::StatsCache::new()),
         settings: Arc::new(RwLock::new(DynamicSettings::default())),
         prowlarr_fetch_lock: Arc::new(Mutex::new(())),
         pending_tg_auth: Arc::new(Mutex::new(None)),
@@ -1219,4 +1220,31 @@ async fn get_reading_overview_series_progress_is_per_user(pool: PgPool) {
         .find(|bk| bk.book_id == b2.to_string())
         .unwrap();
     assert_eq!(b_b2.status, "unread");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_stats_reuses_cached_response_until_cleared(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    create_simple_book(&pool, library, None, "B1", 10).await;
+
+    let Json(first) = get_stats(State(state.clone()), stats_query(None), None)
+        .await
+        .unwrap();
+    assert_eq!(first.overview.total_books, 1);
+
+    // A second identical request is served from the TTL cache even though the
+    // database changed in between.
+    create_simple_book(&pool, library, None, "B2", 10).await;
+    let Json(cached) = get_stats(State(state.clone()), stats_query(None), None)
+        .await
+        .unwrap();
+    assert_eq!(cached.overview.total_books, 1);
+
+    // After an explicit invalidation the aggregate is recomputed.
+    state.stats_cache.full.clear();
+    let Json(refreshed) = get_stats(State(state), stats_query(None), None)
+        .await
+        .unwrap();
+    assert_eq!(refreshed.overview.total_books, 2);
 }
