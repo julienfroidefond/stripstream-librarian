@@ -2,6 +2,7 @@ mod ai_tagging;
 mod api_middleware;
 mod authors;
 mod books;
+mod cache;
 mod downloads;
 mod error;
 mod genres;
@@ -97,7 +98,8 @@ async fn main() -> anyhow::Result<()> {
         page_render_locks: Arc::new(PageRenderLocks::new(512)),
         page_render_limit: Arc::new(Semaphore::new(concurrent_renders)),
         metrics: Arc::new(Metrics::new()),
-        read_rate_limit: Arc::new(Mutex::new(ReadRateLimit::new())),
+        read_rate_limit: Arc::new(std::sync::Mutex::new(ReadRateLimit::new())),
+        stats_cache: Arc::new(crate::stats::StatsCache::new()),
         settings: Arc::new(RwLock::new(dynamic_settings)),
         prowlarr_fetch_lock: Arc::new(Mutex::new(())),
         pending_tg_auth: Arc::new(Mutex::new(None)),

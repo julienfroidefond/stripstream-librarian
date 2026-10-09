@@ -1,3 +1,6 @@
+use std::sync::Arc;
+use std::time::Duration;
+
 use axum::{
     extract::{Extension, Query, State},
     Json,
@@ -6,7 +9,38 @@ use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use utoipa::{IntoParams, ToSchema};
 
+use crate::cache::TtlCache;
 use crate::{auth::AuthUser, error::ApiError, state::AppState};
+
+/// How long a built dashboard response stays cached. Long enough to absorb the
+/// Backoffice's batched polling of `/stats`, `/stats/overview` and
+/// `/stats/breakdown`, short enough that freshly indexed books appear promptly.
+const STATS_CACHE_TTL: Duration = Duration::from_secs(20);
+
+/// TTL caches for the three dashboard endpoints. Each endpoint has its own key
+/// shape: the full stats depend on the requested period, the overview and
+/// breakdown only on the authenticated user.
+pub struct StatsCache {
+    full: TtlCache<(Option<uuid::Uuid>, String), StatsResponse>,
+    overview: TtlCache<Option<uuid::Uuid>, StatsOverviewResponse>,
+    breakdown: TtlCache<Option<uuid::Uuid>, StatsBreakdownResponse>,
+}
+
+impl StatsCache {
+    pub fn new() -> Self {
+        Self {
+            full: TtlCache::new(STATS_CACHE_TTL),
+            overview: TtlCache::new(STATS_CACHE_TTL),
+            breakdown: TtlCache::new(STATS_CACHE_TTL),
+        }
+    }
+}
+
+impl Default for StatsCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[derive(Deserialize, IntoParams)]
 pub struct StatsQuery {
@@ -183,13 +217,18 @@ pub async fn get_stats(
     State(state): State<AppState>,
     Query(query): Query<StatsQuery>,
     user: Option<Extension<AuthUser>>,
-) -> Result<Json<StatsResponse>, ApiError> {
+) -> Result<Json<Arc<StatsResponse>>, ApiError> {
     let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
     let period = query.period.as_deref().unwrap_or("week");
     if !matches!(period, "day" | "week" | "month") {
         return Err(ApiError::bad_request(
             "period must be one of: day, week, month",
         ));
+    }
+
+    let cache_key = (user_id, period.to_string());
+    if let Some(cached) = state.stats_cache.full.get(&cache_key) {
+        return Ok(Json(cached));
     }
     let pool = &state.pool;
 
@@ -924,7 +963,7 @@ pub async fn get_stats(
         recent_downloads,
     };
 
-    Ok(Json(StatsResponse {
+    let response = StatsResponse {
         overview,
         reading_status,
         currently_reading,
@@ -939,7 +978,9 @@ pub async fn get_stats(
         metadata,
         users_reading_over_time,
         downloads,
-    }))
+    };
+
+    Ok(Json(state.stats_cache.full.insert(cache_key, response)))
 }
 
 // ─── Reading Overview (per-user) ─────────────────────────────────────────────
@@ -983,8 +1024,12 @@ pub struct StatsOverviewResponse {
 pub async fn get_stats_overview(
     State(state): State<AppState>,
     user: Option<Extension<AuthUser>>,
-) -> Result<Json<StatsOverviewResponse>, ApiError> {
+) -> Result<Json<Arc<StatsOverviewResponse>>, ApiError> {
     let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
+
+    if let Some(cached) = state.stats_cache.overview.get(&user_id) {
+        return Ok(Json(cached));
+    }
     let pool = &state.pool;
 
     let (
@@ -1107,7 +1152,7 @@ pub async fn get_stats_overview(
     let meta_total_series: i64 = meta_row.get("total_series");
     let meta_series_linked: i64 = meta_row.get("series_linked");
 
-    Ok(Json(StatsOverviewResponse {
+    let response = StatsOverviewResponse {
         overview: StatsOverview {
             total_books: overview_row.get("total_books"),
             total_series: overview_row.get("total_series"),
@@ -1180,7 +1225,9 @@ pub async fn get_stats_overview(
                 }
             })
             .collect(),
-    }))
+    };
+
+    Ok(Json(state.stats_cache.overview.insert(user_id, response)))
 }
 
 // ─── /stats/breakdown — libraries + series + downloads ───────────────────────
@@ -1195,8 +1242,12 @@ pub struct StatsBreakdownResponse {
 pub async fn get_stats_breakdown(
     State(state): State<AppState>,
     user: Option<Extension<AuthUser>>,
-) -> Result<Json<StatsBreakdownResponse>, ApiError> {
+) -> Result<Json<Arc<StatsBreakdownResponse>>, ApiError> {
     let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
+
+    if let Some(cached) = state.stats_cache.breakdown.get(&user_id) {
+        return Ok(Json(cached));
+    }
     let pool = &state.pool;
 
     let (
@@ -1277,7 +1328,7 @@ pub async fn get_stats_breakdown(
         .fetch_all(pool),
     )?;
 
-    Ok(Json(StatsBreakdownResponse {
+    let response = StatsBreakdownResponse {
         by_library: lib_rows
             .iter()
             .map(|r| LibraryStats {
@@ -1319,7 +1370,9 @@ pub async fn get_stats_breakdown(
                 })
                 .collect(),
         },
-    }))
+    };
+
+    Ok(Json(state.stats_cache.breakdown.insert(user_id, response)))
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]

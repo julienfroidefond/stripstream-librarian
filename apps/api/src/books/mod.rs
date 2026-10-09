@@ -258,7 +258,8 @@ pub async fn list_books(
         SELECT b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.volume_type, b.language, b.page_count, b.thumbnail_path, b.updated_at,
                COALESCE(brp.status, 'unread') AS reading_status,
                brp.current_page AS reading_current_page,
-               brp.last_read_at AS reading_last_read_at
+               brp.last_read_at AS reading_last_read_at,
+               COUNT(*) OVER() AS total_count
         FROM books b
         LEFT JOIN series s ON s.id = b.series_id
         LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${uid_p}::uuid IS NOT NULL AND brp.user_id = ${uid_p}
@@ -320,11 +321,14 @@ pub async fn list_books(
     count_builder = count_builder.bind(user_id);
     data_builder = data_builder.bind(user_id).bind(limit).bind(offset);
 
-    let (count_row, rows) = tokio::try_join!(
-        count_builder.fetch_one(&state.pool),
-        data_builder.fetch_all(&state.pool),
-    )?;
-    let total: i64 = count_row.get(0);
+    let rows = data_builder.fetch_all(&state.pool).await?;
+    // `COUNT(*) OVER()` already computed the filtered total in the same pass as
+    // the data. Only when the requested page is past the end (no rows) do we
+    // fall back to a separate count so pagination still reports the real total.
+    let total: i64 = match rows.first() {
+        Some(row) => row.get("total_count"),
+        None => count_builder.fetch_one(&state.pool).await?.get(0),
+    };
 
     let items: Vec<BookItem> = rows
         .iter()
