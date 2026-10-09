@@ -42,9 +42,13 @@
       "dependencyDashboardApproval": true
     },
     {
-      "description": "Regroupe les mises à jour non majeures des crates Rust dans une seule PR",
+      "description": "Regroupe les mises à jour non majeures des crates Rust dans une seule PR. grammers-client/session sont exclus du groupe : leur migration est différée et ne doit jamais être embarquée dans un lot.",
       "matchManagers": [
         "cargo"
+      ],
+      "matchPackageNames": [
+        "!grammers-client",
+        "!grammers-session"
       ],
       "matchUpdateTypes": [
         "minor",
