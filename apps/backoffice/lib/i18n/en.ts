@@ -32,6 +32,7 @@ const en: Record<TranslationKey, string> = {
   "metadata.gap.noPublishers": "No publisher",
   "metadata.gap.noYear": "No year",
   "metadata.gap.noCover": "No cover",
+  "metadata.gap.noCommunityScore": "No community rating",
   "metadata.gap.noSummary": "No summary",
   "metadata.gap.noIsbn": "No ISBN",
   "metadata.gap.noPublishDate": "No publication date",

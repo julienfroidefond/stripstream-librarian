@@ -18,6 +18,7 @@ export const SERIES_GAPS: readonly GapDef[] = [
   { value: "no_publishers", labelKey: "metadata.gap.noPublishers", countKey: "series_no_publishers", icon: "building" },
   { value: "no_year", labelKey: "metadata.gap.noYear", countKey: "series_no_year", icon: "calendar" },
   { value: "no_cover", labelKey: "metadata.gap.noCover", countKey: "series_no_cover", icon: "image" },
+  { value: "no_community_score", labelKey: "metadata.gap.noCommunityScore", countKey: "series_no_community_score", icon: "star" },
 ];
 
 export const BOOKS_GAPS: readonly GapDef[] = [

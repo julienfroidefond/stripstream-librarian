@@ -590,6 +590,7 @@ export type GapSummaryDto = {
   series_no_publishers: number;
   series_no_year: number;
   series_no_cover: number;
+  series_no_community_score: number;
   books_total: number;
   books_no_summary: number;
   books_no_isbn: number;

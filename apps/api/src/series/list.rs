@@ -264,7 +264,7 @@ pub async fn list_series(
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),
         ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
         ("metadata_provider" = Option<String>, Query, description = "Filter by metadata provider: a provider name (e.g. 'google_books'), 'linked' (any provider), or 'unlinked' (no provider)"),
-        ("gap" = Option<String>, Query, description = "Filter by metadata gap: 'unlinked', 'no_genre', 'missing_volumes', or 'stale'"),
+        ("gap" = Option<String>, Query, description = "Filter by metadata gap: 'no_description', 'no_genre', 'no_authors', 'no_publishers', 'no_year', 'no_cover', or 'no_community_score'"),
         ("author" = Option<String>, Query, description = "Filter by author name (matches in series.authors or book-level authors)"),
         ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
         ("limit" = Option<i64>, Query, description = "Items per page (max 200, default 50)"),
@@ -355,6 +355,9 @@ pub async fn list_all_series(
         Some("no_publishers") => "AND COALESCE(cardinality(s.publishers), 0) = 0".to_string(),
         Some("no_year") => "AND s.start_year IS NULL".to_string(),
         Some("no_cover") => "AND (s.cover_url IS NULL OR s.cover_url = '')".to_string(),
+        // No approved provider link carries a usable rating for this series.
+        // Must mirror the `community_score_lateral` predicate exactly.
+        Some("no_community_score") => "AND cs.community_score IS NULL".to_string(),
         _ => String::new(),
     };
 
