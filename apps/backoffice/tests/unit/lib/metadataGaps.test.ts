@@ -39,6 +39,7 @@ describe("gapsForTab", () => {
       "no_publishers",
       "no_year",
       "no_cover",
+      "no_community_score",
     ]);
     expect(BOOKS_GAPS.map((g) => g.value)).toEqual([
       "no_summary",
@@ -69,6 +70,7 @@ describe("gap icons", () => {
     expect(iconOf(SERIES_GAPS, "no_publishers")).toBe("building");
     expect(iconOf(SERIES_GAPS, "no_year")).toBe("calendar");
     expect(iconOf(SERIES_GAPS, "no_cover")).toBe("image");
+    expect(iconOf(SERIES_GAPS, "no_community_score")).toBe("star");
     expect(iconOf(BOOKS_GAPS, "no_isbn")).toBe("hash");
     expect(iconOf(BOOKS_GAPS, "no_language")).toBe("globe");
     expect(iconOf(BOOKS_GAPS, "no_volume")).toBe("number");
