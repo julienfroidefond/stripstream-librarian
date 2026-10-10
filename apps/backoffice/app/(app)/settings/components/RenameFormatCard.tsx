@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, FormField, FormInput } from "@/app/components/ui";
+import { SettingsCard, SettingsField, FormInput } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 import type { TranslationKey } from "@/lib/i18n";
 
@@ -101,60 +101,47 @@ export function RenameFormatCard({
   };
 
   return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          {t("rename.settingTitle")}
-        </CardTitle>
-        <CardDescription>{t("rename.settingDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          {TEMPLATES.map((tpl) => (
-            <div key={tpl.key} className="space-y-3">
-              <FormField>
-                <label
-                  htmlFor={`rename-format-${tpl.key}`}
-                  className="text-sm font-medium text-muted-foreground mb-1 block"
-                >
-                  {t(tpl.labelKey)}
-                </label>
-                <FormInput
-                  id={`rename-format-${tpl.key}`}
-                  value={values[tpl.key]}
-                  onFocus={() => setActiveField(tpl.key)}
-                  onChange={(e) =>
-                    setValues((prev) => ({ ...prev, [tpl.key]: e.target.value }))
-                  }
-                  onBlur={() => handleUpdateSetting(tpl.settingKey, values[tpl.key])}
-                  placeholder={tpl.defaultValue}
-                />
-              </FormField>
+    <SettingsCard title={t("rename.settingTitle")} description={t("rename.settingDesc")}>
+      {TEMPLATES.map((tpl) => (
+        <div key={tpl.key} className="space-y-3">
+          <SettingsField
+            label={t(tpl.labelKey)}
+            labelHtmlFor={`rename-format-${tpl.key}`}
+          >
+            <FormInput
+              id={`rename-format-${tpl.key}`}
+              value={values[tpl.key]}
+              onFocus={() => setActiveField(tpl.key)}
+              onChange={(e) =>
+                setValues((prev) => ({ ...prev, [tpl.key]: e.target.value }))
+              }
+              onBlur={() => handleUpdateSetting(tpl.settingKey, values[tpl.key])}
+              placeholder={tpl.defaultValue}
+            />
+          </SettingsField>
 
-              <div className="p-3 bg-muted/30 rounded-lg">
-                <p className="text-xs font-medium text-muted-foreground mb-2">{t(tpl.previewKey)}</p>
-                <p className="text-sm font-mono text-foreground">{applyExampleTemplate(values[tpl.key])}</p>
-              </div>
-            </div>
-          ))}
-
-          <div>
-            <p className="text-xs font-medium text-muted-foreground mb-2">{t("rename.availableVars")}</p>
-            <div className="flex flex-wrap gap-2">
-              {AVAILABLE_VARS.map((v) => (
-                <code
-                  key={v.name}
-                  className="text-xs px-2 py-1 bg-muted rounded-md cursor-pointer hover:bg-muted/80 transition-colors"
-                  onClick={() => appendVar(v.name)}
-                  title={v.example}
-                >
-                  {`{${v.name}}`}
-                </code>
-              ))}
-            </div>
+          <div className="p-3 bg-muted/30 rounded-lg">
+            <p className="text-xs font-medium text-muted-foreground mb-2">{t(tpl.previewKey)}</p>
+            <p className="text-sm font-mono text-foreground">{applyExampleTemplate(values[tpl.key])}</p>
           </div>
         </div>
-      </CardContent>
-    </Card>
+      ))}
+
+      <div>
+        <p className="text-xs font-medium text-muted-foreground mb-2">{t("rename.availableVars")}</p>
+        <div className="flex flex-wrap gap-2">
+          {AVAILABLE_VARS.map((v) => (
+            <code
+              key={v.name}
+              className="text-xs px-2 py-1 bg-muted rounded-md cursor-pointer hover:bg-muted/80 transition-colors"
+              onClick={() => appendVar(v.name)}
+              title={v.example}
+            >
+              {`{${v.name}}`}
+            </code>
+          ))}
+        </div>
+      </div>
+    </SettingsCard>
   );
 }

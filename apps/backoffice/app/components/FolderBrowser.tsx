@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { FolderItem } from "../../lib/api";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 import { Icon } from "./ui";
 
 interface TreeNode extends FolderItem {

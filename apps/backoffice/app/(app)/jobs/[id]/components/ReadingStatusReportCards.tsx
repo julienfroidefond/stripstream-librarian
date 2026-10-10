@@ -1,4 +1,4 @@
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, StatBox } from "@/app/components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, ReportStatGrid } from "@/app/components/ui";
 import type { ReadingStatusMatchReportDto, ReadingStatusMatchResultDto, ReadingStatusPushReportDto, ReadingStatusPushResultDto } from "@/lib/api";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 import { SeriesResultRow, ResultStatusBadge } from "./SeriesResultRow";
@@ -11,13 +11,15 @@ export function ReadingStatusMatchReportCard({ report, t }: { report: ReadingSta
         <CardDescription>{t("jobDetail.seriesAnalyzed", { count: String(report.total_series) })}</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          <StatBox value={report.linked} label={t("jobDetail.linked")} variant="success" />
-          <StatBox value={report.already_linked} label={t("jobDetail.alreadyLinked")} variant="primary" />
-          <StatBox value={report.no_results} label={t("jobDetail.noResults")} />
-          <StatBox value={report.ambiguous} label={t("jobDetail.ambiguous")} variant="warning" />
-          <StatBox value={report.errors} label={t("jobDetail.errors")} variant={report.errors > 0 ? "error" : "default"} />
-        </div>
+        <ReportStatGrid
+          stats={[
+            { value: report.linked, label: t("jobDetail.linked"), variant: "success" },
+            { value: report.already_linked, label: t("jobDetail.alreadyLinked"), variant: "primary" },
+            { value: report.no_results, label: t("jobDetail.noResults") },
+            { value: report.ambiguous, label: t("jobDetail.ambiguous"), variant: "warning" },
+            { value: report.errors, label: t("jobDetail.errors"), variant: report.errors > 0 ? "error" : "default" },
+          ]}
+        />
       </CardContent>
     </Card>
   );
@@ -99,12 +101,14 @@ export function ReadingStatusPushReportCard({ report, t }: { report: ReadingStat
         <CardDescription>{t("jobDetail.seriesAnalyzed", { count: String(report.total_series) })}</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          <StatBox value={report.pushed} label={t("jobDetail.pushed")} variant="success" />
-          <StatBox value={report.skipped} label={t("jobDetail.skipped")} variant="primary" />
-          <StatBox value={report.no_books} label={t("jobDetail.noBooks")} />
-          <StatBox value={report.errors} label={t("jobDetail.errors")} variant={report.errors > 0 ? "error" : "default"} />
-        </div>
+        <ReportStatGrid
+          stats={[
+            { value: report.pushed, label: t("jobDetail.pushed"), variant: "success" },
+            { value: report.skipped, label: t("jobDetail.skipped"), variant: "primary" },
+            { value: report.no_books, label: t("jobDetail.noBooks") },
+            { value: report.errors, label: t("jobDetail.errors"), variant: report.errors > 0 ? "error" : "default" },
+          ]}
+        />
       </CardContent>
     </Card>
   );

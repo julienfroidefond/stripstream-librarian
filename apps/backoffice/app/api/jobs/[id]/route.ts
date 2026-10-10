@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiFetch, IndexJobDto } from "@/lib/api";
+import { withRoute } from "@/lib/api-handler";
 
-export async function GET(
+export const GET = withRoute(async (
   _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
-  try {
-    const data = await apiFetch<IndexJobDto>(`/index/jobs/${id}`);
-    return NextResponse.json(data);
-  } catch (error) {
-    return NextResponse.json({ error: "Failed to fetch job" }, { status: 500 });
-  }
-}
+  const data = await apiFetch<IndexJobDto>(`/index/jobs/${id}`);
+  return NextResponse.json(data);
+}, { message: "Failed to fetch job" });

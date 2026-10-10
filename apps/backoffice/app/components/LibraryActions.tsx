@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { Button, Icon } from "../components/ui";
 import { ProviderIcon } from "../components/ProviderIcon";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 import type { MetadataProviderDto } from "../../lib/api";
 
 interface LibraryActionsProps {

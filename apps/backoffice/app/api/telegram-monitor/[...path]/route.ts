@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiFetch } from "@/lib/api";
+import { withRoute } from "@/lib/api-handler";
 
 type Params = { params: Promise<{ path: string[] }> };
 
-async function proxy(request: NextRequest, { params }: Params) {
-  const { path } = await params;
-  const apiPath = "/telegram-monitor/" + path.join("/") + request.nextUrl.search;
+const proxy = withRoute(
+  async (request: NextRequest, { params }: Params) => {
+    const { path } = await params;
+    const apiPath = "/telegram-monitor/" + path.join("/") + request.nextUrl.search;
 
-  try {
     let body: unknown = undefined;
     if (request.method !== "GET" && request.method !== "DELETE") {
       const text = await request.text();
@@ -19,12 +20,13 @@ async function proxy(request: NextRequest, { params }: Params) {
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     return NextResponse.json(data ?? { ok: true });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Request failed";
-    const status = message.includes("(404)") ? 404 : message.includes("(400)") ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
+  },
+  {
+    fallback: "Request failed",
+    statusFromError: (_error, message) =>
+      message.includes("(404)") ? 404 : message.includes("(400)") ? 400 : 500,
   }
-}
+);
 
 export const GET = proxy;
 export const POST = proxy;

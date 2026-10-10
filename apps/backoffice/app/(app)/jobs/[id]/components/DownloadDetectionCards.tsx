@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, StatBox } from "@/app/components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, ReportStatGrid } from "@/app/components/ui";
 import { QbittorrentProvider, QbittorrentDownloadButton } from "@/app/components/QbittorrentDownloadButton";
 import type { DownloadDetectionReportDto, DownloadDetectionResultDto } from "@/lib/api";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
@@ -96,11 +96,13 @@ export function RssPollStatsCard({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          <StatBox value={stats.total_series ?? 0} label={t("jobDetail.seriesChecked")} />
-          <StatBox value={stats.found ?? 0} label={t("jobDetail.downloadFound")} variant="success" />
-          <StatBox value={stats.new_releases ?? 0} label={t("jobDetail.downloadNewReleases")} variant="primary" />
-        </div>
+        <ReportStatGrid
+          stats={[
+            { value: stats.total_series ?? 0, label: t("jobDetail.seriesChecked") },
+            { value: stats.found ?? 0, label: t("jobDetail.downloadFound"), variant: "success" },
+            { value: stats.new_releases ?? 0, label: t("jobDetail.downloadNewReleases"), variant: "primary" },
+          ]}
+        />
       </CardContent>
     </Card>
   );
@@ -114,14 +116,16 @@ export function DownloadDetectionReportCard({ report, t }: { report: DownloadDet
         <CardDescription>{t("jobDetail.seriesAnalyzed", { count: String(report.total_series) })}</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          <StatBox value={report.found} label={t("jobDetail.downloadFound")} variant="success" />
-          <StatBox value={report.new_releases ?? 0} label={t("jobDetail.downloadNewReleases")} variant="primary" />
-          <StatBox value={report.not_found} label={t("jobDetail.downloadNotFound")} />
-          <StatBox value={report.no_missing} label={t("jobDetail.downloadNoMissing")} variant="primary" />
-          <StatBox value={report.no_metadata} label={t("jobDetail.downloadNoMetadata")} />
-          <StatBox value={report.errors} label={t("jobDetail.errors")} variant={report.errors > 0 ? "error" : "default"} />
-        </div>
+        <ReportStatGrid
+          stats={[
+            { value: report.found, label: t("jobDetail.downloadFound"), variant: "success" },
+            { value: report.new_releases ?? 0, label: t("jobDetail.downloadNewReleases"), variant: "primary" },
+            { value: report.not_found, label: t("jobDetail.downloadNotFound") },
+            { value: report.no_missing, label: t("jobDetail.downloadNoMissing"), variant: "primary" },
+            { value: report.no_metadata, label: t("jobDetail.downloadNoMetadata") },
+            { value: report.errors, label: t("jobDetail.errors"), variant: report.errors > 0 ? "error" : "default" },
+          ]}
+        />
       </CardContent>
     </Card>
   );

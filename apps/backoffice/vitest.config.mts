@@ -19,7 +19,7 @@ export default defineConfig({
       reporter: ["text", "html", "lcov"],
       reportsDirectory: "./coverage",
       skipFull: false,
-      include: ["lib/**/*.{ts,tsx}", "app/**/*.{ts,tsx}"],
+      include: ["lib/**/*.{ts,tsx}", "app/**/*.{ts,tsx}", "hooks/**/*.{ts,tsx}"],
       exclude: ["**/*.d.ts", "app/**/layout.tsx", "app/**/globals.css"],
     },
   },

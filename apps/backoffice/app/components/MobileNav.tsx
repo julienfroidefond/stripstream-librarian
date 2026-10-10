@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { NavIcon } from "./ui";
 import type { IconName } from "./ui/Icon";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 import type { NavHref } from "@/lib/navigation";
 import type { UserDto } from "@/lib/api";
 

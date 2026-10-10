@@ -4,7 +4,7 @@ import { useState } from "react";
 import { FolderPicker } from "./FolderPicker";
 import { FolderItem } from "../../lib/api";
 import { Button, FormField, FormInput, FormRow } from "./ui";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 
 interface LibraryFormProps {
   initialFolders: FolderItem[];

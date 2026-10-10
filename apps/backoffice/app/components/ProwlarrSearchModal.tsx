@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Icon, Modal } from "./ui";
 import type { ProwlarrRelease, ProwlarrSearchResponse } from "../../lib/api";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 import { QbittorrentProvider, QbittorrentDownloadButton } from "./QbittorrentDownloadButton";
 import { compressVolumes, stripLeadingArticle } from "@/lib/volumeRanges";
 

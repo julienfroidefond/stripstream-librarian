@@ -3,7 +3,7 @@
 import nextDynamic from "next/dynamic";
 import { ActionsMenu, ActionsMenuItem, ActionsMenuSection, Icon } from "./ui";
 import type { QuickSearch } from "./ProwlarrSearchModal";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 
 const ProwlarrSearchModal = nextDynamic(
   () => import("./ProwlarrSearchModal").then(m => m.ProwlarrSearchModal)

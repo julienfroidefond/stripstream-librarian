@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cancelJob } from "@/lib/api";
+import { withRoute } from "@/lib/api-handler";
 
-export async function POST(
+export const POST = withRoute(async (
   _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
-  try {
-    const data = await cancelJob(id);
-    return NextResponse.json(data);
-  } catch (error) {
-    return NextResponse.json({ error: "Failed to cancel job" }, { status: 500 });
-  }
-}
+  const data = await cancelJob(id);
+  return NextResponse.json(data);
+}, { message: "Failed to cancel job" });

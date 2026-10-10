@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 import { JobRow } from "./JobRow";
 import { formatDateTime, formatDuration } from "@/lib/format";
 

@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
 import { apiFetch } from "@/lib/api";
+import { withRoute } from "@/lib/api-handler";
 
-export async function GET() {
-  try {
-    const data = await apiFetch<string[]>("/series/genres");
-    return NextResponse.json(data);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
-}
+export const GET = withRoute(async () => {
+  const data = await apiFetch<string[]>("/series/genres");
+  return NextResponse.json(data);
+}, { fallback: "Failed" });

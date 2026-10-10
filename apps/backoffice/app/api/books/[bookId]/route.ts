@@ -1,31 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateBook, apiFetch } from "@/lib/api";
+import { withRoute } from "@/lib/api-handler";
 
-export async function PATCH(
+export const PATCH = withRoute(async (
   request: NextRequest,
-  { params }: { params: Promise<{ bookId: string }> }
-) {
+  { params }: { params: Promise<{ bookId: string }> }) => {
   const { bookId } = await params;
-  try {
-    const body = await request.json();
-    const data = await updateBook(bookId, body);
-    return NextResponse.json(data);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to update book";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
-}
+  const body = await request.json();
+  const data = await updateBook(bookId, body);
+  return NextResponse.json(data);
+}, { fallback: "Failed to update book" });
 
-export async function DELETE(
+export const DELETE = withRoute(async (
   _request: NextRequest,
-  { params }: { params: Promise<{ bookId: string }> }
-) {
+  { params }: { params: Promise<{ bookId: string }> }) => {
   const { bookId } = await params;
-  try {
-    const data = await apiFetch(`/books/${bookId}`, { method: "DELETE" });
-    return NextResponse.json(data);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to delete book";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
-}
+  const data = await apiFetch(`/books/${bookId}`, { method: "DELETE" });
+  return NextResponse.json(data);
+}, { fallback: "Failed to delete book" });
