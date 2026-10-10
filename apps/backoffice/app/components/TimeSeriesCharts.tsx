@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui";
 import { RcAreaChart, RcMultiLineChart } from "@/app/components/DashboardCharts";
 import type {
@@ -125,38 +125,39 @@ export function TimeSeriesCharts({
   const [data, setData] = useState<TimeSeriesData>(initialData);
   const [loading, setLoading] = useState(false);
 
-  const fetchData = useCallback(async (p: Period) => {
-    setLoading(true);
-    try {
-      const params = p !== "week" ? `?period=${p}` : "";
-      const res = await fetch(`/api/stats${params}`);
-      if (res.ok) {
-        const stats: StatsResponse = await res.json();
+  useEffect(() => {
+    // Skip initial fetch — we already have server-rendered data for "week"
+    if (period === "week") return;
+    let cancelled = false;
+    fetch(`/api/stats?period=${period}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((stats: StatsResponse | null) => {
+        if (!stats || cancelled) return;
         setData({
           reading_over_time: stats.reading_over_time ?? [],
           users_reading_over_time: stats.users_reading_over_time ?? [],
           additions_over_time: stats.additions_over_time ?? [],
           jobs_over_time: stats.jobs_over_time ?? [],
         });
-      }
-    } catch {
-      // keep existing data on error
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    // Skip initial fetch — we already have server-rendered data for "week"
-    if (period === "week") return;
-    fetchData(period);
-  }, [period, fetchData]);
+      })
+      .catch(() => {
+        // keep existing data on error
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [period]);
 
   function handlePeriodChange(p: Period) {
     if (p === period) return;
     if (p === "week") {
       // Reset to initial server data
       setData(initialData);
+    } else {
+      setLoading(true);
     }
     setPeriod(p);
   }

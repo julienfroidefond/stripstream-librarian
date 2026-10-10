@@ -5,6 +5,14 @@ import { SettingsCard, SettingsField, Button, FormInput, FormSelect, Icon } from
 import { KomgaSyncResponse, KomgaSyncReportSummary, UserDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 
+async function loadKomgaReports(): Promise<KomgaSyncReportSummary[] | null> {
+  try {
+    const resp = await fetch("/api/komga/reports");
+    if (resp.ok) return (await resp.json()) as KomgaSyncReportSummary[];
+  } catch { /* ignore */ }
+  return null;
+}
+
 export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initialData: Record<string, unknown> | null }) {
   const { t, locale } = useTranslation();
   const [komgaUrl, setKomgaUrl] = useState(initialData?.url ? String(initialData.url) : "");
@@ -30,16 +38,17 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
     [selectedReport?.newly_marked_books],
   );
 
-  const fetchReports = useCallback(async () => {
-    try {
-      const resp = await fetch("/api/komga/reports");
-      if (resp.ok) setReports(await resp.json());
-    } catch { /* ignore */ }
+  const fetchReports = useCallback(() => {
+    loadKomgaReports().then((data) => {
+      if (data) setReports(data);
+    });
   }, []);
 
   useEffect(() => {
-    fetchReports();
-  }, [fetchReports]);
+    loadKomgaReports().then((data) => {
+      if (data) setReports(data);
+    });
+  }, []);
 
   async function handleViewReport(id: string) {
     setSelectedReport(null);

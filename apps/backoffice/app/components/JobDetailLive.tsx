@@ -11,7 +11,10 @@ interface JobDetailLiveProps {
 export function JobDetailLive({ jobId, isTerminal }: JobDetailLiveProps) {
   const router = useRouter();
   const isTerminalRef = useRef(isTerminal);
-  isTerminalRef.current = isTerminal;
+
+  useEffect(() => {
+    isTerminalRef.current = isTerminal;
+  }, [isTerminal]);
 
   useEffect(() => {
     if (isTerminalRef.current) return;

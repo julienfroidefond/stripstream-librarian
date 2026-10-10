@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect, useCallback, useRef } from "react";
+import { useState, useTransition, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Modal } from "./ui/Modal";
 import { useRouter } from "next/navigation";
@@ -10,6 +10,57 @@ import { LockButton } from "./LockButton";
 import { useTranslation } from "@/lib/i18n/context";
 
 const SERIES_STATUS_VALUES = ["", "ongoing", "ended", "hiatus", "cancelled", "upcoming"] as const;
+
+/** Autocomplete dropdown for the genre input. Rendered in a portal so it is not
+ * clipped by the modal's scroll container. The anchor rect is measured in an
+ * effect (never during render) and kept in sync on scroll/resize. */
+function GenreSuggestions({
+  anchorRef,
+  items,
+  onSelect,
+}: {
+  anchorRef: React.RefObject<HTMLInputElement | null>;
+  items: string[];
+  onSelect: (genre: string) => void;
+}) {
+  const [rect, setRect] = useState<DOMRect | null>(null);
+
+  useLayoutEffect(() => {
+    const update = () => setRect(anchorRef.current?.getBoundingClientRect() ?? null);
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [anchorRef]);
+
+  if (!rect) return null;
+
+  return createPortal(
+    <div
+      style={{ position: "fixed", top: rect.bottom + 6, left: rect.left, width: rect.width, zIndex: 9999 }}
+      className="overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+    >
+      <ul className="max-h-52 overflow-y-auto">
+        {items.map((g) => (
+          <li key={g}>
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); onSelect(g); }}
+              className="w-full px-3 py-2.5 text-left text-sm text-foreground hover:bg-success/10 hover:text-success transition-colors flex items-center gap-2 group"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-success/40 group-hover:bg-success transition-colors flex-shrink-0" />
+              {g}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>,
+    document.body,
+  );
+}
 
 export interface EditSeriesFormProps {
   children?: (open: () => void) => React.ReactNode;
@@ -160,7 +211,7 @@ export function EditSeriesForm({
     setBookLanguage(currentBookLanguage ?? "");
     setError(null);
     setIsOpen(false);
-  }, [seriesName, currentAuthors, currentGenres, currentPublishers, currentDescription, currentStartYear, currentTotalVolumes, currentBookAuthor, currentBookLanguage, currentLockedFields]);
+  }, [seriesName, currentAuthors, currentGenres, currentPublishers, currentDescription, currentStartYear, currentTotalVolumes, currentStatus, currentBookAuthor, currentBookLanguage, currentLockedFields]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -412,35 +463,12 @@ export function EditSeriesForm({
                   autoComplete="off"
                   inputRef={(el) => { genreInputRef.current = el; }}
                   suggestions={showGenreSuggestions && (() => {
-                    const rect = genreInputRef.current?.getBoundingClientRect();
-                    if (!rect) return null;
                     const q = genreInput.toLowerCase();
-                    const suggestions = allGenres.filter(
+                    const items = allGenres.filter(
                       (g) => !genres.includes(g) && (q === "" || g.toLowerCase().includes(q))
                     );
-                    if (!suggestions.length) return null;
-                    return createPortal(
-                      <ul
-                        style={{ position: "fixed", top: rect.bottom + 6, left: rect.left, width: rect.width, zIndex: 9999 }}
-                        className="overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
-                      >
-                        <div className="max-h-52 overflow-y-auto">
-                          {suggestions.map((g) => (
-                            <li key={g}>
-                              <button
-                                type="button"
-                                onMouseDown={(e) => { e.preventDefault(); addGenre(g); }}
-                                className="w-full px-3 py-2.5 text-left text-sm text-foreground hover:bg-success/10 hover:text-success transition-colors flex items-center gap-2 group"
-                              >
-                                <span className="w-1.5 h-1.5 rounded-full bg-success/40 group-hover:bg-success transition-colors flex-shrink-0" />
-                                {g}
-                              </button>
-                            </li>
-                          ))}
-                        </div>
-                      </ul>,
-                      document.body
-                    );
+                    if (!items.length) return null;
+                    return <GenreSuggestions anchorRef={genreInputRef} items={items} onSelect={addGenre} />;
                   })()}
                 />
               </FormField>

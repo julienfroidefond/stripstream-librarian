@@ -79,7 +79,23 @@ export function TelegramMonitorCard({
   ];
 
   useEffect(() => {
-    loadAll();
+    Promise.all([
+      tgFetch<TelegramMonitorStatus>("status").catch(() => null),
+      tgFetch<TelegramSourceDto[]>("sources").catch(() => []),
+    ]).then(([s, srcs]) => {
+      if (s) {
+        setStatus(s);
+        if (s.phone) setPhone(s.phone);
+        if (s.api_id) setApiId(String(s.api_id));
+        const interval = String(s.sync_interval_minutes || 30);
+        setSyncInterval(SYNC_INTERVAL_VALUES.has(interval) ? interval : "30");
+        // Collapse credentials if already connected
+        setCredentialsOpen(!s.authorized);
+      } else {
+        setCredentialsOpen(true);
+      }
+      setSources(srcs);
+    });
   }, []);
 
   useEffect(() => {
@@ -123,25 +139,6 @@ export function TelegramMonitorCard({
     setNewChannel(username);
     setSuggestions([]);
     setShowSuggestions(false);
-  }
-
-  async function loadAll() {
-    const [s, srcs] = await Promise.all([
-      tgFetch<TelegramMonitorStatus>("status").catch(() => null),
-      tgFetch<TelegramSourceDto[]>("sources").catch(() => []),
-    ]);
-    if (s) {
-      setStatus(s);
-      if (s.phone) setPhone(s.phone);
-      if (s.api_id) setApiId(String(s.api_id));
-      const interval = String(s.sync_interval_minutes || 30);
-      setSyncInterval(SYNC_INTERVAL_VALUES.has(interval) ? interval : "30");
-      // Collapse credentials if already connected
-      setCredentialsOpen(!s.authorized);
-    } else {
-      setCredentialsOpen(true);
-    }
-    setSources(srcs);
   }
 
   async function handleSaveSettings() {

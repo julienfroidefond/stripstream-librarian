@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
+
+import { useIsMounted } from "@/lib/useIsMounted";
 
 // Sun Icon
 const SunIcon = ({ className }: { className?: string }) => (
@@ -28,11 +29,7 @@ const MonitorIcon = ({ className }: { className?: string }) => (
 
 export function ThemeToggle() {
   const { theme, setTheme, resolvedTheme, systemTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useIsMounted();
 
   if (!mounted) {
     return (
@@ -83,11 +80,7 @@ export function ThemeToggle() {
 // Full theme selector with dropdown
 export function ThemeSelector() {
   const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useIsMounted();
 
   if (!mounted) {
     return (

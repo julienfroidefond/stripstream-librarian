@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, SettingsField, FormInput, Icon } from "@/app/components/ui";
 import { UserDto, AnilistStatusDto, AnilistSyncReportDto, AnilistPullReportDto, AnilistSyncPreviewItemDto, AnilistSyncItemDto, AnilistPullItemDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
+import { useIsMounted } from "@/lib/useIsMounted";
 
 export function AnilistTab({
   handleUpdateSetting,
@@ -16,8 +17,8 @@ export function AnilistTab({
 }) {
   const { t } = useTranslation();
 
-  const [origin, setOrigin] = useState("");
-  useEffect(() => { setOrigin(window.location.origin); }, []);
+  const mounted = useIsMounted();
+  const origin = mounted ? window.location.origin : "";
 
   const [clientId, setClientId] = useState(initialData?.client_id ? String(initialData.client_id) : "");
   const [token, setToken] = useState(initialData?.access_token ? String(initialData.access_token) : "");

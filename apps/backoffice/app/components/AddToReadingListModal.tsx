@@ -22,7 +22,6 @@ export function AddToReadingListModal({ seriesId, children }: Props) {
 
   useEffect(() => {
     if (!isOpen) return;
-    setLoading(true);
     fetch("/api/reading-lists")
       .then((r) => r.json())
       .then((data: ReadingListDto[]) => setLists(data))
@@ -46,7 +45,7 @@ export function AddToReadingListModal({ seriesId, children }: Props) {
     }
   }
 
-  const open = () => { setIsOpen(true); setAdded(new Set()); };
+  const open = () => { setIsOpen(true); setAdded(new Set()); setLoading(true); };
 
   return (
     <>

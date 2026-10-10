@@ -33,11 +33,18 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
 
   // Stash mutable callbacks in refs so we don't re-open the SSE on every parent
   // render (onComplete is typically an inline arrow function in the parent,
-  // and t changes shape often enough to retrigger the effect).
+  // and t changes shape often enough to retrigger the effect). The refs are
+  // synced in effects (never written during render).
   const onCompleteRef = useRef(onComplete);
-  onCompleteRef.current = onComplete;
   const tRef = useRef(t);
-  tRef.current = t;
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
 
   useEffect(() => {
     const eventSource = new EventSource(`/api/jobs/${jobId}/stream`);

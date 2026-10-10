@@ -16,6 +16,22 @@ interface FolderBrowserProps {
   onSelect: (path: string) => void;
 }
 
+function findAndUpdateNode(
+  nodes: TreeNode[],
+  targetPath: string,
+  updateFn: (node: TreeNode) => TreeNode
+): TreeNode[] {
+  return nodes.map(node => {
+    if (node.path === targetPath) {
+      return updateFn(node);
+    }
+    if (node.children) {
+      return { ...node, children: findAndUpdateNode(node.children, targetPath, updateFn) };
+    }
+    return node;
+  });
+}
+
 export function FolderBrowser({ initialFolders, selectedPath, onSelect }: FolderBrowserProps) {
   const { t } = useTranslation();
   // Convert initial folders to tree structure
@@ -35,22 +51,6 @@ export function FolderBrowser({ initialFolders, selectedPath, onSelect }: Folder
     }
     return [];
   }, []);
-
-  const findAndUpdateNode = (
-    nodes: TreeNode[],
-    targetPath: string,
-    updateFn: (node: TreeNode) => TreeNode
-  ): TreeNode[] => {
-    return nodes.map(node => {
-      if (node.path === targetPath) {
-        return updateFn(node);
-      }
-      if (node.children) {
-        return { ...node, children: findAndUpdateNode(node.children, targetPath, updateFn) };
-      }
-      return node;
-    });
-  };
 
   const toggleExpand = useCallback(async (node: TreeNode) => {
     if (!node.has_children) {

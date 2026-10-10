@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { NavIcon } from "./ui";
 import type { IconName } from "./ui/Icon";
 import { useTranslation } from "@/lib/i18n/context";
+import { useIsMounted } from "@/lib/useIsMounted";
 import type { NavHref } from "@/lib/navigation";
 import type { UserDto } from "@/lib/api";
 
@@ -38,7 +39,7 @@ export function MobileNav({ navItems, users, activeUserId, setActiveUserAction }
   const { t } = useTranslation();
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useIsMounted();
   const [, startTransition] = useTransition();
 
   async function handleLogout() {
@@ -54,10 +55,6 @@ export function MobileNav({ navItems, users, activeUserId, setActiveUserAction }
       await setActiveUserAction(fd);
     });
   }
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const overlay = (
     <>

@@ -79,17 +79,11 @@ function GenreSeriesModal({
   const [name, setName] = useState(genre);
 
   useEffect(() => {
-    setLoading(true);
     fetch(`/api/series?genre=${encodeURIComponent(genre)}&limit=200`)
       .then(r => r.json())
       .then(data => { setSeries(data.items ?? []); setTotal(data.total ?? 0); })
       .catch(() => setSeries([]))
       .finally(() => setLoading(false));
-  }, [genre]);
-
-  useEffect(() => {
-    setName(genre);
-    setEditing(false);
   }, [genre]);
 
   const saveRename = async () => {
@@ -512,6 +506,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
       {/* Genre detail modal */}
       {activeGenreModal && (
         <GenreSeriesModal
+          key={activeGenreModal}
           genre={activeGenreModal}
           busy={busy}
           onClose={() => setActiveGenreModal(null)}

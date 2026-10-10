@@ -1,8 +1,38 @@
 "use client";
 
-import { useState, useEffect, createContext, useContext } from "react";
+import { createContext, useCallback, useContext, useSyncExternalStore } from "react";
 
 const STORAGE_KEY = "nav-collapsed";
+
+// Module-level store backed by localStorage. Using an external store (instead of
+// useState + useEffect) keeps the persisted value in sync without synchronously
+// calling setState inside an effect.
+const listeners = new Set<() => void>();
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === STORAGE_KEY) listener();
+  };
+  window.addEventListener("storage", onStorage);
+  return () => {
+    listeners.delete(listener);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+function getSnapshot(): boolean {
+  return localStorage.getItem(STORAGE_KEY) !== "false";
+}
+
+function getServerSnapshot(): boolean {
+  return true;
+}
+
+function setCollapsed(next: boolean) {
+  localStorage.setItem(STORAGE_KEY, String(next));
+  listeners.forEach((listener) => listener());
+}
 
 const NavCollapseContext = createContext<{ collapsed: boolean; toggle: () => void }>({
   collapsed: false,
@@ -10,19 +40,11 @@ const NavCollapseContext = createContext<{ collapsed: boolean; toggle: () => voi
 });
 
 export function CollapsibleNavProvider({ children }: { children: React.ReactNode }) {
-  const [collapsed, setCollapsed] = useState(true);
+  const collapsed = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
-  useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === "false") setCollapsed(false);
+  const toggle = useCallback(() => {
+    setCollapsed(!getSnapshot());
   }, []);
-
-  const toggle = () => {
-    setCollapsed((prev) => {
-      localStorage.setItem(STORAGE_KEY, String(!prev));
-      return !prev;
-    });
-  };
 
   return (
     <NavCollapseContext.Provider value={{ collapsed, toggle }}>

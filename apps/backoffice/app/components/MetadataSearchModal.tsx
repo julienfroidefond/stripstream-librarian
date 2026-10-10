@@ -96,36 +96,7 @@ export function MetadataSearchModal({
   const approvedLinks = localLinks.filter((l) => l.status === "approved");
   const primaryLink = approvedLinks.find((l) => l.is_primary) ?? null;
 
-  const handleOpen = useCallback(() => {
-    setIsOpen(true);
-    setSearchInput(seriesName);
-    if (approvedLinks.length > 0) {
-      setStep("linked");
-    } else {
-      doSearch("", seriesName);
-    }
-  }, [approvedLinks.length, seriesName]);
-
-  const handleClose = useCallback(() => {
-    setIsOpen(false);
-    setStep("idle");
-    setError(null);
-    setCandidates([]);
-    setSelectedCandidate(null);
-    setShowMissingList(false);
-    setSyncReport(null);
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") handleClose();
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, handleClose]);
-
-  async function doSearch(provider: string, customQuery?: string) {
+  const doSearch = useCallback(async (provider: string, customQuery?: string) => {
     setStep("searching");
     setError(null);
     setActiveProvider(provider);
@@ -159,7 +130,36 @@ export function MetadataSearchModal({
       setError(t("common.networkError"));
       setStep("results");
     }
-  }
+  }, [libraryId, searchInput, t]);
+
+  const handleOpen = useCallback(() => {
+    setIsOpen(true);
+    setSearchInput(seriesName);
+    if (approvedLinks.length > 0) {
+      setStep("linked");
+    } else {
+      doSearch("", seriesName);
+    }
+  }, [approvedLinks.length, seriesName, doSearch]);
+
+  const handleClose = useCallback(() => {
+    setIsOpen(false);
+    setStep("idle");
+    setError(null);
+    setCandidates([]);
+    setSelectedCandidate(null);
+    setShowMissingList(false);
+    setSyncReport(null);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") handleClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, handleClose]);
 
   async function handleSelectCandidate(candidate: SeriesCandidateDto) {
     setSelectedCandidate(candidate);
