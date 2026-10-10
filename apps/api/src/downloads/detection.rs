@@ -9,7 +9,10 @@ use tracing::{info, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use stripstream_core::http::build_http_client_with_agent;
+
 use super::{missing, prowlarr};
+use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
 use crate::{error::ApiError, state::AppState};
 
 // ---------------------------------------------------------------------------
@@ -113,11 +116,11 @@ pub async fn start_detection(
             .await?;
         let mut last_job_id: Option<Uuid> = None;
         for library_id in library_ids {
-            let existing: Option<Uuid> = sqlx::query_scalar(
-                "SELECT id FROM index_jobs WHERE library_id = $1 AND type = 'download_detection' AND status IN ('pending', 'running') LIMIT 1",
+            let existing = job_in_flight(
+                &state.pool,
+                JobScope::Library(library_id),
+                &["download_detection"],
             )
-            .bind(library_id)
-            .fetch_optional(&state.pool)
             .await?;
             if existing.is_some() {
                 continue;
@@ -141,13 +144,7 @@ pub async fn start_detection(
             tokio::spawn(async move {
                 if let Err(e) = process_download_detection(&pool, job_id, library_id).await {
                     warn!("[DOWNLOAD_DETECTION] job {job_id} failed: {e}");
-                    let _ = sqlx::query(
-                        "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
-                    )
-                    .bind(job_id)
-                    .bind(e.to_string())
-                    .execute(&pool)
-                    .await;
+                    let _ = fail_job(&pool, job_id, &e.to_string(), None).await;
                     notifications::notify(
                         pool,
                         notifications::NotificationEvent::DownloadDetectionFailed {
@@ -182,11 +179,11 @@ pub async fn start_detection(
     prowlarr::check_prowlarr_configured(&state.pool).await?;
 
     // Check no existing running job for this library
-    let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM index_jobs WHERE library_id = $1 AND type = 'download_detection' AND status IN ('pending', 'running') LIMIT 1",
+    let existing = job_in_flight(
+        &state.pool,
+        JobScope::Library(library_id),
+        &["download_detection"],
     )
-    .bind(library_id)
-    .fetch_optional(&state.pool)
     .await?;
 
     if let Some(existing_id) = existing {
@@ -217,13 +214,7 @@ pub async fn start_detection(
     tokio::spawn(async move {
         if let Err(e) = process_download_detection(&pool, job_id, library_id).await {
             warn!("[DOWNLOAD_DETECTION] job {job_id} failed: {e}");
-            let _ = sqlx::query(
-                "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
-            )
-            .bind(job_id)
-            .bind(e.to_string())
-            .execute(&pool)
-            .await;
+            let _ = fail_job(&pool, job_id, &e.to_string(), None).await;
             notifications::notify(
                 pool,
                 notifications::NotificationEvent::DownloadDetectionFailed {
@@ -830,10 +821,7 @@ pub(crate) async fn process_download_detection(
 
     let link_map: std::collections::HashMap<String, Uuid> = links.into_iter().collect();
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .user_agent("Stripstream-Librarian")
-        .build()
+    let client = build_http_client_with_agent(std::time::Duration::from_secs(30))
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
     // Load blacklisted release titles to filter them out
@@ -1106,14 +1094,9 @@ pub(crate) async fn process_download_detection(
         "errors": count_errors,
     });
 
-    sqlx::query(
-        "UPDATE index_jobs SET status = 'success', finished_at = NOW(), stats_json = $2, progress_percent = 100 WHERE id = $1",
-    )
-    .bind(job_id)
-    .bind(&stats)
-    .execute(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    complete_job(pool, job_id, stats.clone())
+        .await
+        .map_err(|e| e.to_string())?;
 
     info!(
         "[DOWNLOAD_DETECTION] job={job_id} completed: {total} series, found={count_found}, new_releases={new_releases}, not_found={count_not_found}, no_missing={count_no_missing}, no_metadata={count_no_metadata}, errors={count_errors}"

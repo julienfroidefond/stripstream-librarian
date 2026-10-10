@@ -19,6 +19,24 @@ pub fn unmap_libraries_path(path: &str) -> String {
     path.to_string()
 }
 
+/// Resolve `.`/`..` components lexically (without touching the filesystem), so
+/// path-traversal can be detected from the string alone.
+pub fn normalize_lexically(path: &std::path::Path) -> std::path::PathBuf {
+    use std::path::Component;
+
+    let mut normalized = std::path::PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::CurDir => {}
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    normalized
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,5 +107,22 @@ mod tests {
         assert_eq!(remapped, "/mnt/data/manga/naruto/vol01.cbz");
         assert_eq!(unmap_libraries_path(&remapped), original);
         std::env::remove_var("LIBRARIES_ROOT_PATH");
+    }
+
+    #[test]
+    fn normalize_resolves_dot_and_dotdot() {
+        use std::path::{Path, PathBuf};
+        assert_eq!(
+            normalize_lexically(Path::new("/a/./b/../c")),
+            PathBuf::from("/a/c")
+        );
+        assert_eq!(
+            normalize_lexically(Path::new("a/../../b")),
+            PathBuf::from("b")
+        );
+        assert_eq!(
+            normalize_lexically(Path::new("./a/b/")),
+            PathBuf::from("a/b")
+        );
     }
 }

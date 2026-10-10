@@ -6,8 +6,10 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::Row;
-use std::path::{Path as FsPath, PathBuf};
+use std::path::Path as FsPath;
 use std::time::Duration;
+use stripstream_core::paths::normalize_lexically;
+use stripstream_core::settings::load_setting;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -110,16 +112,8 @@ pub async fn get_setting(
     State(state): State<AppState>,
     axum::extract::Path(key): axum::extract::Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    let row = sqlx::query(r#"SELECT value FROM app_settings WHERE key = $1"#)
-        .bind(&key)
-        .fetch_optional(&state.pool)
-        .await?;
-
-    match row {
-        Some(row) => {
-            let value: Value = row.get("value");
-            Ok(Json(value))
-        }
+    match load_setting::<Value>(&state.pool, &key).await? {
+        Some(value) => Ok(Json(value)),
         None => Err(ApiError::not_found("setting not found")),
     }
 }
@@ -214,21 +208,6 @@ fn is_safe_cache_directory(path: &str) -> bool {
         .copied()
         .chain(protected.iter().map(|s| s.as_str()))
         .any(|root| normalized.starts_with(root))
-}
-
-/// Resolve `.`/`..` lexically so traversal is caught without touching the filesystem.
-fn normalize_lexically(path: &FsPath) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            std::path::Component::ParentDir => {
-                normalized.pop();
-            }
-            std::path::Component::CurDir => {}
-            other => normalized.push(other.as_os_str()),
-        }
-    }
-    normalized
 }
 
 /// Create or update a setting
@@ -457,21 +436,14 @@ fn compute_dir_stats(path: &std::path::Path) -> (u64, u64) {
 pub async fn get_thumbnail_stats(
     State(_state): State<AppState>,
 ) -> Result<Json<ThumbnailStats>, ApiError> {
-    let settings = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'thumbnail'"#)
-        .fetch_optional(&_state.pool)
-        .await?;
+    let settings = load_setting::<serde_json::Value>(&_state.pool, "thumbnail").await?;
 
-    let directory = match settings {
-        Some(row) => {
-            let value: serde_json::Value = row.get("value");
-            value
-                .get("directory")
-                .and_then(|v| v.as_str())
-                .unwrap_or("/data/thumbnails")
-                .to_string()
-        }
-        None => "/data/thumbnails".to_string(),
-    };
+    let directory = settings
+        .as_ref()
+        .and_then(|value| value.get("directory"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("/data/thumbnails")
+        .to_string();
 
     let directory_clone = directory.clone();
     let stats = tokio::task::spawn_blocking(move || {
@@ -623,3 +595,7 @@ pub async fn delete_status_mapping(
 #[cfg(test)]
 #[path = "tests/settings.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/core_settings.rs"]
+mod core_settings_tests;

@@ -1,45 +1,37 @@
-use super::{BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate};
+use stripstream_core::http::build_http_client;
+
+use super::{compute_confidence, BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate};
 
 pub struct AniListProvider;
 
+#[async_trait::async_trait]
 impl MetadataProvider for AniListProvider {
     fn name(&self) -> &str {
         "anilist"
     }
 
-    fn search_series(
+    async fn search_series(
         &self,
         query: &str,
         config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Vec<SeriesCandidate>, String>> + Send + '_>,
-    > {
-        let query = query.to_string();
-        let config = config.clone();
-        Box::pin(async move { search_series_impl(&query, &config).await })
+    ) -> Result<Vec<SeriesCandidate>, String> {
+        search_series_impl(query, config).await
     }
 
-    fn get_series(
+    async fn get_series(
         &self,
         external_id: &str,
         _config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<SeriesCandidate, String>> + Send + '_>,
-    > {
-        let external_id = external_id.to_string();
-        Box::pin(async move { get_series_impl(&external_id).await })
+    ) -> Result<SeriesCandidate, String> {
+        get_series_impl(external_id).await
     }
 
-    fn get_series_books(
+    async fn get_series_books(
         &self,
         external_id: &str,
         config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Vec<BookCandidate>, String>> + Send + '_>,
-    > {
-        let external_id = external_id.to_string();
-        let config = config.clone();
-        Box::pin(async move { get_series_books_impl(&external_id, &config).await })
+    ) -> Result<Vec<BookCandidate>, String> {
+        get_series_books_impl(external_id, config).await
     }
 }
 
@@ -125,9 +117,7 @@ async fn search_series_impl(
 }
 
 async fn search_series_impl_url(query: &str, url: &str) -> Result<Vec<SeriesCandidate>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
+    let client = build_http_client(std::time::Duration::from_secs(15))
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
     let data = graphql_request_url(
@@ -247,9 +237,7 @@ async fn get_series_impl(external_id: &str) -> Result<SeriesCandidate, String> {
     let id: i64 = external_id
         .parse()
         .map_err(|_| "invalid AniList ID".to_string())?;
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
+    let client = build_http_client(std::time::Duration::from_secs(15))
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
     let data = graphql_request_url(
         &client,
@@ -282,9 +270,7 @@ async fn get_series_books_impl_url(
         .parse()
         .map_err(|_| "invalid AniList ID".to_string())?;
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
+    let client = build_http_client(std::time::Duration::from_secs(15))
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
     let data =
@@ -405,9 +391,7 @@ pub async fn fetch_trending(limit: i32) -> Result<Vec<SeriesCandidate>, String> 
 }
 
 async fn fetch_trending_url(limit: i32, url: &str) -> Result<Vec<SeriesCandidate>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
+    let client = build_http_client(std::time::Duration::from_secs(15))
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
     let data = graphql_request_url(
@@ -527,21 +511,6 @@ fn extract_genres(media: &serde_json::Value) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
-}
-
-fn compute_confidence(title: &str, query: &str) -> f32 {
-    let title_lower = title.to_lowercase();
-    if title_lower == query {
-        1.0
-    } else if title_lower.starts_with(query) || query.starts_with(&title_lower) {
-        0.8
-    } else if title_lower.contains(query) || query.contains(&title_lower) {
-        0.7
-    } else {
-        let common: usize = query.chars().filter(|c| title_lower.contains(*c)).count();
-        let max_len = query.len().max(title_lower.len()).max(1);
-        (common as f32 / max_len as f32).clamp(0.1, 0.6)
-    }
 }
 
 #[cfg(test)]

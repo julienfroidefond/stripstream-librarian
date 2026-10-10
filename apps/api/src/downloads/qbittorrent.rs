@@ -1,6 +1,7 @@
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
+use stripstream_core::http::{build_http_client, USER_AGENT};
+use stripstream_core::settings::load_setting;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -50,14 +51,10 @@ struct QBittorrentConfig {
 pub(crate) async fn load_qbittorrent_config(
     pool: &sqlx::PgPool,
 ) -> Result<(String, String, String), ApiError> {
-    let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'qbittorrent'")
-        .fetch_optional(pool)
-        .await?;
-
-    let row = row.ok_or_else(|| ApiError::bad_request("qBittorrent is not configured"))?;
-    let value: serde_json::Value = row.get("value");
-    let config: QBittorrentConfig = serde_json::from_value(value)
-        .map_err(|e| ApiError::internal(format!("invalid qbittorrent config: {e}")))?;
+    let config = load_setting::<QBittorrentConfig>(pool, "qbittorrent")
+        .await
+        .map_err(|e| ApiError::internal(format!("invalid qbittorrent config: {e}")))?
+        .ok_or_else(|| ApiError::bad_request("qBittorrent is not configured"))?;
 
     if config.url.is_empty() || config.username.is_empty() {
         return Err(ApiError::bad_request(
@@ -185,13 +182,10 @@ pub async fn add_torrent(
                 tracing::error!("[QBITTORRENT] Failed to load config: {}", e.message);
             })?;
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| {
-            tracing::error!("[QBITTORRENT] Failed to build HTTP client: {e}");
-            ApiError::internal(format!("failed to build HTTP client: {e}"))
-        })?;
+    let client = build_http_client(std::time::Duration::from_secs(30)).map_err(|e| {
+        tracing::error!("[QBITTORRENT] Failed to build HTTP client: {e}");
+        ApiError::internal(format!("failed to build HTTP client: {e}"))
+    })?;
 
     // Resolve the URL: if it's an HTTP(S) link (e.g. Prowlarr proxy), follow redirects
     // and download the .torrent file ourselves, since qBittorrent may not handle redirects.
@@ -518,7 +512,7 @@ async fn resolve_torrent_url(url: &str) -> Result<ResolvedTorrent, String> {
     let no_redirect_client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::none())
-        .user_agent("Stripstream-Librarian")
+        .user_agent(USER_AGENT)
         .build()
         .map_err(|e| format!("failed to build redirect client: {e}"))?;
 
@@ -728,9 +722,7 @@ pub async fn test_qbittorrent(
 ) -> Result<Json<QBittorrentTestResponse>, ApiError> {
     let (base_url, username, password) = load_qbittorrent_config(&state.pool).await?;
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
+    let client = build_http_client(std::time::Duration::from_secs(10))
         .map_err(|e| ApiError::internal(format!("failed to build HTTP client: {e}")))?;
 
     let sid = match qbittorrent_login(&client, &base_url, &username, &password).await {

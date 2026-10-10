@@ -119,6 +119,27 @@ mod tests {
         }
     }
 
+    /// Run `f` with `vars` set, restoring the previous environment afterwards so
+    /// process-global variables are not left clobbered for other tests.
+    fn with_env<F: FnOnce()>(vars: &[(&str, &str)], f: F) {
+        let previous: Vec<(&str, Option<std::ffi::OsString>)> = vars
+            .iter()
+            .map(|(key, _)| (*key, std::env::var_os(key)))
+            .collect();
+        for (key, value) in vars {
+            std::env::set_var(key, value);
+        }
+
+        f();
+
+        for (key, old) in previous {
+            match old {
+                Some(value) => std::env::set_var(key, value),
+                None => std::env::remove_var(key),
+            }
+        }
+    }
+
     #[test]
     fn env_or_falls_back_when_unset() {
         let _guard = ENV_LOCK.lock().unwrap();
@@ -166,25 +187,34 @@ mod tests {
     #[test]
     fn api_config_reads_pool_size_from_env() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("DATABASE_URL", "postgres://example/db");
-        std::env::set_var("API_BOOTSTRAP_TOKEN", "token");
-        std::env::set_var("API_DB_MAX_CONNECTIONS", "25");
 
-        let config = ApiConfig::from_env().unwrap();
-        clear(&["API_DB_MAX_CONNECTIONS"]);
-
-        assert_eq!(config.db_max_connections, 25);
+        with_env(
+            &[
+                ("DATABASE_URL", "postgres://example/db"),
+                ("API_BOOTSTRAP_TOKEN", "token"),
+                ("API_DB_MAX_CONNECTIONS", "25"),
+            ],
+            || {
+                let config = ApiConfig::from_env().unwrap();
+                assert_eq!(config.db_max_connections, 25);
+            },
+        );
     }
 
     #[test]
     fn api_config_defaults_pool_size_to_ten() {
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("DATABASE_URL", "postgres://example/db");
-        std::env::set_var("API_BOOTSTRAP_TOKEN", "token");
-        clear(&["API_DB_MAX_CONNECTIONS"]);
 
-        let config = ApiConfig::from_env().unwrap();
-
-        assert_eq!(config.db_max_connections, 10);
+        with_env(
+            &[
+                ("DATABASE_URL", "postgres://example/db"),
+                ("API_BOOTSTRAP_TOKEN", "token"),
+            ],
+            || {
+                clear(&["API_DB_MAX_CONNECTIONS"]);
+                let config = ApiConfig::from_env().unwrap();
+                assert_eq!(config.db_max_connections, 10);
+            },
+        );
     }
 }

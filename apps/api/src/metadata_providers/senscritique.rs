@@ -1,61 +1,52 @@
 use std::collections::HashMap;
 
 use base64::Engine as _;
+use stripstream_core::http::build_http_client_with_custom_agent;
 
 use super::{BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate};
 
 const GRAPHQL_URL: &str = "https://apollo.senscritique.com/";
 const POLL_ID_MANGA: i64 = 192836;
 
+/// SensCritique rejects non-browser user-agents, so spoof a real browser.
+const BROWSER_USER_AGENT: &str =
+    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:108.0) Gecko/20100101 Firefox/108.0";
+
 pub struct SensCritiqueProvider;
 
+#[async_trait::async_trait]
 impl MetadataProvider for SensCritiqueProvider {
     fn name(&self) -> &str {
         "senscritique"
     }
 
-    fn search_series(
+    async fn search_series(
         &self,
         query: &str,
         config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Vec<SeriesCandidate>, String>> + Send + '_>,
-    > {
-        let query = query.to_string();
-        let detailed = config.detailed;
-        Box::pin(async move { search_series_impl(&query, detailed).await })
+    ) -> Result<Vec<SeriesCandidate>, String> {
+        search_series_impl(query, config.detailed).await
     }
 
-    fn get_series(
+    async fn get_series(
         &self,
         external_id: &str,
         _config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<SeriesCandidate, String>> + Send + '_>,
-    > {
-        let external_id = external_id.to_string();
-        Box::pin(async move { get_series_impl(&external_id).await })
+    ) -> Result<SeriesCandidate, String> {
+        get_series_impl(external_id).await
     }
 
-    fn get_series_books(
+    async fn get_series_books(
         &self,
         external_id: &str,
         _config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Vec<BookCandidate>, String>> + Send + '_>,
-    > {
-        let external_id = external_id.to_string();
-        Box::pin(async move { get_series_books_impl(&external_id).await })
+    ) -> Result<Vec<BookCandidate>, String> {
+        get_series_books_impl(external_id).await
     }
 }
 
 fn build_client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .user_agent(
-            "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:108.0) Gecko/20100101 Firefox/108.0",
-        )
-        .build()
+    build_http_client_with_custom_agent(std::time::Duration::from_secs(20), BROWSER_USER_AGENT)
         .map_err(|e| format!("failed to build HTTP client: {e}"))
 }
 

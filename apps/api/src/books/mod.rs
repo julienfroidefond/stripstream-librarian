@@ -15,6 +15,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
+use stripstream_core::settings::load_setting;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -764,12 +765,7 @@ async fn persist_rendered_thumbnail(
     data: &[u8],
     content_type: &str,
 ) -> Result<String, ApiError> {
-    let settings = sqlx::query_scalar::<_, serde_json::Value>(
-        "SELECT value FROM app_settings WHERE key = 'thumbnail'",
-    )
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| ApiError::internal(e.to_string()))?;
+    let settings = load_setting::<serde_json::Value>(&state.pool, "thumbnail").await?;
 
     let directory = settings
         .as_ref()
