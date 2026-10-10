@@ -1,50 +1,42 @@
-use super::{BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate};
+use stripstream_core::http::build_http_client;
+
+use super::{
+    compute_confidence, urlencoded, BookCandidate, MetadataProvider, ProviderConfig,
+    SeriesCandidate,
+};
 
 const DEFAULT_BASE_URL: &str = "https://www.googleapis.com";
 
 pub struct GoogleBooksProvider;
 
+#[async_trait::async_trait]
 impl MetadataProvider for GoogleBooksProvider {
     fn name(&self) -> &str {
         "google_books"
     }
 
-    fn search_series(
+    async fn search_series(
         &self,
         query: &str,
         config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Vec<SeriesCandidate>, String>> + Send + '_>,
-    > {
-        let query = query.to_string();
-        let config = config.clone();
-        Box::pin(async move { search_series_impl(&query, &config, DEFAULT_BASE_URL).await })
+    ) -> Result<Vec<SeriesCandidate>, String> {
+        search_series_impl(query, config, DEFAULT_BASE_URL).await
     }
 
-    fn get_series(
+    async fn get_series(
         &self,
         external_id: &str,
         config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<SeriesCandidate, String>> + Send + '_>,
-    > {
-        let external_id = external_id.to_string();
-        let config = config.clone();
-        Box::pin(async move { get_series_impl(&external_id, &config, DEFAULT_BASE_URL).await })
+    ) -> Result<SeriesCandidate, String> {
+        get_series_impl(external_id, config, DEFAULT_BASE_URL).await
     }
 
-    fn get_series_books(
+    async fn get_series_books(
         &self,
         external_id: &str,
         config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Vec<BookCandidate>, String>> + Send + '_>,
-    > {
-        let external_id = external_id.to_string();
-        let config = config.clone();
-        Box::pin(
-            async move { get_series_books_impl(&external_id, &config, DEFAULT_BASE_URL).await },
-        )
+    ) -> Result<Vec<BookCandidate>, String> {
+        get_series_books_impl(external_id, config, DEFAULT_BASE_URL).await
     }
 }
 
@@ -53,9 +45,7 @@ async fn search_series_impl(
     config: &ProviderConfig,
     base_url: &str,
 ) -> Result<Vec<SeriesCandidate>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
+    let client = build_http_client(std::time::Duration::from_secs(15))
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
     let search_query = format!("intitle:{}", query);
@@ -260,9 +250,7 @@ async fn get_series_impl(
     config: &ProviderConfig,
     base_url: &str,
 ) -> Result<SeriesCandidate, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
+    let client = build_http_client(std::time::Duration::from_secs(15))
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
     let mut url = format!("{base_url}/books/v1/volumes/{external_id}");
     if let Some(key) = &config.api_key {
@@ -352,9 +340,7 @@ async fn get_series_books_impl(
     config: &ProviderConfig,
     base_url: &str,
 ) -> Result<Vec<BookCandidate>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
+    let client = build_http_client(std::time::Duration::from_secs(15))
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
     // First fetch the volume to get its series info
@@ -549,37 +535,6 @@ fn extract_fallback_volume_number(title: &str) -> Option<i32> {
 
 fn extract_year(date: &str) -> Option<i32> {
     date.get(..4).and_then(|s| s.parse::<i32>().ok())
-}
-
-fn compute_confidence(title: &str, query: &str) -> f32 {
-    let title_lower = title.to_lowercase();
-    if title_lower == query {
-        1.0
-    } else if title_lower.starts_with(query) || query.starts_with(&title_lower) {
-        0.8
-    } else if title_lower.contains(query) || query.contains(&title_lower) {
-        0.7
-    } else {
-        // Simple character overlap ratio
-        let common: usize = query.chars().filter(|c| title_lower.contains(*c)).count();
-        let max_len = query.len().max(title_lower.len()).max(1);
-        (common as f32 / max_len as f32).clamp(0.1, 0.6)
-    }
-}
-
-fn urlencoded(s: &str) -> String {
-    let mut result = String::new();
-    for byte in s.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                result.push(byte as char);
-            }
-            _ => {
-                result.push_str(&format!("%{:02X}", byte));
-            }
-        }
-    }
-    result
 }
 
 struct SeriesCandidateBuilder {

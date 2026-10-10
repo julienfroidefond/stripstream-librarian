@@ -14,6 +14,12 @@ use uuid::Uuid;
 
 use crate::{error::ApiError, state::AppState};
 
+/// Column list + join shared by every job list response (see [`map_row`]).
+const JOB_SELECT: &str = "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at, j.progress_percent, j.processed_files, j.total_files FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id";
+
+/// Column list for the detailed job view (see [`map_row_detail`]).
+const JOB_DETAIL_SELECT: &str = "SELECT id, library_id, book_id, type, status, started_at, finished_at, phase2_started_at, generating_thumbnails_started_at, stats_json, error_opt, created_at, current_file, progress_percent, total_files, processed_files FROM index_jobs";
+
 #[derive(Deserialize, ToSchema)]
 pub struct RebuildRequest {
     #[schema(value_type = Option<String>)]
@@ -154,12 +160,10 @@ pub async fn enqueue_rebuild(
             last_id = Some(id);
         }
         let last_id = last_id.ok_or_else(|| ApiError::bad_request("No libraries found"))?;
-        let row = sqlx::query(
-            "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id WHERE j.id = $1",
-        )
-        .bind(last_id)
-        .fetch_one(&state.pool)
-        .await?;
+        let row = sqlx::query(sqlx::AssertSqlSafe(format!("{JOB_SELECT} WHERE j.id = $1")))
+            .bind(last_id)
+            .fetch_one(&state.pool)
+            .await?;
         return Ok(Json(map_row(row)));
     }
 
@@ -173,12 +177,10 @@ pub async fn enqueue_rebuild(
     .execute(&state.pool)
     .await?;
 
-    let row = sqlx::query(
-        "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id WHERE j.id = $1",
-    )
-    .bind(id)
-    .fetch_one(&state.pool)
-    .await?;
+    let row = sqlx::query(sqlx::AssertSqlSafe(format!("{JOB_SELECT} WHERE j.id = $1")))
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
 
     Ok(Json(map_row(row)))
 }
@@ -198,9 +200,9 @@ pub async fn enqueue_rebuild(
 pub async fn list_index_jobs(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<IndexJobResponse>>, ApiError> {
-    let rows = sqlx::query(
-        "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at, j.progress_percent, j.processed_files, j.total_files FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id ORDER BY j.created_at DESC LIMIT 100",
-    )
+    let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "{JOB_SELECT} ORDER BY j.created_at DESC LIMIT 100"
+    )))
     .fetch_all(&state.pool)
     .await?;
 
@@ -238,12 +240,10 @@ pub async fn cancel_job(
         return Err(ApiError::not_found("job not found or already finished"));
     }
 
-    let row = sqlx::query(
-        "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at, j.progress_percent, j.processed_files, j.total_files FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id WHERE j.id = $1",
-    )
-    .bind(id.0)
-    .fetch_one(&state.pool)
-    .await?;
+    let row = sqlx::query(sqlx::AssertSqlSafe(format!("{JOB_SELECT} WHERE j.id = $1")))
+        .bind(id.0)
+        .fetch_one(&state.pool)
+        .await?;
 
     Ok(Json(map_row(row)))
 }
@@ -428,12 +428,11 @@ fn map_row_detail(row: sqlx::postgres::PgRow) -> IndexJobDetailResponse {
 pub async fn get_active_jobs(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<IndexJobResponse>>, ApiError> {
-    let rows = sqlx::query(
-        "SELECT j.id, j.library_id, l.name AS library_name, j.book_id, j.type, j.status, j.started_at, j.finished_at, j.stats_json, j.error_opt, j.created_at, j.progress_percent, j.processed_files, j.total_files
-         FROM index_jobs j LEFT JOIN libraries l ON l.id = j.library_id
+    let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "{JOB_SELECT}
          WHERE j.status IN ('pending', 'running', 'extracting_pages', 'generating_thumbnails')
          ORDER BY j.created_at ASC"
-    )
+    )))
     .fetch_all(&state.pool)
     .await?;
 
@@ -460,11 +459,9 @@ pub async fn get_job_details(
     State(state): State<AppState>,
     id: axum::extract::Path<Uuid>,
 ) -> Result<Json<IndexJobDetailResponse>, ApiError> {
-    let row = sqlx::query(
-        "SELECT id, library_id, book_id, type, status, started_at, finished_at, phase2_started_at, generating_thumbnails_started_at,
-                stats_json, error_opt, created_at, current_file, progress_percent, total_files, processed_files
-         FROM index_jobs WHERE id = $1"
-    )
+    let row = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "{JOB_DETAIL_SELECT} WHERE id = $1"
+    )))
     .bind(id.0)
     .fetch_optional(&state.pool)
     .await?;

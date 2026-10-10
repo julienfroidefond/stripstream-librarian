@@ -1,69 +1,40 @@
 use scraper::{Html, Selector};
 
+use super::scraping::{self, absolute, text};
 use super::{BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate};
 
 const BASE_URL: &str = "https://www.bdphile.fr";
 
 pub struct BdphileProvider;
 
+#[async_trait::async_trait]
 impl MetadataProvider for BdphileProvider {
     fn name(&self) -> &str {
         "bdphile"
     }
-    fn search_series(
+    async fn search_series(
         &self,
         query: &str,
         _config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Vec<SeriesCandidate>, String>> + Send + '_>,
-    > {
-        let query = query.to_string();
-        Box::pin(async move { search_series_impl(&query, BASE_URL).await })
+    ) -> Result<Vec<SeriesCandidate>, String> {
+        search_series_impl(query, BASE_URL).await
     }
-    fn get_series(
+    async fn get_series(
         &self,
         external_id: &str,
         _config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<SeriesCandidate, String>> + Send + '_>,
-    > {
-        let external_id = external_id.to_string();
-        Box::pin(async move { get_series_impl(&external_id, BASE_URL).await })
+    ) -> Result<SeriesCandidate, String> {
+        get_series_impl(external_id, BASE_URL).await
     }
-    fn get_series_books(
+    async fn get_series_books(
         &self,
         external_id: &str,
         _config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Vec<BookCandidate>, String>> + Send + '_>,
-    > {
-        let external_id = external_id.to_string();
-        Box::pin(async move { get_series_books_impl(&external_id, BASE_URL).await })
+    ) -> Result<Vec<BookCandidate>, String> {
+        get_series_books_impl(external_id, BASE_URL).await
     }
 }
 
-fn client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .user_agent("StripstreamLibrarian/1.0 (metadata; contact administrator)")
-        .build()
-        .map_err(|e| format!("failed to build BDphile client: {e}"))
-}
-fn text(el: scraper::ElementRef<'_>) -> String {
-    el.text()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-fn absolute(base: &str, href: &str) -> String {
-    reqwest::Url::parse(base)
-        .ok()
-        .and_then(|base| base.join(href).ok())
-        .map(|url| url.to_string())
-        .unwrap_or_else(|| href.to_string())
-}
 fn title_slug(href: &str) -> Option<String> {
     let u = reqwest::Url::parse(href).ok()?;
     u.path().strip_prefix("/series/").map(str::to_string)
@@ -90,22 +61,8 @@ struct SearchResponse {
     #[serde(default)]
     bests: Vec<SearchHit>,
 }
-async fn get_html(c: &reqwest::Client, url: &str) -> Result<String, String> {
-    let r = c
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("BDphile request failed: {e}"))?;
-    if !r.status().is_success() {
-        return Err(format!("BDphile returned {}", r.status()));
-    }
-    r.text()
-        .await
-        .map_err(|e| format!("failed to read BDphile response: {e}"))
-}
-
 async fn search_series_impl(query: &str, base: &str) -> Result<Vec<SeriesCandidate>, String> {
-    let c = client()?;
+    let c = scraping::client(20, "BDphile")?;
     // BDphile's HTML search page errors out for anonymous clients. The
     // canonical search is the JSON autocomplete endpoint, which requires the
     // XHR marker to answer with JSON instead of a PHP notice.
@@ -339,10 +296,10 @@ fn parse_album_ratings(doc: &Html) -> Option<(f64, i64)> {
 }
 
 async fn get_series_impl(external_id: &str, base: &str) -> Result<SeriesCandidate, String> {
-    let c = client()?;
+    let c = scraping::client(20, "BDphile")?;
     let path = external_id.trim_start_matches('/');
     let url = format!("{base}/series/{path}");
-    let body = get_html(&c, &url).await?;
+    let body = scraping::get_html(&c, &url, "BDphile").await?;
     let doc = Html::parse_document(&body);
     let title = doc
         .select(&Selector::parse("h1").unwrap())
@@ -425,10 +382,10 @@ async fn get_series_books_impl(
     external_id: &str,
     base: &str,
 ) -> Result<Vec<BookCandidate>, String> {
-    let c = client()?;
+    let c = scraping::client(20, "BDphile")?;
     let path = external_id.trim_start_matches('/');
     let url = format!("{base}/series/{path}");
-    let body = get_html(&c, &url).await?;
+    let body = scraping::get_html(&c, &url, "BDphile").await?;
     let rows: Vec<(Vec<String>, String, String)> = {
         let doc = Html::parse_document(&body);
         let row_sel = Selector::parse("#detail_view tbody tr").unwrap();
@@ -482,7 +439,7 @@ async fn fetch_album(
     c: &reqwest::Client,
     url: &str,
 ) -> Result<std::collections::HashMap<String, String>, String> {
-    let body = get_html(c, url).await?;
+    let body = scraping::get_html(c, url, "BDphile").await?;
     let doc = Html::parse_document(&body);
     let mut out = std::collections::HashMap::new();
     if let Some(v) = Selector::parse("meta[name='description']")

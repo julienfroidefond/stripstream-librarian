@@ -119,6 +119,13 @@ impl From<std::io::Error> for ApiError {
     }
 }
 
+impl From<anyhow::Error> for ApiError {
+    fn from(err: anyhow::Error) -> Self {
+        tracing::error!("application error: {err:#}");
+        Self::internal("internal error")
+    }
+}
+
 impl From<reqwest::Error> for ApiError {
     fn from(err: reqwest::Error) -> Self {
         // reqwest errors embed the request URL (which may carry API keys in the query string).

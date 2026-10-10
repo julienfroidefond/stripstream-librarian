@@ -4,6 +4,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
+use stripstream_core::settings::load_setting;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -837,12 +838,9 @@ pub(crate) async fn get_provider_for_library(
     }
 
     // Fall back to global setting
-    let global = sqlx::query("SELECT value FROM app_settings WHERE key = 'metadata_providers'")
-        .fetch_optional(&state.pool)
-        .await?;
-
-    if let Some(row) = global {
-        let value: serde_json::Value = row.get("value");
+    if let Some(value) =
+        load_setting::<serde_json::Value>(&state.pool, "metadata_providers").await?
+    {
         if let Some(default) = value.get("default_provider").and_then(|v| v.as_str()) {
             if !default.is_empty() {
                 return Ok(default.to_string());

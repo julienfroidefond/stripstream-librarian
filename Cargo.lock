@@ -77,11 +77,12 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "api"
-version = "3.32.6"
+version = "3.32.7"
 dependencies = [
  "anyhow",
  "argon2",
  "async-stream",
+ "async-trait",
  "axum",
  "base64 0.23.1",
  "chrono",
@@ -158,6 +159,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "async-trait"
+version = "0.1.92"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82f6aeea286b8eb4dd3431a1be1b59d290ace00f5bfd8e2a159bc2a05e2c1667"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
 ]
 
 [[package]]
@@ -1562,7 +1574,7 @@ dependencies = [
 
 [[package]]
 name = "indexer"
-version = "3.32.6"
+version = "3.32.7"
 dependencies = [
  "anyhow",
  "axum",
@@ -1986,13 +1998,14 @@ dependencies = [
 
 [[package]]
 name = "notifications"
-version = "3.32.6"
+version = "3.32.7"
 dependencies = [
  "anyhow",
  "reqwest",
  "serde",
  "serde_json",
  "sqlx",
+ "stripstream-core",
  "tokio",
  "tracing",
 ]
@@ -2262,7 +2275,7 @@ dependencies = [
 
 [[package]]
 name = "parsers"
-version = "3.32.6"
+version = "3.32.7"
 dependencies = [
  "anyhow",
  "flate2",
@@ -3318,12 +3331,15 @@ dependencies = [
 
 [[package]]
 name = "stripstream-core"
-version = "3.32.6"
+version = "3.32.7"
 dependencies = [
  "anyhow",
  "chrono",
+ "reqwest",
  "serde",
+ "serde_json",
  "sha2 0.11.0",
+ "sqlx",
 ]
 
 [[package]]

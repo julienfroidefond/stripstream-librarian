@@ -5,10 +5,13 @@ use sqlx::{PgPool, Row};
 use tracing::info;
 use uuid::Uuid;
 
+use stripstream_core::http::build_http_client_with_agent;
+
 use super::{
     detection::{insert_event, AvailableReleaseDto},
     missing, prowlarr,
 };
+use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
 use crate::{error::ApiError, state::AppState};
 
 // ---------------------------------------------------------------------------
@@ -28,11 +31,7 @@ pub async fn start_rss_poll(
 
     if body.library_id.is_none() {
         // Global job: one RSS fetch covers all libraries
-        let existing: Option<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM index_jobs WHERE library_id IS NULL AND type = 'prowlarr_rss' AND status IN ('pending', 'running') LIMIT 1",
-        )
-        .fetch_optional(&state.pool)
-        .await?;
+        let existing = job_in_flight(&state.pool, JobScope::Global, &["prowlarr_rss"]).await?;
 
         if let Some(existing_id) = existing {
             return Ok(Json(serde_json::json!({
@@ -53,13 +52,7 @@ pub async fn start_rss_poll(
         tokio::spawn(async move {
             if let Err(e) = process_rss_poll(&pool, job_id, None).await {
                 tracing::warn!("[RSS_POLL] job {job_id} failed: {e}");
-                let _ = sqlx::query(
-                    "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
-                )
-                .bind(job_id)
-                .bind(&e)
-                .execute(&pool)
-                .await;
+                let _ = fail_job(&pool, job_id, &e, None).await;
             }
         });
 
@@ -82,11 +75,11 @@ pub async fn start_rss_poll(
         .await?
         .ok_or_else(|| ApiError::not_found("library not found"))?;
 
-    let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM index_jobs WHERE library_id = $1 AND type = 'prowlarr_rss' AND status IN ('pending', 'running') LIMIT 1",
+    let existing = job_in_flight(
+        &state.pool,
+        JobScope::Library(library_id),
+        &["prowlarr_rss"],
     )
-    .bind(library_id)
-    .fetch_optional(&state.pool)
     .await?;
 
     if let Some(existing_id) = existing {
@@ -109,13 +102,7 @@ pub async fn start_rss_poll(
     tokio::spawn(async move {
         if let Err(e) = process_rss_poll(&pool, job_id, Some(library_id)).await {
             tracing::warn!("[RSS_POLL] job {job_id} failed: {e}");
-            let _ = sqlx::query(
-                "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
-            )
-            .bind(job_id)
-            .bind(&e)
-            .execute(&pool)
-            .await;
+            let _ = fail_job(&pool, job_id, &e, None).await;
         }
     });
 
@@ -206,12 +193,11 @@ pub(crate) async fn process_rss_poll(
     };
 
     if series_rows.is_empty() {
-        sqlx::query(
-            "UPDATE index_jobs SET status = 'success', finished_at = NOW(), stats_json = $2, progress_percent = 100 WHERE id = $1",
+        complete_job(
+            pool,
+            job_id,
+            serde_json::json!({"message": "No series with missing volumes"}),
         )
-        .bind(job_id)
-        .bind(serde_json::json!({"message": "No series with missing volumes"}))
-        .execute(pool)
         .await
         .map_err(|e| e.to_string())?;
         return Ok(());
@@ -249,10 +235,7 @@ pub(crate) async fn process_rss_poll(
             .into_iter()
             .collect();
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .user_agent("Stripstream-Librarian")
-        .build()
+    let client = build_http_client_with_agent(std::time::Duration::from_secs(60))
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
     // Single RSS fetch regardless of how many libraries/series are covered
@@ -432,14 +415,9 @@ pub(crate) async fn process_rss_poll(
         "rss_releases": snapshot,
     });
 
-    sqlx::query(
-        "UPDATE index_jobs SET status = 'success', finished_at = NOW(), stats_json = $2, progress_percent = 100 WHERE id = $1",
-    )
-    .bind(job_id)
-    .bind(&stats)
-    .execute(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    complete_job(pool, job_id, stats.clone())
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Keep rss_releases snapshot only for the 5 most recent successful jobs
     let _ = sqlx::query(

@@ -6,6 +6,7 @@ use tracing::{info, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
 use crate::{error::ApiError, integrations::anilist, state::AppState};
 
 // ---------------------------------------------------------------------------
@@ -81,11 +82,11 @@ pub async fn start_push(
         .await?;
         let mut last_job_id: Option<Uuid> = None;
         for library_id in library_ids {
-            let existing: Option<Uuid> = sqlx::query_scalar(
-                "SELECT id FROM index_jobs WHERE library_id = $1 AND type = 'reading_status_push' AND status IN ('pending', 'running') LIMIT 1",
+            let existing = job_in_flight(
+                &state.pool,
+                JobScope::Library(library_id),
+                &["reading_status_push"],
             )
-            .bind(library_id)
-            .fetch_optional(&state.pool)
             .await?;
             if existing.is_some() {
                 continue;
@@ -110,14 +111,7 @@ pub async fn start_push(
                 if let Err(e) = process_reading_status_push(&pool, job_id, library_id).await {
                     warn!("[READING_STATUS_PUSH] job {job_id} failed: {e}");
                     let partial_stats = build_push_stats(&pool, job_id).await;
-                    let _ = sqlx::query(
-                        "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW(), stats_json = $3 WHERE id = $1",
-                    )
-                    .bind(job_id)
-                    .bind(e.to_string())
-                    .bind(&partial_stats)
-                    .execute(&pool)
-                    .await;
+                    let _ = fail_job(&pool, job_id, &e.to_string(), Some(partial_stats)).await;
                     notifications::notify(
                         pool.clone(),
                         notifications::NotificationEvent::ReadingStatusPushFailed {
@@ -164,11 +158,11 @@ pub async fn start_push(
     }
 
     // Check no existing running job for this library
-    let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM index_jobs WHERE library_id = $1 AND type = 'reading_status_push' AND status IN ('pending', 'running') LIMIT 1",
+    let existing = job_in_flight(
+        &state.pool,
+        JobScope::Library(library_id),
+        &["reading_status_push"],
     )
-    .bind(library_id)
-    .fetch_optional(&state.pool)
     .await?;
 
     if let Some(existing_id) = existing {
@@ -200,14 +194,7 @@ pub async fn start_push(
         if let Err(e) = process_reading_status_push(&pool, job_id, library_id).await {
             warn!("[READING_STATUS_PUSH] job {job_id} failed: {e}");
             let partial_stats = build_push_stats(&pool, job_id).await;
-            let _ = sqlx::query(
-                "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW(), stats_json = $3 WHERE id = $1",
-            )
-            .bind(job_id)
-            .bind(e.to_string())
-            .bind(&partial_stats)
-            .execute(&pool)
-            .await;
+            let _ = fail_job(&pool, job_id, &e.to_string(), Some(partial_stats)).await;
             notifications::notify(
                 pool.clone(),
                 notifications::NotificationEvent::ReadingStatusPushFailed {
@@ -756,14 +743,9 @@ pub async fn process_reading_status_push(
         "errors": count_errors,
     });
 
-    sqlx::query(
-        "UPDATE index_jobs SET status = 'success', finished_at = NOW(), stats_json = $2, progress_percent = 100 WHERE id = $1",
-    )
-    .bind(job_id)
-    .bind(&stats)
-    .execute(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    complete_job(pool, job_id, stats.clone())
+        .await
+        .map_err(|e| e.to_string())?;
 
     info!(
         "[READING_STATUS_PUSH] job={job_id} completed: {}/{} series, pushed={count_pushed}, no_books={count_no_books}, errors={count_errors}",

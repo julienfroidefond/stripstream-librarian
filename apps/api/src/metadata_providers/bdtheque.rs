@@ -1,73 +1,41 @@
 use scraper::{Html, Selector};
 
+use super::scraping::{self, absolute, text};
 use super::{BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate};
 
 const BASE_URL: &str = "https://www.bdtheque.com";
 
 pub struct BdthequeProvider;
 
+#[async_trait::async_trait]
 impl MetadataProvider for BdthequeProvider {
     fn name(&self) -> &str {
         "bdtheque"
     }
 
-    fn search_series(
+    async fn search_series(
         &self,
         query: &str,
         _config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Vec<SeriesCandidate>, String>> + Send + '_>,
-    > {
-        let query = query.to_string();
-        Box::pin(async move { search_series_impl(&query, BASE_URL).await })
+    ) -> Result<Vec<SeriesCandidate>, String> {
+        search_series_impl(query, BASE_URL).await
     }
 
-    fn get_series(
+    async fn get_series(
         &self,
         external_id: &str,
         _config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<SeriesCandidate, String>> + Send + '_>,
-    > {
-        let external_id = external_id.to_string();
-        Box::pin(async move { get_series_impl(&external_id, BASE_URL).await })
+    ) -> Result<SeriesCandidate, String> {
+        get_series_impl(external_id, BASE_URL).await
     }
 
-    fn get_series_books(
+    async fn get_series_books(
         &self,
         external_id: &str,
         _config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Vec<BookCandidate>, String>> + Send + '_>,
-    > {
-        let external_id = external_id.to_string();
-        Box::pin(async move { get_series_books_impl(&external_id, BASE_URL).await })
+    ) -> Result<Vec<BookCandidate>, String> {
+        get_series_books_impl(external_id, BASE_URL).await
     }
-}
-
-fn client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .user_agent("StripstreamLibrarian/1.0 (metadata; contact administrator)")
-        .build()
-        .map_err(|e| format!("failed to build BDTheque client: {e}"))
-}
-
-fn text(el: scraper::ElementRef<'_>) -> String {
-    el.text()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn absolute(base: &str, href: &str) -> String {
-    reqwest::Url::parse(base)
-        .ok()
-        .and_then(|base| base.join(href).ok())
-        .map(|url| url.to_string())
-        .unwrap_or_else(|| href.to_string())
 }
 
 /// The default search layout shows covers only: the anchor wraps an image and
@@ -147,23 +115,8 @@ fn series_external_id(href: &str) -> Option<String> {
     path.strip_prefix("series/").map(str::to_string)
 }
 
-async fn get_html(client: &reqwest::Client, url: &str) -> Result<String, String> {
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("BDTheque request failed: {e}"))?;
-    if !response.status().is_success() {
-        return Err(format!("BDTheque returned {}", response.status()));
-    }
-    response
-        .text()
-        .await
-        .map_err(|e| format!("failed to read BDTheque response: {e}"))
-}
-
 async fn search_series_impl(query: &str, base: &str) -> Result<Vec<SeriesCandidate>, String> {
-    let c = client()?;
+    let c = scraping::client(20, "BDTheque")?;
     let url = format!("{base}/recherche/series/");
     let html = c
         .post(&url)
@@ -306,10 +259,10 @@ fn parse_aggregate_rating(doc: &Html) -> Option<(f64, i64, f64)> {
 }
 
 async fn get_series_impl(external_id: &str, base: &str) -> Result<SeriesCandidate, String> {
-    let c = client()?;
+    let c = scraping::client(20, "BDTheque")?;
     let path = external_id.trim_start_matches('/');
     let url = format!("{base}/series/{path}");
-    let body = get_html(&c, &url).await?;
+    let body = scraping::get_html(&c, &url, "BDTheque").await?;
     let doc = Html::parse_document(&body);
     let h1 = Selector::parse("h1").unwrap();
     let title = doc
@@ -412,13 +365,13 @@ async fn get_series_books_impl(
     external_id: &str,
     base: &str,
 ) -> Result<Vec<BookCandidate>, String> {
-    let c = client()?;
+    let c = scraping::client(20, "BDTheque")?;
     let id = series_id(external_id).ok_or("invalid BDTheque series ID")?;
     let mut books = Vec::new();
     let mut page = 0u32;
     loop {
         let url = format!("{base}/ajax/series/tomes/{id}/{page}");
-        let body = get_html(&c, &url).await?;
+        let body = scraping::get_html(&c, &url, "BDTheque").await?;
         let page_books = parse_tomes_page(&body, &id);
         if page_books.is_empty() {
             break;

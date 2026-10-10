@@ -3,7 +3,8 @@ use std::sync::{atomic::AtomicU64, Arc};
 use std::time::{Duration, Instant};
 
 use lru::LruCache;
-use sqlx::{Pool, Postgres, Row};
+use sqlx::{Pool, Postgres};
+use stripstream_core::settings::load_setting;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock, Semaphore};
 use uuid::Uuid;
 
@@ -152,51 +153,39 @@ impl Metrics {
 
 pub async fn load_concurrent_renders(pool: &Pool<Postgres>) -> usize {
     let default_concurrency = 8;
-    let row = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'limits'"#)
-        .fetch_optional(pool)
-        .await;
-
-    match row {
-        Ok(Some(row)) => {
-            let value: serde_json::Value = row.get("value");
-            value
-                .get("concurrent_renders")
-                .and_then(|v: &serde_json::Value| v.as_u64())
-                // Clamp to >= 1: `Semaphore::new(0)` would block every page render forever.
-                .map(|v| (v as usize).max(1))
-                .unwrap_or(default_concurrency)
-        }
-        _ => default_concurrency,
-    }
+    load_setting::<serde_json::Value>(pool, "limits")
+        .await
+        .ok()
+        .flatten()
+        .and_then(|value| value.get("concurrent_renders").and_then(|v| v.as_u64()))
+        // Clamp to >= 1: `Semaphore::new(0)` would block every page render forever.
+        .map(|v| (v as usize).max(1))
+        .unwrap_or(default_concurrency)
 }
 
 pub async fn load_concurrent_telegram_downloads(pool: &Pool<Postgres>) -> usize {
     let default_concurrency = 2;
-    let row = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'limits'"#)
-        .fetch_optional(pool)
-        .await;
-
-    match row {
-        Ok(Some(row)) => {
-            let value: serde_json::Value = row.get("value");
+    load_setting::<serde_json::Value>(pool, "limits")
+        .await
+        .ok()
+        .flatten()
+        .and_then(|value| {
             value
                 .get("concurrent_telegram_downloads")
-                .and_then(|v: &serde_json::Value| v.as_u64())
-                .map(|v| (v as usize).max(1))
-                .unwrap_or(default_concurrency)
-        }
-        _ => default_concurrency,
-    }
+                .and_then(|v| v.as_u64())
+        })
+        .map(|v| (v as usize).max(1))
+        .unwrap_or(default_concurrency)
 }
 
 pub async fn load_dynamic_settings(pool: &Pool<Postgres>) -> DynamicSettings {
     let mut s = DynamicSettings::default();
 
-    if let Ok(Some(row)) = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'limits'"#)
-        .fetch_optional(pool)
+    if let Some(v) = load_setting::<serde_json::Value>(pool, "limits")
         .await
+        .ok()
+        .flatten()
     {
-        let v: serde_json::Value = row.get("value");
         if let Some(n) = v.get("rate_limit_per_second").and_then(|x| x.as_u64()) {
             // A rate limit of 0 would reject every read request (429) permanently.
             s.rate_limit_per_second = (n as u32).max(1);
@@ -206,12 +195,11 @@ pub async fn load_dynamic_settings(pool: &Pool<Postgres>) -> DynamicSettings {
         }
     }
 
-    if let Ok(Some(row)) =
-        sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'image_processing'"#)
-            .fetch_optional(pool)
-            .await
+    if let Some(v) = load_setting::<serde_json::Value>(pool, "image_processing")
+        .await
+        .ok()
+        .flatten()
     {
-        let v: serde_json::Value = row.get("value");
         if let Some(s2) = v.get("format").and_then(|x| x.as_str()) {
             s.image_format = s2.to_string();
         }
@@ -226,11 +214,11 @@ pub async fn load_dynamic_settings(pool: &Pool<Postgres>) -> DynamicSettings {
         }
     }
 
-    if let Ok(Some(row)) = sqlx::query(r#"SELECT value FROM app_settings WHERE key = 'cache'"#)
-        .fetch_optional(pool)
+    if let Some(v) = load_setting::<serde_json::Value>(pool, "cache")
         .await
+        .ok()
+        .flatten()
     {
-        let v: serde_json::Value = row.get("value");
         if let Some(dir) = v.get("directory").and_then(|x| x.as_str()) {
             s.cache_directory = dir.to_string();
         }

@@ -5,6 +5,7 @@ use tracing::{info, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
 use crate::{
     error::ApiError,
     integrations::{anilist, anilist_rating_push::anilist_score_to_local},
@@ -50,11 +51,7 @@ pub async fn start_pull(
         ));
     }
 
-    let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM index_jobs WHERE type = 'rating_pull' AND status IN ('pending', 'running') LIMIT 1",
-    )
-    .fetch_optional(&state.pool)
-    .await?;
+    let existing = job_in_flight(&state.pool, JobScope::Any, &["rating_pull"]).await?;
 
     if let Some(existing_id) = existing {
         return Ok(Json(serde_json::json!({
@@ -75,13 +72,7 @@ pub async fn start_pull(
     tokio::spawn(async move {
         if let Err(e) = process_rating_pull(&pool, job_id).await {
             warn!("[RATING_PULL] job {job_id} failed: {e}");
-            let _ = sqlx::query(
-                "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
-            )
-            .bind(job_id)
-            .bind(e.to_string())
-            .execute(&pool)
-            .await;
+            let _ = fail_job(&pool, job_id, &e.to_string(), None).await;
         }
     });
 
@@ -314,14 +305,9 @@ pub async fn process_rating_pull(pool: &PgPool, job_id: Uuid) -> Result<(), Stri
         "not_found": count_not_found,
     });
 
-    sqlx::query(
-        "UPDATE index_jobs SET status = 'success', finished_at = NOW(), stats_json = $2, progress_percent = 100 WHERE id = $1",
-    )
-    .bind(job_id)
-    .bind(&stats)
-    .execute(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    complete_job(pool, job_id, stats.clone())
+        .await
+        .map_err(|e| e.to_string())?;
 
     info!(
         "[RATING_PULL] job={job_id} done: {total} linked, updated={count_updated}, unrated={count_unrated}, not_found={count_not_found}"

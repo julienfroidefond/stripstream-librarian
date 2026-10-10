@@ -4,6 +4,7 @@ use sqlx::{PgPool, Row};
 use tracing::{error, info, trace};
 use uuid::Uuid;
 
+use crate::jobs::lifecycle::fail_job;
 use crate::{
     downloads::{detection as download_detection, rss_poll, telegram_monitor},
     metadata, reading,
@@ -90,13 +91,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
 
                     if let Err(e) = result {
                         error!("[JOB_POLLER] {job_type} job {job_id} failed: {e}");
-                        let _ = sqlx::query(
-                            "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
-                        )
-                        .bind(job_id)
-                        .bind(e.to_string())
-                        .execute(&pool_clone)
-                        .await;
+                        let _ = fail_job(&pool_clone, job_id, &e, None).await;
 
                         match job_type.as_str() {
                             "metadata_refresh" | "metadata_refresh_all" => {

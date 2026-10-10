@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use stripstream_core::fingerprint::compute_fingerprint;
 use stripstream_core::paths::remap_libraries_path;
+use stripstream_core::settings::load_setting;
 
 use crate::error::ApiError;
 use crate::state::AppState;
@@ -112,7 +113,7 @@ pub(crate) const DEFAULT_RENAME_TEMPLATE_HS: &str = "{series_name} - HS {volume_
 pub(crate) const DEFAULT_RENAME_TEMPLATE_INT: &str = "{series_name} - INT {volume_padded}";
 pub(crate) const DEFAULT_RENAME_TEMPLATE_ONESHOT: &str = "{series_name}";
 
-pub(crate) async fn load_rename_templates(pool: &PgPool) -> Result<RenameTemplates, sqlx::Error> {
+pub(crate) async fn load_rename_templates(pool: &PgPool) -> anyhow::Result<RenameTemplates> {
     let regular = load_rename_template(pool, "rename_format", DEFAULT_RENAME_TEMPLATE).await?;
     let hs = load_rename_template(pool, "rename_format_hs", DEFAULT_RENAME_TEMPLATE_HS).await?;
     let integral =
@@ -162,17 +163,11 @@ async fn load_rename_template(
     pool: &PgPool,
     key: &str,
     default_template: &str,
-) -> Result<String, sqlx::Error> {
-    let row = sqlx::query("SELECT value FROM app_settings WHERE key = $1")
-        .bind(key)
-        .fetch_optional(pool)
-        .await?;
+) -> anyhow::Result<String> {
+    let value = load_setting::<serde_json::Value>(pool, key).await?;
 
-    Ok(row
-        .and_then(|r| {
-            let val: serde_json::Value = r.get("value");
-            val.as_str().map(ToOwned::to_owned)
-        })
+    Ok(value
+        .and_then(|val| val.as_str().map(ToOwned::to_owned))
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| default_template.to_string()))
 }
