@@ -12,6 +12,8 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { useIsMounted } from "@/lib/useIsMounted";
+
 interface MenuContext {
   close: () => void;
 }
@@ -28,14 +30,13 @@ const MOBILE_BREAKPOINT_PX = 640;
 
 export function ActionsMenu({ children, label, align = "right" }: ActionsMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useIsMounted();
   const [isMobile, setIsMobile] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popinRef = useRef<HTMLDivElement>(null);
   const [popinStyle, setPopinStyle] = useState<React.CSSProperties>({});
 
   useEffect(() => {
-    setMounted(true);
     const updateBreakpoint = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT_PX);
     updateBreakpoint();
     window.addEventListener("resize", updateBreakpoint);

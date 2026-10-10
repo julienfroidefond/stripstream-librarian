@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useTranslation } from "@/lib/i18n/context";
 import type { ReadingListDetailDto, ReadingListSeriesDto, SeriesDto } from "@/lib/api";
@@ -62,10 +62,6 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
       }
     }, 300);
   }, []);
-
-  useEffect(() => {
-    searchSeries(searchQuery);
-  }, [searchQuery, searchSeries]);
 
   async function handleAdd(series: SeriesDto) {
     try {
@@ -307,7 +303,7 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
             autoFocus
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => { setSearchQuery(e.target.value); searchSeries(e.target.value); }}
             placeholder={t("readingLists.searchSeries")}
             className="w-full px-3 py-2 rounded-lg border border-border bg-input text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
           />

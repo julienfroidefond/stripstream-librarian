@@ -15,14 +15,12 @@ type SeriesResult = {
 interface MergeSeriesButtonProps {
   seriesId: string;
   seriesName: string;
-  libraryId: string;
   children?: (open: () => void) => React.ReactNode;
 }
 
 export function MergeSeriesButton({
   seriesId,
   seriesName,
-  libraryId,
   children,
 }: MergeSeriesButtonProps) {
   const { t } = useTranslation();
@@ -65,7 +63,7 @@ export function MergeSeriesButton({
         setSearching(false);
       }
     },
-    [libraryId, seriesId],
+    [seriesId],
   );
 
   function handleQueryChange(value: string) {

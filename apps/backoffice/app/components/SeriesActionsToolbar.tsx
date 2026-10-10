@@ -181,7 +181,6 @@ export function SeriesActionsToolbar(props: Props) {
           <MergeSeriesButton
             seriesId={props.seriesId}
             seriesName={props.seriesName}
-            libraryId={props.libraryId}
           >
             {(open) => (
               <ActionsMenuItem icon="🔀" onClick={open}>

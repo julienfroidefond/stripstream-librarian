@@ -232,10 +232,11 @@ export function LiveSearchForm({ fields, basePath, debounceMs = 300, initialValu
             {hasFilters && (
               <button
                 type="button"
-                onClick={() => {
+                onClick={(e) => {
                   // Immediately clear all visible inputs for instant feedback
-                  if (formRef.current) {
-                    for (const el of formRef.current.elements) {
+                  const form = e.currentTarget.form;
+                  if (form) {
+                    for (const el of form.elements) {
                       if (el instanceof HTMLInputElement) el.value = "";
                       if (el instanceof HTMLSelectElement) el.selectedIndex = 0;
                     }

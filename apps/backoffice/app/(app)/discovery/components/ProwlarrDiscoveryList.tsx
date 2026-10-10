@@ -55,12 +55,6 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
   const [hideMine, setHideMine] = useState(false);
   const [page, setPage] = useState(1);
 
-  // Reset to page 1 whenever filters or sort change
-  useEffect(() => {
-    setPage(1);
-  }, [filterCategory, filterIndexer, filterSearch, sort, hideMine]);
-
-
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
@@ -131,7 +125,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
       {allIndexers.length > 0 && (
         <div className="flex flex-wrap gap-1">
           <button
-            onClick={() => setFilterIndexer("all")}
+            onClick={() => { setFilterIndexer("all"); setPage(1); }}
             className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
               filterIndexer === "all"
                 ? "bg-primary/15 text-primary border-primary/30"
@@ -145,7 +139,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
             return (
               <button
                 key={indexer}
-                onClick={() => setFilterIndexer(isActive ? "all" : indexer)}
+                onClick={() => { setFilterIndexer(isActive ? "all" : indexer); setPage(1); }}
                 className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
                   isActive
                     ? "bg-primary/15 text-primary border-primary/30"
@@ -163,12 +157,12 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
         <input
           type="text"
           value={filterSearch}
-          onChange={(e) => setFilterSearch(e.target.value)}
+          onChange={(e) => { setFilterSearch(e.target.value); setPage(1); }}
           placeholder={t("common.search")}
           className="text-sm border border-border rounded-lg px-3 py-1.5 bg-background w-48"
         />
         <button
-          onClick={() => setHideMine((v) => !v)}
+          onClick={() => { setHideMine((v) => !v); setPage(1); }}
           className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
             hideMine
               ? "bg-green-500/15 text-green-600 border-green-500/30"
@@ -181,7 +175,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
           {(["seeders", "date"] as const).map((s) => (
             <button
               key={s}
-              onClick={() => setSort(s)}
+              onClick={() => { setSort(s); setPage(1); }}
               className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
                 sort === s
                   ? "bg-primary/15 text-primary border-primary/30"
@@ -194,7 +188,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
         </div>
         <div className="flex flex-wrap gap-1">
           <button
-            onClick={() => setFilterCategory("all")}
+            onClick={() => { setFilterCategory("all"); setPage(1); }}
             className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
               filterCategory === "all"
                 ? "bg-primary/15 text-primary border-primary/30"
@@ -208,7 +202,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
             return (
               <button
                 key={cat}
-                onClick={() => setFilterCategory(isActive ? "all" : cat)}
+                onClick={() => { setFilterCategory(isActive ? "all" : cat); setPage(1); }}
                 className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
                   isActive
                     ? "bg-primary/15 text-primary border-primary/30"

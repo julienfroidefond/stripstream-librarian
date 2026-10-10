@@ -124,7 +124,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
     } finally {
       setIsSearching(false);
     }
-  }, [t, seriesName, searchInput]);
+  }, [t, seriesName, searchInput, missingBooks]);
 
   function handleOpen() {
     setIsOpen(true);
