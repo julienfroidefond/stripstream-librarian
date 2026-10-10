@@ -3,6 +3,9 @@
 Checklist des opportunités de factorisation identifiées (Rust + Backoffice), triées par
 priorité. Chaque lot est indépendant et livrable avec ses tests.
 
+> **État :** Front / Backoffice — ✅ **terminé** (mergé via #54, v3.32.5/3.32.6).
+> Back / Rust — ⏳ **à faire** (P0.1, P0.2, P1.1, P1.2, P2.1, P2.2, P4.1–P4.3, P4.4 partiel).
+
 **Conventions :** cocher `[x]` quand la tâche est terminée et testée.
 **Rappel tests :** `cargo test --workspace` (Rust) — `cd apps/backoffice && npm run test:unit &&
 npx tsc --noEmit && npm run lint` (front).
@@ -34,12 +37,12 @@ npx tsc --noEmit && npm run lint` (front).
 - [ ] Test : désérialisation avec/sans bloc `events`
 - [ ] `cargo test -p notifications` (ou `--workspace`) vert
 
-### P0.3 — Front : sanitiser les `dangerouslySetInnerHTML`
-- [ ] `TelegramCard.tsx:73,77,81` → utiliser `SafeHtml`
-- [ ] `SettingsPage.tsx:348` → utiliser `SafeHtml`
-- [ ] Vérifier que le rendu HTML (gras, liens) reste correct après sanitisation
-- [ ] Tests unitaires des cartes concernées verts
-- [ ] `npx tsc --noEmit` + `npm run lint` verts
+### P0.3 — Front : sanitiser les `dangerouslySetInnerHTML` — ✅
+- [x] `TelegramCard.tsx:73,77,81` → utiliser `SafeHtml`
+- [x] `SettingsPage.tsx:348` → utiliser `SafeHtml`
+- [x] Vérifier que le rendu HTML (gras, liens) reste correct après sanitisation
+- [x] Tests unitaires des cartes concernées verts
+- [x] `npx tsc --noEmit` + `npm run lint` verts
 
 ---
 
@@ -66,19 +69,19 @@ npx tsc --noEmit && npm run lint` (front).
 - [ ] Importer le helper depuis `core` dans les deux modules
 - [ ] Tests existants verts + `cargo test --workspace`
 
-### P1.3 — Front : hook `useMarkRead`
-- [ ] Créer `hooks/useMarkRead.ts` : `{ loading, handleClick }` (preventDefault,
+### P1.3 — Front : hook `useMarkRead` — ✅
+- [x] Créer `hooks/useMarkRead.ts` : `{ loading, handleClick }` (preventDefault,
       stopPropagation, fetch, gestion `!res.ok`, `router.refresh`, reset loading)
-- [ ] Extraire `markReadClassName(completed, compact)` (styles partagés)
-- [ ] Refactorer `MarkBookReadButton.tsx` pour l'utiliser
-- [ ] Refactorer `MarkSeriesReadButton.tsx` pour l'utiliser
-- [ ] Conserver l'API publique et labels actuels (`markRead.*`)
-- [ ] Tests `MarkBookReadButton` / `MarkSeriesReadButton` verts (+ test du hook)
+- [x] Extraire `markReadClassName(completed, compact)` (styles partagés)
+- [x] Refactorer `MarkBookReadButton.tsx` pour l'utiliser
+- [x] Refactorer `MarkSeriesReadButton.tsx` pour l'utiliser
+- [x] Conserver l'API publique et labels actuels (`markRead.*`)
+- [x] Tests `MarkBookReadButton` / `MarkSeriesReadButton` verts (+ test du hook)
 
-### P1.4 — Front : uniformiser les imports i18n (61 occurrences)
-- [ ] Remplacer `from "../../lib/i18n/context"` par `from "@/lib/i18n/context"` partout
-- [ ] Vérifier l'absence de chemins relatifs résiduels (`grep "\.\./.*lib/i18n/context"`)
-- [ ] `npx tsc --noEmit` + `npm run lint` verts
+### P1.4 — Front : uniformiser les imports i18n (61 occurrences) — ✅
+- [x] Remplacer `from "../../lib/i18n/context"` par `from "@/lib/i18n/context"` partout
+- [x] Vérifier l'absence de chemins relatifs résiduels (`grep "\.\./.*lib/i18n/context"`)
+- [x] `npx tsc --noEmit` + `npm run lint` verts
 
 ---
 
@@ -110,43 +113,43 @@ npx tsc --noEmit && npm run lint` (front).
 - [ ] Vérifier les endpoints jobs (liste, détail, replay) via tests
 - [ ] `cargo test --workspace` vert
 
-### P2.3 — Front : `withRoute` pour les route handlers (~100 fichiers)
-- [ ] Créer `lib/api-handler.ts` (`withRoute`, extraction message d'erreur, statut 500 par défaut)
-- [ ] Supporter un statut/`fallback` personnalisé (ex. 400 « id is required », 404)
-- [ ] Migrer les handlers `apps/backoffice/app/api/**` (codemod puis revue manuelle)
-- [ ] Conserver les statuts spécifiques (`series/[seriesId]/rename-books`, `books/[bookId]/convert`,
+### P2.3 — Front : `withRoute` pour les route handlers (~100 fichiers) — ✅
+- [x] Créer `lib/api-handler.ts` (`withRoute`, extraction message d'erreur, statut 500 par défaut)
+- [x] Supporter un statut/`fallback` personnalisé (ex. 400 « id is required », 404)
+- [x] Migrer les handlers `apps/backoffice/app/api/**` (codemod puis revue manuelle)
+- [x] Conserver les statuts spécifiques (`series/[seriesId]/rename-books`, `books/[bookId]/convert`,
       `telegram-monitor`)
-- [ ] `tests/unit/app/api/errors.test.ts` + suite complète verte
-- [ ] `npx tsc --noEmit` + `npm run lint` verts
+- [x] `tests/unit/app/api/errors.test.ts` + suite complète verte
+- [x] `npx tsc --noEmit` + `npm run lint` verts
 
 ---
 
 ## P3 — Gain moyen, risque faible
 
-### P3.1 — Front : composant `SettingsCard` / usages de `FormLabel`
-- [ ] Aligner `FormLabel` (`ui/Form.tsx:19`) sur le style settings (ou variante)
-- [ ] Créer `SettingsCard` (Card + CardHeader icône/titre/description + CardContent)
-- [ ] Créer `SettingsField` (label + `FormInput`/`FormSelect` avec save onBlur)
-- [ ] Migrer les 45 labels inline : `SettingsPage.tsx`, `TelegramCard`, `QBittorrentCard`,
+### P3.1 — Front : composant `SettingsCard` / usages de `FormLabel` — ✅
+- [x] Aligner `FormLabel` (`ui/Form.tsx:19`) sur le style settings (ou variante)
+- [x] Créer `SettingsCard` (Card + CardHeader icône/titre/description + CardContent)
+- [x] Créer `SettingsField` (label + `FormInput`/`FormSelect` avec save onBlur)
+- [x] Migrer les 45 labels inline : `SettingsPage.tsx`, `TelegramCard`, `QBittorrentCard`,
       `ProwlarrCard`, `KomgaSyncCard`, `AiTaggingCard`, `AnilistTab`, `TelegramMonitorCard`,
       `RenameFormatCard`
-- [ ] Tests des cartes settings verts
-- [ ] `npx tsc --noEmit` + `npm run lint` verts
+- [x] Tests des cartes settings verts
+- [x] `npx tsc --noEmit` + `npm run lint` verts
 
-### P3.2 — Front : composant `Switch`
-- [ ] Créer `ui/Switch.tsx` (pattern `sr-only peer` réutilisable)
-- [ ] Exporter depuis `ui/index.ts`
-- [ ] Remplacer les toggles `TelegramCard.tsx:96,206`
-- [ ] Rechercher d'autres toggles dupliqués et migrer
-- [ ] Tests du Switch + `npx tsc --noEmit` verts
+### P3.2 — Front : composant `Switch` — ✅
+- [x] Créer `ui/Switch.tsx` (pattern `sr-only peer` réutilisable)
+- [x] Exporter depuis `ui/index.ts`
+- [x] Remplacer les toggles `TelegramCard.tsx:96,206`
+- [x] Rechercher d'autres toggles dupliqués et migrer
+- [x] Tests du Switch + `npx tsc --noEmit` verts
 
-### P3.3 — Front : grille de stats pour les rapports de jobs
-- [ ] Créer `ReportStatGrid` (grille de `StatBox` paramétrable)
-- [ ] Migrer `MetadataReportCards`
-- [ ] Migrer `ReadingStatusReportCards`
-- [ ] Migrer `DownloadDetectionCards`
-- [ ] Migrer `JobProgressCard`
-- [ ] Tests des cartes de rapport verts
+### P3.3 — Front : grille de stats pour les rapports de jobs — ✅
+- [x] Créer `ReportStatGrid` (grille de `StatBox` paramétrable)
+- [x] Migrer `MetadataReportCards`
+- [x] Migrer `ReadingStatusReportCards`
+- [x] Migrer `DownloadDetectionCards`
+- [x] Migrer `JobProgressCard`
+- [x] Tests des cartes de rapport verts
 
 ---
 
@@ -180,7 +183,7 @@ npx tsc --noEmit && npm run lint` (front).
 - [ ] `apps/api/src/downloads/telegram_monitor.rs` (2544 l.) → auth / sync canaux / jobs
 - [ ] `apps/indexer/src/scanner.rs` (2283 l.) → discovery / mtime / classification volume_type
 - [ ] `apps/api/src/stats.rs` (1571 l.) → agrégations par domaine
-- [ ] `apps/backoffice/lib/api.ts` (2078 l.) → par domaine (books, series, metadata, downloads…)
+- [x] `apps/backoffice/lib/api.ts` (2078 l.) → éclaté en `lib/api/*` (barrel `index.ts`)
 - [ ] `cargo test --workspace` / `npm run test:unit` verts après chaque découpage
 
 ---
@@ -199,18 +202,18 @@ npx tsc --noEmit && npm run lint` (front).
 |-----|--------|------|-------|
 | P0.1 | ☐ | | |
 | P0.2 | ☐ | | |
-| P0.3 | ☐ | | |
+| P0.3 | ✅ | 2026-10-10 | #54 (front) |
 | P1.1 | ☐ | | |
 | P1.2 | ☐ | | |
-| P1.3 | ☐ | | |
-| P1.4 | ☐ | | |
+| P1.3 | ✅ | 2026-10-10 | #54 (front) |
+| P1.4 | ✅ | 2026-10-10 | #54 (front) |
 | P2.1 | ☐ | | |
 | P2.2 | ☐ | | |
-| P2.3 | ☐ | | |
-| P3.1 | ☐ | | |
-| P3.2 | ☐ | | |
-| P3.3 | ☐ | | |
+| P2.3 | ✅ | 2026-10-10 | #54 (front) |
+| P3.1 | ✅ | 2026-10-10 | #54 (front) |
+| P3.2 | ✅ | 2026-10-10 | #54 (front) |
+| P3.3 | ✅ | 2026-10-10 | #54 (front) |
 | P4.1 | ☐ | | |
 | P4.2 | ☐ | | |
 | P4.3 | ☐ | | |
-| P4.4 | ☐ | | |
+| P4.4 | 🟡 | 2026-10-10 | `lib/api.ts` éclaté (#54) ; reste les splits Rust |
