@@ -9,7 +9,7 @@ import { DeleteBookButton } from "./DeleteBookButton";
 import { RefreshButton } from "./RefreshButton";
 import { RefreshIcon } from "./RefreshIcon";
 import type { QuickSearch } from "./ProwlarrSearchModal";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 
 const EditBookForm = nextDynamic(
   () => import("./EditBookForm").then(m => m.EditBookForm)

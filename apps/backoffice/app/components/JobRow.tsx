@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 import { JobProgress } from "./JobProgress";
 import { StatusBadge, JobTypeBadge, Button, MiniProgressBar, Icon, Tooltip } from "./ui";
 import { isActiveJobStatus, isPhase2Status, isRunningJobStatus } from "@/lib/jobStatus";

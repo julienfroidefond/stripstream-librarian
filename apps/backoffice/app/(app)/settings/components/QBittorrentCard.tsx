@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, FormField, FormInput, FormSelect, Icon } from "@/app/components/ui";
+import { SettingsCard, SettingsField, FormInput, FormSelect, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 import { TestConnectionButton } from "./TestConnectionButton";
 
@@ -21,83 +21,66 @@ export function QBittorrentCard({ handleUpdateSetting, initialQbittorrent, initi
   }
 
   return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Icon name="settings" size="md" />
-          {t("settings.qbittorrent")}
-        </CardTitle>
-        <CardDescription>{t("settings.qbittorrentDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div className="flex gap-4">
-            <FormField className="flex-1">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.qbittorrentUrl")}</label>
-              <FormInput
-                type="url"
-                placeholder={t("settings.qbittorrentUrlPlaceholder")}
-                value={qbUrl}
-                onChange={(e) => setQbUrl(e.target.value)}
-                onBlur={() => saveQbittorrent()}
-              />
-            </FormField>
-          </div>
-          <div className="flex gap-4">
-            <FormField className="flex-1">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.qbittorrentUsername")}</label>
-              <FormInput
-                type="text"
-                value={qbUsername}
-                onChange={(e) => setQbUsername(e.target.value)}
-                onBlur={() => saveQbittorrent()}
-              />
-            </FormField>
-            <FormField className="flex-1">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.qbittorrentPassword")}</label>
-              <FormInput
-                type="password" autoComplete="off"
-                value={qbPassword}
-                onChange={(e) => setQbPassword(e.target.value)}
-                onBlur={() => saveQbittorrent()}
-              />
-            </FormField>
-          </div>
+    <SettingsCard icon="settings" title={t("settings.qbittorrent")} description={t("settings.qbittorrentDesc")}>
+      <div className="flex gap-4">
+        <SettingsField className="flex-1" label={t("settings.qbittorrentUrl")}>
+          <FormInput
+            type="url"
+            placeholder={t("settings.qbittorrentUrlPlaceholder")}
+            value={qbUrl}
+            onChange={(e) => setQbUrl(e.target.value)}
+            onBlur={() => saveQbittorrent()}
+          />
+        </SettingsField>
+      </div>
+      <div className="flex gap-4">
+        <SettingsField className="flex-1" label={t("settings.qbittorrentUsername")}>
+          <FormInput
+            type="text"
+            value={qbUsername}
+            onChange={(e) => setQbUsername(e.target.value)}
+            onBlur={() => saveQbittorrent()}
+          />
+        </SettingsField>
+        <SettingsField className="flex-1" label={t("settings.qbittorrentPassword")}>
+          <FormInput
+            type="password" autoComplete="off"
+            value={qbPassword}
+            onChange={(e) => setQbPassword(e.target.value)}
+            onBlur={() => saveQbittorrent()}
+          />
+        </SettingsField>
+      </div>
 
-          <div className="flex items-center gap-3">
-            <TestConnectionButton
-              endpoint="/api/qbittorrent/test"
-              disabled={!qbUrl || !qbUsername}
-            />
-          </div>
+      <div className="flex items-center gap-3">
+        <TestConnectionButton
+          endpoint="/api/qbittorrent/test"
+          disabled={!qbUrl || !qbUsername}
+        />
+      </div>
 
-          <div className="border-t border-border/40 pt-4">
-            <FormField className="max-w-xs">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">
-                {t("settings.torrentImportEnabled")}
-              </label>
-              <FormSelect
-                value={importEnabled ? "true" : "false"}
-                onChange={(e) => {
-                  const val = e.target.value === "true";
-                  setImportEnabled(val);
-                  handleUpdateSetting("torrent_import", { enabled: val });
-                }}
-              >
-                <option value="false">{t("common.disabled")}</option>
-                <option value="true">{t("common.enabled")}</option>
-              </FormSelect>
-            </FormField>
+      <div className="border-t border-border/40 pt-4">
+        <SettingsField className="max-w-xs" label={t("settings.torrentImportEnabled")}>
+          <FormSelect
+            value={importEnabled ? "true" : "false"}
+            onChange={(e) => {
+              const val = e.target.value === "true";
+              setImportEnabled(val);
+              handleUpdateSetting("torrent_import", { enabled: val });
+            }}
+          >
+            <option value="false">{t("common.disabled")}</option>
+            <option value="true">{t("common.enabled")}</option>
+          </FormSelect>
+        </SettingsField>
 
-            {importEnabled && (
-              <div className="mt-3 rounded-lg border border-success/20 bg-success/5 p-3 flex items-start gap-2">
-                <Icon name="check" size="sm" className="text-success mt-0.5 shrink-0" />
-                <p className="text-sm text-muted-foreground">{t("settings.torrentImportPollingInfo")}</p>
-              </div>
-            )}
+        {importEnabled && (
+          <div className="mt-3 rounded-lg border border-success/20 bg-success/5 p-3 flex items-start gap-2">
+            <Icon name="check" size="sm" className="text-success mt-0.5 shrink-0" />
+            <p className="text-sm text-muted-foreground">{t("settings.torrentImportPollingInfo")}</p>
           </div>
-        </div>
-      </CardContent>
-    </Card>
+        )}
+      </div>
+    </SettingsCard>
   );
 }

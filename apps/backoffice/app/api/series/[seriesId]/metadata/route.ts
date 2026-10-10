@@ -1,15 +1,11 @@
 import { NextResponse, NextRequest } from "next/server";
 import { apiFetch } from "@/lib/api";
+import { withRoute } from "@/lib/api-handler";
 
 type Params = Promise<{ seriesId: string }>;
 
-export async function GET(request: NextRequest, { params }: { params: Params }) {
-  try {
-    const { seriesId } = await params;
-    const data = await apiFetch(`/series/${seriesId}/metadata`);
-    return NextResponse.json(data);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to fetch metadata";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
-}
+export const GET = withRoute(async (request: NextRequest, { params }: { params: Params }) => {
+  const { seriesId } = await params;
+  const data = await apiFetch(`/series/${seriesId}/metadata`);
+  return NextResponse.json(data);
+}, { fallback: "Failed to fetch metadata" });

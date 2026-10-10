@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Icon, Modal } from "./ui";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 import type { AnilistMediaResultDto, AnilistSeriesLinkDto } from "../../lib/api";
 
 interface ReadingStatusModalProps {

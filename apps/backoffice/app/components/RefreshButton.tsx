@@ -7,7 +7,7 @@ import {
   refreshSeriesAction,
   refreshSeriesByIdAction,
 } from "../actions/cache";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 import { Button } from "./ui/Button";
 
 type Target = "books" | "series" | "series-detail" | "book-detail";

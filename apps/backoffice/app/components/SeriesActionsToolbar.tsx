@@ -6,7 +6,7 @@ import { ActionsMenu, ActionsMenuItem, ActionsMenuSection, Icon } from "./ui";
 import { MarkSeriesReadButton } from "./MarkSeriesReadButton";
 import { RefreshButton } from "./RefreshButton";
 import { RefreshIcon } from "./RefreshIcon";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 import { AddToReadingListModal } from "./AddToReadingListModal";
 
 const EditSeriesForm = nextDynamic(

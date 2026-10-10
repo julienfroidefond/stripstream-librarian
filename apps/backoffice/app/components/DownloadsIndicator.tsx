@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 import { MiniProgressBar, ProgressBar } from "./ui/ProgressBar";
 import { formatEta, formatSpeed, formatVolumes } from "@/lib/format";
 import { useEventSource } from "@/lib/useEventSource";

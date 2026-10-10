@@ -2,7 +2,8 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, FormRow, Icon, toast, Toaster } from "@/app/components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, SettingsField, FormInput, FormSelect, FormRow, Icon, Switch, toast, Toaster } from "@/app/components/ui";
+import { SafeHtml } from "@/app/components/SafeHtml";
 import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, UserDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 import type { Locale } from "@/lib/i18n/types";
@@ -216,8 +217,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         <CardContent>
           <div className="space-y-4">
             <FormRow>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.concurrentRenders")}</label>
+              <SettingsField className="flex-1" label={t("settings.concurrentRenders")}>
                 <FormInput
                   type="number"
                   min={1}
@@ -233,9 +233,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                 <p className="text-xs text-muted-foreground mt-1">
                   {t("settings.concurrentRendersHelp")}
                 </p>
-              </FormField>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.timeoutSeconds")}</label>
+              </SettingsField>
+              <SettingsField className="flex-1" label={t("settings.timeoutSeconds")}>
                 <FormInput
                   type="number"
                   min={5}
@@ -248,9 +247,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   }}
                   onBlur={() => handleUpdateSetting("limits", settings.limits)}
                 />
-              </FormField>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.rateLimit")}</label>
+              </SettingsField>
+              <SettingsField className="flex-1" label={t("settings.rateLimit")}>
                 <FormInput
                   type="number"
                   min={10}
@@ -263,7 +261,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   }}
                   onBlur={() => handleUpdateSetting("limits", settings.limits)}
                 />
-              </FormField>
+              </SettingsField>
             </FormRow>
             <p className="text-sm text-muted-foreground">
               {t("settings.limitsNote")}
@@ -345,13 +343,12 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             <Icon name="image" size="md" />
             {t("settings.imageProcessing")}
           </CardTitle>
-          <CardDescription><span dangerouslySetInnerHTML={{ __html: t("settings.imageProcessingDesc") }} /></CardDescription>
+          <CardDescription><SafeHtml html={t("settings.imageProcessingDesc")} as="span" /></CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <FormRow>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.defaultFormat")}</label>
+              <SettingsField className="flex-1" label={t("settings.defaultFormat")}>
                 <FormSelect
                   value={settings.image_processing.format}
                   onChange={(e) => {
@@ -364,9 +361,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   <option value="jpeg">JPEG</option>
                   <option value="png">PNG</option>
                 </FormSelect>
-              </FormField>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.defaultQuality")}</label>
+              </SettingsField>
+              <SettingsField className="flex-1" label={t("settings.defaultQuality")}>
                 <FormInput
                   type="number"
                   min={1}
@@ -379,11 +375,10 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   }}
                   onBlur={() => handleUpdateSetting("image_processing", settings.image_processing)}
                 />
-              </FormField>
+              </SettingsField>
             </FormRow>
             <FormRow>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.defaultFilter")}</label>
+              <SettingsField className="flex-1" label={t("settings.defaultFilter")}>
                 <FormSelect
                   value={settings.image_processing.filter}
                   onChange={(e) => {
@@ -396,9 +391,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   <option value="triangle">{t("settings.filterTriangle")}</option>
                   <option value="nearest">{t("settings.filterNearest")}</option>
                 </FormSelect>
-              </FormField>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.maxWidth")}</label>
+              </SettingsField>
+              <SettingsField className="flex-1" label={t("settings.maxWidth")}>
                 <FormInput
                   type="number"
                   min={100}
@@ -411,7 +405,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   }}
                   onBlur={() => handleUpdateSetting("image_processing", settings.image_processing)}
                 />
-              </FormField>
+              </SettingsField>
             </FormRow>
           </div>
         </CardContent>
@@ -458,8 +452,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             )}
 
             <FormRow>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.cacheDirectory")}</label>
+              <SettingsField className="flex-1" label={t("settings.cacheDirectory")}>
                 <FormInput
                   value={settings.cache.directory}
                   onChange={(e) => {
@@ -468,9 +461,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   }}
                   onBlur={() => handleUpdateSetting("cache", settings.cache)}
                 />
-              </FormField>
-              <FormField className="w-32">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.maxSizeMb")}</label>
+              </SettingsField>
+              <SettingsField className="w-32" label={t("settings.maxSizeMb")}>
                 <FormInput
                   type="number"
                   value={settings.cache.max_size_mb}
@@ -481,9 +473,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   }}
                   onBlur={() => handleUpdateSetting("cache", settings.cache)}
                 />
-              </FormField>
-              <FormField className="w-56">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block whitespace-nowrap">{t("settings.memoryMaxSizeMb")}</label>
+              </SettingsField>
+              <SettingsField className="w-56" label={t("settings.memoryMaxSizeMb")} labelClassName="whitespace-nowrap">
                 <FormInput
                   type="number"
                   min={1}
@@ -495,7 +486,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   onBlur={() => handleUpdateSetting("cache", settings.cache)}
                 />
                 <p className="text-xs text-muted-foreground mt-1">{t("settings.memoryMaxSizeMbHelp")}</p>
-              </FormField>
+              </SettingsField>
             </FormRow>
 
             <Button
@@ -531,8 +522,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         <CardContent>
           <div className="space-y-4">
             <FormRow>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.enableThumbnails")}</label>
+              <SettingsField className="flex-1" label={t("settings.enableThumbnails")}>
                 <FormSelect
                   value={settings.thumbnail.enabled ? "true" : "false"}
                   onChange={(e) => {
@@ -544,9 +534,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   <option value="true">{t("common.enabled")}</option>
                   <option value="false">{t("common.disabled")}</option>
                 </FormSelect>
-              </FormField>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.outputFormat")}</label>
+              </SettingsField>
+              <SettingsField className="flex-1" label={t("settings.outputFormat")}>
                 <FormSelect
                   value={settings.thumbnail.format}
                   onChange={(e) => {
@@ -565,11 +554,10 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                     ? t("settings.formatOriginalDesc")
                     : t("settings.formatReencodeDesc")}
                 </p>
-              </FormField>
+              </SettingsField>
             </FormRow>
             <FormRow>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.width")}</label>
+              <SettingsField className="flex-1" label={t("settings.width")}>
                 <FormInput
                   type="number"
                   min={50}
@@ -582,9 +570,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   }}
                   onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
                 />
-              </FormField>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.height")}</label>
+              </SettingsField>
+              <SettingsField className="flex-1" label={t("settings.height")}>
                 <FormInput
                   type="number"
                   min={50}
@@ -597,9 +584,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   }}
                   onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
                 />
-              </FormField>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.quality")}</label>
+              </SettingsField>
+              <SettingsField className="flex-1" label={t("settings.quality")}>
                 <FormInput
                   type="number"
                   min={1}
@@ -612,11 +598,10 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   }}
                   onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
                 />
-              </FormField>
+              </SettingsField>
             </FormRow>
             <FormRow>
-              <FormField className="flex-1">
-                <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.thumbnailDirectory")}</label>
+              <SettingsField className="flex-1" label={t("settings.thumbnailDirectory")}>
                 <FormInput
                   value={settings.thumbnail.directory}
                   onChange={(e) => {
@@ -625,7 +610,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                   }}
                   onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
                 />
-              </FormField>
+              </SettingsField>
             </FormRow>
 
             <div className="grid grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg">
@@ -673,11 +658,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
           <CardDescription>{t("settings.downloadsEnabledDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={downloadsEnabled}
-            onClick={async () => {
+          <Switch
+            checked={downloadsEnabled}
+            onChange={async () => {
               const next = !downloadsEnabled;
               setDownloadsEnabled(next);
               try {
@@ -698,10 +681,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                 toast(t("settings.saveError"), "error");
               }
             }}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${downloadsEnabled ? "bg-primary" : "bg-muted"}`}
-          >
-            <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${downloadsEnabled ? "translate-x-6" : "translate-x-1"}`} />
-          </button>
+          />
         </CardContent>
       </Card>
 

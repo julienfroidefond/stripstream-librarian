@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, FormField, FormInput, FormSelect, Icon } from "@/app/components/ui";
+import { SettingsCard, SettingsField, FormInput, FormSelect } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 import { TestConnectionButton } from "./TestConnectionButton";
 
@@ -40,75 +40,58 @@ export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdat
   }
 
   return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Icon name="search" size="md" />
-          {t("settings.prowlarr")}
-        </CardTitle>
-        <CardDescription>{t("settings.prowlarrDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div className="flex gap-4">
-            <FormField className="flex-1">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.prowlarrUrl")}</label>
-              <FormInput
-                type="url"
-                placeholder={t("settings.prowlarrUrlPlaceholder")}
-                value={prowlarrUrl}
-                onChange={(e) => setProwlarrUrl(e.target.value)}
-                onBlur={() => saveProwlarr()}
-              />
-            </FormField>
-          </div>
-          <div className="flex gap-4">
-            <FormField className="flex-1">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.prowlarrApiKey")}</label>
-              <FormInput
-                type="password" autoComplete="off"
-                placeholder={t("settings.prowlarrApiKeyPlaceholder")}
-                value={prowlarrApiKey}
-                onChange={(e) => setProwlarrApiKey(e.target.value)}
-                onBlur={() => saveProwlarr()}
-              />
-            </FormField>
-          </div>
-          <div className="flex gap-4">
-            <FormField className="flex-1">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.prowlarrCategories")}</label>
-              <FormInput
-                type="text"
-                placeholder="7030, 7020"
-                value={prowlarrCategories}
-                onChange={(e) => setProwlarrCategories(e.target.value)}
-                onBlur={() => saveProwlarr()}
-              />
-              <p className="text-xs text-muted-foreground mt-1">{t("settings.prowlarrCategoriesHelp")}</p>
-            </FormField>
-          </div>
-          <div className="flex gap-4">
-            <FormField className="w-64">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.prowlarrRssInterval")}</label>
-              <FormSelect
-                value={rssPollInterval}
-                onChange={(e) => { setRssPollInterval(e.target.value); saveProwlarr(undefined, undefined, undefined, e.target.value); }}
-              >
-                {RSS_INTERVAL_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </FormSelect>
-              <p className="text-xs text-muted-foreground mt-1">{t("settings.prowlarrRssIntervalHelp")}</p>
-            </FormField>
-          </div>
-          <div className="flex items-center gap-3">
-            <TestConnectionButton
-              endpoint="/api/prowlarr/test"
-              disabled={!prowlarrUrl || !prowlarrApiKey}
-            />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <SettingsCard icon="search" title={t("settings.prowlarr")} description={t("settings.prowlarrDesc")}>
+      <div className="flex gap-4">
+        <SettingsField className="flex-1" label={t("settings.prowlarrUrl")}>
+          <FormInput
+            type="url"
+            placeholder={t("settings.prowlarrUrlPlaceholder")}
+            value={prowlarrUrl}
+            onChange={(e) => setProwlarrUrl(e.target.value)}
+            onBlur={() => saveProwlarr()}
+          />
+        </SettingsField>
+      </div>
+      <div className="flex gap-4">
+        <SettingsField className="flex-1" label={t("settings.prowlarrApiKey")}>
+          <FormInput
+            type="password" autoComplete="off"
+            placeholder={t("settings.prowlarrApiKeyPlaceholder")}
+            value={prowlarrApiKey}
+            onChange={(e) => setProwlarrApiKey(e.target.value)}
+            onBlur={() => saveProwlarr()}
+          />
+        </SettingsField>
+      </div>
+      <div className="flex gap-4">
+        <SettingsField className="flex-1" label={t("settings.prowlarrCategories")} help={t("settings.prowlarrCategoriesHelp")}>
+          <FormInput
+            type="text"
+            placeholder="7030, 7020"
+            value={prowlarrCategories}
+            onChange={(e) => setProwlarrCategories(e.target.value)}
+            onBlur={() => saveProwlarr()}
+          />
+        </SettingsField>
+      </div>
+      <div className="flex gap-4">
+        <SettingsField className="w-64" label={t("settings.prowlarrRssInterval")} help={t("settings.prowlarrRssIntervalHelp")}>
+          <FormSelect
+            value={rssPollInterval}
+            onChange={(e) => { setRssPollInterval(e.target.value); saveProwlarr(undefined, undefined, undefined, e.target.value); }}
+          >
+            {RSS_INTERVAL_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </FormSelect>
+        </SettingsField>
+      </div>
+      <div className="flex items-center gap-3">
+        <TestConnectionButton
+          endpoint="/api/prowlarr/test"
+          disabled={!prowlarrUrl || !prowlarrApiKey}
+        />
+      </div>
+    </SettingsCard>
   );
 }

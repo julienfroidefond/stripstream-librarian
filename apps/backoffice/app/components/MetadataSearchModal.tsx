@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Icon, Modal } from "./ui";
 import { ProviderIcon, providerLabel } from "./ProviderIcon";
 import type { ExternalMetadataLinkDto, SeriesCandidateDto, MissingBooksDto, SyncReport, MetadataProviderDto } from "../../lib/api";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 
 const FIELD_KEYS: string[] = [
   "description", "authors", "publishers", "start_year",

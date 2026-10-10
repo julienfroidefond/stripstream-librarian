@@ -23,15 +23,26 @@ app/
 │   └── ...
 └── globals.css         # Variables CSS, Tailwind base
 lib/
-└── api.ts              # Client API : types DTO + fonctions fetch vers l'API Rust
+├── api/                # Client API : types DTO + fetch vers l'API Rust, découpé par domaine
+│   ├── index.ts        # Barrel (`@/lib/api`)
+│   ├── client.ts       # `apiFetch` / `config`
+│   └── ...             # libraries, jobs, books, series, metadata, downloads, ...
+└── api-handler.ts      # `withRoute` pour les route handlers
 ```
 
-## Client API (lib/api.ts)
+## Client API (lib/api/)
 
-Tous les appels vers l'API Rust passent par `lib/api.ts`. Les types DTO sont définis là :
+Tous les appels vers l'API Rust passent par `lib/api` (barrel `lib/api/index.ts`). Le module est
+découpé par domaine (`client`, `libraries`, `jobs`, `books`, `series`, `metadata`, `downloads`…) ;
+les types DTO vivent dans le fichier du domaine concerné :
 - `LibraryDto`, `IndexJobDto`, `BookDto`, `TokenDto`, `FolderItem`
 
-Ajouter les nouveaux endpoints et types dans ce fichier.
+Ajouter les nouveaux endpoints et types dans le module du domaine concerné ; le barrel les
+réexporte automatiquement.
+
+`lib/api-handler.ts` expose `withRoute(handler, options)`, enveloppe standard des route handlers
+`app/api/**` (extraction du message d'erreur, statut 500 par défaut, options `fallback` / `status` /
+`statusFromError` / `onError`). L'utiliser pour tout nouveau handler.
 
 ## Composants UI
 
@@ -76,13 +87,14 @@ npm run test:coverage    # rapport de couverture (text + html dans coverage/)
 
 - `tests/setup.ts` mocke `next/link`, `next/image`, `next/navigation` et `@/lib/i18n/context` (`t` renvoie la clé) ; `@testing-library/jest-dom` est chargé globalement.
 - Couvre :
-  - logique/`lib` : `format`, `jobStatus`, `ratings`, `searchParams`, `session`, `volumeRanges`, `useEventSource`, `usePopin`, `i18n` (dictionnaires sync + chargement async, parité fr/en, interpolation, `LocaleProvider`/`useTranslation`), `api` (`apiFetch`, `config`, `getBookCoverUrl` et tous les endpoints : librairies, jobs, tokens, livres, séries, métadonnées, reading status, downloads, komga, reading lists, archive, reading overview, telegram) ;
-  - composants : `TagInput`, `Modal`, `DeleteConfirmButton`, `MarkReadButton`, `MarkBookReadButton`, `MarkSeriesReadButton`, `TestConnectionButton`, `SeriesResultRow`, `StatCard`, `SeriesGrid`, `MetadataReportCards`, `ReadingStatusReportCards`, `RatingStars`, `JobProgress`, `Pagination`, `ProgressBar`, `ActionsMenu`, `BookCard`, `LibraryForm`, `EditBookForm`, `EditSeriesForm`, `JobRow`, `JobsList`, `ProwlarrCard`, `QBittorrentCard`, `TelegramCard`, `ThemeToggle`/`ThemeSelector`, plus les primitives `ui/` (`Badge`/`StatusBadge`/`JobTypeBadge`/`ProgressBadge`, `Card`/`GlassCard`/`SimpleCard`, `Tooltip`, `CoverFan`, `Button`/`IconButton`, `Input`/`Select`/`Textarea`/`SearchInput`, `Form`, `StatBox`, `Toast`, `Icon`) ;
+  - logique/`lib` : `format`, `jobStatus`, `ratings`, `searchParams`, `session`, `volumeRanges`, `useEventSource`, `usePopin`, `useMarkRead`, `i18n` (dictionnaires sync + chargement async, parité fr/en, interpolation, `LocaleProvider`/`useTranslation`), `api` (`apiFetch`, `config`, `getBookCoverUrl` et tous les endpoints : librairies, jobs, tokens, livres, séries, métadonnées, reading status, downloads, komga, reading lists, archive, reading overview, telegram) ;
+  - composants : `TagInput`, `Modal`, `DeleteConfirmButton`, `MarkReadButton`, `MarkBookReadButton`, `MarkSeriesReadButton`, `TestConnectionButton`, `SeriesResultRow`, `StatCard`, `SeriesGrid`, `MetadataReportCards`, `ReadingStatusReportCards`, `RatingStars`, `JobProgress`, `Pagination`, `ProgressBar`, `ActionsMenu`, `BookCard`, `LibraryForm`, `EditBookForm`, `EditSeriesForm`, `JobRow`, `JobsList`, `ProwlarrCard`, `QBittorrentCard`, `TelegramCard`, `ThemeToggle`/`ThemeSelector`, plus les primitives `ui/` (`Badge`/`StatusBadge`/`JobTypeBadge`/`ProgressBadge`, `Card`/`GlassCard`/`SimpleCard`, `Tooltip`, `CoverFan`, `Button`/`IconButton`, `Input`/`Select`/`Textarea`/`SearchInput`, `Form`, `StatBox`, `Switch`, `ReportStatGrid`, `SettingsCard`/`SettingsField`, `Toast`, `Icon`) ;
   - settings : `AiTaggingCard`, `MetadataProvidersCard`, `StatusMappingsCard`, `RenameFormatCard`, `ArchivesTab`, `TokensTab` (server component + server actions), `AnilistTab`, `KomgaSyncCard`, `ReadingOverviewTab`, `TelegramMonitorCard` ;
   - routes/app : `app/health`, `app/login` (formulaire), `app/theme-provider`, et l'ensemble des route handlers `app/api/**` (CRUD, SSE `streams.test.ts`, cas d'erreur data-driven `errors.test.ts`).
 - Les tests de route handlers utilisent `// @vitest-environment node` et `tests/unit/app/api/helpers.ts` (`createApiMock()`, `jsonRequest()`, `routeCtx()` retournant `{ params: Promise<any> }`).
 - Pour les composants à `fetch` global, stubber `vi.stubGlobal("fetch", fetchMock)` et router par `url`/`method` ; préférer `fireEvent.change`/`fireEvent.blur` pour les champs `{var}` ou number contrôlés.
-- `lib/api.ts` est couvert par `tests/unit/lib/api-*.test.ts`.
+- `lib/api/**` est couvert par `tests/unit/lib/api-*.test.ts` ; `lib/api-handler.ts` par
+  `tests/unit/lib/api-handler.test.ts`.
 - Le test de `lib/i18n/context` appelle `vi.unmock("@/lib/i18n/context")` pour rétablir le vrai provider (le setup le mocke globalement).
 - Les tests de `lib/session.ts` utilisent `// @vitest-environment node` (`jose` compare les `Uint8Array` par realm, incompatible avec jsdom).
 - Importer explicitement `describe`/`it`/`expect`/`vi` depuis `vitest` (pas de globals).

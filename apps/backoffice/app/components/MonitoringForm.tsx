@@ -1,7 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 
 interface MonitoringFormProps {
   libraryId: string;

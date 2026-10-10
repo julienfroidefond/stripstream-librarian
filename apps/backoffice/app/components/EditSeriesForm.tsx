@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { FormField, FormLabel, FormInput } from "./ui/Form";
 import { Icon, TagInput } from "./ui";
 import { LockButton } from "./LockButton";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 
 const SERIES_STATUS_VALUES = ["", "ongoing", "ended", "hiatus", "cancelled", "upcoming"] as const;
 

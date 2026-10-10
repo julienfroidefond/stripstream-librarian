@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Card, CardHeader, CardTitle, CardDescription, CardContent,
-  Button, FormField, FormInput, FormSelect, Icon, Tooltip, toast,
+  Button, SettingsField, FormInput, FormSelect, FormLabel, Icon, Tooltip, toast,
 } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 import type { LibraryDto, TelegramMonitorStatus, TelegramSourceDto } from "@/lib/api";
@@ -287,17 +287,15 @@ export function TelegramMonitorCard({
             {credentialsOpen && (
               <div className="px-4 pb-4 pt-1 border-t space-y-3">
                 <div className="flex gap-4 pt-2">
-                  <FormField className="w-40">
-                    <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("telegramMonitor.apiId")}</label>
+                  <SettingsField className="w-40" label={t("telegramMonitor.apiId")}>
                     <FormInput
                       type="text"
                       placeholder={t("telegramMonitor.apiIdPlaceholder")}
                       value={apiId}
                       onChange={e => setApiId(e.target.value)}
                     />
-                  </FormField>
-                  <FormField className="flex-1">
-                    <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("telegramMonitor.apiHash")}</label>
+                  </SettingsField>
+                  <SettingsField className="flex-1" label={t("telegramMonitor.apiHash")}>
                     <FormInput
                       type="password"
                       autoComplete="off"
@@ -305,16 +303,15 @@ export function TelegramMonitorCard({
                       value={apiHash}
                       onChange={e => setApiHash(e.target.value)}
                     />
-                  </FormField>
-                  <FormField className="w-48">
-                    <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("telegramMonitor.phone")}</label>
+                  </SettingsField>
+                  <SettingsField className="w-48" label={t("telegramMonitor.phone")}>
                     <FormInput
                       type="text"
                       placeholder={t("telegramMonitor.phonePlaceholder")}
                       value={phone}
                       onChange={e => setPhone(e.target.value)}
                     />
-                  </FormField>
+                  </SettingsField>
                 </div>
                 <p className="text-xs text-muted-foreground">{t("telegramMonitor.apiHelp")}</p>
                 <div className="flex items-center gap-3 flex-wrap">
@@ -333,8 +330,7 @@ export function TelegramMonitorCard({
 
                   {status?.configured && !authorized && codeSent && (
                     <div className="flex items-end gap-3">
-                      <FormField className="w-40">
-                        <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("telegramMonitor.enterCode")}</label>
+                      <SettingsField className="w-40" label={t("telegramMonitor.enterCode")}>
                         <FormInput
                           type="text"
                           placeholder={t("telegramMonitor.codePlaceholder")}
@@ -342,7 +338,7 @@ export function TelegramMonitorCard({
                           onChange={e => setCode(e.target.value)}
                           onKeyDown={e => e.key === "Enter" && handleVerify()}
                         />
-                      </FormField>
+                      </SettingsField>
                       <Button onClick={handleVerify} disabled={verifying || !code}>
                         {verifying ? t("telegramMonitor.verifying") : t("telegramMonitor.verify")}
                       </Button>
@@ -363,12 +359,12 @@ export function TelegramMonitorCard({
           {authorized && (
             <div className="space-y-2">
               <div className="flex items-center gap-4">
-                <label className="text-sm font-medium text-muted-foreground flex items-center gap-1 w-72 shrink-0">
+                <FormLabel variant="settings" className="flex items-center gap-1 w-72 shrink-0">
                   {t("telegramMonitor.syncInterval")}
                   <Tooltip label={t("telegramMonitor.syncIntervalHelp")}>
                     <Icon name="info" size="sm" className="text-muted-foreground/60 cursor-default" />
                   </Tooltip>
-                </label>
+                </FormLabel>
                 <FormSelect
                   value={syncInterval}
                   onChange={e => handleSaveSyncInterval(e.target.value)}
@@ -380,12 +376,12 @@ export function TelegramMonitorCard({
                 </FormSelect>
               </div>
               <div className="flex items-center gap-4">
-                <label className="text-sm font-medium text-muted-foreground flex items-center gap-1 w-72 shrink-0">
+                <FormLabel variant="settings" className="flex items-center gap-1 w-72 shrink-0">
                   {t("settings.concurrentTelegramDownloads")}
                   <Tooltip label={t("settings.concurrentTelegramDownloadsHelp")}>
                     <Icon name="info" size="sm" className="text-muted-foreground/60 cursor-default" />
                   </Tooltip>
-                </label>
+                </FormLabel>
                 <FormInput
                   type="number"
                   min={1}
@@ -423,8 +419,7 @@ export function TelegramMonitorCard({
 
               {/* Add channel form */}
               <div className="flex items-end gap-3">
-                <FormField className="flex-1">
-                  <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("telegramMonitor.addChannel")}</label>
+                <SettingsField className="flex-1" label={t("telegramMonitor.addChannel")}>
                   <div className="relative" ref={autocompleteRef}>
                     <FormInput
                       type="search"
@@ -462,16 +457,15 @@ export function TelegramMonitorCard({
                       </ul>
                     )}
                   </div>
-                </FormField>
-                <FormField className="w-48">
-                  <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("telegramMonitor.library")}</label>
+                </SettingsField>
+                <SettingsField className="w-48" label={t("telegramMonitor.library")}>
                   <FormSelect value={newChannelLibrary} onChange={e => setNewChannelLibrary(e.target.value)}>
                     <option value="">{t("telegramMonitor.noLibrary")}</option>
                     {libraries.map(lib => (
                       <option key={lib.id} value={lib.id}>{lib.name}</option>
                     ))}
                   </FormSelect>
-                </FormField>
+                </SettingsField>
                 <Button
                   onClick={handleAddSource}
                   disabled={addingSource || !newChannel}

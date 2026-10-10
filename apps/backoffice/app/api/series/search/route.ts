@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { apiFetch } from "@/lib/api";
+import { withRoute } from "@/lib/api-handler";
 
 type SeriesPage = {
   items: unknown[];
@@ -8,14 +9,14 @@ type SeriesPage = {
   limit: number;
 };
 
-export async function GET(request: NextRequest) {
-  try {
+export const GET = withRoute(
+  async (request: NextRequest) => {
     const { searchParams } = request.nextUrl;
     const data = await apiFetch<SeriesPage>(`/series?${searchParams.toString()}`);
     return NextResponse.json(data);
-  } catch (error) {
-    console.error("[series/search] Error:", error);
-    const message = error instanceof Error ? error.message : "Failed to search series";
-    return NextResponse.json({ error: message }, { status: 500 });
+  },
+  {
+    fallback: "Failed to search series",
+    onError: (error) => console.error("[series/search] Error:", error),
   }
-}
+);
