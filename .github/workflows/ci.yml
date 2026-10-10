@@ -3,9 +3,13 @@ name: CI
 # Rust quality gate: formatting, lints and the full test suite (including the
 # `#[sqlx::test]` database tests, backed by the PostgreSQL service below).
 #
-# The Gitea pipeline (.gitea/workflows/deploy.yml) historically ran neither
-# clippy nor `cargo test` (see docs/KNOWN_ISSUES.md §3); this workflow adds
-# that coverage on GitHub.
+# Single job on purpose: its name — `Rust (fmt · clippy · test)` — is the
+# required status check on the protected branch, so it must stay stable.
+#
+# Tests run through cargo-nextest instead of `cargo test`: it executes each test
+# in its own process and schedules them across all cores, which is markedly
+# faster on this suite (~400 `#[sqlx::test]` cases). nextest does not run
+# doctests; this workspace has none.
 #
 # It only triggers when Rust sources, the workspace manifests or the DB
 # migrations change — a docs-only or backoffice-only PR does not spin up
@@ -29,6 +33,12 @@ on:
       - "infra/migrations/**"
       - "rust-toolchain*"
   workflow_dispatch:
+
+# A new push to the same pull request cancels the previous, still-running gate
+# instead of letting two full runs finish concurrently.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -67,6 +77,13 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          # Persist the cache even when a test fails, so a red run does not
+          # throw away the (expensive) compilation for the next attempt.
+          cache-on-failure: true
+          # Also cache crates that are not direct workspace dependencies: the
+          # test binaries pull in a lot of transitive dev-dependency code.
+          cache-all-crates: true
 
       - name: Format
         run: cargo fmt --all -- --check
@@ -74,5 +91,11 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # nextest runs each test in its own process and schedules them across all
+      # cores far better than `cargo test`. It does not run doctests, and this
+      # workspace has none.
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
       - name: Test
-        run: cargo test --workspace
+        run: cargo nextest run --workspace
