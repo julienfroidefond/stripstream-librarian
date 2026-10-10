@@ -2,6 +2,8 @@ use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::Row;
+use stripstream_core::http::build_http_client;
+use stripstream_core::settings::load_setting;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -52,9 +54,7 @@ pub async fn test_connection(
     if base_url.is_empty() {
         return Err(ApiError::bad_request("API URL is required"));
     }
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()?;
+    let client = build_http_client(std::time::Duration::from_secs(15))?;
     let response = client
         .get(format!("{base_url}/models"))
         .bearer_auth(api_key)
@@ -106,10 +106,8 @@ pub async fn suggest_tags(
         ));
     }
 
-    let setting = sqlx::query("SELECT value FROM app_settings WHERE key = 'ai_tagging'")
-        .fetch_optional(&state.pool)
+    let setting = load_setting::<Value>(&state.pool, "ai_tagging")
         .await?
-        .map(|row| row.get::<Value, _>("value"))
         .unwrap_or_else(|| serde_json::json!({}));
     if !setting
         .get("enabled")
@@ -197,9 +195,7 @@ pub async fn suggest_tags(
             &serde_json::to_string(&input).map_err(|e| ApiError::internal(e.to_string()))?,
         );
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(45))
-        .build()?;
+    let client = build_http_client(std::time::Duration::from_secs(45))?;
     let response = client
         .post(format!("{base_url}/chat/completions"))
         .bearer_auth(api_key)

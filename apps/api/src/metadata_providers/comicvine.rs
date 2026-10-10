@@ -1,58 +1,47 @@
-use super::{BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate};
+use stripstream_core::http::build_http_client_with_agent;
+
+use super::{
+    compute_confidence, strip_html, urlencoded, BookCandidate, MetadataProvider, ProviderConfig,
+    SeriesCandidate,
+};
 
 const DEFAULT_BASE_URL: &str = "https://comicvine.gamespot.com";
 
 pub struct ComicVineProvider;
 
+#[async_trait::async_trait]
 impl MetadataProvider for ComicVineProvider {
     fn name(&self) -> &str {
         "comicvine"
     }
 
-    fn search_series(
+    async fn search_series(
         &self,
         query: &str,
         config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Vec<SeriesCandidate>, String>> + Send + '_>,
-    > {
-        let query = query.to_string();
-        let config = config.clone();
-        Box::pin(async move { search_series_impl(&query, &config, DEFAULT_BASE_URL).await })
+    ) -> Result<Vec<SeriesCandidate>, String> {
+        search_series_impl(query, config, DEFAULT_BASE_URL).await
     }
 
-    fn get_series(
+    async fn get_series(
         &self,
         external_id: &str,
         config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<SeriesCandidate, String>> + Send + '_>,
-    > {
-        let external_id = external_id.to_string();
-        let config = config.clone();
-        Box::pin(async move { get_series_impl(&external_id, &config, DEFAULT_BASE_URL).await })
+    ) -> Result<SeriesCandidate, String> {
+        get_series_impl(external_id, config, DEFAULT_BASE_URL).await
     }
 
-    fn get_series_books(
+    async fn get_series_books(
         &self,
         external_id: &str,
         config: &ProviderConfig,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Vec<BookCandidate>, String>> + Send + '_>,
-    > {
-        let external_id = external_id.to_string();
-        let config = config.clone();
-        Box::pin(
-            async move { get_series_books_impl(&external_id, &config, DEFAULT_BASE_URL).await },
-        )
+    ) -> Result<Vec<BookCandidate>, String> {
+        get_series_books_impl(external_id, config, DEFAULT_BASE_URL).await
     }
 }
 
 fn build_client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .user_agent("StripstreamLibrarian/1.0")
-        .build()
+    build_http_client_with_agent(std::time::Duration::from_secs(15))
         .map_err(|e| format!("failed to build HTTP client: {e}"))
 }
 
@@ -343,48 +332,6 @@ async fn get_series_books_impl(
         .collect();
 
     Ok(books)
-}
-
-fn strip_html(s: &str) -> String {
-    let mut result = String::new();
-    let mut in_tag = false;
-    for ch in s.chars() {
-        match ch {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => result.push(ch),
-            _ => {}
-        }
-    }
-    result.trim().to_string()
-}
-
-fn compute_confidence(title: &str, query: &str) -> f32 {
-    let title_lower = title.to_lowercase();
-    if title_lower == query {
-        1.0
-    } else if title_lower.starts_with(query) || query.starts_with(&title_lower) {
-        0.8
-    } else if title_lower.contains(query) || query.contains(&title_lower) {
-        0.7
-    } else {
-        let common: usize = query.chars().filter(|c| title_lower.contains(*c)).count();
-        let max_len = query.len().max(title_lower.len()).max(1);
-        (common as f32 / max_len as f32).clamp(0.1, 0.6)
-    }
-}
-
-fn urlencoded(s: &str) -> String {
-    let mut result = String::new();
-    for byte in s.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                result.push(byte as char);
-            }
-            _ => result.push_str(&format!("%{:02X}", byte)),
-        }
-    }
-    result
 }
 
 #[cfg(test)]

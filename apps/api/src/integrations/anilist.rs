@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::Row;
+use stripstream_core::http::build_http_client;
+use stripstream_core::settings::load_setting;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -18,9 +20,7 @@ pub(crate) async fn anilist_graphql(
     query: &str,
     variables: Value,
 ) -> Result<Value, ApiError> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
+    let client = build_http_client(std::time::Duration::from_secs(15))
         .map_err(|e| ApiError::internal(format!("HTTP client error: {e}")))?;
 
     let body = serde_json::json!({ "query": query, "variables": variables });
@@ -62,13 +62,9 @@ pub(crate) async fn anilist_graphql(
 pub(crate) async fn load_anilist_settings(
     pool: &sqlx::PgPool,
 ) -> Result<(String, Option<i64>, Option<Uuid>), ApiError> {
-    let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'anilist'")
-        .fetch_optional(pool)
-        .await?;
-
-    let value: Value = row
-        .ok_or_else(|| ApiError::bad_request("AniList not configured (missing settings)"))?
-        .get("value");
+    let value: Value = load_setting::<Value>(pool, "anilist")
+        .await?
+        .ok_or_else(|| ApiError::bad_request("AniList not configured (missing settings)"))?;
 
     let token = value["access_token"]
         .as_str()

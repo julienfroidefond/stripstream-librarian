@@ -4,6 +4,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
+use stripstream_core::http::USER_AGENT;
+use stripstream_core::settings::load_setting;
 use uuid::Uuid;
 
 use crate::error::ApiError;
@@ -463,11 +465,9 @@ pub async fn prowlarr_discovery(
     }
 
     // Load Prowlarr config
-    let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'prowlarr'")
-        .fetch_optional(&state.pool)
+    let value: serde_json::Value = load_setting(&state.pool, "prowlarr")
         .await?
         .ok_or_else(|| ApiError::bad_request("Prowlarr is not configured"))?;
-    let value: serde_json::Value = row.get("value");
     let prowlarr_url = value
         .get("url")
         .and_then(|u| u.as_str())
@@ -502,7 +502,7 @@ pub async fn prowlarr_discovery(
     }
 
     let client = reqwest::Client::builder()
-        .user_agent("Stripstream-Librarian")
+        .user_agent(USER_AGENT)
         .connect_timeout(std::time::Duration::from_secs(5))
         .timeout(std::time::Duration::from_secs(15))
         .build()

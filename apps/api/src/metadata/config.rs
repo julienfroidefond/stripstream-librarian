@@ -1,6 +1,7 @@
 //! Shared metadata logic used by metadata.rs (manual search) and metadata_batch/ (batch processing).
 
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
+use stripstream_core::settings::load_setting;
 
 use crate::metadata_providers;
 
@@ -15,12 +16,11 @@ pub(crate) async fn load_provider_config(
         ..Default::default()
     };
 
-    if let Ok(Some(row)) =
-        sqlx::query("SELECT value FROM app_settings WHERE key = 'metadata_providers'")
-            .fetch_optional(pool)
-            .await
+    if let Some(value) = load_setting::<serde_json::Value>(pool, "metadata_providers")
+        .await
+        .ok()
+        .flatten()
     {
-        let value: serde_json::Value = row.get("value");
         if let Some(api_key) = value
             .get(provider_name)
             .and_then(|p| p.get("api_key"))
@@ -49,12 +49,11 @@ pub(crate) async fn resolve_provider_name(pool: &PgPool, lib_provider: Option<&s
     }
 
     // Check global setting
-    if let Ok(Some(row)) =
-        sqlx::query("SELECT value FROM app_settings WHERE key = 'metadata_providers'")
-            .fetch_optional(pool)
-            .await
+    if let Some(value) = load_setting::<serde_json::Value>(pool, "metadata_providers")
+        .await
+        .ok()
+        .flatten()
     {
-        let value: serde_json::Value = row.get("value");
         if let Some(default) = value.get("default_provider").and_then(|v| v.as_str()) {
             if !default.is_empty() {
                 return default.to_string();

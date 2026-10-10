@@ -1,6 +1,8 @@
 use anyhow::Result;
 use serde::Deserialize;
 use sqlx::PgPool;
+use stripstream_core::http::build_http_client;
+use stripstream_core::settings::load_setting;
 use tracing::{info, warn};
 
 // ---------------------------------------------------------------------------
@@ -13,97 +15,72 @@ pub struct TelegramConfig {
     pub chat_id: String,
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default = "default_events")]
+    #[serde(default)]
     pub events: EventToggles,
 }
 
+/// Per-event notification toggles.
+///
+/// All events are enabled by default: a partial or missing `events` block in the
+/// stored JSON keeps every toggle on. Disabling requires an explicit `false`.
 #[derive(Debug, Deserialize)]
+#[serde(default)]
 pub struct EventToggles {
-    #[serde(default = "default_true")]
     pub scan_completed: bool,
-    #[serde(default = "default_true")]
     pub scan_failed: bool,
-    #[serde(default = "default_true")]
     pub scan_cancelled: bool,
-    #[serde(default = "default_true")]
     pub thumbnail_completed: bool,
-    #[serde(default = "default_true")]
     pub thumbnail_failed: bool,
-    #[serde(default = "default_true")]
     pub conversion_completed: bool,
-    #[serde(default = "default_true")]
     pub conversion_failed: bool,
-    #[serde(default = "default_true")]
     pub metadata_approved: bool,
-    #[serde(default = "default_true")]
     pub metadata_batch_completed: bool,
-    #[serde(default = "default_true")]
     pub metadata_batch_failed: bool,
-    #[serde(default = "default_true")]
     pub metadata_refresh_completed: bool,
-    #[serde(default = "default_true")]
     pub metadata_refresh_failed: bool,
-    #[serde(default = "default_true")]
     pub reading_status_match_completed: bool,
-    #[serde(default = "default_true")]
     pub reading_status_match_failed: bool,
-    #[serde(default = "default_true")]
     pub reading_status_push_completed: bool,
-    #[serde(default = "default_true")]
     pub reading_status_push_failed: bool,
-    #[serde(default = "default_true")]
     pub download_detection_completed: bool,
-    #[serde(default = "default_true")]
     pub download_detection_failed: bool,
-    #[serde(default = "default_true")]
     pub torrent_import_completed: bool,
-    #[serde(default = "default_true")]
     pub torrent_import_failed: bool,
-    #[serde(default = "default_true")]
     pub telegram_sync_incremental_completed: bool,
 }
 
-fn default_true() -> bool {
-    true
-}
-
-fn default_events() -> EventToggles {
-    EventToggles {
-        scan_completed: true,
-        scan_failed: true,
-        scan_cancelled: true,
-        thumbnail_completed: true,
-        thumbnail_failed: true,
-        conversion_completed: true,
-        conversion_failed: true,
-        metadata_approved: true,
-        metadata_batch_completed: true,
-        metadata_batch_failed: true,
-        metadata_refresh_completed: true,
-        metadata_refresh_failed: true,
-        reading_status_match_completed: true,
-        reading_status_match_failed: true,
-        reading_status_push_completed: true,
-        reading_status_push_failed: true,
-        download_detection_completed: true,
-        download_detection_failed: true,
-        torrent_import_completed: true,
-        torrent_import_failed: true,
-        telegram_sync_incremental_completed: true,
+impl Default for EventToggles {
+    fn default() -> Self {
+        Self {
+            scan_completed: true,
+            scan_failed: true,
+            scan_cancelled: true,
+            thumbnail_completed: true,
+            thumbnail_failed: true,
+            conversion_completed: true,
+            conversion_failed: true,
+            metadata_approved: true,
+            metadata_batch_completed: true,
+            metadata_batch_failed: true,
+            metadata_refresh_completed: true,
+            metadata_refresh_failed: true,
+            reading_status_match_completed: true,
+            reading_status_match_failed: true,
+            reading_status_push_completed: true,
+            reading_status_push_failed: true,
+            download_detection_completed: true,
+            download_detection_failed: true,
+            torrent_import_completed: true,
+            torrent_import_failed: true,
+            telegram_sync_incremental_completed: true,
+        }
     }
 }
 
 /// Load the Telegram config from `app_settings` (key = "telegram").
 /// Returns `None` when the row is missing, disabled, or has empty credentials.
 pub async fn load_telegram_config(pool: &PgPool) -> Option<TelegramConfig> {
-    let row = sqlx::query_scalar::<_, serde_json::Value>(
-        "SELECT value FROM app_settings WHERE key = 'telegram'",
-    )
-    .fetch_optional(pool)
-    .await
-    .ok()??;
-
-    let config: TelegramConfig = serde_json::from_value(row).ok()?;
+    let config: TelegramConfig = load_setting(pool, "telegram").await.ok()??;
 
     if !config.enabled || config.bot_token.is_empty() || config.chat_id.is_empty() {
         return None;
@@ -117,9 +94,7 @@ pub async fn load_telegram_config(pool: &PgPool) -> Option<TelegramConfig> {
 // ---------------------------------------------------------------------------
 
 fn build_client() -> Result<reqwest::Client> {
-    Ok(reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()?)
+    Ok(build_http_client(std::time::Duration::from_secs(10))?)
 }
 
 async fn send_telegram(config: &TelegramConfig, text: &str) -> Result<()> {
@@ -1099,7 +1074,37 @@ pub fn notify(pool: PgPool, event: NotificationEvent) {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_event, NotificationEvent};
+    use super::{format_event, NotificationEvent, TelegramConfig};
+
+    #[test]
+    fn telegram_config_without_events_enables_all() {
+        let config: TelegramConfig = serde_json::from_value(serde_json::json!({
+            "bot_token": "token",
+            "chat_id": "chat",
+            "enabled": true
+        }))
+        .unwrap();
+
+        assert!(config.events.scan_completed);
+        assert!(config.events.metadata_approved);
+        assert!(config.events.torrent_import_failed);
+        assert!(config.events.telegram_sync_incremental_completed);
+    }
+
+    #[test]
+    fn telegram_config_partial_events_keeps_others_enabled() {
+        let config: TelegramConfig = serde_json::from_value(serde_json::json!({
+            "bot_token": "token",
+            "chat_id": "chat",
+            "enabled": true,
+            "events": { "scan_completed": false }
+        }))
+        .unwrap();
+
+        assert!(!config.events.scan_completed);
+        assert!(config.events.scan_failed);
+        assert!(config.events.torrent_import_completed);
+    }
 
     #[test]
     fn scan_series_discovered_lists_titles() {

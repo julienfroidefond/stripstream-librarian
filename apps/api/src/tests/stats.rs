@@ -9,15 +9,21 @@
 use std::collections::HashMap;
 use std::sync::{atomic::AtomicU64, Arc};
 
-use axum::http::StatusCode;
+use axum::{
+    extract::{Extension, Query, State},
+    http::StatusCode,
+    Json,
+};
 use chrono::{DateTime, Duration, Utc};
 use sqlx::PgPool;
 use tokio::sync::{Mutex, RwLock, Semaphore};
 use uuid::Uuid;
 
 use super::*;
+use crate::auth::AuthUser;
+use crate::error::ApiError;
 use crate::state::{
-    DiskCacheStatsSnapshot, DynamicSettings, Metrics, PageRenderLocks, ReadRateLimit,
+    AppState, DiskCacheStatsSnapshot, DynamicSettings, Metrics, PageRenderLocks, ReadRateLimit,
 };
 
 // ---------------------------------------------------------------------------

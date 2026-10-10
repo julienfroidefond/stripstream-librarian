@@ -9,6 +9,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::job_helpers::{is_job_cancelled, update_progress};
+use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
 use crate::metadata_providers::senscritique::RATE_LIMITED_ERROR;
 use crate::{error::ApiError, state::AppState};
 
@@ -126,11 +127,11 @@ pub async fn start_refresh(
             if link_count == 0 {
                 continue;
             }
-            let existing: Option<Uuid> = sqlx::query_scalar(
-                "SELECT id FROM index_jobs WHERE library_id = $1 AND type = 'metadata_refresh' AND status IN ('pending', 'running') LIMIT 1",
+            let existing = job_in_flight(
+                &state.pool,
+                JobScope::Library(library_id),
+                &["metadata_refresh"],
             )
-            .bind(library_id)
-            .fetch_optional(&state.pool)
             .await?;
             if existing.is_some() {
                 continue;
@@ -154,13 +155,7 @@ pub async fn start_refresh(
             tokio::spawn(async move {
                 if let Err(e) = process_metadata_refresh(&pool, job_id, library_id).await {
                     warn!("[METADATA_REFRESH] job {job_id} failed: {e}");
-                    let _ = sqlx::query(
-                        "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
-                    )
-                    .bind(job_id)
-                    .bind(e.to_string())
-                    .execute(&pool)
-                    .await;
+                    let _ = fail_job(&pool, job_id, &e.to_string(), None).await;
                     notifications::notify(
                         pool.clone(),
                         notifications::NotificationEvent::MetadataRefreshFailed {
@@ -192,11 +187,11 @@ pub async fn start_refresh(
         .ok_or_else(|| ApiError::not_found("library not found"))?;
 
     // Check no existing running metadata_refresh job for this library
-    let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM index_jobs WHERE library_id = $1 AND type = 'metadata_refresh' AND status IN ('pending', 'running') LIMIT 1",
+    let existing = job_in_flight(
+        &state.pool,
+        JobScope::Library(library_id),
+        &["metadata_refresh"],
     )
-    .bind(library_id)
-    .fetch_optional(&state.pool)
     .await?;
 
     if let Some(existing_id) = existing {
@@ -248,13 +243,7 @@ pub async fn start_refresh(
     tokio::spawn(async move {
         if let Err(e) = process_metadata_refresh(&pool, job_id, library_id).await {
             warn!("[METADATA_REFRESH] job {job_id} failed: {e}");
-            let _ = sqlx::query(
-                "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
-            )
-            .bind(job_id)
-            .bind(e.to_string())
-            .execute(&pool)
-            .await;
+            let _ = fail_job(&pool, job_id, &e.to_string(), None).await;
             notifications::notify(
                 pool.clone(),
                 notifications::NotificationEvent::MetadataRefreshFailed {
@@ -313,11 +302,11 @@ pub async fn start_refresh_all(
             if link_count == 0 {
                 continue;
             }
-            let existing: Option<Uuid> = sqlx::query_scalar(
-                "SELECT id FROM index_jobs WHERE library_id = $1 AND type = 'metadata_refresh_all' AND status IN ('pending', 'running') LIMIT 1",
+            let existing = job_in_flight(
+                &state.pool,
+                JobScope::Library(library_id),
+                &["metadata_refresh_all"],
             )
-            .bind(library_id)
-            .fetch_optional(&state.pool)
             .await?;
             if existing.is_some() {
                 continue;
@@ -341,13 +330,7 @@ pub async fn start_refresh_all(
             tokio::spawn(async move {
                 if let Err(e) = process_metadata_refresh_all(&pool, job_id, library_id).await {
                     warn!("[METADATA_REFRESH_ALL] job {job_id} failed: {e}");
-                    let _ = sqlx::query(
-                        "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
-                    )
-                    .bind(job_id)
-                    .bind(e.to_string())
-                    .execute(&pool)
-                    .await;
+                    let _ = fail_job(&pool, job_id, &e.to_string(), None).await;
                     notifications::notify(
                         pool.clone(),
                         notifications::NotificationEvent::MetadataRefreshFailed {
@@ -379,11 +362,11 @@ pub async fn start_refresh_all(
         .ok_or_else(|| ApiError::not_found("library not found"))?;
 
     // Check no existing running metadata_refresh_all job for this library
-    let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM index_jobs WHERE library_id = $1 AND type = 'metadata_refresh_all' AND status IN ('pending', 'running') LIMIT 1",
+    let existing = job_in_flight(
+        &state.pool,
+        JobScope::Library(library_id),
+        &["metadata_refresh_all"],
     )
-    .bind(library_id)
-    .fetch_optional(&state.pool)
     .await?;
 
     if let Some(existing_id) = existing {
@@ -431,13 +414,7 @@ pub async fn start_refresh_all(
     tokio::spawn(async move {
         if let Err(e) = process_metadata_refresh_all(&pool, job_id, library_id).await {
             warn!("[METADATA_REFRESH_ALL] job {job_id} failed: {e}");
-            let _ = sqlx::query(
-                "UPDATE index_jobs SET status = 'failed', error_opt = $2, finished_at = NOW() WHERE id = $1",
-            )
-            .bind(job_id)
-            .bind(e.to_string())
-            .execute(&pool)
-            .await;
+            let _ = fail_job(&pool, job_id, &e.to_string(), None).await;
             notifications::notify(
                 pool.clone(),
                 notifications::NotificationEvent::MetadataRefreshFailed {
@@ -726,14 +703,9 @@ async fn process_metadata_refresh_inner(
         "changes": changes_only,
     });
 
-    sqlx::query(
-        "UPDATE index_jobs SET status = 'success', finished_at = NOW(), progress_percent = 100, stats_json = $2 WHERE id = $1",
-    )
-    .bind(job_id)
-    .bind(stats)
-    .execute(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    complete_job(pool, job_id, stats)
+        .await
+        .map_err(|e| e.to_string())?;
 
     info!("[METADATA_REFRESH] job={job_id} completed: {refreshed} updated, {unchanged} unchanged, {errors} errors");
 

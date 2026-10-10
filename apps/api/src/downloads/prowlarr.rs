@@ -1,6 +1,7 @@
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
+use stripstream_core::http::build_http_client_with_agent;
+use stripstream_core::settings::load_setting;
 use utoipa::ToSchema;
 
 use crate::{error::ApiError, state::AppState};
@@ -104,14 +105,10 @@ pub(crate) async fn check_prowlarr_configured(pool: &sqlx::PgPool) -> Result<(),
 }
 
 async fn load_prowlarr_config(pool: &sqlx::PgPool) -> Result<(String, String, Vec<i32>), ApiError> {
-    let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'prowlarr'")
-        .fetch_optional(pool)
-        .await?;
-
-    let row = row.ok_or_else(|| ApiError::bad_request("Prowlarr is not configured"))?;
-    let value: serde_json::Value = row.get("value");
-    let config: ProwlarrConfig = serde_json::from_value(value)
-        .map_err(|e| ApiError::internal(format!("invalid prowlarr config: {e}")))?;
+    let config = load_setting::<ProwlarrConfig>(pool, "prowlarr")
+        .await
+        .map_err(|e| ApiError::internal(format!("invalid prowlarr config: {e}")))?
+        .ok_or_else(|| ApiError::bad_request("Prowlarr is not configured"))?;
 
     if config.url.is_empty() || config.api_key.is_empty() {
         return Err(ApiError::bad_request(
@@ -189,10 +186,7 @@ async fn do_prowlarr_search(
     categories: &[i32],
     missing_volumes: Option<&[MissingVolumeInput]>,
 ) -> Result<ProwlarrSearchResponse, ApiError> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .user_agent("Stripstream-Librarian")
-        .build()
+    let client = build_http_client_with_agent(std::time::Duration::from_secs(60))
         .map_err(|e| ApiError::internal(format!("failed to build HTTP client: {e}")))?;
 
     let mut params: Vec<(&str, String)> =
@@ -287,10 +281,7 @@ async fn do_prowlarr_search(
 /// Test the Prowlarr connection against the given base URL.
 /// Extracted so it can be called directly in tests (with a wiremock server URL).
 async fn do_prowlarr_test(base_url: &str, api_key: &str) -> Result<ProwlarrTestResponse, ApiError> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .user_agent("Stripstream-Librarian")
-        .build()
+    let client = build_http_client_with_agent(std::time::Duration::from_secs(10))
         .map_err(|e| ApiError::internal(format!("failed to build HTTP client: {e}")))?;
 
     let resp = client

@@ -1,10 +1,13 @@
+use std::collections::HashMap;
+
 use axum::{extract::State, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use std::collections::HashMap;
 use utoipa::ToSchema;
 use uuid::Uuid;
+
+use stripstream_core::http::build_http_client;
 
 use crate::{error::ApiError, state::AppState};
 
@@ -102,9 +105,7 @@ pub async fn sync_komga_read_books(
     }
 
     // Build HTTP client with basic auth
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
+    let client = build_http_client(std::time::Duration::from_secs(30))
         .map_err(|e| ApiError::internal(format!("failed to build HTTP client: {e}")))?;
 
     // Paginate through all READ books from Komga

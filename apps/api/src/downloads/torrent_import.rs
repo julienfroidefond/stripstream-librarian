@@ -5,10 +5,14 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
-use std::path::{Component, Path as FsPath, PathBuf};
+use std::path::Path as FsPath;
 use std::time::Duration;
 use tracing::{info, trace, warn};
 use uuid::Uuid;
+
+use stripstream_core::http::build_http_client;
+use stripstream_core::paths::normalize_lexically;
+use stripstream_core::settings::load_setting;
 
 use super::qbittorrent::{load_qbittorrent_config, qbittorrent_login, resolve_hash_by_category};
 use crate::{error::ApiError, metadata, state::AppState};
@@ -101,20 +105,6 @@ fn validate_torrent_content_path(raw: &str) -> Result<String, ApiError> {
     }
 
     Ok(trimmed.to_string())
-}
-
-fn normalize_lexically(path: &FsPath) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            Component::CurDir => {}
-            other => normalized.push(other.as_os_str()),
-        }
-    }
-    normalized
 }
 
 /// Webhook called by qBittorrent when a torrent completes (no auth required).
@@ -244,10 +234,7 @@ pub async fn delete_torrent_download(
     if status == "downloading" {
         if let Some(ref hash) = qb_hash {
             if let Ok((base_url, username, password)) = load_qbittorrent_config(&state.pool).await {
-                let client = reqwest::Client::builder()
-                    .timeout(Duration::from_secs(10))
-                    .build()
-                    .ok();
+                let client = build_http_client(Duration::from_secs(10)).ok();
                 if let Some(client) = client {
                     if let Ok(sid) =
                         qbittorrent_login(&client, &base_url, &username, &password).await
@@ -399,9 +386,7 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
         .await
         .map_err(|e| anyhow::anyhow!("qBittorrent config: {}", e.message))?;
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()?;
+    let client = build_http_client(Duration::from_secs(10))?;
 
     let sid = qbittorrent_login(&client, &base_url, &username, &password)
         .await
@@ -636,16 +621,12 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
 // ─── Import processing ────────────────────────────────────────────────────────
 
 async fn is_torrent_import_enabled(pool: &PgPool) -> bool {
-    let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'torrent_import'")
-        .fetch_optional(pool)
+    load_setting::<serde_json::Value>(pool, "torrent_import")
         .await
         .ok()
-        .flatten();
-    row.map(|r| {
-        let v: serde_json::Value = r.get("value");
-        v.get("enabled").and_then(|e| e.as_bool()).unwrap_or(false)
-    })
-    .unwrap_or(false)
+        .flatten()
+        .and_then(|v| v.get("enabled").and_then(|e| e.as_bool()))
+        .unwrap_or(false)
 }
 
 pub(super) async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Result<()> {
@@ -873,10 +854,7 @@ pub(super) async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> an
             // Remove torrent and category from qBittorrent
             if let Some(ref hash) = qb_hash {
                 if let Ok((base_url, username, password)) = load_qbittorrent_config(&pool).await {
-                    if let Ok(client) = reqwest::Client::builder()
-                        .timeout(Duration::from_secs(10))
-                        .build()
-                    {
+                    if let Ok(client) = build_http_client(Duration::from_secs(10)) {
                         if let Ok(sid) =
                             qbittorrent_login(&client, &base_url, &username, &password).await
                         {
