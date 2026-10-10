@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
 import { listKomgaReports } from "@/lib/api";
+import { withRoute } from "@/lib/api-handler";
 
-export async function GET() {
-  try {
-    const data = await listKomgaReports();
-    return NextResponse.json(data);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to fetch reports";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
-}
+export const GET = withRoute(async () => {
+  const data = await listKomgaReports();
+  return NextResponse.json(data);
+}, { fallback: "Failed to fetch reports" });

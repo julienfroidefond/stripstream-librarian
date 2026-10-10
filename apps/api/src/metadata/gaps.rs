@@ -31,6 +31,7 @@ pub struct GapSummary {
     pub series_no_publishers: i64,
     pub series_no_year: i64,
     pub series_no_cover: i64,
+    pub series_no_community_score: i64,
     pub books_total: i64,
     pub books_no_summary: i64,
     pub books_no_isbn: i64,
@@ -49,7 +50,14 @@ const SERIES_GAP_SQL: &str = r#"
         COUNT(*) FILTER (WHERE COALESCE(cardinality(s.authors), 0) = 0) AS series_no_authors,
         COUNT(*) FILTER (WHERE COALESCE(cardinality(s.publishers), 0) = 0) AS series_no_publishers,
         COUNT(*) FILTER (WHERE s.start_year IS NULL) AS series_no_year,
-        COUNT(*) FILTER (WHERE s.cover_url IS NULL OR s.cover_url = '') AS series_no_cover
+        COUNT(*) FILTER (WHERE s.cover_url IS NULL OR s.cover_url = '') AS series_no_cover,
+        COUNT(*) FILTER (WHERE NOT EXISTS (
+            SELECT 1 FROM external_metadata_links eml
+            WHERE eml.series_id = s.id
+              AND eml.status = 'approved'
+              AND eml.provider_rating IS NOT NULL
+              AND eml.provider_rating > 0
+        )) AS series_no_community_score
     FROM series s
     WHERE ($1::uuid IS NULL OR s.library_id = $1)
 "#;
@@ -109,6 +117,7 @@ pub async fn get_gap_summary(
         series_no_publishers: series_row.get("series_no_publishers"),
         series_no_year: series_row.get("series_no_year"),
         series_no_cover: series_row.get("series_no_cover"),
+        series_no_community_score: series_row.get("series_no_community_score"),
         books_total: books_row.get("books_total"),
         books_no_summary: books_row.get("books_no_summary"),
         books_no_isbn: books_row.get("books_no_isbn"),

@@ -32,7 +32,8 @@ fn test_state(pool: PgPool) -> AppState {
             page_cache_hits: AtomicU64::new(0),
             page_cache_misses: AtomicU64::new(0),
         }),
-        read_rate_limit: Arc::new(Mutex::new(ReadRateLimit::new())),
+        read_rate_limit: Arc::new(std::sync::Mutex::new(ReadRateLimit::new())),
+        stats_cache: Arc::new(crate::stats::StatsCache::new()),
         settings: Arc::new(RwLock::new(DynamicSettings::default())),
         prowlarr_fetch_lock: Arc::new(Mutex::new(())),
         pending_tg_auth: Arc::new(Mutex::new(None)),
@@ -74,6 +75,29 @@ async fn create_book(pool: &PgPool, library_id: Uuid, series_id: Uuid, title: &s
     .bind(library_id)
     .bind(title)
     .bind(series_id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+async fn create_book_with(
+    pool: &PgPool,
+    library_id: Uuid,
+    series_id: Uuid,
+    title: &str,
+    volume: Option<i32>,
+    volume_type: &str,
+) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO books \
+             (id, library_id, kind, title, series_id, volume, volume_type, authors, page_count) \
+         VALUES (gen_random_uuid(), $1, 'comic', $2, $3, $4, $5, '{}', 10) RETURNING id",
+    )
+    .bind(library_id)
+    .bind(title)
+    .bind(series_id)
+    .bind(volume)
+    .bind(volume_type)
     .fetch_one(pool)
     .await
     .unwrap()
@@ -209,6 +233,46 @@ async fn list_series_counts_books_and_first_book(pool: PgPool) {
     assert_eq!(page.total, 1);
     assert_eq!(page.items[0].book_count, 1);
     assert_eq!(page.items[0].first_book_id, Some(book));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_series_first_book_prefers_regular_then_lowest_volume(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+
+    // Inserted out of order: the "first book" must be regular volume 1, not the
+    // integral (which has a higher volume) nor regular volume 2.
+    create_book_with(&pool, library, series, "Integral", Some(3), "integral").await;
+    create_book_with(&pool, library, series, "Vol 2", Some(2), "regular").await;
+    let vol1 = create_book_with(&pool, library, series, "Vol 1", Some(1), "regular").await;
+
+    let Json(page) = list_series(State(state), None, Path(library), series_query(None, None))
+        .await
+        .unwrap();
+
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].book_count, 3);
+    assert_eq!(page.items[0].first_book_id, Some(vol1));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_all_series_first_book_prefers_regular_then_lowest_volume(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+
+    create_book_with(&pool, library, series, "Integral", Some(3), "integral").await;
+    create_book_with(&pool, library, series, "Vol 2", Some(2), "regular").await;
+    let vol1 = create_book_with(&pool, library, series, "Vol 1", Some(1), "regular").await;
+
+    let Json(page) = list_all_series(State(state), None, all_query(None, None))
+        .await
+        .unwrap();
+
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].book_count, 3);
+    assert_eq!(page.items[0].first_book_id, Some(vol1));
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]

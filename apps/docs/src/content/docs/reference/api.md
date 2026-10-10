@@ -60,6 +60,8 @@ curl -H "Authorization: Bearer stl_abc_votre_token_complet" \
 
 **Rate limiting** : fenêtre glissante **par client** (clé = token `Authorization`), configurable via `rate_limit_per_second` (défaut 120 req/s). En cas de dépassement, la réponse est `429 Too Many Requests` avec un corps JSON `{"error":"rate limit exceeded"}` et un header `Retry-After: 1`.
 
+**Statistiques** : les réponses de `GET /stats`, `GET /stats/overview` et `GET /stats/breakdown` sont mises en cache en mémoire pendant 20 s, par utilisateur (et par période pour `/stats`). Les compteurs peuvent donc accuser un léger retard après un import ou une analyse.
+
 **Impersonation** : le header `X-As-User` n'est pris en compte que pour un token `admin` et doit référencer un utilisateur existant ; sinon la requête est rejetée avec `400 Bad Request`.
 
 **Validation des paramètres** : `POST /settings/{key}` valide les clés sensibles avant écriture. Pour `limits`, les valeurs `concurrent_renders`, `concurrent_telegram_downloads`, `rate_limit_per_second` et `timeout_seconds` doivent être strictement positives ; pour `cache`, `memory_max_size_mb` doit être positif et `directory` un chemin absolu en dehors des dossiers protégés (racine, `/etc`, `/usr`, bibliothèques, thumbnails). Toute valeur invalide est rejetée avec `400 Bad Request`.

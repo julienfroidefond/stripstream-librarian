@@ -87,7 +87,7 @@ cd apps/backoffice && npm install && npm run dev
 # Docs (Astro/Starlight) — dev server on 7083
 cd apps/docs && npm install && npm run dev -- --port 7083
 
-# Build & push images (interactive: bump version, select services)
+# Local build & push (rarely needed — the GitHub workflow auto-bumps & deploys on push to main)
 ./scripts/docker-push.sh
 ```
 
@@ -111,6 +111,15 @@ images and restart the stack from the local `docker-stack` checkout. `ci.yml` ad
 `cargo fmt` / `clippy` / `test` on **pull requests only** (Rust paths only; the merge to `main` is
 not re-validated, so the check must be required on the protected branch) and `ci-web.yml`
 validates the web apps on pull requests. The former Gitea pipeline has been retired.
+
+`deploy.yml` also owns versioning: when a push to `main` produces at least one image, it bumps the
+workspace version (patch by default; `minor` / `major` / `none` selectable via the `workflow_dispatch`
+input), commits `chore: bump version to X`, tags `vX`, and pushes both to `main` before building the
+images under the new version. The push uses a write **deploy key** that is a bypass actor on the
+"Protect main" ruleset (which otherwise requires a pull request); the job skips commits whose message
+starts with `chore: bump version to`, which prevents the push from re-triggering itself forever.
+`scripts/docker-push.sh` still exists for local builds, but its interactive version bump is now
+redundant with the workflow.
 
 ---
 

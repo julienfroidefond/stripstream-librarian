@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode } from "react";
-import { useTranslation } from "../../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 
 type BadgeVariant = 
   | "default" 

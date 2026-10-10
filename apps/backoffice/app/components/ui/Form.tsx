@@ -11,15 +11,24 @@ export function FormField({ children, className = "" }: FormFieldProps) {
 }
 
 // Form Label
+type FormLabelVariant = "default" | "settings";
+
 interface FormLabelProps extends LabelHTMLAttributes<HTMLLabelElement> {
   children: ReactNode;
   required?: boolean;
+  /** `settings` matches the settings form style (muted, block). */
+  variant?: FormLabelVariant;
 }
 
-export function FormLabel({ children, required, className = "", ...props }: FormLabelProps) {
+const FORM_LABEL_VARIANTS: Record<FormLabelVariant, string> = {
+  default: "text-sm font-medium text-foreground leading-none",
+  settings: "text-sm font-medium text-muted-foreground mb-1 block",
+};
+
+export function FormLabel({ children, required, variant = "default", className = "", ...props }: FormLabelProps) {
   return (
     <label 
-      className={`text-sm font-medium text-foreground leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${className}`} 
+      className={`${FORM_LABEL_VARIANTS[variant]} peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${className}`} 
       {...props}
     >
       {children}

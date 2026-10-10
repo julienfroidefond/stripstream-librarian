@@ -4,7 +4,7 @@ import { memo, useState, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { BookDto, ReadingStatus } from "../../lib/api";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 import { MarkBookReadButton } from "./MarkBookReadButton";
 
 const readingStatusOverlayClasses: Record<ReadingStatus, string | null> = {

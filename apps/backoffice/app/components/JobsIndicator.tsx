@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 import { refreshAfterJobAction } from "../actions/cache";
 import { Badge } from "./ui/Badge";
 import { MiniProgressBar, ProgressBar } from "./ui/ProgressBar";

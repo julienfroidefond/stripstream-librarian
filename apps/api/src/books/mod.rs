@@ -19,6 +19,7 @@ use stripstream_core::settings::load_setting;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::series::update::prune_series_if_empty;
 use crate::{auth::AuthUser, error::ApiError, index_jobs::IndexJobResponse, state::AppState};
 
 #[derive(Deserialize, ToSchema)]
@@ -258,7 +259,8 @@ pub async fn list_books(
         SELECT b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.volume_type, b.language, b.page_count, b.thumbnail_path, b.updated_at,
                COALESCE(brp.status, 'unread') AS reading_status,
                brp.current_page AS reading_current_page,
-               brp.last_read_at AS reading_last_read_at
+               brp.last_read_at AS reading_last_read_at,
+               COUNT(*) OVER() AS total_count
         FROM books b
         LEFT JOIN series s ON s.id = b.series_id
         LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${uid_p}::uuid IS NOT NULL AND brp.user_id = ${uid_p}
@@ -320,11 +322,14 @@ pub async fn list_books(
     count_builder = count_builder.bind(user_id);
     data_builder = data_builder.bind(user_id).bind(limit).bind(offset);
 
-    let (count_row, rows) = tokio::try_join!(
-        count_builder.fetch_one(&state.pool),
-        data_builder.fetch_all(&state.pool),
-    )?;
-    let total: i64 = count_row.get(0);
+    let rows = data_builder.fetch_all(&state.pool).await?;
+    // `COUNT(*) OVER()` already computed the filtered total in the same pass as
+    // the data. Only when the requested page is past the end (no rows) do we
+    // fall back to a separate count so pagination still reports the real total.
+    let total: i64 = match rows.first() {
+        Some(row) => row.get("total_count"),
+        None => count_builder.fetch_one(&state.pool).await?.get(0),
+    };
 
     let items: Vec<BookItem> = rows
         .iter()
@@ -954,7 +959,7 @@ pub async fn delete_book(
 ) -> Result<Json<crate::responses::OkResponse>, ApiError> {
     // Fetch the book and its file path
     let row = sqlx::query(
-        "SELECT b.library_id, b.thumbnail_path, bf.abs_path \
+        "SELECT b.library_id, b.series_id, b.thumbnail_path, bf.abs_path \
          FROM books b \
          LEFT JOIN book_files bf ON bf.book_id = b.id \
          WHERE b.id = $1",
@@ -965,6 +970,7 @@ pub async fn delete_book(
 
     let row = row.ok_or_else(|| ApiError::not_found("book not found"))?;
     let library_id: Uuid = row.get("library_id");
+    let series_id: Option<Uuid> = row.get("series_id");
     let abs_path: Option<String> = row.get("abs_path");
     let thumbnail_path: Option<String> = row.get("thumbnail_path");
 
@@ -994,22 +1000,18 @@ pub async fn delete_book(
         .execute(&state.pool)
         .await?;
 
-    // Queue a scan job for the library so the index stays consistent
-    let scan_job_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'scan', 'pending')",
-    )
-    .bind(scan_job_id)
-    .bind(library_id)
-    .execute(&state.pool)
-    .await?;
+    // Deleting the last book of a series leaves an empty series behind. The
+    // scanner used to clean this up on the next library scan; do it inline
+    // instead so no library-wide scan has to be queued.
+    if let Some(series_id) = series_id {
+        match prune_series_if_empty(&state.pool, series_id).await {
+            Ok(true) => tracing::info!("[BOOKS] Removed empty series {}", series_id),
+            Ok(false) => {}
+            Err(e) => tracing::warn!("[BOOKS] Failed to prune series {}: {}", series_id, e),
+        }
+    }
 
-    tracing::info!(
-        "[BOOKS] Deleted book {}, scan job {} queued for library {}",
-        id,
-        scan_job_id,
-        library_id
-    );
+    tracing::info!("[BOOKS] Deleted book {} from library {}", id, library_id);
 
     Ok(Json(crate::responses::OkResponse::new()))
 }

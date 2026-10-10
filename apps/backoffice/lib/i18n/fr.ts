@@ -30,6 +30,7 @@ const fr = {
   "metadata.gap.noPublishers": "Sans éditeur",
   "metadata.gap.noYear": "Sans année",
   "metadata.gap.noCover": "Sans couverture",
+  "metadata.gap.noCommunityScore": "Sans note communautaire",
   "metadata.gap.noSummary": "Sans résumé",
   "metadata.gap.noIsbn": "Sans ISBN",
   "metadata.gap.noPublishDate": "Sans date de publication",

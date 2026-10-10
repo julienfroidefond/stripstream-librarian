@@ -38,7 +38,8 @@ fn test_state(pool: PgPool) -> AppState {
             page_cache_hits: AtomicU64::new(0),
             page_cache_misses: AtomicU64::new(0),
         }),
-        read_rate_limit: Arc::new(Mutex::new(ReadRateLimit::new())),
+        read_rate_limit: Arc::new(std::sync::Mutex::new(ReadRateLimit::new())),
+        stats_cache: Arc::new(crate::stats::StatsCache::new()),
         settings: Arc::new(RwLock::new(DynamicSettings::default())),
         prowlarr_fetch_lock: Arc::new(Mutex::new(())),
         pending_tg_auth: Arc::new(Mutex::new(None)),
@@ -160,6 +161,29 @@ async fn insert_book(pool: &PgPool, library_id: Uuid, seed: BookSeed<'_>) -> Uui
     .bind(seed.author)
     .bind(seed.publish_date)
     .bind(seed.language)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// Insert an approved provider link for a series, optionally carrying a rating.
+async fn insert_approved_link(
+    pool: &PgPool,
+    library_id: Uuid,
+    series_id: Uuid,
+    provider_rating: Option<f32>,
+    provider_rating_scale: Option<f32>,
+) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO external_metadata_links \
+             (library_id, series_id, provider, external_id, status, provider_rating, provider_rating_scale) \
+         VALUES ($1, $2, 'test', $3, 'approved', $4, $5) RETURNING id",
+    )
+    .bind(library_id)
+    .bind(series_id)
+    .bind(format!("ext:{}", Uuid::new_v4()))
+    .bind(provider_rating)
+    .bind(provider_rating_scale)
     .fetch_one(pool)
     .await
     .unwrap()
@@ -315,6 +339,7 @@ async fn gap_summary_counts_every_dimension(pool: PgPool) {
     assert_eq!(summary.series_no_publishers, 1);
     assert_eq!(summary.series_no_year, 1);
     assert_eq!(summary.series_no_cover, 1);
+    assert_eq!(summary.series_no_community_score, 2);
     assert_eq!(summary.books_total, 3);
     assert_eq!(summary.books_no_summary, 2);
     assert_eq!(summary.books_no_isbn, 2);
@@ -468,6 +493,66 @@ async fn series_gap_filters_isolate_each_dimension(pool: PgPool) {
     );
 }
 
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn series_no_community_score_gap_matches_summary(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "community-score-gaps").await;
+
+    let rated = insert_series(
+        &pool,
+        library,
+        SeriesSeed {
+            name: "Rated",
+            ..Default::default()
+        },
+    )
+    .await;
+    let unrated = insert_series(
+        &pool,
+        library,
+        SeriesSeed {
+            name: "Unrated",
+            ..Default::default()
+        },
+    )
+    .await;
+    let zero = insert_series(
+        &pool,
+        library,
+        SeriesSeed {
+            name: "ZeroRating",
+            ..Default::default()
+        },
+    )
+    .await;
+    let no_link = insert_series(
+        &pool,
+        library,
+        SeriesSeed {
+            name: "NoLink",
+            ..Default::default()
+        },
+    )
+    .await;
+
+    // A real rating, an approved link without rating, a zero rating (ignored by
+    // the `provider_rating > 0` predicate), and no approved link at all.
+    insert_approved_link(&pool, library, rated, Some(8.0), Some(10.0)).await;
+    insert_approved_link(&pool, library, unrated, None, None).await;
+    insert_approved_link(&pool, library, zero, Some(0.0), Some(10.0)).await;
+
+    assert_eq!(
+        sorted(series_ids(&state, library, "no_community_score").await),
+        sorted(vec![unrated, zero, no_link]),
+    );
+    assert_eq!(
+        summary(&state, Some(library))
+            .await
+            .series_no_community_score,
+        3
+    );
+}
+
 // ---------------------------------------------------------------------------
 // books gap filters
 // ---------------------------------------------------------------------------
@@ -604,4 +689,58 @@ async fn books_gap_filters_isolate_each_dimension(pool: PgPool) {
     );
     assert_eq!(book_ids(&state, library, "not-a-gap").await.len(), 8);
     assert_eq!(book_ids(&state, library, "missing_volumes").await.len(), 8);
+}
+
+// ---------------------------------------------------------------------------
+// books pagination
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_books_reports_total_beyond_last_page(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+
+    for volume in 1..=3 {
+        insert_book(
+            &pool,
+            library,
+            BookSeed {
+                title: "Book",
+                series_id: None,
+                volume: Some(volume),
+                ..BookSeed::default()
+            },
+        )
+        .await;
+    }
+
+    let query = |page: i64| {
+        Query(ListBooksQuery {
+            q: None,
+            library_id: Some(library),
+            kind: None,
+            format: None,
+            series: None,
+            reading_status: None,
+            author: None,
+            page: Some(page),
+            limit: Some(1),
+            sort: None,
+            metadata_provider: None,
+            gap: None,
+        })
+    };
+
+    // Normal page: the total comes from `COUNT(*) OVER()` in the data query.
+    let Json(first) = list_books(State(state.clone()), query(1), None)
+        .await
+        .unwrap();
+    assert_eq!(first.items.len(), 1);
+    assert_eq!(first.total, 3);
+
+    // Page past the end: no rows, but the fallback count must still report the
+    // real total so pagination stays correct.
+    let Json(empty) = list_books(State(state), query(10), None).await.unwrap();
+    assert!(empty.items.is_empty());
+    assert_eq!(empty.total, 3);
 }

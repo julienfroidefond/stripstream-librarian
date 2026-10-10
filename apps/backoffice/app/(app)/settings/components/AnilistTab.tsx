@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, Icon } from "@/app/components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, SettingsField, FormInput, Icon } from "@/app/components/ui";
 import { UserDto, AnilistStatusDto, AnilistSyncReportDto, AnilistPullReportDto, AnilistSyncPreviewItemDto, AnilistSyncItemDto, AnilistPullItemDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 
@@ -142,8 +142,7 @@ export function AnilistTab({
             <p>{t("settings.anilistRedirectUrlHint")}</p>
           </div>
           <div className="flex gap-4">
-            <FormField className="flex-1">
-              <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.anilistClientId")}</label>
+            <SettingsField className="flex-1" label={t("settings.anilistClientId")}>
               <FormInput
                 type="text"
                 autoComplete="off"
@@ -151,7 +150,7 @@ export function AnilistTab({
                 onChange={(e) => setClientId(e.target.value)}
                 placeholder={t("settings.anilistClientIdPlaceholder")}
               />
-            </FormField>
+            </SettingsField>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
             <Button onClick={handleConnect} disabled={!clientId}>
@@ -183,8 +182,7 @@ export function AnilistTab({
             </summary>
             <div className="mt-3 space-y-3">
               <div className="flex gap-4">
-                <FormField className="flex-1">
-                  <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.anilistToken")}</label>
+                <SettingsField className="flex-1" label={t("settings.anilistToken")}>
                   <FormInput
                     type="password"
                     autoComplete="off"
@@ -192,9 +190,8 @@ export function AnilistTab({
                     onChange={(e) => setToken(e.target.value)}
                     placeholder={t("settings.anilistTokenPlaceholder")}
                   />
-                </FormField>
-                <FormField className="flex-1">
-                  <label className="text-sm font-medium text-muted-foreground mb-1 block">{t("settings.anilistUserId")}</label>
+                </SettingsField>
+                <SettingsField className="flex-1" label={t("settings.anilistUserId")}>
                   <FormInput
                     type="text"
                     autoComplete="off"
@@ -202,7 +199,7 @@ export function AnilistTab({
                     onChange={(e) => setUserId(e.target.value)}
                     placeholder={t("settings.anilistUserIdPlaceholder")}
                   />
-                </FormField>
+                </SettingsField>
               </div>
               <Button onClick={handleSaveToken} disabled={!token}>
                 {t("common.save")}

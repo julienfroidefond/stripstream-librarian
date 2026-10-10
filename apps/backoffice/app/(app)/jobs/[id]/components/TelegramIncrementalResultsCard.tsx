@@ -1,4 +1,4 @@
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, StatBox } from "@/app/components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, ReportStatGrid } from "@/app/components/ui";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 
 interface SourceResult {
@@ -37,18 +37,20 @@ export function TelegramIncrementalResultsCard({ new_books, sources_scanned, sou
       <CardContent className="space-y-6">
 
         {/* Summary stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          <StatBox
-            label={t("jobDetail.telegramIncrementalNewBooks")}
-            value={String(new_books)}
-            variant={new_books > 0 ? "success" : "default"}
-          />
-          <StatBox
-            label={t("jobDetail.telegramIncrementalSources")}
-            value={String(sources_scanned)}
-            variant="primary"
-          />
-        </div>
+        <ReportStatGrid
+          stats={[
+            {
+              label: t("jobDetail.telegramIncrementalNewBooks"),
+              value: String(new_books),
+              variant: new_books > 0 ? "success" : "default",
+            },
+            {
+              label: t("jobDetail.telegramIncrementalSources"),
+              value: String(sources_scanned),
+              variant: "primary",
+            },
+          ]}
+        />
 
         {/* Per-source breakdown */}
         {sources.length > 0 && (

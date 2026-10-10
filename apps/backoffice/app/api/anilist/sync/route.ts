@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
 import { apiFetch } from "@/lib/api";
+import { withRoute } from "@/lib/api-handler";
 
-export async function POST() {
-  try {
-    const data = await apiFetch("/anilist/sync", { method: "POST", body: "{}" });
-    return NextResponse.json(data);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to sync to AniList";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
-}
+export const POST = withRoute(async () => {
+  const data = await apiFetch("/anilist/sync", { method: "POST", body: "{}" });
+  return NextResponse.json(data);
+}, { fallback: "Failed to sync to AniList" });

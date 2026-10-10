@@ -1,7 +1,7 @@
 "use client";
 
 import { Icon } from "./ui";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 
 export function LockButton({
   locked,

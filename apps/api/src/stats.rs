@@ -1,4 +1,5 @@
 mod breakdown;
+mod cache;
 mod get_stats;
 mod overview;
 mod period;
@@ -6,6 +7,7 @@ mod reading;
 mod types;
 
 pub use breakdown::get_stats_breakdown;
+pub use cache::StatsCache;
 pub use get_stats::get_stats;
 pub use overview::get_stats_overview;
 pub use reading::get_reading_overview;

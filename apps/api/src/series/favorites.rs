@@ -173,7 +173,9 @@ mod tests {
     use tokio::sync::{Mutex, RwLock, Semaphore};
 
     use super::*;
-    use crate::series::ratings::{delete_series_rating, set_series_rating, SetRatingRequest};
+    use crate::series::ratings::{
+        delete_series_rating, get_series_ratings, set_series_rating, SetRatingRequest,
+    };
     use crate::state::{
         DiskCacheStatsSnapshot, DynamicSettings, Metrics, PageRenderLocks, ReadRateLimit,
     };
@@ -191,7 +193,8 @@ mod tests {
                 page_cache_hits: AtomicU64::new(0),
                 page_cache_misses: AtomicU64::new(0),
             }),
-            read_rate_limit: Arc::new(Mutex::new(ReadRateLimit::new())),
+            read_rate_limit: Arc::new(std::sync::Mutex::new(ReadRateLimit::new())),
+            stats_cache: Arc::new(crate::stats::StatsCache::new()),
             settings: Arc::new(RwLock::new(DynamicSettings::default())),
             prowlarr_fetch_lock: Arc::new(Mutex::new(())),
             pending_tg_auth: Arc::new(Mutex::new(None)),
@@ -339,6 +342,43 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn provider_rating_count_decodes_from_integer_column(pool: sqlx::PgPool) {
+        let state = test_state(pool.clone());
+        let user_id = create_user(&pool, "rating-provider-user").await;
+        let series_id = create_series(&pool, "Provider rated series", &[]).await;
+        let library_id: Uuid = sqlx::query_scalar("SELECT library_id FROM series WHERE id = $1")
+            .bind(series_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query(
+            r#"
+            INSERT INTO external_metadata_links
+                (library_id, provider, external_id, status, provider_rating,
+                 provider_rating_count, provider_rating_scale, series_id)
+            VALUES ($1, 'bdphile', 'ext-1', 'approved', 4.2, 1234, 5.0, $2)
+            "#,
+        )
+        .bind(library_id)
+        .bind(series_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Regression: provider_rating_count is an INTEGER column and used to be
+        // decoded as i64, which panicked (INT4 vs INT8) and reset the connection.
+        let Json(ratings) = get_series_ratings(State(state), auth_user(user_id), Path(series_id))
+            .await
+            .unwrap();
+
+        assert_eq!(ratings.provider_ratings.len(), 1);
+        assert_eq!(ratings.provider_ratings[0].provider, "bdphile");
+        assert_eq!(ratings.provider_ratings[0].rating_count, Some(1234));
+        assert!((ratings.provider_ratings[0].rating - 4.2).abs() < 1e-6);
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]

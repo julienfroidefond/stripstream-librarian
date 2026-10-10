@@ -2,7 +2,7 @@
 
 import { useRef, useCallback, useEffect, useTransition, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 import { Icon } from "./ui";
 
 // SVG path data for filter icons, keyed by field name

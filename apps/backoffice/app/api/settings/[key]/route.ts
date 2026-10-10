@@ -1,29 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiFetch, updateSetting } from "@/lib/api";
+import { withRoute } from "@/lib/api-handler";
 
-export async function GET(
+export const GET = withRoute(async (
   _request: NextRequest,
-  { params }: { params: Promise<{ key: string }> }
-) {
+  { params }: { params: Promise<{ key: string }> }) => {
   const { key } = await params;
-  try {
-    const data = await apiFetch<unknown>(`/settings/${key}`);
-    return NextResponse.json(data);
-  } catch (error) {
-    return NextResponse.json({ error: "Failed to fetch setting" }, { status: 500 });
-  }
-}
+  const data = await apiFetch<unknown>(`/settings/${key}`);
+  return NextResponse.json(data);
+}, { message: "Failed to fetch setting" });
 
-export async function POST(
+export const POST = withRoute(async (
   request: NextRequest,
-  { params }: { params: Promise<{ key: string }> }
-) {
+  { params }: { params: Promise<{ key: string }> }) => {
   const { key } = await params;
-  try {
-    const { value } = await request.json();
-    const data = await updateSetting(key, value);
-    return NextResponse.json(data);
-  } catch (error) {
-    return NextResponse.json({ error: "Failed to update setting" }, { status: 500 });
-  }
-}
+  const { value } = await request.json();
+  const data = await updateSetting(key, value);
+  return NextResponse.json(data);
+}, { message: "Failed to update setting" });

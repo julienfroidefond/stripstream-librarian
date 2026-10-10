@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { Icon, Modal, toast } from "./ui";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 import { stripLeadingArticle } from "../../lib/volumeRanges";
 import type { TelegramSearchResultDto } from "../../lib/api";
 import type { TranslationKey } from "../../lib/i18n/fr";

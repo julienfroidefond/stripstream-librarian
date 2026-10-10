@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, StatBox } from "@/app/components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, ReportStatGrid } from "@/app/components/ui";
 import type { MetadataBatchReportDto, MetadataBatchResultDto, MetadataRefreshReportDto } from "@/lib/api";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 import { SeriesResultRow, ResultStatusBadge } from "./SeriesResultRow";
@@ -12,14 +12,16 @@ export function MetadataBatchReportCard({ report, t }: { report: MetadataBatchRe
         <CardDescription>{t("jobDetail.seriesAnalyzed", { count: String(report.total_series) })}</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          <StatBox value={report.auto_matched} label={t("jobDetail.autoMatched")} variant="success" />
-          <StatBox value={report.already_linked} label={t("jobDetail.alreadyLinked")} variant="primary" />
-          <StatBox value={report.no_results} label={t("jobDetail.noResults")} />
-          <StatBox value={report.too_many_results} label={t("jobDetail.tooManyResults")} variant="warning" />
-          <StatBox value={report.low_confidence} label={t("jobDetail.lowConfidence")} variant="warning" />
-          <StatBox value={report.errors} label={t("jobDetail.errors")} variant={report.errors > 0 ? "error" : "default"} />
-        </div>
+        <ReportStatGrid
+          stats={[
+            { value: report.auto_matched, label: t("jobDetail.autoMatched"), variant: "success" },
+            { value: report.already_linked, label: t("jobDetail.alreadyLinked"), variant: "primary" },
+            { value: report.no_results, label: t("jobDetail.noResults") },
+            { value: report.too_many_results, label: t("jobDetail.tooManyResults"), variant: "warning" },
+            { value: report.low_confidence, label: t("jobDetail.lowConfidence"), variant: "warning" },
+            { value: report.errors, label: t("jobDetail.errors"), variant: report.errors > 0 ? "error" : "default" },
+          ]}
+        />
       </CardContent>
     </Card>
   );
@@ -103,21 +105,24 @@ export function MetadataRefreshReportCard({ report, t }: { report: MetadataRefre
         <CardDescription>{t("jobDetail.refreshReportDesc", { count: String(report.total_links) })}</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <StatBox
-            value={report.refreshed}
-            label={t("jobDetail.refreshed")}
-            variant="success"
-            icon={
-              <svg className="w-6 h-6 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            }
-          />
-          <StatBox value={report.unchanged} label={t("jobDetail.unchanged")} />
-          <StatBox value={report.errors} label={t("jobDetail.errors")} variant={report.errors > 0 ? "error" : "default"} />
-          <StatBox value={report.total_links} label={t("jobDetail.total")} />
-        </div>
+        <ReportStatGrid
+          className="grid-cols-2 sm:grid-cols-4"
+          stats={[
+            {
+              value: report.refreshed,
+              label: t("jobDetail.refreshed"),
+              variant: "success",
+              icon: (
+                <svg className="w-6 h-6 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              ),
+            },
+            { value: report.unchanged, label: t("jobDetail.unchanged") },
+            { value: report.errors, label: t("jobDetail.errors"), variant: report.errors > 0 ? "error" : "default" },
+            { value: report.total_links, label: t("jobDetail.total") },
+          ]}
+        />
       </CardContent>
     </Card>
   );

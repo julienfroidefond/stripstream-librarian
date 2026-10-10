@@ -122,19 +122,7 @@ pub async fn list_series(
 
     let data_sql = format!(
         r#"
-        WITH sorted_books AS (
-            SELECT DISTINCT ON (b.series_id)
-                b.series_id,
-                b.id,
-                b.updated_at
-            FROM books b
-            WHERE b.library_id = $1
-            ORDER BY b.series_id,
-                     CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
-                     b.volume NULLS LAST,
-                     b.title ASC
-        ),
-        series_counts AS (
+        WITH series_counts AS (
             SELECT
                 s.id as series_id,
                 s.name,
@@ -153,8 +141,6 @@ pub async fn list_series(
                 sc.series_id,
                 sc.book_count,
                 sc.books_read_count,
-                sb.id as first_book_id,
-                sb.updated_at as first_book_updated_at,
                 s.status as series_status,
                 mc.missing_count,
                 ml.provider as metadata_provider,
@@ -162,7 +148,6 @@ pub async fn list_series(
                 asl.anilist_url,
                 s.cover_url, s.start_year, s.genres, s.authors, s.description
             FROM series_counts sc
-            LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id
             LEFT JOIN series s ON s.id = sc.series_id
             LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
             LEFT JOIN LATERAL (
@@ -180,14 +165,26 @@ pub async fn list_series(
               {has_books_cond}
               {genre_restriction_cond}
         ),
-        total AS (SELECT COUNT(*) AS total_count FROM filtered)
-        SELECT f.*, t.total_count
-        FROM total t
-        LEFT JOIN LATERAL (
+        total AS (SELECT COUNT(*) AS total_count FROM filtered),
+        page AS (
             SELECT * FROM filtered
             ORDER BY {series_order_clause}
             LIMIT ${limit_p} OFFSET ${offset_p}
-        ) f ON TRUE
+        )
+        SELECT p.*, fb.id as first_book_id, fb.updated_at as first_book_updated_at, t.total_count
+        FROM total t
+        LEFT JOIN page p ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT b.id, b.updated_at
+            FROM books b
+            WHERE b.library_id = $1 AND b.series_id = p.series_id
+            ORDER BY
+                CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
+                b.volume NULLS LAST,
+                b.title ASC
+            LIMIT 1
+        ) fb ON TRUE
+        ORDER BY {series_order_clause}
         "#
     );
 
@@ -264,7 +261,7 @@ pub async fn list_series(
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),
         ("reading_status" = Option<String>, Query, description = "Filter by reading status, comma-separated (e.g. 'unread,reading')"),
         ("metadata_provider" = Option<String>, Query, description = "Filter by metadata provider: a provider name (e.g. 'google_books'), 'linked' (any provider), or 'unlinked' (no provider)"),
-        ("gap" = Option<String>, Query, description = "Filter by metadata gap: 'unlinked', 'no_genre', 'missing_volumes', or 'stale'"),
+        ("gap" = Option<String>, Query, description = "Filter by metadata gap: 'no_description', 'no_genre', 'no_authors', 'no_publishers', 'no_year', 'no_cover', or 'no_community_score'"),
         ("author" = Option<String>, Query, description = "Filter by author name (matches in series.authors or book-level authors)"),
         ("page" = Option<i64>, Query, description = "Page number (1-indexed, default 1)"),
         ("limit" = Option<i64>, Query, description = "Items per page (max 200, default 50)"),
@@ -355,6 +352,9 @@ pub async fn list_all_series(
         Some("no_publishers") => "AND COALESCE(cardinality(s.publishers), 0) = 0".to_string(),
         Some("no_year") => "AND s.start_year IS NULL".to_string(),
         Some("no_cover") => "AND (s.cover_url IS NULL OR s.cover_url = '')".to_string(),
+        // No approved provider link carries a usable rating for this series.
+        // Must mirror the `community_score_lateral` predicate exactly.
+        Some("no_community_score") => "AND cs.community_score IS NULL".to_string(),
         _ => String::new(),
     };
 
@@ -447,21 +447,7 @@ pub async fn list_all_series(
 
     let data_sql = format!(
         r#"
-        WITH sorted_books AS (
-            SELECT DISTINCT ON (b.series_id)
-                b.series_id,
-                b.id,
-                b.library_id,
-                b.updated_at
-            FROM books b
-            JOIN series s ON s.id = b.series_id
-            {lib_cond}
-            ORDER BY b.series_id,
-                     CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
-                     b.volume NULLS LAST,
-                     b.title ASC
-        ),
-        series_counts AS (
+        WITH series_counts AS (
             SELECT
                 s.id as series_id,
                 s.name,
@@ -482,8 +468,6 @@ pub async fn list_all_series(
                 sc.series_id,
                 sc.book_count,
                 sc.books_read_count,
-                sb.id as first_book_id,
-                sb.updated_at as first_book_updated_at,
                 sc.library_id,
                 s.status as series_status,
                 mc.missing_count,
@@ -495,7 +479,6 @@ pub async fn list_all_series(
                 sur.rating as user_rating,
                 sc.latest_created_at
             FROM series_counts sc
-            LEFT JOIN sorted_books sb ON sb.series_id = sc.series_id
             LEFT JOIN series s ON s.id = sc.series_id
             LEFT JOIN missing_counts mc ON mc.series_id = sc.series_id
             LEFT JOIN LATERAL (
@@ -521,14 +504,26 @@ pub async fn list_all_series(
               {rated_only_cond}
               {genre_restriction_cond}
         ),
-        total AS (SELECT COUNT(*) AS total_count FROM filtered)
-        SELECT f.*, t.total_count
-        FROM total t
-        LEFT JOIN LATERAL (
+        total AS (SELECT COUNT(*) AS total_count FROM filtered),
+        page AS (
             SELECT * FROM filtered
             ORDER BY {series_order_clause}
             LIMIT ${limit_p} OFFSET ${offset_p}
-        ) f ON TRUE
+        )
+        SELECT p.*, fb.id as first_book_id, fb.updated_at as first_book_updated_at, t.total_count
+        FROM total t
+        LEFT JOIN page p ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT b.id, b.updated_at
+            FROM books b
+            WHERE b.series_id = p.series_id
+            ORDER BY
+                CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
+                b.volume NULLS LAST,
+                b.title ASC
+            LIMIT 1
+        ) fb ON TRUE
+        ORDER BY {series_order_clause}
         "#
     );
 

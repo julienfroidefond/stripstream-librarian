@@ -48,11 +48,40 @@ pub struct SearchResponse {
 }
 
 /// Book search SQL, shared with the search tests so they cannot diverge.
+///
+/// A top-level `OR` whose author branch uses `unnest(...)` cannot be
+/// index-accelerated as a whole, so PostgreSQL falls back to a sequential scan
+/// even though `idx_books_title_trgm` / `idx_series_name_trgm` exist. The
+/// `candidate_ids` CTE splits that `OR` into independent, index-backed branches
+/// (title trigram, series name trigram, and the trigram indexes on the
+/// concatenated authors text) and unions the matching ids. The outer query then
+/// re-applies the exact per-element author predicate on the — now small —
+/// candidate set, so the semantics are unchanged.
 pub(crate) const BOOKS_SEARCH_SQL: &str = r#"
+        WITH candidate_ids AS (
+            SELECT b.id
+            FROM books b
+            WHERE b.title ILIKE $1
+            UNION
+            SELECT b.id
+            FROM books b
+            WHERE authors_search_text(b.authors, b.author) ILIKE $1
+            UNION
+            SELECT b.id
+            FROM books b
+            JOIN series s ON s.id = b.series_id
+            WHERE s.name ILIKE $1
+            UNION
+            SELECT b.id
+            FROM books b
+            JOIN series s ON s.id = b.series_id
+            WHERE authors_search_text(s.authors, NULL::text) ILIKE $1
+        )
         SELECT b.id, b.library_id, b.kind, b.title,
             COALESCE(b.authors, CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END) as authors,
             s.name AS series, b.volume, b.volume_type, b.language
-        FROM books b
+        FROM candidate_ids m
+        JOIN books b ON b.id = m.id
         LEFT JOIN series s ON s.id = b.series_id
         WHERE (
             b.title ILIKE $1

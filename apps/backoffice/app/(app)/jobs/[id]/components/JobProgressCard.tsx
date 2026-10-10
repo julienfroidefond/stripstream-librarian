@@ -1,4 +1,4 @@
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, StatBox, ProgressBar } from "@/app/components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, ReportStatGrid, ProgressBar } from "@/app/components/ui";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 import { isCompletedJobStatus, isFailedJobStatus, isPhase2Status, isRunningJobStatus } from "@/lib/jobStatus";
 
@@ -42,19 +42,22 @@ export function JobProgressCard({ job, isThumbnailOnly, progressTitle, progressD
         {job.total_files != null && job.total_files > 0 && (
           <>
             <ProgressBar value={job.progress_percent || 0} showLabel size="lg" className="mb-4" />
-            <div className="grid grid-cols-3 gap-4">
-              <StatBox
-                value={job.processed_files ?? 0}
-                label={isThumbnailOnly || isPhase2 ? t("jobDetail.generated") : t("jobDetail.processed")}
-                variant="primary"
-              />
-              <StatBox value={job.total_files} label={t("jobDetail.total")} />
-              <StatBox
-                value={Math.max(0, job.total_files - (job.processed_files ?? 0))}
-                label={t("jobDetail.remaining")}
-                variant={isCompleted ? "default" : "warning"}
-              />
-            </div>
+            <ReportStatGrid
+              className="grid-cols-3"
+              stats={[
+                {
+                  value: job.processed_files ?? 0,
+                  label: isThumbnailOnly || isPhase2 ? t("jobDetail.generated") : t("jobDetail.processed"),
+                  variant: "primary",
+                },
+                { value: job.total_files, label: t("jobDetail.total") },
+                {
+                  value: Math.max(0, job.total_files - (job.processed_files ?? 0)),
+                  label: t("jobDetail.remaining"),
+                  variant: isCompleted ? "default" : "warning",
+                },
+              ]}
+            />
           </>
         )}
         {job.current_file && (
@@ -92,13 +95,16 @@ export function IndexStatsCard({ job, t, formatDuration, formatSpeed, durationMs
         )}
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-          <StatBox value={s.scanned_files ?? 0} label={t("jobDetail.scanned")} variant="success" />
-          <StatBox value={s.indexed_files ?? 0} label={t("jobDetail.indexed")} variant="primary" />
-          <StatBox value={s.removed_files ?? 0} label={t("jobDetail.removed")} variant="warning" />
-          <StatBox value={s.warnings ?? 0} label={t("jobDetail.warnings")} variant={(s.warnings ?? 0) > 0 ? "warning" : "default"} />
-          <StatBox value={s.errors ?? 0} label={t("jobDetail.errors")} variant={(s.errors ?? 0) > 0 ? "error" : "default"} />
-        </div>
+        <ReportStatGrid
+          className="grid-cols-2 sm:grid-cols-5"
+          stats={[
+            { value: s.scanned_files ?? 0, label: t("jobDetail.scanned"), variant: "success" },
+            { value: s.indexed_files ?? 0, label: t("jobDetail.indexed"), variant: "primary" },
+            { value: s.removed_files ?? 0, label: t("jobDetail.removed"), variant: "warning" },
+            { value: s.warnings ?? 0, label: t("jobDetail.warnings"), variant: (s.warnings ?? 0) > 0 ? "warning" : "default" },
+            { value: s.errors ?? 0, label: t("jobDetail.errors"), variant: (s.errors ?? 0) > 0 ? "error" : "default" },
+          ]}
+        />
       </CardContent>
     </Card>
   );
@@ -127,10 +133,13 @@ export function ThumbnailStatsCard({ job, t, formatDuration, formatSpeed, durati
         )}
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 gap-4">
-          <StatBox value={job.processed_files ?? job.total_files} label={t("jobDetail.generated")} variant="success" />
-          <StatBox value={job.total_files} label={t("jobDetail.total")} />
-        </div>
+        <ReportStatGrid
+          className="grid-cols-2"
+          stats={[
+            { value: job.processed_files ?? job.total_files, label: t("jobDetail.generated"), variant: "success" },
+            { value: job.total_files, label: t("jobDetail.total") },
+          ]}
+        />
       </CardContent>
     </Card>
   );

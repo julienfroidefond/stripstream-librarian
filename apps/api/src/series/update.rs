@@ -221,6 +221,100 @@ pub async fn update_series_by_id(
     update_series(state, Path((library_id, series_id)), body).await
 }
 
+// ─── Deletion helpers ─────────────────────────────────────────────────────────
+
+/// Snapshot a series into `archived_series` (idempotent upsert) and preserve its
+/// AniList link before the `ON DELETE CASCADE` wipes `anilist_series_links`.
+///
+/// Used by manual deletion so series metadata can be restored if the files are
+/// re-added to disk later.
+pub(crate) async fn archive_series_row(
+    pool: &sqlx::PgPool,
+    series_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO archived_series (id, library_id, name, description, authors, publishers, genres,
+                                     start_year, total_volumes, status, locked_fields, original_name,
+                                     book_author, book_language, cover_url, created_at, updated_at)
+        SELECT id, library_id, name, description, authors, publishers, genres,
+               start_year, total_volumes, status, locked_fields, original_name,
+               book_author, book_language, cover_url, created_at, updated_at
+        FROM series WHERE id = $1
+        ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name, description = EXCLUDED.description,
+            authors = EXCLUDED.authors, publishers = EXCLUDED.publishers,
+            genres = EXCLUDED.genres, start_year = EXCLUDED.start_year,
+            total_volumes = EXCLUDED.total_volumes, status = EXCLUDED.status,
+            locked_fields = EXCLUDED.locked_fields, cover_url = EXCLUDED.cover_url,
+            updated_at = EXCLUDED.updated_at, archived_at = NOW()
+        "#,
+    )
+    .bind(series_id)
+    .execute(pool)
+    .await?;
+
+    // Preserve the AniList link before the CASCADE delete wipes anilist_series_links.
+    sqlx::query(
+        r#"
+        UPDATE archived_series aseries
+        SET anilist_id    = asl.anilist_id,
+            anilist_title = asl.anilist_title,
+            anilist_url   = asl.anilist_url
+        FROM anilist_series_links asl
+        WHERE asl.series_id = aseries.id
+          AND aseries.id = $1
+          AND asl.anilist_id IS NOT NULL
+          AND aseries.anilist_id IS NULL
+        "#,
+    )
+    .bind(series_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Archive and delete a series that no longer has any book, replicating the
+/// scanner's orphan-series cleanup so deleting the last book does not require
+/// queuing a library scan.
+///
+/// Discovery series (still linked to metadata or a wishlist download) are
+/// preserved. Returns `true` when the series was actually removed.
+pub(crate) async fn prune_series_if_empty(
+    pool: &sqlx::PgPool,
+    series_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let has_books =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM books WHERE series_id = $1)")
+            .bind(series_id)
+            .fetch_one(pool)
+            .await?;
+    if has_books {
+        return Ok(false);
+    }
+
+    let protected = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM external_metadata_links WHERE series_id = $1)
+             OR EXISTS(SELECT 1 FROM available_downloads WHERE series_id = $1)",
+    )
+    .bind(series_id)
+    .fetch_one(pool)
+    .await?;
+    if protected {
+        return Ok(false);
+    }
+
+    archive_series_row(pool, series_id).await?;
+
+    let deleted = sqlx::query_scalar::<_, Uuid>("DELETE FROM series WHERE id = $1 RETURNING id")
+        .bind(series_id)
+        .fetch_optional(pool)
+        .await?;
+
+    Ok(deleted.is_some())
+}
+
 /// Delete an entire series (deprecated: use DELETE /series/{series_id})
 #[deprecated]
 #[utoipa::path(
@@ -268,6 +362,10 @@ pub async fn delete_series(
     // Collect the series directory from the first book's path
     let mut series_dir: Option<String> = None;
 
+    // Track physical deletion failures so we can fall back to a scan (which
+    // reconciles disk and DB) only in that exceptional case.
+    let mut deletion_failed = false;
+
     // Delete each book's physical file and thumbnail
     for row in &book_rows {
         let abs_path: Option<String> = row.get("abs_path");
@@ -284,6 +382,7 @@ pub async fn delete_series(
                 Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                 Err(e) => {
+                    deletion_failed = true;
                     tracing::warn!("[SERIES] Failed to delete file {}: {}", physical, e);
                 }
             }
@@ -332,27 +431,7 @@ pub async fn delete_series(
 
     // Archive series + books + reading progress before deletion so data can be restored
     // if the files are re-added to disk later.
-    sqlx::query(
-        r#"
-        INSERT INTO archived_series (id, library_id, name, description, authors, publishers, genres,
-                                     start_year, total_volumes, status, locked_fields, original_name,
-                                     book_author, book_language, cover_url, created_at, updated_at)
-        SELECT id, library_id, name, description, authors, publishers, genres,
-               start_year, total_volumes, status, locked_fields, original_name,
-               book_author, book_language, cover_url, created_at, updated_at
-        FROM series WHERE id = $1
-        ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name, description = EXCLUDED.description,
-            authors = EXCLUDED.authors, publishers = EXCLUDED.publishers,
-            genres = EXCLUDED.genres, start_year = EXCLUDED.start_year,
-            total_volumes = EXCLUDED.total_volumes, status = EXCLUDED.status,
-            locked_fields = EXCLUDED.locked_fields, cover_url = EXCLUDED.cover_url,
-            updated_at = EXCLUDED.updated_at, archived_at = NOW()
-        "#,
-    )
-    .bind(series_id)
-    .execute(&state.pool)
-    .await?;
+    archive_series_row(&state.pool, series_id).await?;
 
     sqlx::query(
         r#"
@@ -424,23 +503,33 @@ pub async fn delete_series(
         .execute(&state.pool)
         .await?;
 
-    // Queue a scan job for consistency
-    let scan_job_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'scan', 'pending')",
-    )
-    .bind(scan_job_id)
-    .bind(library_id)
-    .execute(&state.pool)
-    .await?;
+    // A file could not be removed: the DB rows are gone but the file remains, so
+    // queue a scan to reconcile the index with the disk. This is the only case
+    // where a series deletion still needs a library scan.
+    if deletion_failed {
+        let scan_job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'scan', 'pending')",
+        )
+        .bind(scan_job_id)
+        .bind(library_id)
+        .execute(&state.pool)
+        .await?;
+
+        tracing::warn!(
+            "[SERIES] Some files could not be deleted for series '{}' ({}), queued scan job {} to reconcile",
+            series_name,
+            series_id,
+            scan_job_id
+        );
+    }
 
     tracing::info!(
-        "[SERIES] Deleted series '{}' ({}) ({} books) from library {}, scan job {} queued",
+        "[SERIES] Deleted series '{}' ({}) ({} books) from library {}",
         series_name,
         series_id,
         book_ids.len(),
-        library_id,
-        scan_job_id
+        library_id
     );
 
     Ok(Json(crate::responses::DeletedResponse::new(library_id)))

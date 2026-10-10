@@ -79,7 +79,7 @@ pub async fn get_series_ratings(
 
     let providers_fut = sqlx::query(
         r#"
-        SELECT provider, provider_rating, provider_rating_scale, provider_rating_count
+        SELECT provider, provider_rating, provider_rating_scale, provider_rating_count::bigint AS provider_rating_count
         FROM external_metadata_links
         WHERE series_id = $1
           AND status = 'approved'

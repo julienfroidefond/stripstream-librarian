@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 import { StatusBadge, Badge, ProgressBar } from "./ui";
 import { isPhase2Status } from "@/lib/jobStatus";
 

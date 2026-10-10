@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{
     extract::{Extension, State},
     Json,
@@ -11,8 +13,12 @@ use super::types::*;
 pub async fn get_stats_breakdown(
     State(state): State<AppState>,
     user: Option<Extension<AuthUser>>,
-) -> Result<Json<StatsBreakdownResponse>, ApiError> {
+) -> Result<Json<Arc<StatsBreakdownResponse>>, ApiError> {
     let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
+
+    if let Some(cached) = state.stats_cache.breakdown.get(&user_id) {
+        return Ok(Json(cached));
+    }
     let pool = &state.pool;
 
     let (
@@ -93,7 +99,7 @@ pub async fn get_stats_breakdown(
         .fetch_all(pool),
     )?;
 
-    Ok(Json(StatsBreakdownResponse {
+    let response = StatsBreakdownResponse {
         by_library: lib_rows
             .iter()
             .map(|r| LibraryStats {
@@ -135,5 +141,7 @@ pub async fn get_stats_breakdown(
                 })
                 .collect(),
         },
-    }))
+    };
+
+    Ok(Json(state.stats_cache.breakdown.insert(user_id, response)))
 }

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { Button } from "./Button";
 import { IconButton } from "./Button";
-import { useTranslation } from "../../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 
 /** Read current URL search params from the browser location (safe in event handlers). */
 function getCurrentParams(): URLSearchParams {

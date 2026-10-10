@@ -47,7 +47,12 @@ pub async fn read_rate_limit(
     let key = client_key(&req);
     let rate_limit = state.settings.read().await.rate_limit_per_second;
 
-    if !state.read_rate_limit.lock().await.check(&key, rate_limit) {
+    let allowed = state
+        .read_rate_limit
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .check(&key, rate_limit);
+    if !allowed {
         return rate_limited();
     }
 

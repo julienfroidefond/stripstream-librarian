@@ -1,31 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateSeries, deleteSeries } from "@/lib/api";
+import { withRoute } from "@/lib/api-handler";
 
-export async function PATCH(
+export const PATCH = withRoute(async (
   request: NextRequest,
-  { params }: { params: Promise<{ id: string; seriesId: string }> }
-) {
+  { params }: { params: Promise<{ id: string; seriesId: string }> }) => {
   const { seriesId } = await params;
-  try {
-    const body = await request.json();
-    const data = await updateSeries(seriesId, body);
-    return NextResponse.json(data);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to update series";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
-}
+  const body = await request.json();
+  const data = await updateSeries(seriesId, body);
+  return NextResponse.json(data);
+}, { fallback: "Failed to update series" });
 
-export async function DELETE(
+export const DELETE = withRoute(async (
   _request: NextRequest,
-  { params }: { params: Promise<{ id: string; seriesId: string }> }
-) {
+  { params }: { params: Promise<{ id: string; seriesId: string }> }) => {
   const { seriesId } = await params;
-  try {
-    await deleteSeries(seriesId);
-    return NextResponse.json({ deleted: true });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to delete series";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
-}
+  await deleteSeries(seriesId);
+  return NextResponse.json({ deleted: true });
+}, { fallback: "Failed to delete series" });

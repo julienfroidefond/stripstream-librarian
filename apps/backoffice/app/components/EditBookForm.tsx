@@ -7,7 +7,7 @@ import { BookDto } from "@/lib/api";
 import { FormField, FormLabel, FormInput } from "./ui/Form";
 import { Icon, TagInput } from "./ui";
 import { LockButton } from "./LockButton";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 
 interface EditBookFormProps {
   book: BookDto;

@@ -5,23 +5,56 @@ name: Build & Push
 #
 # This replaces the former Gitea pipeline (.gitea/workflows/deploy.yml):
 # GitHub is now the single deployment path.
+#
+# Versioning: whenever a push to `main` results in at least one image being
+# built, the workflow bumps the workspace version itself (patch by default),
+# commits `chore: bump version to X`, tags `vX`, and pushes both back to `main`.
+# The images are then built and tagged under the new version. A manual run can
+# ask for a `minor`/`major` bump, or `none` to rebuild the current version.
+#
+# The bump is pushed over SSH with a write deploy key that is a ruleset bypass
+# actor (the "Protect main" ruleset otherwise requires a pull request). Because
+# that push is a normal push event, the job skips commits whose message starts
+# with `chore: bump version to` — which breaks the otherwise-infinite loop.
 
 on:
   push:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump applied before building (default: patch)"
+        required: false
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - none
 
 env:
   REGISTRY: docker.io
   OWNER: julienfroidefond32
   PLATFORMS: linux/amd64
 
+# Read-only GITHUB_TOKEN: the version bump is pushed over SSH with the
+# ruleset-bypass deploy key (see the checkout step), not with this token.
 permissions:
   contents: read
 
+# Serialise runs so two pushes cannot race on the version number.
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
 jobs:
   build-and-push:
+    # Skip the run triggered by the version-bump commit itself (pushed over SSH
+    # by this workflow); otherwise it would bump again forever. head_commit is
+    # absent on workflow_dispatch, so manual runs always proceed.
+    if: "${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: bump version to') }}"
     runs-on: ubuntu-latest
     outputs:
       api: ${{ steps.detect.outputs.api }}
@@ -34,13 +67,18 @@ jobs:
         with:
           # Keep the parent commit available for the changed-files detection below.
           fetch-depth: 2
+          # The version bump below pushes directly to `main`, which the "Protect
+          # main" ruleset otherwise blocks (pull request required). This write
+          # deploy key is a ruleset bypass actor, so authenticated git pushes go
+          # over SSH and are allowed.
+          ssh-key: ${{ secrets.DEPLOY_KEY }}
 
-      - name: Detect changes & resolve version
+      - name: Detect changes
         id: detect
         run: |
           set -euo pipefail
           v=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          echo "VERSION=$v" >> "$GITHUB_ENV"
+          echo "current=$v" >> "$GITHUB_OUTPUT"
           echo "Detected version: $v"
 
           # On a manual run, the first push, or a force-push there is no parent
@@ -116,6 +154,75 @@ jobs:
             echo "No image to build — deploy will be skipped."
           fi
 
+      # ── Automatic version bump ─────────────────────────────────────────
+      # Runs before the images are built so the compiled crates (which embed
+      # the version via env!("CARGO_PKG_VERSION")) and the Docker tags both
+      # carry the new version. Also runs before `npm ci`, which requires
+      # package.json and package-lock.json to stay in sync.
+      - name: Bump version
+        id: bump
+        run: |
+          set -euo pipefail
+          # Ensure pushes use the SSH deploy key from the checkout (bypass actor),
+          # not the https GITHUB_TOKEN URL.
+          git remote set-url origin "git@github.com:${GITHUB_REPOSITORY}.git"
+          current='${{ steps.detect.outputs.current }}'
+          bump='${{ inputs.bump }}'
+          [ -z "$bump" ] && bump=patch
+
+          if [ '${{ steps.detect.outputs.any }}' != 'true' ] || [ "$bump" = 'none' ]; then
+            echo "No version bump (any=${{ steps.detect.outputs.any }}, bump=$bump)"
+            echo "VERSION=$current" >> "$GITHUB_ENV"
+            echo "version=$current" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          IFS='.' read -r major minor patch <<< "$current"
+          case "$bump" in
+            major) new="$((major + 1)).0.0" ;;
+            minor) new="$major.$((minor + 1)).0" ;;
+            *)     new="$major.$minor.$((patch + 1))" ;;
+          esac
+
+          # Re-runs of a workflow check out the original (pre-bump) commit, so
+          # recompute the same `new`. If it was already released, don't bump or
+          # commit again — just build under that version.
+          if git ls-remote --exit-code --tags origin "v$new" >/dev/null 2>&1; then
+            echo "Version $new is already tagged — skipping bump"
+            echo "VERSION=$new" >> "$GITHUB_ENV"
+            echo "version=$new" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Version: $current → $new ($bump)"
+
+          sed -i "s/^version = \"$current\"/version = \"$new\"/" Cargo.toml
+          sed -i "s/\"version\": \"$current\"/\"version\": \"$new\"/" apps/backoffice/package.json
+          sed -i "s/\"version\": \"$current\"/\"version\": \"$new\"/g" apps/backoffice/package-lock.json
+
+          # Keep Cargo.lock in step with the bumped workspace members.
+          if command -v cargo >/dev/null 2>&1; then
+            cargo update --workspace >/dev/null 2>&1 || true
+          else
+            echo "::warning::cargo not found — Cargo.lock not synced"
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock apps/backoffice/package.json apps/backoffice/package-lock.json
+          git commit -m "chore: bump version to $new"
+          git tag "v$new"
+
+          # Pushed over SSH via the bypass deploy key; the resulting push event
+          # is skipped by the job-level `chore: bump version to` guard.
+          git push origin HEAD:main \
+            || echo "::warning::could not push the version bump to main (branch protection?)"
+          git push origin "v$new" \
+            || echo "::warning::could not push tag v$new"
+
+          echo "VERSION=$new" >> "$GITHUB_ENV"
+          echo "version=$new" >> "$GITHUB_OUTPUT"
+
       - name: Set up Node
         if: env.CHANGED_BACKOFFICE == 'true'
         uses: actions/setup-node@v7
@@ -135,10 +242,10 @@ jobs:
           npm run test:unit
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to DockerHub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -148,7 +255,7 @@ jobs:
       # when indexer builds (only its small final stage runs).
       - name: Build & push api
         if: env.BUILD_API == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/api/Dockerfile
@@ -163,7 +270,7 @@ jobs:
 
       - name: Build & push indexer
         if: env.BUILD_API == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/api/Dockerfile
@@ -180,7 +287,7 @@ jobs:
 
       - name: Build & push backoffice
         if: env.BUILD_BACKOFFICE == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/backoffice/Dockerfile
@@ -194,7 +301,7 @@ jobs:
 
       - name: Build & push docs
         if: env.BUILD_DOCS == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/docs/Dockerfile

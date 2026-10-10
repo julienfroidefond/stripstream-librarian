@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{
     extract::{Extension, Query, State},
     Json,
@@ -25,13 +27,18 @@ pub async fn get_stats(
     State(state): State<AppState>,
     Query(query): Query<StatsQuery>,
     user: Option<Extension<AuthUser>>,
-) -> Result<Json<StatsResponse>, ApiError> {
+) -> Result<Json<Arc<StatsResponse>>, ApiError> {
     let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
     let period = query.period.as_deref().unwrap_or("week");
     if !matches!(period, "day" | "week" | "month") {
         return Err(ApiError::bad_request(
             "period must be one of: day, week, month",
         ));
+    }
+
+    let cache_key = (user_id, period.to_string());
+    if let Some(cached) = state.stats_cache.full.get(&cache_key) {
+        return Ok(Json(cached));
     }
     let pool = &state.pool;
 
@@ -413,7 +420,7 @@ pub async fn get_stats(
         recent_downloads,
     };
 
-    Ok(Json(StatsResponse {
+    let response = StatsResponse {
         overview,
         reading_status,
         currently_reading,
@@ -428,5 +435,7 @@ pub async fn get_stats(
         metadata,
         users_reading_over_time,
         downloads,
-    }))
+    };
+
+    Ok(Json(state.stats_cache.full.insert(cache_key, response)))
 }

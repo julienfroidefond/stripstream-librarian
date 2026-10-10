@@ -11,7 +11,7 @@ La page est divisée en deux onglets :
 
 | Onglet | Portée | Champs surveillés |
 |--------|--------|-------------------|
-| **Séries** | Une ligne par série | Description, genres, auteurs, éditeurs, année de début, couverture |
+| **Séries** | Une ligne par série | Description, genres, auteurs, éditeurs, année de début, couverture, note communautaire |
 | **Livres** | Une ligne par livre | Résumé, ISBN, couverture, auteur, date de publication, langue, numéro de volume |
 
 Chaque onglet affiche un tableau avec les colonnes pertinentes (nom, fournisseur de métadonnées, statut, année, genres, tomes, manquants, note pour les séries ; titre, série, tome, auteurs, langue, pages, format, résumé, ISBN pour les livres).
@@ -21,7 +21,7 @@ Chaque onglet affiche un tableau avec les colonnes pertinentes (nom, fournisseur
 Au-dessus du tableau, une rangée de **puces** permet de filtrer sur une lacune précise. Chaque puce affiche le nombre d'éléments concernés :
 
 - **Toutes** — aucun filtre, la liste complète
-- **Sans description**, **Sans genre**, **Sans auteur**, **Sans éditeur**, **Sans année**, **Sans couverture** (onglet Séries)
+- **Sans description**, **Sans genre**, **Sans auteur**, **Sans éditeur**, **Sans année**, **Sans couverture**, **Sans note communautaire** (onglet Séries)
 - **Sans résumé**, **Sans ISBN**, **Sans couverture**, **Sans auteur**, **Sans date de publication**, **Sans langue**, **Sans numéro de volume** (onglet Livres)
 
 Cliquer sur une puce filtre le tableau ; recliquer sur **Toutes** retire le filtre.
@@ -44,13 +44,13 @@ Chaque ligne du tableau renvoie vers la série ou le livre concerné. Depuis la 
 - **Lancer un batch** pour lier automatiquement les séries non liées (voir [Batch & Refresh](/metadata/batch-refresh))
 
 :::note[Détails techniques]
-**Endpoint** : `GET /metadata/gaps/summary` (scope `read`), avec un paramètre optionnel `library_id`. Il renvoie 15 compteurs agrégés (7 pour les séries, 8 pour les livres).
+**Endpoint** : `GET /metadata/gaps/summary` (scope `read`), avec un paramètre optionnel `library_id`. Il renvoie 16 compteurs agrégés (8 pour les séries, 8 pour les livres).
 
 **Filtres de liste** : les endpoints `GET /series` et `GET /books` acceptent un paramètre `gap=` :
 
 | Endpoint | Valeurs de `gap` |
 |----------|------------------|
-| `GET /series` | `no_description`, `no_genre`, `no_authors`, `no_publishers`, `no_year`, `no_cover` |
+| `GET /series` | `no_description`, `no_genre`, `no_authors`, `no_publishers`, `no_year`, `no_cover`, `no_community_score` |
 | `GET /books` | `no_summary`, `no_isbn`, `no_cover`, `no_author`, `no_publish_date`, `no_language`, `no_volume` |
 
 Une valeur inconnue est ignorée (aucun filtre appliqué). Les compteurs du résumé utilisent **exactement les mêmes prédicats SQL** que les filtres de liste, donc les puces et les tableaux filtrés ne peuvent jamais diverger.
@@ -60,4 +60,5 @@ Une valeur inconnue est ignorée (aucun filtre appliqué). Les compteurs du rés
 - *Sans couverture* (série) : `cover_url` nul ou vide ; (livre) : `thumbnail_path` nul
 - *Sans auteur* (livre) : ni `authors` (tableau non vide) ni `author` (chaîne non vide)
 - *Sans numéro de volume* : `volume` nul
+- *Sans note communautaire* (série) : aucun lien fournisseur approuvé ne porte de note exploitable (`provider_rating` nul ou ≤ 0)
 :::

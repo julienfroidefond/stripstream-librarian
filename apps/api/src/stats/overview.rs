@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{
     extract::{Extension, State},
     Json,
@@ -11,8 +13,12 @@ use super::types::*;
 pub async fn get_stats_overview(
     State(state): State<AppState>,
     user: Option<Extension<AuthUser>>,
-) -> Result<Json<StatsOverviewResponse>, ApiError> {
+) -> Result<Json<Arc<StatsOverviewResponse>>, ApiError> {
     let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
+
+    if let Some(cached) = state.stats_cache.overview.get(&user_id) {
+        return Ok(Json(cached));
+    }
     let pool = &state.pool;
 
     let (
@@ -135,7 +141,7 @@ pub async fn get_stats_overview(
     let meta_total_series: i64 = meta_row.get("total_series");
     let meta_series_linked: i64 = meta_row.get("series_linked");
 
-    Ok(Json(StatsOverviewResponse {
+    let response = StatsOverviewResponse {
         overview: StatsOverview {
             total_books: overview_row.get("total_books"),
             total_series: overview_row.get("total_series"),
@@ -208,5 +214,7 @@ pub async fn get_stats_overview(
                 }
             })
             .collect(),
-    }))
+    };
+
+    Ok(Json(state.stats_cache.overview.insert(user_id, response)))
 }

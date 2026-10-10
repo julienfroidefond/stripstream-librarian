@@ -4,7 +4,7 @@ import { useState } from "react";
 import { FolderBrowser } from "./FolderBrowser";
 import { FolderItem } from "../../lib/api";
 import { Button, Icon, Modal } from "./ui";
-import { useTranslation } from "../../lib/i18n/context";
+import { useTranslation } from "@/lib/i18n/context";
 
 interface FolderPickerProps {
   initialFolders: FolderItem[];
