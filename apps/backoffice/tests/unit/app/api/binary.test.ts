@@ -102,7 +102,8 @@ describe("GET /api/books/[bookId]/file", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/vnd.comicbook+zip");
     expect(res.headers.get("content-disposition")).toBe('attachment; filename="book.cbz"');
-    expect(res.headers.get("content-length")).toBe("10");
+    // Content-Length is not forwarded on purpose (Safari strictness through the proxy).
+    expect(res.headers.get("content-length")).toBeNull();
     expect(res.headers.get("cache-control")).toBe("private, no-store");
     expect(await res.text()).toBe("file-bytes");
   });
