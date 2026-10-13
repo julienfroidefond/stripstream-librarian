@@ -125,6 +125,10 @@ export function getBookCoverUrl(bookId: string, version?: string | null): string
   return version ? `${base}?v=${encodeURIComponent(version)}` : base;
 }
 
+export function getBookFileDownloadUrl(bookId: string): string {
+  return `/api/books/${bookId}/file`;
+}
+
 export async function convertBook(bookId: string) {
   return apiFetch<IndexJobDto>(`/books/${bookId}/convert`, { method: "POST" });
 }

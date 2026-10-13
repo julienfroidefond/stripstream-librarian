@@ -6,6 +6,7 @@ import { ActionsMenu, ActionsMenuItem, ActionsMenuSection, Icon } from "./ui";
 import { MarkBookReadButton } from "./MarkBookReadButton";
 import { ConvertButton } from "./ConvertButton";
 import { DeleteBookButton } from "./DeleteBookButton";
+import { DownloadBookFileButton } from "./DownloadBookFileButton";
 import { RefreshButton } from "./RefreshButton";
 import { RefreshIcon } from "./RefreshIcon";
 import type { QuickSearch } from "./ProwlarrSearchModal";
@@ -100,6 +101,7 @@ export function BookActionsToolbar({ book, hasActiveUser = true, telegramEnabled
               )}
             </ConvertButton>
           )}
+          <DownloadBookFileButton bookId={book.id} />
           <DeleteBookButton bookId={book.id} seriesId={book.series_id ?? undefined}>
             {(open) => (
               <ActionsMenuItem icon="🗑" variant="danger" onClick={open}>

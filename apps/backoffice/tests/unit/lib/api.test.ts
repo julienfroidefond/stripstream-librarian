@@ -6,7 +6,7 @@ vi.mock("next/headers", () => ({
   cookies: async () => cookieStore,
 }));
 
-import { apiFetch, config, getBookCoverUrl } from "@/lib/api";
+import { apiFetch, config, getBookCoverUrl, getBookFileDownloadUrl } from "@/lib/api";
 
 function makeResponse(body: unknown, status = 200): Response {
   return {
@@ -139,5 +139,11 @@ describe("getBookCoverUrl", () => {
   it("ignores a null or empty version", () => {
     expect(getBookCoverUrl("abc", null)).toBe("/api/books/abc/thumbnail");
     expect(getBookCoverUrl("abc", "")).toBe("/api/books/abc/thumbnail");
+  });
+});
+
+describe("getBookFileDownloadUrl", () => {
+  it("builds the original file download URL", () => {
+    expect(getBookFileDownloadUrl("abc")).toBe("/api/books/abc/file");
   });
 });
