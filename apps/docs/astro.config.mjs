@@ -38,6 +38,8 @@ export default defineConfig({
 						{ label: 'Miniatures', slug: 'books/thumbnails' },
 						{ label: 'Renommage', slug: 'books/renaming' },
 						{ label: 'Conversion CBR→CBZ', slug: 'books/conversion' },
+						{ label: 'Télécharger un livre', slug: 'books/download' },
+						{ label: 'Supprimer un livre', slug: 'books/deletion' },
 					],
 				},
 				{

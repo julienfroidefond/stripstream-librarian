@@ -43,6 +43,26 @@ describe("/api/books/[bookId]", () => {
     expect(res.status).toBe(200);
   });
 
+  it("DELETE revalidates the series and books paths", async () => {
+    mockApi
+      .mockResolvedValueOnce({ series_id: "s1" })
+      .mockResolvedValueOnce({ deleted: true });
+    const res = await deleteBook(jsonRequest("/api/books/b1", { method: "DELETE" }), routeCtx({ bookId: "b1" }));
+    expect(revalidatePath).toHaveBeenCalledWith("/series");
+    expect(revalidatePath).toHaveBeenCalledWith("/books");
+    expect(revalidatePath).toHaveBeenCalledWith("/series/s1");
+    expect(res.status).toBe(200);
+  });
+
+  it("DELETE still succeeds when the book lookup fails", async () => {
+    mockApi
+      .mockRejectedValueOnce(new Error("nope"))
+      .mockResolvedValueOnce({ deleted: true });
+    const res = await deleteBook(jsonRequest("/api/books/b1", { method: "DELETE" }), routeCtx({ bookId: "b1" }));
+    expect(res.status).toBe(200);
+    expect(revalidatePath).not.toHaveBeenCalledWith(expect.stringContaining("/series/"));
+  });
+
   it("DELETE returns 500 on error", async () => {
     mockApi.mockRejectedValue(new Error("bad"));
     expect((await deleteBook(jsonRequest("/api/books/b1", { method: "DELETE" }), routeCtx({ bookId: "b1" }))).status).toBe(500);

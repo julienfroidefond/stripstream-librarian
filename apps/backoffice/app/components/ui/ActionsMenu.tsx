@@ -222,12 +222,18 @@ export function ActionsMenu({ children, label, align = "right" }: ActionsMenuPro
   );
 }
 
-interface ActionsMenuItemProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> {
+interface ActionsMenuItemProps
+  extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children" | "onClick"> {
   icon?: ReactNode;
   children: ReactNode;
   variant?: "default" | "danger";
   /** When true, prevents the menu from closing on click (useful while a sub-modal opens). */
   keepOpen?: boolean;
+  /** Render the item as a link (e.g. a file download) instead of a button. */
+  href?: string;
+  /** Forwarded to the anchor when `href` is set. */
+  download?: string | boolean;
+  onClick?: (e: React.MouseEvent<HTMLElement>) => void;
 }
 
 export function ActionsMenuItem({
@@ -237,6 +243,8 @@ export function ActionsMenuItem({
   keepOpen = false,
   onClick,
   className = "",
+  href,
+  download,
   ...rest
 }: ActionsMenuItemProps) {
   const ctx = useContext(ActionsMenuContext);
@@ -245,26 +253,38 @@ export function ActionsMenuItem({
       ? "text-destructive hover:bg-destructive/10"
       : "text-foreground hover:bg-accent";
 
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={(e) => {
-        onClick?.(e);
-        if (!keepOpen) ctx?.close();
-      }}
-      className={`
+  const classes = `
         flex items-center gap-2.5
         w-full px-4 py-3 sm:px-3 sm:py-2 text-sm text-left
         transition-colors
         disabled:opacity-50 disabled:pointer-events-none
         ${baseClass}
         ${className}
-      `}
-      {...rest}
-    >
+      `;
+
+  const handleClick = (e: React.MouseEvent<HTMLElement>) => {
+    onClick?.(e);
+    if (!keepOpen) ctx?.close();
+  };
+
+  const content = (
+    <>
       {icon && <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center">{icon}</span>}
       <span className="flex-1 truncate">{children}</span>
+    </>
+  );
+
+  if (href) {
+    return (
+      <a role="menuitem" href={href} download={download} onClick={handleClick} className={classes}>
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <button type="button" role="menuitem" onClick={handleClick} className={classes} {...rest}>
+      {content}
     </button>
   );
 }

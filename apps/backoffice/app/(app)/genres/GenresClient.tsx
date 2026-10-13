@@ -8,7 +8,7 @@ import { getBookCoverUrl } from "@/lib/api";
 import type { SeriesDto, LibraryDto } from "@/lib/api";
 import { matchesSearchText } from "@/lib/search";
 import { useTranslation } from "@/lib/i18n/context";
-import { toast, Toaster } from "@/app/components/ui";
+import { toast } from "@/app/components/ui";
 import { LibraryMultiBadgeSelector } from "../jobs/components/LibraryBadgeSelector";
 
 export type GenreDto = {
@@ -501,8 +501,6 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
 
   return (
     <div className="space-y-6">
-      <Toaster />
-
       {/* Genre detail modal */}
       {activeGenreModal && (
         <GenreSeriesModal

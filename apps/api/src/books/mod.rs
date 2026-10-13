@@ -1,7 +1,9 @@
+pub mod download;
 pub mod pages;
 pub mod rename;
 pub mod thumbnails;
 
+pub use download::*;
 pub use pages::*;
 pub use rename::*;
 pub use thumbnails::*;

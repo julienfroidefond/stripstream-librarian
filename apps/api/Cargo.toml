@@ -21,6 +21,8 @@ stripstream-core = { path = "../../crates/core" }
 parsers = { path = "../../crates/parsers" }
 rand.workspace = true
 tokio-stream = "0.1"
+tokio-util = { version = "0.7", features = ["io"] }
+percent-encoding = "2"
 regex = "1"
 reqwest.workspace = true
 serde.workspace = true

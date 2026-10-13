@@ -60,6 +60,8 @@ jobs:
           cache-dependency-path: apps/backoffice/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Generate route types
+        run: npx next typegen
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Lint

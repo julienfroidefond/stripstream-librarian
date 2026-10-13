@@ -8,6 +8,7 @@ vi.mock("@/lib/api", async () => {
   return createApiMock();
 });
 
+import { GET as getBookFile } from "@/app/api/books/[bookId]/file/route";
 import { GET as getPage } from "@/app/api/books/[bookId]/pages/[pageNum]/route";
 import { GET as getThumbnail } from "@/app/api/books/[bookId]/thumbnail/route";
 
@@ -74,6 +75,57 @@ describe("GET /api/books/[bookId]/pages/[pageNum]", () => {
     const res = await getPage(jsonRequest("/api/books/b1/pages/1"), routeCtx({ bookId: "b1", pageNum: "1" }));
     expect(res.status).toBe(500);
     expect(await res.text()).toBe("Failed to fetch image");
+  });
+});
+
+describe("GET /api/books/[bookId]/file", () => {
+  it("streams the file and forwards the download headers", async () => {
+    fetchMock.mockResolvedValue(
+      new Response("file-bytes", {
+        status: 200,
+        headers: {
+          "content-type": "application/vnd.comicbook+zip",
+          "content-disposition": 'attachment; filename="book.cbz"',
+          "content-length": "10",
+        },
+      })
+    );
+    const res = await getBookFile(jsonRequest("/api/books/b1/file"), routeCtx({ bookId: "b1" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://api:7080/books/b1/file",
+      expect.objectContaining({
+        cache: "no-store",
+        headers: { Authorization: "Bearer test-token" },
+      })
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/vnd.comicbook+zip");
+    expect(res.headers.get("content-disposition")).toBe('attachment; filename="book.cbz"');
+    // Content-Length is not forwarded on purpose (Safari strictness through the proxy).
+    expect(res.headers.get("content-length")).toBeNull();
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(await res.text()).toBe("file-bytes");
+  });
+
+  it("defaults the content type when the API omits it", async () => {
+    fetchMock.mockResolvedValue(new Response(new Uint8Array([1]), { status: 200 }));
+    const res = await getBookFile(jsonRequest("/api/books/b1/file"), routeCtx({ bookId: "b1" }));
+    expect(res.headers.get("content-type")).toBe("application/octet-stream");
+  });
+
+  it("propagates upstream error status", async () => {
+    fetchMock.mockResolvedValue(new Response("missing", { status: 404 }));
+    const res = await getBookFile(jsonRequest("/api/books/b1/file"), routeCtx({ bookId: "b1" }));
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe("Failed to download file: 404");
+  });
+
+  it("returns 500 when fetch throws", async () => {
+    fetchMock.mockRejectedValue(new Error("network"));
+    const res = await getBookFile(jsonRequest("/api/books/b1/file"), routeCtx({ bookId: "b1" }));
+    expect(res.status).toBe(500);
+    expect(await res.text()).toBe("Failed to download file");
   });
 });
 

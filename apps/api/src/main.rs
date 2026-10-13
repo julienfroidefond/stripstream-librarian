@@ -558,6 +558,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/books/{id}", get(books::get_book))
         .route("/books/{id}/thumbnail", get(books::get_thumbnail))
         .route("/books/{id}/pages/{n}", get(books::get_page))
+        .route("/books/{id}/file", get(books::get_book_file))
         .route(
             "/books/{id}/progress",
             get(reading::get_reading_progress).patch(reading::update_reading_progress),
