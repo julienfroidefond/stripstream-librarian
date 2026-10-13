@@ -23,6 +23,7 @@ function makeBook(overrides: Partial<CardBook> = {}): CardBook {
     file_path: null,
     file_format: null,
     file_parse_status: null,
+    file_size: null,
     updated_at: "2024-01-01",
     reading_status: "unread",
     reading_current_page: null,

@@ -31,6 +31,17 @@ describe("formatBytes", () => {
   it("rounds to a single decimal", () => {
     expect(formatBytes(1536)).toBe("1.5 KB");
   });
+
+  it("localizes units and decimals in French", () => {
+    expect(formatBytes(0, "fr")).toBe("0 o");
+    expect(formatBytes(1024, "fr")).toBe("1,0 Ko");
+    expect(formatBytes(1536, "fr")).toBe("1,5 Ko");
+    expect(formatBytes(38 * 1024 * 1024, "fr")).toBe("38,0 Mo");
+  });
+
+  it("keeps English units for other locales", () => {
+    expect(formatBytes(1024, "en")).toBe("1.0 KB");
+  });
 });
 
 describe("formatNumber", () => {

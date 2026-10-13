@@ -4,6 +4,7 @@ import { BookPreview } from "@/app/components/BookPreview";
 import { BookActionsToolbar } from "@/app/components/BookActionsToolbar";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { getServerTranslations } from "@/lib/i18n/server";
+import { formatBytes } from "@/lib/format";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -141,6 +142,9 @@ export default async function BookDetailPage({
             </span>
             {book.page_count && (
               <span className="text-muted-foreground"><span className="font-semibold text-foreground">{book.page_count}</span> {t("dashboard.pages").toLowerCase()}</span>
+            )}
+            {book.file_size != null && (
+              <span className="font-semibold text-foreground">{formatBytes(book.file_size, locale)}</span>
             )}
             {book.language && (
               <span className="text-muted-foreground">{book.language.toUpperCase()}</span>

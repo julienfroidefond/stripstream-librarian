@@ -114,6 +114,8 @@ pub struct BookDetails {
     pub file_path: Option<String>,
     pub file_format: Option<String>,
     pub file_parse_status: Option<String>,
+    /// Size of the book file in bytes
+    pub file_size: Option<i64>,
     /// Reading status: "unread", "reading", or "read"
     pub reading_status: String,
     pub reading_current_page: Option<i32>,
@@ -369,6 +371,26 @@ pub async fn list_books(
     }))
 }
 
+/// The `get_book` query: the book, its latest `book_files` row and the reader's progress.
+pub(crate) const GET_BOOK_SQL: &str = r#"
+        SELECT b.id, b.library_id, b.kind, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.volume_type, b.language, b.page_count, b.thumbnail_path, b.locked_fields, b.summary, b.isbn, b.publish_date, b.updated_at,
+               bf.abs_path, bf.format, bf.parse_status, bf.size_bytes,
+               COALESCE(brp.status, 'unread') AS reading_status,
+               brp.current_page AS reading_current_page,
+               brp.last_read_at AS reading_last_read_at
+        FROM books b
+        LEFT JOIN series s ON s.id = b.series_id
+        LEFT JOIN LATERAL (
+          SELECT abs_path, format, parse_status, size_bytes
+          FROM book_files
+          WHERE book_id = b.id
+          ORDER BY updated_at DESC
+          LIMIT 1
+        ) bf ON TRUE
+        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
+        WHERE b.id = $1
+"#;
+
 /// Get detailed information about a specific book
 #[utoipa::path(
     get,
@@ -390,30 +412,11 @@ pub async fn get_book(
     user: Option<Extension<AuthUser>>,
 ) -> Result<Json<BookDetails>, ApiError> {
     let user_id: Option<uuid::Uuid> = user.map(|u| u.0.user_id);
-    let row = sqlx::query(
-        r#"
-        SELECT b.id, b.library_id, b.kind, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.volume_type, b.language, b.page_count, b.thumbnail_path, b.locked_fields, b.summary, b.isbn, b.publish_date, b.updated_at,
-               bf.abs_path, bf.format, bf.parse_status,
-               COALESCE(brp.status, 'unread') AS reading_status,
-               brp.current_page AS reading_current_page,
-               brp.last_read_at AS reading_last_read_at
-        FROM books b
-        LEFT JOIN series s ON s.id = b.series_id
-        LEFT JOIN LATERAL (
-          SELECT abs_path, format, parse_status
-          FROM book_files
-          WHERE book_id = b.id
-          ORDER BY updated_at DESC
-          LIMIT 1
-        ) bf ON TRUE
-        LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
-        WHERE b.id = $1
-        "#,
-    )
-    .bind(id)
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let row = sqlx::query(GET_BOOK_SQL)
+        .bind(id)
+        .bind(user_id)
+        .fetch_optional(&state.pool)
+        .await?;
 
     let row = row.ok_or_else(|| ApiError::not_found("book not found"))?;
     let thumbnail_path: Option<String> = row.get("thumbnail_path");
@@ -434,6 +437,7 @@ pub async fn get_book(
         file_path: row.get("abs_path"),
         file_format: row.get("format"),
         file_parse_status: row.get("parse_status"),
+        file_size: row.get("size_bytes"),
         reading_status: row.get("reading_status"),
         reading_current_page: row.get("reading_current_page"),
         reading_last_read_at: row.get("reading_last_read_at"),
@@ -702,6 +706,7 @@ pub async fn update_book(
         file_path: None,
         file_format: None,
         file_parse_status: None,
+        file_size: None,
         reading_status: row.get("reading_status"),
         reading_current_page: row.get("reading_current_page"),
         reading_last_read_at: row.get("reading_last_read_at"),
