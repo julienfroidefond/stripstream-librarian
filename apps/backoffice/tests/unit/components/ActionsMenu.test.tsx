@@ -80,6 +80,22 @@ describe("ActionsMenu", () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
+  it("renders a download link when href is provided", () => {
+    render(
+      <ActionsMenu>
+        <ActionsMenuItem href="/api/books/b1/file" download>
+          Download
+        </ActionsMenuItem>
+      </ActionsMenu>
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Plus" }));
+
+    const link = screen.getByRole("menuitem", { name: "Download" });
+    expect(link.tagName).toBe("A");
+    expect(link).toHaveAttribute("href", "/api/books/b1/file");
+    expect(link).toHaveAttribute("download");
+  });
+
   it("closes on Escape and on an outside click", () => {
     renderMenu();
     const trigger = screen.getByRole("button", { name: "Plus" });

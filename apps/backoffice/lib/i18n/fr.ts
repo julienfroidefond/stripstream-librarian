@@ -990,6 +990,7 @@ const fr = {
   "bookDetail.fileFormat": "Format fichier",
   "bookDetail.parsing": "Parsing",
   "bookDetail.updatedAt": "Mis à jour",
+  "bookDetail.downloadOriginal": "Télécharger le fichier original",
   "bookDetail.delete": "Supprimer",
   "bookDetail.confirmDelete": "Le fichier sera définitivement supprimé du disque. Cette action est irréversible.",
   "seriesDetail.delete": "Supprimer la série",
