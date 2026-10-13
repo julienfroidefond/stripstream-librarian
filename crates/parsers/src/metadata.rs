@@ -92,7 +92,30 @@ pub fn analyze_book(
     match format {
         BookFormat::Cbz => analyze_cbz(path, true),
         BookFormat::Cbr => analyze_cbr(path, true),
-        BookFormat::Pdf => analyze_pdf(path, pdf_render_scale),
+        BookFormat::Pdf => {
+            let (page_count, first_page) = analyze_pdf(path, pdf_render_scale)?;
+            let first_page = first_page.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "PDF first page could not be rendered (page count is {})",
+                    page_count
+                )
+            })?;
+            Ok((page_count, first_page))
+        }
         BookFormat::Epub => analyze_epub(path),
+    }
+}
+
+/// Opens a book only to count its pages, without extracting any image.
+///
+/// Used as a recovery path when `analyze_book` fails: a book whose first page
+/// cannot be rendered (damaged page, rendering timeout, ...) still gets a
+/// correct `page_count` and stays readable in the UI.
+pub fn page_count_only(path: &Path, format: BookFormat) -> Result<i32> {
+    match format {
+        BookFormat::Cbz => crate::zip::parse_cbz_page_count(path),
+        BookFormat::Cbr => crate::cbr::parse_cbr_page_count(path),
+        BookFormat::Pdf => crate::pdf::pdf_page_count(path),
+        BookFormat::Epub => crate::epub::parse_epub_page_count(path),
     }
 }

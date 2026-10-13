@@ -85,6 +85,16 @@ jobs:
           # test binaries pull in a lot of transitive dev-dependency code.
           cache-all-crates: true
 
+      # pdfium-render binds libpdfium at runtime. The parser tests skip PDF
+      # cases when the library is missing, so install it to actually exercise
+      # them (same source as the Docker runtime image).
+      - name: Install libpdfium
+        run: |
+          curl -sSL "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz" -o /tmp/pdfium.tgz
+          tar -xzf /tmp/pdfium.tgz -C /tmp
+          sudo cp /tmp/lib/libpdfium.so /usr/local/lib/
+          sudo ldconfig
+
       - name: Format
         run: cargo fmt --all -- --check
 

@@ -1023,6 +1023,7 @@ const fr = {
   "bookPreview.pages": "pages {{start}}–{{end}} / {{total}}",
   "bookPreview.prev": "← Préc.",
   "bookPreview.next": "Suiv. →",
+  "bookPreview.pageUnavailable": "Page indisponible",
 
   // Edit book form
   "editBook.editMetadata": "Modifier les métadonnées",

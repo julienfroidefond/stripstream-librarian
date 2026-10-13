@@ -23,6 +23,20 @@ Stripstream essaie de gérer les archives endommagées ou atypiques sans bloquer
 - **PDF** : comptage de pages et rendu via **pdfium** (bibliothèque `libpdfium`) — pas de `pdfinfo`/`pdftoppm`
 - **EPUB** : extraction ZIP standard
 
+### PDF : page_count et vignettes
+
+Le comptage de pages est **indépendant** du rendu de la première page. Si le rendu de la
+première page échoue (page corrompue, délai dépassé), le livre est tout de même indexé avec
+son nombre de pages exact ; seule la vignette reste absente (un job de reconstruction de
+vignettes peut la retenter plus tard). Cas particuliers :
+
+- **PDF chiffré avec mot de passe utilisateur** : ne peut pas être ouvert — l'erreur
+  `PDF is password-protected` est enregistrée sur le fichier (aucun mot de passe n'est stocké).
+- **PDF chiffré « owner password » uniquement** (permissions restreintes, ouverture sans mot
+  de passe) : ouvert normalement.
+- **Fichier `.pdf` corrompu ou qui n'est pas un PDF** : erreur explicite
+  `PDF cannot be loaded (corrupted or not a PDF)`.
+
 Si trop d'erreurs surviennent en rafale lors d'un scan, celui-ci s'interrompt automatiquement pour éviter de surcharger le système.
 
 :::note[Détails techniques]
