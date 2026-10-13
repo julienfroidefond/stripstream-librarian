@@ -15,12 +15,12 @@ pub use matching::{
 mod cbr;
 mod epub;
 mod metadata;
-mod pdf;
+pub mod pdf;
 mod volume;
 mod zip;
 
 pub use cbr::convert_cbr_to_cbz;
-pub use metadata::{analyze_book, parse_metadata, parse_metadata_fast};
+pub use metadata::{analyze_book, page_count_only, parse_metadata, parse_metadata_fast};
 pub use volume::{
     extract_hs_info, extract_int_info, extract_metadata_volume, extract_volume, extract_volumes,
     read_bare_number, read_vol_prefix_number,

@@ -18,6 +18,13 @@ pub fn parse_metadata(path: &Path, format: BookFormat, library_root: &Path) -> R
 // Ouvre l'archive UNE fois → (page_count, first_page_bytes) — utilisé par l'indexer phase 2
 pub fn analyze_book(path: &Path, format: BookFormat, pdf_render_scale: u32) -> Result<(i32, Vec<u8>)>
 
+// Compte les pages sans extraire d'image — chemin de secours quand analyze_book échoue
+pub fn page_count_only(path: &Path, format: BookFormat) -> Result<i32>
+
+// PDF bas niveau : comptage, rendu, classification d'erreurs (pdf::PdfError / PdfErrorKind)
+// `analyze_pdf` renvoie (page_count, Option<first_page_png>) : le comptage survit à un échec de rendu.
+pub mod pdf;  // pdf::analyze_pdf, pdf::pdf_page_count, pdf::render_pdf_page_n, pdf::PdfErrorKind
+
 // Extraction de pages
 pub fn extract_first_page(path: &Path, format: BookFormat) -> Result<Vec<u8>>
 pub fn extract_page(path: &Path, format: BookFormat, page_number: u32, pdf_render_width: u32) -> Result<Vec<u8>>
@@ -83,6 +90,18 @@ Les packs de plage (`T01.T15`, `[T001.T104]`, `T01-T15`, `Tome 01 à Tome 15`) s
 
 `extract_page` dispatche : `extract_cbz_page`, `extract_cbr_page`, `render_pdf_page_n`
 (pdfium), `extract_epub_page`.
+
+### PDF : rendu et erreurs
+
+- `pdf::analyze_pdf` renvoie `(page_count, Option<png>)` : le comptage vient de pdfium et est
+  **toujours renvoyé** dès que le document s'ouvre, même si le rendu de la première page échoue
+  (l'appelant retente la vignette ailleurs). `analyze_book` transforme `None` en erreur.
+- Les erreurs pdfium sont classées par `pdf::PdfError` (`PdfErrorKind::{PasswordProtected,
+  Corrupted, NoPages, PdfiumUnavailable}`) avec des préfixes stables :
+  `pdf::PDF_PASSWORD_ERROR` (« PDF is password-protected ») et `pdf::PDF_CORRUPT_ERROR`.
+- Les PDF chiffrés « owner password » uniquement (mot de passe utilisateur vide) s'ouvrent
+  normalement ; ceux avec un vrai mot de passe utilisateur ne peuvent pas être lus (aucun mot
+  de passe n'est stocké) et sont signalés `PasswordProtected` (`FPDF_ERR_PASSWORD`).
 
 ## Dépendances système
 

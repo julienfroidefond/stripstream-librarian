@@ -1023,6 +1023,7 @@ const en: Record<TranslationKey, string> = {
   "bookPreview.pages": "pages {{start}}–{{end}} / {{total}}",
   "bookPreview.prev": "← Prev",
   "bookPreview.next": "Next →",
+  "bookPreview.pageUnavailable": "Page unavailable",
 
   // Edit book form
   "editBook.editMetadata": "Edit metadata",

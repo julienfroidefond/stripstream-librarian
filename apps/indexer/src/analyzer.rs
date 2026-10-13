@@ -1,7 +1,7 @@
 use anyhow::Result;
 use futures::stream::{self, StreamExt};
 use image::{GenericImageView, ImageEncoder};
-use parsers::{analyze_book, BookFormat};
+use parsers::{analyze_book, page_count_only, BookFormat};
 use sqlx::Row;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -47,6 +47,9 @@ enum ExtractOutcome {
         book_id: Uuid,
         local_path: String,
         page_count: i32,
+        /// Set when the full analysis failed and only the page count could be
+        /// recovered; carries the original parse error for traceability.
+        recovered_from: Option<String>,
     },
     Thumbnail {
         book_id: Uuid,
@@ -353,6 +356,51 @@ fn book_format_from_str(s: &str) -> Option<BookFormat> {
     }
 }
 
+/// Best-effort recovery of a book's page count when `analyze_book` failed
+/// (unrenderable first page, corrupt page, timeout, ...).
+///
+/// The page count does not depend on the first-page render, so recovering it
+/// keeps the book visible with a correct page count instead of leaving it
+/// permanently stuck on `page_count = NULL`. The thumbnail is left unset: a
+/// later thumbnail job retries it. Returns `None` when the page count cannot
+/// be determined either (the book then keeps its parse error).
+async fn recover_page_count(
+    path: &Path,
+    format: BookFormat,
+    timeout_secs: u64,
+    file_name: &str,
+) -> Option<i32> {
+    let path_owned = path.to_path_buf();
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(timeout_secs),
+        tokio::task::spawn_blocking(move || page_count_only(&path_owned, format)),
+    )
+    .await
+    {
+        Ok(Ok(Ok(count))) if count > 0 => {
+            info!(
+                target: "extraction",
+                "[EXTRACTION] Recovered page count ({} pages) for {} despite extraction failure",
+                count, file_name
+            );
+            Some(count)
+        }
+        Ok(Ok(Ok(_))) => None,
+        Ok(Ok(Err(e))) => {
+            warn!(target: "extraction", "[EXTRACTION] Page count recovery failed for {}: {}", file_name, e);
+            None
+        }
+        Ok(Err(e)) => {
+            warn!(target: "extraction", "[EXTRACTION] Page count recovery spawn error for {}: {}", file_name, e);
+            None
+        }
+        Err(_) => {
+            warn!(target: "extraction", "[EXTRACTION] Page count recovery timed out for {}", file_name);
+            None
+        }
+    }
+}
+
 /// Phase 2 — Two-sub-phase analysis:
 ///
 /// **Sub-phase A (extracting_pages)**: open each archive once, extract (page_count, raw_image_bytes),
@@ -558,15 +606,34 @@ pub async fn analyze_library_books(
                         )
                         .await;
 
+                        // Keep a copy for the page-count recovery path: the original is moved into the blocking task.
+                        let recovery_path = path.to_path_buf();
                         let (page_count, raw_bytes) = match analyze_result {
                             Ok(Ok(Ok(result))) => result,
                             Ok(Ok(Err(e))) => {
-                                warn!(target: "extraction", "[EXTRACTION] Failed: {} — {}", file_name, e);
+                                let parse_error = e.to_string();
+                                let message = format!(
+                                    "Extraction failed: {} (thumbnail generation failed, page count unavailable)",
+                                    file_name
+                                );
+                                warn!(target: "extraction", "[EXTRACTION] Failed: {} — {}", file_name, parse_error);
+                                // The page count is independent from the first-page render:
+                                // recover it so the book stays visible with its real error.
+                                if let Some(page_count) =
+                                    recover_page_count(&recovery_path, format, timeout_secs, &file_name).await
+                                {
+                                    return ExtractOutcome::PageCountOnly {
+                                        book_id,
+                                        local_path,
+                                        page_count,
+                                        recovered_from: Some(parse_error),
+                                    };
+                                }
                                 return ExtractOutcome::Error {
                                     book_id,
                                     local_path,
-                                    parse_error: e.to_string(),
-                                    message: format!("Extraction failed: {}", e),
+                                    parse_error,
+                                    message,
                                 };
                             }
                             Ok(Err(e)) => {
@@ -579,6 +646,19 @@ pub async fn analyze_library_books(
                             }
                             Err(_) => {
                                 warn!(target: "extraction", "[EXTRACTION] Timeout ({}s): {}", timeout_secs, file_name);
+                                if let Some(page_count) =
+                                    recover_page_count(&recovery_path, format, timeout_secs, &file_name).await
+                                {
+                                    return ExtractOutcome::PageCountOnly {
+                                        book_id,
+                                        local_path,
+                                        page_count,
+                                        recovered_from: Some(format!(
+                                            "analyze_book timed out after {}s",
+                                            timeout_secs
+                                        )),
+                                    };
+                                }
                                 return ExtractOutcome::Error {
                                     book_id,
                                     local_path,
@@ -603,6 +683,7 @@ pub async fn analyze_library_books(
                                 book_id,
                                 local_path,
                                 page_count,
+                                recovered_from: None,
                             };
                         }
 
@@ -684,17 +765,33 @@ pub async fn analyze_library_books(
                         book_id,
                         local_path,
                         page_count,
+                        recovered_from,
                     } => {
                         page_count_updates.push((book_id, page_count));
+                        let (message, level, detail) = match &recovered_from {
+                            Some(error) => (
+                                format!(
+                                    "Recovered {} pages, thumbnail skipped — {}",
+                                    page_count, error
+                                ),
+                                "warning".to_string(),
+                                serde_json::json!({"page_count": page_count, "recovered": true, "error": error}),
+                            ),
+                            None => (
+                                format!("Extracted {} pages", page_count),
+                                "info".to_string(),
+                                serde_json::json!({"page_count": page_count}),
+                            ),
+                        };
                         events.push(EventInsert {
                             job_id,
                             event_type: "pages_extracted".to_string(),
-                            level: "info".to_string(),
+                            level,
                             entity_type: Some("book".to_string()),
                             entity_id: Some(book_id),
                             entity_name: Some(local_path),
-                            message: Some(format!("Extracted {} pages", page_count)),
-                            detail: Some(serde_json::json!({"page_count": page_count})),
+                            message: Some(message),
+                            detail: Some(detail),
                         });
                     }
                     ExtractOutcome::Thumbnail {

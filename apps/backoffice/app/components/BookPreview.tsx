@@ -6,6 +6,43 @@ import { useTranslation } from "@/lib/i18n/context";
 
 const PAGE_SIZE = 5;
 
+function PreviewPage({
+  bookId,
+  pageNum,
+  versionParam,
+}: {
+  bookId: string;
+  pageNum: number;
+  versionParam: string;
+}) {
+  const { t } = useTranslation();
+  const [failed, setFailed] = useState(false);
+
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <div className="relative w-full aspect-[2/3] bg-muted rounded-lg overflow-hidden border border-border">
+        {failed ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-center px-1">
+            <span className="text-[10px] text-muted-foreground">
+              {t("bookPreview.pageUnavailable")}
+            </span>
+          </div>
+        ) : (
+          <Image
+            src={`/api/books/${bookId}/pages/${pageNum}?format=webp&width=600&quality=80${versionParam}`}
+            alt={`Page ${pageNum}`}
+            fill
+            className="object-contain"
+            unoptimized
+            onError={() => setFailed(true)}
+          />
+        )}
+      </div>
+      <span className="text-xs text-muted-foreground">{pageNum}</span>
+    </div>
+  );
+}
+
 export function BookPreview({
   bookId,
   pageCount,
@@ -52,18 +89,12 @@ export function BookPreview({
 
       <div className="grid grid-cols-5 gap-3">
         {pages.map((pageNum) => (
-          <div key={pageNum} className="flex flex-col items-center gap-1.5">
-            <div className="relative w-full aspect-[2/3] bg-muted rounded-lg overflow-hidden border border-border">
-              <Image
-                src={`/api/books/${bookId}/pages/${pageNum}?format=webp&width=600&quality=80${versionParam}`}
-                alt={`Page ${pageNum}`}
-                fill
-                className="object-contain"
-                unoptimized
-              />
-            </div>
-            <span className="text-xs text-muted-foreground">{pageNum}</span>
-          </div>
+          <PreviewPage
+            key={pageNum}
+            bookId={bookId}
+            pageNum={pageNum}
+            versionParam={versionParam}
+          />
         ))}
       </div>
     </div>

@@ -91,6 +91,9 @@ Traitement progressif en background :
 - Concurrence bornée via `buffer_unordered(concurrency)` — défaut `(num_cpus / 2).clamp(1, 2)` soit
   1–2, surchargeable par `app_settings.limits.concurrent_renders`
 - Par livre : `parsers::analyze_book(path, format, pdf_render_scale)` → `(page_count, first_page_bytes)`
+- Si `analyze_book` échoue (rendu de la 1re page impossible, timeout…), `recover_page_count`
+  retente via `parsers::page_count_only` : le livre conserve son `page_count` (donc reste visible)
+  sans vignette, et un événement `pages_extracted` de niveau `warning` est enregistré.
 - Thumbnail en **2 sous-phases** : A) extraction brute vers `{book_id}.raw` ; B) redimensionnement /
   encodage vers `{book_id}.{ext}`. Downscale rapide (`img.thumbnail()`, pas de Lanczos3), format
   `webp` (défaut) / `jpeg` / `png` / `original`
