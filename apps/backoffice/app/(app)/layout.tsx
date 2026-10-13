@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { ThemeToggle } from "@/app/theme-toggle";
 import { JobsIndicator } from "@/app/components/JobsIndicator";
 import { DownloadsIndicator } from "@/app/components/DownloadsIndicator";
-import { NavIcon } from "@/app/components/ui";
+import { NavIcon, Toaster } from "@/app/components/ui";
 import { NavLink } from "@/app/components/NavLink";
 import { NavDropdown } from "@/app/components/NavDropdown";
 import type { IconName } from "@/app/components/ui/Icon";
@@ -181,6 +181,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       >
         {children}
       </main>
+
+      <Toaster />
     </>
   );
 }

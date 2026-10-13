@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, SettingsField, FormInput, FormSelect, FormRow, Icon, Switch, toast, Toaster } from "@/app/components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, SettingsField, FormInput, FormSelect, FormRow, Icon, Switch, toast } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, UserDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
@@ -718,8 +718,6 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       {activeTab === "archives" && <ArchivesTab />}
 
       {activeTab === "tokens" && tokensContent}
-
-      <Toaster />
     </>
   );
 }

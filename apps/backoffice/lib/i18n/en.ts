@@ -993,6 +993,7 @@ const en: Record<TranslationKey, string> = {
   "bookDetail.parsing": "Parsing",
   "bookDetail.updatedAt": "Updated",
   "bookDetail.downloadOriginal": "Download original file",
+  "bookDetail.downloadPreparing": "Preparing the file…",
   "bookDetail.delete": "Delete",
   "bookDetail.confirmDelete": "The file will be permanently deleted from disk. This action cannot be undone.",
   "seriesDetail.delete": "Delete series",

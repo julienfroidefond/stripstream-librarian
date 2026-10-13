@@ -15,6 +15,10 @@ Le fichier est envoyé tel quel : c'est exactement celui présent sur le disque,
 Il s'agit d'un vrai lien de téléchargement : le clic droit → **Enregistrer la cible du lien sous…** fonctionne aussi.
 :::
 
+:::note[iPhone / iPad — application installée]
+Dans l'application installée sur l'écran d'accueil (mode PWA), iOS ne peut pas télécharger un fichier par simple navigation : le WebView reste bloqué sur une page vide, sans bouton retour. Stripstream détecte ce cas et remet le fichier à la **feuille de partage iOS** : choisissez **Enregistrer dans Fichiers** (ou l'application de lecture de votre choix). Dans un onglet Safari classique, le téléchargement direct fonctionne normalement.
+:::
+
 ---
 
 ## Formats et types MIME
