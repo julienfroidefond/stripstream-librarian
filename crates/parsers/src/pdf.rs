@@ -311,8 +311,7 @@ mod tests {
     }
 
     fn pdfium_available() -> bool {
-        use pdfium_render::prelude::*;
-        Pdfium::bind_to_system_library().is_ok()
+        pdfium().is_ok()
     }
 
     fn write_fixture(dir: &std::path::Path, name: &str, b64: &str) -> std::path::PathBuf {
