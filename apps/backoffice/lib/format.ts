@@ -1,9 +1,14 @@
-export function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
+export function formatBytes(bytes: number, locale?: string): string {
+  const french = locale === "fr";
   const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const sizes = french ? ["o", "Ko", "Mo", "Go", "To"] : ["B", "KB", "MB", "GB", "TB"];
+  if (bytes === 0) return `0 ${sizes[0]}`;
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+  const value = bytes / Math.pow(k, i);
+  const formatted = french
+    ? value.toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+    : value.toFixed(1);
+  return `${formatted} ${sizes[i]}`;
 }
 
 export function formatNumber(n: number, locale: string): string {

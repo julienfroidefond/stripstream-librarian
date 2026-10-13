@@ -29,6 +29,7 @@ export type BookDto = {
   file_path: string | null;
   file_format: string | null;
   file_parse_status: string | null;
+  file_size: number | null;
   updated_at: string;
   reading_status: ReadingStatus;
   reading_current_page: number | null;
