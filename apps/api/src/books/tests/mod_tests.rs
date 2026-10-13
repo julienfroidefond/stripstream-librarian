@@ -1,6 +1,8 @@
 use sqlx::Row;
 use uuid::Uuid;
 
+use super::GET_BOOK_SQL;
+
 async fn create_test_library(pool: &sqlx::PgPool, name: &str) -> Uuid {
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
@@ -60,26 +62,6 @@ async fn create_test_book_file(pool: &sqlx::PgPool, book_id: Uuid, abs_path: &st
     .unwrap();
 }
 
-/// The get_book SQL from the handler.
-const GET_BOOK_SQL: &str = r#"
-    SELECT b.id, b.library_id, b.kind, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.volume_type, b.language, b.page_count, b.thumbnail_path, b.locked_fields, b.summary, b.isbn, b.publish_date,
-           bf.abs_path, bf.format, bf.parse_status,
-           COALESCE(brp.status, 'unread') AS reading_status,
-           brp.current_page AS reading_current_page,
-           brp.last_read_at AS reading_last_read_at
-    FROM books b
-    LEFT JOIN series s ON s.id = b.series_id
-    LEFT JOIN LATERAL (
-      SELECT abs_path, format, parse_status
-      FROM book_files
-      WHERE book_id = b.id
-      ORDER BY updated_at DESC
-      LIMIT 1
-    ) bf ON TRUE
-    LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND $2::uuid IS NOT NULL AND brp.user_id = $2
-    WHERE b.id = $1
-"#;
-
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn get_book_returns_series_id_when_book_has_series(pool: sqlx::PgPool) {
     let lib_id = create_test_library(&pool, "comics").await;
@@ -127,6 +109,10 @@ async fn get_book_returns_null_series_id_when_no_series(pool: sqlx::PgPool) {
         row.get::<Option<String>, _>("series").is_none(),
         "series name should be null"
     );
+    assert!(
+        row.get::<Option<i64>, _>("size_bytes").is_none(),
+        "size_bytes should be null without a book file"
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -155,4 +141,5 @@ async fn get_book_basic_fields_populated(pool: sqlx::PgPool) {
     );
     assert_eq!(row.get::<Option<String>, _>("format").unwrap(), "cbz");
     assert_eq!(row.get::<Option<String>, _>("parse_status").unwrap(), "ok");
+    assert_eq!(row.get::<Option<i64>, _>("size_bytes").unwrap(), 1024);
 }
