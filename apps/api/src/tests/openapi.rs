@@ -45,6 +45,16 @@ fn test_admin_openapi_generation() {
 }
 
 #[test]
+fn client_openapi_exposes_book_file_download() {
+    let spec = serde_json::to_value(ClientApiDoc::openapi()).unwrap();
+
+    assert!(
+        spec["paths"]["/books/{book_id}/file"]["get"].is_object(),
+        "client OpenAPI must expose GET /books/{{book_id}}/file"
+    );
+}
+
+#[test]
 fn client_openapi_exposes_favorite_and_rating_mutations() {
     let spec = serde_json::to_value(ClientApiDoc::openapi()).unwrap();
 
