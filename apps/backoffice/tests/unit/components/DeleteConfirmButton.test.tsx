@@ -1,6 +1,15 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const routerMock = vi.hoisted(() => ({
+  push: vi.fn(),
+  refresh: vi.fn(),
+  replace: vi.fn(),
+  back: vi.fn(),
+  prefetch: vi.fn(),
+}));
+vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
+
 import { DeleteConfirmButton } from "@/app/components/DeleteConfirmButton";
 
 const ENDPOINT = "/api/series/series-1";
@@ -59,6 +68,48 @@ describe("DeleteConfirmButton", () => {
     await vi.waitFor(() =>
       expect(screen.queryByText("seriesDetail.delete")).not.toBeInTheDocument()
     );
+  });
+
+  it("navigates to the default target then refreshes it after confirm", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    renderButton();
+
+    fireEvent.click(screen.getByRole("button", { name: "common.delete" }));
+    const panel = screen.getByTestId("modal-panel");
+    fireEvent.click(within(panel).getByRole("button", { name: "common.delete" }));
+
+    await vi.waitFor(() => expect(routerMock.push).toHaveBeenCalledWith("/series"));
+    expect(routerMock.refresh).toHaveBeenCalledTimes(1);
+    expect(routerMock.push.mock.invocationCallOrder[0]).toBeLessThan(
+      routerMock.refresh.mock.invocationCallOrder[0]
+    );
+  });
+
+  it("honours a custom redirect target", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    renderButton({ redirectTo: "/series/s1" });
+
+    fireEvent.click(screen.getByRole("button", { name: "common.delete" }));
+    const panel = screen.getByTestId("modal-panel");
+    fireEvent.click(within(panel).getByRole("button", { name: "common.delete" }));
+
+    await vi.waitFor(() => expect(routerMock.push).toHaveBeenCalledWith("/series/s1"));
+    expect(routerMock.refresh).toHaveBeenCalled();
+  });
+
+  it("does not navigate when the deletion fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+    renderButton();
+
+    fireEvent.click(screen.getByRole("button", { name: "common.delete" }));
+    const panel = screen.getByTestId("modal-panel");
+    fireEvent.click(within(panel).getByRole("button", { name: "common.delete" }));
+
+    await vi.waitFor(() =>
+      expect(screen.queryByText("seriesDetail.delete")).not.toBeInTheDocument()
+    );
+    expect(routerMock.push).not.toHaveBeenCalled();
+    expect(routerMock.refresh).not.toHaveBeenCalled();
   });
 
   it("supports a custom trigger through the render prop", () => {
