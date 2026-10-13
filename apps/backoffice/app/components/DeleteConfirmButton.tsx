@@ -1,20 +1,24 @@
 "use client";
 
 import { useState } from "react";
+import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { Button, Icon, Modal } from "./ui";
 import { useTranslation } from "@/lib/i18n/context";
 import type { TranslationKey } from "@/lib/i18n/fr";
 
+const DEFAULT_REDIRECT = "/series";
+
 interface DeleteConfirmButtonProps {
   endpoint: string;
+  redirectTo?: string;
   titleKey: TranslationKey;
   confirmKey: TranslationKey;
   labelKey: TranslationKey;
   children?: (open: () => void) => React.ReactNode;
 }
 
-export function DeleteConfirmButton({ endpoint, titleKey, confirmKey, labelKey, children }: DeleteConfirmButtonProps) {
+export function DeleteConfirmButton({ endpoint, redirectTo = DEFAULT_REDIRECT, titleKey, confirmKey, labelKey, children }: DeleteConfirmButtonProps) {
   const { t } = useTranslation();
   const router = useRouter();
   const [showConfirm, setShowConfirm] = useState(false);
@@ -26,8 +30,10 @@ export function DeleteConfirmButton({ endpoint, titleKey, confirmKey, labelKey, 
     try {
       const resp = await fetch(endpoint, { method: "DELETE" });
       if (resp.ok) {
+        // Navigate first, then refresh so the destination route is the one re-fetched.
+        // `redirectTo` is assembled dynamically; cast required by statically-typed routes.
+        router.push(redirectTo as Route);
         router.refresh();
-        router.push("/series");
       }
     } finally {
       setDeleting(false);

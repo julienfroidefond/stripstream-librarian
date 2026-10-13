@@ -100,7 +100,7 @@ export function BookActionsToolbar({ book, hasActiveUser = true, telegramEnabled
               )}
             </ConvertButton>
           )}
-          <DeleteBookButton bookId={book.id} libraryId={book.library_id}>
+          <DeleteBookButton bookId={book.id} seriesId={book.series_id ?? undefined}>
             {(open) => (
               <ActionsMenuItem icon="🗑" variant="danger" onClick={open}>
                 {t("bookDetail.delete")}
