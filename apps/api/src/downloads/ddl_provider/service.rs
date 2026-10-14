@@ -16,7 +16,7 @@ use tokio::io::AsyncWriteExt;
 use tracing::info;
 use uuid::Uuid;
 
-use parsers::{extract_series_name_from_filename, extract_volume, title_matches_series};
+use parsers::{extract_series_name_from_filename, extract_volume, title_matches_series_tolerant};
 
 use crate::downloads::target::{finalize_download, prepare_destination, DownloadProgress};
 use crate::downloads::worker::DownloadQueue;
@@ -110,7 +110,10 @@ pub(super) fn build_result(
     let series_ref = series_name.as_deref().unwrap_or("");
     // A file whose name does not contain the requested series must not be
     // credited with matching missing volumes (e.g. another series' volume 5).
-    let series_matches = series_ref.is_empty() || title_matches_series(match_name, series_ref);
+    // The tolerant variant absorbs connector/article drift between the library
+    // name and the catalogue (`Boule & Bill` vs `Boule et Bill`).
+    let series_matches =
+        series_ref.is_empty() || title_matches_series_tolerant(match_name, series_ref);
 
     let (mut matched_missing_volumes, all_volumes) =
         parsers::match_title_volumes(match_name, missing);
@@ -119,7 +122,7 @@ pub(super) fn build_result(
     }
 
     let confidence = if series_matches && !missing.is_empty() {
-        parsers::match_release_title(match_name, series_ref, missing)
+        parsers::match_release_title_tolerant(match_name, series_ref, missing)
             .map(|m| m.confidence.as_str().to_string())
     } else {
         None
@@ -143,6 +146,7 @@ pub(super) fn build_result(
         all_volumes,
         matched_missing_volumes,
         match_confidence: confidence,
+        series_matched: series_matches,
         already_owned,
         download_id: None,
         download_status: None,
@@ -570,7 +574,39 @@ mod tests {
         assert_eq!(result.matched_missing_volumes, vec![3]);
         assert_eq!(result.volume_number, Some(3));
         assert_eq!(result.match_confidence.as_deref(), Some("high"));
+        assert!(result.series_matched);
         assert!(!result.already_owned);
+    }
+
+    #[test]
+    fn tolerant_series_gate_recovers_connector_drift() {
+        // Library uses `&`, the catalogue spells it `et`.
+        let result = build_result(
+            "fourtoutici",
+            &file("BD Boule et Bill 07 Bill est maboul – Roba.pdf"),
+            Some("Boule & Bill"),
+            &[6, 7],
+            &HashSet::new(),
+        );
+
+        assert!(result.series_matched);
+        assert_eq!(result.matched_missing_volumes, vec![7]);
+        assert_eq!(result.match_confidence.as_deref(), Some("high"));
+    }
+
+    #[test]
+    fn tolerant_series_gate_still_reports_other_series() {
+        let result = build_result(
+            "fourtoutici",
+            &file("BD Boule et Bill 07 Bill est maboul – Roba.pdf"),
+            Some("Astérix le Gaulois"),
+            &[7],
+            &HashSet::new(),
+        );
+
+        assert!(!result.series_matched);
+        assert!(result.matched_missing_volumes.is_empty());
+        assert!(result.match_confidence.is_none());
     }
 
     #[test]
@@ -585,6 +621,7 @@ mod tests {
 
         assert!(result.matched_missing_volumes.is_empty());
         assert_eq!(result.volume_number, Some(3));
+        assert!(!result.series_matched);
         assert!(result.match_confidence.is_none());
     }
 

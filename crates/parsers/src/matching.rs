@@ -127,6 +127,64 @@ pub fn title_matches_series(candidate_title: &str, series_name: &str) -> bool {
         .any(|window| window == series_words.as_slice())
 }
 
+/// Connector words treated as interchangeable noise when matching a catalogue
+/// name to a library series (`Boule & Bill` vs `Boule et Bill`).
+const SERIES_CONNECTORS: &[&str] = &["et", "and", "&", "+"];
+
+/// Leading articles / elisions dropped from a series name before comparison
+/// (`L'Incal` vs `Incal`, `Les Légendaires` vs `Légendaires`).
+const SERIES_ARTICLES: &[&str] = &[
+    "l", "le", "la", "les", "un", "une", "des", "du", "de", "d", "the", "a", "an",
+];
+
+/// Tolerant variant of [`title_matches_series`] for catalogues whose naming
+/// differs from the library only by a connector (`&` ↔ `et`) or a leading
+/// article / elision (`L'Incal` ↔ `Incal`, `Les Légendaires` ↔ `Légendaires`).
+///
+/// Both sides have their connectors removed; the series additionally loses its
+/// leading article. The remaining significant series words must still appear as
+/// a contiguous window in the candidate, so `Hotel` still does not match
+/// `Hotelier`.
+///
+/// Use this only for sources whose titles are known to drift (manual and
+/// background DDL search); automatic detection keeps the strict
+/// [`title_matches_series`].
+pub fn title_matches_series_tolerant(candidate_title: &str, series_name: &str) -> bool {
+    let title = normalize_title(candidate_title);
+    let series = normalize_title(series_name);
+    if title.is_empty() || series.is_empty() {
+        return false;
+    }
+
+    let title_words: Vec<&str> = title
+        .split_whitespace()
+        .filter(|word| !SERIES_CONNECTORS.contains(word))
+        .collect();
+    let series_without_connectors: Vec<&str> = series
+        .split_whitespace()
+        .filter(|word| !SERIES_CONNECTORS.contains(word))
+        .collect();
+    // Drop a leading article, but never strip the whole name (a series literally
+    // named `A` or `L` must keep matching).
+    let series_without_article: Vec<&str> = series_without_connectors
+        .iter()
+        .copied()
+        .skip_while(|word| SERIES_ARTICLES.contains(word))
+        .collect();
+    let series_words = if series_without_article.is_empty() {
+        series_without_connectors
+    } else {
+        series_without_article
+    };
+    if title_words.is_empty() || series_words.is_empty() {
+        return false;
+    }
+
+    title_words
+        .windows(series_words.len())
+        .any(|window| window == series_words.as_slice())
+}
+
 /// Returns true if a title denotes a complete or integral edition.
 pub fn is_integral_release(title: &str) -> bool {
     normalize_title(title)
@@ -164,7 +222,32 @@ pub fn match_release_title(
     if !title_matches_series(candidate_title, series_name) {
         return None;
     }
+    build_release_match(candidate_title, series_name, missing_volumes)
+}
 
+/// Tolerant counterpart of [`match_release_title`] using
+/// [`title_matches_series_tolerant`] for the series gate.
+///
+/// Reserved for sources whose naming is known to drift from the library
+/// (manual and background DDL search); automatic detection keeps the strict
+/// [`match_release_title`].
+pub fn match_release_title_tolerant(
+    candidate_title: &str,
+    series_name: &str,
+    missing_volumes: &[i32],
+) -> Option<ReleaseTitleMatch> {
+    if !title_matches_series_tolerant(candidate_title, series_name) {
+        return None;
+    }
+    build_release_match(candidate_title, series_name, missing_volumes)
+}
+
+/// Shared volume/confidence computation once the series gate passed.
+fn build_release_match(
+    candidate_title: &str,
+    series_name: &str,
+    missing_volumes: &[i32],
+) -> Option<ReleaseTitleMatch> {
     let (matched_missing_volumes, all_volumes) =
         match_title_volumes(candidate_title, missing_volumes);
     if matched_missing_volumes.is_empty() {
@@ -416,8 +499,69 @@ mod tests {
     }
 
     #[test]
+    fn tolerant_matcher_bridges_connectors() {
+        // `&` on the library side, `et` in the catalogue (and vice versa).
+        assert!(title_matches_series_tolerant(
+            "Boule et Bill T01",
+            "Boule & Bill"
+        ));
+        assert!(title_matches_series_tolerant(
+            "Boule & Bill T01",
+            "Boule et Bill"
+        ));
+        // The strict matcher still rejects the drifted pair.
+        assert!(!title_matches_series("Boule et Bill T01", "Boule & Bill"));
+    }
+
+    #[test]
+    fn tolerant_matcher_ignores_leading_articles() {
+        assert!(title_matches_series_tolerant(
+            "Legendaires T05",
+            "Les Légendaires"
+        ));
+        assert!(title_matches_series_tolerant(
+            "Les Legendaires T05",
+            "Legendaires"
+        ));
+        assert!(title_matches_series_tolerant("Incal T01", "L'Incal"));
+    }
+
+    #[test]
+    fn tolerant_matcher_still_rejects_substrings_and_other_series() {
+        assert!(!title_matches_series_tolerant("Hotelier T01", "Hotel"));
+        assert!(!title_matches_series_tolerant("Naruto T05", "One Piece"));
+        assert!(!title_matches_series_tolerant("Boule T01", "Boule & Bill"));
+    }
+
+    #[test]
+    fn tolerant_matcher_keeps_single_letter_series() {
+        // A series literally named `A` must not be emptied by article stripping.
+        assert!(title_matches_series_tolerant("A T02", "A"));
+    }
+
+    #[test]
     fn rejects_same_volume_from_another_series() {
         assert_eq!(match_release_title("Naruto T05", "One Piece", &[5]), None);
+    }
+
+    #[test]
+    fn tolerant_release_match_recovers_drifted_series_names() {
+        let matched =
+            match_release_title_tolerant("Boule et Bill T07", "Boule & Bill", &[7, 8]).unwrap();
+        assert_eq!(matched.matched_missing_volumes, vec![7]);
+        // The strict variant keeps refusing the pair.
+        assert_eq!(
+            match_release_title("Boule et Bill T07", "Boule & Bill", &[7, 8]),
+            None
+        );
+    }
+
+    #[test]
+    fn tolerant_release_match_still_requires_a_volume_hit() {
+        assert_eq!(
+            match_release_title_tolerant("Boule et Bill T12", "Boule & Bill", &[7]),
+            None
+        );
     }
 
     #[test]

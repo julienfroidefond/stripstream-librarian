@@ -45,6 +45,10 @@ pub struct DdlProviderSearchResultDto {
     pub all_volumes: Vec<i32>,
     pub matched_missing_volumes: Vec<i32>,
     pub match_confidence: Option<String>,
+    /// The filename was recognised as belonging to the requested series
+    /// (connector/article-tolerant). Splits "wrong series" from "no missing
+    /// volume in this file" when debugging low recall.
+    pub series_matched: bool,
     /// The resolved volume is already present in the target library.
     pub already_owned: bool,
     /// Id of an existing `ddl_provider_downloads` row for this file, if any.

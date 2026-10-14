@@ -46,8 +46,10 @@ struct RemoteFile {
 ///
 /// The bare tome (`41`) is not one of the volume patterns `parsers` recognises
 /// (`T41`, `Vol. 41`, `#41`, …), so we rewrite the name to `<series> T<tome>`
-/// before it reaches the shared matcher. Only the value used for matching is
-/// rewritten; the UI keeps showing the original filename.
+/// before it reaches the shared matcher. Range packs (`One Piece 01 à T114`) keep
+/// their start/end so the whole span is expanded instead of only the first tome.
+/// Only the value used for matching is rewritten; the UI keeps showing the
+/// original filename.
 ///
 /// Returns `None` when no unambiguous standalone tome (1-3 digits) is found, in
 /// which case the plain filename is matched instead.
@@ -57,7 +59,7 @@ pub(super) fn normalize_for_match(original: &str) -> Option<String> {
     let head = stem.split(['–', '—']).next().unwrap_or(stem);
 
     let tokens: Vec<&str> = head.split_whitespace().collect();
-    let index = tokens.iter().position(|token| is_tome_token(token))?;
+    let index = tokens.iter().position(|token| is_bare_tome_token(token))?;
 
     let mut series: Vec<&str> = tokens[..index].to_vec();
     if series.first().is_some_and(|token| is_kind_prefix(token)) {
@@ -76,13 +78,44 @@ pub(super) fn normalize_for_match(original: &str) -> Option<String> {
     if series.is_empty() {
         return None;
     }
-    Some(format!("{} T{}", series.join(" "), tokens[index]))
+    let start = tome_digits(tokens[index])?;
+
+    // A range continuation right after the first tome (`01 à T114`, `00 a 30`)
+    // must survive as a real range, otherwise only the first tome is matched.
+    if let Some(end) = range_end(&tokens, index) {
+        return Some(format!("{} T{} à T{}", series.join(" "), start, end));
+    }
+
+    Some(format!("{} T{}", series.join(" "), start))
 }
 
-/// A standalone 1- to 3-digit tome token (4-digit years are ignored).
-fn is_tome_token(token: &str) -> bool {
-    let digits = token.trim_matches(|c: char| !c.is_ascii_digit());
-    !digits.is_empty() && digits.len() <= 3 && digits.chars().all(|c| c.is_ascii_digit())
+/// A standalone bare tome token (`01`, `5`, `114`). A token carrying letters
+/// such as `no8` or `T114` is **not** the standalone tome of the upload name —
+/// treating it as one would truncate the series (e.g. `Kaiju No.8`).
+fn is_bare_tome_token(token: &str) -> bool {
+    let cleaned = token.trim_matches(|c: char| !c.is_alphanumeric());
+    !cleaned.is_empty() && cleaned.len() <= 3 && cleaned.chars().all(|c| c.is_ascii_digit())
+}
+
+/// Digit run of a tome token, preserving zero-padding (`01` → `01`,
+/// `T114` → `114`). `None` when the token holds no usable 1-3 digit number.
+fn tome_digits(token: &str) -> Option<&str> {
+    let cleaned = token.trim_matches(|c: char| !c.is_ascii_digit());
+    (!cleaned.is_empty() && cleaned.len() <= 3 && cleaned.chars().all(|c| c.is_ascii_digit()))
+        .then_some(cleaned)
+}
+
+/// Detect a `start <connector> end` tome range right after `index`
+/// (`01 à T114`, `00 a 30`, `01 - 05`). Returns the end tome digits.
+fn range_end<'a>(tokens: &[&'a str], index: usize) -> Option<&'a str> {
+    let connector = tokens.get(index + 1)?;
+    if !matches!(
+        connector.to_lowercase().as_str(),
+        "à" | "a" | "-" | "–" | "to" | "au"
+    ) {
+        return None;
+    }
+    tome_digits(tokens.get(index + 2)?)
 }
 
 /// Leading upload-kind marker (`BD`, `EBOOK`, …) dropped from the series name.
@@ -230,6 +263,52 @@ mod tests {
                 "input: {input}"
             );
         }
+    }
+
+    #[test]
+    fn preserves_tome_ranges() {
+        // Range packs observed on the live catalogue: only the first tome is a
+        // standalone token, the upper bound must survive as a real range.
+        let cases = [
+            (
+                "MANGA One Piece 01 à T114 – Eiichirō Oda.pdf",
+                "One Piece T01 à T114",
+            ),
+            (
+                "MANGA Jujutsu Kaisen 00 a 30 PDF – Gege Akutami.pdf",
+                "Jujutsu Kaisen T00 à T30",
+            ),
+            (
+                "BD Blake et Mortimer 01 - 05 – Edgar P. Jacobs.pdf",
+                "Blake et Mortimer T01 à T05",
+            ),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(
+                normalize_for_match(input),
+                Some(expected.to_string()),
+                "input: {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn keeps_series_names_containing_digits() {
+        // `No.8` is part of the series name, not the tome: the real tome is `09`.
+        assert_eq!(
+            normalize_for_match("MANGA Kaiju No.8 09 – Naoya Matsumoto.pdf").as_deref(),
+            Some("Kaiju No.8 T09")
+        );
+    }
+
+    #[test]
+    fn ignores_range_connector_without_a_tome() {
+        // `01 à venir` must not be read as a range.
+        assert_eq!(
+            normalize_for_match("BD Series 01 à venir – Auteur.pdf").as_deref(),
+            Some("Series T01")
+        );
     }
 
     #[test]
