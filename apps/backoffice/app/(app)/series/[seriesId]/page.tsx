@@ -1,4 +1,4 @@
-import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, fetchDownloadsEnabled, fetchSeriesReadingLists, fetchSeriesRatings, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto, ReadingListDto, TelegramMonitorStatus, SeriesRatingsDto } from "@/lib/api";
+import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, fetchDownloadsEnabled, fetchSeriesReadingLists, fetchSeriesRatings, hasEnabledDdlProvider, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto, ReadingListDto, TelegramMonitorStatus, SeriesRatingsDto } from "@/lib/api";
 import { cookies } from "next/headers";
 import { BooksGrid, EmptyState } from "@/app/components/BookCard";
 import { SeriesRelatedCarousel } from "@/app/components/SeriesRelatedCarousel";
@@ -40,7 +40,7 @@ export default async function SeriesDetailPage({
   }
   const libraryId = seriesDto.library_id;
 
-  const [library, seriesMeta, metadataLinks, readingStatusLink, prowlarrConfigured, qbConfigured, metadataProviders, renameFormat, renameFormatHs, renameFormatInt, renameFormatOneshot, telegramStatus] = await Promise.all([
+  const [library, seriesMeta, metadataLinks, readingStatusLink, prowlarrConfigured, qbConfigured, metadataProviders, renameFormat, renameFormatHs, renameFormatInt, renameFormatOneshot, telegramStatus, ddlProviderEnabled] = await Promise.all([
     fetchLibraries().then((libs) => libs.find((l) => l.id === libraryId)),
     fetchSeriesMetadata(seriesId).catch(() => null as SeriesMetadataDto | null),
     getMetadataLink(seriesId).catch(() => [] as ExternalMetadataLinkDto[]),
@@ -55,6 +55,7 @@ export default async function SeriesDetailPage({
     apiFetch<string>("/settings/rename_format_int", { next: { revalidate: 3600 } }).catch(() => null),
     apiFetch<string>("/settings/rename_format_oneshot", { next: { revalidate: 3600 } }).catch(() => null),
     apiFetch<TelegramMonitorStatus>("/telegram-monitor/status", { next: { revalidate: 60 } }).catch(() => null),
+    hasEnabledDdlProvider(),
   ]);
   const telegramEnabled = !!(telegramStatus?.configured && telegramStatus?.authorized);
 
@@ -336,6 +337,7 @@ export default async function SeriesDetailPage({
             prowlarrConfigured={prowlarrConfigured}
             qbConfigured={qbConfigured}
             telegramEnabled={telegramEnabled}
+            ddlProviderEnabled={ddlProviderEnabled}
             ownedVolumes={ownedVolumes}
             renameFormat={typeof renameFormat === "string" ? renameFormat : null}
             renameFormatHs={typeof renameFormatHs === "string" ? renameFormatHs : null}

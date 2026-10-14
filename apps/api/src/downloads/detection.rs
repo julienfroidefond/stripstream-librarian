@@ -11,7 +11,10 @@ use uuid::Uuid;
 
 use stripstream_core::http::build_http_client_with_agent;
 
-use super::{missing, prowlarr};
+use super::{blacklist, missing, prowlarr, store};
+use crate::jobs::helpers::{
+    insert_entity_event as insert_event, is_job_cancelled, update_progress,
+};
 use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
 use crate::{error::ApiError, state::AppState};
 
@@ -76,6 +79,13 @@ pub struct AvailableReleaseDto {
     /// Machine-readable evidence used by the shared title matcher.
     #[serde(default = "default_match_reasons")]
     pub match_reasons: Vec<String>,
+    /// Set when the release comes from a DDL provider rather than Prowlarr.
+    /// The value is the provider registry id (e.g. `fourtoutici`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    /// DDL-provider-specific file id, used to start a direct download.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_id: Option<String>,
 }
 
 fn default_match_confidence() -> String {
@@ -825,13 +835,9 @@ pub(crate) async fn process_download_detection(
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
     // Load blacklisted release titles to filter them out
-    let blacklisted_titles: std::collections::HashSet<String> =
-        sqlx::query_scalar("SELECT title FROM release_blacklist")
-            .fetch_all(pool)
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .collect();
+    let blacklisted_titles = blacklist::load_blacklisted_titles(pool)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let mut processed = 0i32;
 
@@ -951,21 +957,14 @@ pub(crate) async fn process_download_detection(
                 let releases_json = serde_json::to_value(&matched_releases).ok();
                 insert_event(pool, job_id, "downloads_found", "info", Some(series_name), None, Some(serde_json::json!({"release_count": matched_releases.len(), "missing_count": missing_count, "available_releases": releases_json}))).await;
                 // UPSERT into available_downloads — merge new releases with existing ones
-                if let (Some(ref rj), Some(&sid)) = (&releases_json, series_id_map.get(series_name))
-                {
-                    let _ = sqlx::query(
-                        "INSERT INTO available_downloads (library_id, series_id, missing_count, available_releases, updated_at) \
-                         VALUES ($1, $2, $3, $4, NOW()) \
-                         ON CONFLICT (series_id) DO UPDATE SET \
-                           missing_count = EXCLUDED.missing_count, \
-                           available_releases = merge_releases(available_downloads.available_releases, EXCLUDED.available_releases), \
-                           updated_at = NOW()",
+                if let Some(&sid) = series_id_map.get(series_name) {
+                    let _ = store::upsert_releases(
+                        pool,
+                        library_id,
+                        sid,
+                        missing_count,
+                        &matched_releases,
                     )
-                    .bind(library_id)
-                    .bind(sid)
-                    .bind(missing_count)
-                    .bind(rj)
-                    .execute(pool)
                     .await;
                 }
             }
@@ -1032,12 +1031,7 @@ pub(crate) async fn process_download_detection(
     .await;
 
     // Remove entries that now have empty releases
-    let _ = sqlx::query(
-        "DELETE FROM available_downloads WHERE library_id = $1 AND (available_releases = '[]'::jsonb OR available_releases IS NULL)",
-    )
-    .bind(library_id)
-    .execute(pool)
-    .await;
+    let _ = store::delete_empty(pool, Some(library_id)).await;
 
     // Build final stats from events
     let counts = sqlx::query(
@@ -1185,6 +1179,8 @@ async fn search_prowlarr_for_series(
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
         return Err(format!("Prowlarr returned {status}: {text}"));
+                    provider: None,
+                    external_id: None,
     }
 
     let raw_releases: Vec<prowlarr::ProwlarrRawRelease> = resp
@@ -1222,39 +1218,6 @@ async fn search_prowlarr_for_series(
         .collect();
 
     Ok((matched, raw_count))
-}
-
-pub(crate) async fn insert_event(
-    pool: &PgPool,
-    job_id: Uuid,
-    event_type: &str,
-    level: &str,
-    entity_name: Option<&str>,
-    message: Option<&str>,
-    detail: Option<serde_json::Value>,
-) {
-    let _ = sqlx::query(
-        "INSERT INTO index_job_events (job_id, event_type, level, entity_name, message, detail) VALUES ($1, $2, $3, $4, $5, $6)",
-    )
-    .bind(job_id)
-    .bind(event_type)
-    .bind(level)
-    .bind(entity_name)
-    .bind(message)
-    .bind(detail)
-    .execute(pool)
-    .await;
-}
-
-async fn is_job_cancelled(pool: &PgPool, job_id: Uuid) -> bool {
-    sqlx::query_scalar::<_, String>("SELECT status FROM index_jobs WHERE id = $1")
-        .bind(job_id)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
-        .as_deref()
-        == Some("cancelled")
 }
 
 #[cfg(test)]

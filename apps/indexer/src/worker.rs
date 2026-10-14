@@ -56,6 +56,10 @@ pub async fn run_worker(state: AppState, interval_seconds: u64) {
             {
                 error!("[SCHEDULER] Telegram sync incremental error: {}", err);
             }
+            if let Err(err) = scheduler::check_and_schedule_ddl_search(&scheduler_state.pool).await
+            {
+                error!("[SCHEDULER] DDL search error: {}", err);
+            }
             tokio::time::sleep(scheduler_wait).await;
         }
     });

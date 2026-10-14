@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::jobs::lifecycle::fail_job;
 use crate::{
-    downloads::{detection as download_detection, rss_poll, telegram_monitor},
+    downloads::{ddl_provider, detection as download_detection, rss_poll, telegram_monitor},
     metadata, reading,
 };
 
@@ -86,6 +86,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                             telegram_monitor::process_telegram_sync_incremental(&pool_clone, job_id)
                                 .await
                         }
+                        "ddl_search" => ddl_provider::process_ddl_search(&pool_clone, job_id).await,
                         _ => Err(format!("Unknown API job type: {job_type}")),
                     };
 
@@ -121,7 +122,7 @@ pub async fn run_job_poller(pool: PgPool, interval_seconds: u64) {
                                     },
                                 );
                             }
-                            "download_detection" | "prowlarr_rss" => {
+                            "download_detection" | "prowlarr_rss" | "ddl_search" => {
                                 notifications::notify(
                                     pool_clone,
                                     notifications::NotificationEvent::DownloadDetectionFailed {
@@ -158,6 +159,7 @@ const API_JOB_TYPES: &[&str] = &[
     "prowlarr_rss",
     "telegram_sync",
     "telegram_sync_incremental",
+    "ddl_search",
 ];
 
 const GLOBAL_METADATA_REFRESH_JOB_TYPES: &[&str] = &["metadata_refresh", "metadata_refresh_all"];
@@ -188,7 +190,7 @@ async fn claim_next_api_job(
         FROM index_jobs
         WHERE status = 'pending'
           AND type = ANY($1)
-          AND (library_id IS NOT NULL OR type IN ('prowlarr_rss', 'telegram_sync', 'telegram_sync_incremental'))
+          AND (library_id IS NOT NULL OR type IN ('prowlarr_rss', 'telegram_sync', 'telegram_sync_incremental', 'ddl_search'))
           AND (
             (type = ANY($2) AND NOT $3::bool)
             OR type != ALL($2)

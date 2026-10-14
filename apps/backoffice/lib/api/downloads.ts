@@ -30,6 +30,10 @@ export type AvailableReleaseDto = {
   detected_at?: string;
   match_confidence?: "high" | "review";
   match_reasons?: string[];
+  /** Set when the release comes from a direct-download (DDL) provider. */
+  provider?: string | null;
+  /** Provider-side file id, needed to start the DDL download. */
+  external_id?: string | null;
 };
 
 export type DownloadDetectionReportDto = {

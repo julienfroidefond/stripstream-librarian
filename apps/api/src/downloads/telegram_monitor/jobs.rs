@@ -4,6 +4,7 @@ use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::jobs::helpers::update_progress;
 use crate::jobs::lifecycle::{complete_job, job_in_flight, JobScope};
 use crate::state::AppState;
 
@@ -388,13 +389,8 @@ pub async fn do_incremental_sync(
     let total = sources.len() as i32;
 
     for (idx, (source_id, username, library_id)) in sources.iter().enumerate() {
-        let pct = (idx as i32 * 100 / total.max(1)) as i16;
         let label = format!("@{username} (incremental)");
-        let _ = sqlx::query(
-            "UPDATE index_jobs SET processed_files = $2, progress_percent = $3, current_file = $4 WHERE id = $1",
-        )
-        .bind(job_id).bind(idx as i32).bind(pct).bind(&label)
-        .execute(&pool).await;
+        update_progress(&pool, job_id, idx as i32, total, &label).await;
 
         // Highest message_id already stored for this source — scan only newer messages
         let max_known: Option<i64> = sqlx::query_scalar(

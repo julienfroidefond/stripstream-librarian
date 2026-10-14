@@ -7,10 +7,8 @@ use uuid::Uuid;
 
 use stripstream_core::http::build_http_client_with_agent;
 
-use super::{
-    detection::{insert_event, AvailableReleaseDto},
-    missing, prowlarr,
-};
+use super::{blacklist, detection::AvailableReleaseDto, missing, prowlarr, store};
+use crate::jobs::helpers::insert_entity_event as insert_event;
 use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
 use crate::{error::ApiError, state::AppState};
 
@@ -227,13 +225,11 @@ pub(crate) async fn process_rss_poll(
         series_info.push((series_id, series_name, missing_vols, lib_id));
     }
 
-    let blacklisted_titles: std::collections::HashSet<String> =
-        sqlx::query_scalar("SELECT title FROM release_blacklist")
-            .fetch_all(pool)
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .collect();
+    let blacklisted_titles = blacklist::load_blacklisted_titles(pool)
+        .await
+                        provider: None,
+                        external_id: None,
+        .map_err(|e| e.to_string())?;
 
     let client = build_http_client_with_agent(std::time::Duration::from_secs(60))
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
@@ -255,7 +251,6 @@ pub(crate) async fn process_rss_poll(
     for (series_id, series_name, missing_volumes, lib_id) in &series_info {
         if missing_volumes.is_empty() {
             continue;
-        }
 
         let missing_count = missing_volumes.len() as i32;
 
@@ -317,20 +312,7 @@ pub(crate) async fn process_rss_poll(
         )
         .await;
 
-        if let Some(ref rj) = releases_json {
-            let _ = sqlx::query(
-                "INSERT INTO available_downloads (library_id, series_id, missing_count, available_releases, updated_at) \
-                 VALUES ($1, $2, $3, $4, NOW()) \
-                 ON CONFLICT (series_id) DO UPDATE SET \
-                   missing_count = EXCLUDED.missing_count, \
-                   available_releases = merge_releases(available_downloads.available_releases, EXCLUDED.available_releases), \
-                   updated_at = NOW()",
-            )
-            .bind(lib_id)
-            .bind(series_id)
-            .bind(missing_count)
-            .bind(rj)
-            .execute(pool)
+        let _ = store::upsert_releases(pool, *lib_id, *series_id, missing_count, &matched_releases)
             .await;
         }
     }

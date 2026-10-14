@@ -1,37 +1,8 @@
 use super::*;
 use axum::extract::State;
 use axum::Json;
-use std::sync::atomic::AtomicU64;
-use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock, Semaphore};
 
-use crate::state::{
-    AppState, DiskCacheStatsSnapshot, DynamicSettings, Metrics, PageRenderLocks, ReadRateLimit,
-};
-
-/// Build a minimal AppState suitable for testing (only `pool` is used).
-fn test_state(pool: sqlx::PgPool) -> AppState {
-    AppState {
-        pool,
-        bootstrap_token: Arc::from("test-token"),
-        page_cache: Arc::new(Mutex::new(crate::state::PageCache::new(1))),
-        disk_cache_stats: Arc::new(Mutex::new(None::<DiskCacheStatsSnapshot>)),
-        page_render_locks: Arc::new(PageRenderLocks::new(1)),
-        page_render_limit: Arc::new(Semaphore::new(1)),
-        metrics: Arc::new(Metrics {
-            requests_total: AtomicU64::new(0),
-            page_cache_hits: AtomicU64::new(0),
-            page_cache_misses: AtomicU64::new(0),
-        }),
-        read_rate_limit: Arc::new(std::sync::Mutex::new(ReadRateLimit::new())),
-        stats_cache: Arc::new(crate::stats::StatsCache::new()),
-        settings: Arc::new(RwLock::new(DynamicSettings::default())),
-        prowlarr_fetch_lock: Arc::new(Mutex::new(())),
-        pending_tg_auth: Arc::new(Mutex::new(None)),
-        telegram_download_limit: Arc::new(Semaphore::new(1)),
-        telegram_abort_handles: Arc::new(Mutex::new(std::collections::HashMap::new())),
-    }
-}
+use crate::state::test_state;
 
 /// Insert a test library and return its UUID.
 async fn create_test_library(pool: &sqlx::PgPool) -> Uuid {

@@ -1,13 +1,24 @@
+mod blacklist;
+pub mod ddl_provider;
 pub mod detection;
 mod import_pipeline;
 mod missing;
+
 pub mod prowlarr;
 pub mod qbittorrent;
 pub mod rss_poll;
+mod store;
+pub mod target;
 pub mod telegram_monitor;
 pub mod torrent_import;
+pub mod worker;
 
 // Re-export handler functions used in route registration
+pub use ddl_provider::{
+    dismiss_ddl_download, get_ddl_search_settings, list_ddl_downloads, list_ddl_providers,
+    search_ddl_provider, start_ddl_download, start_ddl_search_all, test_ddl_provider,
+    toggle_ddl_provider, update_ddl_search_settings,
+};
 pub use detection::{
     blacklist_release, delete_available_download, get_detection_report, get_detection_results,
     get_latest_found, list_blacklisted_releases, start_detection, unblacklist_release,

@@ -46,8 +46,9 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::state::{
-    load_concurrent_renders, load_concurrent_telegram_downloads, load_dynamic_settings, AppState,
-    Metrics, PageRenderLocks, ReadRateLimit,
+    load_concurrent_ddl_provider_downloads, load_concurrent_renders,
+    load_concurrent_telegram_downloads, load_dynamic_settings, AppState, Metrics, PageRenderLocks,
+    ReadRateLimit,
 };
 
 #[tokio::main]
@@ -73,6 +74,12 @@ async fn main() -> anyhow::Result<()> {
     info!(
         "Using concurrent_telegram_downloads limit: {}",
         concurrent_telegram_downloads
+    );
+
+    let concurrent_ddl_provider_downloads = load_concurrent_ddl_provider_downloads(&pool).await;
+    info!(
+        "Using concurrent_ddl_provider_downloads limit: {}",
+        concurrent_ddl_provider_downloads
     );
 
     let dynamic_settings = load_dynamic_settings(&pool).await;
@@ -103,8 +110,14 @@ async fn main() -> anyhow::Result<()> {
         settings: Arc::new(RwLock::new(dynamic_settings)),
         prowlarr_fetch_lock: Arc::new(Mutex::new(())),
         pending_tg_auth: Arc::new(Mutex::new(None)),
-        telegram_download_limit: Arc::new(Semaphore::new(concurrent_telegram_downloads)),
-        telegram_abort_handles: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        telegram_downloads: crate::downloads::worker::DownloadSlots::new(
+            Arc::new(Semaphore::new(concurrent_telegram_downloads)),
+            Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        ),
+        ddl_provider_downloads: crate::downloads::worker::DownloadSlots::new(
+            Arc::new(Semaphore::new(concurrent_ddl_provider_downloads)),
+            Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        ),
     };
 
     let admin_routes = Router::new()
@@ -302,6 +315,39 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/telegram-monitor/start-incremental",
             axum::routing::post(downloads::tg_monitor_start_incremental_sync_job),
+        )
+        .route("/ddl-providers", get(downloads::list_ddl_providers))
+        .route(
+            "/ddl-providers/search-all",
+            axum::routing::post(downloads::start_ddl_search_all),
+        )
+        .route(
+            "/ddl-providers/search-settings",
+            get(downloads::get_ddl_search_settings).post(downloads::update_ddl_search_settings),
+        )
+        .route(
+            "/ddl-providers/{id}/toggle",
+            axum::routing::post(downloads::toggle_ddl_provider),
+        )
+        .route(
+            "/ddl-providers/{id}/test",
+            axum::routing::post(downloads::test_ddl_provider),
+        )
+        .route(
+            "/ddl-providers/{id}/search",
+            axum::routing::post(downloads::search_ddl_provider),
+        )
+        .route(
+            "/ddl-providers/{id}/downloads",
+            axum::routing::post(downloads::start_ddl_download),
+        )
+        .route(
+            "/ddl-provider-downloads",
+            get(downloads::list_ddl_downloads),
+        )
+        .route(
+            "/ddl-provider-downloads/{id}",
+            axum::routing::delete(downloads::dismiss_ddl_download),
         )
         .route(
             "/komga/sync",

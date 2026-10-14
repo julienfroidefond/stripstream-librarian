@@ -6,65 +6,16 @@ use sqlx::Row;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use parsers::{detect_format, parse_metadata_fast};
+use std::sync::Arc;
 
-use crate::books::rename::{
-    load_rename_max_volume, load_rename_templates, render_rename_filename, RenameTemplateBook,
-};
-use crate::downloads::{import_pipeline::find_existing_series_dir, missing};
+use crate::downloads::missing;
+use crate::downloads::target::{finalize_download, prepare_destination, DownloadProgress};
+use crate::downloads::worker::DownloadQueue;
 use crate::{error::ApiError, state::AppState};
-use stripstream_core::paths::remap_libraries_path;
 
 use super::auth::{load_tg_settings, save_session_to_db};
 use super::channels::insert_document_message;
 use super::types::*;
-
-/// Find the physical target directory for a series in a library,
-/// matching existing book files first, then existing directories, then fallback to new.
-pub async fn resolve_target_dir(
-    pool: &sqlx::PgPool,
-    library_id: Uuid,
-    series_name: &str,
-) -> anyhow::Result<String> {
-    // 1. Try DB: find existing book files for this series
-    let any_row = sqlx::query(
-        "SELECT bf.abs_path FROM book_files bf \
-         JOIN books b ON b.id = bf.book_id \
-         LEFT JOIN series s ON s.id = b.series_id \
-         WHERE b.library_id = $1 \
-           AND norm_text(s.name) = norm_text($2) \
-         LIMIT 1",
-    )
-    .bind(library_id)
-    .bind(series_name)
-    .fetch_optional(pool)
-    .await?;
-
-    if let Some(r) = any_row {
-        let abs_path: String = r.get("abs_path");
-        let physical = remap_libraries_path(&abs_path);
-        let parent = std::path::Path::new(&physical)
-            .parent()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or(physical);
-        info!("[TG] Series '{}' DB match → {}", series_name, parent);
-        return Ok(parent);
-    }
-
-    // 2. No DB match: look for existing directory in library root
-    let lib_row = sqlx::query("SELECT root_path FROM libraries WHERE id = $1")
-        .bind(library_id)
-        .fetch_one(pool)
-        .await?;
-    let root_path: String = lib_row.get("root_path");
-    let physical_root = remap_libraries_path(&root_path);
-
-    let dir = find_existing_series_dir(&physical_root, series_name)
-        .unwrap_or_else(|| format!("{}/{}", physical_root.trim_end_matches('/'), series_name));
-
-    info!("[TG] Series '{}' dir → {}", series_name, dir);
-    Ok(dir)
-}
 
 pub async fn refresh_reimportable_telegram_links(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
     let result = sqlx::query(
@@ -417,7 +368,7 @@ pub async fn download_book(
         .and_then(|s| Uuid::parse_str(s).ok());
 
     let row = sqlx::query(
-        "SELECT b.source_id, b.message_id, b.filename, b.status, b.series_name, \
+        "SELECT b.source_id, b.message_id, b.filename, b.status, b.series_name, b.volume_number, \
                 COALESCE($2::uuid, b.library_id, s.library_id) AS library_id, \
                 s.channel_username \
          FROM telegram_book_links b \
@@ -441,6 +392,7 @@ pub async fn download_book(
     let library_id: Option<Uuid> = row.get("library_id");
     let channel_username: String = row.get("channel_username");
     let series_name: Option<String> = row.get("series_name");
+    let volume_number: Option<i32> = row.get("volume_number");
 
     let library_id =
         library_id.ok_or_else(|| ApiError::bad_request("No library configured for this source"))?;
@@ -457,75 +409,67 @@ pub async fn download_book(
     .execute(&state.pool)
     .await?;
 
-    let pool = state.pool.clone();
     let api_id_i32 = api_id as i32;
-    let download_limit = state.telegram_download_limit.clone();
-    let abort_handles = state.telegram_abort_handles.clone();
 
-    let handle = tokio::spawn(async move {
-        // Acquire semaphore permit — waits here if the concurrent download limit is reached
-        let _permit = download_limit.acquire_owned().await;
-
-        // Check if dismissed while waiting for the permit
-        let current =
-            sqlx::query_scalar::<_, String>("SELECT status FROM telegram_book_links WHERE id = $1")
-                .bind(id)
-                .fetch_optional(&pool)
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or_default();
-        if current == "dismissed" {
-            abort_handles.lock().await.remove(&id);
-            return;
-        }
-
-        // Switch to 'downloading' now that we have a slot
-        let _ = sqlx::query(
-            "UPDATE telegram_book_links SET status = 'downloading', updated_at = NOW() WHERE id = $1 AND status = 'queued'",
+    state
+        .telegram_downloads
+        .spawn(
+            state.pool.clone(),
+            id,
+            Arc::new(TelegramDownloadQueue),
+            move |pool| {
+                Box::pin(async move {
+                    do_download(
+                        pool,
+                        api_id_i32,
+                        api_hash,
+                        session_bytes,
+                        id,
+                        source_id,
+                        message_id,
+                        channel_username,
+                        filename,
+                        series_name,
+                        library_id,
+                        volume_number,
+                    )
+                    .await
+                })
+            },
         )
-        .bind(id)
-        .execute(&pool)
         .await;
 
-        match do_download(
-            pool.clone(),
-            api_id_i32,
-            api_hash,
-            session_bytes,
-            id,
-            source_id,
-            message_id,
-            channel_username,
-            filename,
-            series_name,
-            library_id,
-        )
-        .await
-        {
-            Ok(_) => {}
-            Err(e) => {
-                error!("Telegram download failed for {id}: {e}");
-                // Don't overwrite 'dismissed' status
-                let _ = sqlx::query(
-                    "UPDATE telegram_book_links SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2 AND status != 'dismissed'",
-                )
-                .bind(e.to_string())
-                .bind(id)
-                .execute(&pool)
-                .await;
-            }
-        }
-
-        abort_handles.lock().await.remove(&id);
-    });
-    state
-        .telegram_abort_handles
-        .lock()
-        .await
-        .insert(id, handle.abort_handle());
-
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+/// Claim/fail SQL for the Telegram book download queue.
+struct TelegramDownloadQueue;
+
+#[async_trait::async_trait]
+impl DownloadQueue for TelegramDownloadQueue {
+    async fn claim(&self, pool: &sqlx::PgPool, id: Uuid) -> bool {
+        sqlx::query(
+            "UPDATE telegram_book_links SET status = 'downloading', updated_at = NOW() \
+             WHERE id = $1 AND status = 'queued'",
+        )
+        .bind(id)
+        .execute(pool)
+        .await
+        .map(|result| result.rows_affected() > 0)
+        .unwrap_or(false)
+    }
+
+    async fn mark_failed(&self, pool: &sqlx::PgPool, id: Uuid, error: &str) {
+        // Don't overwrite a 'dismissed' status.
+        let _ = sqlx::query(
+            "UPDATE telegram_book_links SET status = 'failed', error_message = $1, updated_at = NOW() \
+             WHERE id = $2 AND status != 'dismissed'",
+        )
+        .bind(error)
+        .bind(id)
+        .execute(pool)
+        .await;
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -541,6 +485,7 @@ pub async fn do_download(
     filename: String,
     series_name: String,
     library_id: Uuid,
+    volume_number: Option<i32>,
 ) -> anyhow::Result<()> {
     use grammers_client::types::Downloadable;
     use grammers_client::{Client, Config};
@@ -581,29 +526,17 @@ pub async fn do_download(
         .media()
         .ok_or_else(|| anyhow::anyhow!("No media in message {message_id}"))?;
 
-    // Resolve target directory using series matching
-    let target_dir = resolve_target_dir(&pool, library_id, &series_name).await?;
-    std::fs::create_dir_all(&target_dir)?;
-
-    let safe_name = build_telegram_target_filename(&pool, library_id, &series_name, &filename)
-        .await?
-        .unwrap_or_else(|| sanitize_filename(&filename));
-    let dest_path = std::path::Path::new(&target_dir).join(&safe_name);
-
-    if dest_path.exists() {
-        tokio::fs::remove_file(&dest_path)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to remove existing file for re-import: {e}"))?;
-    }
-
-    let tmp_path = format!("{}.tmp", dest_path.display());
+    // Resolve the target directory + filename; `.tmp` is cleared at each retry.
+    let destination =
+        prepare_destination(&pool, library_id, &series_name, &filename, volume_number).await?;
+    let dest_path = destination.dest_path;
+    let tmp_path = destination.tmp_path;
 
     info!("Downloading {} → {}", filename, dest_path.display());
     let downloadable = Downloadable::Media(media);
 
     // Stream download with progress tracking and FLOOD_WAIT retry
     const MAX_RETRIES: u32 = 3;
-    const PROGRESS_UPDATE_BYTES: i64 = 1_048_576; // update DB every 1 MB
     const DOWNLOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30 * 60);
     let mut retries = 0u32;
     loop {
@@ -612,17 +545,14 @@ pub async fn do_download(
             use tokio::io::AsyncWriteExt;
             let mut file = tokio::fs::File::create(&tmp_path).await?;
             let mut iter = client.iter_download(&downloadable);
-            let mut bytes_written: i64 = 0;
-            let mut last_db_update: i64 = 0;
+            let mut progress = DownloadProgress::new();
             while let Some(chunk) = iter.next().await.map_err(std::io::Error::other)? {
                 file.write_all(&chunk).await?;
-                bytes_written += chunk.len() as i64;
-                if bytes_written - last_db_update >= PROGRESS_UPDATE_BYTES {
-                    last_db_update = bytes_written;
+                if let Some(written) = progress.advance(chunk.len() as i64) {
                     let _ = sqlx::query(
                         "UPDATE telegram_book_links SET bytes_downloaded = $1, updated_at = NOW() WHERE id = $2",
                     )
-                    .bind(bytes_written)
+                    .bind(written)
                     .bind(link_id)
                     .execute(&pool)
                     .await;
@@ -657,7 +587,7 @@ pub async fn do_download(
         }
     }
 
-    tokio::fs::rename(&tmp_path, &dest_path).await?;
+    let scan_job_id = finalize_download(&pool, library_id, &tmp_path, &dest_path).await?;
 
     let updated_bytes = client.session().save();
     save_session_to_db(&pool, updated_bytes)
@@ -665,16 +595,6 @@ pub async fn do_download(
         .map_err(|e| anyhow::anyhow!("session save: {:?}", e))?;
 
     info!("Downloaded {filename} to {}", dest_path.display());
-
-    // Enqueue scan job
-    let scan_job_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, $2, 'scan', 'pending')",
-    )
-    .bind(scan_job_id)
-    .bind(library_id)
-    .execute(&pool)
-    .await?;
 
     // Mark imported
     sqlx::query(
@@ -694,57 +614,6 @@ pub fn parse_flood_wait_secs(err: &str) -> Option<u64> {
         .nth(1)
         .and_then(|s| s.trim().split(|c: char| !c.is_ascii_digit()).next())
         .and_then(|s| s.parse().ok())
-}
-
-pub fn sanitize_filename(name: &str) -> String {
-    let safe: String = name
-        .chars()
-        .map(|c| match c {
-            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
-            c => c,
-        })
-        .collect();
-    if safe.is_empty() {
-        "unknown".to_string()
-    } else {
-        safe
-    }
-}
-
-pub async fn build_telegram_target_filename(
-    pool: &sqlx::PgPool,
-    library_id: Uuid,
-    series_name: &str,
-    filename: &str,
-) -> anyhow::Result<Option<String>> {
-    let path = std::path::Path::new(filename);
-    let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let Some(format) = detect_format(path) else {
-        return Ok(None);
-    };
-
-    let parsed = parse_metadata_fast(path, format, std::path::Path::new(""));
-    let fallback_volume = parsed.volume.unwrap_or(0);
-    let max_volume = load_rename_max_volume(pool, library_id, series_name, fallback_volume).await?;
-    let templates = load_rename_templates(pool).await?;
-
-    let book = RenameTemplateBook {
-        title: parsed.title,
-        authors: Vec::new(),
-        volume: parsed.volume,
-        volume_type: parsed.volume_type.as_str().to_string(),
-        publish_date: None,
-        isbn: None,
-        abs_path: filename.to_string(),
-    };
-
-    Ok(render_rename_filename(
-        &templates,
-        series_name,
-        &book,
-        max_volume,
-        extension,
-    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -772,9 +641,7 @@ pub async fn dismiss_book(
 
     // Abort running/queued task before any DB change so the semaphore slot is freed immediately
     if current == "queued" || current == "downloading" {
-        if let Some(handle) = state.telegram_abort_handles.lock().await.remove(&id) {
-            handle.abort();
-        }
+        state.telegram_downloads.cancel(id).await;
     }
 
     if query.hard.unwrap_or(false) {

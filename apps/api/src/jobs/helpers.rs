@@ -64,3 +64,93 @@ pub(crate) async fn insert_event(
     .execute(pool)
     .await;
 }
+
+/// Convenience wrapper for events that carry only an entity *name* (no
+/// `entity_type`), the shape used by the download and reading-status jobs.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn insert_entity_event(
+    pool: &PgPool,
+    job_id: Uuid,
+    event_type: &str,
+    level: &str,
+    entity_name: Option<&str>,
+    message: Option<&str>,
+    detail: Option<serde_json::Value>,
+) {
+    insert_event(
+        pool,
+        job_id,
+        event_type,
+        level,
+        None,
+        entity_name,
+        message,
+        detail,
+    )
+    .await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::Row;
+
+    async fn seed_job(pool: &PgPool) -> Uuid {
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, type, status) VALUES ($1, 'rating_pull', 'running')",
+        )
+        .bind(job_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        job_id
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn update_progress_writes_count_percent_and_current(pool: PgPool) {
+        let job_id = seed_job(&pool).await;
+
+        update_progress(&pool, job_id, 29, 100, "Astérix").await;
+
+        let row = sqlx::query(
+            "SELECT processed_files, progress_percent, current_file FROM index_jobs WHERE id = $1",
+        )
+        .bind(job_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.get::<i32, _>("processed_files"), 29);
+        assert_eq!(row.get::<i32, _>("progress_percent"), 29);
+        assert_eq!(row.get::<String, _>("current_file"), "Astérix");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn update_progress_is_zero_percent_without_total(pool: PgPool) {
+        let job_id = seed_job(&pool).await;
+
+        update_progress(&pool, job_id, 0, 0, "Astérix").await;
+
+        let percent: i32 =
+            sqlx::query_scalar("SELECT progress_percent FROM index_jobs WHERE id = $1")
+                .bind(job_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(percent, 0);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn is_job_cancelled_reflects_status(pool: PgPool) {
+        let job_id = seed_job(&pool).await;
+        assert!(!is_job_cancelled(&pool, job_id).await);
+
+        sqlx::query("UPDATE index_jobs SET status = 'cancelled' WHERE id = $1")
+            .bind(job_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert!(is_job_cancelled(&pool, job_id).await);
+    }
+}

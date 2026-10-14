@@ -13,6 +13,10 @@ const TelegramSearchModal = nextDynamic(
   () => import("./TelegramSearchModal").then(m => m.TelegramSearchModal)
 );
 
+const DdlProviderSearchModal = nextDynamic(
+  () => import("./DdlProviderSearchModal").then(m => m.DdlProviderSearchModal)
+);
+
 interface MissingBookItem {
   title: string | null;
   volume_number: number | null;
@@ -27,6 +31,7 @@ interface Props {
   prowlarrConfigured: boolean;
   qbConfigured: boolean;
   telegramEnabled: boolean;
+  ddlProviderEnabled?: boolean;
 }
 
 export function MissingBookActionsToolbar({
@@ -37,6 +42,7 @@ export function MissingBookActionsToolbar({
   prowlarrConfigured,
   qbConfigured,
   telegramEnabled,
+  ddlProviderEnabled = false,
 }: Props) {
   const { t } = useTranslation();
 
@@ -80,6 +86,22 @@ export function MissingBookActionsToolbar({
               </ActionsMenuItem>
             )}
           </TelegramSearchModal>
+        )}
+        {ddlProviderEnabled && (
+          <DdlProviderSearchModal
+            seriesName={seriesName}
+            libraryId={libraryId}
+            missingBooks={[missingBook]}
+            targetVolume={volumeNumber}
+            initialQuery={initialQuery}
+            initialEnabled={ddlProviderEnabled}
+          >
+            {(open) => (
+              <ActionsMenuItem icon={<Icon name="globe" size="sm" className="text-emerald-500" />} onClick={open}>
+                {t("ddlProviders.searchButton")}
+              </ActionsMenuItem>
+            )}
+          </DdlProviderSearchModal>
         )}
       </ActionsMenuSection>
     </ActionsMenu>

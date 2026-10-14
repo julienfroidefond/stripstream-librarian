@@ -11,6 +11,7 @@ import { GET as jobsStream } from "@/app/api/jobs/stream/route";
 import { GET as jobStream } from "@/app/api/jobs/[id]/stream/route";
 import { GET as torrentStream } from "@/app/api/torrent-downloads/stream/route";
 import { GET as telegramStream } from "@/app/api/telegram-monitor/downloads/stream/route";
+import { GET as ddlStream } from "@/app/api/ddl-provider-downloads/stream/route";
 
 const fetchMock = vi.fn();
 const decoder = new TextDecoder();
@@ -239,6 +240,68 @@ describe("GET /api/telegram-monitor/downloads/stream", () => {
     vi.useFakeTimers();
     fetchMock.mockImplementation(() => Promise.resolve(jsonResponse([{ status: "success" }])));
     const res = await telegramStream(request());
+    const reader = res.body!.getReader();
+    expect(await readChunk(reader)).toBe("");
+    await vi.advanceTimersByTimeAsync(15000);
+    const chunks = [await readChunk(reader), await readChunk(reader), await readChunk(reader)];
+    expect(chunks).toContain(": heartbeat\n\n");
+    await reader.cancel();
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+  });
+});
+
+describe("GET /api/ddl-provider-downloads/stream", () => {
+  it("streams downloads", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse([{ status: "queued" }])));
+    const ac = new AbortController();
+    const res = await ddlStream(request(ac.signal));
+    const reader = res.body!.getReader();
+    expect(await readChunk(reader)).toBe("");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await readChunk(reader)).toBe('data: [{"status":"queued"}]\n\n');
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://api:7080/ddl-provider-downloads",
+      expect.objectContaining({ headers: { Authorization: "Bearer test-token" } })
+    );
+    ac.abort();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await readChunk(reader)).toBeNull();
+  });
+
+  it("polls fast while a download is queued or downloading", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse([{ status: "downloading" }])));
+    const ac = new AbortController();
+    const res = await ddlStream(request(ac.signal));
+    const reader = res.body!.getReader();
+    expect(await readChunk(reader)).toBe("");
+    await vi.advanceTimersByTimeAsync(0);
+    await readChunk(reader);
+    fetchMock.mockClear();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await readChunk(reader);
+    ac.abort();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await readChunk(reader)).toBeNull();
+  });
+
+  it("ignores fetch failures", async () => {
+    fetchMock.mockRejectedValue(new Error("down"));
+    const ac = new AbortController();
+    const res = await ddlStream(request(ac.signal));
+    const reader = res.body!.getReader();
+    await readChunk(reader);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    ac.abort();
+  });
+
+  it("emits heartbeats and stops when the connection is cancelled", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse([])));
+    const res = await ddlStream(request());
     const reader = res.body!.getReader();
     expect(await readChunk(reader)).toBe("");
     await vi.advanceTimersByTimeAsync(15000);

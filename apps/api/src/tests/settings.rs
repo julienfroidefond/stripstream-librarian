@@ -1,14 +1,13 @@
 //! Integration tests for the `settings` module.
 //!
-//! Handlers are called directly with a hand-built [`AppState`] backed by an
-//! ephemeral Postgres provisioned by `#[sqlx::test]`. Filesystem-backed handlers
+//! Handlers are called directly with the shared `test_state` helper, backed by
+//! an ephemeral Postgres provisioned by `#[sqlx::test]`. Filesystem-backed handlers
 //! (`clear_cache`, `get_cache_stats`, `get_thumbnail_stats`) run against real
 //! `tempfile` directories.
 //!
 //! No production fix is included: every assertion locks current behaviour.
 
-use std::collections::HashMap;
-use std::sync::{atomic::AtomicU64, Arc};
+use std::sync::Arc;
 use std::time::Instant;
 
 use axum::http::StatusCode;
@@ -16,41 +15,15 @@ use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use tempfile::TempDir;
-use tokio::sync::{Mutex, RwLock, Semaphore};
 use uuid::Uuid;
 
 use super::*;
-use crate::state::{
-    DiskCacheStatsSnapshot, DynamicSettings, Metrics, PageRenderLocks, ReadRateLimit,
-};
+use crate::state::test_state;
+use crate::state::DiskCacheStatsSnapshot;
 
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
-
-fn test_state(pool: PgPool) -> AppState {
-    AppState {
-        pool,
-        bootstrap_token: Arc::from("test-token"),
-        page_cache: Arc::new(Mutex::new(crate::state::PageCache::new(1))),
-        disk_cache_stats: Arc::new(Mutex::new(None::<DiskCacheStatsSnapshot>)),
-        page_render_locks: Arc::new(PageRenderLocks::new(1)),
-        page_render_limit: Arc::new(Semaphore::new(1)),
-        metrics: Arc::new(Metrics {
-            requests_total: AtomicU64::new(0),
-            page_cache_hits: AtomicU64::new(0),
-            page_cache_misses: AtomicU64::new(0),
-        }),
-        read_rate_limit: Arc::new(std::sync::Mutex::new(ReadRateLimit::new())),
-        stats_cache: Arc::new(crate::stats::StatsCache::new()),
-        settings: Arc::new(RwLock::new(DynamicSettings::default())),
-        prowlarr_fetch_lock: Arc::new(Mutex::new(())),
-        pending_tg_auth: Arc::new(Mutex::new(None)),
-        telegram_download_limit: Arc::new(Semaphore::new(1)),
-        telegram_abort_handles: Arc::new(Mutex::new(HashMap::new())),
-    }
-}
-
 fn expect_err<T>(result: Result<T, ApiError>) -> ApiError {
     match result {
         Ok(_) => panic!("expected an error result"),

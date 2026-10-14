@@ -1,4 +1,4 @@
-import { fetchLibraries, fetchSeriesById, fetchSeriesMetadata, getMissingBooks, apiFetch, fetchDownloadsEnabled, SeriesMetadataDto, MissingBooksDto, TelegramMonitorStatus } from "@/lib/api";
+import { fetchLibraries, fetchSeriesById, fetchSeriesMetadata, getMissingBooks, apiFetch, fetchDownloadsEnabled, hasEnabledDdlProvider, SeriesMetadataDto, MissingBooksDto, TelegramMonitorStatus } from "@/lib/api";
 import { MissingBookActionsToolbar } from "@/app/components/MissingBookActionsToolbar";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { getServerTranslations } from "@/lib/i18n/server";
@@ -23,7 +23,7 @@ export default async function MissingBookDetailPage({
     notFound();
   }
 
-  const [seriesDto, missingData, libraries, seriesMeta, prowlarrConfigured, qbConfigured, telegramStatus] = await Promise.all([
+  const [seriesDto, missingData, libraries, seriesMeta, prowlarrConfigured, qbConfigured, telegramStatus, ddlProviderEnabled] = await Promise.all([
     fetchSeriesById(seriesId).catch(() => null),
     getMissingBooks(linkId).catch(() => null as MissingBooksDto | null),
     fetchLibraries().catch(() => [] as { id: string; name: string }[]),
@@ -33,6 +33,7 @@ export default async function MissingBookDetailPage({
       .then(d => !!(d?.url?.trim() && d?.username?.trim()))
       .catch(() => false),
     apiFetch<TelegramMonitorStatus>("/telegram-monitor/status", { next: { revalidate: 60 } }).catch(() => null),
+    hasEnabledDdlProvider(),
   ]);
 
   if (!seriesDto) {
@@ -136,6 +137,7 @@ export default async function MissingBookDetailPage({
             prowlarrConfigured={prowlarrConfigured}
             qbConfigured={qbConfigured}
             telegramEnabled={telegramEnabled}
+            ddlProviderEnabled={ddlProviderEnabled}
           />
         </div>
       </div>
