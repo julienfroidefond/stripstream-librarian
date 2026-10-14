@@ -90,7 +90,7 @@ Le rapport final de chaque tâche est consultable après son exécution, avec le
 | 2 | `rebuild`, `rescan`, `scan` |
 | 3 | `thumbnail_rebuild`, `thumbnail_regenerate`, `cbr_to_cbz` |
 
-Les jobs API (`metadata_*`, `reading_status_*`, `download_detection`, `prowlarr_rss`, `telegram_sync`, `telegram_sync_incremental`) sont traités en FIFO.
+Les jobs API (`metadata_*`, `reading_status_*`, `download_detection`, `prowlarr_rss`, `ddl_search`, `telegram_sync`, `telegram_sync_incremental`) sont traités en FIFO.
 
 **Suivi temps réel** : flux SSE via `GET /index/jobs/{id}/stream`. Chaque événement contient `job_id`, `status`, `current_file`, `progress_percent`, `processed_files`, `total_files`, `stats_json`.
 

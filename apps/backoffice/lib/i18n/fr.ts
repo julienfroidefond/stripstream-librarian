@@ -589,6 +589,9 @@ const fr = {
   "jobType.prowlarr_rss": "Prowlarr RSS",
   "jobType.prowlarr_rssLabel": "Polling RSS Prowlarr",
   "jobType.prowlarr_rssDesc": "Récupère les releases récentes depuis Prowlarr en une seule requête et les rapproche de toutes les séries avec des volumes manquants. Plus rapide que la détection classique.",
+  "jobType.ddl_search": "DDL",
+  "jobType.ddl_searchLabel": "Recherche DDL (téléchargement direct)",
+  "jobType.ddl_searchDesc": "Interroge les fournisseurs DDL activés (ex. fourtoutici) pour chaque série avec des volumes manquants et enregistre les fichiers disponibles. Ne télécharge rien automatiquement.",
   "jobType.telegram_sync": "Telegram",
   "jobType.telegram_syncLabel": "Synchronisation Telegram",
   "jobType.telegram_syncDesc": "Recherche dans les channels Telegram surveillés chaque série de votre bibliothèque et importe les fichiers correspondants.",
@@ -1165,6 +1168,7 @@ const fr = {
   "downloads.filterActive": "En cours",
   "downloads.sourceProwlarr": "Prowlarr",
   "downloads.sourceTelegram": "Telegram",
+  "downloads.sourceDdl": "Téléchargement direct",
   "downloads.empty": "Aucun téléchargement",
   "downloads.volumes": "Volumes",
   "downloads.filesImported": "fichiers importés",
@@ -1441,11 +1445,6 @@ const fr = {
   "telegramMonitor.availableCount": "{{count}} livre(s) disponible(s)",
   "telegramMonitor.searchPlaceholder": "Rechercher par nom de série...",
   "telegramMonitor.liveSearching": "Recherche sur Telegram en cours...",
-} as const;
-
-export type TranslationKey = keyof typeof fr;
-export default fr;
-  "downloads.sourceDdl": "Téléchargement direct",
 
   // Direct download providers (JSON / HTML catalogues)
   "ddlProviders.title": "Téléchargement direct",
@@ -1488,3 +1487,7 @@ export default fr;
   "ddlProviders.searchQueued": "Recherche lancée en arrière-plan",
   "ddlProviders.searchAlreadyRunning": "Une recherche est déjà en cours",
   "ddlProviders.enableFirst": "Activez d'abord un fournisseur",
+} as const;
+
+export type TranslationKey = keyof typeof fr;
+export default fr;

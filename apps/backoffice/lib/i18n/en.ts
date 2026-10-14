@@ -591,6 +591,9 @@ const en: Record<TranslationKey, string> = {
   "jobType.prowlarr_rss": "Prowlarr RSS",
   "jobType.prowlarr_rssLabel": "Prowlarr RSS polling",
   "jobType.prowlarr_rssDesc": "Fetches recent releases from Prowlarr in a single request and matches them against all series with missing volumes. Faster than classic detection.",
+  "jobType.ddl_search": "DDL",
+  "jobType.ddl_searchLabel": "DDL search (direct download)",
+  "jobType.ddl_searchDesc": "Queries the enabled DDL providers (e.g. fourtoutici) for every series with missing volumes and stores the files it finds. Downloads nothing automatically.",
   "jobType.telegram_sync": "Telegram",
   "jobType.telegram_syncLabel": "Telegram sync",
   "jobType.telegram_syncDesc": "Searches monitored Telegram channels for each series in your library and imports matching files.",
@@ -1167,6 +1170,7 @@ const en: Record<TranslationKey, string> = {
   "downloads.filterActive": "In progress",
   "downloads.sourceProwlarr": "Prowlarr",
   "downloads.sourceTelegram": "Telegram",
+  "downloads.sourceDdl": "Direct download",
   "downloads.empty": "No downloads",
   "downloads.volumes": "Volumes",
   "downloads.filesImported": "files imported",
@@ -1443,10 +1447,6 @@ const en: Record<TranslationKey, string> = {
   "telegramMonitor.availableCount": "{{count}} book(s) available",
   "telegramMonitor.searchPlaceholder": "Search by series name...",
   "telegramMonitor.liveSearching": "Searching Telegram channels...",
-};
-
-export default en;
-  "downloads.sourceDdl": "Direct download",
 
   // Direct download providers (JSON / HTML catalogues)
   "ddlProviders.title": "Direct download",
@@ -1489,3 +1489,6 @@ export default en;
   "ddlProviders.searchQueued": "Search started in the background",
   "ddlProviders.searchAlreadyRunning": "A search is already running",
   "ddlProviders.enableFirst": "Enable a provider first",
+};
+
+export default en;
