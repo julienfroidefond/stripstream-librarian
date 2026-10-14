@@ -23,7 +23,7 @@ function PreviewPage({
       <div className="relative w-full aspect-[2/3] bg-muted rounded-lg overflow-hidden border border-border">
         {failed ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-center px-1">
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-3xs text-muted-foreground">
               {t("bookPreview.pageUnavailable")}
             </span>
           </div>

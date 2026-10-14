@@ -55,7 +55,7 @@ import { Button, Card, Badge, Icon, Input, ProgressBar, StatBox } from "@/app/co
 ## Conventions
 
 - **App Router** : toutes les pages sont des Server Components par défaut. Utiliser `"use client"` seulement pour l'interactivité.
-- **Tailwind v4** : config dans `postcss.config.js` + `tailwind.config.js`. Variables CSS dans `globals.css`.
+- **Tailwind v4** : config dans `postcss.config.js`, tokens et variables CSS dans `globals.css` (`@theme`). Pas de `tailwind.config.js` (v4 ne le charge pas sans directive `@config`).
 - **Thème** : `ThemeProvider` + `ThemeToggle` pour dark/light mode via `next-themes`.
 - **Icônes** : composant `<Icon name="..." size="sm|md|lg" />` dans `ui/Icon.tsx` — pas de librairie externe.
 - **Navigation** : routes typées dans `layout.tsx` (`"/" | "/books" | "/libraries" | "/jobs" | "/tokens" | "/settings"`).

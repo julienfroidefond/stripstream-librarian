@@ -243,7 +243,7 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
 
             {/* Lock legend */}
             {Object.values(lockedFields).some(Boolean) && (
-              <p className="text-xs text-amber-500 flex items-center gap-1.5">
+              <p className="text-xs text-warning flex items-center gap-1.5">
                 <Icon name="lock" size="sm" className="!w-3.5 !h-3.5 shrink-0" />
                 {t("editBook.lockedFieldsNote")}
               </p>
@@ -266,7 +266,7 @@ export function EditBookForm({ book, children }: EditBookFormProps) {
               <button
                 type="submit"
                 disabled={isPending || !title.trim()}
-                className="px-4 py-1.5 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {isPending ? t("editBook.savingLabel") : t("editBook.saveLabel")}
               </button>

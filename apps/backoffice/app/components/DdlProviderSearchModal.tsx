@@ -271,7 +271,7 @@ export function DdlProviderSearchModal({
       maxWidth="5xl"
       title={
         <span className="flex items-center gap-2">
-          <Icon name="globe" size="sm" className="text-emerald-500" />
+          <Icon name="globe" size="sm" className="text-success" />
           {t("ddlProviders.searchModalTitle", { series: seriesName })}
         </span>
       }
@@ -382,7 +382,7 @@ export function DdlProviderSearchModal({
                   if (providerId) doSearch(q, providerId);
                 }}
                 disabled={isSearching}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border disabled:opacity-50 transition-colors border-green-500/50 bg-green-500/10 text-green-600 hover:bg-green-500/20"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border disabled:opacity-50 transition-colors border-success/50 bg-success/10 text-success hover:bg-success/20"
               >
                 {label}
               </button>
@@ -416,14 +416,14 @@ export function DdlProviderSearchModal({
                       <tr
                         key={key}
                         className={`border-b border-border/40 last:border-b-0 transition-colors ${
-                          isMissing ? "bg-green-500/10 hover:bg-green-500/15" : "hover:bg-muted/20"
+                          isMissing ? "bg-success/10 hover:bg-success/15" : "hover:bg-muted/20"
                         } ${status === "dismissed" ? "opacity-40" : ""}`}
                       >
                         <td className="px-3 py-2.5 whitespace-nowrap w-12">
                           {result.volume_number != null ? (
                             <span
                               className={`px-1.5 py-0.5 rounded text-xs font-medium tabular-nums ${
-                                isMissing ? "bg-green-500/20 text-green-600" : "bg-muted/50 text-muted-foreground"
+                                isMissing ? "bg-success/20 text-success" : "bg-muted/50 text-muted-foreground"
                               }`}
                             >
                               T{String(result.volume_number).padStart(2, "0")}
@@ -436,17 +436,17 @@ export function DdlProviderSearchModal({
                           <p className="text-sm text-foreground">{result.filename}</p>
                           <div className="flex flex-wrap items-center gap-1 mt-0.5">
                             {result.series_name && result.series_name !== seriesName && (
-                              <span className="px-1 py-px rounded bg-warning/10 text-warning text-[10px]">
+                              <span className="px-1 py-px rounded bg-warning/10 text-warning text-3xs">
                                 {result.series_name}
                               </span>
                             )}
                             {result.already_owned && (
-                              <span className="px-1 py-px rounded bg-muted/40 text-muted-foreground text-[10px]">
+                              <span className="px-1 py-px rounded bg-muted/40 text-muted-foreground text-3xs">
                                 {t("ddlProviders.owned")}
                               </span>
                             )}
                             {isMissing && (
-                              <span className="px-1 py-px rounded bg-green-500/15 text-green-600 text-[10px]">
+                              <span className="px-1 py-px rounded bg-success/15 text-success text-3xs">
                                 {t("ddlProviders.matchedMissing", {
                                   volumes: result.matched_missing_volumes.join(", "),
                                 })}
@@ -454,12 +454,12 @@ export function DdlProviderSearchModal({
                             )}
                           </div>
                         </td>
-                        <td className="px-3 py-2.5 whitespace-nowrap text-[11px] text-muted-foreground">
+                        <td className="px-3 py-2.5 whitespace-nowrap text-2xs text-muted-foreground">
                           {formatSize(result.size)}
                         </td>
                         <td className="px-3 py-2.5 whitespace-nowrap">
                           {statusLabel(status, t) && (
-                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${statusClass(status)}`}>
+                            <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full ${statusClass(status)}`}>
                               {statusLabel(status, t)}
                             </span>
                           )}
@@ -528,7 +528,7 @@ export function DdlProviderSearchModal({
         {/* No results */}
         {!isSearching && searched && results.length === 0 && (
           <div className="flex flex-col items-center justify-center gap-3 py-8 text-muted-foreground">
-            <Icon name="globe" size="xl" className="opacity-20 text-emerald-500" />
+            <Icon name="globe" size="xl" className="opacity-20 text-success" />
             <p className="text-sm">{t("ddlProviders.noResults")}</p>
           </div>
         )}
@@ -546,7 +546,7 @@ export function DdlProviderSearchModal({
           onClick={handleOpen}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
         >
-          <Icon name="globe" size="sm" className="text-emerald-500" />
+          <Icon name="globe" size="sm" className="text-success" />
           {t("ddlProviders.searchButton")}
         </button>
       )}

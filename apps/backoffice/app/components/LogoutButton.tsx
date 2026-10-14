@@ -2,8 +2,11 @@
 
 import { useRouter } from "next/navigation";
 
+import { useTranslation } from "@/lib/i18n/context";
+
 export function LogoutButton() {
   const router = useRouter();
+  const { t } = useTranslation();
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -14,7 +17,7 @@ export function LogoutButton() {
   return (
     <button
       onClick={handleLogout}
-      title="Se déconnecter"
+      title={t("auth.logout")}
       className="h-9 w-9 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-200"
     >
       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

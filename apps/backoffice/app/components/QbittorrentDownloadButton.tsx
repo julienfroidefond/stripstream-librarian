@@ -103,7 +103,7 @@ export function QbittorrentDownloadButton({
           disabled={sending}
           className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors disabled:opacity-50 shrink-0 ${
             sent
-              ? "text-green-500"
+              ? "text-success"
               : error
                 ? "text-destructive"
                 : "text-primary hover:bg-primary/10"

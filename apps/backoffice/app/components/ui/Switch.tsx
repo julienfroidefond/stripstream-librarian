@@ -27,7 +27,7 @@ export function Switch({ size = "md", label, labelPosition = "right", className 
     <span className="relative inline-flex items-center shrink-0">
       <input type="checkbox" className="sr-only peer" {...props} />
       <span
-        className={`${s.track} bg-muted rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:transition-all peer-checked:bg-primary ${s.thumb}`}
+        className={`${s.track} bg-muted rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:transition-all peer-checked:bg-primary ${s.thumb}`}
       />
     </span>
   );

@@ -67,7 +67,7 @@ describe("JobTypeBadge", () => {
   it("translates a known job type and styles it", () => {
     render(<JobTypeBadge type="metadata_batch" />);
     const badge = screen.getByText("jobType.metadata_batch");
-    expect(badge.className).toContain("bg-teal-500/80");
+    expect(badge.className).toContain("bg-info-soft");
   });
 
   it("falls back for an unknown type", () => {

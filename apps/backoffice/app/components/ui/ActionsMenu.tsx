@@ -298,7 +298,7 @@ export function ActionsMenuSection({ label, children }: ActionsMenuSectionProps)
   return (
     <div className="py-1 first:pt-0 last:pb-0 border-t border-border/60 first:border-t-0">
       {label && (
-        <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <div className="px-3 pt-1.5 pb-1 text-3xs font-semibold uppercase tracking-wider text-muted-foreground">
           {label}
         </div>
       )}

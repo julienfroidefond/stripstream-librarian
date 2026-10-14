@@ -71,7 +71,7 @@ export function BookActionsToolbar({ book, hasActiveUser = true, telegramEnabled
               initialQuery={initialQuery}
             >
               {(open) => (
-                <ActionsMenuItem icon={<Icon name="send" size="sm" className="text-sky-500" />} onClick={open}>
+                <ActionsMenuItem icon={<Icon name="send" size="sm" className="text-info" />} onClick={open}>
                   {t("telegramMonitor.searchButton")}
                 </ActionsMenuItem>
               )}
@@ -86,7 +86,7 @@ export function BookActionsToolbar({ book, hasActiveUser = true, telegramEnabled
               initialEnabled={ddlProviderEnabled}
             >
               {(open) => (
-                <ActionsMenuItem icon={<Icon name="globe" size="sm" className="text-emerald-500" />} onClick={open}>
+                <ActionsMenuItem icon={<Icon name="globe" size="sm" className="text-success" />} onClick={open}>
                   {t("ddlProviders.searchButton")}
                 </ActionsMenuItem>
               )}

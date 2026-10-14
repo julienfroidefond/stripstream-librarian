@@ -12,10 +12,10 @@ const BODY_CELL = "px-3 py-2 align-middle";
 const EMPTY = "—";
 
 const SERIES_STATUS_CLASSES: Record<string, string> = {
-  ongoing: "bg-blue-500 text-white",
-  ended: "bg-green-500 text-white",
-  hiatus: "bg-amber-500 text-white",
-  cancelled: "bg-red-500 text-white",
+  ongoing: "bg-info text-info-foreground",
+  ended: "bg-success text-success-foreground",
+  hiatus: "bg-warning text-warning-foreground",
+  cancelled: "bg-error text-error-foreground",
 };
 
 interface TableColumn {
@@ -85,7 +85,7 @@ function RatingCell({
   userRating: number | null;
   communityScore: number | null;
 }) {
-  if (userRating != null) return <span className="font-medium text-amber-500">★ {userRating}</span>;
+  if (userRating != null) return <span className="font-medium text-warning">★ {userRating}</span>;
   if (communityScore != null) {
     return <span className="text-muted-foreground">★ {communityScore.toFixed(1)}</span>;
   }

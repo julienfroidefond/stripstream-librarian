@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Class-based dark mode. next-themes toggles the `.dark` class on <html>, but
+   Tailwind v4 defaults the `dark:` variant to `prefers-color-scheme`, so the
+   override below is required for `dark:` utilities to follow the app theme. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   /* Core Colors - Light Theme */
   --color-background: hsl(36 33% 97%);
@@ -40,15 +45,30 @@
   /* Status Colors */
   --color-success: hsl(142 60% 45%);
   --color-success-soft: hsl(142 60% 90%);
+  --color-success-foreground: hsl(210 40% 98%);
   --color-warning: hsl(45 93% 47%);
   --color-warning-soft: hsl(45 93% 90%);
+  --color-warning-foreground: hsl(222 33% 15%);
   --color-error: hsl(2 72% 48%);
   --color-error-soft: hsl(2 72% 90%);
+  --color-error-foreground: hsl(210 40% 98%);
+  --color-info: hsl(217 91% 45%);
+  --color-info-soft: hsl(214 95% 93%);
+  --color-info-foreground: hsl(210 40% 98%);
+  --color-highlight: hsl(263 70% 50%);
+  --color-highlight-soft: hsl(263 70% 95%);
+  --color-highlight-foreground: hsl(210 40% 98%);
   
-  /* Typography */
-  --font-sans: "Inter", "Avenir Next", "Segoe UI", "Noto Sans", system-ui, sans-serif;
-  --font-display: "Baskerville", "Times New Roman", serif;
-  
+  /* Typography — system UI stack. No web font is loaded (see DESIGN_AUDIT.md);
+     `Avenir Next` first on macOS, then the platform UI fonts. */
+  --font-sans: "Avenir Next", "Segoe UI", system-ui, "Noto Sans", sans-serif;
+
+  /* Micro text scale — replaces the arbitrary text-[10px] / text-[11px] values */
+  --text-2xs: 0.6875rem; /* 11px */
+  --text-2xs--line-height: 1rem;
+  --text-3xs: 0.625rem; /* 10px */
+  --text-3xs--line-height: 0.875rem;
+
   /* Border Radius */
   --radius: 0.75rem;
   --radius-sm: calc(var(--radius) - 4px);
@@ -93,10 +113,18 @@
   --color-ring: hsl(194 76% 62%);
   --color-success: hsl(142 70% 55%);
   --color-success-soft: hsl(142 30% 20%);
+  --color-success-foreground: hsl(222 35% 10%);
   --color-warning: hsl(45 90% 55%);
   --color-warning-soft: hsl(45 30% 20%);
   --color-error: hsl(2 80% 65%);
   --color-error-soft: hsl(2 30% 20%);
+  --color-error-foreground: hsl(222 35% 10%);
+  --color-info: hsl(213 94% 68%);
+  --color-info-soft: hsl(217 40% 24%);
+  --color-info-foreground: hsl(222 35% 10%);
+  --color-highlight: hsl(258 90% 76%);
+  --color-highlight-soft: hsl(263 40% 26%);
+  --color-highlight-foreground: hsl(222 35% 10%);
   --shadow-soft: 0 1px 2px 0 rgb(2 8 18 / 0.35);
   --shadow-card: 0 12px 30px -12px rgb(2 8 18 / 0.55);
   --shadow-elevation-1: 0 1px 2px 0 rgb(2 8 18 / 0.35);
@@ -122,58 +150,23 @@ body {
   min-height: 100vh;
 }
 
-/* Fond décoratif avec dégradés marqués */
+/* Numeric data in tables must not shift width when values change */
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Fond décoratif — deux halos alignés sur la palette (primary + highlight).
+   Les tokens suivent le thème, d'où l'absence de surcharge `.dark`. */
 body::before {
   content: '';
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   pointer-events: none;
   z-index: -1;
-  background: 
-    radial-gradient(ellipse 100% 60% at 50% -10%, hsl(198 78% 37% / 0.35), transparent 60%),
-    radial-gradient(ellipse 80% 50% at 90% 100%, hsl(142 60% 45% / 0.25), transparent 50%),
-    radial-gradient(ellipse 70% 40% at 10% 90%, hsl(45 93% 47% / 0.2), transparent 50%),
-    radial-gradient(ellipse 60% 30% at 80% 50%, hsl(280 60% 50% / 0.12), transparent 50%);
+  background:
+    radial-gradient(ellipse 90% 55% at 50% -10%, color-mix(in oklab, var(--color-primary) 20%, transparent), transparent 60%),
+    radial-gradient(ellipse 75% 50% at 100% 105%, color-mix(in oklab, var(--color-highlight) 13%, transparent), transparent 55%);
   background-attachment: fixed;
-}
-
-/* Dark mode - fond plus profond et marqué */
-.dark body::before {
-  background: 
-    radial-gradient(ellipse 100% 60% at 50% -10%, hsl(194 76% 62% / 0.3), transparent 60%),
-    radial-gradient(ellipse 80% 50% at 90% 100%, hsl(142 70% 55% / 0.22), transparent 50%),
-    radial-gradient(ellipse 70% 40% at 10% 90%, hsl(45 90% 55% / 0.18), transparent 50%),
-    radial-gradient(ellipse 60% 30% at 80% 50%, hsl(280 60% 65% / 0.1), transparent 50%);
-}
-
-/* Cercles décoratifs floutés plus visibles */
-body::after {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  pointer-events: none;
-  z-index: -2;
-  background: 
-    radial-gradient(circle 500px at 5% 15%, hsl(198 78% 37% / 0.15) 0%, transparent 70%),
-    radial-gradient(circle 400px at 95% 85%, hsl(142 60% 45% / 0.12) 0%, transparent 70%),
-    radial-gradient(circle 350px at 25% 95%, hsl(45 93% 47% / 0.1) 0%, transparent 70%),
-    radial-gradient(circle 450px at 85% 5%, hsl(198 78% 37% / 0.12) 0%, transparent 70%),
-    radial-gradient(circle 300px at 50% 50%, hsl(280 60% 50% / 0.08) 0%, transparent 70%);
-}
-
-.dark body::after {
-  background: 
-    radial-gradient(circle 500px at 5% 15%, hsl(194 76% 62% / 0.12) 0%, transparent 70%),
-    radial-gradient(circle 400px at 95% 85%, hsl(142 70% 55% / 0.1) 0%, transparent 70%),
-    radial-gradient(circle 350px at 25% 95%, hsl(45 90% 55% / 0.08) 0%, transparent 70%),
-    radial-gradient(circle 450px at 85% 5%, hsl(194 76% 62% / 0.1) 0%, transparent 70%),
-    radial-gradient(circle 300px at 50% 50%, hsl(280 60% 65% / 0.06) 0%, transparent 70%);
 }
 
 /* Texture subtile de grain */
@@ -198,6 +191,15 @@ body::after {
 
 .dark .bg-grain::before {
   opacity: 0.04;
+}
+
+/* Frosted surface (GlassCard) — translucent card over the decorative background */
+.glass-card {
+  background: color-mix(in oklab, var(--color-card) 72%, transparent);
+  border: 1px solid color-mix(in oklab, var(--color-border) 70%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  backdrop-filter: blur(12px) saturate(150%);
+  box-shadow: var(--shadow-card);
 }
 
 /* Selection */
@@ -259,25 +261,21 @@ body::after {
 
 /* Reading progress badge variants */
 .badge-unread {
-  background: hsl(var(--color-muted) / 0.6);
-  color: hsl(var(--color-muted-foreground));
-  border-color: hsl(var(--color-border));
+  background: color-mix(in oklab, var(--color-muted) 60%, transparent);
+  color: var(--color-muted-foreground);
+  border-color: var(--color-border);
 }
 
 .badge-in-progress {
-  background: hsl(38 92% 50% / 0.15);
-  color: hsl(38 92% 40%);
-  border-color: hsl(38 92% 50% / 0.3);
-}
-
-.dark .badge-in-progress {
-  color: hsl(38 92% 65%);
+  background: color-mix(in oklab, var(--color-warning) 15%, transparent);
+  color: color-mix(in oklab, var(--color-warning) 70%, var(--color-foreground));
+  border-color: color-mix(in oklab, var(--color-warning) 35%, transparent);
 }
 
 .badge-completed {
-  background: hsl(var(--color-success) / 0.15);
-  color: hsl(var(--color-success));
-  border-color: hsl(var(--color-success) / 0.3);
+  background: color-mix(in oklab, var(--color-success) 15%, transparent);
+  color: var(--color-success);
+  border-color: color-mix(in oklab, var(--color-success) 30%, transparent);
 }
 
 /* Hide scrollbar */

@@ -4,15 +4,18 @@ import React, { useState } from "react";
 import { ArchivedSeriesItemDto, ArchivedSeriesDetailDto, ArchivedBookReadingProgressDto, ArchivedSeriesReadingProgressDto } from "@/lib/api";
 import { Badge } from "@/app/components/ui/Badge";
 import { Icon } from "@/app/components/ui/Icon";
+import { useTranslation } from "@/lib/i18n/context";
+import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 
-function volumeLabel(volume: number | null, volumeType: string): string {
-  if (volumeType === "hs") return volume != null ? `HS ${volume}` : "Hors-série";
-  if (volumeType === "oneshot") return "One-shot";
-  if (volumeType === "integral") return "Intégrale";
-  return volume != null ? `T${volume}` : "?";
+function volumeLabel(t: TranslateFunction, volume: number | null, volumeType: string): string {
+  if (volumeType === "hs") return volume != null ? t("settings.archives.volumeHs", { volume }) : t("volumeType.hs");
+  if (volumeType === "oneshot") return t("volumeType.oneshot");
+  if (volumeType === "integral") return t("volumeType.integral");
+  return volume != null ? t("settings.archives.volume", { volume }) : "?";
 }
 
 function SeriesReadingProgress({ progress, bookCount }: { progress: ArchivedSeriesReadingProgressDto[]; bookCount: number }) {
+  const { t } = useTranslation();
   if (progress.length === 0) return <span className="text-muted-foreground text-xs">—</span>;
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -31,6 +34,7 @@ function SeriesReadingProgress({ progress, bookCount }: { progress: ArchivedSeri
 }
 
 function ReadingProgressBadges({ progress }: { progress: ArchivedBookReadingProgressDto[] }) {
+  const { t } = useTranslation();
   if (progress.length === 0) return <span className="text-muted-foreground text-xs">—</span>;
   return (
     <div className="flex flex-wrap gap-1">
@@ -40,9 +44,9 @@ function ReadingProgressBadges({ progress }: { progress: ArchivedBookReadingProg
           p.status === "reading" ? "warning" :
           "secondary";
         const label =
-          p.status === "read" ? "Lu" :
-          p.status === "reading" ? `En cours${p.current_page ? ` p.${p.current_page}` : ""}` :
-          "Non lu";
+          p.status === "read" ? t("status.read") :
+          p.status === "reading" ? `${t("status.reading")}${p.current_page ? ` · p.${p.current_page}` : ""}` :
+          t("status.unread");
         return (
           <span key={p.user_name} className="inline-flex items-center gap-1">
             <Badge variant={variant}>{label}</Badge>
@@ -59,6 +63,7 @@ interface Props {
 }
 
 export function ArchivesTable({ series }: Props) {
+  const { t, locale } = useTranslation();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [details, setDetails] = useState<Record<string, ArchivedSeriesDetailDto>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
@@ -85,14 +90,14 @@ export function ArchivesTable({ series }: Props) {
         <thead>
           <tr className="border-b border-border text-muted-foreground">
             <th className="w-8 px-4 py-3" />
-            <th className="text-left px-4 py-3 font-medium">Série</th>
-            <th className="text-left px-4 py-3 font-medium hidden sm:table-cell">Auteurs</th>
-            <th className="text-left px-4 py-3 font-medium hidden lg:table-cell">Éditeur</th>
-            <th className="text-left px-4 py-3 font-medium hidden md:table-cell">Genres</th>
-            <th className="text-right px-4 py-3 font-medium hidden sm:table-cell">Année</th>
-            <th className="text-right px-4 py-3 font-medium">Tomes</th>
-            <th className="text-left px-4 py-3 font-medium hidden sm:table-cell">Lecture</th>
-            <th className="text-right px-4 py-3 font-medium hidden sm:table-cell">Archivé le</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.archives.colSeries")}</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">{t("settings.archives.colAuthors")}</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden lg:table-cell">{t("settings.archives.colPublisher")}</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">{t("settings.archives.colGenres")}</th>
+            <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">{t("settings.archives.colYear")}</th>
+            <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.archives.colVolumes")}</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">{t("settings.archives.colReading")}</th>
+            <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">{t("settings.archives.colArchivedAt")}</th>
           </tr>
         </thead>
         <tbody>
@@ -117,7 +122,9 @@ export function ArchivesTable({ series }: Props) {
                   <td className="px-4 py-3">
                     <span className="font-medium text-foreground">{s.name}</span>
                     {s.status && (
-                      <span className="ml-2 text-xs text-muted-foreground capitalize">{s.status}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {t(`seriesStatus.${s.status}` as Parameters<typeof t>[0])}
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">
@@ -146,7 +153,7 @@ export function ArchivesTable({ series }: Props) {
                     <SeriesReadingProgress progress={s.reading_progress} bookCount={Number(s.book_count)} />
                   </td>
                   <td className="px-4 py-3 text-right text-muted-foreground hidden sm:table-cell whitespace-nowrap">
-                    {new Date(s.archived_at).toLocaleDateString("fr-FR")}
+                    {new Date(s.archived_at).toLocaleDateString(locale)}
                   </td>
                 </tr>
 
@@ -155,9 +162,9 @@ export function ArchivesTable({ series }: Props) {
                     <td />
                     <td colSpan={8} className="px-4 py-4">
                       {isLoading ? (
-                        <p className="text-sm text-muted-foreground">Chargement…</p>
+                        <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
                       ) : !detail ? (
-                        <p className="text-sm text-muted-foreground">Erreur de chargement.</p>
+                        <p className="text-sm text-muted-foreground">{t("settings.archives.detailError")}</p>
                       ) : (
                         <div className="space-y-4">
                           {detail.description && (
@@ -165,25 +172,25 @@ export function ArchivesTable({ series }: Props) {
                           )}
 
                           {detail.books.length === 0 ? (
-                            <p className="text-sm text-muted-foreground italic">Aucun tome archivé.</p>
+                            <p className="text-sm text-muted-foreground italic">{t("settings.archives.noBooks")}</p>
                           ) : (
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="text-muted-foreground border-b border-border/50">
-                                  <th className="text-left py-1.5 pr-4 font-medium">Vol.</th>
-                                  <th className="text-left py-1.5 pr-4 font-medium">Titre</th>
-                                  <th className="text-left py-1.5 pr-4 font-medium hidden md:table-cell">Auteur</th>
-                                  <th className="text-right py-1.5 pr-4 font-medium hidden sm:table-cell">Pages</th>
-                                  <th className="text-left py-1.5 pr-4 font-medium hidden md:table-cell">Format</th>
-                                  <th className="text-left py-1.5 pr-4 font-medium hidden lg:table-cell">Publication</th>
-                                  <th className="text-left py-1.5 font-medium">Lecture</th>
+                                  <th className="text-left py-1.5 pr-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.archives.colVolume")}</th>
+                                  <th className="text-left py-1.5 pr-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.archives.colTitle")}</th>
+                                  <th className="text-left py-1.5 pr-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">{t("settings.archives.colAuthor")}</th>
+                                  <th className="text-right py-1.5 pr-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">{t("settings.archives.colPages")}</th>
+                                  <th className="text-left py-1.5 pr-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">{t("settings.archives.colFormat")}</th>
+                                  <th className="text-left py-1.5 pr-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden lg:table-cell">{t("settings.archives.colPublication")}</th>
+                                  <th className="text-left py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.archives.colReading")}</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {detail.books.map((book) => (
                                   <tr key={book.id} className="border-b border-border/30 last:border-0">
                                     <td className="py-1.5 pr-4 font-medium text-foreground whitespace-nowrap">
-                                      {volumeLabel(book.volume, book.volume_type)}
+                                      {volumeLabel(t, book.volume, book.volume_type)}
                                     </td>
                                     <td className="py-1.5 pr-4 text-muted-foreground">{book.title}</td>
                                     <td className="py-1.5 pr-4 text-muted-foreground hidden md:table-cell">

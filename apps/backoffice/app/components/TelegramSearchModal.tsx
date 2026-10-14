@@ -11,7 +11,7 @@ type TFunction = (key: TranslationKey, vars?: Record<string, string | number>) =
 
 function tgStatusClass(status: string): string {
   switch (status) {
-    case "available":    return "bg-sky-500/15 text-sky-600";
+    case "available":    return "bg-info/15 text-info";
     case "queued":       return "bg-muted/50 text-muted-foreground";
     case "downloading":  return "bg-primary/10 text-primary";
     case "imported":     return "bg-success/10 text-success";
@@ -142,7 +142,7 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
       maxWidth="5xl"
       title={
         <span className="flex items-center gap-2">
-          <Icon name="send" size="sm" className="text-sky-500" />
+          <Icon name="send" size="sm" className="text-info" />
           {t("telegramMonitor.searchModalTitle", { series: seriesName })}
         </span>
       }
@@ -214,7 +214,7 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
                     type="button"
                     onClick={() => { setSearchInput(q); doSearch(q); }}
                     disabled={isSearching}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border disabled:opacity-50 transition-colors border-green-500/50 bg-green-500/10 text-green-600 hover:bg-green-500/20"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border disabled:opacity-50 transition-colors border-success/50 bg-success/10 text-success hover:bg-success/20"
                   >
                     {label}
                   </button>
@@ -245,11 +245,11 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
                       return (
                         <tr
                           key={book.id}
-                          className={`border-b border-border/40 last:border-b-0 transition-colors ${isMissing ? "bg-green-500/10 hover:bg-green-500/15" : "hover:bg-muted/20"} ${book.status === "dismissed" ? "opacity-40" : ""}`}
+                          className={`border-b border-border/40 last:border-b-0 transition-colors ${isMissing ? "bg-success/10 hover:bg-success/15" : "hover:bg-muted/20"} ${book.status === "dismissed" ? "opacity-40" : ""}`}
                         >
                           <td className="px-3 py-2.5 whitespace-nowrap w-12">
                             {book.volume_number != null ? (
-                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium tabular-nums ${isMissing ? "bg-green-500/20 text-green-600" : "bg-muted/50 text-muted-foreground"}`}>
+                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium tabular-nums ${isMissing ? "bg-success/20 text-success" : "bg-muted/50 text-muted-foreground"}`}>
                                 T{String(book.volume_number).padStart(2, "0")}
                               </span>
                             ) : (
@@ -259,17 +259,17 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
                           <td className="px-3 py-2.5 min-w-[220px]">
                             <p className="text-sm text-foreground">{book.filename}</p>
                             {book.series_name && book.series_name !== seriesName && (
-                              <span className="px-1 py-px rounded bg-warning/10 text-warning text-[10px]">{book.series_name}</span>
+                              <span className="px-1 py-px rounded bg-warning/10 text-warning text-3xs">{book.series_name}</span>
                             )}
                           </td>
-                          <td className="px-3 py-2.5 whitespace-nowrap text-[11px] text-muted-foreground">
+                          <td className="px-3 py-2.5 whitespace-nowrap text-2xs text-muted-foreground">
                             @{book.channel_username}
                           </td>
-                          <td className="px-3 py-2.5 whitespace-nowrap text-[11px] text-muted-foreground">
+                          <td className="px-3 py-2.5 whitespace-nowrap text-2xs text-muted-foreground">
                             {book.file_size ? formatSize(book.file_size) : ""}
                           </td>
                           <td className="px-3 py-2.5 whitespace-nowrap">
-                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${tgStatusClass(book.status)}`}>
+                            <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full ${tgStatusClass(book.status)}`}>
                               {tgStatusLabel(book.status, t)}
                             </span>
                           </td>
@@ -330,7 +330,7 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
             {/* No results */}
             {!isSearching && searched && results.length === 0 && (
               <div className="flex flex-col items-center justify-center gap-3 py-8 text-muted-foreground">
-                <Icon name="send" size="xl" className="opacity-20 text-sky-500" />
+                <Icon name="send" size="xl" className="opacity-20 text-info" />
                 <p className="text-sm">{t("telegramMonitor.noAvailableForSeries")}</p>
               </div>
             )}
@@ -348,7 +348,7 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
           onClick={handleOpen}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
         >
-          <Icon name="send" size="sm" className="text-sky-500" />
+          <Icon name="send" size="sm" className="text-info" />
           {t("telegramMonitor.searchButton")}
         </button>
       )}

@@ -244,7 +244,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                           ] as const).map((col, i) => (
                             <th
                               key={i}
-                              className={`px-3 py-2 font-medium text-muted-foreground ${col.align} ${col.id ? "cursor-pointer hover:text-foreground select-none" : ""}`}
+                              className={`px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider ${col.align} ${col.id ? "cursor-pointer hover:text-foreground select-none" : ""}`}
                               onClick={col.id ? () => {
                                 if (sortCol === col.id) setSortAsc(!sortAsc);
                                 else { setSortCol(col.id); setSortAsc(false); }
@@ -252,11 +252,11 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                             >
                               {col.label}
                               {col.id && sortCol === col.id && (
-                                <span className="ml-0.5 text-[10px]">{sortAsc ? "▲" : "▼"}</span>
+                                <span className="ml-0.5 text-3xs">{sortAsc ? "▲" : "▼"}</span>
                               )}
                             </th>
                           ))}
-                          <th className="px-3 py-2 font-medium text-muted-foreground text-right"></th>
+                          <th className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
@@ -271,7 +271,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                         }).map((release) => {
                           const hasMissing = release.matchedMissingVolumes && release.matchedMissingVolumes.length > 0;
                           return (
-                          <tr key={release.guid} className={`transition-colors ${hasMissing ? "bg-green-500/10 hover:bg-green-500/20 border-l-2 border-l-green-500" : "hover:bg-muted/20"}`}>
+                          <tr key={release.guid} className={`transition-colors ${hasMissing ? "bg-success/10 hover:bg-success/20 border-l-2 border-l-green-500" : "hover:bg-muted/20"}`}>
                             <td className="px-3 py-2 min-w-[200px] max-w-[400px]">
                               <span className="break-words block">
                                 {release.title}
@@ -279,14 +279,14 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                               {hasMissing && (
                                 <div className="flex flex-wrap items-center gap-1 mt-0.5">
                                   {compressVolumes(release.matchedMissingVolumes!).map((range) => (
-                                    <span key={range} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-600">
+                                    <span key={range} className="inline-flex items-center px-1.5 py-0.5 rounded text-3xs font-medium bg-success/20 text-success">
                                       {range}
                                     </span>
                                   ))}
                                 </div>
                               )}
                               {release.matchConfidence === "review" && (
-                                <span className="inline-flex mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-warning/20 text-warning" title={release.matchReasons?.join(", ")}>
+                                <span className="inline-flex mt-1 px-1.5 py-0.5 rounded text-3xs font-medium bg-warning/20 text-warning" title={release.matchReasons?.join(", ")}>
                                   À vérifier
                                 </span>
                               )}
@@ -297,7 +297,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                             <td className="px-3 py-2">
                               <div className="flex flex-wrap gap-1">
                                 {release.categories?.map((cat) => (
-                                  <span key={cat.id} title={cat.name ?? undefined} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground whitespace-nowrap">
+                                  <span key={cat.id} title={cat.name ?? undefined} className="text-3xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground whitespace-nowrap">
                                     {cat.id}
                                   </span>
                                 )) ?? "—"}
@@ -308,7 +308,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                             </td>
                             <td className="px-3 py-2 text-center">
                               {release.seeders != null ? (
-                                <span className={release.seeders > 0 ? "text-green-500 font-medium" : "text-muted-foreground"}>
+                                <span className={release.seeders > 0 ? "text-success font-medium" : "text-muted-foreground"}>
                                   {release.seeders}
                                 </span>
                               ) : "—"}

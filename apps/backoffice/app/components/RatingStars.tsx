@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { useTranslation } from "@/lib/i18n/context";
+
 interface RatingStarsProps {
   value: number | null;
   max?: number;
@@ -61,6 +63,7 @@ export default function RatingStars({
   onClear,
   size = "md",
 }: RatingStarsProps) {
+  const { t } = useTranslation();
   const stars = max / 2;
   const px = SIZE_PX[size] ?? 17;
   const [hovered, setHovered] = useState<number | null>(null);
@@ -92,12 +95,12 @@ export default function RatingStars({
       <div
         className={[
           "flex gap-0.5 transition-colors",
-          isActive ? "text-primary" : "text-slate-500/60 dark:text-slate-500/50",
+          isActive ? "text-primary" : "text-muted-foreground/60",
           !readOnly ? "cursor-pointer" : "",
         ].join(" ")}
         onMouseLeave={() => !readOnly && setHovered(null)}
         role={readOnly ? "img" : "slider"}
-        aria-label={value ? `${value / 2} sur ${stars}` : "Non noté"}
+        aria-label={value ? t("rating.ariaValue", { value: value / 2, max: stars }) : t("rating.unrated")}
         aria-valuenow={value ?? 0}
         aria-valuemin={0}
         aria-valuemax={max}
@@ -115,10 +118,10 @@ export default function RatingStars({
       {!readOnly && value !== null && value !== undefined && onClear && (
         <button
           onClick={onClear}
-          className="ml-0.5 text-slate-500 hover:text-slate-300 transition-colors"
-          title="Supprimer ma note"
+          className="ml-0.5 text-muted-foreground hover:text-foreground transition-colors"
+          title={t("rating.remove")}
           type="button"
-          aria-label="Supprimer la note"
+          aria-label={t("rating.removeAria")}
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <path d="M18 6 6 18M6 6l12 12" />

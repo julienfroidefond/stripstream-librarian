@@ -14,7 +14,7 @@ export function ReadingListCover({ covers, name, className = "" }: { covers: str
 
   if (!main) {
     return (
-      <div className={`w-full bg-gradient-to-br from-cyan-500/20 to-primary/20 flex items-center justify-center ${sizeClass}`}>
+      <div className={`w-full bg-gradient-to-br from-primary/20 to-primary/20 flex items-center justify-center ${sizeClass}`}>
         <svg className="w-10 h-10 text-muted-foreground/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
         </svg>

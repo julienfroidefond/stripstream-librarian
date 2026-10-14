@@ -301,10 +301,10 @@ export function MetadataSearchModal({
   function confidenceBadge(confidence: number) {
     const color =
       confidence >= 0.8
-        ? "bg-green-500/10 text-green-600 border-green-500/30"
+        ? "bg-success/10 text-success border-success/30"
         : confidence >= 0.5
-          ? "bg-yellow-500/10 text-yellow-600 border-yellow-500/30"
-          : "bg-red-500/10 text-red-600 border-red-500/30";
+          ? "bg-warning/10 text-warning border-warning/30"
+          : "bg-error/10 text-error border-error/30";
     return (
       <span className={`text-xs px-2 py-0.5 rounded-full border ${color}`}>
         {Math.round(confidence * 100)}%
@@ -432,7 +432,7 @@ export function MetadataSearchModal({
                                     </span>
                                   )}
                                   {c.metadata_json?.status === "RELEASING" && (
-                                    <span className="italic text-amber-500">{t("metadata.inProgress")}</span>
+                                    <span className="italic text-warning">{t("metadata.inProgress")}</span>
                                   )}
                                 </div>
                               </div>
@@ -464,7 +464,7 @@ export function MetadataSearchModal({
                           {selectedCandidate.total_volumes != null && (
                             <p className="text-sm text-muted-foreground">
                               {selectedCandidate.total_volumes} {selectedCandidate.metadata_json?.volume_source === "chapters" ? t("metadata.chapters") : t("metadata.volumes")}
-                              {selectedCandidate.metadata_json?.status === "RELEASING" && <span className="italic text-amber-500 ml-1">({t("metadata.inProgress")})</span>}
+                              {selectedCandidate.metadata_json?.status === "RELEASING" && <span className="italic text-warning ml-1">({t("metadata.inProgress")})</span>}
                             </p>
                           )}
                           <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1">
@@ -516,8 +516,8 @@ export function MetadataSearchModal({
                 {/* DONE */}
                 {step === "done" && (
                   <div className="space-y-4">
-                    <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/30">
-                      <p className="font-medium text-green-600">{t("metadata.syncSuccess")}</p>
+                    <div className="p-4 rounded-lg bg-success/10 border border-success/30">
+                      <p className="font-medium text-success">{t("metadata.syncSuccess")}</p>
                     </div>
 
                     {/* Sync Report */}
@@ -531,7 +531,7 @@ export function MetadataSearchModal({
                               <div className="space-y-1">
                                 {syncReport.series.fields_updated.map((f, i) => (
                                   <div key={i} className="flex items-center gap-2 text-xs">
-                                    <span className="inline-flex items-center gap-1 text-green-600">
+                                    <span className="inline-flex items-center gap-1 text-success">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                                     </span>
                                     <span className="font-medium text-foreground">{fieldLabel(f.field)}</span>
@@ -543,7 +543,7 @@ export function MetadataSearchModal({
                             {syncReport.series.fields_skipped.length > 0 && (
                               <div className="space-y-1 mt-1">
                                 {syncReport.series.fields_skipped.map((f, i) => (
-                                  <div key={i} className="flex items-center gap-2 text-xs text-amber-500">
+                                  <div key={i} className="flex items-center gap-2 text-xs text-warning">
                                     <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                                     </svg>
@@ -558,8 +558,8 @@ export function MetadataSearchModal({
 
                         {/* Books message (e.g. provider has no volume data) */}
                         {syncReport.books_message && (
-                          <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
-                            <p className="text-xs text-amber-600">{syncReport.books_message}</p>
+                          <div className="p-3 rounded-lg bg-warning/10 border border-warning/30">
+                            <p className="text-xs text-warning">{syncReport.books_message}</p>
                           </div>
                         )}
 
@@ -579,13 +579,13 @@ export function MetadataSearchModal({
                                     </p>
                                     <div className="ml-4 space-y-0.5 mt-0.5">
                                       {b.fields_updated.map((f, j) => (
-                                        <p key={j} className="flex items-center gap-1.5 text-green-600">
+                                        <p key={j} className="flex items-center gap-1.5 text-success">
                                           <svg className="w-2.5 h-2.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                                           <span className="font-medium">{fieldLabel(f.field)}</span>
                                         </p>
                                       ))}
                                       {b.fields_skipped.map((f, j) => (
-                                        <p key={`s${j}`} className="flex items-center gap-1.5 text-amber-500">
+                                        <p key={`s${j}`} className="flex items-center gap-1.5 text-warning">
                                           <svg className="w-2.5 h-2.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                                           </svg>
@@ -674,7 +674,7 @@ export function MetadataSearchModal({
                                 <ProviderIcon provider={link.provider} size={16} />
                                 {providerLabel(link.provider)}
                                 {link.is_primary && (
-                                  <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/30">
+                                  <span className="text-3xs uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/30">
                                     {t("metadata.primary")}
                                   </span>
                                 )}

@@ -35,7 +35,7 @@ export function SeriesResultRow({ seriesId, seriesName, libraryId, tone, badge, 
 
 export function ResultStatusBadge({ className, children }: { className: string; children: ReactNode }) {
   return (
-    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${className}`}>
+    <span className={`text-3xs px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${className}`}>
       {children}
     </span>
   );

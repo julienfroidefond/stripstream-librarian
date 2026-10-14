@@ -251,7 +251,7 @@ export function RcMultiLineChart({
               key={l.key}
               type="button"
               onClick={() => toggleLine(l.key)}
-              className={`flex items-center gap-1.5 text-[11px] transition-opacity ${hidden ? "opacity-35" : "opacity-100"} hover:opacity-80`}
+              className={`flex items-center gap-1.5 text-2xs transition-opacity ${hidden ? "opacity-35" : "opacity-100"} hover:opacity-80`}
             >
               <span
                 className="inline-block w-2.5 h-2.5 rounded-full shrink-0"

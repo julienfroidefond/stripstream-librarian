@@ -133,7 +133,7 @@ export function ReadingStatusModal({
         maxWidth="lg"
         title={
           <span className="flex items-center gap-2.5">
-            <Icon name="link" size="md" className="text-cyan-500" />
+            <Icon name="link" size="md" className="text-primary" />
             {providerLabel} — {seriesName}
           </span>
         }
@@ -154,7 +154,7 @@ export function ReadingStatusModal({
                           ID: {link.anilist_id} · {t(`readingStatus.status.${link.status}` as any) || link.status}
                         </p>
                       </div>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-cyan-500/15 text-cyan-600 shrink-0">
+                      <span className="text-3xs px-1.5 py-0.5 rounded-full font-medium bg-primary/15 text-primary shrink-0">
                         {providerLabel}
                       </span>
                     </div>

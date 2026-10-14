@@ -20,7 +20,7 @@ export function LockButton({
       disabled={disabled}
       className={`p-1 rounded transition-colors ${
         locked
-          ? "text-amber-500 hover:text-amber-600"
+          ? "text-warning hover:text-warning"
           : "text-muted-foreground/40 hover:text-muted-foreground"
       }`}
       title={locked ? t("editBook.lockedField") : t("editBook.clickToLock")}

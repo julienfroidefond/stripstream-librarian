@@ -49,7 +49,7 @@ export function ReadingStatusMatchResultsCard({ results, libraryId, t }: {
               r.status === "linked" ? "bg-success/10 border-success/20" :
               r.status === "already_linked" ? "bg-primary/10 border-primary/20" :
               r.status === "error" ? "bg-destructive/10 border-destructive/20" :
-              r.status === "ambiguous" ? "bg-amber-500/10 border-amber-500/20" :
+              r.status === "ambiguous" ? "bg-warning/10 border-warning/20" :
               "bg-muted/50 border-border/60"
             }
             badge={
@@ -57,7 +57,7 @@ export function ReadingStatusMatchResultsCard({ results, libraryId, t }: {
                 r.status === "linked" ? "bg-success/20 text-success" :
                 r.status === "already_linked" ? "bg-primary/20 text-primary" :
                 r.status === "no_results" ? "bg-muted text-muted-foreground" :
-                r.status === "ambiguous" ? "bg-amber-500/15 text-amber-600" :
+                r.status === "ambiguous" ? "bg-warning/15 text-warning" :
                 r.status === "error" ? "bg-destructive/20 text-destructive" :
                 "bg-muted text-muted-foreground"
               }>

@@ -48,15 +48,15 @@ function CurrentlyReadingCard({ book }: { book: UserReadingOverviewItemDto }) {
         <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-black/30 rounded-b-md overflow-hidden">
           <div className="h-full bg-warning transition-all" style={{ width: `${pct}%` }} />
         </div>
-        <span className="absolute bottom-2 right-1.5 text-[10px] font-bold text-white drop-shadow">{pct}%</span>
+        <span className="absolute bottom-2 right-1.5 text-3xs font-bold text-white drop-shadow">{pct}%</span>
       </div>
       <p className="text-xs font-medium text-foreground truncate mt-1.5 group-hover:text-primary transition-colors">
         {book.title}
       </p>
       {book.series && (
-        <p className="text-[10px] text-muted-foreground truncate">{book.series}</p>
+        <p className="text-3xs text-muted-foreground truncate">{book.series}</p>
       )}
-      <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+      <p className="text-3xs text-muted-foreground/70 mt-0.5">
         {t("settings.readingOverview.page")}{book.current_page}/{book.page_count}
       </p>
     </Link>
@@ -81,12 +81,12 @@ function RecentlyReadRow({ book }: { book: UserReadingOverviewItemDto }) {
           {book.title}
         </p>
         {book.series && (
-          <p className="text-[10px] text-muted-foreground truncate">{book.series}</p>
+          <p className="text-3xs text-muted-foreground truncate">{book.series}</p>
         )}
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
         {book.last_read_at && (
-          <span className="text-[10px] text-muted-foreground">{book.last_read_at}</span>
+          <span className="text-3xs text-muted-foreground">{book.last_read_at}</span>
         )}
         <Icon name="check" size="sm" className="text-success" />
       </div>
@@ -114,12 +114,12 @@ function SeriesBooksTable({ books }: { books: UserReadingOverviewSeriesBookDto[]
       <table className="w-full min-w-[560px] text-sm">
         <thead>
           <tr className="border-b border-border/50 text-muted-foreground">
-            <th className="text-left px-4 py-2 font-medium">{t("settings.readingOverview.bookCover")}</th>
-            <th className="text-left px-4 py-2 font-medium">{t("settings.readingOverview.bookVolume")}</th>
-            <th className="text-left px-4 py-2 font-medium">{t("settings.readingOverview.bookTitle")}</th>
-            <th className="text-left px-4 py-2 font-medium">{t("settings.readingOverview.bookStatus")}</th>
-            <th className="text-right px-4 py-2 font-medium">{t("settings.readingOverview.bookProgress")}</th>
-            <th className="text-right px-4 py-2 font-medium">{t("settings.readingOverview.updatedAt")}</th>
+            <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.readingOverview.bookCover")}</th>
+            <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.readingOverview.bookVolume")}</th>
+            <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.readingOverview.bookTitle")}</th>
+            <th className="text-left px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.readingOverview.bookStatus")}</th>
+            <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.readingOverview.bookProgress")}</th>
+            <th className="text-right px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.readingOverview.updatedAt")}</th>
           </tr>
         </thead>
         <tbody>
@@ -181,10 +181,10 @@ function SeriesStatusTable({ series }: { series: UserReadingOverviewSeriesDto[] 
         <thead>
           <tr className="border-b border-border text-muted-foreground">
             <th className="w-8 px-4 py-3" />
-            <th className="text-left px-4 py-3 font-medium">{t("settings.readingOverview.series")}</th>
-            <th className="text-left px-4 py-3 font-medium">{t("settings.readingOverview.statuses")}</th>
-            <th className="text-right px-4 py-3 font-medium">{t("settings.readingOverview.progressColumn")}</th>
-            <th className="text-right px-4 py-3 font-medium">{t("settings.readingOverview.updatedAt")}</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.readingOverview.series")}</th>
+            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.readingOverview.statuses")}</th>
+            <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.readingOverview.progressColumn")}</th>
+            <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.readingOverview.updatedAt")}</th>
           </tr>
         </thead>
         <tbody>
@@ -319,7 +319,7 @@ function UserCard({ user }: { user: UserReadingOverviewDto }) {
       <div className="px-5 py-4 space-y-5">
         {user.currently_reading.length > 0 && (
           <div>
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+            <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
               {t("settings.readingOverview.currentlyReading")}
             </p>
             <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-thin">
@@ -337,7 +337,7 @@ function UserCard({ user }: { user: UserReadingOverviewDto }) {
             className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/30 transition-colors"
           >
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+              <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
                 {t("settings.readingOverview.seriesStatuses")}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
@@ -359,7 +359,7 @@ function UserCard({ user }: { user: UserReadingOverviewDto }) {
 
         {recentlyRead.length > 0 && (
           <div>
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            <p className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
               {t("settings.readingOverview.recentlyRead")}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 max-h-72 overflow-y-auto">

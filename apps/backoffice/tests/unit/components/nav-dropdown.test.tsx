@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import { NavDropdown, type NavDropdownItem } from "@/app/components/NavDropdown";
 
 const items: NavDropdownItem[] = [
-  { href: "/genres", label: "Genres", icon: "tag", color: "text-pink-500" },
-  { href: "/metadata", label: "Métadonnées", icon: "document", color: "text-sky-500" },
+  { href: "/genres", label: "Genres", icon: "tag", color: "text-highlight" },
+  { href: "/metadata", label: "Métadonnées", icon: "document", color: "text-info" },
 ];
 
 function renderDropdown() {

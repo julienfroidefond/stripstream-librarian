@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { Modal } from "./ui/Modal";
 import { Button } from "./ui";
 
+import { useTranslation } from "@/lib/i18n/context";
+
 export function UserGenreRestrictions({
   userId,
   initialBlockedGenres,
@@ -18,6 +20,7 @@ export function UserGenreRestrictions({
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set(initialBlockedGenres));
   const [pending, startTransition] = useTransition();
+  const { t } = useTranslation();
 
   function toggle(genre: string) {
     setSelected((prev) => {
@@ -51,14 +54,14 @@ export function UserGenreRestrictions({
         <svg className="w-3.5 h-3.5 mr-1.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
         </svg>
-        Gérer les restrictions
+        {t("users.manageRestrictions")}
       </Button>
 
-      <Modal isOpen={open} onClose={() => !pending && setOpen(false)} title="Restrictions" maxWidth="sm">
+      <Modal isOpen={open} onClose={() => !pending && setOpen(false)} title={t("users.restrictions")} maxWidth="sm">
         <div className="p-5 space-y-4">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Genres</p>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("users.genres")}</p>
           {allGenres.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">Aucun genre disponible</p>
+            <p className="text-sm text-muted-foreground text-center py-4">{t("users.noGenre")}</p>
           ) : (
             <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
               {allGenres.map((genre) => (

@@ -238,7 +238,7 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
                     onClick={() => setCurrentPage(p as number)}
                     className={`min-w-[2rem] px-2.5 py-1.5 text-xs rounded-md border transition-colors ${
                       currentPage === p
-                        ? "border-primary bg-primary text-white"
+                        ? "border-primary bg-primary text-primary-foreground"
                         : "border-input bg-background hover:bg-accent/50"
                     }`}
                   >

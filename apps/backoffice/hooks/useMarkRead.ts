@@ -58,13 +58,13 @@ export function markReadClassName(completed: boolean, compact?: boolean): string
   if (compact) {
     return `px-1.5 py-1 rounded-md text-xs font-medium ${
       completed
-        ? "text-green-600 hover:bg-green-500/20"
+        ? "text-success hover:bg-success/20"
         : "text-muted-foreground hover:text-foreground hover:bg-accent"
     }`;
   }
   return `px-3 py-1.5 rounded-lg border text-sm font-medium ${
     completed
-      ? "border-green-500/30 bg-green-500/10 text-green-600 hover:bg-green-500/20"
+      ? "border-success/30 bg-success/10 text-success hover:bg-success/20"
       : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary"
   }`;
 }

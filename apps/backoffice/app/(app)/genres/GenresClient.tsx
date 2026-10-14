@@ -771,7 +771,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
               <button
                 onClick={handleAiSuggest}
                 disabled={busy || aiLoading}
-                className="h-9 rounded-xl border border-violet-500/40 bg-violet-500/10 px-4 text-xs font-medium text-violet-400 hover:bg-violet-500/20 disabled:opacity-50 transition-colors shrink-0"
+                className="h-9 rounded-xl border border-highlight/40 bg-highlight/10 px-4 text-xs font-medium text-highlight hover:bg-highlight/20 disabled:opacity-50 transition-colors shrink-0"
               >
                 {aiLoading ? t("common.loading") : t("genres.aiSuggestSelected", { count: String(selected.size), plural: selected.size !== 1 ? "s" : "" })}
               </button>
@@ -779,21 +779,21 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
         )}
 
         {aiSuggestions.length > 0 && (
-          <div className="mb-5 rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4">
+          <div className="mb-5 rounded-2xl border border-highlight/30 bg-highlight/5 p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-violet-300">{t("genres.aiSuggestions")}</p>
+                <p className="text-sm font-semibold text-highlight">{t("genres.aiSuggestions")}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">{t("genres.aiSuggested")}</p>
               </div>
-              <span className="rounded-lg bg-violet-500/10 px-2 py-1 text-xs font-medium text-violet-300">{aiSuggestions.length}</span>
+              <span className="rounded-lg bg-highlight/10 px-2 py-1 text-xs font-medium text-highlight">{aiSuggestions.length}</span>
             </div>
             <div className="grid gap-2 md:grid-cols-2">
               {aiSuggestions.map(suggestion => (
-                <div key={suggestion.series_id} className="rounded-xl border border-violet-500/20 bg-background/60 p-3">
+                <div key={suggestion.series_id} className="rounded-xl border border-highlight/20 bg-background/60 p-3">
                   <span className="block truncate text-sm font-medium">{suggestion.name}</span>
                   <div className="flex flex-wrap gap-2">
                     {suggestion.tags.map(tag => (
-                      <button key={tag} onClick={() => handleApplyAiTag(suggestion.series_id, tag)} disabled={busy} className="mt-2 rounded-full border border-violet-400/40 px-2.5 py-1 text-xs text-violet-300 hover:bg-violet-500/20 disabled:opacity-50">
+                      <button key={tag} onClick={() => handleApplyAiTag(suggestion.series_id, tag)} disabled={busy} className="mt-2 rounded-full border border-highlight/40 px-2.5 py-1 text-xs text-highlight hover:bg-highlight/20 disabled:opacity-50">
                         {tag} <span className="ml-1 opacity-70">+</span>
                       </button>
                     ))}
@@ -853,7 +853,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
                         {s.genres.map(genre => (
                           <span
                             key={genre}
-                            className="rounded-full bg-success/10 px-1.5 py-0.5 text-[10px] leading-tight text-success"
+                            className="rounded-full bg-success/10 px-1.5 py-0.5 text-3xs leading-tight text-success"
                           >
                             {genre}
                           </span>
@@ -868,7 +868,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
         ) : (
           <div className="overflow-x-auto rounded-xl border border-border">
             <table className="w-full min-w-[620px] text-sm">
-              <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <thead className="bg-muted/50 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="w-10 px-3 py-3">
                     <input

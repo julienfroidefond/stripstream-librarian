@@ -47,7 +47,7 @@ export function ReadingListCard({ list, seriesCountLabel, booksLabel, readLabel,
           </div>
           {list.book_count > 0 && (
             <div className="mt-3">
-              <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
+              <div className="mb-1 flex items-center justify-between text-2xs text-muted-foreground">
                 <span>{readLabel}</span>
                 <span>{list.books_read_count} / {list.book_count} · {progress}%</span>
               </div>

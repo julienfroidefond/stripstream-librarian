@@ -205,7 +205,7 @@ export function DiscoveryGrid({
                   )}
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">{item.title}</p>
-                    <p className="text-[10px] text-muted-foreground">{item.provider}</p>
+                    <p className="text-3xs text-muted-foreground">{item.provider}</p>
                   </div>
                   <button
                     onClick={() => handleUnhide(item)}

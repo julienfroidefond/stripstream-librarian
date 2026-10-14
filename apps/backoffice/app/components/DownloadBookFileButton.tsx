@@ -38,7 +38,7 @@ export function DownloadBookFileButton({ bookId }: DownloadBookFileButtonProps) 
       href={url}
       download
       onClick={handleClick}
-      icon={<Icon name="download" size="sm" className="text-sky-500" />}
+      icon={<Icon name="download" size="sm" className="text-info" />}
     >
       {t("bookDetail.downloadOriginal")}
     </ActionsMenuItem>

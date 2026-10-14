@@ -33,7 +33,7 @@ const variantStyles: Record<BadgeVariant, string> = {
   // Legacy + Additional variants
   primary: "bg-primary/90 text-primary-foreground backdrop-blur-md",
   success: "bg-success/90 text-success-foreground backdrop-blur-md",
-  warning: "bg-warning/90 text-white backdrop-blur-md",
+  warning: "bg-warning/90 text-warning-foreground backdrop-blur-md",
   error: "bg-destructive/90 text-destructive-foreground backdrop-blur-md",
   muted: "bg-muted/60 text-muted-foreground backdrop-blur-md",
   
@@ -91,26 +91,34 @@ export function StatusBadge({ status, className = "" }: StatusBadgeProps) {
 }
 
 // Job type badge
+// Job type badge — colours grouped by domain, all token-based so they follow the
+// active theme (soft background + solid text keeps contrast in both modes).
 const jobTypeStyles: Record<string, string> = {
-  rebuild: "bg-blue-500/80 text-white",
-  rescan: "bg-sky-500/80 text-white",
-  full_rebuild: "bg-orange-500/80 text-white",
-  thumbnail_rebuild: "bg-violet-500/80 text-white",
-  thumbnail_regenerate: "bg-purple-500/80 text-white",
-  cbr_to_cbz: "bg-rose-500/80 text-white",
-  metadata_batch: "bg-teal-500/80 text-white",
-  metadata_batch_rematch: "bg-teal-600/80 text-white",
-  metadata_refresh: "bg-emerald-500/80 text-white",
-  metadata_refresh_all: "bg-orange-500/80 text-white",
-  reading_status_match: "bg-amber-500/80 text-white",
-  reading_status_push: "bg-yellow-500/80 text-white",
-  rating_pull: "bg-orange-400/80 text-white",
-  scan: "bg-cyan-500/80 text-white",
-  download_detection: "bg-indigo-500/80 text-white",
-  prowlarr_rss: "bg-indigo-400/80 text-white",
-  ddl_search: "bg-emerald-600/80 text-white",
-  telegram_sync: "bg-sky-600/80 text-white",
-  telegram_sync_incremental: "bg-sky-500/80 text-white",
+  // Indexing / scan
+  rebuild: "bg-primary-soft text-primary",
+  rescan: "bg-primary-soft text-primary",
+  full_rebuild: "bg-primary-soft text-primary",
+  scan: "bg-primary-soft text-primary",
+  // Thumbnails
+  thumbnail_rebuild: "bg-highlight-soft text-highlight",
+  thumbnail_regenerate: "bg-highlight-soft text-highlight",
+  // Conversion
+  cbr_to_cbz: "bg-warning-soft text-warning",
+  // Metadata
+  metadata_batch: "bg-info-soft text-info",
+  metadata_batch_rematch: "bg-info-soft text-info",
+  metadata_refresh: "bg-info-soft text-info",
+  metadata_refresh_all: "bg-info-soft text-info",
+  // Reading status / ratings
+  reading_status_match: "bg-success-soft text-success",
+  reading_status_push: "bg-success-soft text-success",
+  rating_pull: "bg-success-soft text-success",
+  // Downloads / integrations
+  download_detection: "bg-highlight-soft text-highlight",
+  prowlarr_rss: "bg-highlight-soft text-highlight",
+  ddl_search: "bg-highlight-soft text-highlight",
+  telegram_sync: "bg-highlight-soft text-highlight",
+  telegram_sync_incremental: "bg-highlight-soft text-highlight",
 };
 
 interface JobTypeBadgeProps {

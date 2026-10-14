@@ -12,7 +12,7 @@ const REASON_KEYS: Record<string, string> = {
 };
 
 const REASON_COLORS: Record<string, string> = {
-  same_reading_list: "bg-cyan-500/15 text-cyan-600",
+  same_reading_list: "bg-primary/15 text-primary",
   same_author: "bg-primary/15 text-primary",
   same_genre: "bg-success/15 text-success",
   same_publisher: "bg-warning/15 text-warning",
@@ -77,7 +77,7 @@ export function SeriesRelatedCarousel({
                   {series.match_reasons.map((reason) => (
                     <span
                       key={reason}
-                      className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium backdrop-blur-sm ${REASON_COLORS[reason] ?? "bg-muted/80 text-muted-foreground"}`}
+                      className={`text-3xs px-1.5 py-0.5 rounded-full font-medium backdrop-blur-sm ${REASON_COLORS[reason] ?? "bg-muted/80 text-muted-foreground"}`}
                     >
                       {t(REASON_KEYS[reason] as any)}
                     </span>

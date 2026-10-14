@@ -37,19 +37,19 @@ type NavEntry = NavLinkItem | NavGroupItem;
 const navEntries: NavEntry[] = [
   { href: "/series", labelKey: "nav.series", icon: "series", color: "text-warning" },
   { href: "/books", labelKey: "nav.books", icon: "books", color: "text-success" },
-  { href: "/authors", labelKey: "nav.authors", icon: "authors", color: "text-violet-500" },
+  { href: "/authors", labelKey: "nav.authors", icon: "authors", color: "text-highlight" },
   {
     labelKey: "nav.data",
     icon: "database",
-    color: "text-amber-500",
+    color: "text-info",
     children: [
-      { href: "/genres", labelKey: "nav.genres", icon: "tag", color: "text-pink-500" },
-      { href: "/metadata", labelKey: "nav.metadata", icon: "document", color: "text-sky-500" },
+      { href: "/genres", labelKey: "nav.genres", icon: "tag", color: "text-info" },
+      { href: "/metadata", labelKey: "nav.metadata", icon: "document", color: "text-info" },
     ],
   },
-  { href: "/reading-lists", labelKey: "nav.readingLists", icon: "bookmark", color: "text-cyan-500" },
+  { href: "/reading-lists", labelKey: "nav.readingLists", icon: "bookmark", color: "text-primary" },
   { href: "/libraries", labelKey: "nav.libraries", icon: "libraries", color: "text-primary" },
-  { href: "/discovery", labelKey: "nav.discovery", icon: "search", color: "text-rose-500" },
+  { href: "/discovery", labelKey: "nav.discovery", icon: "search", color: "text-highlight" },
 ];
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
@@ -75,6 +75,13 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <>
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[60] focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+      >
+        {t("common.skipToContent")}
+      </a>
+
       <header
         className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/70 backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-background/60"
         style={{ paddingTop: "env(safe-area-inset-top)" }}
@@ -172,7 +179,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       </header>
 
       <main
-        className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-16"
+        id="main-content"
+        tabIndex={-1}
+        className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-16 focus:outline-none"
         style={{
           paddingLeft: "max(1rem, env(safe-area-inset-left))",
           paddingRight: "max(1rem, env(safe-area-inset-right))",

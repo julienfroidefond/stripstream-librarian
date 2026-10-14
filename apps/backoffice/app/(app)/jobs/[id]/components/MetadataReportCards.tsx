@@ -58,8 +58,8 @@ export function MetadataBatchResultsCard({ results, libraryId, t }: {
                 r.status === "auto_matched" ? "bg-success/20 text-success" :
                 r.status === "already_linked" ? "bg-primary/20 text-primary" :
                 r.status === "no_results" ? "bg-muted text-muted-foreground" :
-                r.status === "too_many_results" ? "bg-amber-500/15 text-amber-600" :
-                r.status === "low_confidence" ? "bg-amber-500/15 text-amber-600" :
+                r.status === "too_many_results" ? "bg-warning/15 text-warning" :
+                r.status === "low_confidence" ? "bg-warning/15 text-warning" :
                 r.status === "error" ? "bg-destructive/20 text-destructive" :
                 "bg-muted text-muted-foreground"
               }>
@@ -155,7 +155,7 @@ export function MetadataRefreshChangesCard({ report, libraryId, t }: {
             }
             badge={
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-muted-foreground">{r.provider}</span>
+                <span className="text-3xs text-muted-foreground">{r.provider}</span>
                 <ResultStatusBadge className={
                   r.status === "updated" ? "bg-success/20 text-success" :
                   r.status === "error" ? "bg-destructive/20 text-destructive" :
@@ -171,7 +171,7 @@ export function MetadataRefreshChangesCard({ report, libraryId, t }: {
           >
             {r.series_changes.length > 0 && (
               <div className="mt-2">
-                <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">{t("metadata.seriesLabel")}</span>
+                <span className="text-3xs uppercase tracking-wide text-muted-foreground font-semibold">{t("metadata.seriesLabel")}</span>
                 <div className="mt-1 space-y-1">
                   {r.series_changes.map((c, ci) => (
                     <div key={ci} className="flex items-start gap-2 text-xs">
@@ -191,7 +191,7 @@ export function MetadataRefreshChangesCard({ report, libraryId, t }: {
 
             {r.book_changes.length > 0 && (
               <div className="mt-2">
-                <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">
+                <span className="text-3xs uppercase tracking-wide text-muted-foreground font-semibold">
                   {t("metadata.booksLabel")} ({r.book_changes.length})
                 </span>
                 <div className="mt-1 space-y-2">
