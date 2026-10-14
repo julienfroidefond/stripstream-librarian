@@ -1,5 +1,6 @@
 //! Shared helpers for background job processing.
-//! Used by metadata_batch, metadata_refresh, download_detection, reading_status_*.
+//! Used by metadata_batch, metadata_refresh, download_detection and the
+//! reading_status_match / reading_status_push / rating_pull jobs.
 
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -21,8 +22,10 @@ pub(crate) async fn update_progress(
     total: i32,
     current: &str,
 ) {
+    // Integer math: `(processed as f64 / total as f64 * 100.0) as i32` truncates
+    // to 28 for 29/100 because of binary rounding, so keep the division exact.
     let percent = if total > 0 {
-        (processed as f64 / total as f64 * 100.0) as i32
+        ((processed.max(0) as i64 * 100) / total as i64).clamp(0, 100) as i32
     } else {
         0
     };

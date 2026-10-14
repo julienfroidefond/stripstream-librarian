@@ -5,6 +5,9 @@ use tracing::{info, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::jobs::helpers::{
+    insert_entity_event as insert_event, is_job_cancelled, update_progress,
+};
 use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
 use crate::{
     error::ApiError,
@@ -209,9 +212,15 @@ pub async fn process_rating_pull(pool: &PgPool, job_id: Uuid) -> Result<(), Stri
     let mut count_not_found = 0i64;
 
     for (processed, row) in link_rows.iter().enumerate() {
+        if is_job_cancelled(pool, job_id).await {
+            break;
+        }
+
         let series_id: Uuid = row.get("series_id");
         let series_name: String = row.get("series_name");
         let anilist_id: i32 = row.get("anilist_id");
+
+        update_progress(pool, job_id, processed as i32, total, &series_name).await;
 
         match score_map.get(&anilist_id) {
             None => {
@@ -282,20 +291,6 @@ pub async fn process_rating_pull(pool: &PgPool, job_id: Uuid) -> Result<(), Stri
                 }
             }
         }
-
-        let pct = if total > 0 {
-            ((processed + 1) as f32 / total as f32 * 100.0) as i32
-        } else {
-            100
-        };
-        let _ = sqlx::query(
-            "UPDATE index_jobs SET processed_files = $2, progress_percent = $3 WHERE id = $1",
-        )
-        .bind(job_id)
-        .bind((processed + 1) as i32)
-        .bind(pct)
-        .execute(pool)
-        .await;
     }
 
     let stats = serde_json::json!({
@@ -314,26 +309,4 @@ pub async fn process_rating_pull(pool: &PgPool, job_id: Uuid) -> Result<(), Stri
     );
 
     Ok(())
-}
-
-async fn insert_event(
-    pool: &PgPool,
-    job_id: Uuid,
-    event_type: &str,
-    level: &str,
-    entity_name: Option<&str>,
-    message: Option<&str>,
-    detail: Option<serde_json::Value>,
-) {
-    let _ = sqlx::query(
-        "INSERT INTO index_job_events (job_id, event_type, level, entity_name, message, detail) VALUES ($1, $2, $3, $4, $5, $6)",
-    )
-    .bind(job_id)
-    .bind(event_type)
-    .bind(level)
-    .bind(entity_name)
-    .bind(message)
-    .bind(detail)
-    .execute(pool)
-    .await;
 }

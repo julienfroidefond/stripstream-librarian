@@ -135,62 +135,15 @@ pub(crate) async fn process_rss_poll(
             .await
             .map_err(|e| e.message)?;
 
-    // Load all series that have an approved metadata link with missing volumes.
-    // When library_id is None, covers every library (single RSS fetch).
-    let series_rows = if let Some(lid) = library_id {
-        sqlx::query(
-            r#"
-            SELECT s.id AS series_id, s.name AS series_name, eml.id AS link_id, eml.library_id AS library_id
-            FROM series s
-            JOIN LATERAL (
-                SELECT id, library_id FROM external_metadata_links
-                WHERE series_id = s.id AND library_id = $1 AND status = 'approved'
-                ORDER BY is_primary DESC, approved_at ASC NULLS LAST, id ASC
-                LIMIT 1
-            ) eml ON TRUE
-            WHERE EXISTS (
-                SELECT 1 FROM external_book_metadata ebm
-                WHERE ebm.link_id = eml.id AND ebm.book_id IS NULL
-            )
-              AND NOT EXISTS (
-                  SELECT 1 FROM books b
-                  WHERE b.series_id = s.id AND b.volume_type = 'integral'
-              )
-            ORDER BY s.name
-            "#,
-        )
-        .bind(lid)
-        .fetch_all(pool)
-        .await
-        .map_err(|e| e.to_string())?
-    } else {
-        sqlx::query(
-            r#"
-            SELECT s.id AS series_id, s.name AS series_name, eml.id AS link_id, eml.library_id AS library_id
-            FROM series s
-            JOIN LATERAL (
-                SELECT id, library_id FROM external_metadata_links
-                WHERE series_id = s.id AND status = 'approved'
-                ORDER BY is_primary DESC, approved_at ASC NULLS LAST, id ASC
-                LIMIT 1
-            ) eml ON TRUE
-            WHERE EXISTS (
-                SELECT 1 FROM external_book_metadata ebm
-                WHERE ebm.link_id = eml.id AND ebm.book_id IS NULL
-            )
-              AND NOT EXISTS (
-                  SELECT 1 FROM books b
-                  WHERE b.series_id = s.id AND b.volume_type = 'integral'
-              )
-            ORDER BY s.name
-            "#,
-        )
-        .fetch_all(pool)
-        .await
-        .map_err(|e| e.to_string())?
-    };
+    // Series with an approved metadata link that still have missing volumes and
+    // no integral volume. When library_id is None, covers every library (single
+    // RSS fetch). Shared with the Prowlarr detection and the DDL search.
+    let targets =
+        missing::load_approved_links(pool, library_id, missing::LinkScope::WithMissingVolumes)
+            .await
+            .map_err(|e| e.to_string())?;
 
-    if series_rows.is_empty() {
+    if targets.is_empty() {
         complete_job(
             pool,
             job_id,
@@ -201,7 +154,7 @@ pub(crate) async fn process_rss_poll(
         return Ok(());
     }
 
-    let total = series_rows.len() as i32;
+    let total = targets.len() as i32;
     sqlx::query("UPDATE index_jobs SET total_files = $2 WHERE id = $1")
         .bind(job_id)
         .bind(total)
@@ -211,24 +164,22 @@ pub(crate) async fn process_rss_poll(
 
     // Build series info: (series_id, name, missing_volumes, library_id)
     let mut series_info: Vec<(Uuid, String, Vec<i32>, Uuid)> = Vec::new();
-    for row in &series_rows {
-        let series_id: Uuid = row.get("series_id");
-        let series_name: String = row.get("series_name");
-        let link_id: Uuid = row.get("link_id");
-        let lib_id: Uuid = row.get("library_id");
-
-        let missing_vols = missing::load_link_missing_volumes(pool, link_id)
+    for target in &targets {
+        let missing_vols = missing::load_link_missing_volumes(pool, target.link_id)
             .await
             .map(|missing| missing.missing_volumes)
             .unwrap_or_default();
 
-        series_info.push((series_id, series_name, missing_vols, lib_id));
+        series_info.push((
+            target.series_id,
+            target.series_name.clone(),
+            missing_vols,
+            target.library_id,
+        ));
     }
 
     let blacklisted_titles = blacklist::load_blacklisted_titles(pool)
         .await
-                        provider: None,
-                        external_id: None,
         .map_err(|e| e.to_string())?;
 
     let client = build_http_client_with_agent(std::time::Duration::from_secs(60))
@@ -251,6 +202,7 @@ pub(crate) async fn process_rss_poll(
     for (series_id, series_name, missing_volumes, lib_id) in &series_info {
         if missing_volumes.is_empty() {
             continue;
+        }
 
         let missing_count = missing_volumes.len() as i32;
 
@@ -275,6 +227,8 @@ pub(crate) async fn process_rss_poll(
                             .into_iter()
                             .map(|reason| reason.as_str().to_string())
                             .collect(),
+                        provider: None,
+                        external_id: None,
                     })
                 } else {
                     None
@@ -314,7 +268,6 @@ pub(crate) async fn process_rss_poll(
 
         let _ = store::upsert_releases(pool, *lib_id, *series_id, missing_count, &matched_releases)
             .await;
-        }
     }
 
     // Count from events

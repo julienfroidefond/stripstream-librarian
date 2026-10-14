@@ -810,26 +810,14 @@ pub(crate) async fn process_download_detection(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Fetch approved metadata links for this library (series_name -> link_id)
-    let links: Vec<(String, Uuid)> = sqlx::query(
-        "SELECT s.name AS series_name, eml.id FROM external_metadata_links eml \
-         JOIN series s ON s.id = eml.series_id \
-         WHERE eml.library_id = $1 AND eml.status = 'approved' \
-         ORDER BY eml.is_primary ASC, eml.approved_at ASC NULLS LAST, eml.id ASC",
-    )
-    .bind(library_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| e.to_string())?
-    .into_iter()
-    .map(|row| {
-        let series_name: String = row.get("series_name");
-        let link_id: Uuid = row.get("id");
-        (series_name, link_id)
-    })
-    .collect();
-
-    let link_map: std::collections::HashMap<String, Uuid> = links.into_iter().collect();
+    // Approved metadata links for this library (series_name -> link_id)
+    let link_map: std::collections::HashMap<String, Uuid> =
+        missing::load_approved_links(pool, Some(library_id), missing::LinkScope::All)
+            .await
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .map(|link| (link.series_name, link.link_id))
+            .collect();
 
     let client = build_http_client_with_agent(std::time::Duration::from_secs(30))
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
@@ -854,17 +842,7 @@ pub(crate) async fn process_download_detection(
         }
 
         processed += 1;
-        let progress = (processed * 100 / total.max(1)).min(100);
-        sqlx::query(
-            "UPDATE index_jobs SET processed_files = $2, progress_percent = $3, current_file = $4 WHERE id = $1",
-        )
-        .bind(job_id)
-        .bind(processed)
-        .bind(progress)
-        .bind(series_name)
-        .execute(pool)
-        .await
-        .ok();
+        update_progress(pool, job_id, processed, total, series_name).await;
 
         // Skip unclassified
         if series_name == "unclassified" {
@@ -944,8 +922,7 @@ pub(crate) async fn process_download_detection(
                 if matched_releases.is_empty() {
                     insert_event(pool, job_id, "downloads_not_found", "info", Some(series_name), None, Some(serde_json::json!({"missing_count": missing_count, "raw_results": _raw_count, "all_blacklisted": true}))).await;
                     if let Some(&sid) = series_id_map.get(series_name) {
-                        let _ = sqlx::query("UPDATE available_downloads SET missing_count = $2, updated_at = NOW() WHERE series_id = $1")
-                            .bind(sid).bind(missing_count).execute(pool).await;
+                        let _ = store::update_missing_count(pool, sid, missing_count).await;
                     }
                     continue;
                 }
@@ -980,13 +957,7 @@ pub(crate) async fn process_download_detection(
                 // Don't delete — keep previous results even if this run found nothing
                 // Only update missing_count
                 if let Some(&sid) = series_id_map.get(series_name) {
-                    let _ = sqlx::query(
-                        "UPDATE available_downloads SET missing_count = $2, updated_at = NOW() WHERE series_id = $1",
-                    )
-                    .bind(sid)
-                    .bind(missing_count)
-                    .execute(pool)
-                    .await;
+                    let _ = store::update_missing_count(pool, sid, missing_count).await;
                 }
             }
             Err(e) => {
@@ -1179,8 +1150,6 @@ async fn search_prowlarr_for_series(
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
         return Err(format!("Prowlarr returned {status}: {text}"));
-                    provider: None,
-                    external_id: None,
     }
 
     let raw_releases: Vec<prowlarr::ProwlarrRawRelease> = resp
@@ -1210,6 +1179,8 @@ async fn search_prowlarr_for_series(
                         .into_iter()
                         .map(|reason| reason.as_str().to_string())
                         .collect(),
+                    provider: None,
+                    external_id: None,
                 })
             } else {
                 None
