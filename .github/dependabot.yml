@@ -1,19 +1,20 @@
 # Dependabot — remplace Renovate (renovate.json supprimé).
 #
-# Politique (reprise de la config Renovate) :
-#   - majeurs : jamais groupés → une PR par paquet, migration manuelle.
-#   - mineurs pré-1.0 des dépendances directes : ignorés (0.x → 0.y est cassant).
-#   - grammers-client / grammers-session : exclus (migration différée).
-#   - non-majeurs : groupés par écosystème pour limiter le nombre de PR.
+# Politique (reprise de la config Renovate, sans Dependency Dashboard) :
+#   - majeurs : jamais groupés → une PR par paquet, traitement manuel.
+#   - mineurs pré-1.0 des dépendances directes : hors groupe eux aussi → une PR
+#     individuelle (donc visible) par bump 0.x → 0.y, jamais noyée dans un lot.
+#   - grammers-client / grammers-session : aucune PR (migration différée).
+#   - autres non-majeurs : groupés par écosystème pour limiter le nombre de PR.
 #
-# ⚠️ Dependabot n'évalue jamais `versions` ET `update-types` dans une même règle
-# `ignore` : les deux critères deviennent deux conditions distinctes (donc « OU »
-# et non « ET »). Impossible d'écrire « ignorer les mineurs sous 1.0 » en une
-# règle → les dépendances directes pré-1.0 sont listées explicitement. Ajouter
-# ici toute nouvelle dépendance directe en 0.x.
+# ⚠️ Dependabot n'a pas de Dependency Dashboard : ce qui n'est ni groupé ni mis en
+# PR est invisible. D'où le choix de ne rien `ignore` en dehors de grammers et
+# d'isoler les bumps cassants en PR individuelles plutôt que de les masquer.
 #
-# Les Dependabot alerts et security updates sont activés côté repo ; les PR de
-# sécurité ne tiennent pas compte des règles `ignore` ci-dessous.
+# Les dépendances directes en 0.x sont listées dans `exclude-patterns` : penser à
+# ajouter toute nouvelle dépendance directe pré-1.0 à ces listes.
+#
+# Les Dependabot alerts et security updates sont activés côté repo.
 version: 2
 updates:
   # ---------------------------------------------------------------- Rust
@@ -33,67 +34,44 @@ updates:
     groups:
       rust-non-major:
         patterns: ["*"]
-        exclude-patterns: ["grammers-client", "grammers-session"]
         update-types: ["minor", "patch"]
+        exclude-patterns:
+          # Migration différée : ne doit jamais être embarqué dans un lot.
+          - "grammers-client"
+          - "grammers-session"
+          # Dépendances directes pré-1.0 (workspace + membres) : un mineur
+          # 0.x → 0.y casse l'API (Cargo traite le mineur d'une 0.x comme un
+          # majeur). Hors groupe → une PR dédiée, à traiter manuellement.
+          - "argon2"
+          - "async-stream"
+          - "async-trait"
+          - "axum"
+          - "base64"
+          - "chrono"
+          - "futures"
+          - "image"
+          - "jpeg-decoder"
+          - "lopdf"
+          - "lru"
+          - "pdfium-render"
+          - "rand"
+          - "reqwest"
+          - "scraper"
+          - "sha2"
+          - "sqlx"
+          - "tokio-stream"
+          - "tokio-util"
+          - "tower"
+          - "tower-http"
+          - "tracing"
+          - "tracing-subscriber"
+          - "unrar"
+          - "webp"
+          - "wiremock"
     ignore:
       # Migration différée : réécriture de l'API client/session + souci upstream.
       - dependency-name: "grammers-client"
       - dependency-name: "grammers-session"
-      # Dépendances directes pré-1.0 (workspace + membres) : un mineur 0.x → 0.y
-      # casse l'API et impose une édition du manifeste. Les patchs pré-1.0
-      # restent proposés (groupés).
-      - dependency-name: "argon2"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "async-stream"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "async-trait"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "axum"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "base64"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "chrono"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "futures"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "image"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "jpeg-decoder"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "lopdf"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "lru"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "pdfium-render"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "rand"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "reqwest"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "scraper"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "sha2"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "sqlx"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "tokio-stream"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "tokio-util"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "tower"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "tower-http"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "tracing"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "tracing-subscriber"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "unrar"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "webp"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "wiremock"
-        update-types: ["version-update:semver-minor"]
 
   # ------------------------------------------------------ Backoffice (npm)
   - package-ecosystem: "npm"
@@ -113,10 +91,9 @@ updates:
       backoffice-non-major:
         patterns: ["*"]
         update-types: ["minor", "patch"]
-    ignore:
-      # Pré-1.0 : 0.x → 0.y est cassant (voir note en tête de fichier).
-      - dependency-name: "next-themes"
-        update-types: ["version-update:semver-minor"]
+        exclude-patterns:
+          # Pré-1.0 : hors groupe, un 0.x → 0.y est cassant (voir en-tête).
+          - "next-themes"
 
   # ---------------------------------------------------------- Docs (npm)
   - package-ecosystem: "npm"
@@ -136,12 +113,10 @@ updates:
       docs-non-major:
         patterns: ["*"]
         update-types: ["minor", "patch"]
-    ignore:
-      # Pré-1.0 : 0.x → 0.y est cassant (voir note en tête de fichier).
-      - dependency-name: "@astrojs/starlight"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "sharp"
-        update-types: ["version-update:semver-minor"]
+        exclude-patterns:
+          # Pré-1.0 : hors groupe, un 0.x → 0.y est cassant (voir en-tête).
+          - "@astrojs/starlight"
+          - "sharp"
 
   # -------------------------------------------------- Racine du repo (npm)
   - package-ecosystem: "npm"
