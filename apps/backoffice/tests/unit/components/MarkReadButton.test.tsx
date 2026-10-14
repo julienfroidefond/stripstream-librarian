@@ -8,7 +8,7 @@ function renderButton(overrides: Partial<React.ComponentProps<typeof MarkReadBut
     label: "Mark as read",
     loading: false,
     completed: false,
-    className: "text-green-600",
+    className: "text-success",
     onClick: vi.fn(),
     ...overrides,
   };

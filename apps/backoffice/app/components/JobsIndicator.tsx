@@ -182,7 +182,7 @@ export function JobsIndicator() {
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <Badge variant={job.type === 'rebuild' ? 'primary' : job.type === 'thumbnail_regenerate' ? 'warning' : 'secondary'} className="text-[10px]">
+                          <Badge variant={job.type === 'rebuild' ? 'primary' : job.type === 'thumbnail_regenerate' ? 'warning' : 'secondary'} className="text-3xs">
                             {t(`jobType.${job.type}` as any) !== `jobType.${job.type}` ? t(`jobType.${job.type}` as any) : job.type}
                           </Badge>
                           {job.library_name && (
@@ -259,7 +259,7 @@ export function JobsIndicator() {
 
         <JobsIcon className="w-3.5 h-3.5" />
 
-        <span className="flex items-center justify-center min-w-4 h-4 px-1 text-[10px] font-bold bg-current rounded-full">
+        <span className="flex items-center justify-center min-w-4 h-4 px-1 text-3xs font-bold bg-current rounded-full">
           <span className="text-background">{totalCount > 99 ? "99+" : totalCount}</span>
         </span>
 

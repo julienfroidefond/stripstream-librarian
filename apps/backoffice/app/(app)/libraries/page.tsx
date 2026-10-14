@@ -154,16 +154,16 @@ export default async function LibrariesPage() {
 
                 {/* Configuration tags */}
                 <div className="flex flex-wrap gap-1.5">
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-medium ${
                     lib.monitor_enabled
                       ? 'bg-success/10 text-success'
                       : 'bg-muted/50 text-muted-foreground'
                   }`}>
-                    <span className="text-[9px]">{lib.monitor_enabled ? '●' : '○'}</span>
+                    <span className="text-3xs">{lib.monitor_enabled ? '●' : '○'}</span>
                     {t("libraries.scanLabel", { mode: t(`monitoring.${lib.scan_mode}` as TranslationKey) })}
                   </span>
 
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-medium ${
                     lib.watcher_enabled
                       ? 'bg-warning/10 text-warning'
                       : 'bg-muted/50 text-muted-foreground'
@@ -173,26 +173,26 @@ export default async function LibrariesPage() {
                   </span>
 
                   {lib.metadata_provider && lib.metadata_provider !== "none" && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-primary/10 text-primary">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-medium bg-primary/10 text-primary">
                       <ProviderIcon provider={lib.metadata_provider} size={11} />
                       {lib.metadata_provider.replace('_', ' ')}
                     </span>
                   )}
 
                   {lib.metadata_refresh_mode !== "manual" && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-muted/50 text-muted-foreground">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-medium bg-muted/50 text-muted-foreground">
                       {t("libraries.metaRefreshLabel", { mode: t(`monitoring.${lib.metadata_refresh_mode}` as TranslationKey) })}
                     </span>
                   )}
 
                   {lib.monitor_enabled && lib.next_scan_at && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-muted/50 text-muted-foreground">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-medium bg-muted/50 text-muted-foreground">
                       {t("libraries.nextScan", { time: formatNextScan(lib.next_scan_at, t("libraries.imminent")) })}
                     </span>
                   )}
 
                   {(lib.tags ?? []).map((tag) => (
-                    <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-accent text-accent-foreground">
+                    <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-medium bg-accent text-accent-foreground">
                       {tag}
                     </span>
                   ))}

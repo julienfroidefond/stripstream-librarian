@@ -75,7 +75,7 @@ export function WishlistTab({ libraries }: { libraries: Library[] }) {
                 )}
                 <div className="absolute top-1.5 right-1.5 flex flex-col items-end gap-1">
                   {s.missing_count != null && s.missing_count > 0 && (
-                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-yellow-500 text-white">
+                    <span className="inline-flex items-center gap-0.5 text-3xs px-1.5 py-0.5 rounded-full font-bold bg-warning text-warning-foreground">
                       <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
                         <path d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
@@ -83,11 +83,11 @@ export function WishlistTab({ libraries }: { libraries: Library[] }) {
                     </span>
                   )}
                   {s.series_status && (
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                      s.series_status === "ongoing" ? "bg-blue-500 text-white" :
-                      s.series_status === "ended" ? "bg-green-500 text-white" :
-                      s.series_status === "hiatus" ? "bg-amber-500 text-white" :
-                      s.series_status === "cancelled" ? "bg-red-500 text-white" :
+                    <span className={`text-3xs px-1.5 py-0.5 rounded-full font-medium ${
+                      s.series_status === "ongoing" ? "bg-info text-info-foreground" :
+                      s.series_status === "ended" ? "bg-success text-success-foreground" :
+                      s.series_status === "hiatus" ? "bg-warning text-warning-foreground" :
+                      s.series_status === "cancelled" ? "bg-error text-error-foreground" :
                       "bg-muted text-muted-foreground"
                     }`}>
                       {t(`seriesStatus.${s.series_status}` as Parameters<typeof t>[0]) || s.series_status}
@@ -99,7 +99,7 @@ export function WishlistTab({ libraries }: { libraries: Library[] }) {
                 <h3 className="font-medium text-foreground truncate text-xs group-hover:text-primary transition-colors" title={s.name}>
                   {s.name}
                 </h3>
-                <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                <p className="text-2xs text-muted-foreground truncate mt-0.5">
                   {libraryName(s.library_id)}
                 </p>
               </div>

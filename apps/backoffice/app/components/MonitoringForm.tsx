@@ -87,7 +87,7 @@ export function MonitoringForm({ libraryId, monitorEnabled, scanMode, watcherEna
         <button 
           type="submit" 
           disabled={isPending}
-          className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary text-white font-semibold text-sm transition-all hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary text-primary-foreground font-semibold text-sm transition-all hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isPending ? '...' : '✓'}
         </button>

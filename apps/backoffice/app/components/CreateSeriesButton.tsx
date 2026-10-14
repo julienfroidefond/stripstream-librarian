@@ -198,7 +198,7 @@ export function CreateSeriesButton({ libraries }: { libraries: Library[] }) {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-medium truncate">{c.title}</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+                      <span className="text-3xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
                         {c.provider}
                       </span>
                       <span className="text-xs text-muted-foreground shrink-0">

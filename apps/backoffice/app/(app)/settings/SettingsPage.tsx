@@ -146,23 +146,23 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
   }
 
   const tabs = [
-    { id: "general" as const, label: t("settings.general"), icon: "settings" as const, color: "text-slate-400" },
-    { id: "media" as const, label: t("settings.media"), icon: "image" as const, color: "text-cyan-500" },
-    { id: "downloadTools" as const, label: t("settings.downloadTools"), icon: "play" as const, color: "text-sky-500" },
-    { id: "metadata" as const, label: t("settings.metadata"), icon: "tag" as const, color: "text-violet-500" },
-    { id: "ai" as const, label: t("settings.aiTab"), icon: "bot" as const, color: "text-fuchsia-500" },
-    { id: "readingStatus" as const, label: t("settings.readingStatus"), icon: "eye" as const, color: "text-amber-500" },
-    { id: "readingOverview" as const, label: t("settings.readingOverview"), icon: "chart" as const, color: "text-emerald-500" },
-    { id: "notifications" as const, label: t("settings.notifications"), icon: "bell" as const, color: "text-orange-500" },
-    { id: "tokens" as const, label: t("nav.tokens"), icon: "tokens" as const, color: "text-rose-500" },
-    { id: "archives" as const, label: t("settings.archives"), icon: "books" as const, color: "text-amber-500" },
+    { id: "general" as const, label: t("settings.general"), icon: "settings" as const, color: "text-muted-foreground" },
+    { id: "media" as const, label: t("settings.media"), icon: "image" as const, color: "text-primary" },
+    { id: "downloadTools" as const, label: t("settings.downloadTools"), icon: "play" as const, color: "text-info" },
+    { id: "metadata" as const, label: t("settings.metadata"), icon: "tag" as const, color: "text-highlight" },
+    { id: "ai" as const, label: t("settings.aiTab"), icon: "bot" as const, color: "text-highlight" },
+    { id: "readingStatus" as const, label: t("settings.readingStatus"), icon: "eye" as const, color: "text-warning" },
+    { id: "readingOverview" as const, label: t("settings.readingOverview"), icon: "chart" as const, color: "text-success" },
+    { id: "notifications" as const, label: t("settings.notifications"), icon: "bell" as const, color: "text-warning" },
+    { id: "tokens" as const, label: t("nav.tokens"), icon: "tokens" as const, color: "text-error" },
+    { id: "archives" as const, label: t("settings.archives"), icon: "books" as const, color: "text-warning" },
   ];
 
   return (
     <>
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
-          <Icon name="settings" size="xl" className="text-slate-400" />
+          <Icon name="settings" size="xl" className="text-muted-foreground" />
           {t("settings.title")}
         </h1>
       </div>

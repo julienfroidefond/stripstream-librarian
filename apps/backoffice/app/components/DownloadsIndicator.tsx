@@ -280,22 +280,22 @@ export function DownloadsIndicator() {
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-sm font-medium text-foreground truncate">{dl.series_name}</span>
                         {dl.source === "telegram" && (
-                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-600">
+                          <span className="text-3xs font-medium px-1.5 py-0.5 rounded-full bg-info/10 text-info">
                             Telegram
                           </span>
                         )}
                         {dl.source === "ddl" && dl.provider && (
-                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600">
+                          <span className="text-3xs font-medium px-1.5 py-0.5 rounded-full bg-success/10 text-success">
                             {dl.provider}
                           </span>
                         )}
-                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${statusClass(dl.status)}`}>
+                        <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full ${statusClass(dl.status)}`}>
                           {statusLabel(dl.status, t)}
                         </span>
                       </div>
 
                       {dl.expected_volumes.length > 0 && (
-                        <p className="text-[11px] text-muted-foreground mb-1">
+                        <p className="text-2xs text-muted-foreground mb-1">
                           {formatVolumes(dl.expected_volumes)}
                         </p>
                       )}
@@ -307,10 +307,10 @@ export function DownloadsIndicator() {
                             {Math.round(dl.progress * 100)}%
                           </span>
                           {dl.download_speed > 0 && (
-                            <span className="text-[10px] text-muted-foreground">{formatSpeed(dl.download_speed)}</span>
+                            <span className="text-3xs text-muted-foreground">{formatSpeed(dl.download_speed)}</span>
                           )}
                           {dl.eta > 0 && dl.eta < 8640000 && (
-                            <span className="text-[10px] text-muted-foreground">ETA {formatEta(dl.eta)}</span>
+                            <span className="text-3xs text-muted-foreground">ETA {formatEta(dl.eta)}</span>
                           )}
                         </div>
                       )}
@@ -358,7 +358,7 @@ export function DownloadsIndicator() {
 
         <DownloadIcon className="w-3.5 h-3.5" />
 
-        <span className="flex items-center justify-center min-w-4 h-4 px-1 text-[10px] font-bold bg-current rounded-full">
+        <span className="flex items-center justify-center min-w-4 h-4 px-1 text-3xs font-bold bg-current rounded-full">
           <span className="text-background">{totalCount > 99 ? "99+" : totalCount}</span>
         </span>
 

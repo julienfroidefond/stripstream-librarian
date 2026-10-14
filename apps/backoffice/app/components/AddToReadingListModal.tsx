@@ -100,7 +100,7 @@ export function AddToReadingListModal({ seriesId, children }: Props) {
 
                     <div className="shrink-0">
                       {isAdded ? (
-                        <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                         </svg>
                       ) : isAdding ? (

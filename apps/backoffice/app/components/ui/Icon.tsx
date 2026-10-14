@@ -141,7 +141,7 @@ const colorClasses: Partial<Record<IconName, string>> = {
   image: "text-primary",
   cache: "text-warning",
   performance: "text-success",
-  authors: "text-violet-500",
+  authors: "text-highlight",
 };
 
 export function Icon({ name, size = "md", className = "" }: IconProps) {

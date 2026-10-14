@@ -84,7 +84,7 @@ export function SeriesRatingControl({
         </svg>
       )}
       {toast && (
-        <span className="text-xs text-green-400">{toast}</span>
+        <span className="text-xs text-success">{toast}</span>
       )}
     </div>
   );

@@ -2,6 +2,7 @@
 
 import { useTheme } from "next-themes";
 
+import { useTranslation } from "@/lib/i18n/context";
 import { useIsMounted } from "@/lib/useIsMounted";
 
 // Sun Icon
@@ -29,12 +30,14 @@ const MonitorIcon = ({ className }: { className?: string }) => (
 
 export function ThemeToggle() {
   const { theme, setTheme, resolvedTheme, systemTheme } = useTheme();
+  const { t } = useTranslation();
   const mounted = useIsMounted();
 
   if (!mounted) {
     return (
       <button
         type="button"
+        aria-label={t("theme.label")}
         className="h-9 w-9 rounded-md flex items-center justify-center text-muted-foreground"
         disabled
       >
@@ -58,8 +61,8 @@ export function ThemeToggle() {
       type="button"
       onClick={toggleTheme}
       className="h-9 w-9 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors duration-200"
-      title={activeTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-      aria-label={activeTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+      title={activeTheme === "dark" ? t("theme.switchToLight") : t("theme.switchToDark")}
+      aria-label={activeTheme === "dark" ? t("theme.switchToLight") : t("theme.switchToDark")}
     >
       <div className="relative h-4 w-4">
         <SunIcon 
@@ -80,21 +83,22 @@ export function ThemeToggle() {
 // Full theme selector with dropdown
 export function ThemeSelector() {
   const { theme, setTheme } = useTheme();
+  const { t } = useTranslation();
   const mounted = useIsMounted();
 
   if (!mounted) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <SunIcon className="h-4 w-4" />
-        <span>Theme</span>
+        <span>{t("theme.label")}</span>
       </div>
     );
   }
 
   const themes = [
-    { value: "light", label: "Light", icon: SunIcon },
-    { value: "dark", label: "Dark", icon: MoonIcon },
-    { value: "system", label: "System", icon: MonitorIcon },
+    { value: "light", label: t("theme.light"), icon: SunIcon },
+    { value: "dark", label: t("theme.dark"), icon: MoonIcon },
+    { value: "system", label: t("theme.system"), icon: MonitorIcon },
   ];
 
   return (

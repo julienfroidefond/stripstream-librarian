@@ -37,12 +37,12 @@ export function RssSnapshotCard({ releases, t }: {
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm z-10">
               <tr>
-                <th className="text-left p-2 font-medium text-muted-foreground">Titre</th>
-                <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">Indexer</th>
-                <th className="text-left p-2 font-medium text-muted-foreground whitespace-nowrap">Catégories</th>
-                <th className="text-right p-2 font-medium text-muted-foreground whitespace-nowrap">Taille</th>
-                <th className="text-right p-2 font-medium text-muted-foreground whitespace-nowrap">Seeders</th>
-                <th className="text-right p-2 font-medium text-muted-foreground whitespace-nowrap">Date</th>
+                <th className="text-left p-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("jobDetail.rssColumnTitle")}</th>
+                <th className="text-left p-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">{t("jobDetail.rssColumnIndexer")}</th>
+                <th className="text-left p-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">{t("jobDetail.rssColumnCategories")}</th>
+                <th className="text-right p-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">{t("jobDetail.rssColumnSize")}</th>
+                <th className="text-right p-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">{t("jobDetail.rssColumnSeeders")}</th>
+                <th className="text-right p-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">{t("jobDetail.rssColumnDate")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/40">
@@ -54,7 +54,7 @@ export function RssSnapshotCard({ releases, t }: {
                     {r.categories?.length ? (
                       <div className="flex flex-wrap gap-1">
                         {r.categories.map((c) => (
-                          <span key={c} className="px-1.5 py-0.5 rounded bg-muted text-[10px] whitespace-nowrap">{c}</span>
+                          <span key={c} className="px-1.5 py-0.5 rounded bg-muted text-3xs whitespace-nowrap">{c}</span>
                         ))}
                       </div>
                     ) : "—"}
@@ -147,7 +147,7 @@ export function DownloadDetectionErrorsCard({ results, t }: {
         {results.map((r) => (
           <div key={r.id} className="p-3 bg-destructive/10 rounded-lg border border-destructive/20">
             <p className="text-sm font-semibold text-destructive mb-1">{r.series_name}</p>
-            <p className="text-sm text-destructive/80">{r.error_message ?? "Erreur inconnue"}</p>
+            <p className="text-sm text-destructive/80">{r.error_message ?? t("common.unknownError")}</p>
           </div>
         ))}
       </CardContent>
@@ -184,7 +184,7 @@ export function DownloadDetectionResultsCard({ results, libraryId, qbConfigured,
                 ) : (
                   <span className="font-semibold text-sm text-foreground truncate">{r.series_name}</span>
                 )}
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap bg-warning/20 text-warning shrink-0">
+                <span className="text-3xs px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap bg-warning/20 text-warning shrink-0">
                   {t("jobDetail.downloadMissingCount", { count: String(r.missing_count) })}
                 </span>
               </div>
@@ -196,22 +196,22 @@ export function DownloadDetectionResultsCard({ results, libraryId, qbConfigured,
                         <p className="text-xs font-mono text-foreground truncate" title={release.title}>{release.title}</p>
                         <div className="flex items-center gap-3 mt-1 flex-wrap">
                           {release.indexer && (
-                            <span className="text-[10px] text-muted-foreground">{release.indexer}</span>
+                            <span className="text-3xs text-muted-foreground">{release.indexer}</span>
                           )}
                           {release.seeders != null && (
-                            <span className="text-[10px] text-success font-medium">{release.seeders} {t("prowlarr.columnSeeders").toLowerCase()}</span>
+                            <span className="text-3xs text-success font-medium">{release.seeders} {t("prowlarr.columnSeeders").toLowerCase()}</span>
                           )}
-                          <span className="text-[10px] text-muted-foreground">
+                          <span className="text-3xs text-muted-foreground">
                             {(release.size / 1024 / 1024).toFixed(0)} MB
                           </span>
                           {release.match_confidence === "review" && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning/20 text-warning font-medium" title={release.match_reasons?.join(", ")}>
-                              À vérifier
+                            <span className="text-3xs px-1.5 py-0.5 rounded-full bg-warning/20 text-warning font-medium" title={release.match_reasons?.join(", ")}>
+                              {t("jobDetail.reviewNeeded")}
                             </span>
                           )}
                           <div className="flex flex-wrap items-center gap-1">
                             {compressVolumes(release.matched_missing_volumes).map((range) => (
-                              <span key={range} className="text-[10px] px-1.5 py-0.5 rounded-full bg-success/20 text-success font-medium">
+                              <span key={range} className="text-3xs px-1.5 py-0.5 rounded-full bg-success/20 text-success font-medium">
                                 {range}
                               </span>
                             ))}

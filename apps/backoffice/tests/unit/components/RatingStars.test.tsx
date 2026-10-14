@@ -11,14 +11,14 @@ function starSpans(): HTMLElement[] {
 describe("RatingStars", () => {
   it("renders a slider with an aria label derived from the value", () => {
     render(<RatingStars value={7} />);
-    expect(screen.getByRole("slider")).toHaveAttribute("aria-label", "3.5 sur 5");
+    expect(screen.getByRole("slider")).toHaveAttribute("aria-label", 'rating.ariaValue:{"value":3.5,"max":5}');
     expect(screen.getByRole("slider")).toHaveAttribute("aria-valuenow", "7");
     expect(screen.getByRole("slider")).toHaveAttribute("aria-valuemax", "10");
   });
 
   it("labels an unrated control", () => {
     render(<RatingStars value={null} />);
-    expect(screen.getByRole("slider")).toHaveAttribute("aria-label", "Non noté");
+    expect(screen.getByRole("slider")).toHaveAttribute("aria-label", "rating.unrated");
   });
 
   it("renders a read-only image without a slider", () => {
@@ -58,7 +58,7 @@ describe("RatingStars", () => {
   it("shows a clear button only for a rated, editable control", () => {
     const onClear = vi.fn();
     const { rerender } = render(<RatingStars value={6} onClear={onClear} />);
-    fireEvent.click(screen.getByRole("button", { name: "Supprimer la note" }));
+    fireEvent.click(screen.getByRole("button", { name: "rating.removeAria" }));
     expect(onClear).toHaveBeenCalledTimes(1);
 
     rerender(<RatingStars value={null} onClear={onClear} />);

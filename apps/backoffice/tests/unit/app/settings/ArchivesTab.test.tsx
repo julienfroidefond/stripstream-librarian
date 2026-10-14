@@ -19,26 +19,37 @@ describe("ArchivesTab", () => {
     let resolve!: (v: unknown) => void;
     fetchMock.mockReturnValue(new Promise((r) => (resolve = r)));
     render(<ArchivesTab />);
-    expect(screen.getByText("Chargement…")).toBeInTheDocument();
+    expect(screen.getByText("common.loading")).toBeInTheDocument();
     resolve({ json: async () => [{ id: "1" }, { id: "2" }] });
     await waitFor(() => expect(screen.getByTestId("archives-table")).toHaveTextContent("2"));
+  });
+
+  it("pluralises the archived series count", async () => {
+    fetchMock.mockResolvedValue({ json: async () => [{ id: "1" }, { id: "2" }] });
+    render(<ArchivesTab />);
+    await waitFor(() =>
+      expect(
+        screen.getByText('settings.archives.count:{"count":2,"plural":"s"}')
+      ).toBeInTheDocument()
+    );
   });
 
   it("shows the empty state when there is no archived series", async () => {
     fetchMock.mockResolvedValue({ json: async () => [] });
     render(<ArchivesTab />);
-    await waitFor(() => expect(screen.getByText("Aucune série archivée.")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("settings.archives.empty")).toBeInTheDocument());
+    expect(screen.getByText("settings.archives.emptyHint")).toBeInTheDocument();
   });
 
   it("falls back to an empty list for non-array payloads", async () => {
     fetchMock.mockResolvedValue({ json: async () => ({ error: "nope" }) });
     render(<ArchivesTab />);
-    await waitFor(() => expect(screen.getByText("Aucune série archivée.")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("settings.archives.empty")).toBeInTheDocument());
   });
 
   it("shows an error message when loading fails", async () => {
     fetchMock.mockRejectedValue(new Error("boom"));
     render(<ArchivesTab />);
-    await waitFor(() => expect(screen.getByText("Erreur de chargement")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("settings.archives.loadError")).toBeInTheDocument());
   });
 });

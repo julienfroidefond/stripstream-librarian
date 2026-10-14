@@ -82,13 +82,13 @@ describe("useMarkRead", () => {
 });
 
 describe("markReadClassName", () => {
-  it("highlights completed items in green", () => {
-    expect(markReadClassName(true, false)).toContain("border-green-500/30");
+  it("highlights completed items with the success token", () => {
+    expect(markReadClassName(true, false)).toContain("border-success/30");
     expect(markReadClassName(false, false)).toContain("border-border");
   });
 
   it("uses the compact variant when requested", () => {
-    expect(markReadClassName(true, true)).toContain("text-green-600");
+    expect(markReadClassName(true, true)).toContain("text-success");
     expect(markReadClassName(true, true)).toContain("px-1.5");
     expect(markReadClassName(false, true)).toContain("text-muted-foreground");
   });

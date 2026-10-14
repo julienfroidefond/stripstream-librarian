@@ -6,6 +6,7 @@ import { getServerTranslations } from "@/lib/i18n/server";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 import { StatsOverviewSection } from "./_components/StatsOverviewSection";
 import { StatsBreakdownSection } from "./_components/StatsBreakdownSection";
+import { Skeleton } from "@/app/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -16,12 +17,12 @@ function OverviewSkeleton() {
     <div className="space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="h-20 bg-card border border-border/50 rounded-xl animate-pulse" />
+          <Skeleton key={i} className="h-20 rounded-xl" />
         ))}
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="h-64 bg-card border border-border/50 rounded-xl animate-pulse" />
+          <Skeleton key={i} className="h-64 rounded-xl" />
         ))}
       </div>
     </div>
@@ -29,14 +30,14 @@ function OverviewSkeleton() {
 }
 
 function TimeSeriesSkeleton() {
-  return <div className="h-80 bg-card border border-border/50 rounded-xl animate-pulse" />;
+  return <Skeleton className="h-80 rounded-xl" />;
 }
 
 function BreakdownSkeleton() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div className="h-64 bg-card border border-border/50 rounded-xl animate-pulse" />
-      <div className="h-64 bg-card border border-border/50 rounded-xl animate-pulse" />
+      <Skeleton className="h-64 rounded-xl" />
+      <Skeleton className="h-64 rounded-xl" />
     </div>
   );
 }
@@ -66,8 +67,8 @@ async function TimeSeriesSection({ locale, labels }: { locale: string; labels: T
 function QuickLinks({ t }: { t: TranslateFunction }) {
   const links = [
     { href: "/libraries", label: t("nav.libraries"), bg: "bg-primary/10", text: "text-primary", hoverBg: "group-hover:bg-primary", hoverText: "group-hover:text-primary-foreground", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /> },
-    { href: "/books", label: t("nav.books"), bg: "bg-success/10", text: "text-success", hoverBg: "group-hover:bg-success", hoverText: "group-hover:text-white", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /> },
-    { href: "/series", label: t("nav.series"), bg: "bg-warning/10", text: "text-warning", hoverBg: "group-hover:bg-warning", hoverText: "group-hover:text-white", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /> },
+    { href: "/books", label: t("nav.books"), bg: "bg-success/10", text: "text-success", hoverBg: "group-hover:bg-success", hoverText: "group-hover:text-success-foreground", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /> },
+    { href: "/series", label: t("nav.series"), bg: "bg-warning/10", text: "text-warning", hoverBg: "group-hover:bg-warning", hoverText: "group-hover:text-warning-foreground", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /> },
     { href: "/jobs", label: t("nav.jobs"), bg: "bg-destructive/10", text: "text-destructive", hoverBg: "group-hover:bg-destructive", hoverText: "group-hover:text-destructive-foreground", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /> },
   ];
   return (

@@ -13,8 +13,8 @@ export const dynamic = "force-dynamic";
 
 const readingStatusClassNames: Record<ReadingStatus, string> = {
   unread: "bg-muted/60 text-muted-foreground border border-border",
-  reading: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30",
-  read: "bg-green-500/15 text-green-600 dark:text-green-400 border border-green-500/30",
+  reading: "bg-warning/15 text-warning dark:text-warning border border-warning/30",
+  read: "bg-success/15 text-success dark:text-success border border-success/30",
 };
 
 async function fetchBook(bookId: string): Promise<BookDto | null> {

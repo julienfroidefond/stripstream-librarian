@@ -70,18 +70,18 @@ export function SeriesGrid({ series, sort, hasActiveUser, t, knownStatuses, show
                     {(s.series_status || (s.missing_count != null && s.missing_count > 0)) && (
                       <div className="absolute top-1.5 right-1.5 flex items-center gap-1">
                         {s.series_status && (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                            s.series_status === "ongoing" ? "bg-blue-500 text-white" :
-                            s.series_status === "ended" ? "bg-green-500 text-white" :
-                            s.series_status === "hiatus" ? "bg-amber-500 text-white" :
-                            s.series_status === "cancelled" ? "bg-red-500 text-white" :
+                          <span className={`text-3xs px-1.5 py-0.5 rounded-full font-medium ${
+                            s.series_status === "ongoing" ? "bg-info text-info-foreground" :
+                            s.series_status === "ended" ? "bg-success text-success-foreground" :
+                            s.series_status === "hiatus" ? "bg-warning text-warning-foreground" :
+                            s.series_status === "cancelled" ? "bg-error text-error-foreground" :
                             "bg-muted text-muted-foreground"
                           }`}>
                             {knownStatuses[s.series_status] || s.series_status}
                           </span>
                         )}
                         {s.missing_count != null && s.missing_count > 0 && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-yellow-500 text-white" title={t("series.missingCount", { count: String(s.missing_count), plural: s.missing_count > 1 ? "s" : "" })}>
+                          <span className="inline-flex items-center gap-0.5 text-3xs px-1.5 py-0.5 rounded-full font-bold bg-warning text-warning-foreground" title={t("series.missingCount", { count: String(s.missing_count), plural: s.missing_count > 1 ? "s" : "" })}>
                             <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round"/></svg>
                             {s.missing_count}
                           </span>
@@ -97,7 +97,7 @@ export function SeriesGrid({ series, sort, hasActiveUser, t, knownStatuses, show
                     </h3>
                   </Link>
                   <div className="flex items-center justify-between mt-0.5">
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-2xs text-muted-foreground">
                       {t("series.readCount", { read: String(s.books_read_count), total: String(s.book_count), plural: s.book_count !== 1 ? "s" : "" })}
                     </p>
                     {hasActiveUser && (

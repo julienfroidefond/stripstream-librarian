@@ -38,7 +38,7 @@ export default async function AuthorsPage({
     <>
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
-          <svg className="w-8 h-8 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-8 h-8 text-highlight" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
           </svg>
           {t("authors.title")}
@@ -80,12 +80,12 @@ export default async function AuthorsPage({
                 <div className="bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden hover:shadow-md hover:-translate-y-1 transition-all duration-200 p-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-accent/50 flex items-center justify-center flex-shrink-0">
-                      <span className="text-lg font-semibold text-violet-500">
+                      <span className="text-lg font-semibold text-highlight">
                         {author.name.charAt(0).toUpperCase()}
                       </span>
                     </div>
                     <div className="min-w-0">
-                      <h3 className="font-medium text-foreground truncate text-sm group-hover:text-violet-500 transition-colors" title={author.name}>
+                      <h3 className="font-medium text-foreground truncate text-sm group-hover:text-highlight transition-colors" title={author.name}>
                         {author.name}
                       </h3>
                       <div className="flex items-center gap-3 mt-0.5">

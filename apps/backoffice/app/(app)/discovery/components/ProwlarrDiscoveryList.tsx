@@ -165,7 +165,7 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
           onClick={() => { setHideMine((v) => !v); setPage(1); }}
           className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
             hideMine
-              ? "bg-green-500/15 text-green-600 border-green-500/30"
+              ? "bg-success/15 text-success border-success/30"
               : "bg-card text-muted-foreground border-border hover:border-primary/30"
           }`}
         >
@@ -221,15 +221,15 @@ export function ProwlarrDiscoveryList({ libraries, nocache = false }: { librarie
         <table className="w-full text-sm">
           <thead className="bg-muted/50">
             <tr>
-              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-8">#</th>
-              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrSeries")}</th>
-              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrProvider")}</th>
-              <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrCategories")}</th>
-              <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.volumes", { count: "" })}</th>
-              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrSeeders")}</th>
-              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrSize")}</th>
-              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">{t("discovery.prowlarrDate")}</th>
-              <th className="text-right px-3 py-2.5 font-medium text-muted-foreground w-24"></th>
+              <th className="text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-8">#</th>
+              <th className="text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("discovery.prowlarrSeries")}</th>
+              <th className="text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("discovery.prowlarrProvider")}</th>
+              <th className="text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("discovery.prowlarrCategories")}</th>
+              <th className="text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("discovery.volumes", { count: "" })}</th>
+              <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("discovery.prowlarrSeeders")}</th>
+              <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("discovery.prowlarrSize")}</th>
+              <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("discovery.prowlarrDate")}</th>
+              <th className="text-right px-3 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-24"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -311,12 +311,12 @@ function ProwlarrRow({ item, idx, libraries, onAdded }: {
             <div className="flex flex-wrap items-center gap-1 mt-0.5">
               <Link
                 href={`/series/${item.local_series_id}`}
-                className="text-[10px] text-green-600 dark:text-green-500 hover:underline"
+                className="text-3xs text-success dark:text-success hover:underline"
               >
                 ✓ {item.local_series_name ?? item.series_name}
               </Link>
               {item.volumes_already_owned.length > 0 && (
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-3xs text-muted-foreground">
                   · {item.volumes_already_owned.map((v) => `T${v}`).join(", ")} possédé{item.volumes_already_owned.length > 1 ? "s" : ""}
                 </span>
               )}
@@ -330,13 +330,13 @@ function ProwlarrRow({ item, idx, libraries, onAdded }: {
       <td className="px-3 py-2">
         <div className="flex flex-wrap gap-1">
           {item.categories.slice(0, 2).map((cat) => (
-            <span key={cat} title={cat} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground whitespace-nowrap">{categoryShortId(cat)}</span>
+            <span key={cat} title={cat} className="text-3xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground whitespace-nowrap">{categoryShortId(cat)}</span>
           ))}
         </div>
       </td>
       <td className="px-3 py-2 text-center text-xs text-muted-foreground">{formatVolumeRange(item.volumes_found ?? [])}</td>
       <td className="px-3 py-2 text-right">
-        <span className={`font-medium ${item.best_seeders >= 10 ? "text-green-600" : item.best_seeders >= 3 ? "text-amber-600" : "text-red-500"}`}>
+        <span className={`font-medium ${item.best_seeders >= 10 ? "text-success" : item.best_seeders >= 3 ? "text-warning" : "text-error"}`}>
           {item.best_seeders}
         </span>
       </td>

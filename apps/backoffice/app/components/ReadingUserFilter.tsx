@@ -81,15 +81,15 @@ export function CurrentlyReadingList({
                   <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">{book.title}</p>
                   {book.series && <p className="text-xs text-muted-foreground truncate">{book.series}</p>}
                   {book.username && usernames.length > 1 && (
-                    <p className="text-[10px] text-primary/70 font-medium">{book.username}</p>
+                    <p className="text-3xs text-primary/70 font-medium">{book.username}</p>
                   )}
                   <div className="mt-1.5 flex items-center gap-2">
                     <div className="h-1.5 flex-1 bg-muted rounded-full overflow-hidden">
                       <div className="h-full bg-warning rounded-full transition-all" style={{ width: `${pct}%` }} />
                     </div>
-                    <span className="text-[10px] text-muted-foreground shrink-0">{pct}%</span>
+                    <span className="text-3xs text-muted-foreground shrink-0">{pct}%</span>
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{pageProgressTemplate.replace("{{current}}", String(book.current_page)).replace("{{total}}", String(book.page_count))}</p>
+                  <p className="text-3xs text-muted-foreground mt-0.5">{pageProgressTemplate.replace("{{current}}", String(book.current_page)).replace("{{total}}", String(book.page_count))}</p>
                 </div>
               </Link>
             );
@@ -134,7 +134,7 @@ export function RecentlyReadList({
                 <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">{book.title}</p>
                 {book.series && <p className="text-xs text-muted-foreground truncate">{book.series}</p>}
                 {book.username && multiUser && (
-                  <p className="text-[10px] text-primary/70 font-medium">{book.username}</p>
+                  <p className="text-3xs text-primary/70 font-medium">{book.username}</p>
                 )}
               </div>
               <span className="text-xs text-muted-foreground shrink-0">{book.last_read_at}</span>

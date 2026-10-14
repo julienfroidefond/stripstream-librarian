@@ -330,8 +330,8 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
     <>
       <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
         <h1 className="text-xl sm:text-3xl font-bold text-foreground flex items-center gap-2 sm:gap-3">
-          <Icon name="download" size="lg" className="sm:hidden text-emerald-500" />
-          <Icon name="download" size="xl" className="hidden sm:block text-emerald-500" />
+          <Icon name="download" size="lg" className="sm:hidden text-success" />
+          <Icon name="download" size="xl" className="hidden sm:block text-success" />
           {t("downloads.title")}
         </h1>
         <Button onClick={() => refresh(true)} disabled={isRefreshing} variant="outline" size="sm">
@@ -354,7 +354,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
           >
             {f.label}
             {f.id !== "all" && (
-              <span className="ml-1 sm:ml-1.5 text-[10px] sm:text-xs opacity-60">
+              <span className="ml-1 sm:ml-1.5 text-3xs sm:text-xs opacity-60">
                 {merged.filter(item => itemMatchesFilter(item, f.id)).length}
               </span>
             )}
@@ -471,20 +471,20 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
           {/* Desktop: single row */}
           <div className="hidden sm:flex items-center gap-2">
             <Link href={`/series/${dl.series_id ?? encodeURIComponent(dl.series_name)}`} className="text-sm font-medium text-primary hover:underline truncate">{dl.series_name}</Link>
-            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${statusClass(dl.status)}`}>
+            <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full ${statusClass(dl.status)}`}>
               {statusLabel(dl.status, t)}
             </span>
             {dl.expected_volumes.length > 0 && (
-              <span className="text-[11px] text-muted-foreground">{formatVolumes(dl.expected_volumes)}</span>
+              <span className="text-2xs text-muted-foreground">{formatVolumes(dl.expected_volumes)}</span>
             )}
             {dl.status === "imported" && importedCount > 0 && (
-              <span className="text-[11px] text-success">{importedCount} {t("downloads.filesImported")}</span>
+              <span className="text-2xs text-success">{importedCount} {t("downloads.filesImported")}</span>
             )}
             {dl.status === "imported" && importedCount === 0 && alreadyExistedCount > 0 && (
-              <span className="text-[11px] text-muted-foreground">{alreadyExistedCount} {t("downloads.alreadyExisted")}</span>
+              <span className="text-2xs text-muted-foreground">{alreadyExistedCount} {t("downloads.alreadyExisted")}</span>
             )}
             {dl.status === "imported" && importedCount > 0 && alreadyExistedCount > 0 && (
-              <span className="text-[11px] text-muted-foreground">({alreadyExistedCount} {t("downloads.alreadyExisted")})</span>
+              <span className="text-2xs text-muted-foreground">({alreadyExistedCount} {t("downloads.alreadyExisted")})</span>
             )}
           </div>
 
@@ -492,11 +492,11 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
           <div className="sm:hidden">
             <div className="flex items-center gap-1.5">
               <Link href={`/series/${dl.series_id ?? encodeURIComponent(dl.series_name)}`} className="text-sm font-medium text-primary hover:underline truncate">{dl.series_name}</Link>
-              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${statusClass(dl.status)}`}>
+              <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full shrink-0 ${statusClass(dl.status)}`}>
                 {statusLabel(dl.status, t)}
               </span>
             </div>
-            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
+            <div className="flex items-center gap-2 mt-0.5 text-2xs text-muted-foreground">
               {dl.expected_volumes.length > 0 && <span>{formatVolumes(dl.expected_volumes)}</span>}
               {dl.status === "imported" && importedCount > 0 && (
                 <span className="text-success">{importedCount} {t("downloads.filesImported")}</span>
@@ -516,24 +516,24 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
                   style={{ width: `${Math.round(dl.progress * 100)}%` }}
                 />
               </div>
-              <span className="text-[10px] font-medium text-foreground tabular-nums">
+              <span className="text-3xs font-medium text-foreground tabular-nums">
                 {Math.round(dl.progress * 100)}%
               </span>
               {dl.download_speed > 0 && (
-                <span className="text-[10px] text-muted-foreground hidden sm:inline">{formatSpeed(dl.download_speed)}</span>
+                <span className="text-3xs text-muted-foreground hidden sm:inline">{formatSpeed(dl.download_speed)}</span>
               )}
               {dl.eta > 0 && dl.eta < 8640000 && (
-                <span className="text-[10px] text-muted-foreground">ETA {formatEta(dl.eta)}</span>
+                <span className="text-3xs text-muted-foreground">ETA {formatEta(dl.eta)}</span>
               )}
             </div>
           )}
 
           {dl.error_message && (
-            <p className="text-[11px] text-destructive truncate mt-0.5" title={dl.error_message}>{dl.error_message}</p>
+            <p className="text-2xs text-destructive truncate mt-0.5" title={dl.error_message}>{dl.error_message}</p>
           )}
         </div>
 
-        <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums hidden sm:block">{formatDateTime(dl.created_at, "fr")}</span>
+        <span className="text-3xs text-muted-foreground shrink-0 tabular-nums hidden sm:block">{formatDateTime(dl.created_at, "fr")}</span>
 
         {canRetry && (
           <button
@@ -648,11 +648,11 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
               ? <Link href={`/series/${item.series_id}`} className="text-sm font-medium text-primary hover:underline truncate">{item.series_name ?? item.filename}</Link>
               : <span className="text-sm font-medium text-foreground truncate">{item.series_name ?? item.filename}</span>
             }
-            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${statusClass(tgStatus)}`}>
+            <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full ${statusClass(tgStatus)}`}>
               {statusLabel(tgStatus, t)}
             </span>
-            {volLabel && <span className="text-[11px] text-muted-foreground">{volLabel}</span>}
-            <span className="text-[11px] text-muted-foreground truncate">@{item.channel_username}</span>
+            {volLabel && <span className="text-2xs text-muted-foreground">{volLabel}</span>}
+            <span className="text-2xs text-muted-foreground truncate">@{item.channel_username}</span>
           </div>
           {/* Mobile */}
           <div className="sm:hidden">
@@ -661,17 +661,17 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
                 ? <Link href={`/series/${item.series_id}`} className="text-sm font-medium text-primary hover:underline truncate">{item.series_name ?? item.filename}</Link>
                 : <span className="text-sm font-medium text-foreground truncate">{item.series_name ?? item.filename}</span>
               }
-              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${statusClass(tgStatus)}`}>
+              <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full shrink-0 ${statusClass(tgStatus)}`}>
                 {statusLabel(tgStatus, t)}
               </span>
             </div>
-            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
+            <div className="flex items-center gap-2 mt-0.5 text-2xs text-muted-foreground">
               {volLabel && <span>{volLabel}</span>}
               <span className="tabular-nums">{formatDateTime(item.updated_at, "fr")}</span>
             </div>
           </div>
           {/* Filename secondary */}
-          <p className="hidden sm:block text-[11px] text-muted-foreground truncate mt-0.5">{item.filename}</p>
+          <p className="hidden sm:block text-2xs text-muted-foreground truncate mt-0.5">{item.filename}</p>
           {/* Progress bar for active downloads */}
           {item.status === "downloading" && item.file_size && item.file_size > 0 && (
             <div className="mt-1.5 space-y-0.5">
@@ -681,18 +681,18 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
                   style={{ width: `${Math.min(100, Math.round((item.bytes_downloaded / item.file_size) * 100))}%` }}
                 />
               </div>
-              <p className="text-[10px] text-muted-foreground tabular-nums">
+              <p className="text-3xs text-muted-foreground tabular-nums">
                 {formatSize(item.bytes_downloaded)} / {formatSize(item.file_size)}
                 {" · "}{Math.min(100, Math.round((item.bytes_downloaded / item.file_size) * 100))}%
               </p>
             </div>
           )}
           {item.error_message && (
-            <p className="text-[11px] text-destructive truncate mt-0.5" title={item.error_message}>{item.error_message}</p>
+            <p className="text-2xs text-destructive truncate mt-0.5" title={item.error_message}>{item.error_message}</p>
           )}
         </div>
 
-        <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums hidden sm:block">{formatDateTime(item.updated_at, "fr")}</span>
+        <span className="text-3xs text-muted-foreground shrink-0 tabular-nums hidden sm:block">{formatDateTime(item.updated_at, "fr")}</span>
 
         {(item.status === "failed" || item.status === "imported") && (
           <button
@@ -825,15 +825,15 @@ function DdlProviderDownloadRow({ item, onRefresh }: { item: DdlProviderDownload
               ? <Link href={`/series/${item.series_id}`} className="text-sm font-medium text-primary hover:underline truncate">{title}</Link>
               : <span className="text-sm font-medium text-foreground truncate">{title}</span>
             }
-            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${statusClass(ddlStatus)}`}>
+            <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full ${statusClass(ddlStatus)}`}>
               {statusLabel(ddlStatus, t)}
             </span>
-            {volLabel && <span className="text-[11px] text-muted-foreground">{volLabel}</span>}
-            <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Icon name="globe" size="sm" className="text-emerald-500" />
+            {volLabel && <span className="text-2xs text-muted-foreground">{volLabel}</span>}
+            <span className="inline-flex items-center gap-1 text-2xs text-muted-foreground">
+              <Icon name="globe" size="sm" className="text-success" />
               {item.provider}
             </span>
-            {item.library_name && <span className="text-[11px] text-muted-foreground truncate">{item.library_name}</span>}
+            {item.library_name && <span className="text-2xs text-muted-foreground truncate">{item.library_name}</span>}
           </div>
           {/* Mobile */}
           <div className="sm:hidden">
@@ -842,18 +842,18 @@ function DdlProviderDownloadRow({ item, onRefresh }: { item: DdlProviderDownload
                 ? <Link href={`/series/${item.series_id}`} className="text-sm font-medium text-primary hover:underline truncate">{title}</Link>
                 : <span className="text-sm font-medium text-foreground truncate">{title}</span>
               }
-              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${statusClass(ddlStatus)}`}>
+              <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full shrink-0 ${statusClass(ddlStatus)}`}>
                 {statusLabel(ddlStatus, t)}
               </span>
             </div>
-            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
+            <div className="flex items-center gap-2 mt-0.5 text-2xs text-muted-foreground">
               {volLabel && <span>{volLabel}</span>}
-              <span className="inline-flex items-center gap-1"><Icon name="globe" size="sm" className="text-emerald-500" />{item.provider}</span>
+              <span className="inline-flex items-center gap-1"><Icon name="globe" size="sm" className="text-success" />{item.provider}</span>
               <span className="tabular-nums">{formatDateTime(item.updated_at, "fr")}</span>
             </div>
           </div>
           {/* Filename secondary */}
-          <p className="hidden sm:block text-[11px] text-muted-foreground truncate mt-0.5">{item.filename}</p>
+          <p className="hidden sm:block text-2xs text-muted-foreground truncate mt-0.5">{item.filename}</p>
           {/* Progress bar for active downloads */}
           {item.status === "downloading" && item.file_size && item.file_size > 0 && (
             <div className="mt-1.5 space-y-0.5">
@@ -863,18 +863,18 @@ function DdlProviderDownloadRow({ item, onRefresh }: { item: DdlProviderDownload
                   style={{ width: `${Math.min(100, Math.round((item.bytes_downloaded / item.file_size) * 100))}%` }}
                 />
               </div>
-              <p className="text-[10px] text-muted-foreground tabular-nums">
+              <p className="text-3xs text-muted-foreground tabular-nums">
                 {formatSize(item.bytes_downloaded)} / {formatSize(item.file_size)}
                 {" · "}{Math.min(100, Math.round((item.bytes_downloaded / item.file_size) * 100))}%
               </p>
             </div>
           )}
           {item.error_message && (
-            <p className="text-[11px] text-destructive truncate mt-0.5" title={item.error_message}>{item.error_message}</p>
+            <p className="text-2xs text-destructive truncate mt-0.5" title={item.error_message}>{item.error_message}</p>
           )}
         </div>
 
-        <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums hidden sm:block">{formatDateTime(item.updated_at, "fr")}</span>
+        <span className="text-3xs text-muted-foreground shrink-0 tabular-nums hidden sm:block">{formatDateTime(item.updated_at, "fr")}</span>
 
         {canRetry && (
           <button
@@ -1235,43 +1235,43 @@ export function AvailableDownloadsSection({
                     {r.series_name}
                   </Link>
                   {libraries.length > 1 && (
-                    <span className="text-[10px] text-muted-foreground hidden sm:inline shrink-0">{r.library_name}</span>
+                    <span className="text-3xs text-muted-foreground hidden sm:inline shrink-0">{r.library_name}</span>
                   )}
                 </div>
 
                 <div className="flex w-full sm:w-auto items-center justify-end gap-2 shrink-0 pl-5 sm:pl-0">
                   {prowlarrCount > 0 && (
-                    <span className="text-[10px] text-muted-foreground shrink-0">
+                    <span className="text-3xs text-muted-foreground shrink-0">
                       {prowlarrCount} Prowlarr
                     </span>
                   )}
                   {ddlCount > 0 && (
-                    <span className="text-[10px] text-emerald-600 shrink-0">
+                    <span className="text-3xs text-success shrink-0">
                       {ddlCount} {t("downloads.sourceDdl")}
                     </span>
                   )}
                   {telegramCount > 0 && (
-                    <span className="text-[10px] text-sky-600 shrink-0">
+                    <span className="text-3xs text-info shrink-0">
                       {telegramCount} TG
                     </span>
                   )}
                   {(() => {
                     const newest = newestDetectedAt(r);
                     return newest ? (
-                      <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{formatDateTime(newest, "fr")}</span>
+                      <span className="text-3xs text-muted-foreground shrink-0 tabular-nums">{formatDateTime(newest, "fr")}</span>
                     ) : null;
                   })()}
                   {failedReleaseCount > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-destructive/20 text-destructive" title={`${failedReleaseCount} failed`}>
+                    <span className="text-3xs px-1.5 py-0.5 rounded-full font-medium bg-destructive/20 text-destructive" title={`${failedReleaseCount} failed`}>
                       {failedReleaseCount}!
                     </span>
                   )}
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-warning/20 text-warning" title={`${r.missing_count} missing`}>
+                  <span className="text-3xs px-1.5 py-0.5 rounded-full font-medium bg-warning/20 text-warning" title={`${r.missing_count} missing`}>
                     {r.missing_count} {t("downloads.missing")}
                   </span>
                   {topSeeders > 0 && (
                     <span className={`text-xs font-bold tabular-nums ${
-                      topSeeders >= 10 ? "text-green-600" : topSeeders >= 3 ? "text-amber-600" : "text-red-500"
+                      topSeeders >= 10 ? "text-success" : topSeeders >= 3 ? "text-warning" : "text-error"
                     }`}>
                       {topSeeders}S
                     </span>
@@ -1290,7 +1290,7 @@ export function AvailableDownloadsSection({
                   }).map((source) => source.kind !== "telegram" ? (
                     <div
                       key={`${source.kind}-${source.entryId}-${source.releaseIndex}`}
-                      className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 pl-7 sm:pl-9 text-[11px] hover:bg-muted/20 border-b border-border/10 last:border-b-0 transition-colors ${source.release.has_failed ? "bg-destructive/5 hover:bg-destructive/10" : ""}`}
+                      className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 pl-7 sm:pl-9 text-2xs hover:bg-muted/20 border-b border-border/10 last:border-b-0 transition-colors ${source.release.has_failed ? "bg-destructive/5 hover:bg-destructive/10" : ""}`}
                     >
                       {source.release.has_failed && (
                         <span className="px-1.5 py-px rounded bg-destructive/20 text-destructive font-medium shrink-0" title={t("downloads.failedBefore", { count: 1 })}>!</span>
@@ -1300,7 +1300,7 @@ export function AvailableDownloadsSection({
                           À vérifier
                         </span>
                       )}
-                      <span className={`px-1.5 py-px rounded font-medium shrink-0 ${source.kind === "ddl" ? "bg-emerald-500/15 text-emerald-600" : "bg-primary/10 text-primary"}`}>
+                      <span className={`px-1.5 py-px rounded font-medium shrink-0 ${source.kind === "ddl" ? "bg-success/15 text-success" : "bg-primary/10 text-primary"}`}>
                         {source.kind === "ddl" ? (source.release.provider ?? "DDL") : "Prowlarr"}
                       </span>
                       <div className="flex items-center gap-1 shrink-0">
@@ -1314,7 +1314,7 @@ export function AvailableDownloadsSection({
                       {source.release.indexer && <span className="text-muted-foreground shrink-0 hidden sm:inline">{source.release.indexer}</span>}
                       {source.release.seeders != null && (
                         <span className={`font-medium shrink-0 tabular-nums ${
-                          source.release.seeders >= 10 ? "text-green-600" : source.release.seeders >= 3 ? "text-amber-600" : "text-red-500"
+                          source.release.seeders >= 10 ? "text-success" : source.release.seeders >= 3 ? "text-warning" : "text-error"
                         }`}>{source.release.seeders}S</span>
                       )}
                       <span className="text-muted-foreground shrink-0 tabular-nums">{(source.release.size / 1024 / 1024).toFixed(0)}MB</span>
@@ -1325,7 +1325,7 @@ export function AvailableDownloadsSection({
                             onClick={() => handleDdlDownload(r, source)}
                             disabled={downloadingDdlKeys.has(`${source.entryId}-${source.releaseIndex}`)}
                             title={t("ddlProviders.download")}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-emerald-600 hover:bg-emerald-500/10 transition-colors disabled:opacity-30 shrink-0"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-success hover:bg-success/10 transition-colors disabled:opacity-30 shrink-0"
                           >
                             {downloadingDdlKeys.has(`${source.entryId}-${source.releaseIndex}`)
                               ? <Icon name="spinner" size="sm" className="animate-spin" />
@@ -1369,9 +1369,9 @@ export function AvailableDownloadsSection({
                   ) : (
                     <div
                       key={`telegram-${source.book.id}`}
-                      className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 pl-7 sm:pl-9 text-[11px] border-b border-border/10 last:border-b-0 transition-colors ${source.book.status === "failed" ? "bg-destructive/5 hover:bg-destructive/10" : "hover:bg-muted/20"}`}
+                      className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 pl-7 sm:pl-9 text-2xs border-b border-border/10 last:border-b-0 transition-colors ${source.book.status === "failed" ? "bg-destructive/5 hover:bg-destructive/10" : "hover:bg-muted/20"}`}
                     >
-                      <span className="px-1.5 py-px rounded bg-sky-500/15 text-sky-600 font-medium shrink-0">TG</span>
+                      <span className="px-1.5 py-px rounded bg-info/15 text-info font-medium shrink-0">TG</span>
                       {source.book.volume_number != null ? (
                         <span className={`px-1.5 py-px rounded font-medium shrink-0 tabular-nums ${source.book.status === "failed" ? "bg-destructive/20 text-destructive" : "bg-success/20 text-success"}`}>
                           T{String(source.book.volume_number).padStart(2, "0")}
@@ -1435,7 +1435,7 @@ export function AvailableDownloadsSection({
                       type="button"
                       onClick={() => handleDeleteProwlarrEntries(r)}
                       disabled={deletingKey === r.key}
-                      className="text-[10px] text-muted-foreground hover:text-destructive transition-colors disabled:opacity-30"
+                      className="text-3xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-30"
                     >
                       {deletingKey === r.key
                         ? <Icon name="spinner" size="sm" className="animate-spin !w-3 !h-3" />

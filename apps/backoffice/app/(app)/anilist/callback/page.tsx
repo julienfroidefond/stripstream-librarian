@@ -3,10 +3,24 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { useTranslation } from "@/lib/i18n/context";
+import type { TranslationKey } from "@/lib/i18n/fr";
+
+type CallbackMessage = { key: TranslationKey; params?: Record<string, string | number> };
+
+/**
+ * The callback outcome is stored as an i18n key (not a rendered string) so the
+ * effect can stay independent of `t`, which is recreated on every render.
+ */
+type CallbackState =
+  | { status: "loading" }
+  | { status: "success"; message: CallbackMessage }
+  | { status: "error"; message: CallbackMessage };
+
 export default function AnilistCallbackPage() {
   const router = useRouter();
-  const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
-  const [message, setMessage] = useState("");
+  const { t } = useTranslation();
+  const [state, setState] = useState<CallbackState>({ status: "loading" });
 
   useEffect(() => {
     async function handleCallback() {
@@ -15,8 +29,7 @@ export default function AnilistCallbackPage() {
       const accessToken = params.get("access_token");
 
       if (!accessToken) {
-        setStatus("error");
-        setMessage("Aucun token trouvé dans l'URL de callback.");
+        setState({ status: "error", message: { key: "settings.anilistCallbackNoToken" } });
         return;
       }
 
@@ -33,7 +46,10 @@ export default function AnilistCallbackPage() {
           });
 
         const saveResp = await save({});
-        if (!saveResp.ok) throw new Error("Impossible de sauvegarder le token");
+        if (!saveResp.ok) {
+          setState({ status: "error", message: { key: "settings.anilistCallbackSaveError" } });
+          return;
+        }
 
         // Auto-fetch user info to populate user_id
         const statusResp = await fetch("/api/anilist/status");
@@ -42,16 +58,20 @@ export default function AnilistCallbackPage() {
           if (data.user_id) {
             await save({ user_id: data.user_id });
           }
-          setMessage(`Connecté en tant que ${data.username}`);
+          setState({
+            status: "success",
+            message: {
+              key: "settings.anilistCallbackConnected",
+              params: { username: String(data.username) },
+            },
+          });
         } else {
-          setMessage("Token sauvegardé.");
+          setState({ status: "success", message: { key: "settings.anilistCallbackTokenSaved" } });
         }
 
-        setStatus("success");
         setTimeout(() => router.push("/settings?tab=anilist"), 2000);
-      } catch (e) {
-        setStatus("error");
-        setMessage(e instanceof Error ? e.message : "Erreur inconnue");
+      } catch {
+        setState({ status: "error", message: { key: "common.unknownError" } });
       }
     }
 
@@ -61,33 +81,33 @@ export default function AnilistCallbackPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="text-center space-y-4 p-8">
-        {status === "loading" && (
+        {state.status === "loading" && (
           <>
             <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-            <p className="text-muted-foreground">Connexion AniList en cours…</p>
+            <p className="text-muted-foreground">{t("settings.anilistCallbackConnecting")}</p>
           </>
         )}
-        {status === "success" && (
+        {state.status === "success" && (
           <>
             <div className="w-12 h-12 rounded-full bg-success/15 flex items-center justify-center mx-auto">
               <svg className="w-6 h-6 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <p className="text-success font-medium">{message}</p>
-            <p className="text-sm text-muted-foreground">Redirection vers les paramètres…</p>
+            <p className="text-success font-medium">{t(state.message.key, state.message.params)}</p>
+            <p className="text-sm text-muted-foreground">{t("settings.anilistCallbackRedirecting")}</p>
           </>
         )}
-        {status === "error" && (
+        {state.status === "error" && (
           <>
             <div className="w-12 h-12 rounded-full bg-destructive/15 flex items-center justify-center mx-auto">
               <svg className="w-6 h-6 text-destructive" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </div>
-            <p className="text-destructive font-medium">{message}</p>
+            <p className="text-destructive font-medium">{t(state.message.key, state.message.params)}</p>
             <a href="/settings" className="text-sm text-primary hover:underline">
-              Retour aux paramètres
+              {t("settings.anilistCallbackBackToSettings")}
             </a>
           </>
         )}

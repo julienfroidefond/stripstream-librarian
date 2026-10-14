@@ -15,9 +15,9 @@ export async function StatsBreakdownSection({ t, locale }: Props) {
   const { by_library, top_series, downloads } = await fetchStatsBreakdown();
 
   const statusColors: Record<string, string> = {
-    downloading: "bg-blue-500/10 text-blue-600",
-    completed: "bg-amber-500/10 text-amber-600",
-    importing: "bg-purple-500/10 text-purple-600",
+    downloading: "bg-info/10 text-info",
+    completed: "bg-warning/10 text-warning",
+    importing: "bg-highlight/10 text-highlight",
     imported: "bg-success/10 text-success",
     error: "bg-destructive/10 text-destructive",
   };

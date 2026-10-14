@@ -282,8 +282,8 @@ export function AnilistTab({
                           </a>
                           <div className="flex items-center gap-2 shrink-0">
                             <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                              item.status === "COMPLETED" ? "bg-green-500/15 text-green-600" :
-                              item.status === "CURRENT" ? "bg-blue-500/15 text-blue-600" :
+                              item.status === "COMPLETED" ? "bg-success/15 text-success" :
+                              item.status === "CURRENT" ? "bg-info/15 text-info" :
                               "bg-muted text-muted-foreground"
                             }`}>{item.status}</span>
                             {item.progress_volumes > 0 && (
@@ -330,9 +330,9 @@ export function AnilistTab({
                           </a>
                           <div className="flex items-center gap-2 shrink-0">
                             <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                              item.anilist_status === "COMPLETED" ? "bg-green-500/15 text-green-600" :
-                              item.anilist_status === "CURRENT" ? "bg-blue-500/15 text-blue-600" :
-                              item.anilist_status === "PLANNING" ? "bg-amber-500/15 text-amber-600" :
+                              item.anilist_status === "COMPLETED" ? "bg-success/15 text-success" :
+                              item.anilist_status === "CURRENT" ? "bg-info/15 text-info" :
+                              item.anilist_status === "PLANNING" ? "bg-warning/15 text-warning" :
                               "bg-muted text-muted-foreground"
                             }`}>{item.anilist_status}</span>
                             <span className="text-xs text-muted-foreground">{item.books_updated} {t("dashboard.books").toLowerCase()}</span>
@@ -376,9 +376,9 @@ export function AnilistTab({
                       </div>
                       <div className="flex items-center gap-3 shrink-0 ml-3">
                         <span className="text-xs text-muted-foreground">{item.books_read}/{item.book_count}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                        <span className={`text-3xs px-1.5 py-0.5 rounded-full font-medium ${
                           item.status === "COMPLETED" ? "bg-success/15 text-success" :
-                          item.status === "CURRENT" ? "bg-blue-500/15 text-blue-600" :
+                          item.status === "CURRENT" ? "bg-info/15 text-info" :
                           "bg-muted text-muted-foreground"
                         }`}>
                           {item.status}

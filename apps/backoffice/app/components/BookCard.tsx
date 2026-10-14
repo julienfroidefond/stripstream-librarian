@@ -9,8 +9,8 @@ import { MarkBookReadButton } from "./MarkBookReadButton";
 
 const readingStatusOverlayClasses: Record<ReadingStatus, string | null> = {
   unread: null,
-  reading: "bg-amber-500/90 text-white",
-  read: "bg-green-600/90 text-white",
+  reading: "bg-warning/90 text-warning-foreground",
+  read: "bg-success/90 text-success-foreground",
 };
 
 interface BookCardProps {
@@ -82,7 +82,7 @@ export const BookCard = memo(function BookCard({ book, readingStatus, compact, h
               dimmed={isRead}
             />
             {overlayClass && status && (
-              <span className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide ${overlayClass}`}>
+              <span className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full text-3xs font-bold tracking-wide ${overlayClass}`}>
                 {statusLabels[status]}
               </span>
             )}
@@ -98,7 +98,7 @@ export const BookCard = memo(function BookCard({ book, readingStatus, compact, h
             <div className="flex items-center gap-1">
               {(book.format ?? book.kind) && (
                 <span className={`
-                  px-1 py-0.5 text-[9px] font-bold uppercase rounded-full
+                  px-1 py-0.5 text-3xs font-bold uppercase rounded-full
                   ${(book.format ?? book.kind) === 'cbz' ? 'bg-success/10 text-success' : ''}
                   ${(book.format ?? book.kind) === 'cbr' ? 'bg-warning/10 text-warning' : ''}
                   ${(book.format ?? book.kind) === 'pdf' ? 'bg-destructive/10 text-destructive' : ''}
@@ -108,13 +108,13 @@ export const BookCard = memo(function BookCard({ book, readingStatus, compact, h
                 </span>
               )}
               {book.volume_type === "hs" ? (
-                <span className="text-[10px] font-medium text-orange-500">HS{book.volume != null ? ` #${book.volume}` : ""}</span>
+                <span className="text-3xs font-medium text-warning">HS{book.volume != null ? ` #${book.volume}` : ""}</span>
               ) : book.volume_type === "integral" ? (
-                <span className="text-[10px] font-medium text-blue-500">INT{book.volume != null ? ` #${book.volume}` : ""}</span>
+                <span className="text-3xs font-medium text-info">INT{book.volume != null ? ` #${book.volume}` : ""}</span>
               ) : book.volume_type === "oneshot" ? (
-                <span className="text-[10px] font-medium text-purple-500">One-shot</span>
+                <span className="text-3xs font-medium text-highlight">One-shot</span>
               ) : book.volume != null ? (
-                <span className="text-[10px] text-muted-foreground">#{book.volume}</span>
+                <span className="text-3xs text-muted-foreground">#{book.volume}</span>
               ) : null}
             </div>
             {hasActiveUser && (
@@ -142,7 +142,7 @@ export const BookCard = memo(function BookCard({ book, readingStatus, compact, h
           dimmed={isRead}
         />
         {overlayClass && status && (
-          <span className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide ${overlayClass}`}>
+          <span className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full text-3xs font-bold tracking-wide ${overlayClass}`}>
             {statusLabels[status]}
           </span>
         )}
@@ -164,11 +164,11 @@ export const BookCard = memo(function BookCard({ book, readingStatus, compact, h
           <p className="text-xs text-muted-foreground/80 truncate mb-2">
             {book.series}
             {book.volume_type === "hs" ? (
-              <span className="text-orange-500 font-medium"> HS{book.volume != null ? ` #${book.volume}` : ""}</span>
+              <span className="text-warning font-medium"> HS{book.volume != null ? ` #${book.volume}` : ""}</span>
             ) : book.volume_type === "integral" ? (
-              <span className="text-blue-500 font-medium"> INT{book.volume != null ? ` #${book.volume}` : ""}</span>
+              <span className="text-info font-medium"> INT{book.volume != null ? ` #${book.volume}` : ""}</span>
             ) : book.volume_type === "oneshot" ? (
-              <span className="text-purple-500 font-medium"> One-shot</span>
+              <span className="text-highlight font-medium"> One-shot</span>
             ) : book.volume != null ? (
               <span className="text-primary font-medium"> #{book.volume}</span>
             ) : null}
@@ -178,7 +178,7 @@ export const BookCard = memo(function BookCard({ book, readingStatus, compact, h
         <div className="flex items-center gap-2 mt-2">
           {(book.format ?? book.kind) && (
             <span className={`
-              px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full
+              px-2 py-0.5 text-3xs font-bold uppercase tracking-wider rounded-full
               ${(book.format ?? book.kind) === 'cbz' ? 'bg-success/10 text-success' : ''}
               ${(book.format ?? book.kind) === 'cbr' ? 'bg-warning/10 text-warning' : ''}
               ${(book.format ?? book.kind) === 'pdf' ? 'bg-destructive/10 text-destructive' : ''}
@@ -188,7 +188,7 @@ export const BookCard = memo(function BookCard({ book, readingStatus, compact, h
             </span>
           )}
           {book.language && (
-            <span className="px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider rounded-full bg-primary/10 text-primary">
+            <span className="px-2 py-0.5 text-3xs font-medium uppercase tracking-wider rounded-full bg-primary/10 text-primary">
               {book.language}
             </span>
           )}
@@ -241,7 +241,7 @@ function MissingBookCard({ book }: { book: MissingBook }) {
             </svg>
           </div>
         )}
-        <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide bg-muted-foreground/80 text-white">
+        <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full text-3xs font-bold tracking-wide bg-muted-foreground/80 text-background">
           {t("status.missing")}
         </span>
       </div>
@@ -250,7 +250,7 @@ function MissingBookCard({ book }: { book: MissingBook }) {
           {book.title || t("books.unknown")}
         </h3>
         {book.volume_number != null && (
-          <span className="text-[10px] text-muted-foreground">#{book.volume_number}</span>
+          <span className="text-3xs text-muted-foreground">#{book.volume_number}</span>
         )}
       </div>
     </>

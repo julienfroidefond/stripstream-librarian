@@ -43,12 +43,12 @@ type Step = "library" | "search" | "adding" | "done" | "error";
 function ConfidenceBadge({ confidence }: { confidence: number }) {
   const color =
     confidence >= 0.8
-      ? "bg-green-500/10 text-green-600 border-green-500/30"
+      ? "bg-success/10 text-success border-success/30"
       : confidence >= 0.5
-        ? "bg-yellow-500/10 text-yellow-600 border-yellow-500/30"
-        : "bg-red-500/10 text-red-600 border-red-500/30";
+        ? "bg-warning/10 text-warning border-warning/30"
+        : "bg-error/10 text-error border-error/30";
   return (
-    <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${color} shrink-0`}>
+    <span className={`text-3xs px-1.5 py-0.5 rounded-full border ${color} shrink-0`}>
       {Math.round(confidence * 100)}%
     </span>
   );
@@ -404,7 +404,7 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
                   {/* Existing series */}
                   {existingSeries.length > 0 && (
                     <div>
-                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+                      <p className="text-3xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
                         {t("discovery.prowlarrExisting")}
                       </p>
                       <div className="space-y-1">
@@ -418,9 +418,9 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
                               className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border transition-colors ${
                                 isSelectable
                                   ? isSelected
-                                    ? "border-green-500/50 bg-green-500/10 cursor-pointer"
-                                    : "border-border hover:border-green-500/30 hover:bg-green-500/5 cursor-pointer"
-                                  : "border-amber-500/30 bg-amber-500/5"
+                                    ? "border-success/50 bg-success/10 cursor-pointer"
+                                    : "border-border hover:border-success/30 hover:bg-success/5 cursor-pointer"
+                                  : "border-warning/30 bg-warning/5"
                               }`}
                             >
                               <div className="w-6 h-8 rounded bg-muted/50 shrink-0 overflow-hidden">
@@ -434,11 +434,11 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
                               </div>
                               <div className="min-w-0 flex-1">
                                 <p className="text-sm font-medium truncate">{s.name}</p>
-                                <p className="text-[10px] text-muted-foreground">{s.book_count} livre{s.book_count !== 1 ? "s" : ""}</p>
+                                <p className="text-3xs text-muted-foreground">{s.book_count} livre{s.book_count !== 1 ? "s" : ""}</p>
                               </div>
                               {isSelectable
-                                ? isSelected && <Icon name="check" size="sm" className="text-green-600 shrink-0" />
-                                : <Icon name="warning" size="sm" className="text-amber-500 shrink-0" />
+                                ? isSelected && <Icon name="check" size="sm" className="text-success shrink-0" />
+                                : <Icon name="warning" size="sm" className="text-warning shrink-0" />
                               }
                             </div>
                           );
@@ -450,7 +450,7 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
                   {/* Metadata candidates */}
                   {metaCandidates.length > 0 && (
                     <div>
-                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+                      <p className="text-3xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
                         {t("discovery.prowlarrNewMeta")}
                       </p>
                       <div className="space-y-1">
@@ -472,8 +472,8 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
                               <p className="text-sm font-medium truncate">{c.title}</p>
                               <div className="flex items-center gap-1 mt-0.5">
                                 <ProviderIcon provider={c.provider} size={10} />
-                                <span className="text-[10px] text-muted-foreground">{c.provider}</span>
-                                {c.start_year && <span className="text-[10px] text-muted-foreground">· {c.start_year}</span>}
+                                <span className="text-3xs text-muted-foreground">{c.provider}</span>
+                                {c.start_year && <span className="text-3xs text-muted-foreground">· {c.start_year}</span>}
                               </div>
                             </div>
                             <ConfidenceBadge confidence={c.confidence} />
@@ -486,14 +486,14 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
                   {!searching && metaCandidates.length === 0 && existingSeries.length === 0 && (
                     <p className="text-xs text-muted-foreground text-center py-3">{t("discovery.noResults")}</p>
                   )}
-                  {searchError && <p className="text-xs text-red-500">{searchError}</p>}
+                  {searchError && <p className="text-xs text-error">{searchError}</p>}
                 </div>
               )}
 
               {/* Prowlarr: best release info */}
               {mode === "prowlarr" && item?.best_release_title && (
                 <div className="rounded-lg bg-muted/40 border border-border px-3 py-2">
-                  <p className="text-[10px] text-muted-foreground">{t("discovery.prowlarrBestRelease")}</p>
+                  <p className="text-3xs text-muted-foreground">{t("discovery.prowlarrBestRelease")}</p>
                   <p className="text-xs truncate" title={item.best_release_title}>{item.best_release_title}</p>
                 </div>
               )}
@@ -510,7 +510,7 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
                     </button>
                     <button
                       onClick={() => handleConfirm(true)}
-                      className="flex-1 px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-medium"
+                      className="flex-1 px-3 py-2 rounded-lg bg-success text-success-foreground text-xs font-medium"
                     >
                       {t("discovery.prowlarrDownloadTo", { name: selectedExisting.name })}
                     </button>
@@ -556,8 +556,8 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
           {/* ── Done step ── */}
           {step === "done" && (
             <div className="flex flex-col items-center gap-3 py-6 text-center">
-              <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center">
-                <Icon name="check" size="md" className="text-green-600" />
+              <div className="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center">
+                <Icon name="check" size="md" className="text-success" />
               </div>
               <p className="text-sm font-medium">
                 {mode === "prowlarr" ? t("discovery.prowlarrAddDone") : t("discovery.added")}
@@ -566,7 +566,7 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
                 <p className="text-xs text-muted-foreground">{t("discovery.prowlarrNoDownload")}</p>
               )}
               {downloadError && (
-                <p className="text-xs text-amber-600 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 max-w-xs">
+                <p className="text-xs text-warning bg-warning/10 border border-warning/20 rounded-lg px-3 py-2 max-w-xs">
                   ⚠ {downloadError}
                 </p>
               )}
@@ -579,7 +579,7 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
           {/* ── Error step ── */}
           {step === "error" && (
             <div className="space-y-3">
-              <p className="text-sm text-red-500">{errorMessage}</p>
+              <p className="text-sm text-error">{errorMessage}</p>
               <div className="flex gap-2">
                 <button onClick={close} className="flex-1 px-3 py-2 rounded-lg border border-border text-sm">{t("common.close")}</button>
                 <button onClick={() => setStep("search")} className="flex-1 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm">

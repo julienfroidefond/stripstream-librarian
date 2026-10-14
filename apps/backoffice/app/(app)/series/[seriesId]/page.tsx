@@ -163,10 +163,10 @@ export default async function SeriesDetailPage({
             )}
             {seriesMeta?.status && (
               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                seriesMeta.status === "ongoing" ? "bg-blue-500/15 text-blue-600" :
-                seriesMeta.status === "ended" ? "bg-green-500/15 text-green-600" :
-                seriesMeta.status === "hiatus" ? "bg-amber-500/15 text-amber-600" :
-                seriesMeta.status === "cancelled" ? "bg-red-500/15 text-red-600" :
+                seriesMeta.status === "ongoing" ? "bg-info/15 text-info" :
+                seriesMeta.status === "ended" ? "bg-success/15 text-success" :
+                seriesMeta.status === "hiatus" ? "bg-warning/15 text-warning" :
+                seriesMeta.status === "cancelled" ? "bg-error/15 text-error" :
                 "bg-muted text-muted-foreground"
               }`}>
                 {t(`seriesStatus.${seriesMeta.status}` as any) || seriesMeta.status}
@@ -195,7 +195,7 @@ export default async function SeriesDetailPage({
                 href={readingStatusLink.anilist_url ?? `https://anilist.co/manga/${readingStatusLink.anilist_id}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-600 text-xs border border-cyan-500/30 hover:bg-cyan-500/20 transition-colors"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs border border-primary/30 hover:bg-primary/20 transition-colors"
               >
                 <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M6.361 2.943 0 21.056h4.942l1.077-3.133H11.4l1.077 3.133H17.5L11.128 2.943H6.361zm1.58 11.152 1.84-5.354 1.84 5.354H7.941zM17.358 2.943v18.113h4.284V2.943h-4.284z"/>
@@ -254,7 +254,7 @@ export default async function SeriesDetailPage({
                 <Link
                   key={list.id}
                   href={`/reading-lists/${list.id}`}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-cyan-500/10 text-cyan-600 border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors"
                 >
                   <Icon name="bookmark" size="sm" className="!w-3 !h-3" />
                   {list.name}
@@ -289,7 +289,7 @@ export default async function SeriesDetailPage({
             <div className="flex items-center gap-2 flex-1 min-w-[120px] max-w-[200px]">
               <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-green-500 rounded-full transition-all"
+                  className="h-full bg-success rounded-full transition-all"
                   style={{ width: `${booksPage.total > 0 ? (booksReadCount / booksPage.total) * 100 : 0}%` }}
                 />
               </div>
@@ -304,7 +304,7 @@ export default async function SeriesDetailPage({
                 </span>
                 <div className="w-[150px] h-2 bg-muted rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-amber-500 rounded-full transition-all"
+                    className="h-full bg-warning rounded-full transition-all"
                     style={{ width: `${Math.round((missingData.total_local / missingData.total_external) * 100)}%` }}
                   />
                 </div>
@@ -380,7 +380,7 @@ export default async function SeriesDetailPage({
               <div className="mt-6">
                 <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
                   <span className="h-px flex-1 bg-border" />
-                  <span className="text-orange-500">{t("volumeType.hs")}</span>
+                  <span className="text-warning">{t("volumeType.hs")}</span>
                   <span className="h-px flex-1 bg-border" />
                 </h3>
                 <BooksGrid books={hsBooks} compact hasActiveUser={hasActiveUser} />
@@ -391,7 +391,7 @@ export default async function SeriesDetailPage({
               <div className="mt-6">
                 <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
                   <span className="h-px flex-1 bg-border" />
-                  <span className="text-purple-500">{t("volumeType.oneshot")}</span>
+                  <span className="text-highlight">{t("volumeType.oneshot")}</span>
                   <span className="h-px flex-1 bg-border" />
                 </h3>
                 <BooksGrid books={oneshotBooks} compact hasActiveUser={hasActiveUser} />

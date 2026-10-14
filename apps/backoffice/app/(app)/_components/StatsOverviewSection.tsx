@@ -109,13 +109,13 @@ export async function StatsOverviewSection({ t, locale }: Props) {
                         <span className="font-medium text-foreground truncate">{user.username}</span>
                         <span className="text-xs text-muted-foreground shrink-0 ml-2">
                           <span className="text-success font-medium">{read}</span>
-                          {reading > 0 && <span className="text-amber-500 font-medium"> · {reading}</span>}
+                          {reading > 0 && <span className="text-warning font-medium"> · {reading}</span>}
                           <span className="text-muted-foreground/60"> / {total}</span>
                         </span>
                       </div>
                       <div className="h-2 bg-muted rounded-full overflow-hidden flex">
                         <div className="h-full bg-success transition-all duration-500" style={{ width: `${readPct}%` }} />
-                        <div className="h-full bg-amber-500 transition-all duration-500" style={{ width: `${readingPct}%` }} />
+                        <div className="h-full bg-warning transition-all duration-500" style={{ width: `${readingPct}%` }} />
                       </div>
                     </div>
                   );

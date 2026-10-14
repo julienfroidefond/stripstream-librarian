@@ -305,10 +305,10 @@ export function RenameSeriesBooksModal({
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50 sticky top-0">
                     <tr>
-                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">{t("rename.currentFilename")}</th>
-                      <th className="text-left px-3 py-2 font-medium text-muted-foreground min-w-[240px]">{t("rename.newFilename")}</th>
-                      <th className="text-left px-3 py-2 font-medium text-muted-foreground w-32">{t("rename.volumeType")}</th>
-                      <th className="text-left px-3 py-2 font-medium text-muted-foreground w-20">{t("rename.volume")}</th>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("rename.currentFilename")}</th>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[240px]">{t("rename.newFilename")}</th>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-32">{t("rename.volumeType")}</th>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-20">{t("rename.volume")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -377,7 +377,7 @@ export function RenameSeriesBooksModal({
 
               {/* Done message */}
               {step === "done" && (
-                <div className="p-3 rounded-lg bg-green-500/10 text-green-600 text-sm">
+                <div className="p-3 rounded-lg bg-success/10 text-success text-sm">
                   {t("rename.success", { count: changedCount })}
                 </div>
               )}

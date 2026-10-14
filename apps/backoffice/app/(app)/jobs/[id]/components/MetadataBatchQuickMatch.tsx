@@ -96,10 +96,10 @@ export function MetadataBatchQuickMatch({
   function confidenceBadge(confidence: number) {
     const color =
       confidence >= 0.8
-        ? "text-green-600 bg-green-500/10 border-green-500/30"
+        ? "text-success bg-success/10 border-success/30"
         : confidence >= 0.5
-          ? "text-yellow-600 bg-yellow-500/10 border-yellow-500/30"
-          : "text-red-600 bg-red-500/10 border-red-500/30";
+          ? "text-warning bg-warning/10 border-warning/30"
+          : "text-error bg-error/10 border-error/30";
     return (
       <span className={`text-xs px-2 py-0.5 rounded-full border ${color}`}>
         {Math.round(confidence * 100)}%
@@ -149,8 +149,8 @@ export function MetadataBatchQuickMatch({
                       <ProviderIcon provider={r.provider_used} size={14} />
                     )}
                     {r.best_confidence != null && confidenceBadge(r.best_confidence)}
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                      r.status === "low_confidence" ? "bg-amber-500/15 text-amber-600" : "bg-amber-500/15 text-amber-600"
+                    <span className={`text-3xs px-1.5 py-0.5 rounded-full font-medium ${
+                      r.status === "low_confidence" ? "bg-warning/15 text-warning" : "bg-warning/15 text-warning"
                     }`}>
                       {r.status === "low_confidence" ? t("jobDetail.lowConfidence") : t("jobDetail.tooManyResults")}
                     </span>
@@ -226,7 +226,7 @@ export function MetadataBatchQuickMatch({
                 ) : (
                   <span className="text-foreground truncate">{r.series_name}</span>
                 )}
-                <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap shrink-0 ${
+                <span className={`ml-auto text-3xs px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap shrink-0 ${
                   r.status === "auto_matched" ? "bg-success/20 text-success" :
                   r.status === "already_linked" ? "bg-primary/20 text-primary" :
                   r.status === "error" ? "bg-destructive/20 text-destructive" :

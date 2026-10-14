@@ -171,7 +171,7 @@ export async function TokensTab({ createdToken }: { createdToken?: string }) {
                   </td>
                   <td className="px-4 py-3 text-sm">
                     {user.books_reading > 0
-                      ? <span className="font-medium text-amber-500">{user.books_reading}</span>
+                      ? <span className="font-medium text-warning">{user.books_reading}</span>
                       : <span className="text-muted-foreground/50">—</span>}
                   </td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">

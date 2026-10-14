@@ -159,7 +159,7 @@ export function SeriesActionsToolbar(props: Props) {
               initialEnabled={props.telegramEnabled}
             >
               {(open) => (
-                <ActionsMenuItem icon={<Icon name="send" size="sm" className="text-sky-500" />} onClick={open}>
+                <ActionsMenuItem icon={<Icon name="send" size="sm" className="text-info" />} onClick={open}>
                   {t("telegramMonitor.searchButton")}
                 </ActionsMenuItem>
               )}
@@ -173,7 +173,7 @@ export function SeriesActionsToolbar(props: Props) {
               initialEnabled={props.ddlProviderEnabled}
             >
               {(open) => (
-                <ActionsMenuItem icon={<Icon name="globe" size="sm" className="text-emerald-500" />} onClick={open}>
+                <ActionsMenuItem icon={<Icon name="globe" size="sm" className="text-success" />} onClick={open}>
                   {t("ddlProviders.searchButton")}
                 </ActionsMenuItem>
               )}

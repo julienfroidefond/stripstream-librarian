@@ -83,10 +83,10 @@ export function DiscoveryCard({
 
         {/* Status badge */}
         {suggestion.status && (
-          <span className={`absolute top-2 right-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium backdrop-blur-sm ${
-            suggestion.status === "RELEASING" ? "bg-blue-500/70 text-white" :
-            suggestion.status === "FINISHED" ? "bg-green-500/70 text-white" :
-            suggestion.status === "HIATUS" ? "bg-amber-500/70 text-white" :
+          <span className={`absolute top-2 right-2 text-3xs px-1.5 py-0.5 rounded-full font-medium backdrop-blur-sm ${
+            suggestion.status === "RELEASING" ? "bg-info/70 text-info-foreground" :
+            suggestion.status === "FINISHED" ? "bg-success/70 text-success-foreground" :
+            suggestion.status === "HIATUS" ? "bg-warning/70 text-warning-foreground" :
             "bg-black/40 text-white"
           }`}>
             {suggestion.status.toLowerCase()}
@@ -95,7 +95,7 @@ export function DiscoveryCard({
 
         {/* SensCritique average rating for the newest and best lists */}
         {suggestion.provider.startsWith("sc_") && suggestion.rating !== null && (
-          <span className="absolute top-2 left-2 inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full font-semibold bg-black/60 text-amber-300 backdrop-blur-sm tabular-nums">
+          <span className="absolute top-2 left-2 inline-flex items-center gap-1 text-2xs px-1.5 py-0.5 rounded-full font-semibold bg-black/60 text-warning backdrop-blur-sm tabular-nums">
             ★ {suggestion.rating.toFixed(1)}/10
           </span>
         )}
@@ -110,7 +110,7 @@ export function DiscoveryCard({
           {suggestion.genres.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-1">
               {suggestion.genres.slice(0, 2).map((genre) => (
-                <span key={genre} className={`text-[9px] px-1.5 py-0.5 rounded-full ${
+                <span key={genre} className={`text-3xs px-1.5 py-0.5 rounded-full ${
                   hasImage
                     ? "bg-white/20 text-white/90 backdrop-blur-sm"
                     : "bg-muted text-muted-foreground"
@@ -126,18 +126,18 @@ export function DiscoveryCard({
       {/* Compact info + action */}
       <div className="p-2.5 space-y-2">
         {suggestion.authors.length > 0 && (
-          <p className="text-[11px] text-muted-foreground line-clamp-1">
+          <p className="text-2xs text-muted-foreground line-clamp-1">
             {suggestion.authors.join(", ")}
           </p>
         )}
 
         {/* Action */}
         {hidden ? (
-          <div className="text-center text-[11px] text-muted-foreground font-medium py-1">
+          <div className="text-center text-2xs text-muted-foreground font-medium py-1">
             {t("discovery.hidden")}
           </div>
         ) : added ? (
-          <div className="text-center text-[11px] text-green-600 font-medium py-1">
+          <div className="text-center text-2xs text-success font-medium py-1">
             {t("discovery.added")}
           </div>
         ) : (

@@ -106,7 +106,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
             <StatusBadge status={job.status} />
             {job.error_opt && (
               <span 
-                className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-error text-white text-xs font-bold cursor-help"
+                className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-error text-error-foreground text-xs font-bold cursor-help"
                 title={job.error_opt}
               >
                 !
@@ -319,7 +319,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
           <div className="flex items-center gap-2">
             <Link
               href={`/jobs/${job.id}`}
-              className="inline-flex items-center justify-center gap-1.5 h-7 px-2.5 text-xs font-medium rounded-md bg-primary text-white hover:bg-primary/90 transition-colors"
+              className="inline-flex items-center justify-center gap-1.5 h-7 px-2.5 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />

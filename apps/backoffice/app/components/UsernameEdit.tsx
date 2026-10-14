@@ -2,6 +2,8 @@
 
 import { useOptimistic, useTransition, useRef, useState } from "react";
 
+import { useTranslation } from "@/lib/i18n/context";
+
 export function UsernameEdit({
   userId,
   currentUsername,
@@ -15,6 +17,7 @@ export function UsernameEdit({
   const [editing, setEditing] = useState(false);
   const [, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
+  const { t } = useTranslation();
 
   function startEdit() {
     setEditing(true);
@@ -57,7 +60,7 @@ export function UsernameEdit({
     <button
       onClick={startEdit}
       className="flex items-center gap-1.5 group/edit text-left"
-      title="Modifier"
+      title={t("common.edit")}
     >
       <span className="text-sm font-medium text-foreground">{optimisticUsername}</span>
       <svg

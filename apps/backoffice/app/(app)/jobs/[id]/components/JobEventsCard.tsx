@@ -25,7 +25,7 @@ function LevelIcon({ level }: { level: string }) {
   }
   if (level === "warning") {
     return (
-      <svg className="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg className="w-4 h-4 text-warning shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
       </svg>
     );
@@ -39,7 +39,7 @@ function LevelIcon({ level }: { level: string }) {
 
 function EventTypeBadge({ eventType }: { eventType: string }) {
   return (
-    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-muted text-muted-foreground shrink-0">
+    <span className="text-3xs px-1.5 py-0.5 rounded font-medium bg-muted text-muted-foreground shrink-0">
       {eventType}
     </span>
   );
@@ -69,7 +69,7 @@ function EntityLink({ event }: { event: JobEvent }) {
 
 function levelRowClass(level: string): string {
   if (level === "error") return "bg-destructive/5 border-l-2 border-destructive/40";
-  if (level === "warning") return "bg-amber-500/5 border-l-2 border-amber-500/40";
+  if (level === "warning") return "bg-warning/5 border-l-2 border-warning/40";
   return "";
 }
 
@@ -104,7 +104,7 @@ export function JobEventsCard({ events, t, locale }: JobEventsCardProps) {
             {countByLevel.info} info
           </span>
           {countByLevel.warning > 0 && (
-            <span className="flex items-center gap-1 text-amber-500">
+            <span className="flex items-center gap-1 text-warning">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
               </svg>
@@ -135,14 +135,14 @@ export function JobEventsCard({ events, t, locale }: JobEventsCardProps) {
                 {event.message && (
                   <span className={`truncate ${
                     event.level === "error" ? "text-destructive" :
-                    event.level === "warning" ? "text-amber-600 dark:text-amber-400" :
+                    event.level === "warning" ? "text-warning dark:text-warning" :
                     "text-muted-foreground"
                   }`}>
                     {event.message}
                   </span>
                 )}
               </div>
-              <span className="text-[10px] text-muted-foreground shrink-0 ml-auto">
+              <span className="text-3xs text-muted-foreground shrink-0 ml-auto">
                 {new Date(event.created_at).toLocaleString(locale)}
               </span>
             </div>
