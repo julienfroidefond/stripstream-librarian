@@ -148,6 +148,23 @@ describe("DdlProvidersCard", () => {
     );
   });
 
+  it("labels every background-search cadence", async () => {
+    routes();
+    render(<DdlProvidersCard />);
+
+    const select = await screen.findByLabelText("ddlProviders.searchInterval");
+    const labels = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
+
+    expect(labels).toEqual([
+      "ddlProviders.intervalOff",
+      "ddlProviders.interval15m",
+      "ddlProviders.interval30m",
+      "ddlProviders.interval1h",
+      "ddlProviders.interval6h",
+      "ddlProviders.interval1d",
+    ]);
+  });
+
   it("starts a global search on demand", async () => {
     routes({
       "POST /api/ddl-providers/search-all": () => ok({ id: "job-1", status: "pending" }),

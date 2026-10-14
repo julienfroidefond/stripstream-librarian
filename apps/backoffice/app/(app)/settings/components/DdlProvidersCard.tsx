@@ -3,12 +3,23 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, FormInput, Icon, Select, SettingsCard, Switch, toast } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
+import type { TranslationKey } from "@/lib/i18n/fr";
 import type { DdlProviderDto } from "@/lib/api";
 
 type TestResult = { success: boolean; message: string };
 
 /** Background-search cadences offered in the interval picker. */
 const SEARCH_INTERVALS = [0, 15, 30, 60, 360, 1440];
+
+/** Human label for each cadence, mirroring the Telegram sync-period wording. */
+const SEARCH_INTERVAL_LABELS: Record<number, TranslationKey> = {
+  0: "ddlProviders.intervalOff",
+  15: "ddlProviders.interval15m",
+  30: "ddlProviders.interval30m",
+  60: "ddlProviders.interval1h",
+  360: "ddlProviders.interval6h",
+  1440: "ddlProviders.interval1d",
+};
 
 /**
  * Settings card listing every DDL provider. Each provider can be
@@ -279,9 +290,7 @@ export function DdlProvidersCard() {
           >
             {SEARCH_INTERVALS.map((minutes) => (
               <option key={minutes} value={minutes}>
-                {minutes === 0
-                  ? t("ddlProviders.intervalOff")
-                  : t("ddlProviders.intervalMinutes", { count: minutes })}
+                {t(SEARCH_INTERVAL_LABELS[minutes])}
               </option>
             ))}
           </Select>
