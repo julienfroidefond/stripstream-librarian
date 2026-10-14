@@ -761,6 +761,8 @@ const en: Record<TranslationKey, string> = {
   "settings.concurrentRendersHelp": "Maximum number of parallel page renders and thumbnail generations",
   "settings.concurrentTelegramDownloads": "Concurrent Telegram downloads",
   "settings.concurrentTelegramDownloadsHelp": "Reduce to avoid FLOOD_WAIT rate limit errors",
+  "settings.telegramDownloadConnections": "Telegram connections per download",
+  "settings.telegramDownloadConnectionsHelp": "Parallel connections used for a single download. More connections means faster large files; past 8 Telegram throttles and it gets slower.",
   "settings.timeoutSeconds": "Timeout (seconds)",
   "settings.rateLimit": "Rate limit (req/s)",
   "settings.limitsNote": "Note: Changes to limits require a server restart to take effect. The \"Concurrent renders\" setting controls both page rendering and thumbnail generation parallelism.",

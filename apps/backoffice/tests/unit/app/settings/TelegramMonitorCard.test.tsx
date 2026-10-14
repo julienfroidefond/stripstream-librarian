@@ -148,6 +148,21 @@ describe("TelegramMonitorCard", () => {
     ));
   });
 
+  it("saves the number of Telegram download connections", async () => {
+    routes({
+      "GET /api/telegram-monitor/status": () => ok({ ...statusBase, authorized: true }),
+    });
+    const onSave = vi.fn();
+
+    render(<TelegramMonitorCard initialDownloadConnections={6} onSaveDownloadConnections={onSave} />);
+    const input = await screen.findByDisplayValue("6");
+
+    fireEvent.change(input, { target: { value: "3" } });
+    fireEvent.blur(input);
+
+    expect(onSave).toHaveBeenCalledWith(3);
+  });
+
   it("reports request failures", async () => {
     const failing = { ok: false, json: async () => ({}), text: async () => "boom" };
     routes({

@@ -701,6 +701,12 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
           setSettings({ ...settings, limits: newLimits });
           handleUpdateSetting("limits", newLimits);
         }}
+        initialDownloadConnections={settings.limits.telegram_download_connections ?? 4}
+        onSaveDownloadConnections={(value) => {
+          const newLimits = { ...settings.limits, telegram_download_connections: value };
+          setSettings({ ...settings, limits: newLimits });
+          handleUpdateSetting("limits", newLimits);
+        }}
       />
 
       {/* Direct download providers (JSON / HTML catalogues) */}

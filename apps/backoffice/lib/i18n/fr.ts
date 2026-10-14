@@ -759,6 +759,8 @@ const fr = {
   "settings.concurrentRendersHelp": "Nombre maximum de rendus de pages et de générations de miniatures en parallèle",
   "settings.concurrentTelegramDownloads": "Téléchargements Telegram simultanés",
   "settings.concurrentTelegramDownloadsHelp": "Réduire pour éviter les erreurs FLOOD_WAIT",
+  "settings.telegramDownloadConnections": "Connexions Telegram par téléchargement",
+  "settings.telegramDownloadConnectionsHelp": "Connexions parallèles utilisées pour un même téléchargement. Plus de connexions accélère les gros fichiers ; au-delà de 8, Telegram limite le débit et tout ralentit.",
   "settings.timeoutSeconds": "Délai d'expiration (secondes)",
   "settings.rateLimit": "Limite de débit (req/s)",
   "settings.limitsNote": "Note : Les modifications des limites nécessitent un redémarrage du serveur pour prendre effet. Le paramètre « Rendus simultanés » contrôle à la fois le rendu des pages et le parallélisme de génération des miniatures.",

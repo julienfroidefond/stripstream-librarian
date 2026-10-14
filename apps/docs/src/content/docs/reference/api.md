@@ -64,7 +64,7 @@ curl -H "Authorization: Bearer stl_abc_votre_token_complet" \
 
 **Impersonation** : le header `X-As-User` n'est pris en compte que pour un token `admin` et doit référencer un utilisateur existant ; sinon la requête est rejetée avec `400 Bad Request`.
 
-**Validation des paramètres** : `POST /settings/{key}` valide les clés sensibles avant écriture. Pour `limits`, les valeurs `concurrent_renders`, `concurrent_telegram_downloads`, `rate_limit_per_second` et `timeout_seconds` doivent être strictement positives ; pour `cache`, `memory_max_size_mb` doit être positif et `directory` un chemin absolu en dehors des dossiers protégés (racine, `/etc`, `/usr`, bibliothèques, thumbnails). Toute valeur invalide est rejetée avec `400 Bad Request`.
+**Validation des paramètres** : `POST /settings/{key}` valide les clés sensibles avant écriture. Pour `limits`, les valeurs `concurrent_renders`, `concurrent_telegram_downloads`, `rate_limit_per_second`, `timeout_seconds` et `telegram_download_connections` doivent être strictement positives, et `telegram_download_connections` est en outre plafonnée à 8 ; pour `cache`, `memory_max_size_mb` doit être positif et `directory` un chemin absolu en dehors des dossiers protégés (racine, `/etc`, `/usr`, bibliothèques, thumbnails). Toute valeur invalide est rejetée avec `400 Bad Request`.
 
 **Dual spec OpenAPI** : Client API (`/openapi.json`, scope read) et Admin API (`/admin/openapi.json`, tous scopes). La Client API inclut notamment les endpoints de progression, favoris et notations associés à l'utilisateur du token. Le déclenchement de scan (`POST /libraries/{id}/scan`) relève du scope `admin`.
 :::
