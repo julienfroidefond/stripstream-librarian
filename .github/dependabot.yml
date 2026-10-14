@@ -172,8 +172,11 @@ updates:
     cooldown:
       default-days: 3
     groups:
+      # Non-majeurs seulement : un majeur d'image de base (`node:24` → `node:26`,
+      # par ex.) part en PR individuelle, comme pour Cargo/npm.
       docker-images:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # -------------------------------------------- docker-compose (services)
   - package-ecosystem: "docker-compose"
@@ -189,5 +192,7 @@ updates:
     cooldown:
       default-days: 3
     groups:
+      # Non-majeurs seulement : un majeur de service part en PR individuelle.
       compose-images:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
