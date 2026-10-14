@@ -40,6 +40,7 @@ Depuis la page **Tâches**, sélectionnez une bibliothèque (ou Toutes) puis cli
 | Libellé dans l'interface | Description |
 |--------------------------|-------------|
 | **Détection de téléchargements** | Cherche sur Prowlarr les releases pour les volumes manquants |
+| **Recherche DDL** | Interroge les fournisseurs directs activés pour les volumes manquants (aucun téléchargement automatique) |
 
 ### Synchronisation lecture (AniList)
 

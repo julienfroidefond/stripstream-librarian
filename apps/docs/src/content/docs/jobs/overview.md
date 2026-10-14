@@ -53,7 +53,7 @@ Plusieurs tâches peuvent être déclenchées automatiquement selon la configura
 | Scan | Selon la fréquence configurée dans les paramètres de la bibliothèque |
 | Détection de téléchargements | Selon la fréquence configurée |
 | Polling RSS Prowlarr | Selon l'intervalle configuré dans Settings → Download tools |
-| Recherche DDL | Selon l'intervalle configuré dans Settings → Download tools (désactivée par défaut) |
+| Recherche DDL | Selon l'intervalle configuré dans Settings → Download tools, ou manuellement via la page Tâches (désactivée par défaut) |
 | Push AniList | Selon la fréquence configurée par bibliothèque |
 | Refresh métadonnées | Selon la fréquence configurée par bibliothèque |
 | Telegram Monitor (complet) | Manuel, via la page Tâches |

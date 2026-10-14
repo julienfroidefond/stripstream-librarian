@@ -48,7 +48,8 @@ que la [détection des releases](/downloads/overview/) et du Telegram Monitor.
 
 - **Fréquence** : `Désactivée` (défaut), ou toutes les 15, 30, 60 min, 6 h, 24 h.
 - **Rechercher maintenant** : lance immédiatement un passage, sans attendre la prochaine échéance
-  (désactivé tant qu'aucun fournisseur n'est actif).
+  (désactivé tant qu'aucun fournisseur n'est actif). Le même passage est aussi lançable depuis la
+  page **Tâches** (groupe *Téléchargement direct*), et rejouable depuis l'historique des tâches.
 
 Les résultats **ne sont jamais téléchargés automatiquement** : ils apparaissent comme des
 **releases** dans la page [Téléchargements](/downloads/overview/) (badge vert, libellé du

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { apiFetch, IndexJobDto, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startMetadataRefreshAll, startReadingStatusMatch, startReadingStatusPush, startReadingStatusPull, startDownloadDetection, startRssPoll } from "@/lib/api";
+import { apiFetch, IndexJobDto, rebuildIndex, rebuildThumbnails, regenerateThumbnails, startMetadataBatch, startMetadataRefresh, startMetadataRefreshAll, startReadingStatusMatch, startReadingStatusPush, startReadingStatusPull, startDownloadDetection, startRssPoll, startDdlSearchAll } from "@/lib/api";
 import { withRoute } from "@/lib/api-handler";
 
 export const POST = withRoute(async (
@@ -25,6 +25,9 @@ export const POST = withRoute(async (
     case "metadata_batch":
       if (!libraryId) return NextResponse.json({ error: "Library ID required for metadata batch" }, { status: 400 });
       return NextResponse.json(await startMetadataBatch(libraryId));
+    case "metadata_batch_rematch":
+      if (!libraryId) return NextResponse.json({ error: "Library ID required for metadata rematch" }, { status: 400 });
+      return NextResponse.json(await startMetadataBatch(libraryId, true));
     case "metadata_refresh":
       if (!libraryId) return NextResponse.json({ error: "Library ID required for metadata refresh" }, { status: 400 });
       return NextResponse.json(await startMetadataRefresh(libraryId));
@@ -45,6 +48,8 @@ export const POST = withRoute(async (
     case "prowlarr_rss":
       if (!libraryId) return NextResponse.json({ error: "Library ID required for Prowlarr RSS poll" }, { status: 400 });
       return NextResponse.json(await startRssPoll(libraryId));
+    case "ddl_search":
+      return NextResponse.json(await startDdlSearchAll());
     default:
       return NextResponse.json({ error: `Cannot replay job type: ${job.type}` }, { status: 400 });
   }

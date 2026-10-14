@@ -199,6 +199,14 @@ describe("JobRow", () => {
     expect(screen.queryByRole("button", { name: "jobRow.replay" })).toBeNull();
   });
 
+  it("replays a finished DDL search", () => {
+    const { onReplay } = renderRow({ type: "ddl_search", status: "success", library_id: null });
+
+    fireEvent.click(screen.getByRole("button", { name: "jobRow.replay" }));
+
+    expect(onReplay).toHaveBeenCalledWith("abcdef1234567890");
+  });
+
   it("renders thumbnail stats for a thumbnail job", () => {
     renderRow({
       type: "thumbnail_rebuild",
