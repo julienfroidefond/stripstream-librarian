@@ -28,6 +28,8 @@ export type DdlProviderSearchResultDto = {
   all_volumes: number[];
   matched_missing_volumes: number[];
   match_confidence: string | null;
+  /** Le fichier a été reconnu comme appartenant à la série demandée. */
+  series_matched: boolean;
   already_owned: boolean;
   download_id: string | null;
   download_status: string | null;

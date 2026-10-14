@@ -87,6 +87,10 @@ Le nombre de téléchargements simultanés se règle via le paramètre `concurre
 
 **Classement** : quand le nom de fichier brut n'est pas exploitable par le parser (Fourtoutici écrit un tome « nu », ex. `BD Astérix le Gaulois 41 Astérix en Lusitanie.pdf`), le fournisseur fournit un `match_name` normalisé (`Astérix le Gaulois T41`) utilisé uniquement pour le classement ; le nom affiché reste l'original.
 
+**Rapprochement de série** : le nom de la série bibliothèque est comparé au catalogue de façon tolérante aux connecteurs (`Boule & Bill` ↔ `Boule et Bill`) et aux articles initiaux (`Les Légendaires` ↔ `Légendaires`) — Prowlarr/Telegram gardent la comparaison stricte. Les packs en plage (`One Piece 01 à T114`) conservent leur borne haute : toute la plage est proposée, pas seulement le premier tome.
+
+**Diagnostic** : le job `ddl_search` écrit dans `stats_json` un entonnoir par étape (`series`, `series_with_results`, `series_without_missing_volumes`, `series_with_missing_volumes`, `files_owned`, `files_other_series`, `files_no_volume_match`, `files_blacklisted`). Un `series_with_results` faible avec beaucoup de `files_other_series` signale un rapprochement de nom trop strict ; beaucoup de `series_without_missing_volumes` indique des métadonnées sans numéro de tome.
+
 **API** : `GET /ddl-providers`, `POST /ddl-providers/{id}/{toggle,test,search,downloads}`, `POST /ddl-providers/search-all`, `GET|POST /ddl-providers/search-settings`, `GET /ddl-provider-downloads`, `DELETE /ddl-provider-downloads/{id}` (scope admin).
 
 **Job** : la recherche planifiée crée un job `ddl_search` (réservé à l'API, sans bibliothèque) traité par le poller de l'API.

@@ -48,9 +48,14 @@ pub struct ParsedMetadata {
 ```
 
 `matching.rs` expose la logique de rapprochement titres/releases : `fold_accents`,
-`normalize_title`, `title_matches_series`, `is_integral_release`, `match_title_volumes`,
-`match_release_title`, `extract_series_name_from_release`, `extract_series_name_from_filename`
+`normalize_title`, `title_matches_series`, `title_matches_series_tolerant`, `is_integral_release`,
+`match_title_volumes`, `match_release_title`, `match_release_title_tolerant`,
+`extract_series_name_from_release`, `extract_series_name_from_filename`
 (plus `MatchConfidence::{High,Review}`, `MatchReason`, `ReleaseTitleMatch`).
+
+Les variantes `*_tolerant` absorbent les écarts de nommage des catalogues DDL (connecteurs
+`&` ↔ `et`, article initial `Les Légendaires` ↔ `Légendaires`) ; la détection automatique
+Prowlarr/Telegram garde la comparaison stricte.
 
 ## Logique de parsing
 

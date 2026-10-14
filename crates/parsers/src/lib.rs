@@ -8,8 +8,9 @@ use anyhow::Result;
 pub mod matching;
 pub use matching::{
     extract_series_name_from_filename, extract_series_name_from_release, fold_accents,
-    is_integral_release, match_release_title, match_title_volumes, normalize_title,
-    title_matches_series, MatchConfidence, MatchReason, ReleaseTitleMatch,
+    is_integral_release, match_release_title, match_release_title_tolerant, match_title_volumes,
+    normalize_title, title_matches_series, title_matches_series_tolerant, MatchConfidence,
+    MatchReason, ReleaseTitleMatch,
 };
 
 mod cbr;

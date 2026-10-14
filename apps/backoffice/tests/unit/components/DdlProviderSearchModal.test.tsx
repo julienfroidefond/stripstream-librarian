@@ -39,6 +39,7 @@ const RESULT = {
   all_volumes: [41],
   matched_missing_volumes: [41],
   match_confidence: "high",
+  series_matched: true,
   already_owned: false,
   download_id: null,
   download_status: null,

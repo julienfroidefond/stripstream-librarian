@@ -49,7 +49,18 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
         return complete_job(
             pool,
             job_id,
-            json!({ "series": 0, "series_with_results": 0, "files": 0, "providers": 0 }),
+            json!({
+                "series": 0,
+                "series_with_results": 0,
+                "files": 0,
+                "providers": 0,
+                "series_without_missing_volumes": 0,
+                "series_with_missing_volumes": 0,
+                "files_owned": 0,
+                "files_other_series": 0,
+                "files_no_volume_match": 0,
+                "files_blacklisted": 0,
+            }),
         )
         .await
         .map_err(|e| e.to_string());
@@ -81,6 +92,14 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
     let mut matched_series = 0i64;
     let mut matched_files = 0i64;
     let mut errors = 0i64;
+    // Per-stage funnel counters: they show *why* a series yields nothing, which
+    // the aggregate `series_with_results` cannot tell apart.
+    let mut series_without_missing_volumes = 0i64;
+    let mut series_with_missing_volumes = 0i64;
+    let mut files_owned = 0i64;
+    let mut files_other_series = 0i64;
+    let mut files_no_volume_match = 0i64;
+    let mut files_blacklisted = 0i64;
 
     for target in targets {
         if is_job_cancelled(pool, job_id).await {
@@ -105,8 +124,10 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
             .await
             .map_err(|e| e.to_string())?;
         if missing.missing_volumes.is_empty() {
+            series_without_missing_volumes += 1;
             continue;
         }
+        series_with_missing_volumes += 1;
 
         let owned = service::owned_volumes(pool, target.library_id, &target.series_name)
             .await
@@ -147,10 +168,20 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
             service::rank(&mut results);
 
             for result in results {
-                if result.already_owned || result.matched_missing_volumes.is_empty() {
+                if !result.series_matched {
+                    files_other_series += 1;
+                    continue;
+                }
+                if result.already_owned {
+                    files_owned += 1;
+                    continue;
+                }
+                if result.matched_missing_volumes.is_empty() {
+                    files_no_volume_match += 1;
                     continue;
                 }
                 if blacklisted_titles.contains(&result.filename) {
+                    files_blacklisted += 1;
                     continue;
                 }
                 // One offer per filename across providers (merge_releases also
@@ -213,6 +244,12 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
             "files": matched_files,
             "providers": providers.len(),
             "errors": errors,
+            "series_without_missing_volumes": series_without_missing_volumes,
+            "series_with_missing_volumes": series_with_missing_volumes,
+            "files_owned": files_owned,
+            "files_other_series": files_other_series,
+            "files_no_volume_match": files_no_volume_match,
+            "files_blacklisted": files_blacklisted,
         }),
     )
     .await
@@ -283,6 +320,7 @@ mod tests {
             all_volumes: vec![3],
             matched_missing_volumes: vec![3],
             match_confidence: Some("high".to_string()),
+            series_matched: true,
             already_owned: false,
             download_id: None,
             download_status: None,
@@ -324,6 +362,10 @@ mod tests {
         assert_eq!(row.get::<String, _>("status"), "success");
         let stats: serde_json::Value = row.get("stats_json");
         assert_eq!(stats["providers"], 0);
+        assert_eq!(stats["series_with_results"], 0);
+        assert_eq!(stats["series_without_missing_volumes"], 0);
+        assert_eq!(stats["files_other_series"], 0);
+        assert_eq!(stats["files_no_volume_match"], 0);
 
         let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM available_downloads")
             .fetch_one(&pool)
