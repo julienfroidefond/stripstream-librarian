@@ -40,6 +40,7 @@ Depuis la page **Tâches**, sélectionnez une bibliothèque (ou Toutes) puis cli
 | Libellé dans l'interface | Description |
 |--------------------------|-------------|
 | **Détection de téléchargements** | Cherche sur Prowlarr les releases pour les volumes manquants |
+| **Recherche DDL** | Interroge les fournisseurs directs activés pour les volumes manquants (aucun téléchargement automatique) |
 
 ### Synchronisation lecture (AniList)
 
@@ -80,7 +81,7 @@ Miniatures : `thumbnail_rebuild` (manquantes), `thumbnail_regenerate` (toutes), 
 
 Métadonnées : `metadata_batch`, `metadata_batch_rematch`, `metadata_refresh`, `metadata_refresh_all`.
 
-Téléchargements : `download_detection`, `prowlarr_rss`.
+Téléchargements : `download_detection`, `prowlarr_rss`, `ddl_search`, `telegram_sync`, `telegram_sync_incremental`.
 
 AniList : `reading_status_match`, `reading_status_push`, `rating_pull`.
 

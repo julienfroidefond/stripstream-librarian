@@ -14,7 +14,7 @@ Service background sur le port **7081**. Voir `AGENTS.md` racine pour les conven
 | `analyzer.rs` | Phase 2 analysis : ouvre chaque archive une fois (`analyze_book`), page_count + thumbnail (2 sous-phases, format configurable) |
 | `converter.rs` | Conversion CBR → CBZ **in-process** via `parsers::convert_cbr_to_cbz` (crate `unrar`, aucun binaire externe) |
 | `batch.rs` | `flush_all_batches` avec UNNEST, structures `BookInsert/BookUpdate/FileInsert/FileUpdate/ErrorInsert/EventInsert` |
-| `scheduler.rs` | 6 planifications : auto-scan, metadata refresh, reading-status push, download detection, Prowlarr RSS, Telegram sync |
+| `scheduler.rs` | 7 planifications : auto-scan, metadata refresh, reading-status push, download detection, Prowlarr RSS, Telegram sync, recherche DDL |
 | `watcher.rs` | Polling filesystem toutes les **30 s** (snapshot, pas d'inotify) — crée des jobs `rebuild` |
 | `api.rs` | Handlers HTTP de l'indexer (`/health`, `/version`, `/ready`) |
 | `utils.rs` | `remap_libraries_path`, `unmap_libraries_path`, `compute_fingerprint`, `kind_from_format`, `file_display_name` |
@@ -47,7 +47,7 @@ Jobs spéciaux :
   `rescan`, `scan`, `thumbnail_rebuild`, `thumbnail_regenerate`) que s'il n'y a **aucun** job actif
   (`running`, `extracting_pages`, `generating_thumbnails`). `cbr_to_cbz` n'est **pas** exclusif.
   Les types `API_ONLY_JOB_TYPES` (metadata_*, reading_status_push, rating_pull, download_detection,
-  prowlarr_rss, telegram_sync) ne sont jamais réclamés ici.
+  prowlarr_rss, telegram_sync, telegram_sync_incremental, ddl_search) ne sont jamais réclamés ici.
 - **Annulation** : `is_job_cancelled` vérifié ~toutes les 10 fichiers ou 1 s (scanner) ; poller séparé
   de 2 s côté analyzer — retourne `Err("Job cancelled by user")`.
 - **Jobs stale** : `cleanup_stale_jobs` marque `failed` les jobs actifs dont `started_at < NOW() - 5 min`,
@@ -135,7 +135,7 @@ utils::unmap_libraries_path(&local_path) // filesystem local → DB
   (`is_already_reconciled`) : pas de rebuild redondant. Seuls les ajouts et les suppressions externes
   (fichier toujours présent dans `book_files`) déclenchent un rebuild.
 - **Watcher + scheduler** : tournent en tâches tokio séparées dans `worker.rs`, en parallèle de la
-  boucle principale. Le scheduler vérifie 6 familles de jobs toutes les 60 s.
+  boucle principale. Le scheduler vérifie 7 familles de jobs toutes les 60 s.
 - **spawn_blocking** : l'ouverture d'archive (`analyze_book`) et la génération de thumbnail sont des
   opérations bloquantes — toujours les wrapper dans `tokio::task::spawn_blocking`.
 - **Aucun outil externe** : la conversion CBR→CBZ et l'extraction passent par le crate `unrar` et

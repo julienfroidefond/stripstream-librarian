@@ -138,6 +138,8 @@ const API_ONLY_JOB_TYPES: &[&str] = &[
     "download_detection",
     "prowlarr_rss",
     "telegram_sync",
+    "telegram_sync_incremental",
+    "ddl_search",
 ];
 
 /// Job types that modify book/thumbnail data and must not run concurrently.

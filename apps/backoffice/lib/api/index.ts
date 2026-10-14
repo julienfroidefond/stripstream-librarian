@@ -20,4 +20,5 @@ export * from "./anilist";
 export * from "./reading-lists";
 export * from "./archive";
 export * from "./downloads";
+export * from "./ddl-providers";
 export * from "./telegram";

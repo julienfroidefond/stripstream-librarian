@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use parsers::extract_volume;
 
+use crate::jobs::helpers::update_progress;
 use crate::{error::ApiError, state::AppState};
 
 use super::auth::{load_tg_settings, save_session_to_db};
@@ -467,19 +468,8 @@ pub async fn sync_one_source(
 
     for series_name in series_names {
         if let Some(jid) = job_id {
-            let pct = (*processed * 100 / total.max(1)) as i16;
             let label = format!("@{username}: {series_name}");
-            let _ = sqlx::query(
-                "UPDATE index_jobs \
-                 SET processed_files = $2, progress_percent = $3, current_file = $4 \
-                 WHERE id = $1",
-            )
-            .bind(jid)
-            .bind(*processed)
-            .bind(pct)
-            .bind(&label)
-            .execute(pool)
-            .await;
+            update_progress(pool, jid, *processed, total, &label).await;
         }
 
         let mut iter = client

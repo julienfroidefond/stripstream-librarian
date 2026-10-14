@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { fetchTorrentDownloads, TorrentDownloadDto, LatestFoundPerLibraryDto, TelegramAvailableGroupDto, TelegramDownloadItemDto, apiFetch, fetchDownloadsEnabled, fetchTelegramAvailable, fetchTelegramDownloads } from "@/lib/api";
+import { fetchTorrentDownloads, TorrentDownloadDto, LatestFoundPerLibraryDto, TelegramAvailableGroupDto, TelegramDownloadItemDto, DdlProviderDownloadDto, apiFetch, fetchDownloadsEnabled, fetchTelegramAvailable, fetchTelegramDownloads, fetchDdlProviderDownloads } from "@/lib/api";
 import { DownloadsPage } from "./DownloadsPage";
 
 export const dynamic = "force-dynamic";
@@ -17,12 +17,13 @@ export default async function Page() {
   const downloadsEnabled = await fetchDownloadsEnabled();
   if (!downloadsEnabled) redirect("/");
 
-  const [downloads, latestFound, qbConfigured, telegramAvailable, telegramDownloads] = await Promise.all([
+  const [downloads, latestFound, qbConfigured, telegramAvailable, telegramDownloads, ddlProviderDownloads] = await Promise.all([
     fetchTorrentDownloads().catch(() => [] as TorrentDownloadDto[]),
     apiFetch<LatestFoundPerLibraryDto[]>("/download-detection/latest-found").catch(() => [] as LatestFoundPerLibraryDto[]),
     isQbConfigured(),
     fetchTelegramAvailable().catch(() => [] as TelegramAvailableGroupDto[]),
     fetchTelegramDownloads().catch(() => [] as TelegramDownloadItemDto[]),
+    fetchDdlProviderDownloads().catch(() => [] as DdlProviderDownloadDto[]),
   ]);
   return (
     <DownloadsPage
@@ -31,6 +32,7 @@ export default async function Page() {
       qbConfigured={qbConfigured}
       initialTelegramAvailable={telegramAvailable}
       initialTelegramDownloads={telegramDownloads}
+      initialDdlProviderDownloads={ddlProviderDownloads}
     />
   );
 }

@@ -45,7 +45,7 @@ interface JobRowProps {
   formatDuration: (start: string, end: string | null) => string;
 }
 
-const REPLAYABLE_TYPES = new Set(["rebuild", "full_rebuild", "rescan", "scan", "thumbnail_rebuild", "thumbnail_regenerate", "metadata_batch", "metadata_batch_rematch", "metadata_refresh", "metadata_refresh_all", "reading_status_match", "reading_status_push", "download_detection", "prowlarr_rss"]);
+const REPLAYABLE_TYPES = new Set(["rebuild", "full_rebuild", "rescan", "scan", "thumbnail_rebuild", "thumbnail_regenerate", "metadata_batch", "metadata_batch_rematch", "metadata_refresh", "metadata_refresh_all", "reading_status_match", "reading_status_push", "download_detection", "prowlarr_rss", "ddl_search"]);
 
 export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, formatDate, formatDuration }: JobRowProps) {
   const { t } = useTranslation();

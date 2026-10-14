@@ -30,6 +30,7 @@ export function createApiMock() {
     startReadingStatusPull: vi.fn(),
     startDownloadDetection: vi.fn(),
     startRssPoll: vi.fn(),
+    startDdlSearchAll: vi.fn(),
     markSeriesRead: vi.fn(),
     clearCache: vi.fn(),
     getCacheStats: vi.fn(),

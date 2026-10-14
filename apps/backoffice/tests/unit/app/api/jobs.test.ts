@@ -23,6 +23,7 @@ import {
   startReadingStatusPull,
   startReadingStatusPush,
   startRssPoll,
+  startDdlSearchAll,
 } from "@/lib/api";
 import { GET as getJob } from "@/app/api/jobs/[id]/route";
 import { POST as cancel } from "@/app/api/jobs/[id]/cancel/route";
@@ -93,6 +94,7 @@ describe("POST /api/jobs/[id]/replay", () => {
     startReadingStatusPull: vi.mocked(startReadingStatusPull),
     startDownloadDetection: vi.mocked(startDownloadDetection),
     startRssPoll: vi.mocked(startRssPoll),
+    startDdlSearchAll: vi.mocked(startDdlSearchAll),
   };
 
   it.each([
@@ -103,6 +105,7 @@ describe("POST /api/jobs/[id]/replay", () => {
     ["thumbnail_rebuild", "rebuildThumbnails", ["l1"]],
     ["thumbnail_regenerate", "regenerateThumbnails", ["l1"]],
     ["metadata_batch", "startMetadataBatch", ["l1"]],
+    ["metadata_batch_rematch", "startMetadataBatch", ["l1", true]],
     ["metadata_refresh", "startMetadataRefresh", ["l1"]],
     ["metadata_refresh_all", "startMetadataRefreshAll", ["l1"]],
     ["reading_status_match", "startReadingStatusMatch", ["l1"]],
@@ -110,6 +113,7 @@ describe("POST /api/jobs/[id]/replay", () => {
     ["rating_pull", "startReadingStatusPull", []],
     ["download_detection", "startDownloadDetection", ["l1"]],
     ["prowlarr_rss", "startRssPoll", ["l1"]],
+    ["ddl_search", "startDdlSearchAll", []],
   ])("replays %s via %s", async (type, fn, args) => {
     mockApi.mockResolvedValue({ id: "j1", type, library_id: "l1" });
     fns[fn as keyof typeof fns].mockResolvedValue({ id: "new" } as never);

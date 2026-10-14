@@ -78,6 +78,7 @@ export default defineConfig({
 						{ label: 'Vue d\'ensemble', slug: 'downloads/overview' },
 						{ label: 'Prowlarr + qBittorrent', slug: 'downloads/prowlarr' },
 						{ label: 'Telegram Monitor', slug: 'downloads/telegram' },
+						{ label: 'Fournisseurs directs', slug: 'downloads/ddl-providers' },
 					],
 				},
 				{

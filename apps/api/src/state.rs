@@ -6,9 +6,9 @@ use lru::LruCache;
 use sqlx::{Pool, Postgres};
 use stripstream_core::settings::load_setting;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock, Semaphore};
-use uuid::Uuid;
 
 use crate::downloads::telegram_monitor::PendingAuth;
+use crate::downloads::worker::DownloadSlots;
 use crate::stats::StatsCache;
 
 #[derive(Clone)]
@@ -33,10 +33,10 @@ pub struct AppState {
     pub prowlarr_fetch_lock: Arc<Mutex<()>>,
     /// Holds the in-progress Telegram MTProto auth state between send-code and verify-code calls
     pub pending_tg_auth: Arc<Mutex<Option<PendingAuth>>>,
-    /// Limits concurrent Telegram file downloads to avoid FLOOD_WAIT errors
-    pub telegram_download_limit: Arc<Semaphore>,
-    /// Abort handles for active/queued Telegram downloads, keyed by book link ID
-    pub telegram_abort_handles: Arc<Mutex<HashMap<Uuid, tokio::task::AbortHandle>>>,
+    /// Telegram file downloads: concurrency limit + cancellable abort handles
+    pub telegram_downloads: DownloadSlots,
+    /// DDL-provider HTTP downloads: concurrency limit + cancellable abort handles
+    pub ddl_provider_downloads: DownloadSlots,
 }
 
 #[derive(Clone)]
@@ -172,6 +172,50 @@ pub async fn load_concurrent_telegram_downloads(pool: &Pool<Postgres>) -> usize 
         .and_then(|value| {
             value
                 .get("concurrent_telegram_downloads")
+                .and_then(|v| v.as_u64())
+        })
+        .map(|v| (v as usize).max(1))
+        .unwrap_or(default_concurrency)
+}
+
+/// Minimal [`AppState`] for unit and DB tests: all fields are present but only
+/// `pool` carries meaningful state. Shared by every test module so adding a
+/// field to `AppState` touches a single place.
+#[cfg(test)]
+pub(crate) fn test_state(pool: Pool<Postgres>) -> AppState {
+    AppState {
+        pool,
+        bootstrap_token: Arc::from("test-token"),
+        page_cache: Arc::new(Mutex::new(PageCache::new(1))),
+        disk_cache_stats: Arc::new(Mutex::new(None)),
+        page_render_locks: Arc::new(PageRenderLocks::new(1)),
+        page_render_limit: Arc::new(Semaphore::new(1)),
+        metrics: Arc::new(Metrics::new()),
+        read_rate_limit: Arc::new(std::sync::Mutex::new(ReadRateLimit::new())),
+        settings: Arc::new(RwLock::new(DynamicSettings::default())),
+        stats_cache: Arc::new(StatsCache::new()),
+        prowlarr_fetch_lock: Arc::new(Mutex::new(())),
+        pending_tg_auth: Arc::new(Mutex::new(None)),
+        telegram_downloads: DownloadSlots::new(
+            Arc::new(Semaphore::new(1)),
+            Arc::new(Mutex::new(HashMap::new())),
+        ),
+        ddl_provider_downloads: DownloadSlots::new(
+            Arc::new(Semaphore::new(1)),
+            Arc::new(Mutex::new(HashMap::new())),
+        ),
+    }
+}
+
+pub async fn load_concurrent_ddl_provider_downloads(pool: &Pool<Postgres>) -> usize {
+    let default_concurrency = 2;
+    load_setting::<serde_json::Value>(pool, "limits")
+        .await
+        .ok()
+        .flatten()
+        .and_then(|value| {
+            value
+                .get("concurrent_ddl_provider_downloads")
                 .and_then(|v| v.as_u64())
         })
         .map(|v| (v as usize).max(1))

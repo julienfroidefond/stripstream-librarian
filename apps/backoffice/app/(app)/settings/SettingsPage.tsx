@@ -18,6 +18,7 @@ import { RenameFormatCard } from "./components/RenameFormatCard";
 import { ReadingOverviewTab } from "./components/ReadingOverviewTab";
 import { ArchivesTab } from "./components/ArchivesTab";
 import { TelegramMonitorCard } from "./components/TelegramMonitorCard";
+import { DdlProvidersCard } from "./components/DdlProvidersCard";
 import { AiTaggingCard } from "./components/AiTaggingCard";
 
 interface SettingsPageProps {
@@ -701,6 +702,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
           handleUpdateSetting("limits", newLimits);
         }}
       />
+
+      {/* Direct download providers (JSON / HTML catalogues) */}
+      <DdlProvidersCard />
       </>)}
 
       {activeTab === "notifications" && (<>

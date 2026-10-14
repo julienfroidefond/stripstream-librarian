@@ -391,3 +391,147 @@ pub async fn check_and_schedule_metadata_refreshes(pool: &PgPool) -> Result<()> 
 
     Ok(())
 }
+
+/// Schedule the global DDL background search.
+///
+/// Opt-in: it only runs when at least one DDL provider is enabled **and** a
+/// non-zero `search_interval_minutes` is configured in `app_settings.ddl_providers`.
+pub async fn check_and_schedule_ddl_search(pool: &PgPool) -> Result<()> {
+    // Settings JSON: `{"providers": {"fourtoutici": {"enabled": true, ...}}, ...}`.
+    let has_enabled_provider: bool = sqlx::query_scalar(
+        r#"
+        SELECT EXISTS(
+            SELECT 1
+            FROM app_settings s,
+                 jsonb_each(s.value->'providers') AS p(key, cfg)
+            WHERE s.key = 'ddl_providers'
+              AND jsonb_typeof(s.value->'providers') = 'object'
+              AND COALESCE((p.cfg->>'enabled')::bool, FALSE)
+        )
+        "#,
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if !has_enabled_provider {
+        return Ok(());
+    }
+
+    // 0 disables the background search; default off (opt-in).
+    let interval_minutes: i32 = sqlx::query_scalar(
+        "SELECT COALESCE((value->>'search_interval_minutes')::int, 0) FROM app_settings WHERE key = 'ddl_providers'"
+    )
+    .fetch_optional(pool)
+    .await?
+    .unwrap_or(0);
+
+    if interval_minutes <= 0 {
+        return Ok(());
+    }
+
+    // A single global job covers every library.
+    let already_active: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'ddl_search' AND status IN ('pending', 'running'))"
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if already_active {
+        return Ok(());
+    }
+
+    let recent_run: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM index_jobs WHERE library_id IS NULL AND type = 'ddl_search' AND finished_at > NOW() - INTERVAL '1 minute' * $1)"
+    )
+    .bind(interval_minutes)
+    .fetch_one(pool)
+    .await?;
+
+    if recent_run {
+        return Ok(());
+    }
+
+    let job_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO index_jobs (id, type, status) VALUES ($1, 'ddl_search', 'pending')")
+        .bind(job_id)
+        .execute(pool)
+        .await?;
+
+    info!("[SCHEDULER] Created global ddl_search job {}", job_id);
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn set_ddl_settings(pool: &PgPool, enabled: bool, interval_minutes: i32) {
+        let value = serde_json::json!({
+            "providers": { "fourtoutici": { "enabled": enabled } },
+            "search_interval_minutes": interval_minutes,
+        });
+        sqlx::query(
+            "INSERT INTO app_settings (key, value, updated_at) VALUES ('ddl_providers', $1, NOW()) \
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
+        )
+        .bind(value)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    async fn ddl_search_job_count(pool: &PgPool) -> i64 {
+        sqlx::query_scalar("SELECT COUNT(*) FROM index_jobs WHERE type = 'ddl_search'")
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn ddl_search_not_scheduled_when_no_provider_enabled(pool: sqlx::PgPool) {
+        // The 0120 seed ships fourtoutici disabled.
+        check_and_schedule_ddl_search(&pool).await.unwrap();
+        assert_eq!(ddl_search_job_count(&pool).await, 0);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn ddl_search_not_scheduled_when_interval_is_zero(pool: sqlx::PgPool) {
+        set_ddl_settings(&pool, true, 0).await;
+        check_and_schedule_ddl_search(&pool).await.unwrap();
+        assert_eq!(ddl_search_job_count(&pool).await, 0);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn ddl_search_scheduled_when_enabled_and_interval_set(pool: sqlx::PgPool) {
+        set_ddl_settings(&pool, true, 30).await;
+        check_and_schedule_ddl_search(&pool).await.unwrap();
+        assert_eq!(ddl_search_job_count(&pool).await, 1);
+
+        // The global job is created with a NULL library_id.
+        let library_id: Option<Uuid> =
+            sqlx::query_scalar("SELECT library_id FROM index_jobs WHERE type = 'ddl_search'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(library_id.is_none());
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn ddl_search_not_duplicated_while_active_or_recent(pool: sqlx::PgPool) {
+        set_ddl_settings(&pool, true, 30).await;
+
+        // A run that finished just now must suppress a new one.
+        sqlx::query(
+            "INSERT INTO index_jobs (id, type, status, finished_at) \
+             VALUES ($1, 'ddl_search', 'success', NOW())",
+        )
+        .bind(Uuid::new_v4())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        check_and_schedule_ddl_search(&pool).await.unwrap();
+        assert_eq!(ddl_search_job_count(&pool).await, 1);
+    }
+}

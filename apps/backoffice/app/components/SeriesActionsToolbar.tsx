@@ -24,6 +24,9 @@ const ProwlarrSearchModal = nextDynamic(
 const TelegramSearchModal = nextDynamic(
   () => import("./TelegramSearchModal").then(m => m.TelegramSearchModal)
 );
+const DdlProviderSearchModal = nextDynamic(
+  () => import("./DdlProviderSearchModal").then(m => m.DdlProviderSearchModal)
+);
 const DeleteSeriesButton = nextDynamic(
   () => import("./DeleteSeriesButton").then(m => m.DeleteSeriesButton)
 );
@@ -64,6 +67,7 @@ interface Props {
   prowlarrConfigured: boolean;
   qbConfigured: boolean;
   telegramEnabled: boolean;
+  ddlProviderEnabled: boolean;
   ownedVolumes?: number[];
   // Rename
   renameFormat: string | null;
@@ -160,6 +164,20 @@ export function SeriesActionsToolbar(props: Props) {
                 </ActionsMenuItem>
               )}
             </TelegramSearchModal>
+          )}
+          {props.ddlProviderEnabled && (
+            <DdlProviderSearchModal
+              seriesName={props.seriesName}
+              libraryId={props.libraryId}
+              missingBooks={props.missingData?.missing_books ?? null}
+              initialEnabled={props.ddlProviderEnabled}
+            >
+              {(open) => (
+                <ActionsMenuItem icon={<Icon name="globe" size="sm" className="text-emerald-500" />} onClick={open}>
+                  {t("ddlProviders.searchButton")}
+                </ActionsMenuItem>
+              )}
+            </DdlProviderSearchModal>
           )}
         </ActionsMenuSection>
 

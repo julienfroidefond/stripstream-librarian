@@ -11,12 +11,14 @@ import { usePopin } from "@/lib/usePopin";
 
 interface Download {
   id: string;
-  source: "prowlarr" | "telegram";
+  source: "prowlarr" | "telegram" | "ddl";
+  /** DDL providers only: name of the external catalogue (fourtoutici, ...). */
+  provider?: string;
   library_id: string;
   series_id?: string;
   series_name: string;
   expected_volumes: number[];
-  status: "downloading" | "completed" | "importing" | "imported" | "error";
+  status: "queued" | "downloading" | "completed" | "importing" | "imported" | "error";
   progress: number;
   download_speed: number;
   eta: number;
@@ -33,6 +35,20 @@ interface TelegramDownload {
   bytes_downloaded: number;
   volume_number: number | null;
   status: "downloading" | "imported" | "failed";
+  error_message: string | null;
+}
+
+interface DdlProviderDownload {
+  id: string;
+  provider: string;
+  filename: string;
+  file_size: number | null;
+  bytes_downloaded: number;
+  series_name: string | null;
+  series_id: string | null;
+  library_id: string | null;
+  volume_number: number | null;
+  status: "queued" | "downloading" | "imported" | "failed" | "dismissed";
   error_message: string | null;
 }
 
@@ -66,6 +82,29 @@ function normalizeTelegramDownload(download: TelegramDownload): Download {
   };
 }
 
+/** DDL downloads are queued then downloaded; keep the two states distinct so a
+ * queued row does not show a 0% "downloading" bar. */
+function normalizeDdlDownload(download: DdlProviderDownload): Download {
+  const progress = download.file_size && download.file_size > 0
+    ? Math.min(1, download.bytes_downloaded / download.file_size)
+    : 0;
+
+  return {
+    id: `ddl-${download.id}`,
+    source: "ddl",
+    provider: download.provider,
+    library_id: download.library_id ?? "",
+    series_id: download.series_id ?? undefined,
+    series_name: download.series_name ?? download.filename,
+    expected_volumes: download.volume_number != null ? [download.volume_number] : [],
+    status: download.status === "downloading" ? "downloading" : "queued",
+    progress,
+    download_speed: 0,
+    eta: 0,
+    error_message: download.error_message,
+  };
+}
+
 // Icons
 const DownloadIcon = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -92,6 +131,7 @@ export function DownloadsIndicator() {
   const { t } = useTranslation();
   const [activeTorrentDownloads, setActiveTorrentDownloads] = useState<Download[]>([]);
   const [activeTelegramDownloads, setActiveTelegramDownloads] = useState<Download[]>([]);
+  const [activeDdlDownloads, setActiveDdlDownloads] = useState<Download[]>([]);
   const { isOpen, setIsOpen, buttonRef, popinRef, popinStyle } = usePopin();
 
   useEventSource<Omit<Download, "source">[]>({
@@ -116,9 +156,23 @@ export function DownloadsIndicator() {
     },
   });
 
-  const activeDownloads = [...activeTorrentDownloads, ...activeTelegramDownloads];
+  useEventSource<DdlProviderDownload[]>({
+    url: "/api/ddl-provider-downloads/stream",
+    onMessage: (allDownloads) => {
+      setActiveDdlDownloads(
+        allDownloads
+          .filter(download => download.status === "queued" || download.status === "downloading")
+          .map(normalizeDdlDownload)
+      );
+    },
+  });
+
+  const activeDownloads = [...activeTorrentDownloads, ...activeTelegramDownloads, ...activeDdlDownloads];
   const downloadingItems = activeDownloads.filter(d => d.status === "downloading");
+  const queuedItems = activeDownloads.filter(d => d.status === "queued");
   const importingItems = activeDownloads.filter(d => d.status === "importing" || d.status === "completed");
+  /** Everything still moving, but only `downloading` rows feed the progress bar. */
+  const inProgressItems = [...downloadingItems, ...queuedItems];
   const totalCount = activeDownloads.length;
 
   const totalProgress = downloadingItems.length > 0
@@ -175,10 +229,10 @@ export function DownloadsIndicator() {
             <div>
               <h3 className="font-semibold text-foreground">{t("downloadsIndicator.activeDownloads")}</h3>
               <p className="text-xs text-muted-foreground">
-                {downloadingItems.length > 0 && importingItems.length > 0
-                  ? t("downloadsIndicator.downloadingAndImporting", { downloading: downloadingItems.length, importing: importingItems.length })
-                  : downloadingItems.length > 0
-                    ? t("downloadsIndicator.downloadingCount", { count: downloadingItems.length, plural: downloadingItems.length !== 1 ? "s" : "" })
+                {inProgressItems.length > 0 && importingItems.length > 0
+                  ? t("downloadsIndicator.downloadingAndImporting", { downloading: inProgressItems.length, importing: importingItems.length })
+                  : inProgressItems.length > 0
+                    ? t("downloadsIndicator.downloadingCount", { count: inProgressItems.length, plural: inProgressItems.length !== 1 ? "s" : "" })
                     : t("downloadsIndicator.importingCount", { count: importingItems.length, plural: importingItems.length !== 1 ? "s" : "" })
                 }
               </p>
@@ -217,6 +271,7 @@ export function DownloadsIndicator() {
                   <div className="flex items-start gap-3">
                     <div className="mt-0.5">
                       {dl.status === "downloading" && <span className="animate-pulse inline-block">⬇️</span>}
+                      {dl.status === "queued" && <span className="inline-block">🕒</span>}
                       {dl.status === "importing" && <span className="animate-spin inline-block">⏳</span>}
                       {dl.status === "completed" && <span>✅</span>}
                     </div>
@@ -227,6 +282,11 @@ export function DownloadsIndicator() {
                         {dl.source === "telegram" && (
                           <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-600">
                             Telegram
+                          </span>
+                        )}
+                        {dl.source === "ddl" && dl.provider && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600">
+                            {dl.provider}
                           </span>
                         )}
                         <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${statusClass(dl.status)}`}>
@@ -315,6 +375,7 @@ export function DownloadsIndicator() {
 function statusClass(status: string): string {
   switch (status) {
     case "downloading": return "bg-primary/10 text-primary";
+    case "queued":      return "bg-muted/30 text-muted-foreground";
     case "completed":   return "bg-warning/10 text-warning";
     case "importing":   return "bg-primary/10 text-primary";
     default:            return "bg-muted/30 text-muted-foreground";
@@ -323,6 +384,7 @@ function statusClass(status: string): string {
 
 function statusLabel(status: string, t: (key: any, vars?: Record<string, string | number>) => string): string {
   const map: Record<string, string> = {
+    queued:      "downloads.status.queued",
     downloading: "downloads.status.downloading",
     completed:   "downloads.status.completed",
     importing:   "downloads.status.importing",

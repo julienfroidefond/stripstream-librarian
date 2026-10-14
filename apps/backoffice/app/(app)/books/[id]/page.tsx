@@ -1,4 +1,4 @@
-import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch, ReadingStatus, TelegramMonitorStatus } from "@/lib/api";
+import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch, ReadingStatus, TelegramMonitorStatus, hasEnabledDdlProvider } from "@/lib/api";
 import { cookies } from "next/headers";
 import { BookPreview } from "@/app/components/BookPreview";
 import { BookActionsToolbar } from "@/app/components/BookActionsToolbar";
@@ -33,10 +33,11 @@ export default async function BookDetailPage({
   const { id } = await params;
   const cookieStore = await cookies();
   const hasActiveUser = !!cookieStore.get("as_user_id")?.value;
-  const [book, libraries, telegramStatus] = await Promise.all([
+  const [book, libraries, telegramStatus, ddlProviderEnabled] = await Promise.all([
     fetchBook(id),
     fetchLibraries().catch(() => [] as { id: string; name: string }[]),
     apiFetch<TelegramMonitorStatus>("/telegram-monitor/status", { next: { revalidate: 60 } }).catch(() => null),
+    hasEnabledDdlProvider(),
   ]);
   const telegramEnabled = !!(telegramStatus?.configured && telegramStatus?.authorized);
 
@@ -163,7 +164,7 @@ export default async function BookDetailPage({
           )}
 
           {/* Action buttons toolbar */}
-          <BookActionsToolbar book={book} hasActiveUser={hasActiveUser} telegramEnabled={telegramEnabled} />
+          <BookActionsToolbar book={book} hasActiveUser={hasActiveUser} telegramEnabled={telegramEnabled} ddlProviderEnabled={ddlProviderEnabled} />
         </div>
       </div>
 

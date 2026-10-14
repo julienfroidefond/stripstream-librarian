@@ -24,7 +24,11 @@ const TelegramSearchModal = nextDynamic(
   () => import("./TelegramSearchModal").then(m => m.TelegramSearchModal)
 );
 
-export function BookActionsToolbar({ book, hasActiveUser = true, telegramEnabled = false }: { book: BookDto; hasActiveUser?: boolean; telegramEnabled?: boolean }) {
+const DdlProviderSearchModal = nextDynamic(
+  () => import("./DdlProviderSearchModal").then(m => m.DdlProviderSearchModal)
+);
+
+export function BookActionsToolbar({ book, hasActiveUser = true, telegramEnabled = false, ddlProviderEnabled = false }: { book: BookDto; hasActiveUser?: boolean; telegramEnabled?: boolean; ddlProviderEnabled?: boolean }) {
   const { t } = useTranslation();
 
   // Prowlarr search context for this book
@@ -72,6 +76,21 @@ export function BookActionsToolbar({ book, hasActiveUser = true, telegramEnabled
                 </ActionsMenuItem>
               )}
             </TelegramSearchModal>
+          )}
+          {ddlProviderEnabled && (
+            <DdlProviderSearchModal
+              seriesName={searchSeries}
+              libraryId={book.library_id}
+              targetVolume={book.volume}
+              initialQuery={initialQuery}
+              initialEnabled={ddlProviderEnabled}
+            >
+              {(open) => (
+                <ActionsMenuItem icon={<Icon name="globe" size="sm" className="text-emerald-500" />} onClick={open}>
+                  {t("ddlProviders.searchButton")}
+                </ActionsMenuItem>
+              )}
+            </DdlProviderSearchModal>
           )}
         </ActionsMenuSection>
         <ActionsMenuSection label={t("actionsMenu.actions")}>

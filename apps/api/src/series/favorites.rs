@@ -165,44 +165,12 @@ fn series_item_from_row(row: &sqlx::postgres::PgRow) -> SeriesItem {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::HashMap,
-        sync::{atomic::AtomicU64, Arc},
-    };
-
-    use tokio::sync::{Mutex, RwLock, Semaphore};
 
     use super::*;
     use crate::series::ratings::{
         delete_series_rating, get_series_ratings, set_series_rating, SetRatingRequest,
     };
-    use crate::state::{
-        DiskCacheStatsSnapshot, DynamicSettings, Metrics, PageRenderLocks, ReadRateLimit,
-    };
-
-    fn test_state(pool: sqlx::PgPool) -> AppState {
-        AppState {
-            pool,
-            bootstrap_token: Arc::from("test-token"),
-            page_cache: Arc::new(Mutex::new(crate::state::PageCache::new(1))),
-            disk_cache_stats: Arc::new(Mutex::new(None::<DiskCacheStatsSnapshot>)),
-            page_render_locks: Arc::new(PageRenderLocks::new(1)),
-            page_render_limit: Arc::new(Semaphore::new(1)),
-            metrics: Arc::new(Metrics {
-                requests_total: AtomicU64::new(0),
-                page_cache_hits: AtomicU64::new(0),
-                page_cache_misses: AtomicU64::new(0),
-            }),
-            read_rate_limit: Arc::new(std::sync::Mutex::new(ReadRateLimit::new())),
-            stats_cache: Arc::new(crate::stats::StatsCache::new()),
-            settings: Arc::new(RwLock::new(DynamicSettings::default())),
-            prowlarr_fetch_lock: Arc::new(Mutex::new(())),
-            pending_tg_auth: Arc::new(Mutex::new(None)),
-            telegram_download_limit: Arc::new(Semaphore::new(1)),
-            telegram_abort_handles: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-
+    use crate::state::test_state;
     async fn create_user(pool: &sqlx::PgPool, username: &str) -> Uuid {
         sqlx::query_scalar("INSERT INTO users (username) VALUES ($1) RETURNING id")
             .bind(username)

@@ -1,14 +1,17 @@
 ---
 title: Téléchargements — Vue d'ensemble
-description: Deux modes pour compléter votre bibliothèque — Prowlarr+qBittorrent et Telegram Monitor
+description: Trois modes pour compléter votre bibliothèque — Prowlarr+qBittorrent, Telegram Monitor et fournisseurs directs
 ---
 
-Stripstream propose deux façons de télécharger des volumes manquants, visibles sur la même page **Téléchargements** :
+Stripstream propose trois façons de télécharger des volumes manquants :
 
 | Mode | Prérequis | Fonctionnement |
 |------|-----------|----------------|
 | [Prowlarr + qBittorrent](prowlarr) | Prowlarr + qBittorrent configurés | Recherche automatique de torrents, téléchargement via qBittorrent, import auto |
 | [Telegram Monitor](telegram) | Compte Telegram + API ID/Hash | Surveillance de channels Telegram, téléchargement direct sans torrent |
+| [Fournisseurs directs](ddl-providers) | Aucun (catalogues publics) | Recherche dans des catalogues externes (Fourtoutici…), import direct dans la bibliothèque |
+
+Les trois modes alimentent la page **Téléchargements** : les offres des **fournisseurs directs** y apparaissent comme releases (badge vert) et leurs téléchargements dans l'historique. Une recherche ciblée reste possible depuis la fenêtre *Actions → Téléchargement direct* d'une série ou d'un livre ; le fichier est alors importé puis indexé immédiatement.
 
 ## Activation
 
@@ -24,7 +27,7 @@ Ce toggle contrôle la visibilité de la page Téléchargements, les boutons d'e
 
 ### Historique des téléchargements
 
-La liste du haut regroupe tous les téléchargements en cours ou terminés — Prowlarr et Telegram confondus.
+La liste du haut regroupe tous les téléchargements en cours ou terminés — Prowlarr, Telegram et fournisseurs directs confondus.
 
 ![Historique des téléchargements — entrées Telegram importées avec statut, numéro de tome, channel source et actions](/screenshots/downloads-history.png)
 
@@ -45,11 +48,11 @@ La liste du haut regroupe tous les téléchargements en cours ou terminés — P
 
 ### Disponibles au téléchargement
 
-En bas de la page, la liste unifiée des releases Prowlarr **et** des fichiers Telegram détectés mais pas encore téléchargés.
+En bas de la page, la liste unifiée des releases Prowlarr, des fichiers Telegram **et** des offres des fournisseurs directs détectés mais pas encore téléchargés.
 
 ![Section Disponibles au téléchargement — liste unifiée Prowlarr et Telegram avec compteurs, manquants et seeders](/screenshots/downloads-available.png)
 
-Un filtre source (Tous / Prowlarr / Telegram) permet de n'afficher qu'un seul type. Le tri par date, seeders, volumes manquants ou nom s'applique aux deux.
+Un filtre source (Tous / Prowlarr / Telegram / DDL) permet de n'afficher qu'un seul type. Le tri par date, seeders, volumes manquants ou nom s'applique aux deux.
 
 → Détails sur les actions disponibles : [Prowlarr](prowlarr#disponibles-au-téléchargement) · [Telegram](telegram#fichiers-disponibles)
 
@@ -58,6 +61,7 @@ Un filtre source (Tous / Prowlarr / Telegram) permet de n'afficher qu'un seul ty
 L'icône œil à côté du titre "Disponibles au téléchargement" ouvre le panneau **Releases masquées**, qui regroupe :
 - Les releases Prowlarr blacklistées (bouton × sur une ligne Prowlarr)
 - Les fichiers Telegram dismissés (bouton × sur une ligne Telegram)
+- Les offres des fournisseurs directs blacklistées (bouton × sur une ligne DDL)
 
 Cliquer sur **Réafficher** réactive l'élément dans la liste des volumes disponibles.
 
@@ -73,7 +77,7 @@ Quand un téléchargement apporte un volume que la bibliothèque possède déjà
 - l'ancien fichier est **supprimé physiquement** du disque ;
 - le livre existant et sa **progression de lecture** sont conservés — aucune nouvelle fiche n'est créée.
 
-Ce comportement vaut pour **Prowlarr + qBittorrent** comme pour **Telegram Monitor**. Avec le [mode Replace](prowlarr#mode-replace), le plus récent gagne également, quel que soit le volume attendu.
+Ce comportement vaut pour **Prowlarr + qBittorrent**, **Telegram Monitor** et les **fournisseurs directs**. Avec le [mode Replace](prowlarr#mode-replace), le plus récent gagne également, quel que soit le volume attendu.
 
 :::note
 Seuls les volumes **réguliers** participent au remplacement. Les hors-séries, intégrales et one-shots ne sont pas concernés.

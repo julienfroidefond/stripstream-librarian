@@ -267,8 +267,8 @@ pub(super) async fn jobs_over_time(pool: &PgPool, period: &str) -> Result<Vec<Pg
                             WHEN type IN ('rebuild', 'full_rebuild', 'rescan') THEN 'rebuild'
                             WHEN type IN ('thumbnail_rebuild', 'thumbnail_regenerate') THEN 'thumbnail'
                             WHEN type IN ('metadata_batch', 'metadata_batch_rematch', 'metadata_refresh', 'metadata_refresh_all') THEN 'metadata'
-                            WHEN type IN ('download_detection', 'prowlarr_rss') THEN 'downloads'
-                            WHEN type IN ('reading_status_match', 'reading_status_push') THEN 'reading'
+                            WHEN type IN ('download_detection', 'prowlarr_rss', 'ddl_search', 'telegram_sync', 'telegram_sync_incremental') THEN 'downloads'
+                            WHEN type IN ('reading_status_match', 'reading_status_push', 'rating_pull') THEN 'reading'
                             WHEN type = 'cbr_to_cbz' THEN 'conversion'
                             ELSE 'other'
                         END AS cat,
@@ -308,8 +308,8 @@ pub(super) async fn jobs_over_time(pool: &PgPool, period: &str) -> Result<Vec<Pg
                             WHEN type IN ('rebuild', 'full_rebuild', 'rescan') THEN 'rebuild'
                             WHEN type IN ('thumbnail_rebuild', 'thumbnail_regenerate') THEN 'thumbnail'
                             WHEN type IN ('metadata_batch', 'metadata_batch_rematch', 'metadata_refresh', 'metadata_refresh_all') THEN 'metadata'
-                            WHEN type IN ('download_detection', 'prowlarr_rss') THEN 'downloads'
-                            WHEN type IN ('reading_status_match', 'reading_status_push') THEN 'reading'
+                            WHEN type IN ('download_detection', 'prowlarr_rss', 'ddl_search', 'telegram_sync', 'telegram_sync_incremental') THEN 'downloads'
+                            WHEN type IN ('reading_status_match', 'reading_status_push', 'rating_pull') THEN 'reading'
                             WHEN type = 'cbr_to_cbz' THEN 'conversion'
                             ELSE 'other'
                         END AS cat,
@@ -349,8 +349,8 @@ pub(super) async fn jobs_over_time(pool: &PgPool, period: &str) -> Result<Vec<Pg
                             WHEN type IN ('rebuild', 'full_rebuild', 'rescan') THEN 'rebuild'
                             WHEN type IN ('thumbnail_rebuild', 'thumbnail_regenerate') THEN 'thumbnail'
                             WHEN type IN ('metadata_batch', 'metadata_batch_rematch', 'metadata_refresh', 'metadata_refresh_all') THEN 'metadata'
-                            WHEN type IN ('download_detection', 'prowlarr_rss') THEN 'downloads'
-                            WHEN type IN ('reading_status_match', 'reading_status_push') THEN 'reading'
+                            WHEN type IN ('download_detection', 'prowlarr_rss', 'ddl_search', 'telegram_sync', 'telegram_sync_incremental') THEN 'downloads'
+                            WHEN type IN ('reading_status_match', 'reading_status_push', 'rating_pull') THEN 'reading'
                             WHEN type = 'cbr_to_cbz' THEN 'conversion'
                             ELSE 'other'
                         END AS cat,

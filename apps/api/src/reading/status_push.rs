@@ -6,6 +6,9 @@ use tracing::{info, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::jobs::helpers::{
+    insert_entity_event as insert_event, is_job_cancelled, update_progress,
+};
 use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
 use crate::{error::ApiError, integrations::anilist, state::AppState};
 
@@ -485,17 +488,7 @@ pub async fn process_reading_status_push(
         }
 
         processed += 1;
-        let progress = (processed * 100 / total.max(1)).min(100);
-        sqlx::query(
-            "UPDATE index_jobs SET processed_files = $2, progress_percent = $3, current_file = $4 WHERE id = $1",
-        )
-        .bind(job_id)
-        .bind(processed)
-        .bind(progress)
-        .bind(&series.series_name)
-        .execute(pool)
-        .await
-        .ok();
+        update_progress(pool, job_id, processed, total, &series.series_name).await;
 
         // Compute reading status for this series
         let stats_row = sqlx::query(
@@ -780,28 +773,6 @@ pub async fn process_reading_status_push(
 // Helpers
 // ---------------------------------------------------------------------------
 
-async fn insert_event(
-    pool: &PgPool,
-    job_id: Uuid,
-    event_type: &str,
-    level: &str,
-    entity_name: Option<&str>,
-    message: Option<&str>,
-    detail: Option<serde_json::Value>,
-) {
-    let _ = sqlx::query(
-        "INSERT INTO index_job_events (job_id, event_type, level, entity_name, message, detail) VALUES ($1, $2, $3, $4, $5, $6)",
-    )
-    .bind(job_id)
-    .bind(event_type)
-    .bind(level)
-    .bind(entity_name)
-    .bind(message)
-    .bind(detail)
-    .execute(pool)
-    .await;
-}
-
 async fn push_to_anilist(
     token: &str,
     anilist_id: i32,
@@ -872,17 +843,6 @@ async fn build_push_stats(pool: &PgPool, job_id: Uuid) -> serde_json::Value {
         "no_books": no_books,
         "errors": errors,
     })
-}
-
-async fn is_job_cancelled(pool: &PgPool, job_id: Uuid) -> bool {
-    sqlx::query_scalar::<_, String>("SELECT status FROM index_jobs WHERE id = $1")
-        .bind(job_id)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
-        .as_deref()
-        == Some("cancelled")
 }
 
 #[cfg(test)]

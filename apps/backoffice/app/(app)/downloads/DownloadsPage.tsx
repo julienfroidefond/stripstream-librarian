@@ -10,6 +10,7 @@ import {
   TelegramAvailableBookDto,
   TelegramAvailableGroupDto,
   TelegramDownloadItemDto,
+  DdlProviderDownloadDto,
 } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, Button, Icon, toast } from "@/app/components/ui";
 import { QbittorrentProvider, QbittorrentDownloadButton } from "@/app/components/QbittorrentDownloadButton";
@@ -72,6 +73,7 @@ interface DownloadsPageProps {
   qbConfigured?: boolean;
   initialTelegramAvailable?: TelegramAvailableGroupDto[];
   initialTelegramDownloads?: TelegramDownloadItemDto[];
+  initialDdlProviderDownloads?: DdlProviderDownloadDto[];
 }
 
 const PAGE_SIZE = 10;
@@ -79,11 +81,27 @@ type StatusFilter = "all" | "active" | "imported" | "error";
 
 type DownloadItem =
   | { kind: "torrent"; data: TorrentDownloadDto }
-  | { kind: "telegram"; data: TelegramDownloadItemDto };
+  | { kind: "telegram"; data: TelegramDownloadItemDto }
+  | { kind: "ddl"; data: DdlProviderDownloadDto };
+
+/** Statuses shared by the Telegram monitor and the DDL providers. */
+function secondaryMatchesFilter(status: string, filter: string): boolean {
+  if (filter === "active") return status === "queued" || status === "downloading";
+  if (filter === "imported") return status === "imported";
+  if (filter === "error") return status === "failed";
+  return false;
+}
 
 type UnifiedAvailableSource =
   | {
       kind: "prowlarr";
+      entryId: string;
+      releaseIndex: number;
+      release: AvailableReleaseDto;
+      detectedAt: string;
+    }
+  | {
+      kind: "ddl";
       entryId: string;
       releaseIndex: number;
       release: AvailableReleaseDto;
@@ -108,10 +126,15 @@ type UnifiedAvailableGroup = {
 
 const ACTIVE_STATUSES = new Set(["queued", "downloading", "completed", "importing"]);
 
-function mergeDownloads(torrents: TorrentDownloadDto[], tg: TelegramDownloadItemDto[]): DownloadItem[] {
+function mergeDownloads(
+  torrents: TorrentDownloadDto[],
+  tg: TelegramDownloadItemDto[],
+  ddl: DdlProviderDownloadDto[],
+): DownloadItem[] {
   const items: DownloadItem[] = [
     ...torrents.map(d => ({ kind: "torrent" as const, data: d })),
     ...tg.map(d => ({ kind: "telegram" as const, data: d })),
+    ...ddl.map(d => ({ kind: "ddl" as const, data: d })),
   ];
   return items.sort((a, b) => {
     const aActive = ACTIVE_STATUSES.has(a.data.status);
@@ -132,12 +155,8 @@ function itemMatchesFilter(item: DownloadItem, filter: string): boolean {
   if (item.kind === "torrent") {
     if (filter === "active") return STATUS_ACTIVE.has(item.data.status);
     return item.data.status === filter;
-  } else {
-    if (filter === "active") return item.data.status === "queued" || item.data.status === "downloading";
-    if (filter === "imported") return item.data.status === "imported";
-    if (filter === "error") return item.data.status === "failed";
-    return false;
   }
+  return secondaryMatchesFilter(item.data.status, filter);
 }
 
 function newestDate(a: string, b: string): string {
@@ -149,8 +168,10 @@ function unifiedGroupKey(libraryId: string, seriesId: string | null, seriesName:
 }
 
 function getSourceVolumes(source: UnifiedAvailableSource): number[] {
-  if (source.kind === "prowlarr") return source.release.matched_missing_volumes;
-  return source.book.volume_number == null ? [] : [source.book.volume_number];
+  if (source.kind === "telegram") {
+    return source.book.volume_number == null ? [] : [source.book.volume_number];
+  }
+  return source.release.matched_missing_volumes;
 }
 
 function buildUnifiedAvailableGroups(
@@ -207,7 +228,8 @@ function buildUnifiedAvailableGroups(
       );
       releases.forEach((release, releaseIndex) => {
         const detectedAt = release.detected_at ?? result.updated_at;
-        group.sources.push({ kind: "prowlarr", entryId: result.id, releaseIndex, release, detectedAt });
+        const kind = release.provider ? "ddl" : "prowlarr";
+        group.sources.push({ kind, entryId: result.id, releaseIndex, release, detectedAt });
         group.updated_at = newestDate(group.updated_at, detectedAt);
       });
     });
@@ -245,10 +267,11 @@ function buildUnifiedAvailableGroups(
   return Array.from(groups.values()).filter(group => group.sources.length > 0);
 }
 
-export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigured, initialTelegramAvailable = [], initialTelegramDownloads = [] }: DownloadsPageProps) {
+export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigured, initialTelegramAvailable = [], initialTelegramDownloads = [], initialDdlProviderDownloads = [] }: DownloadsPageProps) {
   const { t } = useTranslation();
   const [downloads, setDownloads] = useState<TorrentDownloadDto[]>(initialDownloads);
   const [telegramDownloads, setTelegramDownloads] = useState<TelegramDownloadItemDto[]>(initialTelegramDownloads);
+  const [ddlProviderDownloads, setDdlProviderDownloads] = useState<DdlProviderDownloadDto[]>(initialDdlProviderDownloads);
   const [latestFound, setLatestFound] = useState<LatestFoundPerLibraryDto[]>(initialLatestFound);
   const [telegramAvailable, setTelegramAvailable] = useState<TelegramAvailableGroupDto[]>(initialTelegramAvailable);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -258,26 +281,30 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
   const refresh = useCallback(async (showSpinner = true) => {
     if (showSpinner) setIsRefreshing(true);
     try {
-      const [dlResp, lfResp, tgResp, tgDlResp] = await Promise.all([
+      const [dlResp, lfResp, tgResp, tgDlResp, provResp] = await Promise.all([
         fetch("/api/torrent-downloads"),
         fetch("/api/download-detection/latest-found"),
         fetch("/api/telegram-monitor/available"),
         fetch("/api/telegram-monitor/downloads"),
+        fetch("/api/ddl-provider-downloads"),
       ]);
       if (dlResp.ok) setDownloads(await dlResp.json());
       if (lfResp.ok) setLatestFound(await lfResp.json());
       if (tgResp.ok) setTelegramAvailable(await tgResp.json());
       if (tgDlResp.ok) setTelegramDownloads(await tgDlResp.json());
+      if (provResp.ok) setDdlProviderDownloads(await provResp.json());
     } finally {
       if (showSpinner) setIsRefreshing(false);
     }
   }, []);
 
-  const merged = mergeDownloads(downloads, telegramDownloads);
+  const merged = mergeDownloads(downloads, telegramDownloads, ddlProviderDownloads);
 
-  // Auto-refresh every 2s while there are active downloads or telegram downloads in progress
+  // Auto-refresh every 2s while there are active downloads, telegram or DDL provider downloads in progress
   const hasActive = merged.some(item =>
-    item.kind === "torrent" ? STATUS_ACTIVE.has(item.data.status) : item.data.status === "downloading"
+    item.kind === "torrent"
+      ? STATUS_ACTIVE.has(item.data.status)
+      : item.data.status === "queued" || item.data.status === "downloading"
   );
   useEffect(() => {
     if (!hasActive) return;
@@ -347,7 +374,9 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
           <div className="space-y-1.5">
             {paged.map(item => item.kind === "torrent"
               ? <DownloadRow key={`t-${item.data.id}`} dl={item.data} onDeleted={() => refresh(false)} onRetried={() => refresh(false)} />
-              : <TelegramDownloadRow key={`tg-${item.data.id}`} item={item.data} onRefresh={() => refresh(false)} />
+              : item.kind === "telegram"
+              ? <TelegramDownloadRow key={`tg-${item.data.id}`} item={item.data} onRefresh={() => refresh(false)} />
+              : <DdlProviderDownloadRow key={`p-${item.data.id}`} item={item.data} onRefresh={() => refresh(false)} />
             )}
           </div>
           {totalPages > 1 && (
@@ -720,8 +749,190 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
   );
 }
 
+function DdlProviderDownloadRow({ item, onRefresh }: { item: DdlProviderDownloadDto; onRefresh: () => void }) {
+  const { t } = useTranslation();
+  const [retrying, setRetrying] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  const isActive = item.status === "queued" || item.status === "downloading";
+  const canRetry = !!item.library_id && (item.status === "failed" || item.status === "imported" || item.status === "dismissed");
+
+  async function handleRetry() {
+    if (!item.library_id) return;
+    setRetrying(true);
+    try {
+      const resp = await fetch(`/api/ddl-providers/${encodeURIComponent(item.provider)}/downloads`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          external_id: item.external_id,
+          filename: item.filename,
+          size: item.file_size,
+          library_id: item.library_id,
+          series_name: item.series_name ?? item.filename,
+          volume_number: item.volume_number,
+        }),
+      });
+      if (resp.ok) {
+        onRefresh();
+      } else {
+        const body = await resp.json().catch(() => ({}));
+        toast(body?.error ?? `Error ${resp.status}`, "error");
+      }
+    } catch (e) {
+      toast(String(e), "error");
+    } finally {
+      setRetrying(false);
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    setShowConfirm(false);
+    try {
+      // Active downloads are only dismissed (aborted + hidden); finished ones are removed.
+      const suffix = isActive ? "" : "?hard=true";
+      const resp = await fetch(`/api/ddl-provider-downloads/${item.id}${suffix}`, { method: "DELETE" });
+      if (resp.ok) onRefresh();
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  const ddlStatus = item.status === "failed" ? "error" : item.status;
+  const volLabel = item.volume_number != null ? `T${String(item.volume_number).padStart(2, "0")}` : null;
+
+  const statusIcon = item.status === "imported"
+    ? <Icon name="check" size="sm" className="text-success" />
+    : item.status === "downloading"
+    ? <Icon name="download" size="sm" className="text-primary" />
+    : item.status === "queued"
+    ? <Icon name="clock" size="sm" className="text-muted-foreground" />
+    : <Icon name="warning" size="sm" className="text-destructive" />;
+
+  const title = item.series_name ?? item.filename;
+
+  return (
+    <>
+      <div className="flex items-start sm:items-center gap-2 sm:gap-3 px-3 py-2 rounded-lg border border-border/40 bg-card hover:bg-accent/30 transition-colors">
+        <div className="mt-0.5 sm:mt-0">{statusIcon}</div>
+
+        <div className="flex-1 min-w-0">
+          {/* Desktop */}
+          <div className="hidden sm:flex items-center gap-2">
+            {item.series_id
+              ? <Link href={`/series/${item.series_id}`} className="text-sm font-medium text-primary hover:underline truncate">{title}</Link>
+              : <span className="text-sm font-medium text-foreground truncate">{title}</span>
+            }
+            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${statusClass(ddlStatus)}`}>
+              {statusLabel(ddlStatus, t)}
+            </span>
+            {volLabel && <span className="text-[11px] text-muted-foreground">{volLabel}</span>}
+            <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Icon name="globe" size="sm" className="text-emerald-500" />
+              {item.provider}
+            </span>
+            {item.library_name && <span className="text-[11px] text-muted-foreground truncate">{item.library_name}</span>}
+          </div>
+          {/* Mobile */}
+          <div className="sm:hidden">
+            <div className="flex items-center gap-1.5">
+              {item.series_id
+                ? <Link href={`/series/${item.series_id}`} className="text-sm font-medium text-primary hover:underline truncate">{title}</Link>
+                : <span className="text-sm font-medium text-foreground truncate">{title}</span>
+              }
+              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${statusClass(ddlStatus)}`}>
+                {statusLabel(ddlStatus, t)}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
+              {volLabel && <span>{volLabel}</span>}
+              <span className="inline-flex items-center gap-1"><Icon name="globe" size="sm" className="text-emerald-500" />{item.provider}</span>
+              <span className="tabular-nums">{formatDateTime(item.updated_at, "fr")}</span>
+            </div>
+          </div>
+          {/* Filename secondary */}
+          <p className="hidden sm:block text-[11px] text-muted-foreground truncate mt-0.5">{item.filename}</p>
+          {/* Progress bar for active downloads */}
+          {item.status === "downloading" && item.file_size && item.file_size > 0 && (
+            <div className="mt-1.5 space-y-0.5">
+              <div className="w-full bg-muted/50 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className="bg-primary h-1.5 rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(100, Math.round((item.bytes_downloaded / item.file_size) * 100))}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-muted-foreground tabular-nums">
+                {formatSize(item.bytes_downloaded)} / {formatSize(item.file_size)}
+                {" · "}{Math.min(100, Math.round((item.bytes_downloaded / item.file_size) * 100))}%
+              </p>
+            </div>
+          )}
+          {item.error_message && (
+            <p className="text-[11px] text-destructive truncate mt-0.5" title={item.error_message}>{item.error_message}</p>
+          )}
+        </div>
+
+        <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums hidden sm:block">{formatDateTime(item.updated_at, "fr")}</span>
+
+        {canRetry && (
+          <button
+            type="button"
+            onClick={handleRetry}
+            disabled={retrying}
+            className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-30 shrink-0"
+            title={t("downloads.retry")}
+          >
+            {retrying ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="refresh" size="sm" />}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setShowConfirm(true)}
+          disabled={deleting}
+          className="inline-flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-30 shrink-0"
+          title={isActive ? t("downloads.cancel") : t("downloads.delete")}
+        >
+          {deleting ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="trash" size="sm" />}
+        </button>
+      </div>
+
+      {showConfirm && createPortal(
+        <>
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none" />
+          <div
+            className="fixed inset-0 flex items-center justify-center z-50 p-4"
+            onClick={(event) => { if (event.target === event.currentTarget) setShowConfirm(false); }}
+          >
+            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-foreground mb-2">
+                  {isActive ? t("downloads.cancel") : t("downloads.delete")}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {item.status === "downloading" ? t("downloads.confirmCancel") : t("downloads.confirmDelete")}
+                </p>
+              </div>
+              <div className="flex justify-end gap-2 px-6 pb-6">
+                <Button variant="outline" size="sm" onClick={() => setShowConfirm(false)}>
+                  {t("common.cancel")}
+                </Button>
+                <Button variant="destructive" size="sm" onClick={handleDelete}>
+                  {isActive ? t("downloads.cancel") : t("downloads.delete")}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
+    </>
+  );
+}
+
 type AvailableSortKey = "seeders" | "missing" | "name" | "recent";
-type AvailableSourceFilter = "all" | "prowlarr" | "telegram";
+type AvailableSourceFilter = "all" | "prowlarr" | "ddl" | "telegram";
 
 function groupMatchesSourceFilter(group: UnifiedAvailableGroup, sourceFilter: AvailableSourceFilter): boolean {
   if (sourceFilter === "all") return true;
@@ -748,6 +959,7 @@ export function AvailableDownloadsSection({
   const [downloadingTelegramIds, setDownloadingTelegramIds] = useState<Set<string>>(new Set());
   const [dismissingTelegramIds, setDismissingTelegramIds] = useState<Set<string>>(new Set());
   const [deletingTelegramIds, setDeletingTelegramIds] = useState<Set<string>>(new Set());
+  const [downloadingDdlKeys, setDownloadingDdlKeys] = useState<Set<string>>(new Set());
 
   const allResults = buildUnifiedAvailableGroups(latestFound, telegramAvailable);
 
@@ -796,7 +1008,9 @@ export function AvailableDownloadsSection({
   async function handleDeleteProwlarrEntries(group: UnifiedAvailableGroup) {
     const ids = Array.from(new Set(
       group.sources
-        .filter((source): source is Extract<UnifiedAvailableSource, { kind: "prowlarr" }> => source.kind === "prowlarr")
+        .filter((source): source is Extract<UnifiedAvailableSource, { kind: "prowlarr" } | { kind: "ddl" }> =>
+          source.kind === "prowlarr" || source.kind === "ddl"
+        )
         .map(source => source.entryId),
     ));
     setDeletingKey(group.key);
@@ -805,6 +1019,40 @@ export function AvailableDownloadsSection({
       onRefresh();
     } finally {
       setDeletingKey(null);
+    }
+  }
+
+  async function handleDdlDownload(group: UnifiedAvailableGroup, source: Extract<UnifiedAvailableSource, { kind: "ddl" }>) {
+    const provider = source.release.provider;
+    const externalId = source.release.external_id;
+    if (!provider || !externalId) return;
+    const key = `${source.entryId}-${source.releaseIndex}`;
+    setDownloadingDdlKeys(prev => new Set(prev).add(key));
+    try {
+      const volume =
+        source.release.matched_missing_volumes[0] ?? source.release.all_volumes[0] ?? null;
+      const resp = await fetch(`/api/ddl-providers/${encodeURIComponent(provider)}/downloads`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          external_id: externalId,
+          filename: source.release.title,
+          size: source.release.size,
+          library_id: group.library_id,
+          series_name: group.series_name,
+          volume_number: volume,
+        }),
+      });
+      if (resp.ok) {
+        onRefresh();
+      } else {
+        const body = await resp.json().catch(() => ({}));
+        toast(body?.error ?? `Error ${resp.status}`, "error");
+      }
+    } catch (e) {
+      toast(String(e), "error");
+    } finally {
+      setDownloadingDdlKeys(prev => { const next = new Set(prev); next.delete(key); return next; });
     }
   }
 
@@ -902,6 +1150,7 @@ export function AvailableDownloadsSection({
           >
             <option value="all">{t("common.all")}</option>
             <option value="prowlarr">{t("downloads.sourceProwlarr")}</option>
+            <option value="ddl">{t("downloads.sourceDdl")}</option>
             <option value="telegram">{t("downloads.sourceTelegram")}</option>
           </select>
           <div className="flex gap-0.5">
@@ -958,9 +1207,10 @@ export function AvailableDownloadsSection({
             : r.sources.filter(source => source.kind === sourceFilter);
           const topSeeders = bestSeeders({ ...r, sources: visibleSources });
           const prowlarrCount = visibleSources.filter(source => source.kind === "prowlarr").length;
+          const ddlCount = visibleSources.filter(source => source.kind === "ddl").length;
           const telegramCount = visibleSources.filter(source => source.kind === "telegram").length;
           const failedReleaseCount = visibleSources.filter(source =>
-            source.kind === "prowlarr" ? source.release.has_failed : source.book.status === "failed"
+            source.kind === "telegram" ? source.book.status === "failed" : source.release.has_failed
           ).length;
 
           return (
@@ -993,6 +1243,11 @@ export function AvailableDownloadsSection({
                   {prowlarrCount > 0 && (
                     <span className="text-[10px] text-muted-foreground shrink-0">
                       {prowlarrCount} Prowlarr
+                    </span>
+                  )}
+                  {ddlCount > 0 && (
+                    <span className="text-[10px] text-emerald-600 shrink-0">
+                      {ddlCount} {t("downloads.sourceDdl")}
                     </span>
                   )}
                   {telegramCount > 0 && (
@@ -1032,9 +1287,9 @@ export function AvailableDownloadsSection({
                     const bVol = Math.min(...getSourceVolumes(b), 9999);
                     if (aVol !== bVol) return aVol - bVol;
                     return a.kind.localeCompare(b.kind);
-                  }).map((source) => source.kind === "prowlarr" ? (
+                  }).map((source) => source.kind !== "telegram" ? (
                     <div
-                      key={`prowlarr-${source.entryId}-${source.releaseIndex}`}
+                      key={`${source.kind}-${source.entryId}-${source.releaseIndex}`}
                       className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 pl-7 sm:pl-9 text-[11px] hover:bg-muted/20 border-b border-border/10 last:border-b-0 transition-colors ${source.release.has_failed ? "bg-destructive/5 hover:bg-destructive/10" : ""}`}
                     >
                       {source.release.has_failed && (
@@ -1045,7 +1300,9 @@ export function AvailableDownloadsSection({
                           À vérifier
                         </span>
                       )}
-                      <span className="px-1.5 py-px rounded bg-primary/10 text-primary font-medium shrink-0">Prowlarr</span>
+                      <span className={`px-1.5 py-px rounded font-medium shrink-0 ${source.kind === "ddl" ? "bg-emerald-500/15 text-emerald-600" : "bg-primary/10 text-primary"}`}>
+                        {source.kind === "ddl" ? (source.release.provider ?? "DDL") : "Prowlarr"}
+                      </span>
                       <div className="flex items-center gap-1 shrink-0">
                         {compressVolumes(source.release.matched_missing_volumes).map(range => (
                           <span key={range} className="px-1.5 py-px rounded bg-success/20 text-success font-medium tabular-nums">{range}</span>
@@ -1062,16 +1319,30 @@ export function AvailableDownloadsSection({
                       )}
                       <span className="text-muted-foreground shrink-0 tabular-nums">{(source.release.size / 1024 / 1024).toFixed(0)}MB</span>
                       <div className="flex items-center gap-0.5 ml-auto shrink-0">
-                        {source.release.download_url && (
-                          <QbittorrentDownloadButton
-                            downloadUrl={source.release.download_url}
-                            releaseId={`${source.entryId}-${source.releaseIndex}`}
-                            libraryId={r.library_id}
-                            seriesName={r.series_name}
-                            expectedVolumes={source.release.matched_missing_volumes}
-                            allVolumes={source.release.all_volumes}
-                            requiresReview={source.release.match_confidence === "review"}
-                          />
+                        {source.kind === "ddl" ? (
+                          <button
+                            type="button"
+                            onClick={() => handleDdlDownload(r, source)}
+                            disabled={downloadingDdlKeys.has(`${source.entryId}-${source.releaseIndex}`)}
+                            title={t("ddlProviders.download")}
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-emerald-600 hover:bg-emerald-500/10 transition-colors disabled:opacity-30 shrink-0"
+                          >
+                            {downloadingDdlKeys.has(`${source.entryId}-${source.releaseIndex}`)
+                              ? <Icon name="spinner" size="sm" className="animate-spin" />
+                              : <Icon name="download" size="sm" />}
+                          </button>
+                        ) : (
+                          source.release.download_url && (
+                            <QbittorrentDownloadButton
+                              downloadUrl={source.release.download_url}
+                              releaseId={`${source.entryId}-${source.releaseIndex}`}
+                              libraryId={r.library_id}
+                              seriesName={r.series_name}
+                              expectedVolumes={source.release.matched_missing_volumes}
+                              allVolumes={source.release.all_volumes}
+                              requiresReview={source.release.match_confidence === "review"}
+                            />
+                          )
                         )}
                         <button
                           type="button"
@@ -1158,7 +1429,7 @@ export function AvailableDownloadsSection({
                       </div>
                     </div>
                   ))}
-                  {prowlarrCount > 0 && (
+                  {prowlarrCount + ddlCount > 0 && (
                   <div className="flex justify-end px-2 sm:px-3 py-0.5 pl-7 sm:pl-9">
                     <button
                       type="button"

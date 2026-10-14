@@ -16,7 +16,7 @@ Vous pouvez suivre leur progression en temps réel sur la page **Tâches**.
 | [Indexation](../indexation/) | Scanner les fichiers pour maintenir la bibliothèque à jour |
 | [Miniatures](../miniatures/) | Générer ou regénérer les miniatures de couverture |
 | [Métadonnées](../metadonnees/) | Rechercher et mettre à jour les métadonnées des séries |
-| [Téléchargements](../telechargements/) | Détecter les volumes manquants via Prowlarr |
+| [Téléchargements](../telechargements/) | Détecter les volumes manquants via Prowlarr, Telegram et les fournisseurs directs |
 | [AniList](../anilist/) | Synchroniser la progression de lecture avec AniList |
 | [Telegram Monitor](../telegram/) | Surveiller des channels Telegram pour détecter de nouveaux livres |
 
@@ -53,6 +53,7 @@ Plusieurs tâches peuvent être déclenchées automatiquement selon la configura
 | Scan | Selon la fréquence configurée dans les paramètres de la bibliothèque |
 | Détection de téléchargements | Selon la fréquence configurée |
 | Polling RSS Prowlarr | Selon l'intervalle configuré dans Settings → Download tools |
+| Recherche DDL | Selon l'intervalle configuré dans Settings → Download tools, ou manuellement via la page Tâches (désactivée par défaut) |
 | Push AniList | Selon la fréquence configurée par bibliothèque |
 | Refresh métadonnées | Selon la fréquence configurée par bibliothèque |
 | Telegram Monitor (complet) | Manuel, via la page Tâches |
@@ -90,7 +91,7 @@ Le rapport final de chaque tâche est consultable après son exécution, avec le
 | 2 | `rebuild`, `rescan`, `scan` |
 | 3 | `thumbnail_rebuild`, `thumbnail_regenerate`, `cbr_to_cbz` |
 
-Les jobs API (`metadata_*`, `reading_status_*`, `download_detection`, `prowlarr_rss`, `telegram_sync`, `telegram_sync_incremental`) sont traités en FIFO.
+Les jobs API (`metadata_*`, `reading_status_*`, `download_detection`, `prowlarr_rss`, `ddl_search`, `telegram_sync`, `telegram_sync_incremental`) sont traités en FIFO.
 
 **Suivi temps réel** : flux SSE via `GET /index/jobs/{id}/stream`. Chaque événement contient `job_id`, `status`, `current_file`, `progress_percent`, `processed_files`, `total_files`, `stats_json`.
 
