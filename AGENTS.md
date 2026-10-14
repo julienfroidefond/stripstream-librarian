@@ -74,7 +74,11 @@ Renovate a été retiré (`renovate.json` supprimé, app Mend à désinstaller) 
 (`.github/dependabot.yml`). Politique, alignée sur l'ancienne config Renovate :
 
 - **majeurs** : jamais groupés → une PR par paquet, à traiter manuellement (branches `chore/major-*`) ;
-- **mineurs pré-1.0** (`0.x → 0.y`, Cargo et npm) : ignorés, un mineur sous 1.0 est cassant ;
+- **mineurs pré-1.0** (`0.x → 0.y`, Cargo et npm) : ignorés via une **liste explicite** de
+  dépendances directes dans `.github/dependabot.yml` — Dependabot n'évalue pas `versions` et
+  `update-types` dans une même règle (`ignore`) : les deux critères deviennent deux conditions
+  distinctes, donc un « OU » qui ignore *tous* les mineurs. **Ajouter toute nouvelle dépendance
+  directe en `0.x` à cette liste.** Les patchs pré-1.0 et les PR de sécurité restent proposés ;
 - **`grammers-client` / `grammers-session`** : exclus, migration différée ;
 - **non-majeurs** : groupés par écosystème (`rust-non-major`, `backoffice-non-major`, …) ;
 - écosystèmes surveillés : `cargo`, `npm` (backoffice, docs, racine), `github-actions`, `docker`
