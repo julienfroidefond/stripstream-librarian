@@ -1,0 +1,158 @@
+# Dependabot — remplace Renovate (renovate.json supprimé).
+#
+# Politique (reprise de la config Renovate) :
+#   - majeurs : jamais groupés → une PR par paquet, migration manuelle.
+#   - mineurs pré-1.0 Cargo/npm : ignorés (0.x → 0.y est un changement cassant).
+#   - grammers-client / grammers-session : exclus (migration différée).
+#   - non-majeurs : groupés par écosystème pour limiter le nombre de PR.
+#
+# Les Dependabot alerts et security updates sont activés côté repo.
+version: 2
+updates:
+  # ---------------------------------------------------------------- Rust
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "05:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 10
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "chore(deps)"
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+    groups:
+      rust-non-major:
+        patterns: ["*"]
+        exclude-patterns: ["grammers-client", "grammers-session"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # Migration différée : réécriture de l'API client/session + souci upstream.
+      - dependency-name: "grammers-client"
+      - dependency-name: "grammers-session"
+      # Un mineur sous 1.0 est cassant → pas de PR automatique.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-minor"]
+        versions: ["< 1.0.0"]
+
+  # ------------------------------------------------------ Backoffice (npm)
+  - package-ecosystem: "npm"
+    directory: "/apps/backoffice"
+    schedule:
+      interval: "daily"
+      time: "05:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 10
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "chore(deps)"
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+    groups:
+      backoffice-non-major:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-minor"]
+        versions: ["< 1.0.0"]
+
+  # ---------------------------------------------------------- Docs (npm)
+  - package-ecosystem: "npm"
+    directory: "/apps/docs"
+    schedule:
+      interval: "daily"
+      time: "05:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "chore(deps)"
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+    groups:
+      docs-non-major:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-minor"]
+        versions: ["< 1.0.0"]
+
+  # -------------------------------------------------- Racine du repo (npm)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "05:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "chore(deps)"
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+    groups:
+      root-non-major:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # -------------------------------------------------------- GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "05:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "chore(ci)"
+    cooldown:
+      default-days: 3
+    groups:
+      ci-non-major:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # --------------------------------------------- Dockerfiles (images FROM)
+  - package-ecosystem: "docker"
+    directories:
+      - "/apps/api"
+      - "/apps/backoffice"
+      - "/apps/docs"
+    schedule:
+      interval: "daily"
+      time: "05:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "chore(deps)"
+    cooldown:
+      default-days: 3
+    groups:
+      docker-images:
+        patterns: ["*"]
+
+  # -------------------------------------------- docker-compose (services)
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "05:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "chore(deps)"
+    cooldown:
+      default-days: 3
+    groups:
+      compose-images:
+        patterns: ["*"]
