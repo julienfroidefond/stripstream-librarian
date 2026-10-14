@@ -68,6 +68,22 @@ sqlx migrate add -r migration_name   # creates up + down files
 
 Migrations live in `infra/migrations/`. Always migrate before starting the services.
 
+### Dependency Updates (Dependabot)
+
+Renovate a été retiré (`renovate.json` supprimé, app Mend à désinstaller) au profit de Dependabot
+(`.github/dependabot.yml`). Politique, alignée sur l'ancienne config Renovate :
+
+- **majeurs** : jamais groupés → une PR par paquet, à traiter manuellement (branches `chore/major-*`) ;
+- **mineurs pré-1.0** (`0.x → 0.y`, Cargo et npm) : ignorés, un mineur sous 1.0 est cassant ;
+- **`grammers-client` / `grammers-session`** : exclus, migration différée ;
+- **non-majeurs** : groupés par écosystème (`rust-non-major`, `backoffice-non-major`, …) ;
+- écosystèmes surveillés : `cargo`, `npm` (backoffice, docs, racine), `github-actions`, `docker`
+  (les 3 Dockerfiles), `docker-compose` (`postgres`).
+
+Les Dependabot alerts et les security updates sont activés côté repo (PR de sécurité automatiques).
+Dependabot n'a pas de Dependency Dashboard : pour relancer une PR, commenter `@dependabot rebase`
+(ou `recreate`), et « Check for updates » dans l'onglet Dependabot pour une passe manuelle.
+
 ### Docker & Local Dev Servers
 
 `docker-compose.yml` is at the repository root (not in `infra/`).
