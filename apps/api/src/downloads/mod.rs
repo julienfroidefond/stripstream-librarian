@@ -6,6 +6,7 @@ mod missing;
 
 pub mod prowlarr;
 pub mod qbittorrent;
+pub mod ranged;
 pub mod rss_poll;
 mod store;
 pub mod target;

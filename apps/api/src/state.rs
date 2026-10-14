@@ -178,6 +178,15 @@ pub async fn load_concurrent_telegram_downloads(pool: &Pool<Postgres>) -> usize 
         .unwrap_or(default_concurrency)
 }
 
+/// Connections opened per Telegram download. One Telegram socket caps around
+/// 2 MB/s no matter the local bandwidth, so spreading a download over a handful
+/// of them is what makes large files finish in reasonable time.
+pub const DEFAULT_TELEGRAM_DOWNLOAD_CONNECTIONS: usize = 4;
+
+/// Upper bound on the number of connections: past this Telegram throttles and
+/// throughput collapses.
+pub const MAX_TELEGRAM_DOWNLOAD_CONNECTIONS: usize = 8;
+
 /// Minimal [`AppState`] for unit and DB tests: all fields are present but only
 /// `pool` carries meaningful state. Shared by every test module so adding a
 /// field to `AppState` touches a single place.
@@ -220,6 +229,21 @@ pub async fn load_concurrent_ddl_provider_downloads(pool: &Pool<Postgres>) -> us
         })
         .map(|v| (v as usize).max(1))
         .unwrap_or(default_concurrency)
+}
+
+/// Number of parallel Telegram connections used for a single book download.
+pub async fn load_telegram_download_connections(pool: &Pool<Postgres>) -> usize {
+    load_setting::<serde_json::Value>(pool, "limits")
+        .await
+        .ok()
+        .flatten()
+        .and_then(|value| {
+            value
+                .get("telegram_download_connections")
+                .and_then(|v| v.as_u64())
+        })
+        .map(|v| (v as usize).clamp(1, MAX_TELEGRAM_DOWNLOAD_CONNECTIONS))
+        .unwrap_or(DEFAULT_TELEGRAM_DOWNLOAD_CONNECTIONS)
 }
 
 pub async fn load_dynamic_settings(pool: &Pool<Postgres>) -> DynamicSettings {

@@ -2,6 +2,7 @@ mod auth;
 mod books;
 mod channels;
 mod jobs;
+mod transfer;
 mod types;
 
 pub use auth::{disconnect, get_status, save_settings, start_auth, verify_auth};

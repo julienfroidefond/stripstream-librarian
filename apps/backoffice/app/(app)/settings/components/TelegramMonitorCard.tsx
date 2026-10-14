@@ -33,10 +33,14 @@ export function TelegramMonitorCard({
   initialLibraries = [],
   initialConcurrentDownloads = 2,
   onSaveConcurrentDownloads,
+  initialDownloadConnections = 4,
+  onSaveDownloadConnections,
 }: {
   initialLibraries?: LibraryDto[];
   initialConcurrentDownloads?: number;
   onSaveConcurrentDownloads?: (value: number) => void;
+  initialDownloadConnections?: number;
+  onSaveDownloadConnections?: (value: number) => void;
 }) {
   const { t } = useTranslation();
 
@@ -47,6 +51,7 @@ export function TelegramMonitorCard({
   const [syncInterval, setSyncInterval] = useState("30");
   const [savingSettings, setSavingSettings] = useState(false);
   const [concurrentDownloads, setConcurrentDownloads] = useState(initialConcurrentDownloads);
+  const [downloadConnections, setDownloadConnections] = useState(initialDownloadConnections);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
 
   // Auth
@@ -386,6 +391,23 @@ export function TelegramMonitorCard({
                   value={concurrentDownloads}
                   onChange={e => setConcurrentDownloads(Math.max(1, parseInt(e.target.value) || 2))}
                   onBlur={() => onSaveConcurrentDownloads?.(concurrentDownloads)}
+                  className="w-20"
+                />
+              </div>
+              <div className="flex items-center gap-4">
+                <FormLabel variant="settings" className="flex items-center gap-1 w-72 shrink-0">
+                  {t("settings.telegramDownloadConnections")}
+                  <Tooltip label={t("settings.telegramDownloadConnectionsHelp")}>
+                    <Icon name="info" size="sm" className="text-muted-foreground/60 cursor-default" />
+                  </Tooltip>
+                </FormLabel>
+                <FormInput
+                  type="number"
+                  min={1}
+                  max={8}
+                  value={downloadConnections}
+                  onChange={e => setDownloadConnections(Math.min(8, Math.max(1, parseInt(e.target.value) || 4)))}
+                  onBlur={() => onSaveDownloadConnections?.(downloadConnections)}
                   className="w-20"
                 />
               </div>

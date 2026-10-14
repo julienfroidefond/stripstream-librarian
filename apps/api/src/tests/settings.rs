@@ -596,6 +596,55 @@ fn validate_limits_accepts_positive_values() {
 }
 
 #[test]
+fn validate_limits_bounds_telegram_download_connections() {
+    assert!(validate_setting("limits", &json!({ "telegram_download_connections": 0 })).is_err());
+
+    let err = expect_err(validate_setting(
+        "limits",
+        &json!({ "telegram_download_connections": 9 }),
+    ));
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+
+    for value in [1, 4, 8] {
+        assert!(
+            validate_setting("limits", &json!({ "telegram_download_connections": value })).is_ok(),
+            "expected {value} to be accepted"
+        );
+    }
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn load_telegram_download_connections_defaults_then_clamps(pool: PgPool) {
+    use crate::state::{
+        load_telegram_download_connections, DEFAULT_TELEGRAM_DOWNLOAD_CONNECTIONS,
+        MAX_TELEGRAM_DOWNLOAD_CONNECTIONS,
+    };
+
+    assert_eq!(
+        load_telegram_download_connections(&pool).await,
+        DEFAULT_TELEGRAM_DOWNLOAD_CONNECTIONS
+    );
+
+    let cases = [
+        (6u64, 6usize),
+        (0, 1),
+        (99, MAX_TELEGRAM_DOWNLOAD_CONNECTIONS),
+    ];
+    for (stored, expected) in cases {
+        sqlx::query("UPDATE app_settings SET value = $1 WHERE key = 'limits'")
+            .bind(json!({ "telegram_download_connections": stored }))
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            load_telegram_download_connections(&pool).await,
+            expected,
+            "stored value {stored}"
+        );
+    }
+}
+
+#[test]
 fn validate_setting_leaves_unknown_keys_untouched() {
     assert!(validate_setting("custom_noop", &json!({ "x": 1 })).is_ok());
 }

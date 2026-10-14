@@ -33,12 +33,12 @@ Le bouton × est réversible : supprimer l'entrée depuis le panneau *Releases m
 ## Flux de téléchargement
 
 1. Clic sur **↓** — le fichier entre dans la file de téléchargement (statut *En attente*)
-2. Dès qu'un slot est libre, Stripstream se connecte à Telegram et récupère le fichier
-3. Le fichier est téléchargé en streaming dans le répertoire de la série (créé si inexistant)
+2. Dès qu'un slot est libre, Stripstream ouvre plusieurs connexions à Telegram et télécharge le fichier en parallèle
+3. Le fichier est téléchargé dans le répertoire de la série (créé si inexistant)
 4. Un scan est déclenché automatiquement pour intégrer le nouveau fichier
 5. Statut final : **Importé** ou **Erreur**
 
-Le nombre de téléchargements simultanés est configurable dans Settings → Telegram Monitor (défaut : 2). Un timeout de 30 minutes s'applique par fichier.
+Le nombre de téléchargements simultanés et le nombre de connexions par téléchargement sont configurables dans Settings → Telegram Monitor (défauts : 2 téléchargements, 4 connexions).
 
 ## Nommage à l'import
 
@@ -83,6 +83,10 @@ Dans la fenêtre de recherche :
 Les résultats restent affichés après action et leur statut se met à jour sans fermer la fenêtre.
 
 :::note[Détails techniques]
+**Téléchargement parallèle** : le fichier est découpé en blocs de 512 Kio répartis sur plusieurs connexions Telegram (`upload.getFile` avec `precise=true`), chaque connexion faisant deux requêtes simultanées. Une connexion Telegram plafonne autour de 2 Mo/s quel que soit le débit local ; répartir le fichier sur plusieurs sockets est donc ce qui rend les gros fichiers rapides. Le nombre de connexions se règle via `limits.telegram_download_connections` (défaut 4, borné à 8 : au-delà Telegram limite le débit et l'ensemble ralentit).
+
+**Reprise et erreurs** : chaque bloc est réessayé individuellement (5 tentatives, backoff exponentiel) sans perdre les blocs déjà écrits, et un `FLOOD_WAIT` est honoré pour la durée annoncée. Le timeout porte sur l'*inactivité* (180 s sans réponse) et non sur la durée totale, ce qui permet de télécharger des fichiers de plusieurs gigaoctets. Toute erreur fatale supprime le fichier temporaire `.tmp`.
+
 **Répertoire de destination** : résolu dans cet ordre — (1) fichier existant de la série en DB, (2) répertoire existant dans la bibliothèque dont le nom correspond, (3) nouveau répertoire `bibliothèque/nom-de-série`.
 
 **Dismiss (×)** : `status='dismissed'` + insertion dans `release_blacklist`. Cliquer sur **Réafficher** dans le panneau *Releases masquées* restaure `status='available'` via une CTE atomique.

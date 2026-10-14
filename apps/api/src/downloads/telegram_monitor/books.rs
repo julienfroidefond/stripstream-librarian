@@ -3,18 +3,21 @@ use axum::{extract::State, Json};
 use chrono::Utc;
 use serde_json::Value;
 use sqlx::Row;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use uuid::Uuid;
 
 use std::sync::Arc;
 
 use crate::downloads::missing;
-use crate::downloads::target::{finalize_download, prepare_destination, DownloadProgress};
+use crate::downloads::ranged::{download_ranged, FileSink, RangeFetcher, RangeSink, RangedConfig};
+use crate::downloads::target::{finalize_download, prepare_destination};
 use crate::downloads::worker::DownloadQueue;
+use crate::state::load_telegram_download_connections;
 use crate::{error::ApiError, state::AppState};
 
 use super::auth::{load_tg_settings, save_session_to_db};
 use super::channels::insert_document_message;
+use super::transfer::{open_clients, LinkProgress, TelegramFetcher};
 use super::types::*;
 
 pub async fn refresh_reimportable_telegram_links(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
@@ -487,26 +490,22 @@ pub async fn do_download(
     library_id: Uuid,
     volume_number: Option<i32>,
 ) -> anyhow::Result<()> {
-    use grammers_client::types::Downloadable;
-    use grammers_client::{Client, Config};
-    use grammers_session::Session;
+    use grammers_client::types::{Downloadable, Media};
 
-    let session = Session::load(&session_bytes)?;
-    let client = Client::connect(Config {
-        session,
-        api_id,
-        api_hash,
-        params: Default::default(),
-    })
-    .await?;
+    let connection_count = load_telegram_download_connections(&pool).await;
+    let clients = open_clients(api_id, &api_hash, &session_bytes, connection_count).await?;
+    let primary = clients
+        .first()
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("no Telegram connection available"))?;
 
-    let chat = client
+    let chat = primary
         .resolve_username(&channel_username)
         .await?
         .ok_or_else(|| anyhow::anyhow!("Channel not found: {channel_username}"))?;
 
     // Find the specific message
-    let mut iter = client
+    let mut iter = primary
         .iter_messages(&chat)
         .offset_id((message_id + 1) as i32)
         .limit(1);
@@ -526,73 +525,67 @@ pub async fn do_download(
         .media()
         .ok_or_else(|| anyhow::anyhow!("No media in message {message_id}"))?;
 
-    // Resolve the target directory + filename; `.tmp` is cleared at each retry.
+    // A ranged download needs a known size, which only documents carry.
+    let total_size = match &media {
+        Media::Document(document) => document.size(),
+        _ => anyhow::bail!("Message {message_id} is not a downloadable document"),
+    };
+    anyhow::ensure!(total_size > 0, "document {filename} has an unknown size");
+
+    let location = Downloadable::Media(media)
+        .to_raw_input_location()
+        .ok_or_else(|| anyhow::anyhow!("Document {filename} is not downloadable"))?;
+
+    // Resolve the target directory + filename; `.tmp` is cleared on failure.
     let destination =
         prepare_destination(&pool, library_id, &series_name, &filename, volume_number).await?;
     let dest_path = destination.dest_path;
     let tmp_path = destination.tmp_path;
 
-    info!("Downloading {} → {}", filename, dest_path.display());
-    let downloadable = Downloadable::Media(media);
+    info!(
+        "Downloading {filename} ({total_size} bytes) over {} connection(s) → {}",
+        clients.len(),
+        dest_path.display()
+    );
 
-    // Stream download with progress tracking and FLOOD_WAIT retry
-    const MAX_RETRIES: u32 = 3;
-    const DOWNLOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30 * 60);
-    let mut retries = 0u32;
-    loop {
+    // One fetcher per connection; the engine runs `workers_per_fetcher`
+    // concurrent `upload.getFile` requests on each of them.
+    let fetchers: Vec<Arc<dyn RangeFetcher>> = clients
+        .iter()
+        .cloned()
+        .map(|client| {
+            Arc::new(TelegramFetcher::new(client, location.clone())) as Arc<dyn RangeFetcher>
+        })
+        .collect();
+
+    let sink: Arc<dyn RangeSink> = Arc::new(FileSink::create(&tmp_path, total_size).await?);
+    let reporter = Arc::new(LinkProgress::new(pool.clone(), link_id));
+
+    let result = download_ranged(
+        fetchers,
+        sink.clone(),
+        total_size,
+        reporter,
+        RangedConfig {
+            workers_per_fetcher: 2,
+            ..Default::default()
+        },
+    )
+    .await;
+
+    // Close the file before the atomic rename; never leave a `.tmp` behind on
+    // failure.
+    drop(sink);
+    if let Err(err) = result {
         let _ = tokio::fs::remove_file(&tmp_path).await;
-        let result = tokio::time::timeout(DOWNLOAD_TIMEOUT, async {
-            use tokio::io::AsyncWriteExt;
-            let mut file = tokio::fs::File::create(&tmp_path).await?;
-            let mut iter = client.iter_download(&downloadable);
-            let mut progress = DownloadProgress::new();
-            while let Some(chunk) = iter.next().await.map_err(std::io::Error::other)? {
-                file.write_all(&chunk).await?;
-                if let Some(written) = progress.advance(chunk.len() as i64) {
-                    let _ = sqlx::query(
-                        "UPDATE telegram_book_links SET bytes_downloaded = $1, updated_at = NOW() WHERE id = $2",
-                    )
-                    .bind(written)
-                    .bind(link_id)
-                    .execute(&pool)
-                    .await;
-                }
-            }
-            file.flush().await?;
-            Ok::<(), std::io::Error>(())
-        }).await;
-        match result {
-            Ok(Ok(())) => break,
-            Ok(Err(e)) => {
-                let msg = e.to_string();
-                if msg.contains("FLOOD_WAIT") && retries < MAX_RETRIES {
-                    let wait_secs = parse_flood_wait_secs(&msg).unwrap_or(5);
-                    warn!(
-                        "FLOOD_WAIT {wait_secs}s for {filename}, retry {}/{MAX_RETRIES}",
-                        retries + 1
-                    );
-                    tokio::time::sleep(std::time::Duration::from_secs(wait_secs + 1)).await;
-                    retries += 1;
-                } else {
-                    let _ = tokio::fs::remove_file(&tmp_path).await;
-                    return Err(anyhow::anyhow!("{e}"));
-                }
-            }
-            Err(_) => {
-                let _ = tokio::fs::remove_file(&tmp_path).await;
-                return Err(anyhow::anyhow!(
-                    "Download timeout after 30 minutes: {filename}"
-                ));
-            }
-        }
+        return Err(anyhow::anyhow!("{err}"));
     }
 
     let scan_job_id = finalize_download(&pool, library_id, &tmp_path, &dest_path).await?;
 
-    let updated_bytes = client.session().save();
-    save_session_to_db(&pool, updated_bytes)
+    save_session_to_db(&pool, primary.session().save())
         .await
-        .map_err(|e| anyhow::anyhow!("session save: {:?}", e))?;
+        .map_err(|e| anyhow::anyhow!("session save: {e:?}"))?;
 
     info!("Downloaded {filename} to {}", dest_path.display());
 
@@ -606,14 +599,6 @@ pub async fn do_download(
 
     info!("Telegram download complete: {filename}, scan job {scan_job_id} queued");
     Ok(())
-}
-
-pub fn parse_flood_wait_secs(err: &str) -> Option<u64> {
-    // Error format: "rpc error 420: FLOOD_WAIT ... (value: 2)"
-    err.split("value:")
-        .nth(1)
-        .and_then(|s| s.trim().split(|c: char| !c.is_ascii_digit()).next())
-        .and_then(|s| s.parse().ok())
 }
 
 // ---------------------------------------------------------------------------

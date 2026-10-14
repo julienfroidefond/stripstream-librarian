@@ -30,6 +30,7 @@ export type Settings = {
     timeout_seconds: number;
     rate_limit_per_second: number;
     concurrent_telegram_downloads: number;
+    telegram_download_connections: number;
   };
   thumbnail: {
     enabled: boolean;

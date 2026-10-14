@@ -15,7 +15,9 @@ use uuid::Uuid;
 
 use crate::{
     error::ApiError,
-    state::{load_dynamic_settings, AppState, DiskCacheStatsSnapshot},
+    state::{
+        load_dynamic_settings, AppState, DiskCacheStatsSnapshot, MAX_TELEGRAM_DOWNLOAD_CONNECTIONS,
+    },
 };
 
 const DISK_CACHE_STATS_TTL: Duration = Duration::from_secs(30);
@@ -137,6 +139,7 @@ fn validate_limits(value: &Value) -> Result<(), ApiError> {
         "concurrent_telegram_downloads",
         "rate_limit_per_second",
         "timeout_seconds",
+        "telegram_download_connections",
     ] {
         if let Some(n) = value.get(field) {
             let n = n.as_u64().ok_or_else(|| {
@@ -147,6 +150,17 @@ fn validate_limits(value: &Value) -> Result<(), ApiError> {
                     "limits.{field} must be greater than 0"
                 )));
             }
+        }
+    }
+
+    if let Some(n) = value
+        .get("telegram_download_connections")
+        .and_then(|v| v.as_u64())
+    {
+        if n > MAX_TELEGRAM_DOWNLOAD_CONNECTIONS as u64 {
+            return Err(ApiError::bad_request(format!(
+                "limits.telegram_download_connections must be at most {MAX_TELEGRAM_DOWNLOAD_CONNECTIONS}"
+            )));
         }
     }
     Ok(())
