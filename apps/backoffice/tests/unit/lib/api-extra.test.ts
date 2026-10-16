@@ -41,6 +41,7 @@ import {
   getMetadataRefreshReport,
   getMissingBooks,
   getReadingOverview,
+  getReadingOverviewSeriesBooks,
   getReadingStatusLink,
   getReadingStatusMatchReport,
   getReadingStatusMatchResults,
@@ -426,6 +427,13 @@ describe("archive and reading overview", () => {
   it("fetches the reading overview", async () => {
     await getReadingOverview();
     expect(lastCall()).toMatchObject({ url: "/admin/reading-overview", method: "GET" });
+  });
+
+  it("fetches the books of a series for a user", async () => {
+    await getReadingOverviewSeriesBooks("u1", "s 1");
+    expect(lastCall()).toMatchObject({ url: "/admin/reading-overview/u1/series-books?series_id=s%201", method: "GET" });
+    await getReadingOverviewSeriesBooks("u1", null);
+    expect(lastCall()).toMatchObject({ url: "/admin/reading-overview/u1/series-books", method: "GET" });
   });
 });
 

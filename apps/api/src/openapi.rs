@@ -172,6 +172,7 @@ pub struct ClientApiDoc;
         crate::authors::list_authors,
         crate::stats::get_stats,
         crate::stats::get_reading_overview,
+        crate::stats::get_reading_overview_series_books,
         // Libraries
         crate::libraries::list_libraries,
         crate::libraries::create_library,
