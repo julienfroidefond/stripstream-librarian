@@ -15,7 +15,6 @@ import { TelegramCard } from "./components/TelegramCard";
 import { KomgaSyncCard } from "./components/KomgaSyncCard";
 import { AnilistTab } from "./components/AnilistTab";
 import { RenameFormatCard } from "./components/RenameFormatCard";
-import { ReadingOverviewTab } from "./components/ReadingOverviewTab";
 import { ArchivesTab } from "./components/ArchivesTab";
 import { TelegramMonitorCard } from "./components/TelegramMonitorCard";
 import { DdlProvidersCard } from "./components/DdlProvidersCard";
@@ -63,7 +62,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
   const [isSaving, setIsSaving] = useState(false);
   const [downloadsEnabled, setDownloadsEnabled] = useState(initialDownloadsEnabled);
 
-  const VALID_TABS = ["general", "media", "downloadTools", "metadata", "ai", "readingStatus", "readingOverview", "notifications", "tokens", "archives"] as const;
+  const VALID_TABS = ["general", "media", "downloadTools", "metadata", "ai", "readingStatus", "notifications", "tokens", "archives"] as const;
   type TabId = typeof VALID_TABS[number];
 
   function resolveTab(tab: string | null | undefined): TabId {
@@ -152,7 +151,6 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
     { id: "metadata" as const, label: t("settings.metadata"), icon: "tag" as const, color: "text-highlight" },
     { id: "ai" as const, label: t("settings.aiTab"), icon: "bot" as const, color: "text-highlight" },
     { id: "readingStatus" as const, label: t("settings.readingStatus"), icon: "eye" as const, color: "text-warning" },
-    { id: "readingOverview" as const, label: t("settings.readingOverview"), icon: "chart" as const, color: "text-success" },
     { id: "notifications" as const, label: t("settings.notifications"), icon: "bell" as const, color: "text-warning" },
     { id: "tokens" as const, label: t("nav.tokens"), icon: "tokens" as const, color: "text-error" },
     { id: "archives" as const, label: t("settings.archives"), icon: "books" as const, color: "text-warning" },
@@ -722,8 +720,6 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         <AnilistTab handleUpdateSetting={handleUpdateSetting} users={users} initialData={initialAnilist} />
         <KomgaSyncCard users={users} initialData={initialKomga} />
       </>)}
-
-      {activeTab === "readingOverview" && <ReadingOverviewTab />}
 
       {activeTab === "archives" && <ArchivesTab />}
 

@@ -4,6 +4,7 @@ const ROUTES: Array<{ path: string; name: string }> = [
   { path: "/", name: "dashboard" },
   { path: "/series", name: "series" },
   { path: "/books", name: "books" },
+  { path: "/progress", name: "progress" },
   { path: "/authors", name: "authors" },
   { path: "/genres", name: "genres" },
   { path: "/metadata", name: "metadata" },
@@ -40,8 +41,8 @@ test.describe("smoke — toutes les pages se rendent", () => {
   test("le menu de navigation principal est présent", async ({ page }) => {
     await page.goto("/");
     const nav = page.locator("header nav");
-    await expect(nav.getByRole("link")).toHaveCount(6);
-    await expect(nav.getByRole("button")).toHaveCount(1);
+    await expect(nav.getByRole("link")).toHaveCount(3);
+    await expect(nav.getByRole("button")).toHaveCount(2);
   });
 
   test("le dashboard affiche des statistiques", async ({ page }) => {

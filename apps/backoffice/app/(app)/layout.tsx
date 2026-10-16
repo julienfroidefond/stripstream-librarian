@@ -35,9 +35,18 @@ type NavGroupItem = {
 type NavEntry = NavLinkItem | NavGroupItem;
 
 const navEntries: NavEntry[] = [
-  { href: "/series", labelKey: "nav.series", icon: "series", color: "text-warning" },
-  { href: "/books", labelKey: "nav.books", icon: "books", color: "text-success" },
-  { href: "/authors", labelKey: "nav.authors", icon: "authors", color: "text-highlight" },
+  {
+    labelKey: "nav.catalog",
+    icon: "books",
+    color: "text-success",
+    children: [
+      { href: "/series", labelKey: "nav.series", icon: "series", color: "text-warning" },
+      { href: "/books", labelKey: "nav.books", icon: "books", color: "text-success" },
+      { href: "/authors", labelKey: "nav.authors", icon: "authors", color: "text-highlight" },
+      { href: "/reading-lists", labelKey: "nav.readingLists", icon: "bookmark", color: "text-primary" },
+    ],
+  },
+  { href: "/progress", labelKey: "nav.progress", icon: "chart", color: "text-success" },
   {
     labelKey: "nav.data",
     icon: "database",
@@ -47,7 +56,6 @@ const navEntries: NavEntry[] = [
       { href: "/metadata", labelKey: "nav.metadata", icon: "document", color: "text-info" },
     ],
   },
-  { href: "/reading-lists", labelKey: "nav.readingLists", icon: "bookmark", color: "text-primary" },
   { href: "/libraries", labelKey: "nav.libraries", icon: "libraries", color: "text-primary" },
   { href: "/discovery", labelKey: "nav.discovery", icon: "search", color: "text-highlight" },
 ];

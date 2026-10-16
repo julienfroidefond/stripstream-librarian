@@ -1,13 +1,14 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ReadingOverviewTab } from "@/app/(app)/settings/components/ReadingOverviewTab";
+import { ReadingOverview } from "@/app/components/ReadingOverview";
 
 const fetchMock = vi.fn();
 
 beforeEach(() => {
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
+  window.localStorage.clear();
 });
 
 const overview = [
@@ -76,10 +77,10 @@ function mockOverview(payload: unknown, seriesBooks: unknown = serieBooks) {
   });
 }
 
-describe("ReadingOverviewTab", () => {
+describe("ReadingOverview", () => {
   it("renders the selected user's overview and expands series volumes", async () => {
     mockOverview(overview);
-    render(<ReadingOverviewTab />);
+    render(<ReadingOverview />);
 
     expect(await screen.findByText("Alice")).toBeInTheDocument();
     expect(screen.getByText("Bob")).toBeInTheDocument();
@@ -118,6 +119,43 @@ describe("ReadingOverviewTab", () => {
     expect(screen.queryByText("Book1")).not.toBeInTheDocument();
   });
 
+  it("switches the series statuses between list and grid views", async () => {
+    mockOverview(overview);
+    render(<ReadingOverview />);
+
+    expect(await screen.findByText("Serie1")).toBeInTheDocument();
+    expect(screen.getByTestId("series-list")).toBeInTheDocument();
+    expect(screen.queryByTestId("series-grid")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "settings.readingOverview.viewGrid" }));
+    expect(screen.getByTestId("series-grid")).toBeInTheDocument();
+    expect(screen.queryByTestId("series-list")).not.toBeInTheDocument();
+    expect(screen.getByText("Serie1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "settings.readingOverview.viewGrid" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(window.localStorage.getItem("stripstream:reading-overview:series-view")).toBe("grid");
+
+    // Cards stay expandable to reveal the series volumes.
+    fireEvent.click(screen.getByText("Serie1"));
+    expect(await screen.findByText("V1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "settings.readingOverview.viewList" }));
+    expect(screen.getByTestId("series-list")).toBeInTheDocument();
+    expect(screen.queryByTestId("series-grid")).not.toBeInTheDocument();
+    expect(window.localStorage.getItem("stripstream:reading-overview:series-view")).toBe("list");
+  });
+
+  it("restores the persisted series view from localStorage", async () => {
+    window.localStorage.setItem("stripstream:reading-overview:series-view", "grid");
+    mockOverview(overview);
+    render(<ReadingOverview />);
+
+    expect(await screen.findByTestId("series-grid")).toBeInTheDocument();
+    expect(screen.queryByTestId("series-list")).not.toBeInTheDocument();
+  });
+
   it("collapses long series lists behind a show-all toggle", async () => {
     const series = Array.from({ length: 10 }, (_, i) => ({
       series_id: `s${i}`,
@@ -130,7 +168,7 @@ describe("ReadingOverviewTab", () => {
       first_book_id: null,
     }));
     mockOverview([{ ...overview[1], series_progress: series }]);
-    render(<ReadingOverviewTab />);
+    render(<ReadingOverview />);
 
     expect(await screen.findByText("Series 7")).toBeInTheDocument();
     expect(screen.queryByText("Series 8")).not.toBeInTheDocument();
@@ -149,7 +187,7 @@ describe("ReadingOverviewTab", () => {
         ? { ok: false, json: async () => ({}) }
         : { ok: true, json: async () => overview },
     );
-    render(<ReadingOverviewTab />);
+    render(<ReadingOverview />);
 
     fireEvent.click(await screen.findByText("Serie1"));
     expect(await screen.findByText("Erreur de chargement")).toBeInTheDocument();
@@ -157,19 +195,19 @@ describe("ReadingOverviewTab", () => {
 
   it("shows an empty state when there is no activity", async () => {
     mockOverview([]);
-    render(<ReadingOverviewTab />);
+    render(<ReadingOverview />);
     expect(await screen.findByText("settings.readingOverview.noActivity")).toBeInTheDocument();
   });
 
   it("shows an error when loading fails", async () => {
     fetchMock.mockRejectedValue(new Error("down"));
-    render(<ReadingOverviewTab />);
+    render(<ReadingOverview />);
     expect(await screen.findByText("Erreur de chargement")).toBeInTheDocument();
   });
 
   it("shows a loading indicator while fetching", async () => {
     fetchMock.mockReturnValue(new Promise(() => {}));
-    render(<ReadingOverviewTab />);
+    render(<ReadingOverview />);
     expect(screen.getByText("Chargement…")).toBeInTheDocument();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   });

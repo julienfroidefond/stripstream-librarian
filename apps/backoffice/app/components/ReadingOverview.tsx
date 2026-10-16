@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Card, Icon } from "@/app/components/ui";
+import { Card, Icon, type IconName } from "@/app/components/ui";
 import { getBookCoverUrl } from "@/lib/api";
 import type {
   UserReadingOverviewDto,
@@ -14,6 +14,10 @@ import type {
 import { useTranslation } from "@/lib/i18n/context";
 
 const SERIES_PREVIEW_COUNT = 8;
+
+type SeriesView = "list" | "grid";
+
+const SERIES_VIEW_KEY = "stripstream:reading-overview:series-view";
 
 function volumeLabel(volume: number | null, volumeType: string): string {
   if (volumeType === "hs") return volume != null ? `HS ${volume}` : "HS";
@@ -26,12 +30,86 @@ function pagePercent(currentPage: number, pageCount: number): number {
   return pageCount > 0 ? Math.round((currentPage / pageCount) * 100) : 0;
 }
 
-function SectionTitle({ children, count }: { children: React.ReactNode; count?: number }) {
+function SectionTitle({
+  children,
+  count,
+  action,
+}: {
+  children: React.ReactNode;
+  count?: number;
+  action?: React.ReactNode;
+}) {
   return (
-    <h3 className="flex items-baseline gap-2 text-sm font-semibold text-foreground mb-3">
+    <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground mb-3">
       {children}
       {count != null && <span className="text-xs font-normal text-muted-foreground tabular-nums">{count}</span>}
+      {action && <span className="ml-auto shrink-0">{action}</span>}
     </h3>
+  );
+}
+
+/** Series statuses view mode, persisted in localStorage across sessions. */
+function readStoredSeriesView(): SeriesView {
+  if (typeof window === "undefined") return "list";
+  try {
+    const stored = window.localStorage.getItem(SERIES_VIEW_KEY);
+    if (stored === "list" || stored === "grid") return stored;
+  } catch {
+    // localStorage unavailable (private mode, blocked storage) — keep default
+  }
+  return "list";
+}
+
+function useSeriesView(): [SeriesView, (view: SeriesView) => void] {
+  const [view, setView] = useState<SeriesView>(readStoredSeriesView);
+
+  const updateView = (next: SeriesView) => {
+    setView(next);
+    try {
+      window.localStorage.setItem(SERIES_VIEW_KEY, next);
+    } catch {
+      // ignore write failures
+    }
+  };
+
+  return [view, updateView];
+}
+
+/** Segmented control to switch the series statuses section between list and grid. */
+function SeriesViewToggle({
+  view,
+  onChange,
+}: {
+  view: SeriesView;
+  onChange: (view: SeriesView) => void;
+}) {
+  const { t } = useTranslation();
+  const options: { value: SeriesView; icon: IconName; label: string }[] = [
+    { value: "list", icon: "list", label: t("settings.readingOverview.viewList") },
+    { value: "grid", icon: "grid", label: t("settings.readingOverview.viewGrid") },
+  ];
+
+  return (
+    <span role="group" className="inline-flex rounded-md border border-border bg-muted/40 p-0.5">
+      {options.map((option) => {
+        const active = view === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={active}
+            aria-label={option.label}
+            title={option.label}
+            onClick={() => onChange(option.value)}
+            className={`rounded p-1.5 transition-colors ${
+              active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Icon name={option.icon} size="sm" />
+          </button>
+        );
+      })}
+    </span>
   );
 }
 
@@ -251,7 +329,72 @@ function SeriesRow({ item, userId }: { item: UserReadingOverviewSeriesDto; userI
   );
 }
 
-function SeriesList({ series, userId }: { series: UserReadingOverviewSeriesDto[]; userId: string }) {
+function SeriesCard({ item, userId }: { item: UserReadingOverviewSeriesDto; userId: string }) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const { books, failed } = useSeriesBooks(userId, item.series_id, expanded);
+
+  return (
+    <>
+      <li className="min-w-0">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((open) => !open)}
+          title={item.series_name}
+          className="group block w-full text-left"
+        >
+          <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-muted ring-1 ring-border/60 group-hover:shadow-md group-hover:-translate-y-0.5 transition-all">
+            {item.first_book_id ? (
+              <Image
+                src={getBookCoverUrl(item.first_book_id)}
+                alt={item.series_name}
+                fill
+                sizes="(max-width: 640px) 33vw, 160px"
+                className="object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-muted-foreground/30">
+                <Icon name="series" size="lg" />
+              </div>
+            )}
+            <span className="absolute top-1 right-1 rounded-full bg-black/60 text-white text-3xs px-1.5 py-0.5 tabular-nums backdrop-blur-sm">
+              {item.books_read}/{item.books_total}
+            </span>
+            <div className="absolute bottom-0 inset-x-0 bg-black/30">
+              <SeriesProgressBar read={item.books_read} reading={item.books_reading} total={item.books_total} />
+            </div>
+          </div>
+          <p className="mt-1.5 text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
+            {item.series_name}
+          </p>
+          {item.books_reading > 0 && (
+            <p className="text-2xs text-warning truncate">
+              {item.books_reading} {t("status.reading").toLowerCase()}
+            </p>
+          )}
+        </button>
+      </li>
+      {expanded && (
+        <li className="col-span-full min-w-0">
+          <div className="rounded-lg border border-border/60 bg-muted/20 px-3">
+            <SeriesBooksGrid books={books} failed={failed} booksTotal={item.books_total} />
+          </div>
+        </li>
+      )}
+    </>
+  );
+}
+
+function SeriesList({
+  series,
+  userId,
+  view,
+}: {
+  series: UserReadingOverviewSeriesDto[];
+  userId: string;
+  view: SeriesView;
+}) {
   const { t } = useTranslation();
   const [showAll, setShowAll] = useState(false);
 
@@ -260,14 +403,23 @@ function SeriesList({ series, userId }: { series: UserReadingOverviewSeriesDto[]
   }
 
   const visible = showAll ? series : series.slice(0, SERIES_PREVIEW_COUNT);
+  const keyFor = (item: UserReadingOverviewSeriesDto) => item.series_id ?? `unclassified-${item.series_name}`;
 
   return (
     <>
-      <ul>
-        {visible.map((item) => (
-          <SeriesRow key={item.series_id ?? `unclassified-${item.series_name}`} item={item} userId={userId} />
-        ))}
-      </ul>
+      {view === "grid" ? (
+        <ul data-testid="series-grid" className="grid grid-cols-3 sm:grid-cols-4 gap-3 sm:gap-4">
+          {visible.map((item) => (
+            <SeriesCard key={keyFor(item)} item={item} userId={userId} />
+          ))}
+        </ul>
+      ) : (
+        <ul data-testid="series-list">
+          {visible.map((item) => (
+            <SeriesRow key={keyFor(item)} item={item} userId={userId} />
+          ))}
+        </ul>
+      )}
       {series.length > SERIES_PREVIEW_COUNT && (
         <button
           type="button"
@@ -285,6 +437,7 @@ function SeriesList({ series, userId }: { series: UserReadingOverviewSeriesDto[]
 
 function UserOverview({ user }: { user: UserReadingOverviewDto }) {
   const { t } = useTranslation();
+  const [seriesView, setSeriesView] = useSeriesView();
   const recentlyRead = user.recently_read ?? [];
   const seriesProgress = user.series_progress ?? [];
 
@@ -309,8 +462,13 @@ function UserOverview({ user }: { user: UserReadingOverviewDto }) {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <section className="min-w-0">
-          <SectionTitle count={seriesProgress.length}>{t("settings.readingOverview.seriesStatuses")}</SectionTitle>
-          <SeriesList series={seriesProgress} userId={user.user_id} />
+          <SectionTitle
+            count={seriesProgress.length}
+            action={<SeriesViewToggle view={seriesView} onChange={setSeriesView} />}
+          >
+            {t("settings.readingOverview.seriesStatuses")}
+          </SectionTitle>
+          <SeriesList series={seriesProgress} userId={user.user_id} view={seriesView} />
         </section>
 
         {recentlyRead.length > 0 && (
@@ -378,7 +536,7 @@ function UserPicker({
   );
 }
 
-export function ReadingOverviewTab() {
+export function ReadingOverview() {
   const { t } = useTranslation();
   const [overview, setOverview] = useState<UserReadingOverviewDto[] | null>(null);
   const [error, setError] = useState<string | null>(null);

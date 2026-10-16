@@ -19,4 +19,5 @@ export type NavHref =
   | "/downloads"
   | "/genres"
   | "/reading-lists"
-  | "/metadata";
+  | "/metadata"
+  | "/progress";
