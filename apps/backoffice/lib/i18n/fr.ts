@@ -770,6 +770,8 @@ const fr = {
   "settings.readingOverview.noSeries": "Aucune série trouvée.",
   "settings.readingOverview.showAll": "Afficher les {{count}} séries",
   "settings.readingOverview.showLess": "Afficher moins",
+  "settings.readingOverview.viewList": "Vue liste",
+  "settings.readingOverview.viewGrid": "Vue grille",
   "settings.savedSuccess": "Paramètres enregistrés avec succès",
   "settings.savedError": "Échec de l'enregistrement des paramètres",
   "settings.saveError": "Erreur lors de l'enregistrement des paramètres",

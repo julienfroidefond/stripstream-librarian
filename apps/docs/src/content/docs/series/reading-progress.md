@@ -57,8 +57,8 @@ Dans **Settings → Progression**, le backoffice affiche une vue transversale pa
 
 - livres en cours de lecture
 - livres lus récemment
-- tableau dépliable par série avec statuts agrégés
-- détail par livre dans chaque série, avec couverture et état de lecture
+- statuts par série (uniquement les séries commencées ou terminées), affichables en **liste** ou en **grille de couvertures** via le bouton en haut à droite de la section
+- vue dépliable par série : en cliquant une série (ligne ou couverture), les tomes s'affichent avec couverture et état de lecture
 
 Cette vue est en lecture seule : elle sert à inspecter rapidement la progression de tous les utilisateurs depuis l'administration.
 

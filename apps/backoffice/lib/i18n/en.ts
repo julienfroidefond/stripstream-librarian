@@ -772,6 +772,8 @@ const en: Record<TranslationKey, string> = {
   "settings.readingOverview.noSeries": "No series found.",
   "settings.readingOverview.showAll": "Show all {{count}} series",
   "settings.readingOverview.showLess": "Show less",
+  "settings.readingOverview.viewList": "List view",
+  "settings.readingOverview.viewGrid": "Grid view",
   "settings.savedSuccess": "Settings saved successfully",
   "settings.savedError": "Failed to save settings",
   "settings.saveError": "Error saving settings",

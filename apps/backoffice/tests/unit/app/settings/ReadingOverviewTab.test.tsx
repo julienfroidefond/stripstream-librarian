@@ -118,6 +118,32 @@ describe("ReadingOverviewTab", () => {
     expect(screen.queryByText("Book1")).not.toBeInTheDocument();
   });
 
+  it("switches the series statuses between list and grid views", async () => {
+    mockOverview(overview);
+    render(<ReadingOverviewTab />);
+
+    expect(await screen.findByText("Serie1")).toBeInTheDocument();
+    expect(screen.getByTestId("series-list")).toBeInTheDocument();
+    expect(screen.queryByTestId("series-grid")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "settings.readingOverview.viewGrid" }));
+    expect(screen.getByTestId("series-grid")).toBeInTheDocument();
+    expect(screen.queryByTestId("series-list")).not.toBeInTheDocument();
+    expect(screen.getByText("Serie1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "settings.readingOverview.viewGrid" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // Cards stay expandable to reveal the series volumes.
+    fireEvent.click(screen.getByText("Serie1"));
+    expect(await screen.findByText("V1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "settings.readingOverview.viewList" }));
+    expect(screen.getByTestId("series-list")).toBeInTheDocument();
+    expect(screen.queryByTestId("series-grid")).not.toBeInTheDocument();
+  });
+
   it("collapses long series lists behind a show-all toggle", async () => {
     const series = Array.from({ length: 10 }, (_, i) => ({
       series_id: `s${i}`,
