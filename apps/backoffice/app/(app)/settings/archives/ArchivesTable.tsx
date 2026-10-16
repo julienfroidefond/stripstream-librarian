@@ -90,14 +90,14 @@ export function ArchivesTable({ series }: Props) {
         <thead>
           <tr className="border-b border-border text-muted-foreground">
             <th className="w-8 px-4 py-3" />
-            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.archives.colSeries")}</th>
-            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">{t("settings.archives.colAuthors")}</th>
-            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden lg:table-cell">{t("settings.archives.colPublisher")}</th>
-            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">{t("settings.archives.colGenres")}</th>
-            <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">{t("settings.archives.colYear")}</th>
-            <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.archives.colVolumes")}</th>
-            <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">{t("settings.archives.colReading")}</th>
-            <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">{t("settings.archives.colArchivedAt")}</th>
+            <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">{t("settings.archives.colSeries")}</th>
+            <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">{t("settings.archives.colAuthors")}</th>
+            <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">{t("settings.archives.colPublisher")}</th>
+            <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground hidden md:table-cell">{t("settings.archives.colGenres")}</th>
+            <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">{t("settings.archives.colYear")}</th>
+            <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground">{t("settings.archives.colVolumes")}</th>
+            <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">{t("settings.archives.colReading")}</th>
+            <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">{t("settings.archives.colArchivedAt")}</th>
           </tr>
         </thead>
         <tbody>
@@ -177,13 +177,13 @@ export function ArchivesTable({ series }: Props) {
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="text-muted-foreground border-b border-border/50">
-                                  <th className="text-left py-1.5 pr-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.archives.colVolume")}</th>
-                                  <th className="text-left py-1.5 pr-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.archives.colTitle")}</th>
-                                  <th className="text-left py-1.5 pr-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">{t("settings.archives.colAuthor")}</th>
-                                  <th className="text-right py-1.5 pr-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">{t("settings.archives.colPages")}</th>
-                                  <th className="text-left py-1.5 pr-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">{t("settings.archives.colFormat")}</th>
-                                  <th className="text-left py-1.5 pr-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider hidden lg:table-cell">{t("settings.archives.colPublication")}</th>
-                                  <th className="text-left py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("settings.archives.colReading")}</th>
+                                  <th className="text-left py-1.5 pr-4 text-xs font-medium text-muted-foreground">{t("settings.archives.colVolume")}</th>
+                                  <th className="text-left py-1.5 pr-4 text-xs font-medium text-muted-foreground">{t("settings.archives.colTitle")}</th>
+                                  <th className="text-left py-1.5 pr-4 text-xs font-medium text-muted-foreground hidden md:table-cell">{t("settings.archives.colAuthor")}</th>
+                                  <th className="text-right py-1.5 pr-4 text-xs font-medium text-muted-foreground hidden sm:table-cell">{t("settings.archives.colPages")}</th>
+                                  <th className="text-left py-1.5 pr-4 text-xs font-medium text-muted-foreground hidden md:table-cell">{t("settings.archives.colFormat")}</th>
+                                  <th className="text-left py-1.5 pr-4 text-xs font-medium text-muted-foreground hidden lg:table-cell">{t("settings.archives.colPublication")}</th>
+                                  <th className="text-left py-1.5 text-xs font-medium text-muted-foreground">{t("settings.archives.colReading")}</th>
                                 </tr>
                               </thead>
                               <tbody>

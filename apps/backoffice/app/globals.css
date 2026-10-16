@@ -202,6 +202,43 @@ body::before {
   box-shadow: var(--shadow-card);
 }
 
+/* ------------------------------------------------------------------
+   Settings surfaces — « Plein »
+   Les sections sont des aplats de ton (ni bordure, ni filet, ni ombre) et
+   les contrôles sont les seules surfaces posées dessus, en creux.
+   Portée : tout ce qui vit sous `.settings-surface`.
+   ------------------------------------------------------------------ */
+.settings-surface {
+  --settings-panel: color-mix(in oklab, var(--color-muted) 50%, transparent);
+  --settings-well: var(--color-card);
+}
+
+.dark .settings-surface {
+  --settings-panel: color-mix(in oklab, var(--color-muted) 34%, transparent);
+  --settings-well: color-mix(in oklab, var(--color-background) 88%, #000);
+}
+
+.settings-panel {
+  background-color: var(--settings-panel);
+}
+
+.settings-well {
+  background-color: var(--settings-well);
+}
+
+/* Champs : puits creusés dans l'aplat — plus de bordure ni d'ombre. */
+.settings-surface :is(input, select, textarea) {
+  background-color: var(--settings-well);
+  border-color: transparent;
+  box-shadow: none;
+  border-radius: 0.7rem;
+}
+
+.settings-surface :is(input, select, textarea):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-ring);
+}
+
 /* Selection */
 ::selection {
   background: hsl(198 78% 37% / 0.2);

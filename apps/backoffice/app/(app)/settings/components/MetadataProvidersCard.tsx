@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SettingsCard, SettingsField, FormLabel, FormInput, Icon } from "@/app/components/ui";
+import { SettingsCard, SettingsRow, FormInput } from "@/app/components/ui";
 import { ProviderIcon } from "@/app/components/ProviderIcon";
 import type { MetadataProviderDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
@@ -49,11 +49,10 @@ export function MetadataProvidersCard({ handleUpdateSetting, initialData }: { ha
   }
 
   return (
-    <SettingsCard icon="search" title={t("settings.metadataProviders")} description={t("settings.metadataProvidersDesc")} contentClassName="space-y-6">
+    <SettingsCard icon="search" title={t("settings.metadataProviders")} description={t("settings.metadataProvidersDesc")}>
       {/* Default provider */}
-      <div>
-        <FormLabel variant="settings" className="mb-2">{t("settings.defaultProvider")}</FormLabel>
-        <div className="flex gap-2 flex-wrap">
+      <SettingsRow label={t("settings.defaultProvider")} description={t("settings.defaultProviderHelp")} controlClassName="sm:max-w-xl">
+        <div className="flex flex-wrap gap-2">
           {providers.map((p) => (
             <button
               key={p.id}
@@ -62,10 +61,10 @@ export function MetadataProvidersCard({ handleUpdateSetting, initialData }: { ha
                 setDefaultProvider(p.id);
                 save(p.id, metadataLanguage, apiKeys);
               }}
-              className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+              className={`inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm transition-colors ${
                 defaultProvider === p.id
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/50"
+                  ? "bg-primary/15 font-semibold text-primary"
+                  : "settings-well text-muted-foreground hover:text-foreground"
               }`}
             >
               <ProviderIcon provider={p.id} size={18} />
@@ -73,12 +72,10 @@ export function MetadataProvidersCard({ handleUpdateSetting, initialData }: { ha
             </button>
           ))}
         </div>
-        <p className="text-xs text-muted-foreground mt-2">{t("settings.defaultProviderHelp")}</p>
-      </div>
+      </SettingsRow>
 
       {/* Metadata language */}
-      <div>
-        <FormLabel variant="settings" className="mb-2">{t("settings.metadataLanguage")}</FormLabel>
+      <SettingsRow label={t("settings.metadataLanguage")} description={t("settings.metadataLanguageHelp")} controlClassName="sm:max-w-xl">
         <div className="flex gap-2">
           {METADATA_LANGUAGES.map((l) => (
             <button
@@ -88,63 +85,62 @@ export function MetadataProvidersCard({ handleUpdateSetting, initialData }: { ha
                 setMetadataLanguage(l.value);
                 save(defaultProvider, l.value, apiKeys);
               }}
-              className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+              className={`rounded-full px-3.5 py-1.5 text-sm transition-colors ${
                 metadataLanguage === l.value
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/50"
+                  ? "bg-primary/15 font-semibold text-primary"
+                  : "settings-well text-muted-foreground hover:text-foreground"
               }`}
             >
               {l.label}
             </button>
           ))}
         </div>
-        <p className="text-xs text-muted-foreground mt-2">{t("settings.metadataLanguageHelp")}</p>
-      </div>
+      </SettingsRow>
 
       {/* Provider API keys — always visible */}
-      <div className="border-t border-border/50 pt-4">
-        <h4 className="text-sm font-medium text-foreground mb-3">{t("settings.apiKeys")}</h4>
-        <div className="space-y-4">
-          <SettingsField
-            label={<><ProviderIcon provider="google_books" size={16} />{t("settings.googleBooksKey")}</>}
-            labelClassName="flex items-center gap-1.5"
-            help={t("settings.googleBooksHelp")}
-          >
-            <FormInput
-              type="password" autoComplete="off"
-              placeholder={t("settings.googleBooksPlaceholder")}
-              value={apiKeys.google_books || ""}
-              onChange={(e) => setApiKeys({ ...apiKeys, google_books: e.target.value })}
-              onBlur={() => save(defaultProvider, metadataLanguage, apiKeys)}
-            />
-          </SettingsField>
+      <div className="space-y-4 pt-2">
+        <h4 className="text-sm font-semibold text-foreground">{t("settings.apiKeys")}</h4>
+        <SettingsRow
+          label={<span className="flex items-center gap-1.5"><ProviderIcon provider="google_books" size={16} />{t("settings.googleBooksKey")}</span>}
+          description={t("settings.googleBooksHelp")}
+          htmlFor="metadata-google-books-key"
+        >
+          <FormInput
+            id="metadata-google-books-key"
+            type="password" autoComplete="off"
+            placeholder={t("settings.googleBooksPlaceholder")}
+            value={apiKeys.google_books || ""}
+            onChange={(e) => setApiKeys({ ...apiKeys, google_books: e.target.value })}
+            onBlur={() => save(defaultProvider, metadataLanguage, apiKeys)}
+          />
+        </SettingsRow>
 
-          <SettingsField
-            label={<><ProviderIcon provider="comicvine" size={16} />{t("settings.comicvineKey")}</>}
-            labelClassName="flex items-center gap-1.5"
-            help={<>{t("settings.comicvineHelp")} <span className="font-mono text-foreground/70">comicvine.gamespot.com/api</span>.</>}
-          >
-            <FormInput
-              type="password" autoComplete="off"
-              placeholder={t("settings.comicvinePlaceholder")}
-              value={apiKeys.comicvine || ""}
-              onChange={(e) => setApiKeys({ ...apiKeys, comicvine: e.target.value })}
-              onBlur={() => save(defaultProvider, metadataLanguage, apiKeys)}
-            />
-          </SettingsField>
+        <SettingsRow
+          label={<span className="flex items-center gap-1.5"><ProviderIcon provider="comicvine" size={16} />{t("settings.comicvineKey")}</span>}
+          description={<>{t("settings.comicvineHelp")} <span className="font-mono text-foreground/70">comicvine.gamespot.com/api</span>.</>}
+          htmlFor="metadata-comicvine-key"
+        >
+          <FormInput
+            id="metadata-comicvine-key"
+            type="password" autoComplete="off"
+            placeholder={t("settings.comicvinePlaceholder")}
+            value={apiKeys.comicvine || ""}
+            onChange={(e) => setApiKeys({ ...apiKeys, comicvine: e.target.value })}
+            onBlur={() => save(defaultProvider, metadataLanguage, apiKeys)}
+          />
+        </SettingsRow>
 
-          <div className="p-3 rounded-lg bg-muted/30 flex items-center gap-3 flex-wrap">
-            {providers.filter((provider) => !provider.requires_api_key).map((provider, index) => (
-              <span key={provider.id} className="contents">
-                {index > 0 && <span className="text-xs text-muted-foreground">{t("common.and")}</span>}
-                <span className="flex items-center gap-1.5">
-                  <ProviderIcon provider={provider.id} size={16} />
-                  <span className="text-xs font-medium text-foreground">{provider.label}</span>
-                </span>
+        <div className="settings-well flex flex-wrap items-center gap-3 rounded-xl px-4 py-3">
+          {providers.filter((provider) => !provider.requires_api_key).map((provider, index) => (
+            <span key={provider.id} className="contents">
+              {index > 0 && <span className="text-xs text-muted-foreground">{t("common.and")}</span>}
+              <span className="flex items-center gap-1.5">
+                <ProviderIcon provider={provider.id} size={16} />
+                <span className="text-xs font-medium text-foreground">{provider.label}</span>
               </span>
-            ))}
-            <span className="text-xs text-muted-foreground">{t("settings.freeProviders")}</span>
-          </div>
+            </span>
+          ))}
+          <span className="text-xs text-muted-foreground">{t("settings.freeProviders")}</span>
         </div>
       </div>
     </SettingsCard>

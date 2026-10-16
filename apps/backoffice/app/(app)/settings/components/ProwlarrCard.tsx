@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { SettingsCard, SettingsField, FormInput, FormSelect } from "@/app/components/ui";
+import { SettingsCard, SettingsRow, FormInput, FormSelect } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 import { TestConnectionButton } from "./TestConnectionButton";
 
@@ -41,52 +41,44 @@ export function ProwlarrCard({ handleUpdateSetting, initialData }: { handleUpdat
 
   return (
     <SettingsCard icon="search" title={t("settings.prowlarr")} description={t("settings.prowlarrDesc")}>
-      <div className="flex gap-4">
-        <SettingsField className="flex-1" label={t("settings.prowlarrUrl")}>
-          <FormInput
-            type="url"
-            placeholder={t("settings.prowlarrUrlPlaceholder")}
-            value={prowlarrUrl}
-            onChange={(e) => setProwlarrUrl(e.target.value)}
-            onBlur={() => saveProwlarr()}
-          />
-        </SettingsField>
-      </div>
-      <div className="flex gap-4">
-        <SettingsField className="flex-1" label={t("settings.prowlarrApiKey")}>
-          <FormInput
-            type="password" autoComplete="off"
-            placeholder={t("settings.prowlarrApiKeyPlaceholder")}
-            value={prowlarrApiKey}
-            onChange={(e) => setProwlarrApiKey(e.target.value)}
-            onBlur={() => saveProwlarr()}
-          />
-        </SettingsField>
-      </div>
-      <div className="flex gap-4">
-        <SettingsField className="flex-1" label={t("settings.prowlarrCategories")} help={t("settings.prowlarrCategoriesHelp")}>
-          <FormInput
-            type="text"
-            placeholder="7030, 7020"
-            value={prowlarrCategories}
-            onChange={(e) => setProwlarrCategories(e.target.value)}
-            onBlur={() => saveProwlarr()}
-          />
-        </SettingsField>
-      </div>
-      <div className="flex gap-4">
-        <SettingsField className="w-64" label={t("settings.prowlarrRssInterval")} help={t("settings.prowlarrRssIntervalHelp")}>
-          <FormSelect
-            value={rssPollInterval}
-            onChange={(e) => { setRssPollInterval(e.target.value); saveProwlarr(undefined, undefined, undefined, e.target.value); }}
-          >
-            {RSS_INTERVAL_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </FormSelect>
-        </SettingsField>
-      </div>
-      <div className="flex items-center gap-3">
+      <SettingsRow label={t("settings.prowlarrUrl")}>
+        <FormInput
+          type="url"
+          placeholder={t("settings.prowlarrUrlPlaceholder")}
+          value={prowlarrUrl}
+          onChange={(e) => setProwlarrUrl(e.target.value)}
+          onBlur={() => saveProwlarr()}
+        />
+      </SettingsRow>
+      <SettingsRow label={t("settings.prowlarrApiKey")}>
+        <FormInput
+          type="password" autoComplete="off"
+          placeholder={t("settings.prowlarrApiKeyPlaceholder")}
+          value={prowlarrApiKey}
+          onChange={(e) => setProwlarrApiKey(e.target.value)}
+          onBlur={() => saveProwlarr()}
+        />
+      </SettingsRow>
+      <SettingsRow label={t("settings.prowlarrCategories")} description={t("settings.prowlarrCategoriesHelp")}>
+        <FormInput
+          type="text"
+          placeholder="7030, 7020"
+          value={prowlarrCategories}
+          onChange={(e) => setProwlarrCategories(e.target.value)}
+          onBlur={() => saveProwlarr()}
+        />
+      </SettingsRow>
+      <SettingsRow label={t("settings.prowlarrRssInterval")} description={t("settings.prowlarrRssIntervalHelp")}>
+        <FormSelect
+          value={rssPollInterval}
+          onChange={(e) => { setRssPollInterval(e.target.value); saveProwlarr(undefined, undefined, undefined, e.target.value); }}
+        >
+          {RSS_INTERVAL_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </FormSelect>
+      </SettingsRow>
+      <div className="pt-1">
         <TestConnectionButton
           endpoint="/api/prowlarr/test"
           disabled={!prowlarrUrl || !prowlarrApiKey}

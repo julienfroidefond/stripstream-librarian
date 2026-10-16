@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { SettingsCard, SettingsField, Button, FormInput, FormSelect, Icon } from "@/app/components/ui";
+import { SettingsCard, SettingsRow, Button, FormInput, FormSelect, Icon } from "@/app/components/ui";
 import { KomgaSyncResponse, KomgaSyncReportSummary, UserDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 
@@ -93,29 +93,23 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
 
   return (
     <SettingsCard icon="refresh" title={t("settings.komgaSync")} description={t("settings.komgaDesc")}>
-      <div className="flex gap-4">
-        <SettingsField className="flex-1" label={t("settings.komgaUrl")}>
-          <FormInput type="url" placeholder="https://komga.example.com" value={komgaUrl} onChange={(e) => setKomgaUrl(e.target.value)} />
-        </SettingsField>
-      </div>
-      <div className="flex gap-4">
-        <SettingsField className="flex-1" label={t("settings.username")}>
-          <FormInput value={komgaUsername} onChange={(e) => setKomgaUsername(e.target.value)} />
-        </SettingsField>
-        <SettingsField className="flex-1" label={t("settings.password")}>
-          <FormInput type="password" autoComplete="off" value={komgaPassword} onChange={(e) => setKomgaPassword(e.target.value)} />
-        </SettingsField>
-      </div>
+      <SettingsRow label={t("settings.komgaUrl")}>
+        <FormInput type="url" placeholder="https://komga.example.com" value={komgaUrl} onChange={(e) => setKomgaUrl(e.target.value)} />
+      </SettingsRow>
+      <SettingsRow label={t("settings.username")}>
+        <FormInput value={komgaUsername} onChange={(e) => setKomgaUsername(e.target.value)} />
+      </SettingsRow>
+      <SettingsRow label={t("settings.password")}>
+        <FormInput type="password" autoComplete="off" value={komgaPassword} onChange={(e) => setKomgaPassword(e.target.value)} />
+      </SettingsRow>
       {users.length > 0 && (
-        <div className="flex gap-4">
-          <SettingsField className="flex-1" label={t("users.title")}>
-            <FormSelect value={komgaUserId} onChange={(e) => setKomgaUserId(e.target.value)}>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>{u.username}</option>
-              ))}
-            </FormSelect>
-          </SettingsField>
-        </div>
+        <SettingsRow label={t("users.title")}>
+          <FormSelect value={komgaUserId} onChange={(e) => setKomgaUserId(e.target.value)}>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>{u.username}</option>
+            ))}
+          </FormSelect>
+        </SettingsRow>
       )}
       <Button onClick={handleKomgaSync} disabled={isSyncing || !komgaUrl || !komgaUsername || !komgaPassword || !komgaUserId}>
         {isSyncing ? (
@@ -127,7 +121,7 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
       {syncError && <div className="p-3 rounded-lg bg-destructive/10 text-destructive">{syncError}</div>}
       {syncResult && (
         <div className="space-y-3">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
+          <div className="settings-well grid grid-cols-2 gap-4 rounded-xl p-4 sm:grid-cols-4">
             <div>
               <p className="text-sm text-muted-foreground">{t("settings.komgaRead")}</p>
               <p className="text-2xl font-semibold">{syncResult.total_komga_read}</p>
@@ -152,7 +146,7 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
                 {t("settings.matchedBooks", { count: syncResult.matched_books.length, plural: syncResult.matched_books.length !== 1 ? "s" : "" })}
               </button>
               {showMatchedBooks && (
-                <div className="mt-2 max-h-60 overflow-y-auto p-3 bg-success/5 rounded-lg text-sm space-y-1">
+                <div className="mt-2 max-h-60 space-y-1 overflow-y-auto rounded-xl bg-success/5 p-3 text-sm">
                   {syncResult.matched_books.map((title, i) => (
                     <p key={i} className="text-foreground truncate flex items-center gap-1.5" title={title}>
                       {syncNewlyMarkedSet.has(title) && <Icon name="check" size="sm" className="text-success shrink-0" />}
@@ -170,7 +164,7 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
                 {t("settings.unmatchedBooks", { count: syncResult.unmatched.length, plural: syncResult.unmatched.length !== 1 ? "s" : "" })}
               </button>
               {showUnmatched && (
-                <div className="mt-2 max-h-60 overflow-y-auto p-3 bg-muted/20 rounded-lg text-sm space-y-1">
+                <div className="settings-well mt-2 max-h-60 space-y-1 overflow-y-auto rounded-xl p-3 text-sm">
                   {syncResult.unmatched.map((title, i) => (
                     <p key={i} className="text-muted-foreground truncate" title={title}>{title}</p>
                   ))}
@@ -181,7 +175,7 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
         </div>
       )}
       {reports.length > 0 && (
-        <div className="border-t border-border pt-4">
+        <div className="pt-2">
           <h3 className="text-sm font-medium text-foreground mb-3">{t("settings.syncHistory")}</h3>
           <div className="space-y-2">
             {reports.map((r) => (
@@ -189,8 +183,8 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
                 key={r.id}
                 type="button"
                 onClick={() => handleViewReport(r.id)}
-                className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                  selectedReport?.id === r.id ? "border-primary bg-primary/5" : "border-border/60 bg-muted/20 hover:bg-muted/40"
+                className={`w-full rounded-xl p-3 text-left transition-colors ${
+                  selectedReport?.id === r.id ? "bg-primary/15" : "settings-well"
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -208,7 +202,7 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
           </div>
           {selectedReport && (
             <div className="mt-3 space-y-3">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
+              <div className="settings-well grid grid-cols-2 gap-4 rounded-xl p-4 sm:grid-cols-4">
                 <div>
                   <p className="text-sm text-muted-foreground">{t("settings.komgaRead")}</p>
                   <p className="text-2xl font-semibold">{selectedReport.total_komga_read}</p>
@@ -233,7 +227,7 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
                     {t("settings.matchedBooks", { count: selectedReport.matched_books.length, plural: selectedReport.matched_books.length !== 1 ? "s" : "" })}
                   </button>
                   {showReportMatchedBooks && (
-                    <div className="mt-2 max-h-60 overflow-y-auto p-3 bg-success/5 rounded-lg text-sm space-y-1">
+                    <div className="mt-2 max-h-60 space-y-1 overflow-y-auto rounded-xl bg-success/5 p-3 text-sm">
                       {selectedReport.matched_books.map((title, i) => (
                         <p key={i} className="text-foreground truncate flex items-center gap-1.5" title={title}>
                           {reportNewlyMarkedSet.has(title) && <Icon name="check" size="sm" className="text-success shrink-0" />}
@@ -251,7 +245,7 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
                     {t("settings.unmatchedBooks", { count: selectedReport.unmatched.length, plural: selectedReport.unmatched.length !== 1 ? "s" : "" })}
                   </button>
                   {showReportUnmatched && (
-                    <div className="mt-2 max-h-60 overflow-y-auto p-3 bg-muted/20 rounded-lg text-sm space-y-1">
+                    <div className="settings-well mt-2 max-h-60 space-y-1 overflow-y-auto rounded-xl p-3 text-sm">
                       {selectedReport.unmatched.map((title, i) => (
                         <p key={i} className="text-muted-foreground truncate" title={title}>{title}</p>
                       ))}

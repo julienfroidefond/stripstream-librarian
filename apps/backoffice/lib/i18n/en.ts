@@ -730,6 +730,8 @@ const en: Record<TranslationKey, string> = {
 
   // Settings page
   "settings.title": "Settings",
+  "settings.subtitle": "Tune the catalogue, metadata, downloads and access.",
+  "settings.saving": "Saving…",
   "settings.general": "General",
   "settings.integrations": "Integrations",
   "settings.media": "Images & Cache",
@@ -739,6 +741,7 @@ const en: Record<TranslationKey, string> = {
   "settings.metadata": "Metadata",
   "settings.readingStatus": "Reading Status",
   "settings.archives": "Archives",
+  "settings.archives.desc": "Series removed from disk but kept along with their reading history.",
   "settings.archives.count": "{{count}} archived series",
   "settings.archives.loadError": "Failed to load",
   "settings.archives.empty": "No archived series.",

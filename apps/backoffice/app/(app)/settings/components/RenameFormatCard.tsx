@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { SettingsCard, SettingsField, FormInput } from "@/app/components/ui";
+import { SettingsCard, SettingsRow, FormInput } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 import type { TranslationKey } from "@/lib/i18n";
 
@@ -101,39 +101,39 @@ export function RenameFormatCard({
   };
 
   return (
-    <SettingsCard title={t("rename.settingTitle")} description={t("rename.settingDesc")}>
+    <SettingsCard icon="edit" title={t("rename.settingTitle")} description={t("rename.settingDesc")}>
       {TEMPLATES.map((tpl) => (
-        <div key={tpl.key} className="space-y-3">
-          <SettingsField
-            label={t(tpl.labelKey)}
-            labelHtmlFor={`rename-format-${tpl.key}`}
-          >
-            <FormInput
-              id={`rename-format-${tpl.key}`}
-              value={values[tpl.key]}
-              onFocus={() => setActiveField(tpl.key)}
-              onChange={(e) =>
-                setValues((prev) => ({ ...prev, [tpl.key]: e.target.value }))
-              }
-              onBlur={() => handleUpdateSetting(tpl.settingKey, values[tpl.key])}
-              placeholder={tpl.defaultValue}
-            />
-          </SettingsField>
+        <SettingsRow
+          key={tpl.key}
+          label={t(tpl.labelKey)}
+          htmlFor={`rename-format-${tpl.key}`}
+          controlClassName="sm:max-w-lg"
+        >
+          <FormInput
+            id={`rename-format-${tpl.key}`}
+            value={values[tpl.key]}
+            onFocus={() => setActiveField(tpl.key)}
+            onChange={(e) =>
+              setValues((prev) => ({ ...prev, [tpl.key]: e.target.value }))
+            }
+            onBlur={() => handleUpdateSetting(tpl.settingKey, values[tpl.key])}
+            placeholder={tpl.defaultValue}
+          />
 
-          <div className="p-3 bg-muted/30 rounded-lg">
-            <p className="text-xs font-medium text-muted-foreground mb-2">{t(tpl.previewKey)}</p>
-            <p className="text-sm font-mono text-foreground">{applyExampleTemplate(values[tpl.key])}</p>
+          <div className="settings-well mt-2 rounded-xl px-3.5 py-2.5">
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">{t(tpl.previewKey)}</p>
+            <p className="truncate font-mono text-sm text-foreground" title={applyExampleTemplate(values[tpl.key])}>{applyExampleTemplate(values[tpl.key])}</p>
           </div>
-        </div>
+        </SettingsRow>
       ))}
 
-      <div>
-        <p className="text-xs font-medium text-muted-foreground mb-2">{t("rename.availableVars")}</p>
+      <div className="pt-2">
+        <p className="mb-2 text-xs font-medium text-muted-foreground">{t("rename.availableVars")}</p>
         <div className="flex flex-wrap gap-2">
           {AVAILABLE_VARS.map((v) => (
             <code
               key={v.name}
-              className="text-xs px-2 py-1 bg-muted rounded-md cursor-pointer hover:bg-muted/80 transition-colors"
+              className="settings-well cursor-pointer rounded-full px-2.5 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
               onClick={() => appendVar(v.name)}
               title={v.example}
             >

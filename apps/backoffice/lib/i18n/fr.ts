@@ -728,6 +728,8 @@ const fr = {
 
   // Settings page
   "settings.title": "Paramètres",
+  "settings.subtitle": "Réglez le catalogue, les métadonnées, les téléchargements et les accès.",
+  "settings.saving": "Enregistrement…",
   "settings.general": "Général",
   "settings.integrations": "Intégrations",
   "settings.media": "Images & cache",
@@ -737,6 +739,7 @@ const fr = {
   "settings.metadata": "Métadonnées",
   "settings.readingStatus": "Statut de lecture",
   "settings.archives": "Archives",
+  "settings.archives.desc": "Séries supprimées du disque mais conservées avec leur historique de lecture.",
   "settings.archives.count": "{{count}} série{{plural}} archivée{{plural}}",
   "settings.archives.loadError": "Erreur de chargement",
   "settings.archives.empty": "Aucune série archivée.",

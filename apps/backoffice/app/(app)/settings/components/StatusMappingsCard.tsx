@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, FormField, FormInput, FormSelect, Icon } from "@/app/components/ui";
+import { SettingsCard, Button, FormInput, FormSelect, Icon } from "@/app/components/ui";
 import { StatusMappingDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 
@@ -89,112 +89,103 @@ export function StatusMappingsCard({ initialStatusMappings, initialSeriesStatuse
   }
 
   return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Icon name="settings" size="md" />
-          {t("settings.statusMappings")}
-        </CardTitle>
-        <CardDescription>{t("settings.statusMappingsDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          {/* Create new target status */}
-          <div className="flex gap-2 items-center">
-            <FormInput
-              placeholder={t("settings.newTargetPlaceholder")}
-              value={newTargetName}
-              onChange={(e) => setNewTargetName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleCreateTarget(); }}
-              className="max-w-[250px]"
-            />
-            <Button
-              onClick={handleCreateTarget}
-              disabled={!newTargetName.trim() || allTargets.includes(newTargetName.trim().toLowerCase())}
-            >
-              <Icon name="plus" size="sm" />
-              {t("settings.createTargetStatus")}
-            </Button>
-          </div>
+    <SettingsCard icon="settings" title={t("settings.statusMappings")} description={t("settings.statusMappingsDesc")}>
+      {/* Create new target status */}
+      <div className="flex gap-2 items-center">
+        <FormInput
+          placeholder={t("settings.newTargetPlaceholder")}
+          value={newTargetName}
+          onChange={(e) => setNewTargetName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleCreateTarget(); }}
+          className="max-w-[250px]"
+        />
+        <Button
+          onClick={handleCreateTarget}
+          disabled={!newTargetName.trim() || allTargets.includes(newTargetName.trim().toLowerCase())}
+        >
+          <Icon name="plus" size="sm" />
+          {t("settings.createTargetStatus")}
+        </Button>
+      </div>
 
-          {/* Grouped by target status */}
-          {allTargets.map((target) => {
-            const items = grouped.get(target) || [];
-            return (
-              <div key={target} className="border border-border/50 rounded-lg p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-sm font-medium text-foreground">
-                    {statusLabel(target)}
-                  </span>
-                  <span className="text-xs text-muted-foreground font-mono">({target})</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {items.map((m) => (
-                    <span
-                      key={m.id}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted/50 text-sm font-mono"
-                    >
-                      {m.provider_status}
-                      <button
-                        type="button"
-                        onClick={() => handleUnmap(m.id)}
-                        className="ml-1 text-muted-foreground hover:text-destructive transition-colors"
-                        title={t("common.delete")}
-                      >
-                        <Icon name="x" size="sm" />
-                      </button>
-                    </span>
-                  ))}
-                  {items.length === 0 && (
-                    <span className="text-xs text-muted-foreground italic">{t("settings.noMappings")}</span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Unmapped provider statuses (null mapped_status + brand new from providers) */}
-          {(unmappedMappings.length > 0 || newProviderStatuses.length > 0) && (
-            <div className="border-t border-border/50 pt-4">
-              <h4 className="text-sm font-medium text-foreground mb-3">{t("settings.unmappedSection")}</h4>
-              <div className="space-y-2">
-                {unmappedMappings.map((m) => (
-                  <div key={m.id} className="flex items-center gap-2">
-                    <span className="text-sm font-mono bg-muted/50 px-2 py-1 rounded-md min-w-[120px]">{m.provider_status}</span>
-                    <Icon name="chevronRight" size="sm" />
-                    <FormSelect
-                      className="w-auto"
-                      value=""
-                      onChange={(e) => { if (e.target.value) handleAssign(m.provider_status, e.target.value); }}
-                    >
-                      <option value="">{t("settings.selectTargetStatus")}</option>
-                      {allTargets.map((s) => (
-                        <option key={s} value={s}>{statusLabel(s)}</option>
-                      ))}
-                    </FormSelect>
-                  </div>
-                ))}
-                {newProviderStatuses.map((ps) => (
-                  <div key={ps} className="flex items-center gap-2">
-                    <span className="text-sm font-mono bg-muted/50 px-2 py-1 rounded-md min-w-[120px]">{ps}</span>
-                    <Icon name="chevronRight" size="sm" />
-                    <FormSelect
-                      className="w-auto"
-                      value=""
-                      onChange={(e) => { if (e.target.value) handleAssign(ps, e.target.value); }}
-                    >
-                      <option value="">{t("settings.selectTargetStatus")}</option>
-                      {allTargets.map((s) => (
-                        <option key={s} value={s}>{statusLabel(s)}</option>
-                      ))}
-                    </FormSelect>
-                  </div>
-                ))}
-              </div>
+      {/* Grouped by target status */}
+      {allTargets.map((target) => {
+        const items = grouped.get(target) || [];
+        return (
+          <div key={target} className="settings-well rounded-xl px-3.5 py-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm font-medium text-foreground">
+                {statusLabel(target)}
+              </span>
+              <span className="text-xs text-muted-foreground font-mono">({target})</span>
             </div>
-          )}
+            <div className="flex flex-wrap gap-2">
+              {items.map((m) => (
+                <span
+                  key={m.id}
+                  className="inline-flex items-center gap-1 font-mono text-sm"
+                >
+                  {m.provider_status}
+                  <button
+                    type="button"
+                    onClick={() => handleUnmap(m.id)}
+                    className="ml-1 text-muted-foreground hover:text-destructive transition-colors"
+                    title={t("common.delete")}
+                  >
+                    <Icon name="x" size="sm" />
+                  </button>
+                </span>
+              ))}
+              {items.length === 0 && (
+                <span className="text-xs text-muted-foreground italic">{t("settings.noMappings")}</span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Unmapped provider statuses (null mapped_status + brand new from providers) */}
+      {(unmappedMappings.length > 0 || newProviderStatuses.length > 0) && (
+        <div className="pt-2">
+          <h4 className="text-sm font-semibold text-foreground mb-3">{t("settings.unmappedSection")}</h4>
+          <div className="space-y-2">
+            {unmappedMappings.map((m) => (
+              <div key={m.id} className="flex flex-wrap items-center gap-2">
+                <span className="settings-well shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 font-mono text-sm">{m.provider_status}</span>
+                <Icon name="chevronRight" size="sm" className="shrink-0 text-muted-foreground" />
+                <div className="w-full min-w-0 sm:w-56">
+                  <FormSelect
+                    value=""
+                    onChange={(e) => { if (e.target.value) handleAssign(m.provider_status, e.target.value); }}
+                  >
+                    <option value="">{t("settings.selectTargetStatus")}</option>
+                    {allTargets.map((s) => (
+                      <option key={s} value={s}>{statusLabel(s)}</option>
+                    ))}
+                  </FormSelect>
+                </div>
+              </div>
+            ))}
+            {newProviderStatuses.map((ps) => (
+              <div key={ps} className="flex flex-wrap items-center gap-2">
+                <span className="settings-well shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 font-mono text-sm">{ps}</span>
+                <Icon name="chevronRight" size="sm" className="shrink-0 text-muted-foreground" />
+                <div className="w-full min-w-0 sm:w-56">
+                  <FormSelect
+                    value=""
+                    onChange={(e) => { if (e.target.value) handleAssign(ps, e.target.value); }}
+                  >
+                    <option value="">{t("settings.selectTargetStatus")}</option>
+                    {allTargets.map((s) => (
+                      <option key={s} value={s}>{statusLabel(s)}</option>
+                    ))}
+                  </FormSelect>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-      </CardContent>
-    </Card>
+      )}
+    </SettingsCard>
   );
 }

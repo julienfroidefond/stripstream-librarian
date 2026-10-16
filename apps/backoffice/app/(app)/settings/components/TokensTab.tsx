@@ -1,7 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { listTokens, createToken, revokeToken, deleteToken, updateToken, fetchUsers, createUser, deleteUser, updateUser, TokenDto, UserDto, fetchAllGenres, fetchUserGenreRestrictions, setUserGenreRestrictions } from "@/lib/api";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, Badge, FormField, FormInput, FormSelect, FormRow } from "@/app/components/ui";
+import { SettingsCard, Button, Badge, FormField, FormInput, FormSelect, FormRow } from "@/app/components/ui";
 import { TokenUserSelect } from "@/app/components/TokenUserSelect";
 import { UsernameEdit } from "@/app/components/UsernameEdit";
 import { UserGenreRestrictions } from "@/app/components/UserGenreRestrictions";
@@ -93,39 +93,31 @@ export async function TokensTab({ createdToken }: { createdToken?: string }) {
   return (
     <>
       {/* ── Lecteurs ─────────────────────────────────────────── */}
-      <div className="mb-2">
-        <h2 className="text-xl font-semibold text-foreground">{t("users.title")}</h2>
-      </div>
+      <h2 className="mb-4 text-lg font-semibold tracking-tight text-foreground">{t("users.title")}</h2>
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>{t("users.createNew")}</CardTitle>
-          <CardDescription>{t("users.createDescription")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form action={createUserAction}>
-            <FormRow>
-              <FormField className="flex-1 min-w-48">
-                <FormInput name="username" placeholder={t("users.username")} required autoComplete="off" />
-              </FormField>
-              <Button type="submit">{t("users.createButton")}</Button>
-            </FormRow>
-          </form>
-        </CardContent>
-      </Card>
+      <SettingsCard title={t("users.createNew")} description={t("users.createDescription")}>
+        <form action={createUserAction}>
+          <FormRow>
+            <FormField className="flex-1 min-w-48">
+              <FormInput name="username" placeholder={t("users.username")} required autoComplete="off" />
+            </FormField>
+            <Button type="submit">{t("users.createButton")}</Button>
+          </FormRow>
+        </form>
+      </SettingsCard>
 
-      <Card className="overflow-hidden mb-10">
+      <SettingsCard bodyClassName="p-0">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-border/60 bg-muted/50">
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("users.name")}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("users.tokenCount")}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("status.read")}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("status.reading")}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("users.createdAt")}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("users.blockedGenres")}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("users.actions")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">{t("users.name")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">{t("users.tokenCount")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">{t("status.read")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">{t("status.reading")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">{t("users.createdAt")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">{t("users.blockedGenres")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">{t("users.actions")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
@@ -214,67 +206,53 @@ export async function TokensTab({ createdToken }: { createdToken?: string }) {
             </tbody>
           </table>
         </div>
-      </Card>
+      </SettingsCard>
 
       {/* ── Tokens API ───────────────────────────────────────── */}
-      <div className="mb-2">
-        <h2 className="text-xl font-semibold text-foreground">{t("tokens.apiTokens")}</h2>
-      </div>
+      <h2 className="mb-4 mt-4 text-lg font-semibold tracking-tight text-foreground">{t("tokens.apiTokens")}</h2>
 
       {createdToken && (
-        <Card className="mb-6 border-success/50 bg-success/5">
-          <CardHeader>
-            <CardTitle className="text-success">{t("tokens.created")}</CardTitle>
-            <CardDescription>{t("tokens.createdDescription")}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <pre className="p-4 bg-background rounded-lg text-sm font-mono text-foreground overflow-x-auto border">{createdToken}</pre>
-          </CardContent>
-        </Card>
+        <SettingsCard className="border-success/50 bg-success/5" title={t("tokens.created")} description={t("tokens.createdDescription")}>
+          <pre className="p-4 bg-background rounded-lg text-sm font-mono text-foreground overflow-x-auto border">{createdToken}</pre>
+        </SettingsCard>
       )}
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>{t("tokens.createNew")}</CardTitle>
-          <CardDescription>{t("tokens.createDescription")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form action={createTokenAction}>
-            <FormRow>
-              <FormField className="flex-1 min-w-48">
-                <FormInput name="name" placeholder={t("tokens.tokenName")} required autoComplete="off" />
-              </FormField>
-              <FormField className="w-32">
-                <FormSelect name="scope" defaultValue="read">
-                  <option value="read">{t("tokens.scopeRead")}</option>
-                  <option value="admin">{t("tokens.scopeAdmin")}</option>
-                </FormSelect>
-              </FormField>
-              <FormField className="w-48">
-                <FormSelect name="user_id" defaultValue="">
-                  <option value="">{t("tokens.noUser")}</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>{user.username}</option>
-                  ))}
-                </FormSelect>
-              </FormField>
-              <Button type="submit">{t("tokens.createButton")}</Button>
-            </FormRow>
-          </form>
-        </CardContent>
-      </Card>
+      <SettingsCard title={t("tokens.createNew")} description={t("tokens.createDescription")}>
+        <form action={createTokenAction}>
+          <FormRow>
+            <FormField className="flex-1 min-w-48">
+              <FormInput name="name" placeholder={t("tokens.tokenName")} required autoComplete="off" />
+            </FormField>
+            <FormField className="w-32">
+              <FormSelect name="scope" defaultValue="read">
+                <option value="read">{t("tokens.scopeRead")}</option>
+                <option value="admin">{t("tokens.scopeAdmin")}</option>
+              </FormSelect>
+            </FormField>
+            <FormField className="w-48">
+              <FormSelect name="user_id" defaultValue="">
+                <option value="">{t("tokens.noUser")}</option>
+                {users.map((user) => (
+                  <option key={user.id} value={user.id}>{user.username}</option>
+                ))}
+              </FormSelect>
+            </FormField>
+            <Button type="submit">{t("tokens.createButton")}</Button>
+          </FormRow>
+        </form>
+      </SettingsCard>
 
-      <Card className="overflow-hidden">
+      <SettingsCard bodyClassName="p-0">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-border/60 bg-muted/50">
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("tokens.name")}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("tokens.user")}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("tokens.scope")}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("tokens.prefix")}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("tokens.status")}</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("tokens.actions")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">{t("tokens.name")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">{t("tokens.user")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">{t("tokens.scope")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">{t("tokens.prefix")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">{t("tokens.status")}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">{t("tokens.actions")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
@@ -329,7 +307,7 @@ export async function TokensTab({ createdToken }: { createdToken?: string }) {
             </tbody>
           </table>
         </div>
-      </Card>
+      </SettingsCard>
     </>
   );
 }

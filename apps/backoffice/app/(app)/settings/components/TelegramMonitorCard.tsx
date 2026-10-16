@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Card, CardHeader, CardTitle, CardDescription, CardContent,
-  Button, SettingsField, FormInput, FormSelect, FormLabel, Icon, Tooltip, toast,
+  SettingsCard, SettingsRow,
+  Button, FormInput, FormSelect, FormLabel, Icon, Tooltip, toast,
 } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 import type { LibraryDto, TelegramMonitorStatus, TelegramSourceDto } from "@/lib/api";
@@ -254,254 +254,271 @@ export function TelegramMonitorCard({
   const authorized = status?.authorized ?? false;
 
   return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Icon name="download" size="md" />
-          {t("telegramMonitor.title")}
-        </CardTitle>
-        <CardDescription>{t("telegramMonitor.desc")}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
+    <SettingsCard icon="download" title={t("telegramMonitor.title")} description={t("telegramMonitor.desc")}>
 
-          {/* Collapsible credentials section */}
-          <div className="border rounded-lg overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setCredentialsOpen(o => !o)}
-              className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium hover:bg-accent/50 transition-colors"
-            >
-              <span className="flex items-center gap-2">
-                <Icon name="key" size="sm" />
-                {t("telegramMonitor.apiCredentials")}
-              </span>
-              <span className="flex items-center gap-2">
-                {authorized ? (
-                  <span className="text-xs text-success font-normal">{t("telegramMonitor.authorized")}</span>
-                ) : (
-                  <span className="text-xs text-muted-foreground font-normal">{t("telegramMonitor.notAuthorized")}</span>
-                )}
-                <Icon name={credentialsOpen ? "chevronUp" : "chevronDown"} size="sm" className="text-muted-foreground" />
-              </span>
-            </button>
-
-            {credentialsOpen && (
-              <div className="px-4 pb-4 pt-1 border-t space-y-3">
-                <div className="flex gap-4 pt-2">
-                  <SettingsField className="w-40" label={t("telegramMonitor.apiId")}>
-                    <FormInput
-                      type="text"
-                      placeholder={t("telegramMonitor.apiIdPlaceholder")}
-                      value={apiId}
-                      onChange={e => setApiId(e.target.value)}
-                    />
-                  </SettingsField>
-                  <SettingsField className="flex-1" label={t("telegramMonitor.apiHash")}>
-                    <FormInput
-                      type="password"
-                      autoComplete="off"
-                      placeholder={t("telegramMonitor.apiHashPlaceholder")}
-                      value={apiHash}
-                      onChange={e => setApiHash(e.target.value)}
-                    />
-                  </SettingsField>
-                  <SettingsField className="w-48" label={t("telegramMonitor.phone")}>
-                    <FormInput
-                      type="text"
-                      placeholder={t("telegramMonitor.phonePlaceholder")}
-                      value={phone}
-                      onChange={e => setPhone(e.target.value)}
-                    />
-                  </SettingsField>
-                </div>
-                <p className="text-xs text-muted-foreground">{t("telegramMonitor.apiHelp")}</p>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <Button
-                    onClick={handleSaveSettings}
-                    disabled={savingSettings || !apiId || !apiHash || !phone}
-                  >
-                    {t("telegramMonitor.saveSettings")}
-                  </Button>
-
-                  {status?.configured && !authorized && !codeSent && (
-                    <Button onClick={handleSendCode} disabled={sendingCode} variant="secondary">
-                      {sendingCode ? t("telegramMonitor.sending") : t("telegramMonitor.sendCode")}
-                    </Button>
-                  )}
-
-                  {status?.configured && !authorized && codeSent && (
-                    <div className="flex items-end gap-3">
-                      <SettingsField className="w-40" label={t("telegramMonitor.enterCode")}>
-                        <FormInput
-                          type="text"
-                          placeholder={t("telegramMonitor.codePlaceholder")}
-                          value={code}
-                          onChange={e => setCode(e.target.value)}
-                          onKeyDown={e => e.key === "Enter" && handleVerify()}
-                        />
-                      </SettingsField>
-                      <Button onClick={handleVerify} disabled={verifying || !code}>
-                        {verifying ? t("telegramMonitor.verifying") : t("telegramMonitor.verify")}
-                      </Button>
-                    </div>
-                  )}
-
-                  {authorized && (
-                    <Button variant="ghost" onClick={handleDisconnect} disabled={disconnecting}>
-                      {disconnecting ? t("telegramMonitor.disconnecting") : t("telegramMonitor.disconnect")}
-                    </Button>
-                  )}
-                </div>
-              </div>
+      {/* Collapsible credentials section */}
+      <div className="border rounded-lg overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setCredentialsOpen(o => !o)}
+          className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium hover:bg-accent/50 transition-colors"
+        >
+          <span className="flex items-center gap-2">
+            <Icon name="key" size="sm" />
+            {t("telegramMonitor.apiCredentials")}
+          </span>
+          <span className="flex items-center gap-2">
+            {authorized ? (
+              <span className="text-xs text-success font-normal">{t("telegramMonitor.authorized")}</span>
+            ) : (
+              <span className="text-xs text-muted-foreground font-normal">{t("telegramMonitor.notAuthorized")}</span>
             )}
+            <Icon name={credentialsOpen ? "chevronUp" : "chevronDown"} size="sm" className="text-muted-foreground" />
+          </span>
+        </button>
+
+        {credentialsOpen && (
+          <div className="px-4 pb-4 pt-1 border-t space-y-3">
+            <SettingsRow label={t("telegramMonitor.apiId")} htmlFor="tg-api-id">
+              <FormInput
+                id="tg-api-id"
+                type="text"
+                placeholder={t("telegramMonitor.apiIdPlaceholder")}
+                value={apiId}
+                onChange={e => setApiId(e.target.value)}
+              />
+            </SettingsRow>
+            <SettingsRow label={t("telegramMonitor.apiHash")} htmlFor="tg-api-hash">
+              <FormInput
+                id="tg-api-hash"
+                type="password"
+                autoComplete="off"
+                placeholder={t("telegramMonitor.apiHashPlaceholder")}
+                value={apiHash}
+                onChange={e => setApiHash(e.target.value)}
+              />
+            </SettingsRow>
+            <SettingsRow label={t("telegramMonitor.phone")} htmlFor="tg-phone">
+              <FormInput
+                id="tg-phone"
+                type="text"
+                placeholder={t("telegramMonitor.phonePlaceholder")}
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+              />
+            </SettingsRow>
+            <p className="text-xs text-muted-foreground">{t("telegramMonitor.apiHelp")}</p>
+            <div className="flex items-center gap-3 flex-wrap">
+              <Button
+                onClick={handleSaveSettings}
+                disabled={savingSettings || !apiId || !apiHash || !phone}
+              >
+                {t("telegramMonitor.saveSettings")}
+              </Button>
+
+              {status?.configured && !authorized && !codeSent && (
+                <Button onClick={handleSendCode} disabled={sendingCode} variant="secondary">
+                  {sendingCode ? t("telegramMonitor.sending") : t("telegramMonitor.sendCode")}
+                </Button>
+              )}
+
+              {status?.configured && !authorized && codeSent && (
+                <SettingsRow
+                  className="w-full sm:max-w-sm"
+                  label={t("telegramMonitor.enterCode")}
+                  htmlFor="tg-code"
+                  controlClassName="sm:max-w-none"
+                >
+                  <div className="flex items-end gap-3">
+                    <FormInput
+                      id="tg-code"
+                      type="text"
+                      placeholder={t("telegramMonitor.codePlaceholder")}
+                      value={code}
+                      onChange={e => setCode(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && handleVerify()}
+                    />
+                    <Button onClick={handleVerify} disabled={verifying || !code}>
+                      {verifying ? t("telegramMonitor.verifying") : t("telegramMonitor.verify")}
+                    </Button>
+                  </div>
+                </SettingsRow>
+              )}
+
+              {authorized && (
+                <Button variant="ghost" onClick={handleDisconnect} disabled={disconnecting}>
+                  {disconnecting ? t("telegramMonitor.disconnecting") : t("telegramMonitor.disconnect")}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Options: sync interval + concurrent downloads */}
+      {authorized && (
+        <>
+          <SettingsRow
+            label={(
+              <span className="flex items-center gap-1">
+                {t("telegramMonitor.syncInterval")}
+                <Tooltip label={t("telegramMonitor.syncIntervalHelp")}>
+                  <Icon name="info" size="sm" className="text-muted-foreground/60 cursor-default" />
+                </Tooltip>
+              </span>
+            )}
+          >
+            <FormSelect
+              value={syncInterval}
+              onChange={e => handleSaveSyncInterval(e.target.value)}
+              className="w-48"
+            >
+              {SYNC_INTERVAL_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </FormSelect>
+          </SettingsRow>
+          <SettingsRow
+            label={(
+              <span className="flex items-center gap-1">
+                {t("settings.concurrentTelegramDownloads")}
+                <Tooltip label={t("settings.concurrentTelegramDownloadsHelp")}>
+                  <Icon name="info" size="sm" className="text-muted-foreground/60 cursor-default" />
+                </Tooltip>
+              </span>
+            )}
+          >
+            <FormInput
+              type="number"
+              min={1}
+              max={10}
+              value={concurrentDownloads}
+              onChange={e => setConcurrentDownloads(Math.max(1, parseInt(e.target.value) || 2))}
+              onBlur={() => onSaveConcurrentDownloads?.(concurrentDownloads)}
+              className="w-20"
+            />
+          </SettingsRow>
+          <SettingsRow
+            label={(
+              <span className="flex items-center gap-1">
+                {t("settings.telegramDownloadConnections")}
+                <Tooltip label={t("settings.telegramDownloadConnectionsHelp")}>
+                  <Icon name="info" size="sm" className="text-muted-foreground/60 cursor-default" />
+                </Tooltip>
+              </span>
+            )}
+          >
+            <FormInput
+              type="number"
+              min={1}
+              max={8}
+              value={downloadConnections}
+              onChange={e => setDownloadConnections(Math.min(8, Math.max(1, parseInt(e.target.value) || 4)))}
+              onBlur={() => onSaveDownloadConnections?.(downloadConnections)}
+              className="w-20"
+            />
+          </SettingsRow>
+        </>
+      )}
+
+      {/* Monitored channels */}
+      {authorized && (
+        <div className="pt-2">
+          <h3 className="text-sm font-semibold text-foreground">{t("telegramMonitor.sourcesTitle")}</h3>
+
+          <div className="mt-3 space-y-2">
+            {sources.length === 0 && (
+              <p className="text-sm text-muted-foreground">{t("telegramMonitor.noSources")}</p>
+            )}
+            {sources.map(src => (
+              <div
+                key={src.id}
+                className="settings-well flex items-center gap-3 rounded-full px-3.5 py-2 text-sm"
+              >
+                <span className="font-mono">@{src.channel_username}</span>
+                {src.channel_title && <span className="text-muted-foreground">{src.channel_title}</span>}
+                <button
+                  type="button"
+                  onClick={() => handleDeleteSource(src.id)}
+                  className="ml-auto text-xs text-destructive transition-colors hover:text-destructive/80"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
           </div>
 
-          {/* Options: sync interval + concurrent downloads */}
-          {authorized && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-4">
-                <FormLabel variant="settings" className="flex items-center gap-1 w-72 shrink-0">
-                  {t("telegramMonitor.syncInterval")}
-                  <Tooltip label={t("telegramMonitor.syncIntervalHelp")}>
-                    <Icon name="info" size="sm" className="text-muted-foreground/60 cursor-default" />
-                  </Tooltip>
-                </FormLabel>
-                <FormSelect
-                  value={syncInterval}
-                  onChange={e => handleSaveSyncInterval(e.target.value)}
-                  className="w-48"
-                >
-                  {SYNC_INTERVAL_OPTIONS.map(option => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </FormSelect>
-              </div>
-              <div className="flex items-center gap-4">
-                <FormLabel variant="settings" className="flex items-center gap-1 w-72 shrink-0">
-                  {t("settings.concurrentTelegramDownloads")}
-                  <Tooltip label={t("settings.concurrentTelegramDownloadsHelp")}>
-                    <Icon name="info" size="sm" className="text-muted-foreground/60 cursor-default" />
-                  </Tooltip>
-                </FormLabel>
+          {/* Add channel form */}
+          <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem_auto] sm:items-end">
+            <div>
+              <FormLabel variant="settings" htmlFor="tg-new-channel">{t("telegramMonitor.addChannel")}</FormLabel>
+              <div className="relative" ref={autocompleteRef}>
                 <FormInput
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={concurrentDownloads}
-                  onChange={e => setConcurrentDownloads(Math.max(1, parseInt(e.target.value) || 2))}
-                  onBlur={() => onSaveConcurrentDownloads?.(concurrentDownloads)}
-                  className="w-20"
+                  id="tg-new-channel"
+                  type="search"
+                  placeholder={t("telegramMonitor.channelSearchPlaceholder")}
+                  value={newChannel}
+                  onChange={e => handleChannelInput(e.target.value)}
+                  onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
+                  autoComplete="off"
+                  data-lpignore="true"
+                  data-1p-ignore
+                  data-bwignore
                 />
-              </div>
-              <div className="flex items-center gap-4">
-                <FormLabel variant="settings" className="flex items-center gap-1 w-72 shrink-0">
-                  {t("settings.telegramDownloadConnections")}
-                  <Tooltip label={t("settings.telegramDownloadConnectionsHelp")}>
-                    <Icon name="info" size="sm" className="text-muted-foreground/60 cursor-default" />
-                  </Tooltip>
-                </FormLabel>
-                <FormInput
-                  type="number"
-                  min={1}
-                  max={8}
-                  value={downloadConnections}
-                  onChange={e => setDownloadConnections(Math.min(8, Math.max(1, parseInt(e.target.value) || 4)))}
-                  onBlur={() => onSaveDownloadConnections?.(downloadConnections)}
-                  className="w-20"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Monitored channels */}
-          {authorized && (
-            <div className="space-y-3">
-              <h4 className="text-sm font-semibold">{t("telegramMonitor.sourcesTitle")}</h4>
-
-              {sources.length === 0 && (
-                <p className="text-sm text-muted-foreground">{t("telegramMonitor.noSources")}</p>
-              )}
-              {sources.map(src => (
-                <div key={src.id} className="flex items-center gap-3 text-sm">
-                  <span className="font-mono">@{src.channel_username}</span>
-                  {src.channel_title && <span className="text-muted-foreground">{src.channel_title}</span>}
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteSource(src.id)}
-                    className="ml-auto text-destructive hover:text-destructive/80 text-xs"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-
-              {/* Add channel form */}
-              <div className="flex items-end gap-3">
-                <SettingsField className="flex-1" label={t("telegramMonitor.addChannel")}>
-                  <div className="relative" ref={autocompleteRef}>
-                    <FormInput
-                      type="search"
-                      placeholder={t("telegramMonitor.channelSearchPlaceholder")}
-                      value={newChannel}
-                      onChange={e => handleChannelInput(e.target.value)}
-                      onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
-                      autoComplete="off"
-                      data-lpignore="true"
-                      data-1p-ignore
-                      data-bwignore
-                    />
-                    {loadingSuggestions && (
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                        <Icon name="spinner" size="sm" className="animate-spin text-muted-foreground" />
-                      </div>
-                    )}
-                    {showSuggestions && suggestions.length > 0 && (
-                      <ul className="absolute z-50 mt-1 w-full bg-popover border border-border rounded-md shadow-lg max-h-60 overflow-auto">
-                        {suggestions.map((s, i) => (
-                          <li
-                            key={i}
-                            className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-accent text-sm"
-                            onMouseDown={e => { e.preventDefault(); selectSuggestion(s); }}
-                          >
-                            <span className="flex-1 truncate font-medium">{s.title}</span>
-                            {s.username && (
-                              <span className="text-xs text-muted-foreground font-mono">@{s.username}</span>
-                            )}
-                            <span className="text-xs text-muted-foreground shrink-0">
-                              {s.kind === "channel" ? t("telegramMonitor.channelKindChannel") : t("telegramMonitor.channelKindGroup")}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                {loadingSuggestions && (
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                    <Icon name="spinner" size="sm" className="animate-spin text-muted-foreground" />
                   </div>
-                </SettingsField>
-                <SettingsField className="w-48" label={t("telegramMonitor.library")}>
-                  <FormSelect value={newChannelLibrary} onChange={e => setNewChannelLibrary(e.target.value)}>
-                    <option value="">{t("telegramMonitor.noLibrary")}</option>
-                    {libraries.map(lib => (
-                      <option key={lib.id} value={lib.id}>{lib.name}</option>
+                )}
+                {showSuggestions && suggestions.length > 0 && (
+                  <ul className="absolute z-50 mt-1 w-full bg-popover border border-border rounded-md shadow-lg max-h-60 overflow-auto">
+                    {suggestions.map((s, i) => (
+                      <li
+                        key={i}
+                        className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-accent text-sm"
+                        onMouseDown={e => { e.preventDefault(); selectSuggestion(s); }}
+                      >
+                        <span className="flex-1 truncate font-medium">{s.title}</span>
+                        {s.username && (
+                          <span className="text-xs text-muted-foreground font-mono">@{s.username}</span>
+                        )}
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {s.kind === "channel" ? t("telegramMonitor.channelKindChannel") : t("telegramMonitor.channelKindGroup")}
+                        </span>
+                      </li>
                     ))}
-                  </FormSelect>
-                </SettingsField>
-                <Button
-                  onClick={handleAddSource}
-                  disabled={addingSource || !newChannel}
-                >
-                  {addingSource ? t("telegramMonitor.adding") : t("telegramMonitor.add")}
-                </Button>
+                  </ul>
+                )}
               </div>
-
-              {authorized && sources.length > 0 && (
-                <p className="text-xs text-muted-foreground pt-1">
-                  {t("telegramMonitor.seeDownloadsPage")}
-                </p>
-              )}
             </div>
+            <div>
+              <FormLabel variant="settings" htmlFor="tg-new-channel-library">{t("telegramMonitor.library")}</FormLabel>
+              <FormSelect
+                id="tg-new-channel-library"
+                value={newChannelLibrary}
+                onChange={e => setNewChannelLibrary(e.target.value)}
+              >
+                <option value="">{t("telegramMonitor.noLibrary")}</option>
+                {libraries.map(lib => (
+                  <option key={lib.id} value={lib.id}>{lib.name}</option>
+                ))}
+              </FormSelect>
+            </div>
+            <Button
+              onClick={handleAddSource}
+              disabled={addingSource || !newChannel}
+            >
+              {addingSource ? t("telegramMonitor.adding") : t("telegramMonitor.add")}
+            </Button>
+          </div>
+
+          {authorized && sources.length > 0 && (
+            <p className="text-xs text-muted-foreground pt-2">
+              {t("telegramMonitor.seeDownloadsPage")}
+            </p>
           )}
         </div>
-      </CardContent>
-    </Card>
+      )}
+    </SettingsCard>
   );
 }

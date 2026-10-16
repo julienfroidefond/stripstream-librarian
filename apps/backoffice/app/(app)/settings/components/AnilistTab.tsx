@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, SettingsField, FormInput, Icon } from "@/app/components/ui";
+import { SettingsCard, SettingsRow, Button, FormInput, Icon } from "@/app/components/ui";
 import { UserDto, AnilistStatusDto, AnilistSyncReportDto, AnilistPullReportDto, AnilistSyncPreviewItemDto, AnilistSyncItemDto, AnilistPullItemDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 import { useIsMounted } from "@/lib/useIsMounted";
@@ -126,272 +126,254 @@ export function AnilistTab({
 
   return (
     <>
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Icon name="link" size="md" />
-            {t("settings.anilistTitle")}
-          </CardTitle>
-          <CardDescription>{t("settings.anilistDesc")}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">{t("settings.anilistConnectDesc")}</p>
-          {/* Redirect URL info */}
-          <div className="rounded-md bg-muted/50 border px-3 py-2 text-xs text-muted-foreground space-y-1">
-            <p className="font-medium text-foreground">{t("settings.anilistRedirectUrlLabel")}</p>
-            <code className="select-all font-mono">{origin ? `${origin}/anilist/callback` : "/anilist/callback"}</code>
-            <p>{t("settings.anilistRedirectUrlHint")}</p>
-          </div>
-          <div className="flex gap-4">
-            <SettingsField className="flex-1" label={t("settings.anilistClientId")}>
+      <SettingsCard icon="link" title={t("settings.anilistTitle")} description={t("settings.anilistDesc")}>
+        <p className="text-sm text-muted-foreground">{t("settings.anilistConnectDesc")}</p>
+        {/* Redirect URL info */}
+        <div className="settings-well space-y-1 rounded-xl px-3.5 py-2.5 text-xs text-muted-foreground">
+          <p className="font-medium text-foreground">{t("settings.anilistRedirectUrlLabel")}</p>
+          <code className="select-all font-mono">{origin ? `${origin}/anilist/callback` : "/anilist/callback"}</code>
+          <p>{t("settings.anilistRedirectUrlHint")}</p>
+        </div>
+        <SettingsRow label={t("settings.anilistClientId")} htmlFor="anilist-client-id">
+          <FormInput
+            id="anilist-client-id"
+            type="text"
+            autoComplete="off"
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+            placeholder={t("settings.anilistClientIdPlaceholder")}
+          />
+        </SettingsRow>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button onClick={handleConnect} disabled={!clientId}>
+            <Icon name="link" size="sm" className="mr-2" />
+            {t("settings.anilistConnectButton")}
+          </Button>
+          <Button onClick={handleTestConnection} disabled={isTesting || !token} variant="secondary">
+            {isTesting ? (
+              <><Icon name="spinner" size="sm" className="animate-spin mr-2" />{t("settings.testing")}</>
+            ) : (
+              <><Icon name="refresh" size="sm" className="mr-2" />{t("settings.anilistTestConnection")}</>
+            )}
+          </Button>
+          {viewer && (
+            <span className="text-sm font-medium text-success">
+              {t("settings.anilistConnected")} <strong>{viewer.username}</strong>
+              {" · "}
+              <a href={viewer.site_url} target="_blank" rel="noopener noreferrer" className="underline">AniList</a>
+            </span>
+          )}
+          {token && !viewer && (
+            <span className="text-sm text-muted-foreground">{t("settings.anilistTokenPresent")}</span>
+          )}
+          {testError && <span className="text-sm text-destructive">{testError}</span>}
+        </div>
+        <details className="group">
+          <summary className="cursor-pointer select-none text-sm text-muted-foreground hover:text-foreground">
+            {t("settings.anilistManualToken")}
+          </summary>
+          <div className="mt-3 space-y-3">
+            <SettingsRow label={t("settings.anilistToken")} htmlFor="anilist-token">
               <FormInput
+                id="anilist-token"
+                type="password"
+                autoComplete="off"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder={t("settings.anilistTokenPlaceholder")}
+              />
+            </SettingsRow>
+            <SettingsRow label={t("settings.anilistUserId")} htmlFor="anilist-user-id">
+              <FormInput
+                id="anilist-user-id"
                 type="text"
                 autoComplete="off"
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                placeholder={t("settings.anilistClientIdPlaceholder")}
+                value={userId}
+                onChange={(e) => setUserId(e.target.value)}
+                placeholder={t("settings.anilistUserIdPlaceholder")}
               />
-            </SettingsField>
-          </div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <Button onClick={handleConnect} disabled={!clientId}>
-              <Icon name="link" size="sm" className="mr-2" />
-              {t("settings.anilistConnectButton")}
+            </SettingsRow>
+            <Button onClick={handleSaveToken} disabled={!token}>
+              {t("common.save")}
             </Button>
-            <Button onClick={handleTestConnection} disabled={isTesting || !token} variant="secondary">
-              {isTesting ? (
-                <><Icon name="spinner" size="sm" className="animate-spin mr-2" />{t("settings.testing")}</>
-              ) : (
-                <><Icon name="refresh" size="sm" className="mr-2" />{t("settings.anilistTestConnection")}</>
-              )}
-            </Button>
-            {viewer && (
-              <span className="text-sm text-success font-medium">
-                {t("settings.anilistConnected")} <strong>{viewer.username}</strong>
-                {" · "}
-                <a href={viewer.site_url} target="_blank" rel="noopener noreferrer" className="underline">AniList</a>
-              </span>
-            )}
-            {token && !viewer && (
-              <span className="text-sm text-muted-foreground">{t("settings.anilistTokenPresent")}</span>
-            )}
-            {testError && <span className="text-sm text-destructive">{testError}</span>}
           </div>
-          <details className="group">
-            <summary className="text-sm text-muted-foreground cursor-pointer hover:text-foreground select-none">
-              {t("settings.anilistManualToken")}
-            </summary>
-            <div className="mt-3 space-y-3">
-              <div className="flex gap-4">
-                <SettingsField className="flex-1" label={t("settings.anilistToken")}>
-                  <FormInput
-                    type="password"
-                    autoComplete="off"
-                    value={token}
-                    onChange={(e) => setToken(e.target.value)}
-                    placeholder={t("settings.anilistTokenPlaceholder")}
-                  />
-                </SettingsField>
-                <SettingsField className="flex-1" label={t("settings.anilistUserId")}>
-                  <FormInput
-                    type="text"
-                    autoComplete="off"
-                    value={userId}
-                    onChange={(e) => setUserId(e.target.value)}
-                    placeholder={t("settings.anilistUserIdPlaceholder")}
-                  />
-                </SettingsField>
-              </div>
-              <Button onClick={handleSaveToken} disabled={!token}>
-                {t("common.save")}
-              </Button>
-            </div>
-          </details>
-          <div className="border-t border-border/50 pt-4 mt-2">
-            <p className="text-sm font-medium text-foreground mb-1">{t("settings.anilistLocalUserTitle")}</p>
-            <p className="text-xs text-muted-foreground mb-3">{t("settings.anilistLocalUserDesc")}</p>
-            <div className="flex items-center gap-3">
-              <select
-                value={localUserId}
-                onChange={(e) => {
-                  const newLocalUserId = e.target.value;
-                  setLocalUserId(newLocalUserId);
-                  handleUpdateSetting("anilist", {
-                    ...buildAnilistSettings(),
-                    local_user_id: newLocalUserId || undefined,
-                  });
-                }}
-                autoComplete="off"
-                className="flex-1 text-sm border border-border rounded-lg px-3 py-2.5 bg-background focus:outline-none focus:ring-2 focus:ring-ring h-10"
-              >
-                <option value="">{t("settings.anilistLocalUserNone")}</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>{u.username}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+        </details>
+        <SettingsRow
+          label={t("settings.anilistLocalUserTitle")}
+          description={t("settings.anilistLocalUserDesc")}
+          controlClassName="sm:max-w-none"
+        >
+          <select
+            value={localUserId}
+            onChange={(e) => {
+              const newLocalUserId = e.target.value;
+              setLocalUserId(newLocalUserId);
+              handleUpdateSetting("anilist", {
+                ...buildAnilistSettings(),
+                local_user_id: newLocalUserId || undefined,
+              });
+            }}
+            autoComplete="off"
+            className="h-10 w-full px-3 py-2.5 text-sm sm:max-w-md"
+          >
+            <option value="">{t("settings.anilistLocalUserNone")}</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>{u.username}</option>
+            ))}
+          </select>
+        </SettingsRow>
+      </SettingsCard>
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Icon name="refresh" size="md" />
-            {t("settings.anilistSyncTitle")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">{t("settings.anilistSyncDesc")}</p>
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button onClick={handlePreview} disabled={isPreviewing} variant="secondary">
-                  {isPreviewing ? (
-                    <><Icon name="spinner" size="sm" className="animate-spin mr-2" />{t("settings.anilistPreviewing")}</>
-                  ) : (
-                    <><Icon name="eye" size="sm" className="mr-2" />{t("settings.anilistPreviewButton")}</>
-                  )}
-                </Button>
-                <Button onClick={handleSync} disabled={isSyncing}>
-                  {isSyncing ? (
-                    <><Icon name="spinner" size="sm" className="animate-spin mr-2" />{t("settings.anilistSyncing")}</>
-                  ) : (
-                    <><Icon name="refresh" size="sm" className="mr-2" />{t("settings.anilistSyncButton")}</>
-                  )}
-                </Button>
-              </div>
-              {syncReport && (
-                <div className="mt-2 border rounded-lg overflow-hidden">
-                  <div className="px-4 py-2 bg-muted/50 flex items-center gap-3">
-                    <span className="text-sm text-success font-medium">{t("settings.anilistSynced", { count: String(syncReport.synced) })}</span>
-                    {syncReport.skipped > 0 && <span className="text-sm text-muted-foreground">{t("settings.anilistSkipped", { count: String(syncReport.skipped) })}</span>}
-                    {syncReport.errors.length > 0 && <span className="text-sm text-destructive">{t("settings.anilistErrors", { count: String(syncReport.errors.length) })}</span>}
-                  </div>
-                  {syncReport.items.length > 0 && (
-                    <div className="divide-y max-h-60 overflow-y-auto">
-                      {syncReport.items.map((item: AnilistSyncItemDto) => (
-                        <div key={item.series_name} className="flex items-center justify-between px-4 py-2 text-sm">
-                          <a
-                            href={item.anilist_url ?? `https://anilist.co/manga/`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="truncate font-medium hover:underline min-w-0 mr-3"
-                          >
-                            {item.anilist_title ?? item.series_name}
-                          </a>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                              item.status === "COMPLETED" ? "bg-success/15 text-success" :
-                              item.status === "CURRENT" ? "bg-info/15 text-info" :
-                              "bg-muted text-muted-foreground"
-                            }`}>{item.status}</span>
-                            {item.progress_volumes > 0 && (
-                              <span className="text-xs text-muted-foreground">{item.progress_volumes} vol.</span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {syncReport.errors.map((err: string, i: number) => (
-                    <p key={i} className="text-xs text-destructive px-4 py-1 border-t">{err}</p>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">{t("settings.anilistPullDesc")}</p>
-              <Button onClick={handlePull} disabled={isPulling}>
-                {isPulling ? (
-                  <><Icon name="spinner" size="sm" className="animate-spin mr-2" />{t("settings.anilistPulling")}</>
+      <SettingsCard icon="refresh" title={t("settings.anilistSyncTitle")}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">{t("settings.anilistSyncDesc")}</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button onClick={handlePreview} disabled={isPreviewing} variant="secondary">
+                {isPreviewing ? (
+                  <><Icon name="spinner" size="sm" className="animate-spin mr-2" />{t("settings.anilistPreviewing")}</>
                 ) : (
-                  <><Icon name="refresh" size="sm" className="mr-2" />{t("settings.anilistPullButton")}</>
+                  <><Icon name="eye" size="sm" className="mr-2" />{t("settings.anilistPreviewButton")}</>
                 )}
               </Button>
-              {pullReport && (
-                <div className="mt-2 border rounded-lg overflow-hidden">
-                  <div className="px-4 py-2 bg-muted/50 flex items-center gap-3">
-                    <span className="text-sm text-success font-medium">{t("settings.anilistUpdated", { count: String(pullReport.updated) })}</span>
-                    {pullReport.skipped > 0 && <span className="text-sm text-muted-foreground">{t("settings.anilistSkipped", { count: String(pullReport.skipped) })}</span>}
-                    {pullReport.errors.length > 0 && <span className="text-sm text-destructive">{t("settings.anilistErrors", { count: String(pullReport.errors.length) })}</span>}
-                  </div>
-                  {pullReport.items.length > 0 && (
-                    <div className="divide-y max-h-60 overflow-y-auto">
-                      {pullReport.items.map((item: AnilistPullItemDto) => (
-                        <div key={item.series_name} className="flex items-center justify-between px-4 py-2 text-sm">
-                          <a
-                            href={item.anilist_url ?? `https://anilist.co/manga/`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="truncate font-medium hover:underline min-w-0 mr-3"
-                          >
-                            {item.anilist_title ?? item.series_name}
-                          </a>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                              item.anilist_status === "COMPLETED" ? "bg-success/15 text-success" :
-                              item.anilist_status === "CURRENT" ? "bg-info/15 text-info" :
-                              item.anilist_status === "PLANNING" ? "bg-warning/15 text-warning" :
-                              "bg-muted text-muted-foreground"
-                            }`}>{item.anilist_status}</span>
-                            <span className="text-xs text-muted-foreground">{item.books_updated} {t("dashboard.books").toLowerCase()}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {pullReport.errors.map((err: string, i: number) => (
-                    <p key={i} className="text-xs text-destructive px-4 py-1 border-t">{err}</p>
-                  ))}
-                </div>
-              )}
+              <Button onClick={handleSync} disabled={isSyncing}>
+                {isSyncing ? (
+                  <><Icon name="spinner" size="sm" className="animate-spin mr-2" />{t("settings.anilistSyncing")}</>
+                ) : (
+                  <><Icon name="refresh" size="sm" className="mr-2" />{t("settings.anilistSyncButton")}</>
+                )}
+              </Button>
             </div>
-          </div>
-          {actionError && <p className="text-sm text-destructive">{actionError}</p>}
-          {previewItems !== null && (
-            <div className="mt-2 border rounded-lg overflow-hidden">
-              <div className="px-4 py-2 bg-muted/50 flex items-center justify-between">
-                <span className="text-sm font-medium">{t("settings.anilistPreviewTitle", { count: String(previewItems.length) })}</span>
-                <button onClick={() => setPreviewItems(null)} className="text-xs text-muted-foreground hover:text-foreground">✕</button>
-              </div>
-              {previewItems.length === 0 ? (
-                <p className="text-sm text-muted-foreground px-4 py-3">{t("settings.anilistPreviewEmpty")}</p>
-              ) : (
-                <div className="divide-y">
-                  {previewItems.map((item) => (
-                    <div key={`${item.anilist_id}-${item.series_name}`} className="flex items-center justify-between px-4 py-2 text-sm">
-                      <div className="flex items-center gap-2 min-w-0">
+            {syncReport && (
+              <div className="settings-well mt-2 overflow-hidden rounded-xl">
+                <div className="flex items-center gap-3 px-4 py-2.5">
+                  <span className="text-sm text-success font-medium">{t("settings.anilistSynced", { count: String(syncReport.synced) })}</span>
+                  {syncReport.skipped > 0 && <span className="text-sm text-muted-foreground">{t("settings.anilistSkipped", { count: String(syncReport.skipped) })}</span>}
+                  {syncReport.errors.length > 0 && <span className="text-sm text-destructive">{t("settings.anilistErrors", { count: String(syncReport.errors.length) })}</span>}
+                </div>
+                {syncReport.items.length > 0 && (
+                  <div className="max-h-60 divide-y divide-border/40 overflow-y-auto">
+                    {syncReport.items.map((item: AnilistSyncItemDto) => (
+                      <div key={item.series_name} className="flex items-center justify-between px-4 py-2 text-sm">
                         <a
-                          href={item.anilist_url ?? `https://anilist.co/manga/${item.anilist_id}`}
+                          href={item.anilist_url ?? `https://anilist.co/manga/`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="truncate font-medium hover:underline"
+                          className="truncate font-medium hover:underline min-w-0 mr-3"
                         >
                           {item.anilist_title ?? item.series_name}
                         </a>
-                        {item.anilist_title && item.anilist_title !== item.series_name && (
-                          <span className="text-muted-foreground truncate hidden sm:inline">— {item.series_name}</span>
-                        )}
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                            item.status === "COMPLETED" ? "bg-success/15 text-success" :
+                            item.status === "CURRENT" ? "bg-info/15 text-info" :
+                            "settings-well text-muted-foreground"
+                          }`}>{item.status}</span>
+                          {item.progress_volumes > 0 && (
+                            <span className="text-xs text-muted-foreground">{item.progress_volumes} vol.</span>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3 shrink-0 ml-3">
-                        <span className="text-xs text-muted-foreground">{item.books_read}/{item.book_count}</span>
-                        <span className={`text-3xs px-1.5 py-0.5 rounded-full font-medium ${
-                          item.status === "COMPLETED" ? "bg-success/15 text-success" :
-                          item.status === "CURRENT" ? "bg-info/15 text-info" :
-                          "bg-muted text-muted-foreground"
-                        }`}>
-                          {item.status}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
+                {syncReport.errors.map((err: string, i: number) => (
+                  <p key={i} className="text-xs text-destructive px-4 py-1 border-t">{err}</p>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">{t("settings.anilistPullDesc")}</p>
+            <Button onClick={handlePull} disabled={isPulling}>
+              {isPulling ? (
+                <><Icon name="spinner" size="sm" className="animate-spin mr-2" />{t("settings.anilistPulling")}</>
+              ) : (
+                <><Icon name="refresh" size="sm" className="mr-2" />{t("settings.anilistPullButton")}</>
               )}
+            </Button>
+            {pullReport && (
+              <div className="settings-well mt-2 overflow-hidden rounded-xl">
+                <div className="flex items-center gap-3 px-4 py-2.5">
+                  <span className="text-sm text-success font-medium">{t("settings.anilistUpdated", { count: String(pullReport.updated) })}</span>
+                  {pullReport.skipped > 0 && <span className="text-sm text-muted-foreground">{t("settings.anilistSkipped", { count: String(pullReport.skipped) })}</span>}
+                  {pullReport.errors.length > 0 && <span className="text-sm text-destructive">{t("settings.anilistErrors", { count: String(pullReport.errors.length) })}</span>}
+                </div>
+                {pullReport.items.length > 0 && (
+                  <div className="max-h-60 divide-y divide-border/40 overflow-y-auto">
+                    {pullReport.items.map((item: AnilistPullItemDto) => (
+                      <div key={item.series_name} className="flex items-center justify-between px-4 py-2 text-sm">
+                        <a
+                          href={item.anilist_url ?? `https://anilist.co/manga/`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="truncate font-medium hover:underline min-w-0 mr-3"
+                        >
+                          {item.anilist_title ?? item.series_name}
+                        </a>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                            item.anilist_status === "COMPLETED" ? "bg-success/15 text-success" :
+                            item.anilist_status === "CURRENT" ? "bg-info/15 text-info" :
+                            item.anilist_status === "PLANNING" ? "bg-warning/15 text-warning" :
+                            "settings-well text-muted-foreground"
+                          }`}>{item.anilist_status}</span>
+                          <span className="text-xs text-muted-foreground">{item.books_updated} {t("dashboard.books").toLowerCase()}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {pullReport.errors.map((err: string, i: number) => (
+                  <p key={i} className="text-xs text-destructive px-4 py-1 border-t">{err}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+        {previewItems !== null && (
+          <div className="settings-well mt-2 overflow-hidden rounded-xl">
+            <div className="flex items-center justify-between px-4 py-2.5">
+              <span className="text-sm font-medium">{t("settings.anilistPreviewTitle", { count: String(previewItems.length) })}</span>
+              <button onClick={() => setPreviewItems(null)} className="text-xs text-muted-foreground hover:text-foreground">✕</button>
             </div>
-          )}
-        </CardContent>
-      </Card>
+            {previewItems.length === 0 ? (
+              <p className="text-sm text-muted-foreground px-4 py-3">{t("settings.anilistPreviewEmpty")}</p>
+            ) : (
+              <div className="divide-y">
+                {previewItems.map((item) => (
+                  <div key={`${item.anilist_id}-${item.series_name}`} className="flex items-center justify-between px-4 py-2 text-sm">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <a
+                        href={item.anilist_url ?? `https://anilist.co/manga/${item.anilist_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="truncate font-medium hover:underline"
+                      >
+                        {item.anilist_title ?? item.series_name}
+                      </a>
+                      {item.anilist_title && item.anilist_title !== item.series_name && (
+                        <span className="text-muted-foreground truncate hidden sm:inline">— {item.series_name}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0 ml-3">
+                      <span className="text-xs text-muted-foreground">{item.books_read}/{item.book_count}</span>
+                      <span className={`text-3xs px-1.5 py-0.5 rounded-full font-medium ${
+                        item.status === "COMPLETED" ? "bg-success/15 text-success" :
+                        item.status === "CURRENT" ? "bg-info/15 text-info" :
+                        "settings-well text-muted-foreground"
+                      }`}>
+                        {item.status}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </SettingsCard>
     </>
   );
 }
