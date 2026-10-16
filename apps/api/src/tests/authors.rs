@@ -251,6 +251,21 @@ async fn list_authors_search_is_case_insensitive_substring(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_authors_search_is_accent_insensitive(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    create_book(&pool, library, None, "a", &["Hergé"], None).await;
+    create_book(&pool, library, None, "b", &["Albert Uderzo"], None).await;
+
+    let Json(response) = list_authors(State(state), query(Some("herge"), None, None, None))
+        .await
+        .unwrap();
+
+    assert_eq!(names(&response), vec!["Hergé"]);
+    assert_eq!(response.total, 1);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
 async fn list_authors_blank_search_is_ignored(pool: PgPool) {
     let state = test_state(pool.clone());
     let library = create_library(&pool, "main").await;

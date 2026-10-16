@@ -49,33 +49,43 @@ pub struct SearchResponse {
 
 /// Book search SQL, shared with the search tests so they cannot diverge.
 ///
+/// Matching is done through `norm_text()` (`lower` + `unaccent`, defined in
+/// migration `0115`) so a query without accents finds titles/series/authors that
+/// have them — and vice-versa. Both sides are normalized (`norm_text(col) LIKE
+/// norm_text($1)`), which is the pattern documented by migration `0116` and lets
+/// the GIN trigram indexes on the normalized expressions back the lookup.
+///
 /// A top-level `OR` whose author branch uses `unnest(...)` cannot be
 /// index-accelerated as a whole, so PostgreSQL falls back to a sequential scan
-/// even though `idx_books_title_trgm` / `idx_series_name_trgm` exist. The
-/// `candidate_ids` CTE splits that `OR` into independent, index-backed branches
-/// (title trigram, series name trigram, and the trigram indexes on the
-/// concatenated authors text) and unions the matching ids. The outer query then
-/// re-applies the exact per-element author predicate on the — now small —
-/// candidate set, so the semantics are unchanged.
+/// even though the title/author trigram indexes exist. The `candidate_ids` CTE
+/// splits that `OR` into independent, index-backed branches (title trigram,
+/// series name trigram, and the trigram indexes on the concatenated authors
+/// text) and unions the matching ids. The outer query then re-applies the exact
+/// per-element author predicate on the — now small — candidate set, so the
+/// semantics are unchanged.
+///
+/// Ordering is by relevance: exact normalized title, then title substring, then
+/// series/author-only matches; within a group, trigram similarity against the
+/// normalized query ranks the closest titles first.
 pub(crate) const BOOKS_SEARCH_SQL: &str = r#"
         WITH candidate_ids AS (
             SELECT b.id
             FROM books b
-            WHERE b.title ILIKE $1
+            WHERE norm_text(b.title) LIKE norm_text($1)
             UNION
             SELECT b.id
             FROM books b
-            WHERE authors_search_text(b.authors, b.author) ILIKE $1
-            UNION
-            SELECT b.id
-            FROM books b
-            JOIN series s ON s.id = b.series_id
-            WHERE s.name ILIKE $1
+            WHERE norm_text(authors_search_text(b.authors, b.author)) LIKE norm_text($1)
             UNION
             SELECT b.id
             FROM books b
             JOIN series s ON s.id = b.series_id
-            WHERE authors_search_text(s.authors, NULL::text) ILIKE $1
+            WHERE norm_text(s.name) LIKE norm_text($1)
+            UNION
+            SELECT b.id
+            FROM books b
+            JOIN series s ON s.id = b.series_id
+            WHERE norm_text(authors_search_text(s.authors, NULL::text)) LIKE norm_text($1)
         )
         SELECT b.id, b.library_id, b.kind, b.title,
             COALESCE(b.authors, CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END) as authors,
@@ -84,12 +94,12 @@ pub(crate) const BOOKS_SEARCH_SQL: &str = r#"
         JOIN books b ON b.id = m.id
         LEFT JOIN series s ON s.id = b.series_id
         WHERE (
-            b.title ILIKE $1
-            OR s.name ILIKE $1
+            norm_text(b.title) LIKE norm_text($1)
+            OR norm_text(s.name) LIKE norm_text($1)
             OR EXISTS (SELECT 1 FROM unnest(
                 COALESCE(b.authors, CASE WHEN b.author IS NOT NULL AND b.author != '' THEN ARRAY[b.author] ELSE ARRAY[]::text[] END)
                 || COALESCE(s.authors, ARRAY[]::text[])
-            ) AS a WHERE a ILIKE $1)
+            ) AS a WHERE norm_text(a) LIKE norm_text($1))
         )
         AND ($2::uuid IS NULL OR b.library_id = $2)
         AND ($3::text IS NULL OR b.kind = $3)
@@ -98,17 +108,25 @@ pub(crate) const BOOKS_SEARCH_SQL: &str = r#"
             WHERE ugr.user_id = $5 AND ugr.genre = ANY(s.genres)
         ))
         ORDER BY
-            CASE WHEN b.title ILIKE $1 THEN 0 ELSE 1 END,
+            CASE
+                WHEN norm_text(b.title) = btrim(norm_text($1), '%') THEN 0
+                WHEN norm_text(b.title) LIKE norm_text($1) THEN 1
+                ELSE 2
+            END,
+            similarity(norm_text(b.title), btrim(norm_text($1), '%')) DESC,
             b.title ASC
         LIMIT $4
     "#;
 
 /// Series search SQL, shared with the search tests so they cannot diverge.
+///
+/// Matching uses `norm_text()` on both sides (see `BOOKS_SEARCH_SQL` above), so
+/// accent- and case-insensitive lookups hit `idx_series_norm_name_trgm`.
 pub(crate) const SERIES_SEARCH_SQL: &str = r#"
         WITH matched_series AS (
             SELECT s.id AS series_id, s.library_id, s.name
             FROM series s
-            WHERE s.name ILIKE $1
+            WHERE norm_text(s.name) LIKE norm_text($1)
               AND ($2::uuid IS NULL OR s.library_id = $2)
               AND ($5::uuid IS NULL OR NOT EXISTS (
                   SELECT 1 FROM user_genre_restrictions ugr
@@ -160,7 +178,7 @@ pub(crate) const SERIES_SEARCH_SQL: &str = r#"
     path = "/search",
     tag = "search",
     params(
-        ("q" = String, Query, description = "Search query (books + series via PostgreSQL full-text)"),
+        ("q" = String, Query, description = "Search query (books and series; case- and accent-insensitive, trigram-backed)"),
         ("library_id" = Option<String>, Query, description = "Filter by library ID"),
         ("type" = Option<String>, Query, description = "Filter by type (cbz, cbr, pdf, epub)"),
         ("kind" = Option<String>, Query, description = "Filter by kind (alias for type)"),
