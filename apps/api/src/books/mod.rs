@@ -26,7 +26,7 @@ use crate::{auth::AuthUser, error::ApiError, index_jobs::IndexJobResponse, state
 
 #[derive(Deserialize, ToSchema)]
 pub struct ListBooksQuery {
-    /// Text search on title, series and author (case-insensitive, partial match)
+    /// Text search on title, series and author (case- and accent-insensitive, partial match)
     #[schema(value_type = Option<String>, example = "dragon")]
     pub q: Option<String>,
     #[schema(value_type = Option<String>)]
@@ -215,7 +215,9 @@ pub async fn list_books(
     };
     let q_cond = if query.q.is_some() {
         p += 1;
-        format!("AND (b.title ILIKE ${p} OR s.name ILIKE ${p} OR b.author ILIKE ${p})")
+        format!(
+            "AND (norm_text(b.title) LIKE norm_text(${p}) OR norm_text(s.name) LIKE norm_text(${p}) OR norm_text(b.author) LIKE norm_text(${p}))"
+        )
     } else {
         String::new()
     };

@@ -1,7 +1,10 @@
+use axum::extract::{Query, State};
+use axum::Json;
 use sqlx::Row;
 use uuid::Uuid;
 
-use super::GET_BOOK_SQL;
+use super::{list_books, ListBooksQuery, GET_BOOK_SQL};
+use crate::state::test_state;
 
 async fn create_test_library(pool: &sqlx::PgPool, name: &str) -> Uuid {
     let id = Uuid::new_v4();
@@ -142,4 +145,69 @@ async fn get_book_basic_fields_populated(pool: sqlx::PgPool) {
     assert_eq!(row.get::<Option<String>, _>("format").unwrap(), "cbz");
     assert_eq!(row.get::<Option<String>, _>("parse_status").unwrap(), "ok");
     assert_eq!(row.get::<Option<i64>, _>("size_bytes").unwrap(), 1024);
+}
+
+fn query_q(q: &str) -> Query<ListBooksQuery> {
+    Query(ListBooksQuery {
+        q: Some(q.to_string()),
+        library_id: None,
+        kind: None,
+        format: None,
+        series: None,
+        reading_status: None,
+        author: None,
+        page: None,
+        limit: None,
+        sort: None,
+        metadata_provider: None,
+        gap: None,
+    })
+}
+
+/// The `/books` text filter normalizes both sides via `norm_text()`, so an
+/// unaccented query must match an accented series name.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_books_query_matches_series_name_accent_insensitively(pool: sqlx::PgPool) {
+    let state = test_state(pool.clone());
+    let lib_id = create_test_library(&pool, "comics").await;
+    let series_id = create_test_series(&pool, lib_id, "Astérix").await;
+    create_test_book(&pool, lib_id, Some(series_id), "Le Devin", "comic").await;
+    create_test_book(&pool, lib_id, None, "Tintin au Tibet", "comic").await;
+
+    let Json(page) = list_books(State(state), query_q("asterix"), None)
+        .await
+        .unwrap();
+
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].title, "Le Devin");
+}
+
+/// Same for the legacy scalar `author` column.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_books_query_matches_scalar_author_accent_insensitively(pool: sqlx::PgPool) {
+    let state = test_state(pool.clone());
+    let lib_id = create_test_library(&pool, "comics").await;
+
+    let book_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO books (id, library_id, title, kind, author, authors) VALUES ($1, $2, $3, $4, $5, '{}'::text[])",
+    )
+    .bind(book_id)
+    .bind(lib_id)
+    .bind("Le Devin")
+    .bind("comic")
+    .bind("René Goscinny")
+    .execute(&pool)
+    .await
+    .unwrap();
+    create_test_book(&pool, lib_id, None, "Tintin au Tibet", "comic").await;
+
+    let Json(page) = list_books(State(state), query_q("rene goscinny"), None)
+        .await
+        .unwrap();
+
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].title, "Le Devin");
 }

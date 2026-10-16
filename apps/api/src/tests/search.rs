@@ -562,6 +562,234 @@ async fn search_by_series_author(pool: sqlx::PgPool) {
     );
 }
 
+/// The search matches through `norm_text()` (lower + unaccent), so a query
+/// without accents must find accented data. Regression test for the raw `ILIKE`
+/// that made `asterix` miss `Astérix`.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_accent_insensitive_book_title(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "comics").await;
+    create_test_book(
+        &pool,
+        lib_id,
+        None,
+        "Astérix le Gaulois",
+        "comic",
+        None,
+        &[],
+    )
+    .await;
+    create_test_book(&pool, lib_id, None, "Tintin au Tibet", "comic", None, &[]).await;
+
+    let rows = sqlx::query(BOOKS_SQL)
+        .bind("%asterix%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .bind(None::<Uuid>)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<String, _>("title"), "Astérix le Gaulois");
+}
+
+/// Normalization applies to both sides: an accented query must find an
+/// unaccented title too.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_accented_query_matches_unaccented_title(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "comics").await;
+    create_test_book(
+        &pool,
+        lib_id,
+        None,
+        "Asterix le Gaulois",
+        "comic",
+        None,
+        &[],
+    )
+    .await;
+
+    let rows = sqlx::query(BOOKS_SQL)
+        .bind("%Astérix%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .bind(None::<Uuid>)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<String, _>("title"), "Asterix le Gaulois");
+}
+
+/// Accent-insensitive matching on the series name affects both the book hits
+/// (series branch) and the dedicated series hits.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_accent_insensitive_series_name(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "comics").await;
+    let series_id = create_test_series(&pool, lib_id, "Astérix").await;
+    create_test_book(
+        &pool,
+        lib_id,
+        Some(series_id),
+        "Le Devin",
+        "comic",
+        None,
+        &[],
+    )
+    .await;
+    create_test_book(&pool, lib_id, None, "Tintin au Tibet", "comic", None, &[]).await;
+
+    let rows = sqlx::query(BOOKS_SQL)
+        .bind("%asterix%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .bind(None::<Uuid>)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<String, _>("title"), "Le Devin");
+
+    let series_rows = sqlx::query(SERIES_SQL)
+        .bind("%asterix%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .bind(None::<Uuid>)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(series_rows.len(), 1);
+    assert_eq!(series_rows[0].get::<Uuid, _>("series_id"), series_id);
+}
+
+/// Accents must be ignored on book-level authors (both the scalar `author`
+/// fallback and the `authors` array).
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_accent_insensitive_book_author(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "comics").await;
+    create_test_book(
+        &pool,
+        lib_id,
+        None,
+        "Le Devin",
+        "comic",
+        Some("René Goscinny"),
+        &["René Goscinny"],
+    )
+    .await;
+    create_test_book(
+        &pool,
+        lib_id,
+        None,
+        "Watchmen",
+        "comic",
+        Some("Alan Moore"),
+        &["Alan Moore"],
+    )
+    .await;
+
+    let rows = sqlx::query(BOOKS_SQL)
+        .bind("%rene goscinny%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .bind(None::<Uuid>)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<String, _>("title"), "Le Devin");
+}
+
+/// Series-level authors are matched through the normalized concatenated text.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_accent_insensitive_series_author(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "comics").await;
+    let series_id =
+        create_test_series_with_authors(&pool, lib_id, "Astérix", &["René Goscinny"]).await;
+    create_test_book(
+        &pool,
+        lib_id,
+        Some(series_id),
+        "Le Devin",
+        "comic",
+        None,
+        &[],
+    )
+    .await;
+    create_test_book(&pool, lib_id, None, "Unrelated Book", "comic", None, &[]).await;
+
+    let rows = sqlx::query(BOOKS_SQL)
+        .bind("%goscinny%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .bind(None::<Uuid>)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<String, _>("title"), "Le Devin");
+}
+
+/// Relevance: an exact title match must outrank a mere substring match.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_ranks_exact_title_before_substring(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "comics").await;
+    create_test_book(&pool, lib_id, None, "Batman Year One", "comic", None, &[]).await;
+    create_test_book(&pool, lib_id, None, "Batman", "comic", None, &[]).await;
+
+    let rows = sqlx::query(BOOKS_SQL)
+        .bind("%batman%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .bind(None::<Uuid>)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<String, _>("title"), "Batman");
+}
+
+/// Relevance: a title match must outrank a book matched only through its author.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_ranks_title_match_before_author_only_match(pool: sqlx::PgPool) {
+    let lib_id = create_test_library(&pool, "comics").await;
+    create_test_book(&pool, lib_id, None, "Batman", "comic", None, &[]).await;
+    create_test_book(
+        &pool,
+        lib_id,
+        None,
+        "Something Else",
+        "comic",
+        Some("Batman"),
+        &["Batman"],
+    )
+    .await;
+
+    let rows = sqlx::query(BOOKS_SQL)
+        .bind("%batman%")
+        .bind(None::<Uuid>)
+        .bind(None::<&str>)
+        .bind(20i64)
+        .bind(None::<Uuid>)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<String, _>("title"), "Batman");
+}
+
 /// The `candidate_ids` CTE matches authors on the concatenated text, which can
 /// spuriously match across element boundaries. The exact per-element predicate
 /// re-applied on the candidate set must reject those false positives.

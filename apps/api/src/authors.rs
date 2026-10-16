@@ -103,7 +103,7 @@ pub async fn list_authors(
             FROM author_rows
             WHERE author_name IS NOT NULL
               AND btrim(author_name) <> ''
-              AND ($1::text IS NULL OR author_name ILIKE $1)
+              AND ($1::text IS NULL OR norm_text(author_name) LIKE norm_text($1))
             GROUP BY author_name
         ),
         total AS (SELECT COUNT(*) AS total_count FROM author_agg)
