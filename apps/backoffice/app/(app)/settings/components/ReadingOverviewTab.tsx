@@ -92,7 +92,7 @@ function RecentlyReadRow({ book }: { book: UserReadingOverviewItemDto }) {
   return (
     <Link
       href={`/books/${book.book_id}` as any}
-      className="flex items-center gap-3 group rounded-md hover:bg-muted/50 px-2 py-1.5 -mx-2 transition-colors"
+      className="flex min-w-0 items-center gap-3 group rounded-md hover:bg-muted/50 py-1.5 transition-colors"
     >
       <Image
         src={getBookCoverUrl(book.book_id)}
@@ -211,12 +211,12 @@ function SeriesRow({ item, userId }: { item: UserReadingOverviewSeriesDto; userI
   const { books, failed } = useSeriesBooks(userId, item.series_id, expanded);
 
   return (
-    <li className="border-b border-border/50 last:border-0">
+    <li className="min-w-0 border-b border-border/50 last:border-0">
       <button
         type="button"
         aria-expanded={expanded}
         onClick={() => setExpanded((open) => !open)}
-        className="w-full flex items-center gap-3 py-2.5 text-left hover:bg-muted/40 -mx-2 px-2 rounded-md transition-colors"
+        className="w-full min-w-0 flex items-center gap-3 py-2.5 text-left hover:bg-muted/40 rounded-md transition-colors"
       >
         <div className="relative w-8 h-12 shrink-0 rounded overflow-hidden bg-muted">
           {item.first_book_id && (
@@ -224,7 +224,7 @@ function SeriesRow({ item, userId }: { item: UserReadingOverviewSeriesDto; userI
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-3">
+          <div className="flex min-w-0 items-baseline justify-between gap-3">
             <span className="text-sm font-medium text-foreground truncate">{item.series_name}</span>
             <span className="text-xs text-muted-foreground tabular-nums shrink-0">
               {item.books_read}/{item.books_total}
@@ -299,7 +299,7 @@ function UserOverview({ user }: { user: UserReadingOverviewDto }) {
       {user.currently_reading.length > 0 && (
         <section>
           <SectionTitle count={user.currently_reading.length}>{t("settings.readingOverview.currentlyReading")}</SectionTitle>
-          <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 snap-x scrollbar-thin">
+          <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-2 snap-x scrollbar-thin">
             {user.currently_reading.map((book) => (
               <CurrentlyReadingCard key={book.book_id} book={book} />
             ))}
@@ -307,14 +307,14 @@ function UserOverview({ user }: { user: UserReadingOverviewDto }) {
         </section>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <section>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <section className="min-w-0">
           <SectionTitle count={seriesProgress.length}>{t("settings.readingOverview.seriesStatuses")}</SectionTitle>
           <SeriesList series={seriesProgress} userId={user.user_id} />
         </section>
 
         {recentlyRead.length > 0 && (
-          <section>
+          <section className="min-w-0">
             <SectionTitle>{t("settings.readingOverview.recentlyRead")}</SectionTitle>
             <div className="space-y-0.5">
               {recentlyRead.map((book) => (

@@ -123,8 +123,9 @@ pub async fn get_reading_overview(
                     '[]'::json
                 )
                 FROM series_totals st
-                LEFT JOIN user_series us
+                JOIN user_series us
                     ON us.user_id = u.id AND us.series_key = st.series_key
+                WHERE us.books_read + us.books_reading > 0
             ) AS series_progress
         FROM users u
         LEFT JOIN book_reading_progress brp ON brp.user_id = u.id

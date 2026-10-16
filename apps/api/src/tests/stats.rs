@@ -1059,7 +1059,7 @@ async fn get_reading_overview_aggregates_status_and_series_progress(pool: PgPool
     let b1 = create_simple_book(&pool, library, Some(s1), "B1", 10).await;
     let b2 = create_simple_book(&pool, library, Some(s1), "B2", 20).await;
     let b3 = create_simple_book(&pool, library, Some(s2), "B3", 30).await;
-    let b4 = create_simple_book(&pool, library, None, "B4", 40).await;
+    let _b4 = create_simple_book(&pool, library, None, "B4", 40).await;
 
     let now = Utc::now();
     set_progress(
@@ -1091,7 +1091,8 @@ async fn get_reading_overview_aggregates_status_and_series_progress(pool: PgPool
     assert_eq!(a.recently_read.len(), 1);
     assert_eq!(a.recently_read[0].book_id, b1.to_string());
 
-    assert_eq!(a.series_progress.len(), 3);
+    // Only series the user has started (reading) or finished (read) are listed.
+    assert_eq!(a.series_progress.len(), 1);
     let a_s1 = find_series(&a.series_progress, "S1");
     assert_eq!(a_s1.books_total, 2);
     assert_eq!(a_s1.books_read, 1);
@@ -1099,16 +1100,6 @@ async fn get_reading_overview_aggregates_status_and_series_progress(pool: PgPool
     assert_eq!(a_s1.books_unread, 0);
     assert!(a_s1.series_id.is_some());
     assert_eq!(a_s1.first_book_id, Some(b1.to_string()));
-
-    let a_s2 = find_series(&a.series_progress, "S2");
-    assert_eq!(a_s2.books_total, 1);
-    assert_eq!(a_s2.books_unread, 1);
-
-    let a_orphan = find_series(&a.series_progress, "Sans série");
-    assert_eq!(a_orphan.books_total, 1);
-    assert_eq!(a_orphan.books_unread, 1);
-    assert!(a_orphan.series_id.is_none());
-    assert_eq!(a_orphan.first_book_id, Some(b4.to_string()));
 
     let b = &resp[1];
     assert_eq!(b.books_read, 1);
@@ -1118,10 +1109,7 @@ async fn get_reading_overview_aggregates_status_and_series_progress(pool: PgPool
     assert_eq!(b.recently_read.len(), 1);
     assert_eq!(b.recently_read[0].book_id, b3.to_string());
 
-    let b_s1 = find_series(&b.series_progress, "S1");
-    assert_eq!(b_s1.books_total, 2);
-    assert_eq!(b_s1.books_read, 0);
-    assert_eq!(b_s1.books_unread, 2);
+    assert_eq!(b.series_progress.len(), 1);
     let b_s2 = find_series(&b.series_progress, "S2");
     assert_eq!(b_s2.books_read, 1);
     assert_eq!(b_s2.books_unread, 0);
@@ -1147,10 +1135,8 @@ async fn get_reading_overview_includes_users_without_progress(pool: PgPool) {
     assert!(carol.currently_reading.is_empty());
     assert!(carol.recently_read.is_empty());
 
-    assert_eq!(carol.series_progress.len(), 1);
-    let s1_progress = find_series(&carol.series_progress, "S1");
-    assert_eq!(s1_progress.books_total, 1);
-    assert_eq!(s1_progress.books_unread, 1);
+    // No reading activity → no series listed.
+    assert!(carol.series_progress.is_empty());
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -1183,6 +1169,41 @@ async fn get_reading_overview_series_progress_is_per_user(pool: PgPool) {
     assert_eq!(b_s1.books_read, 0);
     assert_eq!(b_s1.books_reading, 1);
     assert_eq!(b_s1.books_unread, 1);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_reading_overview_series_progress_filters_out_untouched_series(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let started = create_series(&pool, library, "Started").await;
+    let finished = create_series(&pool, library, "Finished").await;
+    let untouched = create_series(&pool, library, "Untouched").await;
+    let alice = create_user(&pool, "alice").await;
+
+    let started_book = create_simple_book(&pool, library, Some(started), "S1", 10).await;
+    let finished_book = create_simple_book(&pool, library, Some(finished), "F1", 10).await;
+    let _untouched_book = create_simple_book(&pool, library, Some(untouched), "U1", 10).await;
+
+    set_progress(&pool, started_book, alice, "reading", Some(3), None).await;
+    set_progress(&pool, finished_book, alice, "read", None, Some(Utc::now())).await;
+
+    let Json(resp) = get_reading_overview(State(state)).await.unwrap();
+    let alice = resp.iter().find(|u| u.username == "alice").unwrap();
+
+    // Only the series the user has started or finished appear in the list.
+    assert_eq!(alice.series_progress.len(), 2);
+    assert!(alice
+        .series_progress
+        .iter()
+        .any(|s| s.series_name == "Started"));
+    assert!(alice
+        .series_progress
+        .iter()
+        .any(|s| s.series_name == "Finished"));
+    assert!(alice
+        .series_progress
+        .iter()
+        .all(|s| s.series_name != "Untouched"));
 }
 
 // ---------------------------------------------------------------------------
