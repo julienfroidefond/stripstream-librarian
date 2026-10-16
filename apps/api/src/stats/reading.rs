@@ -1,5 +1,9 @@
-use axum::{extract::State, Json};
+use axum::{
+    extract::{Path, Query, State},
+    Json,
+};
 use sqlx::Row;
+use uuid::Uuid;
 
 use crate::{error::ApiError, state::AppState};
 
@@ -21,26 +25,42 @@ pub async fn get_reading_overview(
 ) -> Result<Json<Vec<UserReadingOverview>>, ApiError> {
     let rows = sqlx::query(
         r#"
-        WITH series_books AS (
+        WITH series_counts AS (
             SELECT
                 b.series_id,
+                COALESCE(b.series_id, '00000000-0000-0000-0000-000000000000'::uuid) AS series_key,
                 COALESCE(s.name, 'Sans série') AS series_name,
-                json_agg(
-                    json_build_object(
-                        'book_id', b.id::text,
-                        'title', b.title,
-                        'volume', b.volume,
-                        'volume_type', b.volume_type,
-                        'page_count', COALESCE(b.page_count, 0)
-                    )
-                    ORDER BY
-                        CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
-                        b.volume NULLS LAST,
-                        b.title
-                ) AS books
+                COUNT(*) AS books_total
             FROM books b
             LEFT JOIN series s ON s.id = b.series_id
             GROUP BY b.series_id, s.name
+        ),
+        first_books AS (
+            SELECT DISTINCT ON (COALESCE(b.series_id, '00000000-0000-0000-0000-000000000000'::uuid))
+                COALESCE(b.series_id, '00000000-0000-0000-0000-000000000000'::uuid) AS series_key,
+                b.id AS first_book_id
+            FROM books b
+            ORDER BY
+                COALESCE(b.series_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
+                b.volume NULLS LAST,
+                b.title
+        ),
+        series_totals AS (
+            SELECT sc.*, fb.first_book_id
+            FROM series_counts sc
+            JOIN first_books fb USING (series_key)
+        ),
+        user_series AS (
+            SELECT
+                brp.user_id,
+                COALESCE(b.series_id, '00000000-0000-0000-0000-000000000000'::uuid) AS series_key,
+                COUNT(*) FILTER (WHERE brp.status = 'read') AS books_read,
+                COUNT(*) FILTER (WHERE brp.status = 'reading') AS books_reading,
+                MAX(brp.last_read_at) AS last_read_at
+            FROM book_reading_progress brp
+            JOIN books b ON b.id = brp.book_id
+            GROUP BY brp.user_id, series_key
         )
         SELECT
             u.id AS user_id,
@@ -85,44 +105,26 @@ pub async fn get_reading_overview(
             ) AS recently_read,
             (
                 SELECT COALESCE(
-                    json_agg(series_row ORDER BY sort_last_read_at DESC NULLS LAST, series_name ASC),
+                    json_agg(
+                        json_build_object(
+                            'series_id', st.series_id::text,
+                            'series_name', st.series_name,
+                            'first_book_id', st.first_book_id::text,
+                            'books_total', st.books_total,
+                            'books_read', COALESCE(us.books_read, 0),
+                            'books_reading', COALESCE(us.books_reading, 0),
+                            'books_unread', st.books_total
+                                - COALESCE(us.books_read, 0)
+                                - COALESCE(us.books_reading, 0),
+                            'last_read_at', TO_CHAR(us.last_read_at, 'YYYY-MM-DD')
+                        )
+                        ORDER BY us.last_read_at DESC NULLS LAST, st.series_name ASC
+                    ),
                     '[]'::json
                 )
-                FROM (
-                    SELECT
-                        sb.series_name,
-                        MAX(up.last_read_at) AS sort_last_read_at,
-                        json_build_object(
-                            'series_id', sb.series_id::text,
-                            'series_name', sb.series_name,
-                            'books_total', COUNT(*),
-                            'books_read', COUNT(*) FILTER (WHERE COALESCE(up.status, 'unread') = 'read'),
-                            'books_reading', COUNT(*) FILTER (WHERE COALESCE(up.status, 'unread') = 'reading'),
-                            'books_unread', COUNT(*) FILTER (WHERE COALESCE(up.status, 'unread') = 'unread'),
-                            'last_read_at', TO_CHAR(MAX(up.last_read_at), 'YYYY-MM-DD'),
-                            'books', json_agg(
-                                json_build_object(
-                                    'book_id', bk->>'book_id',
-                                    'title', bk->>'title',
-                                    'volume', bk->'volume',
-                                    'volume_type', bk->>'volume_type',
-                                    'status', COALESCE(up.status, 'unread'),
-                                    'current_page', COALESCE(up.current_page, 0),
-                                    'page_count', (bk->>'page_count')::int,
-                                    'last_read_at', TO_CHAR(up.last_read_at, 'YYYY-MM-DD')
-                                )
-                                ORDER BY
-                                    CASE WHEN bk->>'volume_type' = 'regular' THEN 0 ELSE 1 END,
-                                    (bk->>'volume')::int NULLS LAST,
-                                    bk->>'title'
-                            )
-                        ) AS series_row
-                    FROM series_books sb
-                    CROSS JOIN LATERAL json_array_elements(sb.books) AS bk
-                    LEFT JOIN book_reading_progress up
-                        ON up.book_id = (bk->>'book_id')::uuid AND up.user_id = u.id
-                    GROUP BY sb.series_id, sb.series_name
-                ) series_rows
+                FROM series_totals st
+                LEFT JOIN user_series us
+                    ON us.user_id = u.id AND us.series_key = st.series_key
             ) AS series_progress
         FROM users u
         LEFT JOIN book_reading_progress brp ON brp.user_id = u.id
@@ -168,4 +170,56 @@ pub async fn get_reading_overview(
         .collect();
 
     Ok(Json(overview))
+}
+
+/// List the books of one series with a user's reading status (admin).
+///
+/// Loaded on demand when a series is expanded in the reading overview.
+#[utoipa::path(
+    get,
+    path = "/admin/reading-overview/{user_id}/series-books",
+    tag = "stats",
+    params(
+        ("user_id" = String, Path, description = "User UUID"),
+        ReadingOverviewSeriesBooksQuery,
+    ),
+    responses(
+        (status = 200, body = Vec<UserReadingOverviewSeriesBook>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn get_reading_overview_series_books(
+    State(state): State<AppState>,
+    Path(user_id): Path<Uuid>,
+    Query(query): Query<ReadingOverviewSeriesBooksQuery>,
+) -> Result<Json<Vec<UserReadingOverviewSeriesBook>>, ApiError> {
+    // `= $2 OR (… IS NULL)` rather than `IS NOT DISTINCT FROM`, which can't use the series index.
+    let books = sqlx::query_as::<_, UserReadingOverviewSeriesBook>(
+        r#"
+        SELECT
+            b.id::text AS book_id,
+            b.title,
+            b.volume,
+            b.volume_type,
+            COALESCE(brp.status, 'unread') AS status,
+            COALESCE(brp.current_page, 0) AS current_page,
+            COALESCE(b.page_count, 0) AS page_count,
+            TO_CHAR(brp.last_read_at, 'YYYY-MM-DD') AS last_read_at
+        FROM books b
+        LEFT JOIN book_reading_progress brp
+            ON brp.book_id = b.id AND brp.user_id = $1
+        WHERE b.series_id = $2 OR ($2::uuid IS NULL AND b.series_id IS NULL)
+        ORDER BY
+            CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END,
+            b.volume NULLS LAST,
+            b.title
+        "#,
+    )
+    .bind(user_id)
+    .bind(query.series_id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(books))
 }

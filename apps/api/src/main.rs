@@ -406,6 +406,10 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/admin/reading-overview", get(stats::get_reading_overview))
         .route(
+            "/admin/reading-overview/{user_id}/series-books",
+            get(stats::get_reading_overview_series_books),
+        )
+        .route(
             "/series/{series_id}/anilist",
             get(integrations::anilist::get_series_link_by_id),
         )

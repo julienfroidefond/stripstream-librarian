@@ -171,7 +171,13 @@ pub struct UserReadingOverviewItem {
     pub last_read_at: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Deserialize, IntoParams)]
+pub struct ReadingOverviewSeriesBooksQuery {
+    /// Series to list; omit it for books without a series
+    pub series_id: Option<uuid::Uuid>,
+}
+
+#[derive(Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 pub struct UserReadingOverviewSeriesBook {
     pub book_id: String,
     pub title: String,
@@ -205,12 +211,13 @@ pub struct StatsBreakdownResponse {
 pub struct UserReadingOverviewSeries {
     pub series_id: Option<String>,
     pub series_name: String,
+    /// First volume of the series, used as its cover
+    pub first_book_id: Option<String>,
     pub books_total: i64,
     pub books_read: i64,
     pub books_reading: i64,
     pub books_unread: i64,
     pub last_read_at: Option<String>,
-    pub books: Vec<UserReadingOverviewSeriesBook>,
 }
 
 #[derive(Serialize, ToSchema)]
