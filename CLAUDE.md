@@ -33,6 +33,6 @@ cp .env.example .env   # then edit the REQUIRED values
 ```
 
 Required: `DATABASE_URL`, `API_BOOTSTRAP_TOKEN`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`,
-`SESSION_SECRET` (min 32 chars). Full variable table lives in `AGENTS.md` / `README.md`.
+`SESSION_SECRET` (min 32 chars). Full variable table lives in `apps/docs/src/content/docs/reference/environment.md`.
 
 DB-backed tests need PostgreSQL on `localhost:6432` and a user with the `CREATEDB` right.

@@ -228,7 +228,6 @@ async fn get_series_books_parses_issues() {
         ]
     );
     // LOCKED: ComicVine issues expose neither ISBN nor page count.
-    // See docs/KNOWN_ISSUES.md §1.
     assert!(books[0].isbn.is_none());
     assert!(books[0].page_count.is_none());
 
