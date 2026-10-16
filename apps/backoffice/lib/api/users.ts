@@ -75,12 +75,12 @@ export type UserReadingOverviewSeriesBookDto = {
 export type UserReadingOverviewSeriesDto = {
   series_id: string | null;
   series_name: string;
+  first_book_id: string | null;
   books_total: number;
   books_read: number;
   books_reading: number;
   books_unread: number;
   last_read_at: string | null;
-  books: UserReadingOverviewSeriesBookDto[];
 };
 
 export type UserReadingOverviewDto = {
@@ -97,4 +97,13 @@ export type UserReadingOverviewDto = {
 
 export async function getReadingOverview(): Promise<UserReadingOverviewDto[]> {
   return apiFetch<UserReadingOverviewDto[]>("/admin/reading-overview");
+}
+
+/** Books of one series with a user's reading status; omit `seriesId` for books without a series. */
+export async function getReadingOverviewSeriesBooks(
+  userId: string,
+  seriesId: string | null,
+): Promise<UserReadingOverviewSeriesBookDto[]> {
+  const qs = seriesId ? `?series_id=${encodeURIComponent(seriesId)}` : "";
+  return apiFetch<UserReadingOverviewSeriesBookDto[]>(`/admin/reading-overview/${userId}/series-books${qs}`);
 }

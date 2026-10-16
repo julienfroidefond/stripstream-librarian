@@ -15,6 +15,7 @@ import { POST as aiSuggest } from "@/app/api/genres/ai-suggest/route";
 import { POST as assign } from "@/app/api/genres/assign/route";
 import { GET as untagged } from "@/app/api/genres/untagged-series/route";
 import { GET as readingOverview } from "@/app/api/reading-overview/route";
+import { GET as readingOverviewSeriesBooks } from "@/app/api/reading-overview/[userId]/series-books/route";
 
 const mockApi = vi.mocked(apiFetch);
 
@@ -73,5 +74,14 @@ describe("/api/genres", () => {
   it("GET reading-overview returns 500 on error", async () => {
     mockApi.mockRejectedValue(new Error("bad"));
     expect((await readingOverview()).status).toBe(500);
+  });
+
+  it("GET reading-overview series books forwards user and query", async () => {
+    mockApi.mockResolvedValue([]);
+    await readingOverviewSeriesBooks(
+      jsonRequest("/api/reading-overview/u1/series-books?series_id=s1"),
+      routeCtx({ userId: "u1" }),
+    );
+    expect(mockApi).toHaveBeenCalledWith("/admin/reading-overview/u1/series-books?series_id=s1");
   });
 });
