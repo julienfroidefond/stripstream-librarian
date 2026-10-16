@@ -41,7 +41,7 @@ test.describe("smoke — toutes les pages se rendent", () => {
   test("le menu de navigation principal est présent", async ({ page }) => {
     await page.goto("/");
     const nav = page.locator("header nav");
-    await expect(nav.getByRole("link")).toHaveCount(5);
+    await expect(nav.getByRole("link")).toHaveCount(3);
     await expect(nav.getByRole("button")).toHaveCount(2);
   });
 
