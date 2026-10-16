@@ -17,6 +17,8 @@ const SERIES_PREVIEW_COUNT = 8;
 
 type SeriesView = "list" | "grid";
 
+const SERIES_VIEW_KEY = "stripstream:reading-overview:series-view";
+
 function volumeLabel(volume: number | null, volumeType: string): string {
   if (volumeType === "hs") return volume != null ? `HS ${volume}` : "HS";
   if (volumeType === "oneshot") return "OS";
@@ -44,6 +46,33 @@ function SectionTitle({
       {action && <span className="ml-auto shrink-0">{action}</span>}
     </h3>
   );
+}
+
+/** Series statuses view mode, persisted in localStorage across sessions. */
+function readStoredSeriesView(): SeriesView {
+  if (typeof window === "undefined") return "list";
+  try {
+    const stored = window.localStorage.getItem(SERIES_VIEW_KEY);
+    if (stored === "list" || stored === "grid") return stored;
+  } catch {
+    // localStorage unavailable (private mode, blocked storage) — keep default
+  }
+  return "list";
+}
+
+function useSeriesView(): [SeriesView, (view: SeriesView) => void] {
+  const [view, setView] = useState<SeriesView>(readStoredSeriesView);
+
+  const updateView = (next: SeriesView) => {
+    setView(next);
+    try {
+      window.localStorage.setItem(SERIES_VIEW_KEY, next);
+    } catch {
+      // ignore write failures
+    }
+  };
+
+  return [view, updateView];
 }
 
 /** Segmented control to switch the series statuses section between list and grid. */
@@ -408,7 +437,7 @@ function SeriesList({
 
 function UserOverview({ user }: { user: UserReadingOverviewDto }) {
   const { t } = useTranslation();
-  const [seriesView, setSeriesView] = useState<SeriesView>("list");
+  const [seriesView, setSeriesView] = useSeriesView();
   const recentlyRead = user.recently_read ?? [];
   const seriesProgress = user.series_progress ?? [];
 
@@ -507,7 +536,7 @@ function UserPicker({
   );
 }
 
-export function ReadingOverviewTab() {
+export function ReadingOverview() {
   const { t } = useTranslation();
   const [overview, setOverview] = useState<UserReadingOverviewDto[] | null>(null);
   const [error, setError] = useState<string | null>(null);

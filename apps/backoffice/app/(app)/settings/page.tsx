@@ -1,4 +1,5 @@
 import { getSettings, getCacheStats, getThumbnailStats, fetchUsers, apiFetch, fetchDownloadsEnabled, fetchLibraries, LibraryDto } from "@/lib/api";
+import { redirect } from "next/navigation";
 import SettingsPage from "./SettingsPage";
 import { TokensTab } from "./components/TokensTab";
 import packageJson from "../../../package.json";
@@ -26,6 +27,8 @@ async function fetchIndexerVersion(): Promise<string> {
 
 export default async function SettingsPageWrapper({ searchParams }: { searchParams: Promise<{ tab?: string; created?: string }> }) {
   const { tab, created: createdToken } = await searchParams;
+  // The reading overview moved out of Settings into its own top-level page.
+  if (tab === "readingOverview") redirect("/progress");
   const [settings, cacheStats, thumbnailStats, users, prowlarr, qbittorrent, torrentImport, telegram, anilist, komga, metadataProviders, statusMappings, seriesStatuses, providerStatuses, apiVersion, indexerVersion, renameFormat, renameFormatHs, renameFormatInt, renameFormatOneshot, downloadsEnabled, libraries] = await Promise.all([
     getSettings().catch(() => ({
       image_processing: { format: "webp", quality: 85, filter: "lanczos3", max_width: 2160 },

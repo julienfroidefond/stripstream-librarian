@@ -35,8 +35,16 @@ type NavGroupItem = {
 type NavEntry = NavLinkItem | NavGroupItem;
 
 const navEntries: NavEntry[] = [
-  { href: "/series", labelKey: "nav.series", icon: "series", color: "text-warning" },
-  { href: "/books", labelKey: "nav.books", icon: "books", color: "text-success" },
+  {
+    labelKey: "nav.catalog",
+    icon: "books",
+    color: "text-success",
+    children: [
+      { href: "/series", labelKey: "nav.series", icon: "series", color: "text-warning" },
+      { href: "/books", labelKey: "nav.books", icon: "books", color: "text-success" },
+    ],
+  },
+  { href: "/progress", labelKey: "nav.progress", icon: "chart", color: "text-success" },
   { href: "/authors", labelKey: "nav.authors", icon: "authors", color: "text-highlight" },
   {
     labelKey: "nav.data",

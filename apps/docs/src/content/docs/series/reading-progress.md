@@ -53,11 +53,11 @@ Si plusieurs utilisateurs sont configurés, un sélecteur de lecteur est disponi
 
 ## Vue admin de progression
 
-Dans **Settings → Progression**, le backoffice affiche une vue transversale par utilisateur :
+La page **Progression** (menu principal) affiche une vue transversale par utilisateur :
 
 - livres en cours de lecture
 - livres lus récemment
-- statuts par série (uniquement les séries commencées ou terminées), affichables en **liste** ou en **grille de couvertures** via le bouton en haut à droite de la section
+- statuts par série (uniquement les séries commencées ou terminées), affichables en **liste** ou en **grille de couvertures** via le bouton en haut à droite de la section (le choix est mémorisé dans le navigateur)
 - vue dépliable par série : en cliquant une série (ligne ou couverture), les tomes s'affichent avec couverture et état de lecture
 
 Cette vue est en lecture seule : elle sert à inspecter rapidement la progression de tous les utilisateurs depuis l'administration.
