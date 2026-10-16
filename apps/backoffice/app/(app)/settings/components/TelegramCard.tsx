@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { SettingsCard, SettingsField, FormInput, Icon, Switch } from "@/app/components/ui";
+import { SettingsCard, SettingsRow, FormInput, Icon, Switch } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { useTranslation } from "@/lib/i18n/context";
 import { TestConnectionButton } from "./TestConnectionButton";
@@ -76,7 +76,7 @@ export function TelegramCard({ handleUpdateSetting, initialData }: { handleUpdat
         )}
       </div>
 
-      <div className="flex items-center gap-3">
+      <SettingsRow label={t("settings.telegramEnabled")} controlClassName="sm:max-w-none">
         <Switch
           checked={enabled}
           onChange={(e) => {
@@ -84,31 +84,28 @@ export function TelegramCard({ handleUpdateSetting, initialData }: { handleUpdat
             saveTelegram(undefined, undefined, e.target.checked);
           }}
         />
-        <span className="text-sm font-medium text-foreground">{t("settings.telegramEnabled")}</span>
-      </div>
+      </SettingsRow>
 
-      <div className="flex gap-4">
-        <SettingsField className="flex-1" label={t("settings.botToken")}>
-          <FormInput
-            type="password" autoComplete="off"
-            placeholder={t("settings.botTokenPlaceholder")}
-            value={botToken}
-            onChange={(e) => setBotToken(e.target.value)}
-            onBlur={() => saveTelegram()}
-          />
-        </SettingsField>
-      </div>
-      <div className="flex gap-4">
-        <SettingsField className="flex-1" label={t("settings.chatId")}>
-          <FormInput
-            type="text"
-            placeholder={t("settings.chatIdPlaceholder")}
-            value={chatId}
-            onChange={(e) => setChatId(e.target.value)}
-            onBlur={() => saveTelegram()}
-          />
-        </SettingsField>
-      </div>
+      <SettingsRow label={t("settings.botToken")} htmlFor="telegram-bot-token">
+        <FormInput
+          id="telegram-bot-token"
+          type="password" autoComplete="off"
+          placeholder={t("settings.botTokenPlaceholder")}
+          value={botToken}
+          onChange={(e) => setBotToken(e.target.value)}
+          onBlur={() => saveTelegram()}
+        />
+      </SettingsRow>
+      <SettingsRow label={t("settings.chatId")} htmlFor="telegram-chat-id">
+        <FormInput
+          id="telegram-chat-id"
+          type="text"
+          placeholder={t("settings.chatIdPlaceholder")}
+          value={chatId}
+          onChange={(e) => setChatId(e.target.value)}
+          onBlur={() => saveTelegram()}
+        />
+      </SettingsRow>
 
       {/* Event toggles grouped by category */}
       <div className="border-t border-border/50 pt-4">

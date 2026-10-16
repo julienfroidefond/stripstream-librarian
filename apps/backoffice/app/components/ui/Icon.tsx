@@ -64,6 +64,8 @@ interface IconProps {
   name: IconName;
   size?: IconSize;
   className?: string;
+  /** Ignore the icon's built-in accent colour and inherit the surrounding text colour. */
+  mono?: boolean;
 }
 
 const sizeClasses: Record<IconSize, string> = {
@@ -148,9 +150,9 @@ const colorClasses: Partial<Record<IconName, string>> = {
   authors: "text-highlight",
 };
 
-export function Icon({ name, size = "md", className = "" }: IconProps) {
+export function Icon({ name, size = "md", className = "", mono = false }: IconProps) {
   const sizeClass = sizeClasses[size];
-  const colorClass = colorClasses[name];
+  const colorClass = mono ? "" : colorClasses[name];
   
   return (
     <svg 

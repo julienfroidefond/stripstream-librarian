@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, SettingsField, FormInput, FormSelect, FormRow, Icon, Switch, toast } from "@/app/components/ui";
+import { Button, FormInput, FormSelect, Icon, SettingsCard, SettingsPageHeader, SettingsRow, SettingsTabs, Switch, toast, type SettingsTabItem } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, UserDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
@@ -144,56 +144,40 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
     }
   }
 
-  const tabs = [
-    { id: "general" as const, label: t("settings.general"), icon: "settings" as const, color: "text-muted-foreground" },
-    { id: "media" as const, label: t("settings.media"), icon: "image" as const, color: "text-primary" },
-    { id: "downloadTools" as const, label: t("settings.downloadTools"), icon: "play" as const, color: "text-info" },
-    { id: "metadata" as const, label: t("settings.metadata"), icon: "tag" as const, color: "text-highlight" },
-    { id: "ai" as const, label: t("settings.aiTab"), icon: "bot" as const, color: "text-highlight" },
-    { id: "readingStatus" as const, label: t("settings.readingStatus"), icon: "eye" as const, color: "text-warning" },
-    { id: "notifications" as const, label: t("settings.notifications"), icon: "bell" as const, color: "text-warning" },
-    { id: "tokens" as const, label: t("nav.tokens"), icon: "tokens" as const, color: "text-error" },
-    { id: "archives" as const, label: t("settings.archives"), icon: "books" as const, color: "text-warning" },
+  const tabs: SettingsTabItem[] = [
+    { id: "general", label: t("settings.general"), icon: "settings" },
+    { id: "media", label: t("settings.media"), icon: "image" },
+    { id: "downloadTools", label: t("settings.downloadTools"), icon: "play" },
+    { id: "metadata", label: t("settings.metadata"), icon: "tag" },
+    { id: "ai", label: t("settings.aiTab"), icon: "bot" },
+    { id: "readingStatus", label: t("settings.readingStatus"), icon: "eye" },
+    { id: "notifications", label: t("settings.notifications"), icon: "bell" },
+    { id: "tokens", label: t("nav.tokens"), icon: "tokens" },
+    { id: "archives", label: t("settings.archives"), icon: "books" },
   ];
 
   return (
     <>
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
-          <Icon name="settings" size="xl" className="text-muted-foreground" />
-          {t("settings.title")}
-        </h1>
-      </div>
+      <SettingsPageHeader title={t("settings.title")} description={t("settings.subtitle")} />
 
-      {/* Tab Navigation */}
-      <div className="flex gap-1 mb-6 border-b border-border overflow-x-auto scrollbar-none">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => handleTabChange(tab.id)}
-            className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${
-              activeTab === tab.id
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
-            }`}
-          >
-            <Icon name={tab.icon} size="sm" className={tab.color} />
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <SettingsTabs
+        tabs={tabs}
+        active={activeTab}
+        onChange={(id) => handleTabChange(id as TabId)}
+        trailing={
+          isSaving ? (
+            <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <Icon name="spinner" size="sm" mono className="animate-spin" />
+              {t("settings.saving")}
+            </span>
+          ) : undefined
+        }
+      />
 
       {activeTab === "general" && (<>
       {/* Language Selector */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Icon name="settings" size="md" />
-            {t("settings.language")}
-          </CardTitle>
-          <CardDescription>{t("settings.languageDesc")}</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <SettingsCard icon="globe" title={t("settings.language")} description={t("settings.languageDesc")}>
+        <div className="max-w-xs">
           <FormSelect
             value={locale}
             onChange={(e) => setLocale(e.target.value as Locale)}
@@ -201,438 +185,359 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             <option value="fr">Français</option>
             <option value="en">English</option>
           </FormSelect>
-        </CardContent>
-      </Card>
+        </div>
+      </SettingsCard>
 
       {/* Limits Settings */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Icon name="performance" size="md" />
-            {t("settings.performanceLimits")}
-          </CardTitle>
-          <CardDescription>{t("settings.performanceDesc")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <FormRow>
-              <SettingsField className="flex-1" label={t("settings.concurrentRenders")}>
-                <FormInput
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={settings.limits.concurrent_renders}
-                  onChange={(e) => {
-                    const concurrent_renders = parseInt(e.target.value) || 4;
-                    const newSettings = { ...settings, limits: { ...settings.limits, concurrent_renders } };
-                    setSettings(newSettings);
-                  }}
-                  onBlur={() => handleUpdateSetting("limits", settings.limits)}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  {t("settings.concurrentRendersHelp")}
-                </p>
-              </SettingsField>
-              <SettingsField className="flex-1" label={t("settings.timeoutSeconds")}>
-                <FormInput
-                  type="number"
-                  min={5}
-                  max={300}
-                  value={settings.limits.timeout_seconds}
-                  onChange={(e) => {
-                    const timeout_seconds = parseInt(e.target.value) || 12;
-                    const newSettings = { ...settings, limits: { ...settings.limits, timeout_seconds } };
-                    setSettings(newSettings);
-                  }}
-                  onBlur={() => handleUpdateSetting("limits", settings.limits)}
-                />
-              </SettingsField>
-              <SettingsField className="flex-1" label={t("settings.rateLimit")}>
-                <FormInput
-                  type="number"
-                  min={10}
-                  max={1000}
-                  value={settings.limits.rate_limit_per_second}
-                  onChange={(e) => {
-                    const rate_limit_per_second = parseInt(e.target.value) || 120;
-                    const newSettings = { ...settings, limits: { ...settings.limits, rate_limit_per_second } };
-                    setSettings(newSettings);
-                  }}
-                  onBlur={() => handleUpdateSetting("limits", settings.limits)}
-                />
-              </SettingsField>
-            </FormRow>
-            <p className="text-sm text-muted-foreground">
-              {t("settings.limitsNote")}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <SettingsCard icon="performance" title={t("settings.performanceLimits")} description={t("settings.performanceDesc")}>
+        <SettingsRow label={t("settings.concurrentRenders")} description={t("settings.concurrentRendersHelp")}>
+          <FormInput
+            type="number"
+            min={1}
+            max={20}
+            value={settings.limits.concurrent_renders}
+            onChange={(e) => {
+              const concurrent_renders = parseInt(e.target.value) || 4;
+              const newSettings = { ...settings, limits: { ...settings.limits, concurrent_renders } };
+              setSettings(newSettings);
+            }}
+            onBlur={() => handleUpdateSetting("limits", settings.limits)}
+            className="w-32"
+          />
+        </SettingsRow>
+        <SettingsRow label={t("settings.timeoutSeconds")}>
+          <FormInput
+            type="number"
+            min={5}
+            max={300}
+            value={settings.limits.timeout_seconds}
+            onChange={(e) => {
+              const timeout_seconds = parseInt(e.target.value) || 12;
+              const newSettings = { ...settings, limits: { ...settings.limits, timeout_seconds } };
+              setSettings(newSettings);
+            }}
+            onBlur={() => handleUpdateSetting("limits", settings.limits)}
+            className="w-32"
+          />
+        </SettingsRow>
+        <SettingsRow label={t("settings.rateLimit")}>
+          <FormInput
+            type="number"
+            min={10}
+            max={1000}
+            value={settings.limits.rate_limit_per_second}
+            onChange={(e) => {
+              const rate_limit_per_second = parseInt(e.target.value) || 120;
+              const newSettings = { ...settings, limits: { ...settings.limits, rate_limit_per_second } };
+              setSettings(newSettings);
+            }}
+            onBlur={() => handleUpdateSetting("limits", settings.limits)}
+            className="w-32"
+          />
+        </SettingsRow>
+        <p className="text-sm leading-relaxed text-muted-foreground">{t("settings.limitsNote")}</p>
+      </SettingsCard>
 
       {/* Rename Format */}
       <RenameFormatCard handleUpdateSetting={handleUpdateSetting} initialRenameFormat={initialRenameFormat} initialRenameFormatHs={initialRenameFormatHs} initialRenameFormatInt={initialRenameFormatInt} initialRenameFormatOneshot={initialRenameFormatOneshot} />
 
       {/* About */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Icon name="document" size="md" />
-            {t("settings.about")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-lg font-semibold text-foreground">Stripstream Librarian</h3>
-              <p className="text-sm text-muted-foreground mt-1">{t("settings.aboutDesc")}</p>
-            </div>
+      <SettingsCard icon="document" title={t("settings.about")}>
+        <div>
+          <p className="text-sm font-medium text-foreground">Stripstream Librarian</p>
+          <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{t("settings.aboutDesc")}</p>
+        </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/40">
-                <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-                  <Icon name="settings" size="sm" className="text-primary" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">API</p>
-                  <p className="text-sm font-mono font-medium text-foreground">{versions?.api ?? "?"}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/40">
-                <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-                  <Icon name="jobs" size="sm" className="text-primary" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Indexer</p>
-                  <p className="text-sm font-mono font-medium text-foreground">{versions?.indexer ?? "?"}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border/40">
-                <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-                  <Icon name="books" size="sm" className="text-primary" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Backoffice</p>
-                  <p className="text-sm font-mono font-medium text-foreground">{versions?.backoffice ?? "?"}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4 pt-2 text-sm">
-              <a
-                href="https://github.com/julienfroidefond/stripstream-librarian"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline flex items-center gap-1.5"
-              >
-                <Icon name="externalLink" size="sm" />
-                GitHub
-              </a>
-            </div>
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
+          <div>
+            <dt className="text-xs text-muted-foreground">API</dt>
+            <dd className="mt-0.5 text-sm font-medium tabular-nums text-foreground">{versions?.api ?? "?"}</dd>
           </div>
-        </CardContent>
-      </Card>
+          <div>
+            <dt className="text-xs text-muted-foreground">Indexer</dt>
+            <dd className="mt-0.5 text-sm font-medium tabular-nums text-foreground">{versions?.indexer ?? "?"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Backoffice</dt>
+            <dd className="mt-0.5 text-sm font-medium tabular-nums text-foreground">{versions?.backoffice ?? "?"}</dd>
+          </div>
+        </dl>
+
+        <a
+          href="https://github.com/julienfroidefond/stripstream-librarian"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+        >
+          <Icon name="externalLink" size="sm" mono />
+          GitHub
+        </a>
+      </SettingsCard>
 
       </>)}
 
       {activeTab === "media" && (<>
       {/* Image Processing Settings */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Icon name="image" size="md" />
-            {t("settings.imageProcessing")}
-          </CardTitle>
-          <CardDescription><SafeHtml html={t("settings.imageProcessingDesc")} as="span" /></CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <FormRow>
-              <SettingsField className="flex-1" label={t("settings.defaultFormat")}>
-                <FormSelect
-                  value={settings.image_processing.format}
-                  onChange={(e) => {
-                    const newSettings = { ...settings, image_processing: { ...settings.image_processing, format: e.target.value } };
-                    setSettings(newSettings);
-                    handleUpdateSetting("image_processing", newSettings.image_processing);
-                  }}
-                >
-                  <option value="webp">WebP</option>
-                  <option value="jpeg">JPEG</option>
-                  <option value="png">PNG</option>
-                </FormSelect>
-              </SettingsField>
-              <SettingsField className="flex-1" label={t("settings.defaultQuality")}>
-                <FormInput
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={settings.image_processing.quality}
-                  onChange={(e) => {
-                    const quality = parseInt(e.target.value) || 85;
-                    const newSettings = { ...settings, image_processing: { ...settings.image_processing, quality } };
-                    setSettings(newSettings);
-                  }}
-                  onBlur={() => handleUpdateSetting("image_processing", settings.image_processing)}
-                />
-              </SettingsField>
-            </FormRow>
-            <FormRow>
-              <SettingsField className="flex-1" label={t("settings.defaultFilter")}>
-                <FormSelect
-                  value={settings.image_processing.filter}
-                  onChange={(e) => {
-                    const newSettings = { ...settings, image_processing: { ...settings.image_processing, filter: e.target.value } };
-                    setSettings(newSettings);
-                    handleUpdateSetting("image_processing", newSettings.image_processing);
-                  }}
-                >
-                  <option value="lanczos3">{t("settings.filterLanczos")}</option>
-                  <option value="triangle">{t("settings.filterTriangle")}</option>
-                  <option value="nearest">{t("settings.filterNearest")}</option>
-                </FormSelect>
-              </SettingsField>
-              <SettingsField className="flex-1" label={t("settings.maxWidth")}>
-                <FormInput
-                  type="number"
-                  min={100}
-                  max={2160}
-                  value={settings.image_processing.max_width}
-                  onChange={(e) => {
-                    const max_width = parseInt(e.target.value) || 2160;
-                    const newSettings = { ...settings, image_processing: { ...settings.image_processing, max_width } };
-                    setSettings(newSettings);
-                  }}
-                  onBlur={() => handleUpdateSetting("image_processing", settings.image_processing)}
-                />
-              </SettingsField>
-            </FormRow>
-          </div>
-        </CardContent>
-      </Card>
+      <SettingsCard icon="image" title={t("settings.imageProcessing")} description={<SafeHtml html={t("settings.imageProcessingDesc")} as="span" />}>
+        <SettingsRow label={t("settings.defaultFormat")}>
+          <FormSelect
+            value={settings.image_processing.format}
+            onChange={(e) => {
+              const newSettings = { ...settings, image_processing: { ...settings.image_processing, format: e.target.value } };
+              setSettings(newSettings);
+              handleUpdateSetting("image_processing", newSettings.image_processing);
+            }}
+          >
+            <option value="webp">WebP</option>
+            <option value="jpeg">JPEG</option>
+            <option value="png">PNG</option>
+          </FormSelect>
+        </SettingsRow>
+        <SettingsRow label={t("settings.defaultQuality")}>
+          <FormInput
+            type="number"
+            min={1}
+            max={100}
+            value={settings.image_processing.quality}
+            onChange={(e) => {
+              const quality = parseInt(e.target.value) || 85;
+              const newSettings = { ...settings, image_processing: { ...settings.image_processing, quality } };
+              setSettings(newSettings);
+            }}
+            onBlur={() => handleUpdateSetting("image_processing", settings.image_processing)}
+            className="w-32"
+          />
+        </SettingsRow>
+        <SettingsRow label={t("settings.defaultFilter")}>
+          <FormSelect
+            value={settings.image_processing.filter}
+            onChange={(e) => {
+              const newSettings = { ...settings, image_processing: { ...settings.image_processing, filter: e.target.value } };
+              setSettings(newSettings);
+              handleUpdateSetting("image_processing", newSettings.image_processing);
+            }}
+          >
+            <option value="lanczos3">{t("settings.filterLanczos")}</option>
+            <option value="triangle">{t("settings.filterTriangle")}</option>
+            <option value="nearest">{t("settings.filterNearest")}</option>
+          </FormSelect>
+        </SettingsRow>
+        <SettingsRow label={t("settings.maxWidth")}>
+          <FormInput
+            type="number"
+            min={100}
+            max={2160}
+            value={settings.image_processing.max_width}
+            onChange={(e) => {
+              const max_width = parseInt(e.target.value) || 2160;
+              const newSettings = { ...settings, image_processing: { ...settings.image_processing, max_width } };
+              setSettings(newSettings);
+            }}
+            onBlur={() => handleUpdateSetting("image_processing", settings.image_processing)}
+            className="w-32"
+          />
+        </SettingsRow>
+      </SettingsCard>
 
       {/* Cache Settings */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Icon name="cache" size="md" />
-            {t("settings.cache")}
-          </CardTitle>
-          <CardDescription>{t("settings.cacheDesc")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
-              <div>
-                <p className="text-sm text-muted-foreground">{t("settings.diskCacheSize")}</p>
-                <p className="text-2xl font-semibold">{cacheStats.total_size_mb.toFixed(2)} MB</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">{t("settings.files")}</p>
-                <p className="text-2xl font-semibold">{cacheStats.file_count}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">{t("settings.memoryCacheSize")}</p>
-                <p className="text-2xl font-semibold">{cacheStats.memory_size_mb.toFixed(2)} / {cacheStats.memory_max_size_mb.toFixed(0)} MB</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">{t("settings.cachedPages")}</p>
-                <p className="text-2xl font-semibold">{cacheStats.memory_page_count}</p>
-              </div>
-              <div className="col-span-2 xl:col-span-4">
-                <p className="text-sm text-muted-foreground">{t("settings.directory")}</p>
-                <p className="text-sm font-mono truncate" title={cacheStats.directory}>{cacheStats.directory}</p>
-              </div>
-            </div>
-
-            {clearResult && (
-              <div className={`p-3 rounded-lg ${clearResult.success ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
-                {clearResult.message}
-              </div>
-            )}
-
-            <FormRow>
-              <SettingsField className="flex-1" label={t("settings.cacheDirectory")}>
-                <FormInput
-                  value={settings.cache.directory}
-                  onChange={(e) => {
-                    const newSettings = { ...settings, cache: { ...settings.cache, directory: e.target.value } };
-                    setSettings(newSettings);
-                  }}
-                  onBlur={() => handleUpdateSetting("cache", settings.cache)}
-                />
-              </SettingsField>
-              <SettingsField className="w-32" label={t("settings.maxSizeMb")}>
-                <FormInput
-                  type="number"
-                  value={settings.cache.max_size_mb}
-                  onChange={(e) => {
-                    const max_size_mb = parseInt(e.target.value) || 10000;
-                    const newSettings = { ...settings, cache: { ...settings.cache, max_size_mb } };
-                    setSettings(newSettings);
-                  }}
-                  onBlur={() => handleUpdateSetting("cache", settings.cache)}
-                />
-              </SettingsField>
-              <SettingsField className="w-56" label={t("settings.memoryMaxSizeMb")} labelClassName="whitespace-nowrap">
-                <FormInput
-                  type="number"
-                  min={1}
-                  value={settings.cache.memory_max_size_mb}
-                  onChange={(e) => {
-                    const memory_max_size_mb = Math.max(1, parseInt(e.target.value) || 128);
-                    setSettings({ ...settings, cache: { ...settings.cache, memory_max_size_mb } });
-                  }}
-                  onBlur={() => handleUpdateSetting("cache", settings.cache)}
-                />
-                <p className="text-xs text-muted-foreground mt-1">{t("settings.memoryMaxSizeMbHelp")}</p>
-              </SettingsField>
-            </FormRow>
-
-            <Button
-              onClick={handleClearCache}
-              disabled={isClearing}
-              variant="destructive"
-            >
-              {isClearing ? (
-                <>
-                  <Icon name="spinner" size="sm" className="animate-spin -ml-1 mr-2" />
-                  {t("settings.clearing")}
-                </>
-              ) : (
-                <>
-                  <Icon name="trash" size="sm" className="mr-2" />
-                  {t("settings.clearCache")}
-                </>
-              )}
-            </Button>
+      <SettingsCard icon="cache" title={t("settings.cache")} description={t("settings.cacheDesc")}>
+        <div className="grid grid-cols-2 gap-4 rounded-lg bg-muted/30 p-4 xl:grid-cols-4">
+          <div>
+            <p className="text-xs text-muted-foreground">{t("settings.diskCacheSize")}</p>
+            <p className="mt-0.5 text-xl font-semibold tabular-nums">{cacheStats.total_size_mb.toFixed(2)} MB</p>
           </div>
-        </CardContent>
-      </Card>
+          <div>
+            <p className="text-xs text-muted-foreground">{t("settings.files")}</p>
+            <p className="mt-0.5 text-xl font-semibold tabular-nums">{cacheStats.file_count}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">{t("settings.memoryCacheSize")}</p>
+            <p className="mt-0.5 text-xl font-semibold tabular-nums">{cacheStats.memory_size_mb.toFixed(2)} / {cacheStats.memory_max_size_mb.toFixed(0)} MB</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">{t("settings.cachedPages")}</p>
+            <p className="mt-0.5 text-xl font-semibold tabular-nums">{cacheStats.memory_page_count}</p>
+          </div>
+          <div className="col-span-2 xl:col-span-4">
+            <p className="text-xs text-muted-foreground">{t("settings.directory")}</p>
+            <p className="mt-0.5 truncate font-mono text-sm" title={cacheStats.directory}>{cacheStats.directory}</p>
+          </div>
+        </div>
+
+        {clearResult && (
+          <div className={`rounded-lg p-3 text-sm ${clearResult.success ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
+            {clearResult.message}
+          </div>
+        )}
+
+        <SettingsRow label={t("settings.cacheDirectory")}>
+          <FormInput
+            value={settings.cache.directory}
+            onChange={(e) => {
+              const newSettings = { ...settings, cache: { ...settings.cache, directory: e.target.value } };
+              setSettings(newSettings);
+            }}
+            onBlur={() => handleUpdateSetting("cache", settings.cache)}
+          />
+        </SettingsRow>
+        <SettingsRow label={t("settings.maxSizeMb")}>
+          <FormInput
+            type="number"
+            value={settings.cache.max_size_mb}
+            onChange={(e) => {
+              const max_size_mb = parseInt(e.target.value) || 10000;
+              const newSettings = { ...settings, cache: { ...settings.cache, max_size_mb } };
+              setSettings(newSettings);
+            }}
+            onBlur={() => handleUpdateSetting("cache", settings.cache)}
+            className="w-40"
+          />
+        </SettingsRow>
+        <SettingsRow label={t("settings.memoryMaxSizeMb")} description={t("settings.memoryMaxSizeMbHelp")}>
+          <FormInput
+            type="number"
+            min={1}
+            value={settings.cache.memory_max_size_mb}
+            onChange={(e) => {
+              const memory_max_size_mb = Math.max(1, parseInt(e.target.value) || 128);
+              setSettings({ ...settings, cache: { ...settings.cache, memory_max_size_mb } });
+            }}
+            onBlur={() => handleUpdateSetting("cache", settings.cache)}
+            className="w-40"
+          />
+        </SettingsRow>
+
+        <div className="pt-1">
+          <Button
+            onClick={handleClearCache}
+            disabled={isClearing}
+            variant="destructive"
+          >
+            {isClearing ? (
+              <>
+                <Icon name="spinner" size="sm" className="animate-spin -ml-1 mr-2" />
+                {t("settings.clearing")}
+              </>
+            ) : (
+              <>
+                <Icon name="trash" size="sm" className="mr-2" />
+                {t("settings.clearCache")}
+              </>
+            )}
+          </Button>
+        </div>
+      </SettingsCard>
 
       {/* Thumbnail Settings */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Icon name="image" size="md" />
-            {t("settings.thumbnails")}
-          </CardTitle>
-          <CardDescription>{t("settings.thumbnailsDesc")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <FormRow>
-              <SettingsField className="flex-1" label={t("settings.enableThumbnails")}>
-                <FormSelect
-                  value={settings.thumbnail.enabled ? "true" : "false"}
-                  onChange={(e) => {
-                    const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, enabled: e.target.value === "true" } };
-                    setSettings(newSettings);
-                    handleUpdateSetting("thumbnail", newSettings.thumbnail);
-                  }}
-                >
-                  <option value="true">{t("common.enabled")}</option>
-                  <option value="false">{t("common.disabled")}</option>
-                </FormSelect>
-              </SettingsField>
-              <SettingsField className="flex-1" label={t("settings.outputFormat")}>
-                <FormSelect
-                  value={settings.thumbnail.format}
-                  onChange={(e) => {
-                    const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, format: e.target.value } };
-                    setSettings(newSettings);
-                    handleUpdateSetting("thumbnail", newSettings.thumbnail);
-                  }}
-                >
-                  <option value="original">{t("settings.formatOriginal")}</option>
-                  <option value="webp">WebP</option>
-                  <option value="jpeg">JPEG</option>
-                  <option value="png">PNG</option>
-                </FormSelect>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {settings.thumbnail.format === "original"
-                    ? t("settings.formatOriginalDesc")
-                    : t("settings.formatReencodeDesc")}
-                </p>
-              </SettingsField>
-            </FormRow>
-            <FormRow>
-              <SettingsField className="flex-1" label={t("settings.width")}>
-                <FormInput
-                  type="number"
-                  min={50}
-                  max={600}
-                  value={settings.thumbnail.width}
-                  onChange={(e) => {
-                    const width = parseInt(e.target.value) || 300;
-                    const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, width } };
-                    setSettings(newSettings);
-                  }}
-                  onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
-                />
-              </SettingsField>
-              <SettingsField className="flex-1" label={t("settings.height")}>
-                <FormInput
-                  type="number"
-                  min={50}
-                  max={800}
-                  value={settings.thumbnail.height}
-                  onChange={(e) => {
-                    const height = parseInt(e.target.value) || 400;
-                    const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, height } };
-                    setSettings(newSettings);
-                  }}
-                  onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
-                />
-              </SettingsField>
-              <SettingsField className="flex-1" label={t("settings.quality")}>
-                <FormInput
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={settings.thumbnail.quality}
-                  onChange={(e) => {
-                    const quality = parseInt(e.target.value) || 80;
-                    const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, quality } };
-                    setSettings(newSettings);
-                  }}
-                  onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
-                />
-              </SettingsField>
-            </FormRow>
-            <FormRow>
-              <SettingsField className="flex-1" label={t("settings.thumbnailDirectory")}>
-                <FormInput
-                  value={settings.thumbnail.directory}
-                  onChange={(e) => {
-                    const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, directory: e.target.value } };
-                    setSettings(newSettings);
-                  }}
-                  onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
-                />
-              </SettingsField>
-            </FormRow>
+      <SettingsCard icon="image" title={t("settings.thumbnails")} description={t("settings.thumbnailsDesc")}>
+        <SettingsRow label={t("settings.enableThumbnails")}>
+          <FormSelect
+            value={settings.thumbnail.enabled ? "true" : "false"}
+            onChange={(e) => {
+              const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, enabled: e.target.value === "true" } };
+              setSettings(newSettings);
+              handleUpdateSetting("thumbnail", newSettings.thumbnail);
+            }}
+          >
+            <option value="true">{t("common.enabled")}</option>
+            <option value="false">{t("common.disabled")}</option>
+          </FormSelect>
+        </SettingsRow>
+        <SettingsRow
+          label={t("settings.outputFormat")}
+          description={
+            settings.thumbnail.format === "original"
+              ? t("settings.formatOriginalDesc")
+              : t("settings.formatReencodeDesc")
+          }
+        >
+          <FormSelect
+            value={settings.thumbnail.format}
+            onChange={(e) => {
+              const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, format: e.target.value } };
+              setSettings(newSettings);
+              handleUpdateSetting("thumbnail", newSettings.thumbnail);
+            }}
+          >
+            <option value="original">{t("settings.formatOriginal")}</option>
+            <option value="webp">WebP</option>
+            <option value="jpeg">JPEG</option>
+            <option value="png">PNG</option>
+          </FormSelect>
+        </SettingsRow>
+        <SettingsRow label={t("settings.width")}>
+          <FormInput
+            type="number"
+            min={50}
+            max={600}
+            value={settings.thumbnail.width}
+            onChange={(e) => {
+              const width = parseInt(e.target.value) || 300;
+              const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, width } };
+              setSettings(newSettings);
+            }}
+            onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
+            className="w-32"
+          />
+        </SettingsRow>
+        <SettingsRow label={t("settings.height")}>
+          <FormInput
+            type="number"
+            min={50}
+            max={800}
+            value={settings.thumbnail.height}
+            onChange={(e) => {
+              const height = parseInt(e.target.value) || 400;
+              const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, height } };
+              setSettings(newSettings);
+            }}
+            onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
+            className="w-32"
+          />
+        </SettingsRow>
+        <SettingsRow label={t("settings.quality")}>
+          <FormInput
+            type="number"
+            min={1}
+            max={100}
+            value={settings.thumbnail.quality}
+            onChange={(e) => {
+              const quality = parseInt(e.target.value) || 80;
+              const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, quality } };
+              setSettings(newSettings);
+            }}
+            onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
+            className="w-32"
+          />
+        </SettingsRow>
+        <SettingsRow label={t("settings.thumbnailDirectory")}>
+          <FormInput
+            value={settings.thumbnail.directory}
+            onChange={(e) => {
+              const newSettings = { ...settings, thumbnail: { ...settings.thumbnail, directory: e.target.value } };
+              setSettings(newSettings);
+            }}
+            onBlur={() => handleUpdateSetting("thumbnail", settings.thumbnail)}
+          />
+        </SettingsRow>
 
-            <div className="grid grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg">
-              <div>
-                <p className="text-sm text-muted-foreground">{t("settings.totalSize")}</p>
-                <p className="text-2xl font-semibold">{thumbnailStats.total_size_mb.toFixed(2)} MB</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">{t("settings.files")}</p>
-                <p className="text-2xl font-semibold">{thumbnailStats.file_count}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">{t("settings.directory")}</p>
-                <p className="text-sm font-mono truncate" title={thumbnailStats.directory}>{thumbnailStats.directory}</p>
-              </div>
-            </div>
-
-            <p className="text-sm text-muted-foreground">
-              {t("settings.thumbnailsNote")}
-            </p>
+        <div className="grid grid-cols-2 gap-4 rounded-lg bg-muted/30 p-4 sm:grid-cols-3">
+          <div>
+            <p className="text-xs text-muted-foreground">{t("settings.totalSize")}</p>
+            <p className="mt-0.5 text-xl font-semibold tabular-nums">{thumbnailStats.total_size_mb.toFixed(2)} MB</p>
           </div>
-        </CardContent>
-      </Card>
+          <div>
+            <p className="text-xs text-muted-foreground">{t("settings.files")}</p>
+            <p className="mt-0.5 text-xl font-semibold tabular-nums">{thumbnailStats.file_count}</p>
+          </div>
+          <div className="col-span-2 sm:col-span-1">
+            <p className="text-xs text-muted-foreground">{t("settings.directory")}</p>
+            <p className="mt-0.5 truncate font-mono text-sm" title={thumbnailStats.directory}>{thumbnailStats.directory}</p>
+          </div>
+        </div>
+
+        <p className="text-sm leading-relaxed text-muted-foreground">{t("settings.thumbnailsNote")}</p>
+      </SettingsCard>
       </>)}
 
       {activeTab === "metadata" && (<>
@@ -648,15 +553,11 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
 
       {activeTab === "downloadTools" && (<>
       {/* Downloads feature toggle */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Icon name="play" size="md" />
-            {t("settings.downloadsEnabled")}
-          </CardTitle>
-          <CardDescription>{t("settings.downloadsEnabledDesc")}</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <SettingsCard
+        icon="play"
+        title={t("settings.downloadsEnabled")}
+        description={t("settings.downloadsEnabledDesc")}
+        action={
           <Switch
             checked={downloadsEnabled}
             onChange={async () => {
@@ -681,8 +582,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
               }
             }}
           />
-        </CardContent>
-      </Card>
+        }
+      />
 
       {/* Prowlarr */}
       <ProwlarrCard handleUpdateSetting={handleUpdateSetting} initialData={initialProwlarr} />

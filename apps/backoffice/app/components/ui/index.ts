@@ -21,7 +21,10 @@ export {
   FormField, FormLabel, FormInput, FormSelect, FormRow, 
   FormSection, FormError, FormDescription 
 } from "./Form";
-export { SettingsCard, SettingsField } from "./SettingsCard";
+export { SettingsCard, SettingsField, SettingsRow } from "./SettingsCard";
+export { SettingsPageHeader } from "./SettingsPageHeader";
+export { SettingsTabs } from "./SettingsTabs";
+export type { SettingsTabItem } from "./SettingsTabs";
 export { TagInput } from "./TagInput";
 export { PageIcon, NavIcon, Icon } from "./Icon";
 export type { IconName } from "./Icon";

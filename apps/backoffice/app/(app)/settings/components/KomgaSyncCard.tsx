@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { SettingsCard, SettingsField, Button, FormInput, FormSelect, Icon } from "@/app/components/ui";
+import { SettingsCard, SettingsRow, Button, FormInput, FormSelect, Icon } from "@/app/components/ui";
 import { KomgaSyncResponse, KomgaSyncReportSummary, UserDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 
@@ -93,29 +93,23 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
 
   return (
     <SettingsCard icon="refresh" title={t("settings.komgaSync")} description={t("settings.komgaDesc")}>
-      <div className="flex gap-4">
-        <SettingsField className="flex-1" label={t("settings.komgaUrl")}>
-          <FormInput type="url" placeholder="https://komga.example.com" value={komgaUrl} onChange={(e) => setKomgaUrl(e.target.value)} />
-        </SettingsField>
-      </div>
-      <div className="flex gap-4">
-        <SettingsField className="flex-1" label={t("settings.username")}>
-          <FormInput value={komgaUsername} onChange={(e) => setKomgaUsername(e.target.value)} />
-        </SettingsField>
-        <SettingsField className="flex-1" label={t("settings.password")}>
-          <FormInput type="password" autoComplete="off" value={komgaPassword} onChange={(e) => setKomgaPassword(e.target.value)} />
-        </SettingsField>
-      </div>
+      <SettingsRow label={t("settings.komgaUrl")}>
+        <FormInput type="url" placeholder="https://komga.example.com" value={komgaUrl} onChange={(e) => setKomgaUrl(e.target.value)} />
+      </SettingsRow>
+      <SettingsRow label={t("settings.username")}>
+        <FormInput value={komgaUsername} onChange={(e) => setKomgaUsername(e.target.value)} />
+      </SettingsRow>
+      <SettingsRow label={t("settings.password")}>
+        <FormInput type="password" autoComplete="off" value={komgaPassword} onChange={(e) => setKomgaPassword(e.target.value)} />
+      </SettingsRow>
       {users.length > 0 && (
-        <div className="flex gap-4">
-          <SettingsField className="flex-1" label={t("users.title")}>
-            <FormSelect value={komgaUserId} onChange={(e) => setKomgaUserId(e.target.value)}>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>{u.username}</option>
-              ))}
-            </FormSelect>
-          </SettingsField>
-        </div>
+        <SettingsRow label={t("users.title")}>
+          <FormSelect value={komgaUserId} onChange={(e) => setKomgaUserId(e.target.value)}>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>{u.username}</option>
+            ))}
+          </FormSelect>
+        </SettingsRow>
       )}
       <Button onClick={handleKomgaSync} disabled={isSyncing || !komgaUrl || !komgaUsername || !komgaPassword || !komgaUserId}>
         {isSyncing ? (

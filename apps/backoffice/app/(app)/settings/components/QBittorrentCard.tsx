@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { SettingsCard, SettingsField, FormInput, FormSelect, Icon } from "@/app/components/ui";
+import { SettingsCard, SettingsRow, FormInput, FormSelect, Icon } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 import { TestConnectionButton } from "./TestConnectionButton";
 
@@ -22,45 +22,41 @@ export function QBittorrentCard({ handleUpdateSetting, initialQbittorrent, initi
 
   return (
     <SettingsCard icon="settings" title={t("settings.qbittorrent")} description={t("settings.qbittorrentDesc")}>
-      <div className="flex gap-4">
-        <SettingsField className="flex-1" label={t("settings.qbittorrentUrl")}>
-          <FormInput
-            type="url"
-            placeholder={t("settings.qbittorrentUrlPlaceholder")}
-            value={qbUrl}
-            onChange={(e) => setQbUrl(e.target.value)}
-            onBlur={() => saveQbittorrent()}
-          />
-        </SettingsField>
-      </div>
-      <div className="flex gap-4">
-        <SettingsField className="flex-1" label={t("settings.qbittorrentUsername")}>
-          <FormInput
-            type="text"
-            value={qbUsername}
-            onChange={(e) => setQbUsername(e.target.value)}
-            onBlur={() => saveQbittorrent()}
-          />
-        </SettingsField>
-        <SettingsField className="flex-1" label={t("settings.qbittorrentPassword")}>
-          <FormInput
-            type="password" autoComplete="off"
-            value={qbPassword}
-            onChange={(e) => setQbPassword(e.target.value)}
-            onBlur={() => saveQbittorrent()}
-          />
-        </SettingsField>
-      </div>
+      <SettingsRow label={t("settings.qbittorrentUrl")}>
+        <FormInput
+          type="url"
+          placeholder={t("settings.qbittorrentUrlPlaceholder")}
+          value={qbUrl}
+          onChange={(e) => setQbUrl(e.target.value)}
+          onBlur={() => saveQbittorrent()}
+        />
+      </SettingsRow>
+      <SettingsRow label={t("settings.qbittorrentUsername")}>
+        <FormInput
+          type="text"
+          value={qbUsername}
+          onChange={(e) => setQbUsername(e.target.value)}
+          onBlur={() => saveQbittorrent()}
+        />
+      </SettingsRow>
+      <SettingsRow label={t("settings.qbittorrentPassword")}>
+        <FormInput
+          type="password" autoComplete="off"
+          value={qbPassword}
+          onChange={(e) => setQbPassword(e.target.value)}
+          onBlur={() => saveQbittorrent()}
+        />
+      </SettingsRow>
 
-      <div className="flex items-center gap-3">
+      <div className="pt-1">
         <TestConnectionButton
           endpoint="/api/qbittorrent/test"
           disabled={!qbUrl || !qbUsername}
         />
       </div>
 
-      <div className="border-t border-border/40 pt-4">
-        <SettingsField className="max-w-xs" label={t("settings.torrentImportEnabled")}>
+      <div className="space-y-3 border-t border-border/40 pt-4">
+        <SettingsRow label={t("settings.torrentImportEnabled")}>
           <FormSelect
             value={importEnabled ? "true" : "false"}
             onChange={(e) => {
@@ -68,15 +64,16 @@ export function QBittorrentCard({ handleUpdateSetting, initialQbittorrent, initi
               setImportEnabled(val);
               handleUpdateSetting("torrent_import", { enabled: val });
             }}
+            className="w-40"
           >
             <option value="false">{t("common.disabled")}</option>
             <option value="true">{t("common.enabled")}</option>
           </FormSelect>
-        </SettingsField>
+        </SettingsRow>
 
         {importEnabled && (
-          <div className="mt-3 rounded-lg border border-success/20 bg-success/5 p-3 flex items-start gap-2">
-            <Icon name="check" size="sm" className="text-success mt-0.5 shrink-0" />
+          <div className="flex items-start gap-2 rounded-lg border border-success/20 bg-success/5 p-3">
+            <Icon name="check" size="sm" mono className="mt-0.5 shrink-0 text-success" />
             <p className="text-sm text-muted-foreground">{t("settings.torrentImportPollingInfo")}</p>
           </div>
         )}
