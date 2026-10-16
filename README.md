@@ -4,6 +4,10 @@ Gestionnaire auto-hébergé de bibliothèque de BD, mangas et ebooks : indexatio
 (CBZ/CBR/PDF/EPUB), recherche plein texte, enrichissement de métadonnées multi-providers,
 découverte et téléchargement.
 
+## Écosystème
+
+- **Lecteur officiel** — [julienfroidefond/stripstream](https://github.com/julienfroidefond/stripstream) : application de lecture séparée qui consomme l'API Client (scope `read`).
+
 ## Documentation
 
 La documentation de référence vit dans [`apps/docs/`](apps/docs) (site Astro/Starlight), servie

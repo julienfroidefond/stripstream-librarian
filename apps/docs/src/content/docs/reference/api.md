@@ -23,6 +23,8 @@ Un menu déroulant permet de basculer entre les deux spécifications.
 
 ## Endpoints de lecture (token read)
 
+Ces endpoints forment l'API publique consommée par le [lecteur officiel](https://github.com/julienfroidefond/stripstream) et les applications tierces (KOReader, Panels…).
+
 Accessibles avec un token de scope `read` :
 
 - Bibliothèques, livres, séries, auteurs — listing et détail

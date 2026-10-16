@@ -8,6 +8,8 @@ Read it first. Companion docs:
 
 The workspace is a Cargo workspace (`apps/api`, `apps/indexer`, `crates/core`, `crates/notifications`, `crates/parsers`) plus three non-Rust apps (`apps/backoffice`, `apps/docs`).
 
+The official reader client lives in a separate repository, [`julienfroidefond/stripstream`](https://github.com/julienfroidefond/stripstream), often cloned as a sibling directory (`../stripstream`). It consumes the **read-scoped Client API** (`/openapi.json` + `/swagger-ui`); treat that surface as a public contract and avoid breaking changes.
+
 ---
 
 ## 1. Build, Lint, and Test Commands

@@ -34,3 +34,7 @@ Stripstream est composé de plusieurs services :
 
 Stack : backend Rust (axum, sqlx, tokio), frontend Next.js 16 / React 19 / Tailwind CSS, base de données PostgreSQL avec `pg_trgm` pour la recherche full-text.
 :::
+
+## Lecteur officiel
+
+Une application de lecture officielle est publiée dans un dépôt séparé : [julienfroidefond/stripstream](https://github.com/julienfroidefond/stripstream). Elle consomme l'**API Client** (scope `read`, endpoints de lecture détaillés dans la [référence API](/reference/api/)) pour parcourir et lire votre bibliothèque sur mobile.
