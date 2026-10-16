@@ -29,10 +29,10 @@ export function SettingsTabs({ tabs, active, onChange, trailing }: SettingsTabsP
   return (
     <nav
       aria-label="Settings sections"
-      className="sticky top-12 z-30 -mt-1 mb-8 border-b border-border/60 bg-background/85 backdrop-blur-md"
+      className="sticky top-12 z-30 -mt-1 mb-6 border-b border-border/60 bg-background/85 backdrop-blur-md"
     >
-      <div className="flex items-stretch">
-        <div className="scrollbar-hide flex flex-1 items-stretch gap-0.5 overflow-x-auto">
+      <div className="flex items-center gap-3 py-2">
+        <div className="scrollbar-hide flex flex-1 items-center gap-1 overflow-x-auto">
           {tabs.map((tab) => {
             const isActive = tab.id === active;
             return (
@@ -41,10 +41,10 @@ export function SettingsTabs({ tabs, active, onChange, trailing }: SettingsTabsP
                 type="button"
                 aria-current={isActive ? "page" : undefined}
                 onClick={() => onChange(tab.id)}
-                className={`group -mb-px flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-2.5 py-3 text-sm font-medium transition-colors sm:px-3 ${
+                className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition-colors ${
                   isActive
-                    ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
+                    ? "bg-primary/10 font-semibold text-primary ring-1 ring-inset ring-primary/25"
+                    : "font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                 }`}
               >
                 {tab.icon && (
@@ -52,7 +52,7 @@ export function SettingsTabs({ tabs, active, onChange, trailing }: SettingsTabsP
                     name={tab.icon}
                     size="sm"
                     mono
-                    className={isActive ? "text-primary" : "text-muted-foreground/60 group-hover:text-foreground"}
+                    className={isActive ? "text-primary" : "text-muted-foreground/70"}
                   />
                 )}
                 {tab.label}
@@ -60,7 +60,7 @@ export function SettingsTabs({ tabs, active, onChange, trailing }: SettingsTabsP
             );
           })}
         </div>
-        {trailing != null && <div className="hidden shrink-0 items-center pl-3 sm:flex">{trailing}</div>}
+        {trailing != null && <div className="hidden shrink-0 items-center sm:flex">{trailing}</div>}
       </div>
     </nav>
   );

@@ -158,7 +158,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
 
   return (
     <>
-      <SettingsPageHeader title={t("settings.title")} description={t("settings.subtitle")} />
+      <SettingsPageHeader icon="settings" title={t("settings.title")} description={t("settings.subtitle")} />
 
       <SettingsTabs
         tabs={tabs}
@@ -235,7 +235,10 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             className="w-32"
           />
         </SettingsRow>
-        <p className="text-sm leading-relaxed text-muted-foreground">{t("settings.limitsNote")}</p>
+        <p className="flex items-start gap-2.5 rounded-lg bg-muted/40 p-3 text-sm leading-relaxed text-muted-foreground">
+          <Icon name="info" size="sm" mono className="mt-0.5 shrink-0 text-primary" />
+          {t("settings.limitsNote")}
+        </p>
       </SettingsCard>
 
       {/* Rename Format */}
@@ -248,7 +251,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
           <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{t("settings.aboutDesc")}</p>
         </div>
 
-        <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-4 rounded-lg bg-muted/40 p-4 sm:grid-cols-3">
           <div>
             <dt className="text-xs text-muted-foreground">API</dt>
             <dd className="mt-0.5 text-sm font-medium tabular-nums text-foreground">{versions?.api ?? "?"}</dd>
@@ -536,7 +539,10 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
           </div>
         </div>
 
-        <p className="text-sm leading-relaxed text-muted-foreground">{t("settings.thumbnailsNote")}</p>
+        <p className="flex items-start gap-2.5 rounded-lg bg-muted/40 p-3 text-sm leading-relaxed text-muted-foreground">
+          <Icon name="info" size="sm" mono className="mt-0.5 shrink-0 text-primary" />
+          {t("settings.thumbnailsNote")}
+        </p>
       </SettingsCard>
       </>)}
 

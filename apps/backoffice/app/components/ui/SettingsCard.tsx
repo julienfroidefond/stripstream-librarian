@@ -39,21 +39,25 @@ export function SettingsCard({
 }: SettingsCardProps) {
   const hasHeader = title != null || description != null || action != null;
   return (
-    <section className={`overflow-hidden rounded-lg border border-border/60 bg-card text-card-foreground ${className}`}>
+    <section className={`overflow-hidden rounded-xl border border-border/70 bg-card text-card-foreground shadow-soft ${className}`}>
       {hasHeader && (
-        <header className="flex items-start gap-3 px-5 py-4">
-          {icon && <Icon name={icon} size="md" mono className="mt-px shrink-0 text-muted-foreground" />}
+        <header className="flex items-start gap-3 border-b border-border/50 bg-muted/40 px-5 py-4">
+          {icon && (
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-inset ring-primary/20">
+              <Icon name={icon} size="sm" mono />
+            </span>
+          )}
           <div className="min-w-0 flex-1">
-            {title != null && <h2 className="text-sm font-semibold tracking-tight text-foreground">{title}</h2>}
+            {title != null && <h2 className="text-base font-semibold leading-6 tracking-tight text-foreground">{title}</h2>}
             {description != null && (
-              <p className={`text-sm leading-relaxed text-muted-foreground ${title != null ? "mt-0.5" : ""}`}>{description}</p>
+              <p className={`text-sm leading-relaxed text-muted-foreground ${title != null ? "mt-1" : ""}`}>{description}</p>
             )}
           </div>
           {action != null && <div className="shrink-0">{action}</div>}
         </header>
       )}
       {children != null && (
-        <div className={`${hasHeader ? "border-t border-border/50 " : ""}${bodyClassName}`}>
+        <div className={bodyClassName}>
           <div className={contentClassName}>{children}</div>
         </div>
       )}
