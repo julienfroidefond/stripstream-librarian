@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button, FormInput, FormSelect, Icon, SettingsCard, SettingsPageHeader, SettingsRow, SettingsTabs, Switch, toast, type SettingsTabItem } from "@/app/components/ui";
+import { Button, FormInput, FormSelect, Icon, SettingsCard, SettingsPageHeader, SettingsRow, SettingsSections, SettingsTabs, Switch, toast, type SettingsTabItem } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, UserDto } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
@@ -157,7 +157,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
   ];
 
   return (
-    <>
+    <div className="settings-surface">
       <SettingsPageHeader icon="settings" title={t("settings.title")} description={t("settings.subtitle")} />
 
       <SettingsTabs
@@ -174,7 +174,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         }
       />
 
-      {activeTab === "general" && (<>
+      {activeTab === "general" && (<SettingsSections>
       {/* Language Selector */}
       <SettingsCard icon="globe" title={t("settings.language")} description={t("settings.languageDesc")}>
         <div className="max-w-xs">
@@ -235,7 +235,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             className="w-32"
           />
         </SettingsRow>
-        <p className="flex items-start gap-2.5 rounded-lg bg-muted/40 p-3 text-sm leading-relaxed text-muted-foreground">
+        <p className="settings-well flex items-start gap-2.5 rounded-xl p-3.5 text-sm leading-relaxed text-muted-foreground">
           <Icon name="info" size="sm" mono className="mt-0.5 shrink-0 text-primary" />
           {t("settings.limitsNote")}
         </p>
@@ -251,7 +251,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
           <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{t("settings.aboutDesc")}</p>
         </div>
 
-        <dl className="grid grid-cols-1 gap-x-6 gap-y-4 rounded-lg bg-muted/40 p-4 sm:grid-cols-3">
+        <dl className="settings-well grid grid-cols-1 gap-x-6 gap-y-4 rounded-xl p-4 sm:grid-cols-3">
           <div>
             <dt className="text-xs text-muted-foreground">API</dt>
             <dd className="mt-0.5 text-sm font-medium tabular-nums text-foreground">{versions?.api ?? "?"}</dd>
@@ -277,9 +277,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
         </a>
       </SettingsCard>
 
-      </>)}
+      </SettingsSections>)}
 
-      {activeTab === "media" && (<>
+      {activeTab === "media" && (<SettingsSections>
       {/* Image Processing Settings */}
       <SettingsCard icon="image" title={t("settings.imageProcessing")} description={<SafeHtml html={t("settings.imageProcessingDesc")} as="span" />}>
         <SettingsRow label={t("settings.defaultFormat")}>
@@ -344,7 +344,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
 
       {/* Cache Settings */}
       <SettingsCard icon="cache" title={t("settings.cache")} description={t("settings.cacheDesc")}>
-        <div className="grid grid-cols-2 gap-4 rounded-lg bg-muted/30 p-4 xl:grid-cols-4">
+        <div className="settings-well grid grid-cols-2 gap-4 rounded-xl p-4">
           <div>
             <p className="text-xs text-muted-foreground">{t("settings.diskCacheSize")}</p>
             <p className="mt-0.5 text-xl font-semibold tabular-nums">{cacheStats.total_size_mb.toFixed(2)} MB</p>
@@ -361,14 +361,14 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             <p className="text-xs text-muted-foreground">{t("settings.cachedPages")}</p>
             <p className="mt-0.5 text-xl font-semibold tabular-nums">{cacheStats.memory_page_count}</p>
           </div>
-          <div className="col-span-2 xl:col-span-4">
+          <div className="col-span-2">
             <p className="text-xs text-muted-foreground">{t("settings.directory")}</p>
             <p className="mt-0.5 truncate font-mono text-sm" title={cacheStats.directory}>{cacheStats.directory}</p>
           </div>
         </div>
 
         {clearResult && (
-          <div className={`rounded-lg p-3 text-sm ${clearResult.success ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
+          <div className={`rounded-xl p-3 text-sm ${clearResult.success ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
             {clearResult.message}
           </div>
         )}
@@ -524,7 +524,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
           />
         </SettingsRow>
 
-        <div className="grid grid-cols-2 gap-4 rounded-lg bg-muted/30 p-4 sm:grid-cols-3">
+        <div className="settings-well grid grid-cols-2 gap-4 rounded-xl p-4 sm:grid-cols-3">
           <div>
             <p className="text-xs text-muted-foreground">{t("settings.totalSize")}</p>
             <p className="mt-0.5 text-xl font-semibold tabular-nums">{thumbnailStats.total_size_mb.toFixed(2)} MB</p>
@@ -539,25 +539,25 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
           </div>
         </div>
 
-        <p className="flex items-start gap-2.5 rounded-lg bg-muted/40 p-3 text-sm leading-relaxed text-muted-foreground">
+        <p className="settings-well flex items-start gap-2.5 rounded-xl p-3.5 text-sm leading-relaxed text-muted-foreground">
           <Icon name="info" size="sm" mono className="mt-0.5 shrink-0 text-primary" />
           {t("settings.thumbnailsNote")}
         </p>
       </SettingsCard>
-      </>)}
+      </SettingsSections>)}
 
-      {activeTab === "metadata" && (<>
+      {activeTab === "metadata" && (<SettingsSections>
       {/* Metadata Providers */}
       <MetadataProvidersCard handleUpdateSetting={handleUpdateSetting} initialData={initialMetadataProviders} />
 
 
       {/* Status Mappings */}
       <StatusMappingsCard initialStatusMappings={initialStatusMappings} initialSeriesStatuses={initialSeriesStatuses} initialProviderStatuses={initialProviderStatuses} />
-      </>)}
+      </SettingsSections>)}
 
-      {activeTab === "ai" && (<AiTaggingCard handleUpdateSetting={handleUpdateSetting} initialData={settings.ai_tagging ?? null} />)}
+      {activeTab === "ai" && (<SettingsSections layout="stack"><AiTaggingCard handleUpdateSetting={handleUpdateSetting} initialData={settings.ai_tagging ?? null} /></SettingsSections>)}
 
-      {activeTab === "downloadTools" && (<>
+      {activeTab === "downloadTools" && (<SettingsSections>
       {/* Downloads feature toggle */}
       <SettingsCard
         icon="play"
@@ -616,21 +616,25 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
 
       {/* Direct download providers (JSON / HTML catalogues) */}
       <DdlProvidersCard />
-      </>)}
+      </SettingsSections>)}
 
-      {activeTab === "notifications" && (<>
+      {activeTab === "notifications" && (<SettingsSections layout="stack">
       {/* Telegram Notifications */}
       <TelegramCard handleUpdateSetting={handleUpdateSetting} initialData={initialTelegram} />
-      </>)}
+      </SettingsSections>)}
 
-      {activeTab === "readingStatus" && (<>
+      {activeTab === "readingStatus" && (<SettingsSections>
         <AnilistTab handleUpdateSetting={handleUpdateSetting} users={users} initialData={initialAnilist} />
         <KomgaSyncCard users={users} initialData={initialKomga} />
-      </>)}
+      </SettingsSections>)}
 
-      {activeTab === "archives" && <ArchivesTab />}
+      {activeTab === "archives" && (
+        <SettingsSections layout="stack">
+          <ArchivesTab />
+        </SettingsSections>
+      )}
 
-      {activeTab === "tokens" && tokensContent}
-    </>
+      {activeTab === "tokens" && <SettingsSections layout="stack">{tokensContent}</SettingsSections>}
+    </div>
   );
 }

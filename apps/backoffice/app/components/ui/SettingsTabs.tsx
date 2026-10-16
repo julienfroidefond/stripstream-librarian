@@ -29,10 +29,10 @@ export function SettingsTabs({ tabs, active, onChange, trailing }: SettingsTabsP
   return (
     <nav
       aria-label="Settings sections"
-      className="sticky top-12 z-30 -mt-1 mb-6 border-b border-border/60 bg-background/85 backdrop-blur-md"
+      className="sticky top-12 z-30 -mt-1 mb-5 bg-background/85 backdrop-blur-md"
     >
       <div className="flex items-center gap-3 py-2">
-        <div className="scrollbar-hide flex flex-1 items-center gap-1 overflow-x-auto">
+        <div className="settings-panel scrollbar-hide flex flex-1 items-center gap-1 overflow-x-auto rounded-full p-1">
           {tabs.map((tab) => {
             const isActive = tab.id === active;
             return (
@@ -41,10 +41,10 @@ export function SettingsTabs({ tabs, active, onChange, trailing }: SettingsTabsP
                 type="button"
                 aria-current={isActive ? "page" : undefined}
                 onClick={() => onChange(tab.id)}
-                className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm transition-colors ${
                   isActive
-                    ? "bg-primary/10 font-semibold text-primary ring-1 ring-inset ring-primary/25"
-                    : "font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                    ? "settings-well font-semibold text-foreground"
+                    : "font-medium text-muted-foreground hover:text-foreground"
                 }`}
               >
                 {tab.icon && (

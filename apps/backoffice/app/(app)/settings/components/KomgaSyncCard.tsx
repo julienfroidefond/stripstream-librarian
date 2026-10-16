@@ -121,7 +121,7 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
       {syncError && <div className="p-3 rounded-lg bg-destructive/10 text-destructive">{syncError}</div>}
       {syncResult && (
         <div className="space-y-3">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
+          <div className="settings-well grid grid-cols-2 gap-4 rounded-xl p-4 sm:grid-cols-4">
             <div>
               <p className="text-sm text-muted-foreground">{t("settings.komgaRead")}</p>
               <p className="text-2xl font-semibold">{syncResult.total_komga_read}</p>
@@ -146,7 +146,7 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
                 {t("settings.matchedBooks", { count: syncResult.matched_books.length, plural: syncResult.matched_books.length !== 1 ? "s" : "" })}
               </button>
               {showMatchedBooks && (
-                <div className="mt-2 max-h-60 overflow-y-auto p-3 bg-success/5 rounded-lg text-sm space-y-1">
+                <div className="mt-2 max-h-60 space-y-1 overflow-y-auto rounded-xl bg-success/5 p-3 text-sm">
                   {syncResult.matched_books.map((title, i) => (
                     <p key={i} className="text-foreground truncate flex items-center gap-1.5" title={title}>
                       {syncNewlyMarkedSet.has(title) && <Icon name="check" size="sm" className="text-success shrink-0" />}
@@ -164,7 +164,7 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
                 {t("settings.unmatchedBooks", { count: syncResult.unmatched.length, plural: syncResult.unmatched.length !== 1 ? "s" : "" })}
               </button>
               {showUnmatched && (
-                <div className="mt-2 max-h-60 overflow-y-auto p-3 bg-muted/20 rounded-lg text-sm space-y-1">
+                <div className="settings-well mt-2 max-h-60 space-y-1 overflow-y-auto rounded-xl p-3 text-sm">
                   {syncResult.unmatched.map((title, i) => (
                     <p key={i} className="text-muted-foreground truncate" title={title}>{title}</p>
                   ))}
@@ -175,7 +175,7 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
         </div>
       )}
       {reports.length > 0 && (
-        <div className="border-t border-border pt-4">
+        <div className="pt-2">
           <h3 className="text-sm font-medium text-foreground mb-3">{t("settings.syncHistory")}</h3>
           <div className="space-y-2">
             {reports.map((r) => (
@@ -183,8 +183,8 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
                 key={r.id}
                 type="button"
                 onClick={() => handleViewReport(r.id)}
-                className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                  selectedReport?.id === r.id ? "border-primary bg-primary/5" : "border-border/60 bg-muted/20 hover:bg-muted/40"
+                className={`w-full rounded-xl p-3 text-left transition-colors ${
+                  selectedReport?.id === r.id ? "bg-primary/15" : "settings-well"
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -202,7 +202,7 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
           </div>
           {selectedReport && (
             <div className="mt-3 space-y-3">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg">
+              <div className="settings-well grid grid-cols-2 gap-4 rounded-xl p-4 sm:grid-cols-4">
                 <div>
                   <p className="text-sm text-muted-foreground">{t("settings.komgaRead")}</p>
                   <p className="text-2xl font-semibold">{selectedReport.total_komga_read}</p>
@@ -227,7 +227,7 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
                     {t("settings.matchedBooks", { count: selectedReport.matched_books.length, plural: selectedReport.matched_books.length !== 1 ? "s" : "" })}
                   </button>
                   {showReportMatchedBooks && (
-                    <div className="mt-2 max-h-60 overflow-y-auto p-3 bg-success/5 rounded-lg text-sm space-y-1">
+                    <div className="mt-2 max-h-60 space-y-1 overflow-y-auto rounded-xl bg-success/5 p-3 text-sm">
                       {selectedReport.matched_books.map((title, i) => (
                         <p key={i} className="text-foreground truncate flex items-center gap-1.5" title={title}>
                           {reportNewlyMarkedSet.has(title) && <Icon name="check" size="sm" className="text-success shrink-0" />}
@@ -245,7 +245,7 @@ export function KomgaSyncCard({ users, initialData }: { users: UserDto[]; initia
                     {t("settings.unmatchedBooks", { count: selectedReport.unmatched.length, plural: selectedReport.unmatched.length !== 1 ? "s" : "" })}
                   </button>
                   {showReportUnmatched && (
-                    <div className="mt-2 max-h-60 overflow-y-auto p-3 bg-muted/20 rounded-lg text-sm space-y-1">
+                    <div className="settings-well mt-2 max-h-60 space-y-1 overflow-y-auto rounded-xl p-3 text-sm">
                       {selectedReport.unmatched.map((title, i) => (
                         <p key={i} className="text-muted-foreground truncate" title={title}>{title}</p>
                       ))}

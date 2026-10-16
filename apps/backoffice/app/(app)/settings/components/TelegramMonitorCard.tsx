@@ -423,7 +423,7 @@ export function TelegramMonitorCard({
 
       {/* Monitored channels */}
       {authorized && (
-        <div className="border-t border-border/50 pt-4">
+        <div className="pt-2">
           <h3 className="text-sm font-semibold text-foreground">{t("telegramMonitor.sourcesTitle")}</h3>
 
           <div className="mt-3 space-y-2">
@@ -433,7 +433,7 @@ export function TelegramMonitorCard({
             {sources.map(src => (
               <div
                 key={src.id}
-                className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-sm"
+                className="settings-well flex items-center gap-3 rounded-full px-3.5 py-2 text-sm"
               >
                 <span className="font-mono">@{src.channel_username}</span>
                 {src.channel_title && <span className="text-muted-foreground">{src.channel_title}</span>}

@@ -129,7 +129,7 @@ export function AnilistTab({
       <SettingsCard icon="link" title={t("settings.anilistTitle")} description={t("settings.anilistDesc")}>
         <p className="text-sm text-muted-foreground">{t("settings.anilistConnectDesc")}</p>
         {/* Redirect URL info */}
-        <div className="space-y-1 rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+        <div className="settings-well space-y-1 rounded-xl px-3.5 py-2.5 text-xs text-muted-foreground">
           <p className="font-medium text-foreground">{t("settings.anilistRedirectUrlLabel")}</p>
           <code className="select-all font-mono">{origin ? `${origin}/anilist/callback` : "/anilist/callback"}</code>
           <p>{t("settings.anilistRedirectUrlHint")}</p>
@@ -214,7 +214,7 @@ export function AnilistTab({
               });
             }}
             autoComplete="off"
-            className="h-10 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring sm:max-w-md"
+            className="h-10 w-full px-3 py-2.5 text-sm sm:max-w-md"
           >
             <option value="">{t("settings.anilistLocalUserNone")}</option>
             {users.map((u) => (
@@ -245,14 +245,14 @@ export function AnilistTab({
               </Button>
             </div>
             {syncReport && (
-              <div className="mt-2 border rounded-lg overflow-hidden">
-                <div className="px-4 py-2 bg-muted/50 flex items-center gap-3">
+              <div className="settings-well mt-2 overflow-hidden rounded-xl">
+                <div className="flex items-center gap-3 px-4 py-2.5">
                   <span className="text-sm text-success font-medium">{t("settings.anilistSynced", { count: String(syncReport.synced) })}</span>
                   {syncReport.skipped > 0 && <span className="text-sm text-muted-foreground">{t("settings.anilistSkipped", { count: String(syncReport.skipped) })}</span>}
                   {syncReport.errors.length > 0 && <span className="text-sm text-destructive">{t("settings.anilistErrors", { count: String(syncReport.errors.length) })}</span>}
                 </div>
                 {syncReport.items.length > 0 && (
-                  <div className="divide-y max-h-60 overflow-y-auto">
+                  <div className="max-h-60 divide-y divide-border/40 overflow-y-auto">
                     {syncReport.items.map((item: AnilistSyncItemDto) => (
                       <div key={item.series_name} className="flex items-center justify-between px-4 py-2 text-sm">
                         <a
@@ -267,7 +267,7 @@ export function AnilistTab({
                           <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
                             item.status === "COMPLETED" ? "bg-success/15 text-success" :
                             item.status === "CURRENT" ? "bg-info/15 text-info" :
-                            "bg-muted text-muted-foreground"
+                            "settings-well text-muted-foreground"
                           }`}>{item.status}</span>
                           {item.progress_volumes > 0 && (
                             <span className="text-xs text-muted-foreground">{item.progress_volumes} vol.</span>
@@ -293,14 +293,14 @@ export function AnilistTab({
               )}
             </Button>
             {pullReport && (
-              <div className="mt-2 border rounded-lg overflow-hidden">
-                <div className="px-4 py-2 bg-muted/50 flex items-center gap-3">
+              <div className="settings-well mt-2 overflow-hidden rounded-xl">
+                <div className="flex items-center gap-3 px-4 py-2.5">
                   <span className="text-sm text-success font-medium">{t("settings.anilistUpdated", { count: String(pullReport.updated) })}</span>
                   {pullReport.skipped > 0 && <span className="text-sm text-muted-foreground">{t("settings.anilistSkipped", { count: String(pullReport.skipped) })}</span>}
                   {pullReport.errors.length > 0 && <span className="text-sm text-destructive">{t("settings.anilistErrors", { count: String(pullReport.errors.length) })}</span>}
                 </div>
                 {pullReport.items.length > 0 && (
-                  <div className="divide-y max-h-60 overflow-y-auto">
+                  <div className="max-h-60 divide-y divide-border/40 overflow-y-auto">
                     {pullReport.items.map((item: AnilistPullItemDto) => (
                       <div key={item.series_name} className="flex items-center justify-between px-4 py-2 text-sm">
                         <a
@@ -316,7 +316,7 @@ export function AnilistTab({
                             item.anilist_status === "COMPLETED" ? "bg-success/15 text-success" :
                             item.anilist_status === "CURRENT" ? "bg-info/15 text-info" :
                             item.anilist_status === "PLANNING" ? "bg-warning/15 text-warning" :
-                            "bg-muted text-muted-foreground"
+                            "settings-well text-muted-foreground"
                           }`}>{item.anilist_status}</span>
                           <span className="text-xs text-muted-foreground">{item.books_updated} {t("dashboard.books").toLowerCase()}</span>
                         </div>
@@ -333,8 +333,8 @@ export function AnilistTab({
         </div>
         {actionError && <p className="text-sm text-destructive">{actionError}</p>}
         {previewItems !== null && (
-          <div className="mt-2 border rounded-lg overflow-hidden">
-            <div className="px-4 py-2 bg-muted/50 flex items-center justify-between">
+          <div className="settings-well mt-2 overflow-hidden rounded-xl">
+            <div className="flex items-center justify-between px-4 py-2.5">
               <span className="text-sm font-medium">{t("settings.anilistPreviewTitle", { count: String(previewItems.length) })}</span>
               <button onClick={() => setPreviewItems(null)} className="text-xs text-muted-foreground hover:text-foreground">✕</button>
             </div>
@@ -362,7 +362,7 @@ export function AnilistTab({
                       <span className={`text-3xs px-1.5 py-0.5 rounded-full font-medium ${
                         item.status === "COMPLETED" ? "bg-success/15 text-success" :
                         item.status === "CURRENT" ? "bg-info/15 text-info" :
-                        "bg-muted text-muted-foreground"
+                        "settings-well text-muted-foreground"
                       }`}>
                         {item.status}
                       </span>

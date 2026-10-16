@@ -271,7 +271,7 @@ export function DdlProvidersCard() {
         </ul>
       )}
 
-      <div className="mt-6 border-t border-border pt-4 space-y-3">
+      <div className="space-y-3 pt-2">
         <div>
           <p className="text-sm font-medium text-foreground">
             {t("ddlProviders.backgroundSearch")}

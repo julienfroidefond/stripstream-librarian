@@ -46,34 +46,42 @@ export function AiTaggingCard({ initialData, handleUpdateSetting }: { initialDat
   };
 
   return (
-    <SettingsCard icon="bot" title={t("settings.aiConfiguration")} description={t("settings.aiTaggingDesc")}>
-      <label className="flex items-center gap-3 text-sm font-medium">
-        <input type="checkbox" checked={data.enabled} onChange={e => save({ ...data, enabled: e.target.checked })} />
-        {t("settings.aiGenreTagging")}
-      </label>
-      <SettingsRow label={t("settings.aiBaseUrl")} htmlFor="ai-base-url">
-        <FormInput id="ai-base-url" value={data.base_url} onChange={e => setData({ ...data, base_url: e.target.value })} onBlur={() => save(data)} placeholder="https://openrouter.ai/api/v1" />
-      </SettingsRow>
-      <SettingsRow label={t("settings.aiApiKey")} htmlFor="ai-api-key">
-        <FormInput id="ai-api-key" type="password" value={data.api_key} onChange={e => setData({ ...data, api_key: e.target.value })} onBlur={() => save(data)} placeholder="sk-or-v1-..." autoComplete="off" />
-      </SettingsRow>
-      <SettingsRow label={t("settings.aiModel")} htmlFor="ai-model">
-        <FormInput id="ai-model" value={data.model} onChange={e => setData({ ...data, model: e.target.value })} onBlur={() => save(data)} placeholder="openrouter/free" />
-      </SettingsRow>
-      <SettingsRow label={t("settings.aiMaxTags")} htmlFor="ai-max-tags">
-        <FormInput id="ai-max-tags" type="number" min={1} max={10} value={data.max_tags} onChange={e => setData({ ...data, max_tags: Math.min(10, Math.max(1, parseInt(e.target.value) || 5)) })} onBlur={() => save(data)} className="w-24" />
-      </SettingsRow>
-      <SettingsRow label={t("settings.aiPrompt")} htmlFor="ai-prompt">
+    <div className="grid grid-cols-1 gap-5 xl:grid-cols-2 xl:items-start">
+      <SettingsCard icon="bot" title={t("settings.aiConfiguration")} description={t("settings.aiTaggingDesc")}>
+        <label className="flex items-center gap-3 text-sm font-medium">
+          <input type="checkbox" checked={data.enabled} onChange={e => save({ ...data, enabled: e.target.checked })} />
+          {t("settings.aiGenreTagging")}
+        </label>
+        <SettingsRow label={t("settings.aiBaseUrl")} htmlFor="ai-base-url">
+          <FormInput id="ai-base-url" value={data.base_url} onChange={e => setData({ ...data, base_url: e.target.value })} onBlur={() => save(data)} placeholder="https://openrouter.ai/api/v1" />
+        </SettingsRow>
+        <SettingsRow label={t("settings.aiApiKey")} htmlFor="ai-api-key">
+          <FormInput id="ai-api-key" type="password" value={data.api_key} onChange={e => setData({ ...data, api_key: e.target.value })} onBlur={() => save(data)} placeholder="sk-or-v1-..." autoComplete="off" />
+        </SettingsRow>
+        <SettingsRow label={t("settings.aiModel")} htmlFor="ai-model">
+          <FormInput id="ai-model" value={data.model} onChange={e => setData({ ...data, model: e.target.value })} onBlur={() => save(data)} placeholder="openrouter/free" />
+        </SettingsRow>
+        <SettingsRow label={t("settings.aiMaxTags")} htmlFor="ai-max-tags">
+          <FormInput id="ai-max-tags" type="number" min={1} max={10} value={data.max_tags} onChange={e => setData({ ...data, max_tags: Math.min(10, Math.max(1, parseInt(e.target.value) || 5)) })} onBlur={() => save(data)} className="w-24" />
+        </SettingsRow>
+        <div className="flex flex-wrap items-center gap-3 pt-2">
+          <button type="button" onClick={testConnection} disabled={testing} className="rounded-xl bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50">
+            {testing ? t("settings.aiTesting") : t("settings.aiTest")}
+          </button>
+          {testResult && <p className={`text-sm ${testResult.ok ? "text-success" : "text-destructive"}`}>{testResult.message}</p>}
+        </div>
+      </SettingsCard>
+  
+      <SettingsCard icon="document" title={t("settings.aiPrompt")} description={t("settings.aiPromptHelp")}>
         <textarea
           id="ai-prompt"
           value={data.prompt}
           onChange={e => setData({ ...data, prompt: e.target.value })}
           onBlur={() => save(data)}
-          rows={9}
-          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm leading-6 text-foreground focus:outline-none focus:ring-2 focus:ring-primary font-mono"
+          rows={14}
+          className="w-full px-3.5 py-3 font-mono text-sm leading-6 text-foreground"
         />
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-muted-foreground">{t("settings.aiPromptHelp")}</p>
+        <div className="flex justify-end">
           <button
             type="button"
             onClick={restoreDefaultPrompt}
@@ -83,13 +91,7 @@ export function AiTaggingCard({ initialData, handleUpdateSetting }: { initialDat
             {t("settings.aiRestoreDefaultPrompt")}
           </button>
         </div>
-      </SettingsRow>
-      <div className="flex flex-wrap items-center gap-3 pt-2">
-        <button type="button" onClick={testConnection} disabled={testing} className="rounded-lg border border-primary/40 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/10 disabled:opacity-50">
-          {testing ? t("settings.aiTesting") : t("settings.aiTest")}
-        </button>
-        {testResult && <p className={`text-sm ${testResult.ok ? "text-success" : "text-destructive"}`}>{testResult.message}</p>}
-      </div>
-    </SettingsCard>
+      </SettingsCard>
+    </div>
   );
 }

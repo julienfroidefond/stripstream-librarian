@@ -61,10 +61,10 @@ export function MetadataProvidersCard({ handleUpdateSetting, initialData }: { ha
                 setDefaultProvider(p.id);
                 save(p.id, metadataLanguage, apiKeys);
               }}
-              className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+              className={`inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm transition-colors ${
                 defaultProvider === p.id
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/50"
+                  ? "bg-primary/15 font-semibold text-primary"
+                  : "settings-well text-muted-foreground hover:text-foreground"
               }`}
             >
               <ProviderIcon provider={p.id} size={18} />
@@ -85,10 +85,10 @@ export function MetadataProvidersCard({ handleUpdateSetting, initialData }: { ha
                 setMetadataLanguage(l.value);
                 save(defaultProvider, l.value, apiKeys);
               }}
-              className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+              className={`rounded-full px-3.5 py-1.5 text-sm transition-colors ${
                 metadataLanguage === l.value
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/50"
+                  ? "bg-primary/15 font-semibold text-primary"
+                  : "settings-well text-muted-foreground hover:text-foreground"
               }`}
             >
               {l.label}
@@ -98,7 +98,7 @@ export function MetadataProvidersCard({ handleUpdateSetting, initialData }: { ha
       </SettingsRow>
 
       {/* Provider API keys — always visible */}
-      <div className="space-y-5 border-t border-border/50 pt-5">
+      <div className="space-y-4 pt-2">
         <h4 className="text-sm font-semibold text-foreground">{t("settings.apiKeys")}</h4>
         <SettingsRow
           label={<span className="flex items-center gap-1.5"><ProviderIcon provider="google_books" size={16} />{t("settings.googleBooksKey")}</span>}
@@ -130,7 +130,7 @@ export function MetadataProvidersCard({ handleUpdateSetting, initialData }: { ha
           />
         </SettingsRow>
 
-        <div className="flex items-center gap-3 flex-wrap rounded-lg bg-muted/30 p-3">
+        <div className="settings-well flex flex-wrap items-center gap-3 rounded-xl px-4 py-3">
           {providers.filter((provider) => !provider.requires_api_key).map((provider, index) => (
             <span key={provider.id} className="contents">
               {index > 0 && <span className="text-xs text-muted-foreground">{t("common.and")}</span>}

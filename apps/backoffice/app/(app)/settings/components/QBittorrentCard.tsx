@@ -55,7 +55,7 @@ export function QBittorrentCard({ handleUpdateSetting, initialQbittorrent, initi
         />
       </div>
 
-      <div className="space-y-3 border-t border-border/40 pt-4">
+      <div className="space-y-3 pt-2">
         <SettingsRow label={t("settings.torrentImportEnabled")}>
           <FormSelect
             value={importEnabled ? "true" : "false"}
@@ -72,7 +72,7 @@ export function QBittorrentCard({ handleUpdateSetting, initialQbittorrent, initi
         </SettingsRow>
 
         {importEnabled && (
-          <div className="flex items-start gap-2 rounded-lg border border-success/20 bg-success/5 p-3">
+          <div className="flex items-start gap-2 rounded-xl bg-success/10 p-3">
             <Icon name="check" size="sm" mono className="mt-0.5 shrink-0 text-success" />
             <p className="text-sm text-muted-foreground">{t("settings.torrentImportPollingInfo")}</p>
           </div>
