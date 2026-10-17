@@ -486,6 +486,11 @@ fn row_to_external_book(row: &sqlx::postgres::PgRow) -> ExternalBookRow {
 /// Fetch the matched external books of a series' approved links, ordered
 /// primary-first then by approval time. Rows without a local `book_id` are
 /// skipped: they cannot be merged onto a local book.
+///
+/// The ordering must be total and stable: it decides which row wins the merge
+/// for a given local book. Ties on the external book id are broken by the row
+/// id only as a last resort, never on it alone (it is a random UUID re-created
+/// on every refresh).
 pub(crate) async fn fetch_approved_external_books(
     pool: &PgPool,
     series_id: Uuid,
@@ -501,7 +506,8 @@ pub(crate) async fn fetch_approved_external_books(
           AND eml.status = 'approved'
           AND ebm.book_id IS NOT NULL
         ORDER BY eml.is_primary DESC, eml.approved_at ASC NULLS LAST, eml.id ASC,
-                 ebm.volume_number NULLS LAST, ebm.id ASC
+                 ebm.volume_number NULLS LAST, ebm.external_book_id ASC NULLS LAST,
+                 ebm.id ASC
         "#,
     )
     .bind(series_id)
@@ -1055,6 +1061,59 @@ mod tests {
         .await
         .unwrap();
         id
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn fetch_approved_external_books_is_deterministic_on_duplicate_editions(
+        pool: sqlx::PgPool,
+    ) {
+        let (lib_id, series_id) = seed_series(&pool).await;
+        let book_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO books (id, library_id, series_id, title, kind, format, volume) \
+             VALUES ($1, $2, $3, 'Gon T01', 'comic', 'cbz', 1)",
+        )
+        .bind(book_id)
+        .bind(lib_id)
+        .bind(series_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let link_id = seed_link(&pool, lib_id, series_id, "senscritique", "approved").await;
+
+        // Two editions of the same volume matched to the same book. The row ids
+        // are chosen so the uuid order is the opposite of the external book id
+        // order: the merge must follow `external_book_id`, never the random uuid
+        // that is re-created on every refresh (issue #65).
+        for (id, external_id, isbn) in [
+            ("00000000-0000-0000-0000-000000000001", "2", "pika"),
+            ("ffffffff-ffff-ffff-ffff-ffffffffffff", "1", "casterman"),
+        ] {
+            sqlx::query(
+                "INSERT INTO external_book_metadata \
+                     (id, link_id, book_id, external_book_id, volume_number, title, isbn) \
+                 VALUES ($1, $2, $3, $4, 1, 'Gon T01', $5)",
+            )
+            .bind(Uuid::parse_str(id).unwrap())
+            .bind(link_id)
+            .bind(book_id)
+            .bind(external_id)
+            .bind(isbn)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let rows = fetch_approved_external_books(&pool, series_id)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].isbn.as_deref(), Some("casterman"));
+
+        let merged = merge_book_rows(&rows);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].1.isbn.as_deref(), Some("casterman"));
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]

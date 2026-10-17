@@ -81,6 +81,8 @@ Accès : **Settings → onglet Général → Status Mappings**.
 
 Pour une édition SensCritique, les métadonnées de série sont celles du tome au numéro le plus bas. Les auteurs regroupent les champs `authors` et `pencillers` de ce tome ; la même règle est appliquée au matching initial et aux refresh.
 
+Quand SensCritique renvoie **plusieurs éditions d'un même tome** (par exemple les éditions Casterman et Pika de *Gon*), une seule est retenue : celle dont la date de sortie est connue, puis la plus ancienne, puis le plus petit identifiant produit SensCritique. Ce choix est **stable d'un refresh à l'autre** : le rafraîchissement quotidien ne réécrit plus en boucle les mêmes résumés, ISBN et descriptions.
+
 **Sources de description par provider** :
 
 | Provider | Source de la description |
