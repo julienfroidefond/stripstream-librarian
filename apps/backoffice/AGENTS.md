@@ -11,6 +11,7 @@ app/
 ├── books/              # Liste et détail des livres
 ├── libraries/          # Gestion bibliothèques
 ├── jobs/               # Monitoring jobs
+├── diagnostics/        # Diagnostic / santé (API, base, caches, miniatures, jobs)
 ├── tokens/             # Tokens API
 ├── settings/           # Paramètres
 ├── components/         # Composants métier
@@ -58,7 +59,7 @@ import { Button, Card, Badge, Icon, Input, ProgressBar, StatBox } from "@/app/co
 - **Tailwind v4** : config dans `postcss.config.js`, tokens et variables CSS dans `globals.css` (`@theme`). Pas de `tailwind.config.js` (v4 ne le charge pas sans directive `@config`).
 - **Thème** : `ThemeProvider` + `ThemeToggle` pour dark/light mode via `next-themes`.
 - **Icônes** : composant `<Icon name="..." size="sm|md|lg" />` dans `ui/Icon.tsx` — pas de librairie externe.
-- **Navigation** : routes typées dans `layout.tsx` (`"/" | "/books" | "/libraries" | "/jobs" | "/tokens" | "/settings"`).
+- **Navigation** : routes typées dans `layout.tsx` (`"/" | "/books" | "/libraries" | "/jobs" | "/tokens" | "/settings" | "/diagnostics"`).
 
 ## Commandes
 

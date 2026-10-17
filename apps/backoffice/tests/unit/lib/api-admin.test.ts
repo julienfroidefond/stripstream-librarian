@@ -20,6 +20,8 @@ import {
   fetchStatsOverview,
   fetchReadingProgress,
   fetchStatusMappings,
+  fetchDiagnostics,
+  fetchDiagnosticsProbe,
   fetchUserGenreRestrictions,
   fetchUsers,
   getCacheStats,
@@ -169,6 +171,18 @@ describe("settings and cache", () => {
   it("clears the cache", async () => {
     await clearCache();
     expect(lastCall()).toMatchObject({ url: "http://api:7080/settings/cache/clear", method: "POST" });
+  });
+
+  it("fetches the diagnostics report without caching", async () => {
+    await fetchDiagnostics();
+    expect(lastCall()).toMatchObject({ url: "http://api:7080/diagnostics" });
+    expect(lastCall().init.cache).toBe("no-store");
+  });
+
+  it("runs the on-demand probe without caching", async () => {
+    await fetchDiagnosticsProbe();
+    expect(lastCall()).toMatchObject({ url: "http://api:7080/diagnostics/probe" });
+    expect(lastCall().init.cache).toBe("no-store");
   });
 });
 

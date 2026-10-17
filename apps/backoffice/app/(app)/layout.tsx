@@ -57,6 +57,7 @@ const navEntries: NavEntry[] = [
     ],
   },
   { href: "/libraries", labelKey: "nav.libraries", icon: "libraries", color: "text-primary" },
+  { href: "/diagnostics", labelKey: "nav.diagnostics", icon: "performance", color: "text-info" },
   { href: "/discovery", labelKey: "nav.discovery", icon: "search", color: "text-highlight" },
 ];
 

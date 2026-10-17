@@ -45,6 +45,7 @@ Accessibles avec un token de scope `admin` :
 - Opérations metadata (recherche, match, approbation, rejet, batch, refresh)
 - Intégrations externes (Prowlarr, qBittorrent, Komga)
 - Paramètres application et gestion du cache
+- Diagnostic de santé : `GET /diagnostics` (versions, base de données, caches, miniatures, tâches, bibliothèques)
 
 ## Authentification
 

@@ -353,7 +353,8 @@ stripstream-librarian/
 │   ├── backoffice/        # Next.js 16 admin UI — port 7082
 │   └── docs/              # Astro/Starlight documentation site — port 7084
 ├── crates/
-│   ├── core/              # config.rs (env), paths.rs, fingerprint.rs, schedule.rs
+│   ├── core/              # config.rs (env), paths.rs, fingerprint.rs, schedule.rs,
+│   │                      # heartbeat.rs (API + indexer liveness), disk.rs (statvfs)
 │   ├── parsers/           # lib.rs (CBZ/CBR/PDF/EPUB parsing), matching.rs
 │   ├── notifications/     # Telegram notifications
 │   └── core2-shim/        # crates-io patch for `core2` (path override)

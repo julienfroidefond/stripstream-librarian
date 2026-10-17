@@ -91,6 +91,7 @@ dependencies = [
  "grammers-session",
  "image",
  "jpeg-decoder",
+ "libc",
  "lru",
  "notifications",
  "parsers",
@@ -3337,11 +3338,14 @@ version = "3.32.30"
 dependencies = [
  "anyhow",
  "chrono",
+ "libc",
  "reqwest",
  "serde",
  "serde_json",
  "sha2 0.11.1",
  "sqlx",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

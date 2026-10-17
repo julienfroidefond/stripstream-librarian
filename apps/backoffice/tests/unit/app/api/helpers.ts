@@ -34,6 +34,8 @@ export function createApiMock() {
     markSeriesRead: vi.fn(),
     clearCache: vi.fn(),
     getCacheStats: vi.fn(),
+    fetchDiagnostics: vi.fn(),
+    fetchDiagnosticsProbe: vi.fn(),
     listKomgaReports: vi.fn(),
     getKomgaReport: vi.fn(),
   };
