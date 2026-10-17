@@ -209,6 +209,128 @@ fn aggregate_series_rating_empty_is_none() {
     assert_eq!(aggregate_series_rating(&[]), None);
 }
 
+// ─── dedupe_volumes_by_edition (issue #65) ───────────────────────────
+
+fn edition_book(
+    product_id: &str,
+    volume: i32,
+    isbn: &str,
+    publish_date: Option<&str>,
+) -> BookCandidate {
+    BookCandidate {
+        external_book_id: product_id.to_string(),
+        title: format!("Gon, tome {volume}"),
+        volume_number: Some(volume),
+        authors: vec![],
+        isbn: Some(isbn.to_string()),
+        summary: Some(format!("synopsis {isbn}")),
+        cover_url: None,
+        page_count: None,
+        language: Some("fr".to_string()),
+        publish_date: publish_date.map(str::to_string),
+        metadata_json: serde_json::json!({}),
+    }
+}
+
+fn kept_isbns(books: Vec<BookCandidate>) -> Vec<String> {
+    dedupe_volumes_by_edition(books)
+        .into_iter()
+        .map(|book| book.isbn.unwrap_or_default())
+        .collect()
+}
+
+#[test]
+fn dedupe_volumes_is_independent_of_provider_order() {
+    // Gon has two French editions (Casterman / Pika) whose volumes share the
+    // same volume number. SensCritique's item order is not stable between
+    // calls, so both orders must yield the very same edition.
+    let casterman = |vol| {
+        edition_book(
+            &format!("10{vol}"),
+            vol,
+            &format!("9782203372{vol:03}"),
+            None,
+        )
+    };
+    let pika = |vol| {
+        edition_book(
+            &format!("20{vol}"),
+            vol,
+            &format!("9782811619{vol:03}"),
+            None,
+        )
+    };
+
+    let forward = kept_isbns(vec![
+        casterman(1),
+        pika(1),
+        casterman(2),
+        pika(2),
+        casterman(3),
+        pika(3),
+    ]);
+    let backward = kept_isbns(vec![
+        pika(3),
+        casterman(3),
+        pika(2),
+        casterman(2),
+        pika(1),
+        casterman(1),
+    ]);
+
+    assert_eq!(forward, backward);
+    assert_eq!(
+        forward,
+        vec![
+            "9782203372001".to_string(),
+            "9782203372002".to_string(),
+            "9782203372003".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn dedupe_volumes_prefers_edition_with_release_date() {
+    let undated = || edition_book("1", 1, "undated", None);
+    let dated = || edition_book("2", 1, "dated", Some("2008-05-14"));
+
+    assert_eq!(kept_isbns(vec![undated(), dated()]), vec!["dated"]);
+    assert_eq!(kept_isbns(vec![dated(), undated()]), vec!["dated"]);
+}
+
+#[test]
+fn dedupe_volumes_keeps_earliest_release_date() {
+    let late = || edition_book("1", 1, "late", Some("2008-05-14"));
+    let early = || edition_book("2", 1, "early", Some("1993-01-01"));
+
+    assert_eq!(kept_isbns(vec![late(), early()]), vec!["early"]);
+    assert_eq!(kept_isbns(vec![early(), late()]), vec!["early"]);
+}
+
+#[test]
+fn dedupe_volumes_tie_breaks_on_product_id() {
+    let newer_product = || edition_book("900", 1, "newer", Some("1993-01-01"));
+    let older_product = || edition_book("100", 1, "older", Some("1993-01-01"));
+
+    assert_eq!(
+        kept_isbns(vec![newer_product(), older_product()]),
+        vec!["older"]
+    );
+    assert_eq!(
+        kept_isbns(vec![older_product(), newer_product()]),
+        vec!["older"]
+    );
+}
+
+#[test]
+fn dedupe_volumes_skips_books_without_volume() {
+    let mut integral = edition_book("1", 1, "integral", None);
+    integral.volume_number = None;
+    let tome = edition_book("2", 1, "tome", None);
+
+    assert_eq!(kept_isbns(vec![integral, tome]), vec!["tome"]);
+}
+
 // ─── Wiremock integration tests ─────────────────────────────────────
 
 use wiremock::matchers::method;

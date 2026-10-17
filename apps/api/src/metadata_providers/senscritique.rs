@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use base64::Engine as _;
 use stripstream_core::http::build_http_client_with_custom_agent;
@@ -533,7 +533,7 @@ async fn fetch_franchise_books(
     };
 
     // Parse all items, then deduplicate by volume number (keep earliest edition)
-    let mut all_books: Vec<BookCandidate> = filtered_items
+    let all_books: Vec<BookCandidate> = filtered_items
         .iter()
         .filter_map(|product| {
             let id = product
@@ -592,29 +592,56 @@ async fn fetch_franchise_books(
         })
         .collect();
 
-    // Sort by publish date (oldest first) so dedup keeps the original edition
-    all_books.sort_by(|a, b| a.publish_date.cmp(&b.publish_date));
+    // Keep one edition per volume with a total, input-order-independent order:
+    // `groupProducts` does not guarantee a stable item order between calls.
+    Ok(dedupe_volumes_by_edition(all_books))
+}
 
-    // Deduplicate by volume number: keep earliest edition per volume
-    let mut seen_volumes: HashMap<i32, usize> = HashMap::new();
-    let mut deduped: Vec<BookCandidate> = Vec::new();
-    for book in all_books {
-        if let Some(vol) = book.volume_number {
-            if let std::collections::hash_map::Entry::Vacant(e) = seen_volumes.entry(vol) {
-                e.insert(deduped.len());
-                deduped.push(book);
-            }
-            // Skip duplicate volume numbers (later editions)
-        } else {
-            // Books without volume number (intégrales, artbooks, etc.) — skip
-            // to avoid polluting the volume list
-        }
+/// Rank two editions of the same volume: lower ranks are kept by
+/// [`dedupe_volumes_by_edition`].
+fn compare_edition_priority(a: &BookCandidate, b: &BookCandidate) -> std::cmp::Ordering {
+    // An edition with a known release date always outranks an undated one.
+    a.publish_date
+        .is_none()
+        .cmp(&b.publish_date.is_none())
+        .then_with(|| a.publish_date.cmp(&b.publish_date))
+        // SensCritique's item order is not stable across calls. Product ids are,
+        // and the oldest product is the original edition, so use them as the
+        // tie-breaker instead of relying on the incoming order (issue #65).
+        .then_with(|| {
+            product_id_rank(&a.external_book_id).cmp(&product_id_rank(&b.external_book_id))
+        })
+        .then_with(|| a.external_book_id.cmp(&b.external_book_id))
+}
+
+/// Numeric rank for a SensCritique product id: numeric ids first (ascending),
+/// then any unexpected non-numeric id (lexicographic).
+fn product_id_rank(external_book_id: &str) -> (bool, i64, &str) {
+    match external_book_id.parse::<i64>() {
+        Ok(id) => (false, id, ""),
+        Err(_) => (true, 0, external_book_id),
     }
+}
 
-    // Sort by volume number
-    deduped.sort_by_key(|b| b.volume_number.unwrap_or(i32::MAX));
+/// Keep exactly one edition per volume. The result only depends on the input
+/// set, never on the order of the items returned by the provider.
+fn dedupe_volumes_by_edition(books: Vec<BookCandidate>) -> Vec<BookCandidate> {
+    let mut ordered = books;
+    ordered.sort_by(compare_edition_priority);
 
-    Ok(deduped)
+    let mut seen_volumes: HashSet<i32> = HashSet::new();
+    // Books without volume number (intégrales, artbooks, etc.) are skipped to
+    // avoid polluting the volume list.
+    let mut deduped: Vec<BookCandidate> = ordered
+        .into_iter()
+        .filter(|book| {
+            book.volume_number
+                .is_some_and(|volume| seen_volumes.insert(volume))
+        })
+        .collect();
+
+    deduped.sort_by_key(|book| book.volume_number.unwrap_or(i32::MAX));
+    deduped
 }
 
 /// Fetch a single product as a book.
@@ -1206,8 +1233,10 @@ fn group_products_by_edition(
     }
 
     let mut result: Vec<_> = groups.into_iter().collect();
-    // Sort by volume count descending (main edition first)
-    result.sort_by_key(|entry| std::cmp::Reverse(entry.1.len()));
+    // Sort by volume count descending (main edition first). The edition name is a
+    // deterministic tie-breaker: `HashMap` iteration order is not stable, and the
+    // search results must not shuffle between calls.
+    result.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0)));
     result
 }
 

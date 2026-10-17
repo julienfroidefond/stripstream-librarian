@@ -335,15 +335,21 @@ async fn sync_book_with_diff(
 
 /// Re-match external_book_metadata rows that have book_id IS NULL
 /// by joining on volume number with local books in the same series.
+///
+/// At most one external row per (link, local book) is ever linked. Linking a
+/// second edition of the same volume to the same book used to make the merge
+/// pick a random row on every refresh (issue #65).
 pub async fn rematch_unlinked_books(pool: &PgPool, library_id: Uuid) -> Result<i64, String> {
     let result = sqlx::query(
         r#"
-        UPDATE external_book_metadata ebm
-        SET book_id = matched.book_id
-        FROM (
+        WITH candidates AS (
+            -- One row per unlinked external book. When several local books share
+            -- the same volume number, the lowest book id wins (deterministic).
             SELECT DISTINCT ON (ebm2.id)
-                ebm2.id AS ebm_id,
-                b.id AS book_id
+                   ebm2.id AS ebm_id,
+                   ebm2.link_id,
+                   b.id AS book_id,
+                   ebm2.external_book_id
             FROM external_book_metadata ebm2
             JOIN external_metadata_links eml ON eml.id = ebm2.link_id
             JOIN books b ON b.library_id = eml.library_id
@@ -355,8 +361,26 @@ pub async fn rematch_unlinked_books(pool: &PgPool, library_id: Uuid) -> Result<i
               AND ebm2.volume_number IS NOT NULL
               AND ebm2.volume_number != 0
               AND eml.status = 'approved'
-        ) matched
-        WHERE ebm.id = matched.ebm_id
+              AND NOT EXISTS (
+                  SELECT 1 FROM external_book_metadata linked
+                  WHERE linked.link_id = ebm2.link_id
+                    AND linked.book_id = b.id
+              )
+            ORDER BY ebm2.id, b.id
+        ), ranked AS (
+            -- At most one external book per (link, local book). Duplicates by
+            -- volume number are broken by the external book id, which is stable
+            -- across refreshes, unlike the row id (a random UUID).
+            SELECT DISTINCT ON (link_id, book_id)
+                   ebm_id, book_id
+            FROM candidates
+            ORDER BY link_id, book_id,
+                     external_book_id ASC NULLS LAST, ebm_id ASC
+        )
+        UPDATE external_book_metadata ebm
+        SET book_id = ranked.book_id
+        FROM ranked
+        WHERE ebm.id = ranked.ebm_id
         "#,
     )
     .bind(library_id)
@@ -370,3 +394,7 @@ pub async fn rematch_unlinked_books(pool: &PgPool, library_id: Uuid) -> Result<i
     }
     Ok(count)
 }
+
+#[cfg(test)]
+#[path = "tests/refresh_sync.rs"]
+mod tests;
