@@ -14,6 +14,8 @@ use crate::stats::StatsCache;
 #[derive(Clone)]
 pub struct AppState {
     pub pool: sqlx::PgPool,
+    /// Process start, used by the diagnostics page to report uptime.
+    pub started_at: Instant,
     pub bootstrap_token: Arc<str>,
     pub page_cache: Arc<Mutex<PageCache>>,
     /// Latest disk-cache walk, reused by the Backoffice's frequent cache-stat polling.
@@ -21,6 +23,8 @@ pub struct AppState {
     /// Coalesces concurrent cache misses for the same rendered page.
     pub page_render_locks: Arc<PageRenderLocks>,
     pub page_render_limit: Arc<Semaphore>,
+    /// Configured `concurrent_renders` limit, for the diagnostics panel.
+    pub page_render_limit_total: usize,
     pub metrics: Arc<Metrics>,
     /// In-memory sliding-window limiter. A plain (non-async) mutex is used
     /// because the critical section never awaits, avoiding serialisation on
@@ -194,11 +198,13 @@ pub const MAX_TELEGRAM_DOWNLOAD_CONNECTIONS: usize = 8;
 pub(crate) fn test_state(pool: Pool<Postgres>) -> AppState {
     AppState {
         pool,
+        started_at: Instant::now(),
         bootstrap_token: Arc::from("test-token"),
         page_cache: Arc::new(Mutex::new(PageCache::new(1))),
         disk_cache_stats: Arc::new(Mutex::new(None)),
         page_render_locks: Arc::new(PageRenderLocks::new(1)),
         page_render_limit: Arc::new(Semaphore::new(1)),
+        page_render_limit_total: 1,
         metrics: Arc::new(Metrics::new()),
         read_rate_limit: Arc::new(std::sync::Mutex::new(ReadRateLimit::new())),
         settings: Arc::new(RwLock::new(DynamicSettings::default())),

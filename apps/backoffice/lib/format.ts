@@ -15,6 +15,19 @@ export function formatNumber(n: number, locale: string): string {
   return n.toLocaleString(locale === "fr" ? "fr-FR" : "en-US");
 }
 
+/** Compact duration since start, e.g. `45s`, `12m`, `3h 12m`, `2d 4h`. */
+export function formatUptime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "—";
+  const total = Math.floor(seconds);
+  if (total < 60) return `${total}s`;
+  const minutes = Math.floor(total / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${minutes % 60}m`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ${hours % 24}h`;
+}
+
 export function formatDuration(start: string, end: string | null): string {
   const startDate = new Date(start);
   const endDate = end ? new Date(end) : new Date();

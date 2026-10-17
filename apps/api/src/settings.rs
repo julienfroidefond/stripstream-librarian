@@ -407,7 +407,7 @@ pub async fn get_cache_stats(State(state): State<AppState>) -> Result<Json<Cache
 /// Symlinked directories are skipped rather than followed: the cache and
 /// thumbnail directories are user-configurable, and a symlink loop (or a link
 /// to `/`) would otherwise make this walk recurse without bound.
-fn compute_dir_stats(path: &std::path::Path) -> (u64, u64) {
+pub(crate) fn compute_dir_stats(path: &std::path::Path) -> (u64, u64) {
     let mut total_size: u64 = 0;
     let mut file_count: u64 = 0;
 
@@ -450,14 +450,7 @@ fn compute_dir_stats(path: &std::path::Path) -> (u64, u64) {
 pub async fn get_thumbnail_stats(
     State(_state): State<AppState>,
 ) -> Result<Json<ThumbnailStats>, ApiError> {
-    let settings = load_setting::<serde_json::Value>(&_state.pool, "thumbnail").await?;
-
-    let directory = settings
-        .as_ref()
-        .and_then(|value| value.get("directory"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("/data/thumbnails")
-        .to_string();
+    let directory = thumbnail_directory(&_state.pool).await;
 
     let directory_clone = directory.clone();
     let stats = tokio::task::spawn_blocking(move || {
@@ -482,6 +475,25 @@ pub async fn get_thumbnail_stats(
     .map_err(|e| ApiError::internal(format!("thumbnail stats failed: {}", e)))?;
 
     Ok(Json(stats))
+}
+
+/// Directory the indexer writes thumbnails to: the `thumbnail` setting, falling
+/// back to the legacy container path.
+///
+/// Never fails: diagnostics must stay readable even when the settings row is
+/// missing or the database is degraded.
+pub(crate) async fn thumbnail_directory(pool: &sqlx::PgPool) -> String {
+    load_setting::<serde_json::Value>(pool, "thumbnail")
+        .await
+        .ok()
+        .flatten()
+        .and_then(|value| {
+            value
+                .get("directory")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "/data/thumbnails".to_string())
 }
 
 // ---------------------------------------------------------------------------

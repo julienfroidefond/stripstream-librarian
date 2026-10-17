@@ -20,6 +20,7 @@ export default defineConfig({
 						{ label: 'Installation', slug: 'getting-started/installation' },
 						{ label: 'Configuration', slug: 'getting-started/configuration' },
 						{ label: 'Dashboard', slug: 'getting-started/dashboard' },
+						{ label: 'Diagnostic / Santé', slug: 'getting-started/diagnostics' },
 					],
 				},
 				{

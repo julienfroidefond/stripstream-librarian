@@ -14,6 +14,7 @@ export * from "./books";
 export * from "./series";
 export * from "./settings";
 export * from "./stats";
+export * from "./diagnostics";
 export * from "./metadata";
 export * from "./komga";
 export * from "./anilist";

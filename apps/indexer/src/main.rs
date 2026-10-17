@@ -31,6 +31,13 @@ async fn async_main() -> anyhow::Result<()> {
 
     let state = AppState { pool };
 
+    // Liveness row read by the diagnostics page (`service_heartbeats`).
+    stripstream_core::heartbeat::spawn(
+        state.pool.clone(),
+        stripstream_core::heartbeat::INDEXER_SERVICE,
+        env!("CARGO_PKG_VERSION"),
+    );
+
     tokio::spawn(indexer::worker::run_worker(
         state.clone(),
         config.scan_interval_seconds,

@@ -8,6 +8,7 @@ import {
   formatNumber,
   formatRate,
   formatSpeed,
+  formatUptime,
   formatVolumeRange,
   formatVolumes,
 } from "@/lib/format";
@@ -132,6 +133,30 @@ describe("formatVolumeRange", () => {
 
   it("compresses longer ranges with a count", () => {
     expect(formatVolumeRange([1, 2, 3, 4, 5])).toBe("1-5 (5)");
+  });
+});
+
+describe("formatUptime", () => {
+  it("returns a dash for invalid input", () => {
+    expect(formatUptime(Number.NaN)).toBe("—");
+    expect(formatUptime(-1)).toBe("—");
+  });
+
+  it("keeps short uptimes in seconds", () => {
+    expect(formatUptime(0)).toBe("0s");
+    expect(formatUptime(59.9)).toBe("59s");
+  });
+
+  it("switches to minutes then hours", () => {
+    expect(formatUptime(60)).toBe("1m");
+    expect(formatUptime(3599)).toBe("59m");
+    expect(formatUptime(3600)).toBe("1h 0m");
+    expect(formatUptime(3600 + 12 * 60)).toBe("1h 12m");
+  });
+
+  it("switches to days past 24 hours", () => {
+    expect(formatUptime(86400)).toBe("1d 0h");
+    expect(formatUptime(2 * 86400 + 4 * 3600)).toBe("2d 4h");
   });
 });
 

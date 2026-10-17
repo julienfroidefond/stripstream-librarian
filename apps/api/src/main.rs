@@ -3,6 +3,7 @@ mod api_middleware;
 mod authors;
 mod books;
 mod cache;
+mod diagnostics;
 mod downloads;
 mod error;
 mod genres;
@@ -97,6 +98,7 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState {
         pool,
+        started_at: std::time::Instant::now(),
         bootstrap_token: Arc::from(config.api_bootstrap_token),
         page_cache: Arc::new(Mutex::new(crate::state::PageCache::new(
             dynamic_settings.page_cache_max_size_mb,
@@ -104,6 +106,7 @@ async fn main() -> anyhow::Result<()> {
         disk_cache_stats: Arc::new(Mutex::new(None)),
         page_render_locks: Arc::new(PageRenderLocks::new(512)),
         page_render_limit: Arc::new(Semaphore::new(concurrent_renders)),
+        page_render_limit_total: concurrent_renders,
         metrics: Arc::new(Metrics::new()),
         read_rate_limit: Arc::new(std::sync::Mutex::new(ReadRateLimit::new())),
         stats_cache: Arc::new(crate::stats::StatsCache::new()),
@@ -119,6 +122,13 @@ async fn main() -> anyhow::Result<()> {
             Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         ),
     };
+
+    // Liveness row read by the diagnostics page (`service_heartbeats`).
+    stripstream_core::heartbeat::spawn(
+        state.pool.clone(),
+        stripstream_core::heartbeat::API_SERVICE,
+        env!("CARGO_PKG_VERSION"),
+    );
 
     let admin_routes = Router::new()
         .route("/libraries", axum::routing::post(libraries::create_library))
@@ -596,6 +606,7 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::post(libraries::scan_library),
         )
         .merge(settings::settings_routes())
+        .merge(diagnostics::diagnostics_routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_admin,

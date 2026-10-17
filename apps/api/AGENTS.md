@@ -23,6 +23,7 @@ Service HTTP sur le port **7080**. Voir `AGENTS.md` racine pour les conventions 
 | `reading_lists/` | Listes de lecture |
 | `users/` | `accounts.rs`, `auth.rs`, `tokens.rs`, `genre_restrictions.rs` |
 | `libraries.rs`, `search.rs`, `settings.rs`, `stats.rs`, `authors.rs`, `genres.rs`, `responses.rs`, `ai_tagging.rs` | Endpoints transverses |
+| `diagnostics/` | `mod.rs` (`GET /diagnostics` : agrégat versions, services, base, disques, caches, miniatures, jobs, intégrité, bibliothèques) + `database.rs`, `storage.rs`, `jobs.rs`, `integrity.rs`, `runtime.rs`, `probe.rs` (`GET /diagnostics/probe` : intégrations externes + fichiers manquants, **lancé à la demande**). Lecture seule, aucune donnée sensible ; dégrade en 200 avec `database.reachable = false` plutôt qu'en 500. |
 | `tests/` | Tests unitaires + `#[sqlx::test]` (DB temporaire migrée) |
 
 ## Patterns clés
@@ -74,6 +75,9 @@ Chargé au démarrage dans `state.rs::load_concurrent_renders`.
 
 ## Gotchas
 
+- **Diagnostic / heartbeats** : l'API et l'indexeur écrivent `service_heartbeats` toutes les 30 s
+  (`stripstream_core::heartbeat::spawn`, seuil hors-ligne 90 s). Déployer les deux services ensemble :
+  sinon la carte Services signale un badge *Versions différentes*.
 - **LIBRARIES_ROOT_PATH** : les `abs_path` en DB commencent par `/libraries/`. Appeler `remap_libraries_path()` avant tout accès fichier.
 - **Rate limit lecture** : middleware `read_rate_limit` sur les routes read, fenêtre de 1s **par client** (clé = token `Authorization`), limite `rate_limit_per_second` (défaut 120). Dépassement → `429` JSON `{"error":"rate limit exceeded"}` + `Retry-After: 1`.
 - **Métriques** : `/metrics` expose `requests_total`, `page_cache_hits`, `page_cache_misses` (atomics dans `AppState.metrics`).
