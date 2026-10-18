@@ -743,7 +743,7 @@ const en: Record<TranslationKey, string> = {
   "settings.downloadClientDesc": "Snatches always go to a single client, never both. Choose here the one that receives every send.",
   "settings.downloadClientQbittorrent": "Local BitTorrent client: files land on disk and are then imported.",
   "settings.downloadClientAlldebrid": "Cloud debridging, then files are fetched back over HTTP.",
-  "settings.downloadClientNotConfigured": "Not configured — fill in its credentials below to select it.",
+  "settings.downloadClientNotConfigured": "Unavailable — enable this client and fill in its credentials below to select it.",
   "settings.metadata": "Metadata",
   "settings.readingStatus": "Reading Status",
   "settings.archives": "Archives",
@@ -898,6 +898,7 @@ const en: Record<TranslationKey, string> = {
 
   // Settings - Prowlarr
   "settings.prowlarr": "Prowlarr",
+  "settings.prowlarrEnabled": "Enable Prowlarr",
   "settings.prowlarrDesc": "Configure Prowlarr to search for releases on indexers (torrents/usenet). Only manual search is available for now.",
   "settings.prowlarrUrl": "Prowlarr URL",
   "settings.prowlarrUrlPlaceholder": "http://localhost:9696",
@@ -957,6 +958,7 @@ const en: Record<TranslationKey, string> = {
 
   // Settings - qBittorrent
   "settings.qbittorrent": "qBittorrent",
+  "settings.qbittorrentEnabled": "Enable qBittorrent",
   "settings.qbittorrentDesc": "Configure qBittorrent as a download client. Torrents found via Prowlarr can be sent directly to qBittorrent.",
   "settings.qbittorrentUrl": "qBittorrent URL",
   "settings.qbittorrentUrlPlaceholder": "http://localhost:8080",

@@ -46,6 +46,13 @@ struct QBittorrentConfig {
     url: String,
     username: String,
     password: String,
+    /// Defaults to enabled so configurations saved before the flag existed keep working.
+    #[serde(default = "default_true")]
+    enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 pub(crate) async fn load_qbittorrent_config(
@@ -55,6 +62,10 @@ pub(crate) async fn load_qbittorrent_config(
         .await
         .map_err(|e| ApiError::internal(format!("invalid qbittorrent config: {e}")))?
         .ok_or_else(|| ApiError::bad_request("qBittorrent is not configured"))?;
+
+    if !config.enabled {
+        return Err(ApiError::bad_request("qBittorrent is disabled"));
+    }
 
     if config.url.is_empty() || config.username.is_empty() {
         return Err(ApiError::bad_request(
@@ -803,3 +814,7 @@ pub async fn test_qbittorrent(
         })),
     }
 }
+
+#[cfg(test)]
+#[path = "tests/qbittorrent.rs"]
+mod tests;

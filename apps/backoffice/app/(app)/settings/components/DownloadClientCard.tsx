@@ -41,18 +41,20 @@ export function DownloadClientCard({
     qbittorrent: qbConfigured,
     alldebrid: alldebridConfigured,
   };
-  // Mirror the runtime fallback exactly (see `DownloadClientProvider`): a
-  // stored choice whose client is no longer configured is not the client
-  // snatches actually use, so it must not look selected here.
-  const [client, setClient] = useState<DownloadClient | null>(() =>
-    initialClient && configured[initialClient]
-      ? initialClient
-      : (DOWNLOAD_CLIENTS.find((c) => configured[c]) ?? null),
-  );
+  // Keep the last explicit choice, but never render a client that is not
+  // currently usable: this mirrors the runtime fallback exactly (see
+  // `DownloadClientProvider`). Deriving the shown client at render — instead of
+  // freezing it in state — makes the card react when a client is enabled or
+  // configured above in another card (e.g. AllDebrid switched on).
+  const [chosen, setChosen] = useState<DownloadClient | null>(initialClient);
+  const client: DownloadClient | null =
+    chosen && configured[chosen]
+      ? chosen
+      : (DOWNLOAD_CLIENTS.find((c) => configured[c]) ?? null);
 
   function choose(next: DownloadClient) {
     if (!configured[next]) return;
-    setClient(next);
+    setChosen(next);
     void handleUpdateSetting(DOWNLOAD_CLIENT_SETTING_KEY, { client: next });
   }
 

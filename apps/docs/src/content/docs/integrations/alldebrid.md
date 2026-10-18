@@ -18,7 +18,9 @@ qBittorrent.
 Dans **Settings → Download tools → AllDebrid** :
 - **Clé API** : votre clé AllDebrid (AllDebrid → *Mon compte* → clé API). Un compte premium ou en
   essai est requis : un compte gratuit est refusé par le test de connexion.
-- **Activer AllDebrid** : *Enabled*
+- **Activer AllDebrid** : interrupteur en haut à droite de la carte (désactivé par défaut). AllDebrid
+  doit être activé **et** disposer d'une clé pour apparaître comme sélectionnable dans le sélecteur
+  *Client de téléchargement*.
 
 Le bouton **Tester la connexion** vérifie la clé et affiche le compte connecté.
 

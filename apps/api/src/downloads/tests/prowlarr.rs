@@ -531,3 +531,87 @@ async fn wiremock_search_with_integral_release_matching() {
     // all_volumes should be empty for integral releases
     assert!(release.all_volumes.is_empty());
 }
+
+// ── Config gating (enabled flag) ────────────────────────────────────────────
+
+use axum::http::StatusCode;
+
+async fn set_prowlarr(pool: &sqlx::PgPool, value: serde_json::Value) {
+    sqlx::query("UPDATE app_settings SET value = $1 WHERE key = 'prowlarr'")
+        .bind(value)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn config_errors_when_not_configured(pool: sqlx::PgPool) {
+    sqlx::query("DELETE FROM app_settings WHERE key = 'prowlarr'")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let err = load_prowlarr_config(&pool).await.unwrap_err();
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+    assert!(
+        err.message.contains("not configured"),
+        "got: {}",
+        err.message
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn config_errors_when_disabled(pool: sqlx::PgPool) {
+    set_prowlarr(
+        &pool,
+        serde_json::json!({
+            "url": "http://prowlarr:9696", "api_key": "k", "enabled": false
+        }),
+    )
+    .await;
+
+    let err = load_prowlarr_config(&pool).await.unwrap_err();
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+    assert!(err.message.contains("disabled"), "got: {}", err.message);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn config_enabled_flag_defaults_to_true_when_absent(pool: sqlx::PgPool) {
+    set_prowlarr(
+        &pool,
+        serde_json::json!({ "url": "http://prowlarr:9696/", "api_key": "k" }),
+    )
+    .await;
+
+    let (url, api_key, categories) = load_prowlarr_config(&pool).await.unwrap();
+    assert_eq!(url, "http://prowlarr:9696"); // trailing slash trimmed
+    assert_eq!(api_key, "k");
+    // Seeded categories are [7030, 7020]; the seeded row has none, so fall back.
+    assert_eq!(categories, vec![7030, 7020]);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn config_loads_when_explicitly_enabled_and_keeps_categories(pool: sqlx::PgPool) {
+    set_prowlarr(
+        &pool,
+        serde_json::json!({
+            "url": "http://prowlarr", "api_key": "k", "categories": [1, 2], "enabled": true
+        }),
+    )
+    .await;
+
+    let (_, _, categories) = load_prowlarr_config(&pool).await.unwrap();
+    assert_eq!(categories, vec![1, 2]);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn config_errors_when_credentials_are_incomplete(pool: sqlx::PgPool) {
+    set_prowlarr(
+        &pool,
+        serde_json::json!({ "url": "http://prowlarr", "api_key": "", "enabled": true }),
+    )
+    .await;
+
+    let err = load_prowlarr_config(&pool).await.unwrap_err();
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+}

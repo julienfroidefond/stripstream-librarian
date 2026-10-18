@@ -67,6 +67,14 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
   const [clearResult, setClearResult] = useState<ClearCacheResponse | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [downloadsEnabled, setDownloadsEnabled] = useState(initialDownloadsEnabled);
+  // Availability of each download client, kept live so the picker below reacts
+  // as soon as a client is enabled/configured in its own card.
+  const [qbConfigured, setQbConfigured] = useState(() =>
+    isClientConfigured("qbittorrent", initialQbittorrent)
+  );
+  const [alldebridConfigured, setAlldebridConfigured] = useState(() =>
+    isClientConfigured("alldebrid", initialAlldebrid)
+  );
 
   const VALID_TABS = ["general", "media", "downloadTools", "metadata", "ai", "readingStatus", "notifications", "tokens", "archives"] as const;
   type TabId = typeof VALID_TABS[number];
@@ -608,15 +616,15 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             <DownloadClientCard
               handleUpdateSetting={handleUpdateSetting}
               initialClient={initialDownloadClient}
-              qbConfigured={isClientConfigured("qbittorrent", initialQbittorrent)}
-              alldebridConfigured={isClientConfigured("alldebrid", initialAlldebrid)}
+              qbConfigured={qbConfigured}
+              alldebridConfigured={alldebridConfigured}
             />
             <SettingsColumns>
               <SettingsColumn>
-                <QBittorrentCard handleUpdateSetting={handleUpdateSetting} initialQbittorrent={initialQbittorrent} initialTorrentImport={initialTorrentImport} />
+                <QBittorrentCard handleUpdateSetting={handleUpdateSetting} initialQbittorrent={initialQbittorrent} initialTorrentImport={initialTorrentImport} onConfiguredChange={setQbConfigured} />
               </SettingsColumn>
               <SettingsColumn>
-                <AlldebridCard handleUpdateSetting={handleUpdateSetting} initialData={initialAlldebrid} />
+                <AlldebridCard handleUpdateSetting={handleUpdateSetting} initialData={initialAlldebrid} onConfiguredChange={setAlldebridConfigured} />
               </SettingsColumn>
             </SettingsColumns>
           </SettingsSection>

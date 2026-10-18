@@ -10,6 +10,7 @@ Prowlarr est un gestionnaire d'indexeurs de torrents. Stripstream l'utilise pour
 Dans **Settings → Download tools → Prowlarr** :
 - **URL** : adresse de votre instance Prowlarr (ex. `http://prowlarr:9696`)
 - **Clé API** : disponible dans Prowlarr → Settings → General → API Key
+- **Activer Prowlarr** : interrupteur en haut à droite de la carte (activé par défaut). Désactivé, les recherches Prowlarr (manuelles, détection automatique et polling RSS) échouent avec un message « Prowlarr is disabled ».
 
 ---
 
