@@ -16,6 +16,7 @@ import {
   listKomgaReports,
 } from "@/lib/api";
 import { POST as adAdd } from "@/app/api/alldebrid/add/route";
+import { POST as adRestart } from "@/app/api/alldebrid/restart/[id]/route";
 import { GET as adTest } from "@/app/api/alldebrid/test/route";
 import { GET as komgaReports } from "@/app/api/komga/reports/route";
 import { GET as komgaReport } from "@/app/api/komga/reports/[id]/route";
@@ -103,6 +104,12 @@ describe("download routes", () => {
       method: "POST",
       body: JSON.stringify({ url: "magnet:?x" }),
     });
+  });
+
+  it("POST alldebrid restart forwards to the API", async () => {
+    mockApi.mockResolvedValue({ ok: true });
+    await adRestart(jsonRequest("/api/alldebrid/restart/t1", { method: "POST" }), routeCtx({ id: "t1" }));
+    expect(mockApi).toHaveBeenCalledWith("/alldebrid/downloads/t1/restart", { method: "POST" });
   });
 
   it("GET torrent downloads", async () => {

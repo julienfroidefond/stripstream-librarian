@@ -58,12 +58,13 @@ Importé, Partiel, Aucun fichier importé, Erreur) — voir [Téléchargements](
 
 ## Relancer un téléchargement en erreur
 
-Comme pour qBittorrent, le bouton **Retry (↺)** de l'historique relance l'import depuis le répertoire
-de staging quand le magnet a bien été récupéré mais que l'import a échoué.
+Le bouton **Retry (↺)** de l'historique s'adapte au type d'échec :
 
-Quand c'est **AllDebrid lui-même** qui a abandonné le magnet (erreur côté débrideur, donc avant toute
-récupération de fichier), il n'y a rien à réimporter : relancez le magnet avec l'endpoint admin
-`POST /alldebrid/downloads/{id}/restart`, la ligne repasse en *En cours*.
+- le magnet a bien été récupéré mais l'**import** a échoué (erreur, import partiel, aucun fichier) :
+  Retry relance l'import depuis le répertoire de staging, exactement comme pour qBittorrent ;
+- **AllDebrid lui-même** a abandonné le magnet (erreur côté débrideur, donc avant toute récupération
+  de fichier) : Retry relance le magnet (`POST /alldebrid/downloads/{id}/restart`) et la ligne repasse
+  en *En cours*.
 
 :::note[Détails techniques]
 **Formats récupérés** — `cbz`, `cbr`, `pdf`, `epub`. Un magnet qui ne contient aucun fichier de ces

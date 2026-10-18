@@ -440,8 +440,20 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
   async function handleRetry() {
     setRetrying(true);
     try {
-      const resp = await fetch(`/api/torrent-downloads/${dl.id}/retry`, { method: "POST" });
-      if (resp.ok) onRetried();
+      // A failed AllDebrid magnet never produced local files: restart the magnet
+      // itself instead of the (impossible) import. Import errors on a downloaded
+      // torrent keep going through the regular import retry.
+      const magnetFailed = dl.client === "alldebrid" && dl.status === "error" && !dl.content_path;
+      const url = magnetFailed
+        ? `/api/alldebrid/restart/${dl.id}`
+        : `/api/torrent-downloads/${dl.id}/retry`;
+      const resp = await fetch(url, { method: "POST" });
+      if (resp.ok) {
+        onRetried();
+      } else {
+        const body = await resp.json().catch(() => ({}));
+        toast(body?.error ?? `Error ${resp.status}`, "error");
+      }
     } finally {
       setRetrying(false);
     }
