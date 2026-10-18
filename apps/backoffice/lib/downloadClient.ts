@@ -41,13 +41,17 @@ export function downloadClientAddEndpoint(client: DownloadClient): string {
  * Decide whether a client is usable from its settings payload.
  *
  * qBittorrent needs a URL and a username; AllDebrid must be enabled and hold a
- * non-empty API key. The API never returns the real AllDebrid key (it is
- * redacted as a non-empty placeholder), so a non-empty string is enough here.
+ * non-empty API key. A client explicitly switched off is never usable, even with
+ * valid credentials. The API never returns the real AllDebrid key (it is redacted
+ * as a non-empty placeholder), so a non-empty string is enough here.
  */
 export function isClientConfigured(client: DownloadClient, data: Record<string, unknown> | null): boolean {
   if (!data) return false;
   if (client === "qbittorrent") {
-    return !!(typeof data.url === "string" && data.url.trim() && typeof data.username === "string" && data.username.trim());
+    return (
+      data.enabled !== false &&
+      !!(typeof data.url === "string" && data.url.trim() && typeof data.username === "string" && data.username.trim())
+    );
   }
   return data.enabled === true && typeof data.api_key === "string" && data.api_key.trim().length > 0;
 }

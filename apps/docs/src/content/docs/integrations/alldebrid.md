@@ -18,7 +18,9 @@ qBittorrent.
 Dans **Settings → Download tools → AllDebrid** :
 - **Clé API** : votre clé AllDebrid (AllDebrid → *Mon compte* → clé API). Un compte premium ou en
   essai est requis : un compte gratuit est refusé par le test de connexion.
-- **Activer AllDebrid** : *Enabled*
+- **Activer AllDebrid** : interrupteur en haut à droite de la carte (désactivé par défaut). AllDebrid
+  doit être activé **et** disposer d'une clé pour apparaître comme sélectionnable dans le sélecteur
+  *Client de téléchargement*.
 - **Téléchargements AllDebrid simultanés** (`concurrent_alldebrid_downloads`, défaut 4) : nombre de
   magnets traités en parallèle par la sonde de suivi.
 - **Délai avant échec d'un magnet bloqué** (`alldebrid_stall_timeout_minutes`, défaut 30) : durée sans

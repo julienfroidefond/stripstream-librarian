@@ -74,4 +74,59 @@ describe("DownloadClientCard", () => {
     expect(radios[0]).toBeChecked();
     expect(radios[1]).not.toBeChecked();
   });
+
+  it("reacts when a client is enabled/configured above", () => {
+    const handleUpdateSetting = vi.fn();
+    const { rerender } = render(
+      <DownloadClientCard
+        handleUpdateSetting={handleUpdateSetting}
+        initialClient={null}
+        qbConfigured={false}
+        alldebridConfigured={false}
+      />
+    );
+
+    let radios = screen.getAllByRole("radio");
+    expect(radios[0]).not.toBeChecked();
+    expect(radios[1]).not.toBeChecked();
+    expect(radios[1]).toBeDisabled();
+
+    // AllDebrid gets configured elsewhere in the page: the card must pick it up
+    // without remounting.
+    rerender(
+      <DownloadClientCard
+        handleUpdateSetting={handleUpdateSetting}
+        initialClient={null}
+        qbConfigured={false}
+        alldebridConfigured
+      />
+    );
+
+    radios = screen.getAllByRole("radio");
+    expect(radios[1]).toBeEnabled();
+    expect(radios[1]).toBeChecked();
+  });
+
+  it("falls back when the selected client is disabled above", () => {
+    const handleUpdateSetting = vi.fn();
+    const { rerender } = render(
+      <DownloadClientCard
+        handleUpdateSetting={handleUpdateSetting}
+        initialClient="qbittorrent"
+        qbConfigured
+        alldebridConfigured
+      />
+    );
+    expect(screen.getAllByRole("radio")[0]).toBeChecked();
+
+    rerender(
+      <DownloadClientCard
+        handleUpdateSetting={handleUpdateSetting}
+        initialClient="qbittorrent"
+        qbConfigured={false}
+        alldebridConfigured
+      />
+    );
+    expect(screen.getAllByRole("radio")[1]).toBeChecked();
+  });
 });

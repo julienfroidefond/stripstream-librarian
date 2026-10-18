@@ -13,7 +13,7 @@ Ce mode automatise la recherche de torrents via Prowlarr et leur téléchargemen
 | [qBittorrent](/integrations/qbittorrent) | URL + nom d'utilisateur + mot de passe |
 | [AllDebrid](/integrations/alldebrid) *(alternative)* | Clé API + compte premium |
 
-Un seul client suffit. Si les deux sont configurés, celui qui reçoit **tous** les snatchs se choisit dans *Paramètres → Outils de téléchargement → Client de téléchargement* (voir [Choix du client](#choix-du-client)) ; à défaut de choix explicite, c'est le premier des deux configuré.
+Un seul client suffit. Si les deux sont configurés, celui qui reçoit **tous** les snatchs se choisit dans *Paramètres → Outils de téléchargement → Client de téléchargement* (voir [Choix du client](#choix-du-client)) ; à défaut de choix explicite, c'est le premier des deux **utilisable** (activé et configuré).
 
 ## Détection des volumes manquants
 
@@ -52,7 +52,7 @@ Quand vous cliquez sur ↓, Stripstream envoie le torrent au client sélectionn�
 
 ### Choix du client
 
-qBittorrent et AllDebrid sont des alternatives, jamais cumulatives : le client qui reçoit **tous** les snatchs se choisit dans *Paramètres → Outils de téléchargement → **Client de téléchargement***. C'est le seul endroit où le choisir — ni les modales de détection, ni l'en-tête de la page *Téléchargements* ne le demandent. Un client non configuré y apparaît grisé. L'en-tête de la page *Téléchargements* se contente d'un rappel en lecture seule (`Client : qBittorrent`).
+qBittorrent et AllDebrid sont des alternatives, jamais cumulatives : le client qui reçoit **tous** les snatchs se choisit dans *Paramètres → Outils de téléchargement → **Client de téléchargement***. C'est le seul endroit où le choisir — ni les modales de détection, ni l'en-tête de la page *Téléchargements* ne le demandent. Un client **désactivé ou non configuré** y apparaît grisé ; le sélecteur se met à jour dès que vous activez le client ou renseignez ses identifiants dans sa carte. L'en-tête de la page *Téléchargements* se contente d'un rappel en lecture seule (`Client : qBittorrent`).
 
 Chaque ligne de l'historique affiche un badge avec le client qui a traité le téléchargement : `qBittorrent` ou `AllDebrid`.
 

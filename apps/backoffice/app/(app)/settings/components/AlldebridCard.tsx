@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { SettingsCard, SettingsRow, FormInput, FormSelect, Icon, Tooltip } from "@/app/components/ui";
+import { useEffect, useState } from "react";
+import { SettingsCard, SettingsRow, FormInput, Icon, Tooltip, Switch } from "@/app/components/ui";
 import { useTranslation } from "@/lib/i18n/context";
 import { TestConnectionButton } from "./TestConnectionButton";
 
@@ -37,11 +37,13 @@ export function AlldebridCard({
   initialData,
   limits = {},
   onSaveLimits,
+  onConfiguredChange,
 }: {
   handleUpdateSetting: (key: string, value: unknown) => Promise<void>;
   initialData: Record<string, unknown> | null;
   limits?: Partial<AlldebridLimits>;
   onSaveLimits?: (partial: Partial<AlldebridLimits>) => void;
+  onConfiguredChange?: (configured: boolean) => void;
 }) {
   const { t } = useTranslation();
   const [apiKey, setApiKey] = useState("");
@@ -73,6 +75,12 @@ export function AlldebridCard({
     onSaveLimits?.({ [key]: value });
   }
 
+  // Keep the parent (download-client picker) in sync: AllDebrid is only usable
+  // when it is both enabled and holding a key.
+  useEffect(() => {
+    onConfiguredChange?.(configured && enabled);
+  }, [configured, enabled, onConfiguredChange]);
+
   function save(overrides: Record<string, unknown> = {}) {
     const value: Record<string, unknown> = { enabled, ...overrides };
     const trimmed = apiKey.trim();
@@ -85,31 +93,34 @@ export function AlldebridCard({
   }
 
   return (
-    <SettingsCard icon="globe" title={t("settings.alldebrid")} description={t("settings.alldebridDesc")}>
+    <SettingsCard
+      icon="globe"
+      title={t("settings.alldebrid")}
+      description={t("settings.alldebridDesc")}
+      action={
+        <Switch
+          checked={enabled}
+          aria-label={t("settings.alldebridEnabled")}
+          onChange={(e) => {
+            const val = e.target.checked;
+            setEnabled(val);
+            save({ enabled: val });
+          }}
+        />
+      }
+    >
       <SettingsRow label={t("settings.alldebridApiKey")}>
         <FormInput
           type="password"
           autoComplete="off"
+          data-lpignore="true"
+          data-1p-ignore
+          data-bwignore
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           onBlur={() => save()}
           placeholder={configured ? t("settings.alldebridApiKeyConfigured") : t("settings.alldebridApiKeyPlaceholder")}
         />
-      </SettingsRow>
-
-      <SettingsRow label={t("settings.alldebridEnabled")}>
-        <FormSelect
-          value={enabled ? "true" : "false"}
-          onChange={(e) => {
-            const val = e.target.value === "true";
-            setEnabled(val);
-            save({ enabled: val });
-          }}
-          className="w-40"
-        >
-          <option value="false">{t("common.disabled")}</option>
-          <option value="true">{t("common.enabled")}</option>
-        </FormSelect>
       </SettingsRow>
 
       <SettingsRow
