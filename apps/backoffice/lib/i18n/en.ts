@@ -1269,6 +1269,7 @@ const en: Record<TranslationKey, string> = {
   "downloads.status.noFilesImported": "No files imported",
   "downloads.status.error": "Error",
   "downloads.retry": "Retry import",
+  "downloads.seeders": "{{count}} seeder{{plural}}",
   "downloads.blacklist": "Don't show again",
   "downloads.blacklisted": "Hidden releases",
   "downloads.unblacklist": "Unhide",

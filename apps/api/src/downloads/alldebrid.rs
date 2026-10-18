@@ -20,6 +20,7 @@ use axum::{
     extract::{Path as AxumPath, State},
     Json,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer};
 use sqlx::{PgPool, Row};
 use tokio::io::AsyncWriteExt;
@@ -49,6 +50,10 @@ const ALLDEBRID_TIMEOUT: Duration = Duration::from_secs(60);
 /// How many local fetch failures are tolerated before a ready magnet is marked
 /// as errored (transient network failures must not kill the row immediately).
 const MAX_FETCH_ATTEMPTS: u32 = 3;
+
+/// How long an in-flight magnet may go without receiving a single byte before
+/// it is considered unreachable (dead torrent or blocked tracker).
+const STALL_TIMEOUT_MINUTES: i64 = 30;
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 
@@ -386,6 +391,9 @@ struct MagnetUploadEntry {
     id: Option<IdValue>,
     #[serde(default)]
     hash: Option<String>,
+    /// Torrent name reported by AllDebrid.
+    #[serde(default)]
+    name: Option<String>,
     #[serde(default)]
     error: Option<ApiErrorBody>,
 }
@@ -409,6 +417,11 @@ struct MagnetStatusEntry {
     downloaded: Option<i64>,
     #[serde(default)]
     download_speed: Option<i64>,
+    #[serde(default)]
+    seeders: Option<i64>,
+    /// Torrent name (single file: the file name; multi-file: the folder name).
+    #[serde(default)]
+    filename: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -517,6 +530,28 @@ fn status_message(status_code: i32, status: Option<&str>) -> String {
         }
         _ => text.to_string(),
     }
+}
+
+/// An in-flight magnet is stalled when it has not received a single byte and
+/// has stayed that way for at least [`STALL_TIMEOUT_MINUTES`].
+fn is_stalled(downloaded: i64, idle_minutes: i64) -> bool {
+    downloaded == 0 && idle_minutes >= STALL_TIMEOUT_MINUTES
+}
+
+/// Message shown on the history row when a stalled magnet is abandoned.
+fn stall_message(idle_minutes: i64, seeders: i64) -> String {
+    format!(
+        "No peer: 0 bytes downloaded in {} min ({} seeders)",
+        idle_minutes.max(1),
+        seeders
+    )
+}
+
+/// AllDebrid refuses to "restart" a magnet it still considers active
+/// (`MAGNET_PROCESSING`) — which is exactly the case for a stalled but still
+/// alive magnet. Retry then means "keep watching it", not "surface an error".
+fn is_already_processing(message: &str) -> bool {
+    message.contains("MAGNET_PROCESSING")
 }
 
 // ─── Handlers ───────────────────────────────────────────────────────────────
@@ -637,8 +672,8 @@ pub async fn add_torrent(
         let expected_volumes = body.expected_volumes.as_deref().unwrap_or(&[]);
 
         sqlx::query(
-            "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, qb_hash, external_id, client, replace_existing) \
-             VALUES ($1, $2, $3, $4, $5, $6, 'alldebrid', $7)",
+            "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, qb_hash, external_id, client, name, replace_existing) \
+             VALUES ($1, $2, $3, $4, $5, $6, 'alldebrid', $7, $8)",
         )
         .bind(id)
         .bind(managed.library_id)
@@ -646,6 +681,7 @@ pub async fn add_torrent(
         .bind(expected_volumes)
         .bind(resolved_hash.as_deref())
         .bind(&external_id)
+        .bind(entry.name.as_deref())
         .bind(body.replace_existing)
         .execute(&state.pool)
         .await
@@ -749,11 +785,19 @@ pub async fn restart_torrent_download(
         external_id.ok_or_else(|| ApiError::bad_request("AllDebrid magnet id is missing"))?;
 
     let client = load_alldebrid_client(&state.pool).await?;
-    client.restart_magnet(&external_id).await?;
+    // A magnet AllDebrid still considers active (typically a stalled transfer —
+    // it is still "processing", just without peers) cannot be restarted. In that
+    // case Retry only re-arms the stall window so the poller keeps watching it.
+    if let Err(e) = client.restart_magnet(&external_id).await {
+        if !is_already_processing(&e.message) {
+            return Err(e);
+        }
+    }
 
     sqlx::query(
         "UPDATE torrent_downloads SET status = 'downloading', error_message = NULL, \
-         progress = 0, download_speed = 0, eta = 0, updated_at = NOW() WHERE id = $1",
+         progress = 0, download_speed = 0, eta = 0, stall_started_at = NULL, updated_at = NOW() \
+         WHERE id = $1",
     )
     .bind(id)
     .execute(&state.pool)
@@ -882,6 +926,62 @@ async fn poll_alldebrid_downloads(
     Ok(still_active > 0)
 }
 
+/// Live progress of an in-flight magnet, as reported by AllDebrid.
+struct InflightProgress<'a> {
+    downloaded: i64,
+    progress: f32,
+    speed: i64,
+    eta: i64,
+    seeders: i64,
+    /// Torrent name from the magnet status, when AllDebrid reports one.
+    name: Option<&'a str>,
+}
+
+/// Store the live progress of an in-flight magnet and return the instant it was
+/// first seen at zero bytes (armed on first sight, kept across polls with
+/// `COALESCE`, cleared as soon as a byte arrives). `None` means the transfer is
+/// progressing, so there is nothing to time out.
+async fn record_inflight_progress(
+    pool: &PgPool,
+    tid: Uuid,
+    live: &InflightProgress<'_>,
+) -> Option<DateTime<Utc>> {
+    if live.downloaded > 0 {
+        let _ = sqlx::query(
+            "UPDATE torrent_downloads SET progress = $1, download_speed = $2, eta = $3, \
+             seeders = $4, name = COALESCE($6, name), stall_started_at = NULL, updated_at = NOW() \
+             WHERE id = $5 AND status = 'downloading'",
+        )
+        .bind(live.progress)
+        .bind(live.speed)
+        .bind(live.eta)
+        .bind(live.seeders as i32)
+        .bind(tid)
+        .bind(live.name)
+        .execute(pool)
+        .await;
+        return None;
+    }
+
+    sqlx::query_scalar::<_, DateTime<Utc>>(
+        "UPDATE torrent_downloads SET progress = $1, download_speed = $2, eta = $3, \
+         seeders = $4, name = COALESCE($6, name), \
+         stall_started_at = COALESCE(stall_started_at, NOW()), updated_at = NOW() \
+         WHERE id = $5 AND status = 'downloading' \
+         RETURNING stall_started_at",
+    )
+    .bind(live.progress)
+    .bind(live.speed)
+    .bind(live.eta)
+    .bind(live.seeders as i32)
+    .bind(tid)
+    .bind(live.name)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+}
+
 async fn handle_magnet_status(
     pool: &PgPool,
     client: &AlldebridClient,
@@ -914,17 +1014,29 @@ async fn handle_magnet_status(
         } else {
             0
         };
+        let seeders = entry.seeders.unwrap_or(0);
+        let name = entry.filename.as_deref().filter(|n| !n.is_empty());
 
-        let _ = sqlx::query(
-            "UPDATE torrent_downloads SET progress = $1, download_speed = $2, eta = $3, \
-             updated_at = NOW() WHERE id = $4 AND status = 'downloading'",
-        )
-        .bind(progress)
-        .bind(speed)
-        .bind(eta)
-        .bind(tid)
-        .execute(pool)
-        .await;
+        // A magnet that has not received a single byte is either queued or has
+        // no peer. Remember when that started so a torrent the debrid service
+        // can never fetch (0 seeder) does not sit "downloading" forever; the
+        // marker is cleared as soon as a byte arrives and on a manual restart.
+        let live = InflightProgress {
+            downloaded,
+            progress,
+            speed,
+            eta,
+            seeders,
+            name,
+        };
+        if let Some(stall_started) = record_inflight_progress(pool, tid, &live).await {
+            let idle_minutes = (Utc::now() - stall_started).num_minutes();
+            if is_stalled(downloaded, idle_minutes) {
+                let message = stall_message(idle_minutes, seeders);
+                warn!("[ALLDEBRID] Magnet {external_id} (torrent {tid}) stalled: {message}");
+                mark_error(pool, tid, &message).await;
+            }
+        }
         return;
     }
 
@@ -1269,6 +1381,34 @@ mod tests {
     }
 
     #[test]
+    fn stall_detection_needs_zero_bytes_and_time() {
+        assert!(!is_stalled(0, STALL_TIMEOUT_MINUTES - 1));
+        assert!(is_stalled(0, STALL_TIMEOUT_MINUTES));
+        // A magnet that moved at least one byte is never considered stalled.
+        assert!(!is_stalled(1, STALL_TIMEOUT_MINUTES * 10));
+
+        assert_eq!(
+            stall_message(42, 0),
+            "No peer: 0 bytes downloaded in 42 min (0 seeders)"
+        );
+        // Under a minute reads as "1 min" rather than "0 min".
+        assert_eq!(
+            stall_message(0, 3),
+            "No peer: 0 bytes downloaded in 1 min (3 seeders)"
+        );
+    }
+
+    #[test]
+    fn retry_keeps_watching_a_magnet_alldebrid_still_considers_active() {
+        assert!(is_already_processing(
+            "AllDebrid error MAGNET_PROCESSING: Magnet is processing or completed"
+        ));
+        assert!(!is_already_processing(
+            "AllDebrid error MAGNET_INVALID_ID: Magnet not found"
+        ));
+    }
+
+    #[test]
     fn unique_name_disambiguates_duplicates() {
         let mut used = HashSet::new();
         assert_eq!(unique_name("Tome 1.cbz", 0, &mut used), "Tome 1.cbz");
@@ -1367,5 +1507,67 @@ mod tests {
             result.is_err(),
             "the client CHECK constraint must reject unknown backends"
         );
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn inflight_progress_arms_then_clears_the_stall_marker(pool: PgPool) {
+        let library_id = seed_library(&pool).await;
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO torrent_downloads (id, library_id, series_name, qb_hash, external_id, client, status) \
+             VALUES ($1, $2, 'Aposimz', 'HASH', '7', 'alldebrid', 'downloading')",
+        )
+        .bind(id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // The first zero-byte poll arms the marker, reports it and stores the
+        // torrent name AllDebrid gave us...
+        let stalled = InflightProgress {
+            downloaded: 0,
+            progress: 0.0,
+            speed: 0,
+            eta: 0,
+            seeders: 0,
+            name: Some("Aposimz.cbz"),
+        };
+        let armed = record_inflight_progress(&pool, id, &stalled)
+            .await
+            .expect("the first zero-byte poll arms the stall marker");
+        // ...a second one keeps the original instant instead of pushing it back,
+        // and a missing name must not overwrite the one already stored.
+        let nameless = InflightProgress {
+            name: None,
+            ..stalled
+        };
+        let kept = record_inflight_progress(&pool, id, &nameless)
+            .await
+            .unwrap();
+        assert_eq!(armed, kept);
+
+        // As soon as a byte arrives the marker is cleared and seeders stored.
+        let moving = InflightProgress {
+            downloaded: 5,
+            progress: 0.5,
+            speed: 100,
+            eta: 1,
+            seeders: 12,
+            name: None,
+        };
+        assert!(record_inflight_progress(&pool, id, &moving).await.is_none());
+
+        let (stall, seeders, name): (Option<DateTime<Utc>>, Option<i32>, Option<String>) =
+            sqlx::query_as(
+                "SELECT stall_started_at, seeders, name FROM torrent_downloads WHERE id = $1",
+            )
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(stall.is_none());
+        assert_eq!(seeders, Some(12));
+        assert_eq!(name.as_deref(), Some("Aposimz.cbz"));
     }
 }

@@ -24,6 +24,7 @@ function torrentDownload(overrides: Partial<TorrentDownloadDto> = {}): TorrentDo
     expected_volumes: [41],
     client: "qbittorrent",
     qb_hash: "hash-1",
+    name: null,
     content_path: null,
     status: "error",
     imported_files: null,
@@ -31,6 +32,7 @@ function torrentDownload(overrides: Partial<TorrentDownloadDto> = {}): TorrentDo
     progress: 0,
     download_speed: 0,
     eta: 0,
+    seeders: null,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -83,5 +85,25 @@ describe("DownloadRow — retry routing", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/alldebrid/restart/dl-1", { method: "POST" }));
     expect(onRetried).not.toHaveBeenCalled();
+  });
+});
+
+describe("DownloadRow — torrent details", () => {
+  it("shows the torrent name reported by the backend", () => {
+    renderRow(torrentDownload({ client: "alldebrid", name: "Aposimz T04.cbr", status: "downloading" }));
+
+    expect(screen.getByText("Aposimz T04.cbr")).toBeInTheDocument();
+  });
+
+  it("shows the seeder count for an AllDebrid download", () => {
+    renderRow(torrentDownload({ client: "alldebrid", status: "downloading", seeders: 0 }));
+
+    expect(screen.getByText('downloads.seeders:{"count":"0","plural":"s"}')).toBeInTheDocument();
+  });
+
+  it("hides the seeder count when the backend does not report it", () => {
+    renderRow(torrentDownload({ client: "qbittorrent", status: "downloading", seeders: null }));
+
+    expect(screen.queryByText(/downloads\.seeders/)).not.toBeInTheDocument();
   });
 });

@@ -47,8 +47,9 @@ pas seulement les volumes manquants.
 ## Déroulement
 
 1. Stripstream envoie le magnet (ou le fichier `.torrent`) à AllDebrid.
-2. AllDebrid télécharge sur ses serveurs ; la progression, la vitesse et l'ETA remontent dans
-   l'historique exactement comme pour qBittorrent.
+2. AllDebrid télécharge sur ses serveurs ; le nom du torrent, la progression, la vitesse, l'ETA et le
+   nombre de seeders remontent dans l'historique. Le nom s'affiche sous la ligne de série, comme pour
+   les téléchargements Telegram et directs.
 3. Une fois le magnet terminé, les fichiers de livre sont récupérés en streaming dans un répertoire
    temporaire (`/downloads/sl-<id>`) puis le magnet est supprimé d'AllDebrid.
 4. L'import enchaîne le pipeline habituel : extraction des volumes, matching de série, nommage,
@@ -56,6 +57,19 @@ pas seulement les volumes manquants.
 
 Les statuts de l'historique sont les mêmes que pour qBittorrent (En cours, Terminé, Import en cours,
 Importé, Partiel, Aucun fichier importé, Erreur) — voir [Téléchargements](/downloads/overview).
+
+## Magnet sans pair
+
+Un torrent sans seeder ne démarre jamais : AllDebrid reste à 0 octet indéfiniment et la ligne
+tournerait « En cours » sans fin. Pour éviter cela, Stripstream abandonne automatiquement un magnet qui
+n'a téléchargé **aucun octet** après **30 minutes**, avec le message explicite
+`No peer: 0 bytes downloaded in 30 min (0 seeders)`. Le compteur de seeders est affiché en orange
+lorsqu'il est à zéro, ce qui permet de repérer le problème avant l'abandon.
+
+Le magnet n'est pas supprimé d'AllDebrid : **Retry** réarme la fenêtre de surveillance, ce qui laisse
+30 minutes supplémentaires au torrent pour trouver des pairs (AllDebrid refuse de « relancer » un
+magnet qu'il considère déjà actif). Si le torrent reste sans pair, envisagez une autre release ou un
+autre client (qBittorrent).
 
 ## Relancer un téléchargement en erreur
 
@@ -65,7 +79,9 @@ Le bouton **Retry (↺)** de l'historique s'adapte au type d'échec :
   Retry relance l'import depuis le répertoire de staging, exactement comme pour qBittorrent ;
 - **AllDebrid lui-même** a abandonné le magnet (erreur côté débrideur, donc avant toute récupération
   de fichier) : Retry relance le magnet (`POST /alldebrid/downloads/{id}/restart`) et la ligne repasse
-  en *En cours*.
+  en *En cours* ;
+- le magnet est **stalled** (aucun octet après 30 min) mais AllDebrid le considère encore actif : Retry
+  réarme simplement la fenêtre de surveillance (voir *Magnet sans pair*).
 
 :::note[Détails techniques]
 **Formats récupérés** — `cbz`, `cbr`, `pdf`, `epub`. Un magnet qui ne contient aucun fichier de ces

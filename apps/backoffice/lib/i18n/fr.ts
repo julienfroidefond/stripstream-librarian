@@ -1267,6 +1267,7 @@ const fr = {
   "downloads.status.noFilesImported": "Aucun fichier importé",
   "downloads.status.error": "Erreur",
   "downloads.retry": "Relancer l'import",
+  "downloads.seeders": "{{count}} seeder{{plural}}",
   "downloads.blacklist": "Ne plus proposer",
   "downloads.blacklisted": "Releases masquées",
   "downloads.unblacklist": "Réafficher",

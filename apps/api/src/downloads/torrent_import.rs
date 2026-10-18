@@ -45,6 +45,8 @@ pub struct TorrentDownloadDto {
     /// Backend-specific id (AllDebrid magnet id); `None` for qBittorrent.
     pub external_id: Option<String>,
     pub qb_hash: Option<String>,
+    /// Torrent name reported by the download backend (AllDebrid fills it).
+    pub name: Option<String>,
     pub content_path: Option<String>,
     pub status: String,
     pub imported_files: Option<serde_json::Value>,
@@ -52,6 +54,8 @@ pub struct TorrentDownloadDto {
     pub progress: f32,
     pub download_speed: i64,
     pub eta: i64,
+    /// Peers seeding the torrent on the debrid service (`None` for qBittorrent).
+    pub seeders: Option<i32>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -177,8 +181,8 @@ pub async fn list_torrent_downloads(
 ) -> Result<Json<Vec<TorrentDownloadDto>>, ApiError> {
     let rows = sqlx::query(
         "SELECT td.id, td.library_id, td.series_name, td.expected_volumes, td.client, td.external_id, \
-         td.qb_hash, td.content_path, td.status, td.imported_files, td.error_message, td.progress, \
-         td.download_speed, td.eta, td.created_at, td.updated_at, s.id AS series_id \
+         td.qb_hash, td.name, td.content_path, td.status, td.imported_files, td.error_message, td.progress, \
+         td.download_speed, td.eta, td.seeders, td.created_at, td.updated_at, s.id AS series_id \
          FROM torrent_downloads td \
          LEFT JOIN series s ON s.library_id = td.library_id AND LOWER(s.name) = LOWER(td.series_name) \
          ORDER BY td.created_at DESC LIMIT 100",
@@ -204,6 +208,7 @@ pub async fn list_torrent_downloads(
                 client: row.get("client"),
                 external_id: row.get("external_id"),
                 qb_hash: row.get("qb_hash"),
+                name: row.get("name"),
                 content_path: row.get("content_path"),
                 status: row.get("status"),
                 imported_files: row.get("imported_files"),
@@ -211,6 +216,7 @@ pub async fn list_torrent_downloads(
                 progress: row.get("progress"),
                 download_speed: row.get("download_speed"),
                 eta: row.get("eta"),
+                seeders: row.get("seeders"),
                 created_at: created_at.to_rfc3339(),
                 updated_at: updated_at.to_rfc3339(),
             }

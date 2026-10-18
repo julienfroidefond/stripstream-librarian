@@ -524,6 +524,11 @@ export function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadD
             </div>
           </div>
 
+          {/* Torrent / release name reported by the download backend */}
+          {dl.name && (
+            <p className="text-2xs text-muted-foreground truncate mt-0.5" title={dl.name}>{dl.name}</p>
+          )}
+
           {dl.status === "downloading" && (
             <div className="flex items-center gap-2 mt-1">
               <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden max-w-xs">
@@ -540,6 +545,11 @@ export function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadD
               )}
               {dl.eta > 0 && dl.eta < 8640000 && (
                 <span className="text-3xs text-muted-foreground">ETA {formatEta(dl.eta)}</span>
+              )}
+              {dl.seeders != null && (
+                <span className={`text-3xs ${dl.seeders === 0 ? "text-warning" : "text-muted-foreground"}`}>
+                  {t("downloads.seeders", { count: String(dl.seeders), plural: dl.seeders !== 1 ? "s" : "" })}
+                </span>
               )}
             </div>
           )}

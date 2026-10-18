@@ -137,6 +137,8 @@ export type TorrentDownloadDto = {
   /** Client that handles this download (`qbittorrent` or `alldebrid`). */
   client: DownloadClient;
   qb_hash: string | null;
+  /** Torrent name reported by the backend (AllDebrid fills it). */
+  name: string | null;
   content_path: string | null;
   status: "downloading" | "completed" | "importing" | "imported" | "partial" | "no_files_imported" | "error";
   imported_files: Array<{ volume: number; source: string; destination: string; already_existed?: boolean }> | null;
@@ -144,6 +146,8 @@ export type TorrentDownloadDto = {
   progress: number;
   download_speed: number;
   eta: number;
+  /** Peers seeding the torrent on the debrid service (`null` for qBittorrent). */
+  seeders: number | null;
   created_at: string;
   updated_at: string;
 };
