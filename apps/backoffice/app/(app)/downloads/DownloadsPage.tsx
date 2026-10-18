@@ -18,6 +18,7 @@ import { DownloadClientProvider, DownloadClientButton, DownloadClientIndicator, 
 import { useTranslation } from "@/lib/i18n/context";
 import { compressVolumes } from "@/lib/volumeRanges";
 import { formatDateTime, formatEta, formatSpeed, formatVolumes } from "@/lib/format";
+import { showsDownloadProgress } from "@/lib/download";
 import type { TranslationKey } from "@/lib/i18n/fr";
 
 type TFunction = (key: TranslationKey, vars?: Record<string, string | number>) => string;
@@ -532,7 +533,7 @@ export function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadD
             <p className="text-2xs text-muted-foreground truncate mt-0.5" title={dl.name}>{dl.name}</p>
           )}
 
-          {dl.status === "downloading" && (
+          {showsDownloadProgress(dl.status, dl.progress) && (
             <div className="flex items-center gap-2 mt-1">
               <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden max-w-xs">
                 <div
@@ -543,13 +544,13 @@ export function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadD
               <span className="text-3xs font-medium text-foreground tabular-nums">
                 {Math.round(dl.progress * 100)}%
               </span>
-              {dl.download_speed > 0 && (
+              {dl.status === "downloading" && dl.download_speed > 0 && (
                 <span className="text-3xs text-muted-foreground hidden sm:inline">{formatSpeed(dl.download_speed)}</span>
               )}
-              {dl.eta > 0 && dl.eta < 8640000 && (
+              {dl.status === "downloading" && dl.eta > 0 && dl.eta < 8640000 && (
                 <span className="text-3xs text-muted-foreground">ETA {formatEta(dl.eta)}</span>
               )}
-              {dl.seeders != null && (
+              {dl.status === "downloading" && dl.seeders != null && (
                 <span className={`text-3xs ${dl.seeders === 0 ? "text-warning" : "text-muted-foreground"}`}>
                   {t("downloads.seeders", { count: String(dl.seeders), plural: dl.seeders !== 1 ? "s" : "" })}
                 </span>

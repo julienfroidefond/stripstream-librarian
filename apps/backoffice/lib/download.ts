@@ -27,6 +27,20 @@ export function filenameFromContentDisposition(header: string | null): string | 
   return plain ? plain[1] : null;
 }
 
+/**
+ * Whether a download row should render its progress bar.
+ *
+ * A download whose transfer is done (`completed`) keeps its bar at 100 % while
+ * the import runs, so the user sees the file complete right before the import
+ * step instead of a stalled bar followed by an abrupt "importing". An import
+ * retried from a partially-downloaded state (progress < 1) shows no bar rather
+ * than a stale, misleading value.
+ */
+export function showsDownloadProgress(status: string, progress: number): boolean {
+  if (status === "downloading") return true;
+  return (status === "completed" || status === "importing") && progress >= 1;
+}
+
 /** Fetch the book file as a `File` so it can be passed to `navigator.share`. */
 export async function fetchSharedFile(url: string, fallbackName = "book"): Promise<File> {
   const response = await fetch(url);

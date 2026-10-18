@@ -36,8 +36,8 @@ La liste du haut regroupe tous les téléchargements en cours ou terminés — P
 |--------|-------------|
 | **En attente** | En file d'attente Telegram (attend un slot libre) |
 | **En cours** | Téléchargement en progression (barre + vitesse + ETA) |
-| **Terminé** | Torrent terminé, en attente d'import |
-| **Import en cours** | Fichiers en cours de copie dans la bibliothèque |
+| **Terminé** | Torrent terminé (barre à 100 %), en attente d'import |
+| **Import en cours** | Fichiers en cours de copie dans la bibliothèque (barre à 100 % conservée) |
 | **Importé** | Fichiers copiés avec succès |
 | **Partiel** | Certains fichiers importés, d'autres ignorés |
 | **Aucun fichier importé** | Aucun fichier ne correspondait aux volumes attendus |
