@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS torrent_downloads_alldebrid_active_hash_key;

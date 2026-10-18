@@ -14,8 +14,10 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context;
 use axum::{
     extract::{Path as AxumPath, State},
     Json,
@@ -47,6 +49,12 @@ const BOOK_EXTENSIONS: &[&str] = &["cbz", "cbr", "pdf", "epub"];
 const ALLDEBRID_API_BASE: &str = "https://api.alldebrid.com";
 const ALLDEBRID_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// Streaming an unlocked file link must not share the API client: its 60s
+/// *total* timeout would abort any book slower than that. Downloads instead
+/// allow an idle connection to stay open between chunks, which still catches a
+/// transfer that stopped delivering data without capping the whole file.
+const ALLDEBRID_DOWNLOAD_READ_TIMEOUT: Duration = Duration::from_secs(120);
+
 /// How many local fetch failures are tolerated before a ready magnet is marked
 /// as errored (transient network failures must not kill the row immediately).
 const MAX_FETCH_ATTEMPTS: u32 = 3;
@@ -55,14 +63,41 @@ const MAX_FETCH_ATTEMPTS: u32 = 3;
 /// it is considered unreachable (dead torrent or blocked tracker).
 const STALL_TIMEOUT_MINUTES: i64 = 30;
 
+/// How many `torrent_downloads` rows are handled concurrently per poll cycle.
+/// A row streaming its files keeps its slot, so this also bounds how many
+/// AllDebrid transfers can run at once. Handling rows one by one used to freeze
+/// the whole poller for the duration of a single transfer.
+const POLL_CONCURRENCY: usize = 4;
+
+/// Ceiling for the exponential backoff applied while AllDebrid status calls
+/// keep failing (rate limit, outage): 5s, 10s, 20s, 40s, then 60s.
+const MAX_API_BACKOFF: Duration = Duration::from_secs(60);
+
 // ─── Config ─────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub(crate) struct AlldebridConfig {
     #[serde(default)]
     pub(crate) api_key: String,
     #[serde(default)]
     pub(crate) enabled: bool,
+}
+
+/// Hand-written so an accidental `{:?}` can never print the API key.
+impl std::fmt::Debug for AlldebridConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AlldebridConfig")
+            .field(
+                "api_key",
+                if self.api_key.is_empty() {
+                    &"<unset>"
+                } else {
+                    &"<redacted>"
+                },
+            )
+            .field("enabled", &self.enabled)
+            .finish()
+    }
 }
 
 /// Read the `alldebrid` setting; `Ok(None)` when the row is absent.
@@ -107,18 +142,31 @@ pub(crate) async fn load_alldebrid_client(pool: &PgPool) -> Result<AlldebridClie
 
 pub(crate) struct AlldebridClient {
     http: reqwest::Client,
+    /// Dedicated client for streaming unlocked file links; see
+    /// [`ALLDEBRID_DOWNLOAD_READ_TIMEOUT`].
+    download_http: reqwest::Client,
     api_key: String,
     base_url: String,
 }
 
 impl AlldebridClient {
     pub(crate) fn new(api_key: String) -> Result<Self, ApiError> {
+        Self::with_base_url(api_key, ALLDEBRID_API_BASE)
+    }
+
+    /// Same as [`Self::new`] against a caller-supplied base URL (tests).
+    fn with_base_url(api_key: String, base_url: &str) -> Result<Self, ApiError> {
         let http = build_http_client(ALLDEBRID_TIMEOUT)
+            .map_err(|e| ApiError::internal(format!("failed to build HTTP client: {e}")))?;
+        let download_http = reqwest::Client::builder()
+            .read_timeout(ALLDEBRID_DOWNLOAD_READ_TIMEOUT)
+            .build()
             .map_err(|e| ApiError::internal(format!("failed to build HTTP client: {e}")))?;
         Ok(Self {
             http,
+            download_http,
             api_key,
-            base_url: ALLDEBRID_API_BASE.to_string(),
+            base_url: base_url.to_string(),
         })
     }
 
@@ -135,10 +183,20 @@ impl AlldebridClient {
             .form(form)
             .send()
             .await
-            .map_err(|e| ApiError::internal(format!("AllDebrid request failed: {e}")))?;
+            .map_err(|e| {
+                ApiError::internal(format!(
+                    "AllDebrid request failed: {}",
+                    describe_http_failure(&e)
+                ))
+            })?;
 
         let status = response.status();
-        let body = response.text().await.unwrap_or_default();
+        let body = response.text().await.map_err(|e| {
+            ApiError::internal(format!(
+                "AllDebrid response could not be read: {}",
+                describe_http_failure(&e)
+            ))
+        })?;
         if !status.is_success() {
             return Err(ApiError::internal(format!(
                 "AllDebrid returned HTTP {status}"
@@ -210,10 +268,20 @@ impl AlldebridClient {
             .multipart(form)
             .send()
             .await
-            .map_err(|e| ApiError::internal(format!("AllDebrid upload failed: {e}")))?;
+            .map_err(|e| {
+                ApiError::internal(format!(
+                    "AllDebrid upload failed: {}",
+                    describe_http_failure(&e)
+                ))
+            })?;
 
         let status = response.status();
-        let body = response.text().await.unwrap_or_default();
+        let body = response.text().await.map_err(|e| {
+            ApiError::internal(format!(
+                "AllDebrid response could not be read: {}",
+                describe_http_failure(&e)
+            ))
+        })?;
         if !status.is_success() {
             return Err(ApiError::internal(format!(
                 "AllDebrid returned HTTP {status}"
@@ -504,6 +572,28 @@ fn is_book_file(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// One-line description of a failed `reqwest` call that never repeats the
+/// request URL. `reqwest::Error`'s own `Display` embeds it, and for AllDebrid
+/// that URL can be a short-lived *signed* file link — which must not end up in
+/// `torrent_downloads.error_message`, a field served by `GET /torrent-downloads`.
+fn describe_http_failure(err: &reqwest::Error) -> String {
+    let kind = if err.is_timeout() {
+        "timeout"
+    } else if err.is_connect() {
+        "connection"
+    } else if err.is_body() || err.is_decode() {
+        "body"
+    } else if err.is_redirect() {
+        "redirect"
+    } else {
+        "request"
+    };
+    match err.status() {
+        Some(status) => format!("{kind} error (HTTP {status})"),
+        None => format!("{kind} error"),
+    }
+}
+
 /// Human-readable text for an AllDebrid `statusCode`.
 fn status_message(status_code: i32, status: Option<&str>) -> String {
     let text = match status_code {
@@ -539,11 +629,15 @@ fn is_stalled(downloaded: i64, idle_minutes: i64) -> bool {
 }
 
 /// Message shown on the history row when a stalled magnet is abandoned.
-fn stall_message(idle_minutes: i64, seeders: i64) -> String {
+/// `seeders` is `None` when AllDebrid did not report a count.
+fn stall_message(idle_minutes: i64, seeders: Option<i64>) -> String {
+    let seeders = match seeders {
+        Some(n) => format!("{n} seeders"),
+        None => "seeders unknown".to_string(),
+    };
     format!(
-        "No peer: 0 bytes downloaded in {} min ({} seeders)",
-        idle_minutes.max(1),
-        seeders
+        "No peer: 0 bytes downloaded in {} min ({seeders})",
+        idle_minutes.max(1)
     )
 }
 
@@ -587,10 +681,7 @@ pub async fn add_torrent(
     .await;
     let is_managed = managed.is_some();
 
-    info!(
-        "[ALLDEBRID] Add torrent request: url={}, managed={is_managed}",
-        body.url
-    );
+    info!("[ALLDEBRID] Add torrent request: managed={is_managed}");
 
     let client = load_alldebrid_client(&state.pool).await.inspect_err(|e| {
         tracing::error!("[ALLDEBRID] Failed to load config: {}", e.message);
@@ -649,55 +740,77 @@ pub async fn add_torrent(
         .ok_or_else(|| ApiError::internal("AllDebrid did not return a magnet id"))?;
     let resolved_hash = entry.hash.clone().or(magnet_hash);
 
-    let torrent_download_id = if is_managed {
-        let managed = managed.as_ref().expect("managed context checked above");
+    let torrent_download_id = match managed.as_ref().filter(|_| is_managed) {
+        Some(managed) => {
+            // Secondary guard on the hash AllDebrid reports back (covers
+            // .torrent uploads whose URL carried no hash).
+            if let Some(hash) = resolved_hash.as_deref() {
+                if let Some(existing_id) = find_active_alldebrid_by_hash(&state.pool, hash).await {
+                    info!("[ALLDEBRID] Torrent {hash} already tracked by row {existing_id}");
+                    // Free the freshly created (duplicate) magnet so it does not
+                    // occupy one of AllDebrid's 30 active slots.
+                    let _ = client.delete_magnet(&external_id).await;
+                    return Ok(Json(QBittorrentAddResponse {
+                        success: true,
+                        message: "This torrent is already being handled by AllDebrid".to_string(),
+                        torrent_download_id: Some(existing_id),
+                    }));
+                }
+            }
 
-        // Secondary guard on the hash AllDebrid reports back (covers .torrent
-        // uploads whose URL carried no hash).
-        if let Some(hash) = resolved_hash.as_deref() {
-            if let Some(existing_id) = find_active_alldebrid_by_hash(&state.pool, hash).await {
-                info!("[ALLDEBRID] Torrent {hash} already tracked by row {existing_id}");
-                // Free the freshly created (duplicate) magnet so it does not
-                // occupy one of AllDebrid's 30 active slots.
+            let id = Uuid::new_v4();
+            let expected_volumes = body.expected_volumes.as_deref().unwrap_or(&[]);
+
+            // The guard above cannot see a row that a concurrent request is
+            // inserting right now; the unique partial index
+            // `torrent_downloads_alldebrid_active_hash_key` is what actually
+            // serialises two adds of the same magnet.
+            let inserted = sqlx::query(
+                "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, qb_hash, external_id, client, name, replace_existing) \
+                 VALUES ($1, $2, $3, $4, $5, $6, 'alldebrid', $7, $8) \
+                 ON CONFLICT DO NOTHING",
+            )
+            .bind(id)
+            .bind(managed.library_id)
+            .bind(&managed.series_name)
+            .bind(expected_volumes)
+            .bind(resolved_hash.as_deref())
+            .bind(&external_id)
+            .bind(entry.name.as_deref())
+            .bind(body.replace_existing)
+            .execute(&state.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("[ALLDEBRID] Failed to insert torrent_downloads row: {e}");
+                ApiError::from(e)
+            })?;
+
+            if inserted.rows_affected() == 0 {
+                // Lost the race: another request tracked this magnet first.
+                // Drop the duplicate magnet and hand back the winning row.
+                info!("[ALLDEBRID] Magnet {external_id} was tracked concurrently");
                 let _ = client.delete_magnet(&external_id).await;
+                let existing_id = match resolved_hash.as_deref() {
+                    Some(hash) => find_active_alldebrid_by_hash(&state.pool, hash).await,
+                    None => None,
+                };
                 return Ok(Json(QBittorrentAddResponse {
                     success: true,
                     message: "This torrent is already being handled by AllDebrid".to_string(),
-                    torrent_download_id: Some(existing_id),
+                    torrent_download_id: existing_id,
                 }));
             }
+
+            info!(
+                "[ALLDEBRID] Created torrent download {id} for {}, magnet {external_id}",
+                managed.series_name
+            );
+            Some(id)
         }
-
-        let id = Uuid::new_v4();
-        let expected_volumes = body.expected_volumes.as_deref().unwrap_or(&[]);
-
-        sqlx::query(
-            "INSERT INTO torrent_downloads (id, library_id, series_name, expected_volumes, qb_hash, external_id, client, name, replace_existing) \
-             VALUES ($1, $2, $3, $4, $5, $6, 'alldebrid', $7, $8)",
-        )
-        .bind(id)
-        .bind(managed.library_id)
-        .bind(&managed.series_name)
-        .bind(expected_volumes)
-        .bind(resolved_hash.as_deref())
-        .bind(&external_id)
-        .bind(entry.name.as_deref())
-        .bind(body.replace_existing)
-        .execute(&state.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!("[ALLDEBRID] Failed to insert torrent_downloads row: {e}");
-            ApiError::from(e)
-        })?;
-
-        info!(
-            "[ALLDEBRID] Created torrent download {id} for {}, magnet {external_id}",
-            managed.series_name
-        );
-        Some(id)
-    } else {
-        info!("[ALLDEBRID] Magnet {external_id} added but not tracked (no library/series)");
-        None
+        None => {
+            info!("[ALLDEBRID] Magnet {external_id} added but not tracked (no library/series)");
+            None
+        }
     };
 
     Ok(Json(QBittorrentAddResponse {
@@ -824,17 +937,46 @@ async fn find_active_alldebrid_by_hash(pool: &PgPool, hash: &str) -> Option<Uuid
 
 // ─── Background poller ──────────────────────────────────────────────────────
 
+/// What one poll cycle reported back, used to pick the next sleep.
+struct PollOutcome {
+    /// At least one AllDebrid row is still downloading.
+    active: bool,
+    /// Number of rows whose status call failed (rate limit, outage).
+    status_errors: u32,
+}
+
 /// Poll AllDebrid magnets until their files are ready, then fetch and import.
 pub async fn run_alldebrid_poller(pool: PgPool, interval_seconds: u64) {
     let idle_wait = Duration::from_secs(interval_seconds.max(5));
     let active_wait = Duration::from_secs(5);
     let error_wait = Duration::from_secs(15);
     let mut fetch_attempts: HashMap<Uuid, u32> = HashMap::new();
+    // Grows while AllDebrid keeps rejecting status calls, reset on the first
+    // clean cycle.
+    let mut api_backoff = Duration::ZERO;
 
     loop {
         let wait = match poll_alldebrid_downloads(&pool, &mut fetch_attempts).await {
-            Ok(true) => active_wait,
-            Ok(false) => idle_wait,
+            Ok(outcome) if outcome.status_errors > 0 => {
+                api_backoff = if api_backoff.is_zero() {
+                    active_wait
+                } else {
+                    (api_backoff * 2).min(MAX_API_BACKOFF)
+                };
+                warn!(
+                    "[ALLDEBRID] {} status call(s) failed, backing off {api_backoff:?}",
+                    outcome.status_errors
+                );
+                api_backoff
+            }
+            Ok(outcome) => {
+                api_backoff = Duration::ZERO;
+                if outcome.active {
+                    active_wait
+                } else {
+                    idle_wait
+                }
+            }
             Err(e) => {
                 warn!("[ALLDEBRID] {:#}", e);
                 let has_rows = sqlx::query_scalar::<_, i64>(
@@ -855,13 +997,23 @@ pub async fn run_alldebrid_poller(pool: PgPool, interval_seconds: u64) {
     }
 }
 
-/// Returns `Ok(true)` while AllDebrid downloads remain active.
+/// Run one poll cycle. Rows are handled concurrently (bounded by
+/// [`POLL_CONCURRENCY`]) because a row whose magnet is ready spends most of its
+/// time streaming a file: handling rows one by one used to stall every other
+/// magnet's progress for the duration of that transfer.
+///
+/// Note: AllDebrid exposes no way to batch `/magnet/status` by id (`id[]` is
+/// ignored and returns the whole magnet list — hundreds of entries on a normal
+/// account), so one status call per row remains the only option.
 async fn poll_alldebrid_downloads(
     pool: &PgPool,
     fetch_attempts: &mut HashMap<Uuid, u32>,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<PollOutcome> {
     if !alldebrid_enabled(pool).await || !is_torrent_import_enabled(pool).await {
-        return Ok(false);
+        return Ok(PollOutcome {
+            active: false,
+            status_errors: 0,
+        });
     }
 
     let rows = sqlx::query(
@@ -873,42 +1025,72 @@ async fn poll_alldebrid_downloads(
 
     if rows.is_empty() {
         fetch_attempts.clear();
-        return Ok(false);
+        return Ok(PollOutcome {
+            active: false,
+            status_errors: 0,
+        });
     }
 
-    let client = load_alldebrid_client(pool)
-        .await
-        .map_err(|e| anyhow::anyhow!("AllDebrid config: {}", e.message))?;
-
-    let mut active_ids = HashSet::new();
+    let client = Arc::new(
+        load_alldebrid_client(pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("AllDebrid config: {}", e.message))?,
+    );
+    // A row streaming its files holds its permit for the whole transfer, so this
+    // also caps how many AllDebrid downloads run at once.
+    let limit = Arc::new(tokio::sync::Semaphore::new(POLL_CONCURRENCY));
+    let mut set: tokio::task::JoinSet<(Uuid, RowOutcome)> = tokio::task::JoinSet::new();
 
     for row in &rows {
-        let tid: Uuid = row.get("id");
-        let external_id: Option<String> = row.get("external_id");
-        let created_at: chrono::DateTime<chrono::Utc> = row.get("created_at");
+        let tid = row.get::<Uuid, _>("id");
+        let external_id = row.get::<Option<String>, _>("external_id");
+        let created_at = row.get::<DateTime<Utc>, _>("created_at");
+        let pool = pool.clone();
+        let client = Arc::clone(&client);
+        let limit = Arc::clone(&limit);
+        set.spawn(async move {
+            let Ok(_permit) = limit.acquire_owned().await else {
+                // Only happens if the semaphore is closed, which nothing does.
+                warn!("[ALLDEBRID] Download slot unavailable for {tid}");
+                return (tid, RowOutcome::Skipped);
+            };
+            handle_row(pool, client, tid, external_id, created_at).await
+        });
+    }
+
+    let mut outcomes = Vec::with_capacity(rows.len());
+    while let Some(joined) = set.join_next().await {
+        match joined {
+            Ok(outcome) => outcomes.push(outcome),
+            Err(e) => warn!("[ALLDEBRID] Poll task failed: {e}"),
+        }
+    }
+
+    let mut active_ids = HashSet::new();
+    let mut status_errors = 0u32;
+
+    for (tid, outcome) in outcomes {
         active_ids.insert(tid);
-
-        let Some(external_id) = external_id else {
-            let age = chrono::Utc::now() - created_at;
-            if age.num_minutes() > 5 {
-                warn!(
-                    "[ALLDEBRID] Torrent {tid} has no magnet id after 5 minutes, marking as error"
-                );
-                mark_error(pool, tid, "AllDebrid magnet id was never recorded").await;
+        match outcome {
+            RowOutcome::Skipped => {}
+            RowOutcome::StatusError => status_errors += 1,
+            RowOutcome::Fetched => {
+                fetch_attempts.remove(&tid);
             }
-            continue;
-        };
-
-        match client.magnet_status(&external_id).await {
-            Ok(entry) => {
-                handle_magnet_status(pool, &client, tid, &external_id, &entry, fetch_attempts)
-                    .await;
-            }
-            Err(e) => {
-                warn!(
-                    "[ALLDEBRID] Status request for {tid} (magnet {external_id}) failed: {}",
-                    e.message
-                );
+            RowOutcome::FetchFailed(message) => {
+                let attempts = fetch_attempts.entry(tid).or_insert(0);
+                *attempts += 1;
+                if *attempts >= MAX_FETCH_ATTEMPTS {
+                    let message = format!("Failed to fetch files from AllDebrid: {message}");
+                    warn!("[ALLDEBRID] {message} (torrent {tid})");
+                    mark_error(pool, tid, &message).await;
+                    fetch_attempts.remove(&tid);
+                } else {
+                    warn!(
+                        "[ALLDEBRID] Fetch attempt {}/{} for torrent {tid} failed: {message}",
+                        attempts, MAX_FETCH_ATTEMPTS
+                    );
+                }
             }
         }
     }
@@ -923,7 +1105,58 @@ async fn poll_alldebrid_downloads(
     .await
     .unwrap_or(0);
 
-    Ok(still_active > 0)
+    Ok(PollOutcome {
+        active: still_active > 0,
+        status_errors,
+    })
+}
+
+/// What handling one row asked the next cycle to record.
+enum RowOutcome {
+    /// Still downloading, stalled, already errored, or without a magnet id.
+    Skipped,
+    /// The magnet status call itself failed.
+    StatusError,
+    /// The magnet was ready and its files were fetched locally.
+    Fetched,
+    /// The magnet was ready but the local fetch failed (retried up to
+    /// [`MAX_FETCH_ATTEMPTS`]).
+    FetchFailed(String),
+}
+
+/// Handle a single `downloading` row: fetch its magnet status and act on it.
+///
+/// Kept side-effect free regarding the shared fetch-attempt counter so rows can
+/// be processed concurrently; the caller applies the returned outcome.
+async fn handle_row(
+    pool: PgPool,
+    client: Arc<AlldebridClient>,
+    tid: Uuid,
+    external_id: Option<String>,
+    created_at: DateTime<Utc>,
+) -> (Uuid, RowOutcome) {
+    let Some(external_id) = external_id else {
+        let age = Utc::now() - created_at;
+        if age.num_minutes() > 5 {
+            warn!("[ALLDEBRID] Torrent {tid} has no magnet id after 5 minutes, marking as error");
+            mark_error(&pool, tid, "AllDebrid magnet id was never recorded").await;
+        }
+        return (tid, RowOutcome::Skipped);
+    };
+
+    match client.magnet_status(&external_id).await {
+        Ok(entry) => (
+            tid,
+            handle_magnet_status(&pool, client.as_ref(), tid, &external_id, &entry).await,
+        ),
+        Err(e) => {
+            warn!(
+                "[ALLDEBRID] Status request for {tid} (magnet {external_id}) failed: {}",
+                e.message
+            );
+            (tid, RowOutcome::StatusError)
+        }
+    }
 }
 
 /// Live progress of an in-flight magnet, as reported by AllDebrid.
@@ -932,7 +1165,9 @@ struct InflightProgress<'a> {
     progress: f32,
     speed: i64,
     eta: i64,
-    seeders: i64,
+    /// AllDebrid omits the seeder count on some statuses; keep it optional so a
+    /// stall message does not claim "0 seeders" when the value is unknown.
+    seeders: Option<i64>,
     /// Torrent name from the magnet status, when AllDebrid reports one.
     name: Option<&'a str>,
 }
@@ -947,7 +1182,7 @@ async fn record_inflight_progress(
     live: &InflightProgress<'_>,
 ) -> Option<DateTime<Utc>> {
     if live.downloaded > 0 {
-        let _ = sqlx::query(
+        let result = sqlx::query(
             "UPDATE torrent_downloads SET progress = $1, download_speed = $2, eta = $3, \
              seeders = $4, name = COALESCE($6, name), stall_started_at = NULL, updated_at = NOW() \
              WHERE id = $5 AND status = 'downloading'",
@@ -955,15 +1190,18 @@ async fn record_inflight_progress(
         .bind(live.progress)
         .bind(live.speed)
         .bind(live.eta)
-        .bind(live.seeders as i32)
+        .bind(live.seeders.map(|s| s as i32))
         .bind(tid)
         .bind(live.name)
         .execute(pool)
         .await;
+        if let Err(e) = result {
+            warn!("[ALLDEBRID] Failed to store progress for torrent {tid}: {e}");
+        }
         return None;
     }
 
-    sqlx::query_scalar::<_, DateTime<Utc>>(
+    let stalled = sqlx::query_scalar::<_, DateTime<Utc>>(
         "UPDATE torrent_downloads SET progress = $1, download_speed = $2, eta = $3, \
          seeders = $4, name = COALESCE($6, name), \
          stall_started_at = COALESCE(stall_started_at, NOW()), updated_at = NOW() \
@@ -973,13 +1211,21 @@ async fn record_inflight_progress(
     .bind(live.progress)
     .bind(live.speed)
     .bind(live.eta)
-    .bind(live.seeders as i32)
+    .bind(live.seeders.map(|s| s as i32))
     .bind(tid)
     .bind(live.name)
     .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten()
+    .await;
+
+    // `None` (no row matched, e.g. the row changed status since the query) is
+    // normal; only a real query failure is worth logging.
+    match stalled {
+        Ok(stall) => stall,
+        Err(e) => {
+            warn!("[ALLDEBRID] Failed to arm the stall marker for torrent {tid}: {e}");
+            None
+        }
+    }
 }
 
 async fn handle_magnet_status(
@@ -988,8 +1234,7 @@ async fn handle_magnet_status(
     tid: Uuid,
     external_id: &str,
     entry: &MagnetStatusEntry,
-    fetch_attempts: &mut HashMap<Uuid, u32>,
-) {
+) -> RowOutcome {
     let status_code = entry.status_code.unwrap_or(0);
 
     if status_code >= 5 {
@@ -997,7 +1242,7 @@ async fn handle_magnet_status(
         warn!("[ALLDEBRID] Magnet {external_id} (torrent {tid}) failed: {message}");
         mark_error(pool, tid, &message).await;
         let _ = client.delete_magnet(external_id).await;
-        return;
+        return RowOutcome::Skipped;
     }
 
     if status_code < 4 {
@@ -1014,7 +1259,7 @@ async fn handle_magnet_status(
         } else {
             0
         };
-        let seeders = entry.seeders.unwrap_or(0);
+        let seeders = entry.seeders;
         let name = entry.filename.as_deref().filter(|n| !n.is_empty());
 
         // A magnet that has not received a single byte is either queued or has
@@ -1037,30 +1282,14 @@ async fn handle_magnet_status(
                 mark_error(pool, tid, &message).await;
             }
         }
-        return;
+        return RowOutcome::Skipped;
     }
 
     // statusCode == 4: AllDebrid finished; fetch the files and hand over to
     // the shared torrent import pipeline.
     match download_ready_magnet(pool, client, tid, external_id).await {
-        Ok(()) => {
-            fetch_attempts.remove(&tid);
-        }
-        Err(e) => {
-            let attempts = fetch_attempts.entry(tid).or_insert(0);
-            *attempts += 1;
-            if *attempts >= MAX_FETCH_ATTEMPTS {
-                let message = format!("Failed to fetch files from AllDebrid: {e:#}");
-                warn!("[ALLDEBRID] {message} (torrent {tid})");
-                mark_error(pool, tid, &message).await;
-                fetch_attempts.remove(&tid);
-            } else {
-                warn!(
-                    "[ALLDEBRID] Fetch attempt {}/{} for torrent {tid} failed: {e:#}",
-                    attempts, MAX_FETCH_ATTEMPTS
-                );
-            }
-        }
+        Ok(()) => RowOutcome::Fetched,
+        Err(e) => RowOutcome::FetchFailed(format!("{e:#}")),
     }
 }
 
@@ -1085,48 +1314,7 @@ async fn download_ready_magnet(
 
     let staging_db = format!("/downloads/sl-{tid}");
     let staging_dir = remap_downloads_path(&staging_db);
-    tokio::fs::create_dir_all(&staging_dir).await?;
-
-    let total: i64 = files.iter().map(|f| f.size.max(0)).sum();
-    let mut progress = DownloadProgress::new();
-    let mut used_names: HashSet<String> = HashSet::new();
-
-    for (index, file) in files.iter().enumerate() {
-        let link = resolve_unlocked_link(client, &file.link).await?;
-        let name = unique_name(&file.name, index, &mut used_names);
-        let dest = Path::new(&staging_dir).join(&name);
-        let tmp = PathBuf::from(format!("{}.tmp", dest.display()));
-
-        info!(
-            "[ALLDEBRID] Downloading '{}' for torrent {tid} ({} bytes)",
-            name, file.size
-        );
-
-        let mut response = client
-            .http
-            .get(&link)
-            .send()
-            .await
-            .map_err(|e| anyhow::anyhow!("download request failed: {e}"))?;
-        if !response.status().is_success() {
-            anyhow::bail!("AllDebrid link returned HTTP {}", response.status());
-        }
-
-        let mut out = tokio::fs::File::create(&tmp).await?;
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|e| anyhow::anyhow!("reading response failed: {e}"))?
-        {
-            out.write_all(&chunk).await?;
-            if let Some(written) = progress.advance(chunk.len() as i64) {
-                report_progress(pool, tid, written, total).await;
-            }
-        }
-        out.flush().await?;
-        tokio::fs::rename(&tmp, &dest).await?;
-        report_progress(pool, tid, progress.written(), total).await;
-    }
+    download_files_to(pool, client, tid, Path::new(&staging_dir), &files).await?;
 
     sqlx::query(
         "UPDATE torrent_downloads SET status = 'completed', content_path = $1, progress = 1, \
@@ -1150,6 +1338,69 @@ async fn download_ready_magnet(
             warn!("[ALLDEBRID] Import {tid} failed: {e:#}");
         }
     });
+
+    Ok(())
+}
+
+/// Stream every book file into `staging_dir` (`.tmp` then rename) while keeping
+/// the stored progress up to date. Split from [`download_ready_magnet`] so the
+/// transfer itself can be exercised against a local HTTP server.
+async fn download_files_to(
+    pool: &PgPool,
+    client: &AlldebridClient,
+    tid: Uuid,
+    staging_dir: &Path,
+    files: &[BookFile],
+) -> anyhow::Result<()> {
+    tokio::fs::create_dir_all(staging_dir)
+        .await
+        .with_context(|| format!("cannot create staging directory {}", staging_dir.display()))?;
+
+    let total: i64 = files.iter().map(|f| f.size.max(0)).sum();
+    let mut progress = DownloadProgress::new();
+    let mut used_names: HashSet<String> = HashSet::new();
+
+    for (index, file) in files.iter().enumerate() {
+        let link = resolve_unlocked_link(client, &file.link).await?;
+        let name = unique_name(&file.name, index, &mut used_names);
+        let dest = staging_dir.join(&name);
+        let tmp = PathBuf::from(format!("{}.tmp", dest.display()));
+
+        info!(
+            "[ALLDEBRID] Downloading '{}' for torrent {tid} ({} bytes)",
+            name, file.size
+        );
+
+        // Use the download client: the API one caps the *whole* request at 60s,
+        // which a book transfer routinely exceeds.
+        let mut response = client.download_http.get(&link).send().await.map_err(|e| {
+            anyhow::anyhow!("download request failed: {}", describe_http_failure(&e))
+        })?;
+        if !response.status().is_success() {
+            anyhow::bail!("AllDebrid link returned HTTP {}", response.status());
+        }
+
+        let mut out = tokio::fs::File::create(&tmp)
+            .await
+            .with_context(|| format!("cannot create {}", tmp.display()))?;
+        while let Some(chunk) = response.chunk().await.map_err(|e| {
+            anyhow::anyhow!("reading response failed: {}", describe_http_failure(&e))
+        })? {
+            out.write_all(&chunk)
+                .await
+                .with_context(|| format!("cannot write to {}", tmp.display()))?;
+            if let Some(written) = progress.advance(chunk.len() as i64) {
+                report_progress(pool, tid, written, total).await;
+            }
+        }
+        out.flush()
+            .await
+            .with_context(|| format!("cannot flush {}", tmp.display()))?;
+        tokio::fs::rename(&tmp, &dest)
+            .await
+            .with_context(|| format!("cannot move {} into place", tmp.display()))?;
+        report_progress(pool, tid, progress.written(), total).await;
+    }
 
     Ok(())
 }
@@ -1214,18 +1465,21 @@ async fn report_progress(pool: &PgPool, tid: Uuid, written: i64, total: i64) {
     } else {
         0.0
     };
-    let _ = sqlx::query(
+    if let Err(e) = sqlx::query(
         "UPDATE torrent_downloads SET progress = $1, updated_at = NOW() \
          WHERE id = $2 AND status = 'downloading'",
     )
     .bind(fraction)
     .bind(tid)
     .execute(pool)
-    .await;
+    .await
+    {
+        warn!("[ALLDEBRID] Failed to report progress for torrent {tid}: {e}");
+    }
 }
 
 async fn mark_error(pool: &PgPool, tid: Uuid, message: &str) {
-    let _ = sqlx::query(
+    let result = sqlx::query(
         "UPDATE torrent_downloads SET status = 'error', error_message = $1, \
          download_speed = 0, eta = 0, updated_at = NOW() \
          WHERE id = $2 AND status = 'downloading'",
@@ -1234,12 +1488,21 @@ async fn mark_error(pool: &PgPool, tid: Uuid, message: &str) {
     .bind(tid)
     .execute(pool)
     .await;
+
+    match result {
+        Ok(done) if done.rows_affected() == 0 => {
+            warn!("[ALLDEBRID] Torrent {tid} left '{message}' unrecorded: row is no longer downloading");
+        }
+        Ok(_) => {}
+        Err(e) => warn!("[ALLDEBRID] Failed to mark torrent {tid} as error: {e}"),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use sqlx::PgPool;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn node(name: &str, link: Option<&str>, size: i64, children: Vec<FileNode>) -> FileNode {
         FileNode {
@@ -1388,14 +1651,39 @@ mod tests {
         assert!(!is_stalled(1, STALL_TIMEOUT_MINUTES * 10));
 
         assert_eq!(
-            stall_message(42, 0),
+            stall_message(42, Some(0)),
             "No peer: 0 bytes downloaded in 42 min (0 seeders)"
         );
         // Under a minute reads as "1 min" rather than "0 min".
         assert_eq!(
-            stall_message(0, 3),
+            stall_message(0, Some(3)),
             "No peer: 0 bytes downloaded in 1 min (3 seeders)"
         );
+        // AllDebrid does not always report a seeder count; the message must not
+        // pretend the transfer had zero seeders.
+        assert_eq!(
+            stall_message(10, None),
+            "No peer: 0 bytes downloaded in 10 min (seeders unknown)"
+        );
+    }
+
+    #[test]
+    fn describe_http_failure_never_repeats_the_request_url() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        // Nothing listens on port 1, so this always fails at connect time.
+        let err = runtime
+            .block_on(reqwest::get("http://127.0.0.1:1/unlocked?sig=supersecret"))
+            .expect_err("connecting to port 1 must fail");
+
+        let described = describe_http_failure(&err);
+        assert!(
+            !described.contains("127.0.0.1") && !described.contains("supersecret"),
+            "the persisted error must not carry the signed link, got: {described}"
+        );
+        assert!(described.contains("error"), "got: {described}");
     }
 
     #[test]
@@ -1530,7 +1818,7 @@ mod tests {
             progress: 0.0,
             speed: 0,
             eta: 0,
-            seeders: 0,
+            seeders: Some(0),
             name: Some("Aposimz.cbz"),
         };
         let armed = record_inflight_progress(&pool, id, &stalled)
@@ -1553,7 +1841,7 @@ mod tests {
             progress: 0.5,
             speed: 100,
             eta: 1,
-            seeders: 12,
+            seeders: Some(12),
             name: None,
         };
         assert!(record_inflight_progress(&pool, id, &moving).await.is_none());
@@ -1569,5 +1857,272 @@ mod tests {
         assert!(stall.is_none());
         assert_eq!(seeders, Some(12));
         assert_eq!(name.as_deref(), Some("Aposimz.cbz"));
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn a_second_active_alldebrid_row_for_the_same_hash_is_rejected(pool: PgPool) {
+        let library_id = seed_library(&pool).await;
+        sqlx::query(
+            "INSERT INTO torrent_downloads (id, library_id, series_name, qb_hash, external_id, client, status) \
+             VALUES ($1, $2, 'Astérix', 'AABBCC', '1', 'alldebrid', 'downloading')",
+        )
+        .bind(Uuid::new_v4())
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Same hash, different casing: the unique partial index normalises case.
+        let duplicate = sqlx::query(
+            "INSERT INTO torrent_downloads (library_id, series_name, qb_hash, external_id, client, status) \
+             VALUES ($1, 'Astérix', 'aabbcc', '2', 'alldebrid', 'downloading')",
+        )
+        .bind(library_id)
+        .execute(&pool)
+        .await;
+        assert!(
+            duplicate.is_err(),
+            "two active AllDebrid rows for one hash must not be insertable"
+        );
+
+        // A finished row for the same hash stays possible (re-snatch after import)...
+        let finished = sqlx::query(
+            "INSERT INTO torrent_downloads (library_id, series_name, qb_hash, external_id, client, status) \
+             VALUES ($1, 'Astérix', 'aabbcc', '3', 'alldebrid', 'imported')",
+        )
+        .bind(library_id)
+        .execute(&pool)
+        .await;
+        assert!(finished.is_ok(), "a finished duplicate must remain allowed");
+
+        // ...and so is the same hash tracked by the other client.
+        let other_client = sqlx::query(
+            "INSERT INTO torrent_downloads (library_id, series_name, qb_hash, external_id, client, status) \
+             VALUES ($1, 'Astérix', 'aabbcc', '4', 'qbittorrent', 'downloading')",
+        )
+        .bind(library_id)
+        .execute(&pool)
+        .await;
+        assert!(other_client.is_ok(), "the other client keeps its own rules");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn the_race_safe_insert_reports_a_conflict_instead_of_failing(pool: PgPool) {
+        let library_id = seed_library(&pool).await;
+        sqlx::query(
+            "INSERT INTO torrent_downloads (id, library_id, series_name, qb_hash, external_id, client, status) \
+             VALUES ($1, $2, 'Astérix', 'AABBCC', '1', 'alldebrid', 'downloading')",
+        )
+        .bind(Uuid::new_v4())
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let outcome = sqlx::query(
+            "INSERT INTO torrent_downloads (id, library_id, series_name, qb_hash, external_id, client, status) \
+             VALUES ($1, $2, 'Astérix', 'aabbcc', '2', 'alldebrid', 'downloading') \
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(Uuid::new_v4())
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            outcome.rows_affected(),
+            0,
+            "the request that loses the race must see zero inserted rows"
+        );
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn a_zero_byte_magnet_past_the_timeout_is_marked_as_error(pool: PgPool) {
+        let library_id = seed_library(&pool).await;
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO torrent_downloads (id, library_id, series_name, qb_hash, external_id, client, status, stall_started_at) \
+             VALUES ($1, $2, 'Aposimz', 'HASH', '7', 'alldebrid', 'downloading', NOW() - INTERVAL '40 minutes')",
+        )
+        .bind(id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // No network is involved for a statusCode < 4 entry.
+        let client = AlldebridClient::new("dummy-key".to_string()).unwrap();
+        let entry = MagnetStatusEntry {
+            size: Some(73_396_635),
+            status: Some("Downloading".to_string()),
+            status_code: Some(1),
+            downloaded: Some(0),
+            download_speed: Some(0),
+            seeders: Some(0),
+            filename: Some("Aposimz T04.cbr".to_string()),
+        };
+
+        let outcome = handle_magnet_status(&pool, &client, id, "7", &entry).await;
+        assert!(matches!(outcome, RowOutcome::Skipped));
+
+        let (status, message): (String, Option<String>) =
+            sqlx::query_as("SELECT status, error_message FROM torrent_downloads WHERE id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        assert_eq!(status, "error");
+        let message = message.expect("the stall must be explained on the row");
+        assert!(
+            message.starts_with("No peer: 0 bytes downloaded in"),
+            "got: {message}"
+        );
+        assert!(message.ends_with("(0 seeders)"), "got: {message}");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn restart_refuses_a_download_that_is_still_running(pool: PgPool) {
+        let library_id = seed_library(&pool).await;
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO torrent_downloads (id, library_id, series_name, qb_hash, external_id, client, status) \
+             VALUES ($1, $2, 'A', 'H', '7', 'alldebrid', 'downloading')",
+        )
+        .bind(id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let state = crate::state::test_state(pool.clone());
+        let err = match restart_torrent_download(State(state), AxumPath(id)).await {
+            Ok(_) => panic!("restarting a running download must be refused"),
+            Err(e) => e,
+        };
+        assert_eq!(err.status, axum::http::StatusCode::BAD_REQUEST);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn restart_reports_an_unknown_alldebrid_row_as_not_found(pool: PgPool) {
+        let state = crate::state::test_state(pool.clone());
+        let err = match restart_torrent_download(State(state), AxumPath(Uuid::new_v4())).await {
+            Ok(_) => panic!("an unknown row must not be restartable"),
+            Err(e) => e,
+        };
+        assert_eq!(err.status, axum::http::StatusCode::NOT_FOUND);
+    }
+
+    async fn seed_downloading_row(pool: &PgPool) -> Uuid {
+        let library_id = seed_library(pool).await;
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO torrent_downloads (id, library_id, series_name, qb_hash, external_id, client, status) \
+             VALUES ($1, $2, 'Aposimz', 'H', '7', 'alldebrid', 'downloading')",
+        )
+        .bind(id)
+        .bind(library_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    /// Mount `/v4/link/unlock` so it hands out a link to `file_path` on the
+    /// mock server itself, then serve `body` at that path.
+    async fn mock_unlock_and_file(server: &MockServer, file_path: &str, body: &'static [u8]) {
+        use wiremock::matchers::{method, path};
+
+        Mock::given(method("POST"))
+            .and(path("/v4/link/unlock"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+                r#"{{"status":"success","data":{{"link":"{}{file_path}"}}}}"#,
+                server.uri()
+            )))
+            .mount(server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(file_path))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(body))
+            .mount(server)
+            .await;
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn download_files_to_streams_a_book_and_records_completion(pool: PgPool) {
+        let id = seed_downloading_row(&pool).await;
+        let server = MockServer::start().await;
+        mock_unlock_and_file(&server, "/files/1", b"pages").await;
+
+        let client = AlldebridClient::with_base_url("key".to_string(), &server.uri()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let files = vec![BookFile {
+            name: "Aposimz T04.cbr".to_string(),
+            size: 5,
+            link: "magnet-internal-link".to_string(),
+        }];
+
+        download_files_to(&pool, &client, id, dir.path(), &files)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read(dir.path().join("Aposimz T04.cbr")).unwrap(),
+            b"pages"
+        );
+        assert!(
+            !dir.path().join("Aposimz T04.cbr.tmp").exists(),
+            "the temporary file must be renamed away"
+        );
+        let progress: f32 =
+            sqlx::query_scalar("SELECT progress FROM torrent_downloads WHERE id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(progress, 1.0);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn download_files_to_reports_a_link_that_is_not_served(pool: PgPool) {
+        use wiremock::matchers::{method, path};
+
+        let id = seed_downloading_row(&pool).await;
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v4/link/unlock"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+                r#"{{"status":"success","data":{{"link":"{}/files/gone"}}}}"#,
+                server.uri()
+            )))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/files/gone"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let client = AlldebridClient::with_base_url("key".to_string(), &server.uri()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let files = vec![BookFile {
+            name: "Aposimz T04.cbr".to_string(),
+            size: 5,
+            link: "magnet-internal-link".to_string(),
+        }];
+
+        let err = download_files_to(&pool, &client, id, dir.path(), &files)
+            .await
+            .expect_err("a 500 from the file link must fail the fetch");
+
+        assert!(
+            err.to_string().contains("HTTP 500"),
+            "the error must name the HTTP status, got: {err}"
+        );
+        assert!(
+            !err.to_string().contains(&server.uri()),
+            "the error must not repeat the signed link, got: {err}"
+        );
     }
 }

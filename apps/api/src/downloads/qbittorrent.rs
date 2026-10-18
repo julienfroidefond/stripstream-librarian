@@ -208,10 +208,7 @@ pub async fn add_torrent(
     .await;
     let is_managed = managed.is_some();
 
-    tracing::info!(
-        "[QBITTORRENT] Add torrent request: url={}, managed={is_managed}",
-        body.url
-    );
+    tracing::info!("[QBITTORRENT] Add torrent request: managed={is_managed}",);
 
     let (base_url, username, password) =
         load_qbittorrent_config(&state.pool)
