@@ -33,7 +33,7 @@ export function TestConnectionButton({ endpoint, disabled }: TestConnectionButto
   }
 
   return (
-    <>
+    <div className="flex flex-wrap items-center gap-3">
       <Button onClick={handleTestConnection} disabled={isTesting || disabled}>
         {isTesting ? (
           <>
@@ -52,6 +52,6 @@ export function TestConnectionButton({ endpoint, disabled }: TestConnectionButto
           {testResult.message}
         </span>
       )}
-    </>
+    </div>
   );
 }
