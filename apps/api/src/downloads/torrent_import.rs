@@ -40,6 +40,10 @@ pub struct TorrentDownloadDto {
     pub series_id: Option<String>,
     pub series_name: String,
     pub expected_volumes: Vec<i32>,
+    /// Download backend: `qbittorrent` or `alldebrid`.
+    pub client: String,
+    /// Backend-specific id (AllDebrid magnet id); `None` for qBittorrent.
+    pub external_id: Option<String>,
     pub qb_hash: Option<String>,
     pub content_path: Option<String>,
     pub status: String,
@@ -127,7 +131,8 @@ pub async fn notify_torrent_done(
     }
 
     let row = sqlx::query(
-        "SELECT id FROM torrent_downloads WHERE qb_hash = $1 AND status = 'downloading' LIMIT 1",
+        "SELECT id FROM torrent_downloads \
+         WHERE qb_hash = $1 AND status = 'downloading' AND client = 'qbittorrent' LIMIT 1",
     )
     .bind(&body.hash)
     .fetch_optional(&state.pool)
@@ -171,9 +176,9 @@ pub async fn list_torrent_downloads(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<TorrentDownloadDto>>, ApiError> {
     let rows = sqlx::query(
-        "SELECT td.id, td.library_id, td.series_name, td.expected_volumes, td.qb_hash, td.content_path, \
-         td.status, td.imported_files, td.error_message, td.progress, td.download_speed, td.eta, \
-         td.created_at, td.updated_at, s.id AS series_id \
+        "SELECT td.id, td.library_id, td.series_name, td.expected_volumes, td.client, td.external_id, \
+         td.qb_hash, td.content_path, td.status, td.imported_files, td.error_message, td.progress, \
+         td.download_speed, td.eta, td.created_at, td.updated_at, s.id AS series_id \
          FROM torrent_downloads td \
          LEFT JOIN series s ON s.library_id = td.library_id AND LOWER(s.name) = LOWER(td.series_name) \
          ORDER BY td.created_at DESC LIMIT 100",
@@ -196,6 +201,8 @@ pub async fn list_torrent_downloads(
                 series_id: series_id.map(|u| u.to_string()),
                 series_name: row.get("series_name"),
                 expected_volumes,
+                client: row.get("client"),
+                external_id: row.get("external_id"),
                 qb_hash: row.get("qb_hash"),
                 content_path: row.get("content_path"),
                 status: row.get("status"),
@@ -213,26 +220,46 @@ pub async fn list_torrent_downloads(
     Ok(Json(dtos))
 }
 
-/// Delete a torrent download entry. If the torrent is still downloading, also remove it from qBittorrent.
+/// Delete a torrent download entry. If the torrent is still downloading, also remove it from the
+/// matching backend (qBittorrent or AllDebrid).
 pub async fn delete_torrent_download(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<crate::responses::OkResponse>, ApiError> {
-    let row = sqlx::query("SELECT qb_hash, status FROM torrent_downloads WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?;
+    let row = sqlx::query(
+        "SELECT client, external_id, qb_hash, status FROM torrent_downloads WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
 
     let Some(row) = row else {
         return Err(ApiError::not_found("torrent download not found"));
     };
 
+    let client: String = row.get("client");
+    let external_id: Option<String> = row.get("external_id");
     let qb_hash: Option<String> = row.get("qb_hash");
     let status: String = row.get("status");
 
-    // If downloading, try to cancel in qBittorrent
+    // If downloading, cancel the transfer in its backend.
     if status == "downloading" {
-        if let Some(ref hash) = qb_hash {
+        if client == "alldebrid" {
+            if let Some(ref magnet_id) = external_id {
+                match super::alldebrid::load_alldebrid_client(&state.pool).await {
+                    Ok(alldebrid) => match alldebrid.delete_magnet(magnet_id).await {
+                        Ok(()) => info!("Deleted magnet {magnet_id} from AllDebrid"),
+                        Err(e) => {
+                            warn!(
+                                "Failed to delete magnet {magnet_id} from AllDebrid: {}",
+                                e.message
+                            )
+                        }
+                    },
+                    Err(e) => warn!("AllDebrid not available to delete magnet: {}", e.message),
+                }
+            }
+        } else if let Some(ref hash) = qb_hash {
             if let Ok((base_url, username, password)) = load_qbittorrent_config(&state.pool).await {
                 let client = build_http_client(Duration::from_secs(10)).ok();
                 if let Some(client) = client {
@@ -349,7 +376,8 @@ pub async fn run_torrent_poller(pool: PgPool, interval_seconds: u64) {
                 warn!("[TORRENT_POLLER] {:#}", e);
                 // Check if there are active downloads — if so, retry faster
                 let has_rows = sqlx::query_scalar::<_, i64>(
-                    "SELECT COUNT(*) FROM torrent_downloads WHERE status = 'downloading'",
+                    "SELECT COUNT(*) FROM torrent_downloads \
+                     WHERE status = 'downloading' AND client = 'qbittorrent'",
                 )
                 .fetch_one(&pool)
                 .await
@@ -372,7 +400,8 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
     }
 
     let rows = sqlx::query(
-        "SELECT id, qb_hash, created_at FROM torrent_downloads WHERE status = 'downloading'",
+        "SELECT id, qb_hash, created_at FROM torrent_downloads \
+         WHERE status = 'downloading' AND client = 'qbittorrent'",
     )
     .fetch_all(pool)
     .await?;
@@ -431,7 +460,8 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
 
     // Re-fetch rows to include newly resolved hashes
     let rows = sqlx::query(
-        "SELECT id, qb_hash, created_at FROM torrent_downloads WHERE status = 'downloading'",
+        "SELECT id, qb_hash, created_at FROM torrent_downloads \
+         WHERE status = 'downloading' AND client = 'qbittorrent'",
     )
     .fetch_all(pool)
     .await?;
@@ -609,7 +639,8 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
 
     // Still active if any rows remain in 'downloading' status
     let still_active = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM torrent_downloads WHERE status = 'downloading'",
+        "SELECT COUNT(*) FROM torrent_downloads \
+         WHERE status = 'downloading' AND client = 'qbittorrent'",
     )
     .fetch_one(pool)
     .await
@@ -620,7 +651,7 @@ async fn poll_qbittorrent_downloads(pool: &PgPool) -> anyhow::Result<bool> {
 
 // ─── Import processing ────────────────────────────────────────────────────────
 
-async fn is_torrent_import_enabled(pool: &PgPool) -> bool {
+pub(super) async fn is_torrent_import_enabled(pool: &PgPool) -> bool {
     load_setting::<serde_json::Value>(pool, "torrent_import")
         .await
         .ok()
@@ -631,7 +662,7 @@ async fn is_torrent_import_enabled(pool: &PgPool) -> bool {
 
 pub(super) async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> anyhow::Result<()> {
     let row = sqlx::query(
-        "SELECT td.library_id, td.series_name, td.expected_volumes, td.content_path, td.qb_hash, td.replace_existing, l.name AS library_name \
+        "SELECT td.library_id, td.series_name, td.expected_volumes, td.content_path, td.qb_hash, td.client, td.replace_existing, l.name AS library_name \
          FROM torrent_downloads td LEFT JOIN libraries l ON l.id = td.library_id WHERE td.id = $1",
     )
     .bind(torrent_id)
@@ -644,6 +675,7 @@ pub(super) async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> an
     let expected_volumes: Vec<i32> = row.get("expected_volumes");
     let content_path: Option<String> = row.get("content_path");
     let qb_hash: Option<String> = row.get("qb_hash");
+    let client: String = row.get("client");
     let replace_existing: bool = row.get("replace_existing");
     let content_path =
         content_path.ok_or_else(|| anyhow::anyhow!("content_path not set on torrent_download"))?;
@@ -851,29 +883,33 @@ pub(super) async fn process_torrent_import(pool: PgPool, torrent_id: Uuid) -> an
                 }
             }
 
-            // Remove torrent and category from qBittorrent
-            if let Some(ref hash) = qb_hash {
-                if let Ok((base_url, username, password)) = load_qbittorrent_config(&pool).await {
-                    if let Ok(client) = build_http_client(Duration::from_secs(10)) {
-                        if let Ok(sid) =
-                            qbittorrent_login(&client, &base_url, &username, &password).await
-                        {
-                            let _ = client
-                                .post(format!("{base_url}/api/v2/torrents/delete"))
-                                .header("Cookie", format!("SID={sid}"))
-                                .form(&[("hashes", hash.as_str()), ("deleteFiles", "true")])
-                                .send()
-                                .await;
-                            info!("[IMPORT] Removed torrent {} from qBittorrent", hash);
+            // Remove torrent and category from qBittorrent (AllDebrid magnets are
+            // already deleted by its poller once the files are fetched).
+            if client == "qbittorrent" {
+                if let Some(ref hash) = qb_hash {
+                    if let Ok((base_url, username, password)) = load_qbittorrent_config(&pool).await
+                    {
+                        if let Ok(client) = build_http_client(Duration::from_secs(10)) {
+                            if let Ok(sid) =
+                                qbittorrent_login(&client, &base_url, &username, &password).await
+                            {
+                                let _ = client
+                                    .post(format!("{base_url}/api/v2/torrents/delete"))
+                                    .header("Cookie", format!("SID={sid}"))
+                                    .form(&[("hashes", hash.as_str()), ("deleteFiles", "true")])
+                                    .send()
+                                    .await;
+                                info!("[IMPORT] Removed torrent {} from qBittorrent", hash);
 
-                            // Remove the sl-{id} category
-                            let cat = format!("sl-{torrent_id}");
-                            let _ = client
-                                .post(format!("{base_url}/api/v2/torrents/removeCategories"))
-                                .header("Cookie", format!("SID={sid}"))
-                                .form(&[("categories", cat.as_str())])
-                                .send()
-                                .await;
+                                // Remove the sl-{id} category
+                                let cat = format!("sl-{torrent_id}");
+                                let _ = client
+                                    .post(format!("{base_url}/api/v2/torrents/removeCategories"))
+                                    .header("Cookie", format!("SID={sid}"))
+                                    .form(&[("categories", cat.as_str())])
+                                    .send()
+                                    .await;
+                            }
                         }
                     }
                 }
