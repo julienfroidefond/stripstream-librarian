@@ -98,6 +98,26 @@ export function SettingsSections({ children, layout = "columns", className = "" 
   );
 }
 
+interface SettingsColumnsProps {
+  children: ReactNode;
+  className?: string;
+}
+
+/**
+ * Explicit two-column (xl) split for tabs whose panels fall into named groups —
+ * e.g. "where releases come from" beside "where they go". Unlike
+ * `SettingsSections`, which auto-balances a single flow, each child here is one
+ * fixed column and keeps its own top-to-bottom order. Stacks below `xl`.
+ */
+export function SettingsColumns({ children, className = "" }: SettingsColumnsProps) {
+  return <div className={`grid items-start gap-5 xl:grid-cols-2 ${className}`}>{children}</div>;
+}
+
+/** One column of `SettingsColumns`: a vertical flow with the section rhythm. */
+export function SettingsColumn({ children, className = "" }: SettingsColumnsProps) {
+  return <div className={`space-y-5 ${className}`}>{children}</div>;
+}
+
 interface SettingsRowProps {
   /** Row title, rendered in a left gutter (stacked above on small screens). */
   label: ReactNode;
