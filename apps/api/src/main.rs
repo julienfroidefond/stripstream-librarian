@@ -244,6 +244,15 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::post(downloads::add_torrent),
         )
         .route("/qbittorrent/test", get(downloads::test_qbittorrent))
+        .route(
+            "/alldebrid/add",
+            axum::routing::post(downloads::add_alldebrid_torrent),
+        )
+        .route("/alldebrid/test", get(downloads::test_alldebrid))
+        .route(
+            "/alldebrid/downloads/{id}/restart",
+            axum::routing::post(downloads::restart_alldebrid_download),
+        )
         .route("/torrent-downloads", get(downloads::list_torrent_downloads))
         .route(
             "/torrent-downloads/{id}",
@@ -709,6 +718,7 @@ async fn main() -> anyhow::Result<()> {
     // Clone pool before state is moved into the router
     let poller_pool = state.pool.clone();
     let torrent_poller_pool = state.pool.clone();
+    let alldebrid_poller_pool = state.pool.clone();
 
     let app = Router::new()
         .route("/", get(handlers::api_home))
@@ -742,6 +752,11 @@ async fn main() -> anyhow::Result<()> {
     // Start background poller for qBittorrent torrent completions (every 30s)
     tokio::spawn(async move {
         downloads::run_torrent_poller(torrent_poller_pool, 30).await;
+    });
+
+    // Start background poller for AllDebrid magnet progress/files (every 15s)
+    tokio::spawn(async move {
+        downloads::run_alldebrid_poller(alldebrid_poller_pool, 15).await;
     });
 
     let listener = tokio::net::TcpListener::bind(&config.listen_addr).await?;

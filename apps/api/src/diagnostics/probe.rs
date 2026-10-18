@@ -29,7 +29,7 @@ pub struct DiagnosticsProbe {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct IntegrationDiagnostics {
-    /// `qbittorrent`, `prowlarr`, `telegram` or `ddl_<provider>`.
+    /// `qbittorrent`, `alldebrid`, `prowlarr`, `telegram` or `ddl_<provider>`.
     pub id: String,
     /// Whether the integration has enough settings to be probed at all.
     pub configured: bool,
@@ -77,14 +77,15 @@ pub async fn diagnostics_probe(State(state): State<AppState>) -> Json<Diagnostic
 // ─── Integrations ────────────────────────────────────────────────────────────
 
 async fn integration_probes(pool: &sqlx::PgPool) -> Vec<IntegrationDiagnostics> {
-    let (qbittorrent, prowlarr, telegram, ddl) = tokio::join!(
+    let (qbittorrent, alldebrid, prowlarr, telegram, ddl) = tokio::join!(
         probe_qbittorrent(pool),
+        probe_alldebrid(pool),
         probe_prowlarr(pool),
         probe_telegram(pool),
         probe_ddl_providers(pool),
     );
 
-    let mut probes = vec![qbittorrent, prowlarr, telegram];
+    let mut probes = vec![qbittorrent, alldebrid, prowlarr, telegram];
     probes.extend(ddl);
     probes
 }
@@ -131,6 +132,32 @@ async fn probe_qbittorrent(pool: &sqlx::PgPool) -> IntegrationDiagnostics {
     match probe {
         Ok(Some(version)) => ok(ID, latency, Some(version)),
         _ => failed(ID, latency, "login or version request failed"),
+    }
+}
+
+async fn probe_alldebrid(pool: &sqlx::PgPool) -> IntegrationDiagnostics {
+    const ID: &str = "alldebrid";
+
+    let Ok(Some(config)) = crate::downloads::alldebrid::load_alldebrid_config(pool).await else {
+        return not_configured(ID);
+    };
+
+    if config.api_key.trim().is_empty() {
+        return not_configured(ID);
+    }
+
+    let Ok(client) = crate::downloads::alldebrid::AlldebridClient::new(config.api_key) else {
+        return failed(ID, 0, "invalid client configuration");
+    };
+
+    let started = std::time::Instant::now();
+    let probe = tokio::time::timeout(PROBE_TIMEOUT, client.get_user()).await;
+    let latency = started.elapsed().as_millis() as u64;
+
+    match probe {
+        Ok(Ok(user)) => ok(ID, latency, Some(user.username)),
+        Ok(Err(_)) => failed(ID, latency, "API key rejected or request failed"),
+        Err(_) => failed(ID, latency, "timeout"),
     }
 }
 

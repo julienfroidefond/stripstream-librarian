@@ -11,9 +11,10 @@ import {
   TelegramAvailableGroupDto,
   TelegramDownloadItemDto,
   DdlProviderDownloadDto,
+  DownloadClient,
 } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, Button, Icon, toast } from "@/app/components/ui";
-import { QbittorrentProvider, QbittorrentDownloadButton } from "@/app/components/QbittorrentDownloadButton";
+import { DownloadClientProvider, DownloadClientButton, DownloadClientIndicator, DownloadClientBadge } from "@/app/components/DownloadClientButton";
 import { useTranslation } from "@/lib/i18n/context";
 import { compressVolumes } from "@/lib/volumeRanges";
 import { formatDateTime, formatEta, formatSpeed, formatVolumes } from "@/lib/format";
@@ -71,6 +72,9 @@ interface DownloadsPageProps {
   initialDownloads: TorrentDownloadDto[];
   initialLatestFound: LatestFoundPerLibraryDto[];
   qbConfigured?: boolean;
+  alldebridConfigured?: boolean;
+  /** Client chosen in Settings; read server-side to avoid a first-render flash. */
+  initialDownloadClient?: DownloadClient | null;
   initialTelegramAvailable?: TelegramAvailableGroupDto[];
   initialTelegramDownloads?: TelegramDownloadItemDto[];
   initialDdlProviderDownloads?: DdlProviderDownloadDto[];
@@ -267,7 +271,7 @@ function buildUnifiedAvailableGroups(
   return Array.from(groups.values()).filter(group => group.sources.length > 0);
 }
 
-export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigured, initialTelegramAvailable = [], initialTelegramDownloads = [], initialDdlProviderDownloads = [] }: DownloadsPageProps) {
+export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigured, alldebridConfigured, initialDownloadClient = null, initialTelegramAvailable = [], initialTelegramDownloads = [], initialDdlProviderDownloads = [] }: DownloadsPageProps) {
   const { t } = useTranslation();
   const [downloads, setDownloads] = useState<TorrentDownloadDto[]>(initialDownloads);
   const [telegramDownloads, setTelegramDownloads] = useState<TelegramDownloadItemDto[]>(initialTelegramDownloads);
@@ -327,17 +331,20 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
   const handleStatusFilterChange = (id: StatusFilter) => { setStatusFilter(id); setPage(1); };
 
   return (
-    <>
+    <DownloadClientProvider initialClients={{ qbittorrent: qbConfigured, alldebrid: alldebridConfigured }} initialClient={initialDownloadClient} onDownloadStarted={() => refresh(false)}>
       <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
         <h1 className="text-xl sm:text-3xl font-bold text-foreground flex items-center gap-2 sm:gap-3">
           <Icon name="download" size="lg" className="sm:hidden text-success" />
           <Icon name="download" size="xl" className="hidden sm:block text-success" />
           {t("downloads.title")}
         </h1>
-        <Button onClick={() => refresh(true)} disabled={isRefreshing} variant="outline" size="sm">
-          {isRefreshing ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="refresh" size="sm" />}
-          <span className="ml-2 hidden sm:inline">{t("downloads.refresh")}</span>
-        </Button>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <DownloadClientIndicator />
+          <Button onClick={() => refresh(true)} disabled={isRefreshing} variant="outline" size="sm">
+            {isRefreshing ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="refresh" size="sm" />}
+            <span className="ml-2 hidden sm:inline">{t("downloads.refresh")}</span>
+          </Button>
+        </div>
       </div>
 
       {/* Filter bar */}
@@ -396,27 +403,25 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
       )}
 
       {(latestFound.length > 0 || telegramAvailable.length > 0) && (
-        <QbittorrentProvider initialConfigured={qbConfigured} onDownloadStarted={() => refresh(false)}>
-          <AvailableDownloadsSection
-            latestFound={latestFound}
-            telegramAvailable={telegramAvailable}
-            onRefresh={() => refresh(false)}
-            onTelegramDownloaded={(bookId) => {
-              setTelegramAvailable(prev => prev.map(group => ({
-                ...group,
-                books: group.books.map(book => book.id === bookId ? { ...book, status: "queued" } : book),
-              })));
-            }}
-          />
-        </QbittorrentProvider>
+        <AvailableDownloadsSection
+          latestFound={latestFound}
+          telegramAvailable={telegramAvailable}
+          onRefresh={() => refresh(false)}
+          onTelegramDownloaded={(bookId) => {
+            setTelegramAvailable(prev => prev.map(group => ({
+              ...group,
+              books: group.books.map(book => book.id === bookId ? { ...book, status: "queued" } : book),
+            })));
+          }}
+        />
       )}
-    </>
+    </DownloadClientProvider>
   );
 }
 
 const RETRYABLE_STATUSES = new Set(["importing", "error", "no_files_imported", "partial"]);
 
-function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onDeleted: () => void; onRetried: () => void }) {
+export function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onDeleted: () => void; onRetried: () => void }) {
   const { t } = useTranslation();
   const [deleting, setDeleting] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -439,8 +444,20 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
   async function handleRetry() {
     setRetrying(true);
     try {
-      const resp = await fetch(`/api/torrent-downloads/${dl.id}/retry`, { method: "POST" });
-      if (resp.ok) onRetried();
+      // A failed AllDebrid magnet never produced local files: restart the magnet
+      // itself instead of the (impossible) import. Import errors on a downloaded
+      // torrent keep going through the regular import retry.
+      const magnetFailed = dl.client === "alldebrid" && dl.status === "error" && !dl.content_path;
+      const url = magnetFailed
+        ? `/api/alldebrid/restart/${dl.id}`
+        : `/api/torrent-downloads/${dl.id}/retry`;
+      const resp = await fetch(url, { method: "POST" });
+      if (resp.ok) {
+        onRetried();
+      } else {
+        const body = await resp.json().catch(() => ({}));
+        toast(body?.error ?? `Error ${resp.status}`, "error");
+      }
     } finally {
       setRetrying(false);
     }
@@ -474,6 +491,7 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
             <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full ${statusClass(dl.status)}`}>
               {statusLabel(dl.status, t)}
             </span>
+            <DownloadClientBadge client={dl.client} />
             {dl.expected_volumes.length > 0 && (
               <span className="text-2xs text-muted-foreground">{formatVolumes(dl.expected_volumes)}</span>
             )}
@@ -495,6 +513,7 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
               <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full shrink-0 ${statusClass(dl.status)}`}>
                 {statusLabel(dl.status, t)}
               </span>
+              <DownloadClientBadge client={dl.client} />
             </div>
             <div className="flex items-center gap-2 mt-0.5 text-2xs text-muted-foreground">
               {dl.expected_volumes.length > 0 && <span>{formatVolumes(dl.expected_volumes)}</span>}
@@ -507,6 +526,11 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
               <span className="tabular-nums">{formatDateTime(dl.created_at, "fr")}</span>
             </div>
           </div>
+
+          {/* Torrent / release name reported by the download backend */}
+          {dl.name && (
+            <p className="text-2xs text-muted-foreground truncate mt-0.5" title={dl.name}>{dl.name}</p>
+          )}
 
           {dl.status === "downloading" && (
             <div className="flex items-center gap-2 mt-1">
@@ -524,6 +548,11 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
               )}
               {dl.eta > 0 && dl.eta < 8640000 && (
                 <span className="text-3xs text-muted-foreground">ETA {formatEta(dl.eta)}</span>
+              )}
+              {dl.seeders != null && (
+                <span className={`text-3xs ${dl.seeders === 0 ? "text-warning" : "text-muted-foreground"}`}>
+                  {t("downloads.seeders", { count: String(dl.seeders), plural: dl.seeders !== 1 ? "s" : "" })}
+                </span>
               )}
             </div>
           )}
@@ -1333,7 +1362,7 @@ export function AvailableDownloadsSection({
                           </button>
                         ) : (
                           source.release.download_url && (
-                            <QbittorrentDownloadButton
+                            <DownloadClientButton
                               downloadUrl={source.release.download_url}
                               releaseId={`${source.entryId}-${source.releaseIndex}`}
                               libraryId={r.library_id}

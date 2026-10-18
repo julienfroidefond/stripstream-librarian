@@ -2,15 +2,17 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button, FormInput, FormSelect, Icon, SettingsCard, SettingsPageHeader, SettingsRow, SettingsSections, SettingsTabs, Switch, toast, type SettingsTabItem } from "@/app/components/ui";
+import { Button, FormInput, FormSelect, Icon, SettingsCard, SettingsColumn, SettingsColumns, SettingsPageHeader, SettingsRow, SettingsSection, SettingsSections, SettingsTabs, Switch, toast, type SettingsTabItem } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, UserDto } from "@/lib/api";
+import type { DownloadClient } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 import type { Locale } from "@/lib/i18n/types";
 import { MetadataProvidersCard } from "./components/MetadataProvidersCard";
 import { StatusMappingsCard } from "./components/StatusMappingsCard";
 import { ProwlarrCard } from "./components/ProwlarrCard";
 import { QBittorrentCard } from "./components/QBittorrentCard";
+import { AlldebridCard } from "./components/AlldebridCard";
 import { TelegramCard } from "./components/TelegramCard";
 import { KomgaSyncCard } from "./components/KomgaSyncCard";
 import { AnilistTab } from "./components/AnilistTab";
@@ -19,6 +21,8 @@ import { ArchivesTab } from "./components/ArchivesTab";
 import { TelegramMonitorCard } from "./components/TelegramMonitorCard";
 import { DdlProvidersCard } from "./components/DdlProvidersCard";
 import { AiTaggingCard } from "./components/AiTaggingCard";
+import { DownloadClientCard } from "./components/DownloadClientCard";
+import { isClientConfigured } from "@/lib/downloadClient";
 
 interface SettingsPageProps {
   initialSettings: Settings;
@@ -28,6 +32,7 @@ interface SettingsPageProps {
   initialTab?: string;
   initialProwlarr: Record<string, unknown> | null;
   initialQbittorrent: Record<string, unknown> | null;
+  initialAlldebrid: Record<string, unknown> | null;
   initialTorrentImport: Record<string, unknown> | null;
   initialTelegram: Record<string, unknown> | null;
   initialAnilist: Record<string, unknown> | null;
@@ -41,12 +46,13 @@ interface SettingsPageProps {
   initialRenameFormatInt?: string | null;
   initialRenameFormatOneshot?: string | null;
   initialDownloadsEnabled: boolean;
+  initialDownloadClient: DownloadClient | null;
   initialLibraries: import("@/lib/api").LibraryDto[];
   versions?: { api: string; indexer: string; backoffice: string };
   tokensContent?: ReactNode;
 }
 
-export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, initialRenameFormatHs, initialRenameFormatInt, initialRenameFormatOneshot, initialDownloadsEnabled, initialLibraries, versions, tokensContent }: SettingsPageProps) {
+export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialAlldebrid, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, initialRenameFormatHs, initialRenameFormatInt, initialRenameFormatOneshot, initialDownloadsEnabled, initialDownloadClient, initialLibraries, versions, tokensContent }: SettingsPageProps) {
   const { t, locale, setLocale } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -557,66 +563,89 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
 
       {activeTab === "ai" && (<SettingsSections layout="stack"><AiTaggingCard handleUpdateSetting={handleUpdateSetting} initialData={settings.ai_tagging ?? null} /></SettingsSections>)}
 
-      {activeTab === "downloadTools" && (<SettingsSections>
-      {/* Downloads feature toggle */}
-      <SettingsCard
-        icon="play"
-        title={t("settings.downloadsEnabled")}
-        description={t("settings.downloadsEnabledDesc")}
-        action={
-          <Switch
-            checked={downloadsEnabled}
-            onChange={async () => {
-              const next = !downloadsEnabled;
-              setDownloadsEnabled(next);
-              try {
-                const resp = await fetch("/api/settings/downloads_enabled", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ value: { enabled: next } }),
-                });
-                if (resp.ok) {
-                  toast(t("settings.savedSuccess"), "success");
-                  router.refresh();
-                } else {
-                  setDownloadsEnabled(!next);
-                  toast(t("settings.savedError"), "error");
-                }
-              } catch {
-                setDownloadsEnabled(!next);
-                toast(t("settings.saveError"), "error");
-              }
-            }}
+      {activeTab === "downloadTools" && (
+        <div className="space-y-8">
+          {/* Master switch: it gates the whole tab, so it sits above the sections. */}
+          <SettingsCard
+            icon="play"
+            title={t("settings.downloadsEnabled")}
+            description={t("settings.downloadsEnabledDesc")}
+            action={
+              <Switch
+                checked={downloadsEnabled}
+                onChange={async () => {
+                  const next = !downloadsEnabled;
+                  setDownloadsEnabled(next);
+                  try {
+                    const resp = await fetch("/api/settings/downloads_enabled", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ value: { enabled: next } }),
+                    });
+                    if (resp.ok) {
+                      toast(t("settings.savedSuccess"), "success");
+                      router.refresh();
+                    } else {
+                      setDownloadsEnabled(!next);
+                      toast(t("settings.savedError"), "error");
+                    }
+                  } catch {
+                    setDownloadsEnabled(!next);
+                    toast(t("settings.saveError"), "error");
+                  }
+                }}
+              />
+            }
           />
-        }
-      />
 
-      {/* Prowlarr */}
-      <ProwlarrCard handleUpdateSetting={handleUpdateSetting} initialData={initialProwlarr} />
+          {/* Where releases are searched */}
+          <SettingsSection title={t("settings.sectionProvider")}>
+            <ProwlarrCard handleUpdateSetting={handleUpdateSetting} initialData={initialProwlarr} />
+          </SettingsSection>
 
-      {/* qBittorrent */}
-      <QBittorrentCard handleUpdateSetting={handleUpdateSetting} initialQbittorrent={initialQbittorrent} initialTorrentImport={initialTorrentImport} />
+          {/* Where they are handed over: the choice is made once, then the two alternatives */}
+          <SettingsSection title={t("settings.sectionDownloadClients")}>
+            <DownloadClientCard
+              handleUpdateSetting={handleUpdateSetting}
+              initialClient={initialDownloadClient}
+              qbConfigured={isClientConfigured("qbittorrent", initialQbittorrent)}
+              alldebridConfigured={isClientConfigured("alldebrid", initialAlldebrid)}
+            />
+            <SettingsColumns>
+              <SettingsColumn>
+                <QBittorrentCard handleUpdateSetting={handleUpdateSetting} initialQbittorrent={initialQbittorrent} initialTorrentImport={initialTorrentImport} />
+              </SettingsColumn>
+              <SettingsColumn>
+                <AlldebridCard handleUpdateSetting={handleUpdateSetting} initialData={initialAlldebrid} />
+              </SettingsColumn>
+            </SettingsColumns>
+          </SettingsSection>
 
-      {/* Telegram Monitor */}
-      <TelegramMonitorCard
-        initialLibraries={initialLibraries}
-        initialConcurrentDownloads={settings.limits.concurrent_telegram_downloads ?? 2}
-        onSaveConcurrentDownloads={(value) => {
-          const newLimits = { ...settings.limits, concurrent_telegram_downloads: value };
-          setSettings({ ...settings, limits: newLimits });
-          handleUpdateSetting("limits", newLimits);
-        }}
-        initialDownloadConnections={settings.limits.telegram_download_connections ?? 4}
-        onSaveDownloadConnections={(value) => {
-          const newLimits = { ...settings.limits, telegram_download_connections: value };
-          setSettings({ ...settings, limits: newLimits });
-          handleUpdateSetting("limits", newLimits);
-        }}
-      />
+          {/* Direct download providers (JSON / HTML catalogues) */}
+          <SettingsSection title={t("settings.sectionDdl")}>
+            <DdlProvidersCard />
+          </SettingsSection>
 
-      {/* Direct download providers (JSON / HTML catalogues) */}
-      <DdlProvidersCard />
-      </SettingsSections>)}
+          {/* Telegram link monitoring */}
+          <SettingsSection title={t("settings.sectionTelegram")}>
+            <TelegramMonitorCard
+              initialLibraries={initialLibraries}
+              initialConcurrentDownloads={settings.limits.concurrent_telegram_downloads ?? 2}
+              onSaveConcurrentDownloads={(value) => {
+                const newLimits = { ...settings.limits, concurrent_telegram_downloads: value };
+                setSettings({ ...settings, limits: newLimits });
+                handleUpdateSetting("limits", newLimits);
+              }}
+              initialDownloadConnections={settings.limits.telegram_download_connections ?? 4}
+              onSaveDownloadConnections={(value) => {
+                const newLimits = { ...settings.limits, telegram_download_connections: value };
+                setSettings({ ...settings, limits: newLimits });
+                handleUpdateSetting("limits", newLimits);
+              }}
+            />
+          </SettingsSection>
+        </div>
+      )}
 
       {activeTab === "notifications" && (<SettingsSections layout="stack">
       {/* Telegram Notifications */}

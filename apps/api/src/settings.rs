@@ -90,7 +90,8 @@ pub async fn get_settings(State(state): State<AppState>) -> Result<Json<Value>, 
     let mut settings = serde_json::Map::new();
     for row in rows {
         let key: String = row.get("key");
-        let value: Value = row.get("value");
+        let mut value: Value = row.get("value");
+        redact_secrets(&key, &mut value);
         settings.insert(key, value);
     }
 
@@ -115,9 +116,80 @@ pub async fn get_setting(
     axum::extract::Path(key): axum::extract::Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     match load_setting::<Value>(&state.pool, &key).await? {
-        Some(value) => Ok(Json(value)),
+        Some(mut value) => {
+            redact_secrets(&key, &mut value);
+            Ok(Json(value))
+        }
         None => Err(ApiError::not_found("setting not found")),
     }
+}
+
+/// Setting keys holding a credential, and the fields inside each value that
+/// must never be echoed back by the settings endpoints.
+const SECRET_FIELDS: &[(&str, &[&str])] = &[("alldebrid", &["api_key"])];
+
+/// Placeholder returned in place of a stored secret.
+const REDACTED_SECRET: &str = "********";
+
+fn secret_fields(key: &str) -> Option<&'static [&'static str]> {
+    SECRET_FIELDS
+        .iter()
+        .find(|(k, _)| *k == key)
+        .map(|(_, fields)| *fields)
+}
+
+/// Replace stored secret fields with [`REDACTED_SECRET`] so responses never
+/// leak credentials. Only non-empty values are masked, keeping "not yet
+/// configured" visible to the backoffice.
+fn redact_secrets(key: &str, value: &mut Value) {
+    let Some(fields) = secret_fields(key) else {
+        return;
+    };
+    let Some(obj) = value.as_object_mut() else {
+        return;
+    };
+    for field in fields {
+        if let Some(slot) = obj.get_mut(*field) {
+            if slot.as_str().map(|s| !s.is_empty()).unwrap_or(false) {
+                *slot = Value::String(REDACTED_SECRET.to_string());
+            }
+        }
+    }
+}
+
+/// Restore secrets the client left untouched: an update carrying an empty or
+/// redacted secret keeps the value already stored, so re-saving the settings
+/// form never wipes the API key.
+async fn preserve_secrets(
+    pool: &sqlx::PgPool,
+    key: &str,
+    incoming: &mut Value,
+) -> Result<(), ApiError> {
+    let Some(fields) = secret_fields(key) else {
+        return Ok(());
+    };
+    let Some(stored) = load_setting::<Value>(pool, key).await? else {
+        return Ok(());
+    };
+    let Some(obj) = incoming.as_object_mut() else {
+        return Ok(());
+    };
+    for field in fields {
+        // Untouched = field absent, or left empty / at the redacted placeholder.
+        let untouched = match obj.get(*field) {
+            None => true,
+            Some(v) => v
+                .as_str()
+                .map(|s| s.is_empty() || s == REDACTED_SECRET)
+                .unwrap_or(false),
+        };
+        if untouched {
+            if let Some(stored_value) = stored.get(*field) {
+                obj.insert((*field).to_string(), stored_value.clone());
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Validate a setting value before it is persisted.
@@ -242,7 +314,10 @@ pub async fn update_setting(
     axum::extract::Path(key): axum::extract::Path<String>,
     Json(body): Json<UpdateSettingRequest>,
 ) -> Result<Json<Value>, ApiError> {
-    validate_setting(&key, &body.value)?;
+    let mut value = body.value;
+    // Empty/redacted secrets keep the stored value (the form never receives it).
+    preserve_secrets(&state.pool, &key, &mut value).await?;
+    validate_setting(&key, &value)?;
 
     let row = sqlx::query(
         r#"
@@ -254,11 +329,12 @@ pub async fn update_setting(
         "#,
     )
     .bind(&key)
-    .bind(&body.value)
+    .bind(&value)
     .fetch_one(&state.pool)
     .await?;
 
-    let value: Value = row.get("value");
+    let mut value: Value = row.get("value");
+    redact_secrets(&key, &mut value);
 
     // Rechargement des settings dynamiques si la clé affecte le comportement runtime
     if key == "limits" || key == "image_processing" || key == "cache" {

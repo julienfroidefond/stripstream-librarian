@@ -48,7 +48,7 @@ Si la série a déjà des livres, le nommage existant est repris pour garder une
 
 ## Suivi dans l'historique
 
-Les téléchargements Telegram apparaissent dans l'historique en haut de la page, mêlés aux torrents qBittorrent.
+Les téléchargements Telegram apparaissent dans l'historique en haut de la page, mêlés aux torrents (qBittorrent / AllDebrid).
 
 | Statut | Description |
 |--------|-------------|

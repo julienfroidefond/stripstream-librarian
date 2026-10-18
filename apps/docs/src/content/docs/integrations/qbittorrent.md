@@ -3,7 +3,7 @@ title: qBittorrent
 description: Téléchargement et import automatique via qBittorrent
 ---
 
-qBittorrent est le client de téléchargement utilisé par Stripstream pour récupérer les releases trouvées par Prowlarr.
+qBittorrent est le client de téléchargement **par défaut** utilisé par Stripstream pour récupérer les releases trouvées par Prowlarr. Les mêmes snatchs peuvent aussi être envoyés à [AllDebrid](/integrations/alldebrid), un débrideur qui télécharge le torrent sur ses serveurs — pratique sans client BitTorrent local.
 
 ## Configuration
 
@@ -16,7 +16,7 @@ Dans **Settings → Download tools → qBittorrent** :
 
 ## Envoyer un torrent à qBittorrent
 
-Depuis la page d'une série ou la page Téléchargements, cliquez sur le bouton de téléchargement à côté d'une release disponible. Le torrent est envoyé automatiquement à qBittorrent.
+Depuis la page d'une série ou la page Téléchargements, cliquez sur le bouton de téléchargement à côté d'une release disponible. Le torrent est envoyé au client choisi dans *Paramètres → Outils de téléchargement → Client de téléchargement* : **qBittorrent** par défaut, ou [AllDebrid](/integrations/alldebrid) si vous l'avez sélectionné. La page Téléchargements rappelle le client utilisé en lecture seule.
 
 **Mode Replace** : par défaut, Stripstream n'importe que les volumes manquants d'un torrent. En activant l'option **Replace**, tous les fichiers du torrent sont importés — y compris ceux que vous possédez déjà. Utile pour remplacer des fichiers par une version de meilleure qualité.
 

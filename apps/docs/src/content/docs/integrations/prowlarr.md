@@ -21,9 +21,9 @@ L'onglet **Prowlarr** de la page Découverte agrège les releases récentes disp
 
 ## Recherche manuelle depuis une série
 
-Sur la page d'une série, le bouton **Prowlarr** lance une recherche ciblée. Les résultats sont triés par pertinence et indiquent quels volumes manquants sont couverts par chaque release. Vous pouvez envoyer directement un résultat à qBittorrent.
+Sur la page d'une série, le bouton **Prowlarr** lance une recherche ciblée. Les résultats sont triés par pertinence et indiquent quels volumes manquants sont couverts par chaque release. Vous pouvez envoyer directement un résultat à votre client de téléchargement ([qBittorrent](/integrations/qbittorrent) ou [AllDebrid](/integrations/alldebrid)).
 
-Lorsqu'un titre ou un numéro de tome est ambigu, Stripstream demande une confirmation avant l'envoi à qBittorrent. Vérifiez alors la release proposée avant de confirmer ; ce contrôle évite qu'une série ou un tome homonyme soit téléchargé par erreur.
+Lorsqu'un titre ou un numéro de tome est ambigu, Stripstream demande une confirmation avant l'envoi au client de téléchargement. Vérifiez alors la release proposée avant de confirmer ; ce contrôle évite qu'une série ou un tome homonyme soit téléchargé par erreur.
 
 ---
 

@@ -73,3 +73,30 @@ fn client_openapi_exposes_favorite_and_rating_mutations() {
         }
     }
 }
+
+/// AllDebrid and qBittorrent are admin-only integrations: their endpoints must
+/// never leak into the read-scoped specification the reader client consumes.
+#[test]
+fn client_openapi_exposes_no_download_client_routes() {
+    let spec = serde_json::to_value(ClientApiDoc::openapi()).unwrap();
+    let paths = spec["paths"].as_object().expect("paths must be an object");
+
+    let leaked: Vec<&String> = paths
+        .keys()
+        .filter(|path| path.contains("alldebrid") || path.contains("qbittorrent"))
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "download clients are admin-only, but the client spec exposes: {leaked:?}"
+    );
+}
+
+#[test]
+fn admin_openapi_exposes_the_alldebrid_routes() {
+    let spec = serde_json::to_value(AdminApiDoc::openapi()).unwrap();
+    let paths = spec["paths"].as_object().expect("paths must be an object");
+
+    for path in ["/alldebrid/test", "/alldebrid/add"] {
+        assert!(paths.contains_key(path), "admin OpenAPI must expose {path}");
+    }
+}

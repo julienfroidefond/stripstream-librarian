@@ -23,6 +23,9 @@ import { GET as anilistStatus } from "@/app/api/anilist/status/route";
 import { GET as anilistSyncPreview } from "@/app/api/anilist/sync/preview/route";
 import { POST as anilistSync } from "@/app/api/anilist/sync/route";
 import { GET as anilistUnlinked } from "@/app/api/anilist/unlinked/route";
+import { POST as adAdd } from "@/app/api/alldebrid/add/route";
+import { POST as adRestart } from "@/app/api/alldebrid/restart/[id]/route";
+import { GET as adTest } from "@/app/api/alldebrid/test/route";
 import { DELETE as deleteAvailable } from "@/app/api/available-downloads/[id]/route";
 import { GET as latestFound } from "@/app/api/download-detection/latest-found/route";
 import { GET as discoveryHidden } from "@/app/api/discovery/hidden/route";
@@ -104,6 +107,9 @@ const req = (path: string, method = "GET", body?: unknown) =>
   jsonRequest(path, { method, body });
 
 const cases: Case[] = [
+  ["alldebrid add", () => adAdd(req("/api/alldebrid/add", "POST", {}))],
+  ["alldebrid restart", () => adRestart(req("/api/alldebrid/restart/t1", "POST"), routeCtx({ id: "t1" }))],
+  ["alldebrid test", () => adTest()],
   ["anilist links", () => listAnilistLinks()],
   ["anilist pull", () => anilistPull()],
   ["anilist search", () => anilistSearch(req("/api/anilist/search", "POST", {}))],

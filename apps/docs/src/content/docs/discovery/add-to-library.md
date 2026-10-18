@@ -41,7 +41,7 @@ Sur la page **Séries**, le bouton **Nouvelle série** vous permet de :
 :::note[Détails techniques]
 **Depuis les tendances** : pour SensCritique, un metadata link est créé automatiquement. AniList ne crée pas de metadata link lors de l'ajout depuis la découverte. Les providers `sc_*` (sc_trending_bd, sc_best_manga, etc.) sont normalisés vers `senscritique`.
 
-**Depuis Prowlarr** : le téléchargement est envoyé à qBittorrent avec `series_name` et `expected_volumes` issus de la release Prowlarr.
+**Depuis Prowlarr** : le téléchargement est envoyé au client de téléchargement (qBittorrent ou AllDebrid) avec `series_name` et `expected_volumes` issus de la release Prowlarr.
 
 **API création** : `POST /series/create` — crée la série, crée le répertoire physique, synchronise les métadonnées si un match provider est sélectionné. Revalide les pages `/series` et `/libraries` après ajout.
 :::

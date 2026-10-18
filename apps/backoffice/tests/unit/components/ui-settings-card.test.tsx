@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { FormInput, FormLabel, SettingsCard, SettingsField } from "@/app/components/ui";
+import { FormInput, FormLabel, SettingsCard, SettingsColumn, SettingsColumns, SettingsField, SettingsSection } from "@/app/components/ui";
 
 describe("FormLabel", () => {
   it("defaults to the foreground style", () => {
@@ -45,6 +45,106 @@ describe("SettingsCard", () => {
 
     expect(container.querySelector("svg")).toBeNull();
     expect(screen.getByText("body").parentElement?.className).toContain("space-y-6");
+  });
+});
+
+describe("SettingsColumns", () => {
+  it("lays its children out in a fixed two-column grid from xl up", () => {
+    const { container } = render(
+      <SettingsColumns>
+        <SettingsColumn>
+          <span>left</span>
+        </SettingsColumn>
+        <SettingsColumn>
+          <span>right</span>
+        </SettingsColumn>
+      </SettingsColumns>
+    );
+
+    const grid = container.firstElementChild as HTMLElement;
+    expect(grid.className).toContain("grid");
+    expect(grid.className).toContain("xl:grid-cols-2");
+    expect(grid.className).toContain("items-start");
+    expect(grid.className).toContain("gap-5");
+    expect(grid.children).toHaveLength(2);
+    expect((grid.children[0] as HTMLElement).className).toContain("space-y-5");
+    expect((grid.children[1] as HTMLElement).className).toContain("space-y-5");
+  });
+
+  it("keeps each column's own top-to-bottom order", () => {
+    const { container } = render(
+      <SettingsColumns>
+        <SettingsColumn>
+          <span>first</span>
+          <span>second</span>
+        </SettingsColumn>
+        <SettingsColumn>
+          <span>third</span>
+        </SettingsColumn>
+      </SettingsColumns>
+    );
+
+    const grid = container.firstElementChild as HTMLElement;
+    const columnTexts = (column: Element) =>
+      Array.from(column.children).map((child) => child.textContent);
+
+    expect(columnTexts(grid.children[0])).toEqual(["first", "second"]);
+    expect(columnTexts(grid.children[1])).toEqual(["third"]);
+  });
+
+  it("accepts extra class names on the grid and on a column", () => {
+    const { container } = render(
+      <SettingsColumns className="mt-5">
+        <SettingsColumn className="order-first">
+          <span>left</span>
+        </SettingsColumn>
+        <SettingsColumn>
+          <span>right</span>
+        </SettingsColumn>
+      </SettingsColumns>
+    );
+
+    const grid = container.firstElementChild as HTMLElement;
+    expect(grid.className).toContain("mt-5");
+    expect((grid.children[0] as HTMLElement).className).toContain("order-first");
+  });
+});
+
+describe("SettingsSection", () => {
+  it("renders an eyebrow heading above its panels", () => {
+    const { container } = render(
+      <SettingsSection title="Provider">
+        <span>panel</span>
+      </SettingsSection>
+    );
+
+    const section = container.firstElementChild as HTMLElement;
+    const heading = screen.getByRole("heading", { name: "Provider" });
+    expect(heading.tagName).toBe("H2");
+    expect(heading.className).toContain("uppercase");
+    expect(section.contains(heading)).toBe(true);
+    // The heading shares its row with a hairline rule that closes the separation.
+    expect(heading.parentElement?.className).toContain("flex");
+    expect(heading.parentElement?.querySelector("span[aria-hidden]")).not.toBeNull();
+    // The panels keep the same vertical rhythm as the rest of the settings page.
+    expect(screen.getByText("panel").parentElement?.className).toContain("space-y-5");
+  });
+
+  it("keeps several panels in their given order and accepts extra class names", () => {
+    const { container } = render(
+      <SettingsSection title="Clients" className="mt-4">
+        <span>choice</span>
+        <span>credentials</span>
+      </SettingsSection>
+    );
+
+    const section = container.firstElementChild as HTMLElement;
+    expect(section.className).toContain("mt-4");
+    const panels = screen.getByText("choice").parentElement as HTMLElement;
+    expect(Array.from(panels.children).map((child) => child.textContent)).toEqual([
+      "choice",
+      "credentials",
+    ]);
   });
 });
 

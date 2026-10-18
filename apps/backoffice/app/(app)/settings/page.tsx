@@ -2,6 +2,7 @@ import { getSettings, getCacheStats, getThumbnailStats, fetchUsers, apiFetch, fe
 import { redirect } from "next/navigation";
 import SettingsPage from "./SettingsPage";
 import { TokensTab } from "./components/TokensTab";
+import { readDownloadClientSetting } from "@/lib/downloadClient";
 import packageJson from "../../../package.json";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
   const { tab, created: createdToken } = await searchParams;
   // The reading overview moved out of Settings into its own top-level page.
   if (tab === "readingOverview") redirect("/progress");
-  const [settings, cacheStats, thumbnailStats, users, prowlarr, qbittorrent, torrentImport, telegram, anilist, komga, metadataProviders, statusMappings, seriesStatuses, providerStatuses, apiVersion, indexerVersion, renameFormat, renameFormatHs, renameFormatInt, renameFormatOneshot, downloadsEnabled, libraries] = await Promise.all([
+  const [settings, cacheStats, thumbnailStats, users, prowlarr, qbittorrent, alldebrid, torrentImport, telegram, anilist, komga, metadataProviders, statusMappings, seriesStatuses, providerStatuses, apiVersion, indexerVersion, renameFormat, renameFormatHs, renameFormatInt, renameFormatOneshot, downloadsEnabled, downloadClientSetting, libraries] = await Promise.all([
     getSettings().catch(() => ({
       image_processing: { format: "webp", quality: 85, filter: "lanczos3", max_width: 2160 },
       cache: { enabled: true, directory: "/tmp/stripstream-image-cache", max_size_mb: 10000, memory_max_size_mb: 128 },
@@ -42,6 +43,7 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
     fetchUsers().catch(() => []),
     apiFetch<Record<string, unknown>>("/settings/prowlarr").catch(() => null),
     apiFetch<Record<string, unknown>>("/settings/qbittorrent").catch(() => null),
+    apiFetch<Record<string, unknown>>("/settings/alldebrid").catch(() => null),
     apiFetch<Record<string, unknown>>("/settings/torrent_import").catch(() => null),
     apiFetch<Record<string, unknown>>("/settings/telegram").catch(() => null),
     apiFetch<Record<string, unknown>>("/settings/anilist").catch(() => null),
@@ -57,6 +59,7 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
     apiFetch<string>("/settings/rename_format_int").catch(() => null),
     apiFetch<string>("/settings/rename_format_oneshot").catch(() => null),
     fetchDownloadsEnabled(),
+    apiFetch<unknown>("/settings/download_client").catch(() => null),
     fetchLibraries().catch(() => []),
   ]);
 
@@ -76,6 +79,7 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
       tokensContent={<TokensTab createdToken={createdToken} />}
       initialProwlarr={prowlarr}
       initialQbittorrent={qbittorrent}
+      initialAlldebrid={alldebrid}
       initialTorrentImport={torrentImport}
       initialTelegram={telegram}
       initialAnilist={anilist}
@@ -89,6 +93,7 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
       initialRenameFormatInt={typeof renameFormatInt === "string" ? renameFormatInt : null}
       initialRenameFormatOneshot={typeof renameFormatOneshot === "string" ? renameFormatOneshot : null}
       initialDownloadsEnabled={downloadsEnabled}
+      initialDownloadClient={readDownloadClientSetting(downloadClientSetting)}
       initialLibraries={libraries as LibraryDto[]}
       versions={versions}
     />

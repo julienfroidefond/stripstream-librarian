@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { Icon, Modal } from "./ui";
 import type { ProwlarrRelease, ProwlarrSearchResponse } from "../../lib/api";
 import { useTranslation } from "@/lib/i18n/context";
-import { QbittorrentProvider, QbittorrentDownloadButton } from "./QbittorrentDownloadButton";
+import { DownloadClientProvider, DownloadClientButton } from "./DownloadClientButton";
+import { isClientConfigured } from "@/lib/downloadClient";
 import { compressVolumes, stripLeadingArticle } from "@/lib/volumeRanges";
 
 interface MissingBookItem {
@@ -24,6 +25,7 @@ interface ProwlarrSearchModalProps {
   missingBooks: MissingBookItem[] | null;
   initialProwlarrConfigured?: boolean;
   initialQbConfigured?: boolean;
+  initialAlldebridConfigured?: boolean;
   /** Pre-fill the search input. Defaults to `"${seriesName}"`. */
   initialQuery?: string;
   /** Override the default quick-search badges (series + missing volumes). */
@@ -55,7 +57,7 @@ function groupReleasesByTitle<T extends { title: string }>(releases: T[]): { tit
   return Array.from(groups.entries()).map(([title, items]) => ({ title, items }));
 }
 
-export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initialProwlarrConfigured, initialQbConfigured, initialQuery, quickSearches, defaultExpectedVolumes, children }: ProwlarrSearchModalProps) {
+export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initialProwlarrConfigured, initialQbConfigured, initialAlldebridConfigured, initialQuery, quickSearches, defaultExpectedVolumes, children }: ProwlarrSearchModalProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [isConfigured, setIsConfigured] = useState<boolean | null>(initialProwlarrConfigured ?? null);
@@ -64,14 +66,15 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // qBittorrent state
+  // Download client state
   const [isQbConfigured, setIsQbConfigured] = useState(initialQbConfigured ?? false);
+  const [isAlldebridConfigured, setIsAlldebridConfigured] = useState(initialAlldebridConfigured ?? false);
   const [sortCol, setSortCol] = useState<"title" | "seeders" | "size">("seeders");
   const [sortAsc, setSortAsc] = useState(false);
 
-  // Check if Prowlarr and qBittorrent are configured on mount (skip if server provided)
+  // Check if Prowlarr and download clients are configured on mount (skip if server provided)
   useEffect(() => {
-    if (initialProwlarrConfigured !== undefined && initialQbConfigured !== undefined) return;
+    if (initialProwlarrConfigured !== undefined && initialQbConfigured !== undefined && initialAlldebridConfigured !== undefined) return;
     if (initialProwlarrConfigured === undefined) {
       fetch("/api/settings/downloads_enabled")
         .then((r) => (r.ok ? r.json() : null))
@@ -84,11 +87,19 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
       fetch("/api/settings/qbittorrent")
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
-          setIsQbConfigured(!!(data && data.url && data.url.trim() && data.username && data.username.trim()));
+          setIsQbConfigured(isClientConfigured("qbittorrent", data));
         })
         .catch(() => setIsQbConfigured(false));
     }
-  }, [initialProwlarrConfigured, initialQbConfigured]);
+    if (initialAlldebridConfigured === undefined) {
+      fetch("/api/settings/alldebrid")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          setIsAlldebridConfigured(isClientConfigured("alldebrid", data));
+        })
+        .catch(() => setIsAlldebridConfigured(false));
+    }
+  }, [initialProwlarrConfigured, initialQbConfigured, initialAlldebridConfigured]);
 
   const strippedName = stripLeadingArticle(seriesName);
   const defaultQuery = initialQuery ?? `"${strippedName}"`;
@@ -225,7 +236,6 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
 
               {/* Results */}
               {!isSearching && results.length > 0 && (
-                <QbittorrentProvider initialConfigured={isQbConfigured}>
                 <div>
                   <p className="text-sm text-muted-foreground mb-3">
                     {t("prowlarr.resultCount", { count: results.length, plural: results.length !== 1 ? "s" : "" })}
@@ -316,7 +326,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                             <td className="px-3 py-2">
                               <div className="flex items-center justify-end gap-1.5">
                                 {release.downloadUrl && (
-                                  <QbittorrentDownloadButton
+                                  <DownloadClientButton
                                     downloadUrl={release.downloadUrl}
                                     releaseId={release.guid}
                                     libraryId={libraryId}
@@ -347,7 +357,6 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                     </table>
                   </div>
                 </div>
-                </QbittorrentProvider>
               )}
 
               {/* No results */}
@@ -359,7 +368,12 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
   );
 
   return (
-    <>
+    // The provider is mounted with the modal rather than around the results
+    // table: it reads the client chosen in Settings on mount, and a provider
+    // that appears only once results are rendered would expose a fallback
+    // client for the first frames — long enough to send a snatch to the wrong
+    // backend.
+    <DownloadClientProvider initialClients={{ qbittorrent: isQbConfigured, alldebrid: isAlldebridConfigured }}>
       {children ? (
         children(handleOpen)
       ) : (
@@ -373,6 +387,6 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
         </button>
       )}
       {modal}
-    </>
+    </DownloadClientProvider>
   );
 }

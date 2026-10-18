@@ -23,7 +23,7 @@ export default async function MissingBookDetailPage({
     notFound();
   }
 
-  const [seriesDto, missingData, libraries, seriesMeta, prowlarrConfigured, qbConfigured, telegramStatus, ddlProviderEnabled] = await Promise.all([
+  const [seriesDto, missingData, libraries, seriesMeta, prowlarrConfigured, qbConfigured, alldebridConfigured, telegramStatus, ddlProviderEnabled] = await Promise.all([
     fetchSeriesById(seriesId).catch(() => null),
     getMissingBooks(linkId).catch(() => null as MissingBooksDto | null),
     fetchLibraries().catch(() => [] as { id: string; name: string }[]),
@@ -31,6 +31,9 @@ export default async function MissingBookDetailPage({
     fetchDownloadsEnabled(),
     apiFetch<{ url?: string; username?: string }>("/settings/qbittorrent", { next: { revalidate: 3600 } })
       .then(d => !!(d?.url?.trim() && d?.username?.trim()))
+      .catch(() => false),
+    apiFetch<{ enabled?: boolean; api_key?: string }>("/settings/alldebrid", { next: { revalidate: 3600 } })
+      .then(d => d?.enabled === true && !!d?.api_key?.trim())
       .catch(() => false),
     apiFetch<TelegramMonitorStatus>("/telegram-monitor/status", { next: { revalidate: 60 } }).catch(() => null),
     hasEnabledDdlProvider(),
@@ -136,6 +139,7 @@ export default async function MissingBookDetailPage({
             missingBook={missingBook}
             prowlarrConfigured={prowlarrConfigured}
             qbConfigured={qbConfigured}
+            alldebridConfigured={alldebridConfigured}
             telegramEnabled={telegramEnabled}
             ddlProviderEnabled={ddlProviderEnabled}
           />

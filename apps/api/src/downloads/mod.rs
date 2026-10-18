@@ -1,3 +1,4 @@
+pub mod alldebrid;
 mod blacklist;
 pub mod ddl_provider;
 pub mod detection;
@@ -15,6 +16,10 @@ pub mod torrent_import;
 pub mod worker;
 
 // Re-export handler functions used in route registration
+pub use alldebrid::{
+    add_torrent as add_alldebrid_torrent, restart_torrent_download as restart_alldebrid_download,
+    run_alldebrid_poller, test_alldebrid,
+};
 pub use ddl_provider::{
     dismiss_ddl_download, get_ddl_search_settings, list_ddl_downloads, list_ddl_providers,
     search_ddl_provider, start_ddl_download, start_ddl_search_all, test_ddl_provider,

@@ -92,7 +92,7 @@ Compteurs d'incohérences calculés sans accès disque :
 Rien n'est exécuté au chargement de la page : la sonde **contacte des services externes** et
 **parcourt les fichiers**, elle se lance donc manuellement via **Lancer la sonde** :
 
-- **Intégrations** — qBittorrent, Prowlarr, Telegram et chaque fournisseur DDL activé : *Joignable*,
+- **Intégrations** — qBittorrent, AllDebrid, Prowlarr, Telegram et chaque fournisseur DDL activé : *Joignable*,
   *Injoignable* ou *Non configurée*, avec la latence et un détail court (code HTTP, `timeout`…). Les
   messages sont volontairement réduits à une classe d'erreur : ils ne contiennent ni URL ni jeton.
 - **Fichiers de la bibliothèque** — chaque chemin de `book_files` (plafonné à 5 000) est testé sur

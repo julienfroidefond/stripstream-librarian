@@ -43,7 +43,7 @@ Accessibles avec un token de scope `admin` :
 - Gestion des tâches (déclenchement, annulation, flux SSE)
 - Gestion des tokens API
 - Opérations metadata (recherche, match, approbation, rejet, batch, refresh)
-- Intégrations externes (Prowlarr, qBittorrent, Komga)
+- Intégrations externes (Prowlarr, qBittorrent, AllDebrid, Komga)
 - Paramètres application et gestion du cache
 - Diagnostic de santé : `GET /diagnostics` (versions, base de données, caches, miniatures, tâches, bibliothèques)
 

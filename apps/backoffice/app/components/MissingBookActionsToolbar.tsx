@@ -30,6 +30,7 @@ interface Props {
   missingBook: MissingBookItem;
   prowlarrConfigured: boolean;
   qbConfigured: boolean;
+  alldebridConfigured?: boolean;
   telegramEnabled: boolean;
   ddlProviderEnabled?: boolean;
 }
@@ -41,6 +42,7 @@ export function MissingBookActionsToolbar({
   missingBook,
   prowlarrConfigured,
   qbConfigured,
+  alldebridConfigured,
   telegramEnabled,
   ddlProviderEnabled = false,
 }: Props) {
@@ -63,6 +65,7 @@ export function MissingBookActionsToolbar({
           missingBooks={[missingBook]}
           initialProwlarrConfigured={prowlarrConfigured}
           initialQbConfigured={qbConfigured}
+          initialAlldebridConfigured={alldebridConfigured}
           initialQuery={initialQuery}
           quickSearches={quickSearches}
           defaultExpectedVolumes={volumeNumber != null ? [volumeNumber] : undefined}

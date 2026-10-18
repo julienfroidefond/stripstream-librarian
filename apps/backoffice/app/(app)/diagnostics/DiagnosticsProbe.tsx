@@ -9,8 +9,8 @@ import { useTranslation } from "@/lib/i18n/context";
 /**
  * Readable name of a probed integration.
  *
- * `id` is either a fixed key (`qbittorrent`, `prowlarr`, `telegram`) or
- * `ddl_<provider>` for a Direct Download provider.
+ * `id` is either a fixed key (`qbittorrent`, `alldebrid`, `prowlarr`, `telegram`)
+ * or `ddl_<provider>` for a Direct Download provider.
  */
 function integrationLabel(id: string): string {
   if (id.startsWith("ddl_")) {
@@ -21,6 +21,8 @@ function integrationLabel(id: string): string {
   switch (id) {
     case "qbittorrent":
       return "qBittorrent";
+    case "alldebrid":
+      return "AllDebrid";
     case "prowlarr":
       return "Prowlarr";
     case "telegram":

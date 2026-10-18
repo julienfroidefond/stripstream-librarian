@@ -60,7 +60,7 @@ Sur la page **Séries**, utilisez le filtre **Wishlist** pour n'afficher que les
         │
         ▼
 5. Téléchargement & import
-   Envoi à qBittorrent → import automatique → scan
+   Envoi au client de téléchargement → import automatique → scan
    La série passe de wishlist à bibliothèque réelle
 ```
 

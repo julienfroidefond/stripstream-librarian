@@ -106,6 +106,74 @@ pub(crate) async fn qbittorrent_login(
     Ok(sid)
 }
 
+// ─── Managed-download inference ───────────────────────────────────────────────
+
+/// A download that will be tracked in `torrent_downloads` and auto-imported.
+///
+/// Both qBittorrent and AllDebrid accept the same "snatch" body; when the
+/// caller does not supply a library/series, they are inferred so the download
+/// still lands in the right place.
+pub(crate) struct ManagedContext {
+    pub library_id: Uuid,
+    pub series_name: String,
+}
+
+/// Best-effort series name from a release URL: the `file=` query parameter
+/// (Prowlarr proxy links), percent-decoded, run through the release parser.
+pub(crate) fn infer_series_name_from_url(url: &str) -> Option<String> {
+    let file = url.split("file=").nth(1)?;
+    let encoded = file.split('&').next().unwrap_or(file);
+
+    // Simple percent-decode + '+' to space.
+    let decoded = encoded.replace('+', " ");
+    let mut result = String::new();
+    let mut chars = decoded.chars();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let hex: String = chars.by_ref().take(2).collect();
+            if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                result.push(byte as char);
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    let name = parsers::extract_series_name_from_release(&result);
+    (!name.is_empty()).then_some(name)
+}
+
+/// First library, used as the fallback when a snatch does not name one.
+pub(crate) async fn first_library_id(pool: &sqlx::PgPool) -> Option<Uuid> {
+    sqlx::query_scalar::<_, Uuid>("SELECT id FROM libraries ORDER BY created_at LIMIT 1")
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+}
+
+/// Resolve the (library, series) a snatch belongs to, inferring what the caller
+/// left out. `None` means the download is not managed (no tracking row).
+pub(crate) async fn infer_managed_context(
+    pool: &sqlx::PgPool,
+    url: &str,
+    library_id: Option<Uuid>,
+    series_name: Option<String>,
+) -> Option<ManagedContext> {
+    let series_name = series_name
+        .filter(|s| !s.is_empty())
+        .or_else(|| infer_series_name_from_url(url))?;
+    let library_id = match library_id {
+        Some(id) => Some(id),
+        None => first_library_id(pool).await,
+    }?;
+
+    Some(ManagedContext {
+        library_id,
+        series_name,
+    })
+}
+
 // ─── Handlers ───────────────────────────────────────────────────────────────
 
 /// Add a torrent to qBittorrent
@@ -131,49 +199,16 @@ pub async fn add_torrent(
     }
 
     // Always track the torrent. Infer missing fields from the URL/title if needed.
-    let inferred_series_name = body.series_name.clone().or_else(|| {
-        // Extract series name from the URL filename param or the URL itself
-        let url = &body.url;
-        url.split("file=")
-            .nth(1)
-            .map(|f| {
-                let encoded = f.split('&').next().unwrap_or(f);
-                // Simple percent-decode + '+' to space
-                let decoded = encoded.replace('+', " ");
-                let mut result = String::new();
-                let mut chars = decoded.chars();
-                while let Some(c) = chars.next() {
-                    if c == '%' {
-                        let hex: String = chars.by_ref().take(2).collect();
-                        if let Ok(byte) = u8::from_str_radix(&hex, 16) {
-                            result.push(byte as char);
-                        }
-                    } else {
-                        result.push(c);
-                    }
-                }
-                result
-            })
-            .map(|f| parsers::extract_series_name_from_release(&f))
-            .filter(|s| !s.is_empty())
-    });
-    let inferred_library_id = match body.library_id {
-        Some(id) => Some(id),
-        None => {
-            // Use the first library as fallback
-            sqlx::query_scalar::<_, Uuid>("SELECT id FROM libraries ORDER BY created_at LIMIT 1")
-                .fetch_optional(&state.pool)
-                .await
-                .ok()
-                .flatten()
-        }
-    };
-    let is_managed = inferred_library_id.is_some() && inferred_series_name.is_some();
+    let managed = infer_managed_context(
+        &state.pool,
+        &body.url,
+        body.library_id,
+        body.series_name.clone(),
+    )
+    .await;
+    let is_managed = managed.is_some();
 
-    tracing::info!(
-        "[QBITTORRENT] Add torrent request: url={}, managed={is_managed}",
-        body.url
-    );
+    tracing::info!("[QBITTORRENT] Add torrent request: managed={is_managed}",);
 
     let (base_url, username, password) =
         load_qbittorrent_config(&state.pool)
@@ -295,8 +330,9 @@ pub async fn add_torrent(
 
     // If managed download: record in torrent_downloads
     let torrent_download_id = if is_managed {
-        let library_id = inferred_library_id.unwrap();
-        let series_name = inferred_series_name.as_deref().unwrap();
+        let managed = managed.as_ref().unwrap();
+        let library_id = managed.library_id;
+        let series_name = managed.series_name.as_str();
         let expected_volumes = body.expected_volumes.as_deref().unwrap_or(&[]);
 
         // Try to resolve hash: first from magnet, then by category in qBittorrent
@@ -494,7 +530,7 @@ pub async fn add_torrent(
 
 // ─── URL resolution ─────────────────────────────────────────────────────────
 
-enum ResolvedTorrent {
+pub(crate) enum ResolvedTorrent {
     Magnet(String),
     TorrentFile(Vec<u8>),
 }
@@ -502,7 +538,7 @@ enum ResolvedTorrent {
 /// Resolve a torrent URL: if it's already a magnet link, return as-is.
 /// Otherwise follow HTTP redirects. If the final URL is a magnet, return it.
 /// If the response is a .torrent file, return the bytes.
-async fn resolve_torrent_url(url: &str) -> Result<ResolvedTorrent, String> {
+pub(crate) async fn resolve_torrent_url(url: &str) -> Result<ResolvedTorrent, String> {
     // Already a magnet link — nothing to resolve
     if url.starts_with("magnet:") {
         return Ok(ResolvedTorrent::Magnet(url.to_string()));
@@ -563,7 +599,7 @@ async fn resolve_torrent_url(url: &str) -> Result<ResolvedTorrent, String> {
 /// Extract the info-hash from a magnet link (lowercased hex).
 /// magnet:?xt=urn:btih:HASH...
 /// Handles both hex (40 chars) and base32 (32 chars) encoded hashes.
-fn extract_magnet_hash(url: &str) -> Option<String> {
+pub(crate) fn extract_magnet_hash(url: &str) -> Option<String> {
     let lower = url.to_lowercase();
     let marker = "urn:btih:";
     let start = lower.find(marker)? + marker.len();

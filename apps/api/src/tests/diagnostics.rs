@@ -322,12 +322,13 @@ async fn probe_reports_unconfigured_integrations(pool: PgPool) {
     let Json(probe) = diagnostics_probe(State(state)).await;
 
     // No integration is configured in a fresh database.
-    assert_eq!(probe.integrations.len(), 3);
+    assert_eq!(probe.integrations.len(), 4);
     assert!(probe.integrations.iter().all(|i| !i.configured));
     assert!(probe.integrations.iter().all(|i| !i.reachable));
     assert_eq!(probe.integrations[0].id, "qbittorrent");
-    assert_eq!(probe.integrations[1].id, "prowlarr");
-    assert_eq!(probe.integrations[2].id, "telegram");
+    assert_eq!(probe.integrations[1].id, "alldebrid");
+    assert_eq!(probe.integrations[2].id, "prowlarr");
+    assert_eq!(probe.integrations[3].id, "telegram");
 
     assert_eq!(probe.missing_files.checked, 0);
     assert_eq!(probe.missing_files.missing, 0);

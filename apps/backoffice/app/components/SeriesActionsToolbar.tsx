@@ -66,6 +66,7 @@ interface Props {
   // Prowlarr/qb
   prowlarrConfigured: boolean;
   qbConfigured: boolean;
+  alldebridConfigured?: boolean;
   telegramEnabled: boolean;
   ddlProviderEnabled: boolean;
   ownedVolumes?: number[];
@@ -144,6 +145,7 @@ export function SeriesActionsToolbar(props: Props) {
             missingBooks={props.missingData?.missing_books ?? null}
             initialProwlarrConfigured={props.prowlarrConfigured}
             initialQbConfigured={props.qbConfigured}
+            initialAlldebridConfigured={props.alldebridConfigured}
           >
             {(open) => (
               <ActionsMenuItem icon="⬇️" onClick={open}>
