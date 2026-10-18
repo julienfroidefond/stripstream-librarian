@@ -32,11 +32,13 @@ use uuid::Uuid;
 use stripstream_core::http::build_http_client;
 use stripstream_core::settings::load_setting;
 
+use super::http_error::describe_http_failure;
 use super::import_pipeline::remap_downloads_path;
 use super::qbittorrent::{
     extract_magnet_hash, infer_managed_context, resolve_torrent_url, QBittorrentAddRequest,
     QBittorrentAddResponse, QBittorrentTestResponse, ResolvedTorrent,
 };
+use super::settings::DownloadSettings;
 use super::target::{sanitize_filename, DownloadProgress};
 use super::torrent_import::{is_torrent_import_enabled, process_torrent_import};
 use crate::error::ApiError;
@@ -58,16 +60,6 @@ const ALLDEBRID_DOWNLOAD_READ_TIMEOUT: Duration = Duration::from_secs(120);
 /// How many local fetch failures are tolerated before a ready magnet is marked
 /// as errored (transient network failures must not kill the row immediately).
 const MAX_FETCH_ATTEMPTS: u32 = 3;
-
-/// How long an in-flight magnet may go without receiving a single byte before
-/// it is considered unreachable (dead torrent or blocked tracker).
-const STALL_TIMEOUT_MINUTES: i64 = 30;
-
-/// How many `torrent_downloads` rows are handled concurrently per poll cycle.
-/// A row streaming its files keeps its slot, so this also bounds how many
-/// AllDebrid transfers can run at once. Handling rows one by one used to freeze
-/// the whole poller for the duration of a single transfer.
-const POLL_CONCURRENCY: usize = 4;
 
 /// Ceiling for the exponential backoff applied while AllDebrid status calls
 /// keep failing (rate limit, outage): 5s, 10s, 20s, 40s, then 60s.
@@ -572,28 +564,6 @@ fn is_book_file(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// One-line description of a failed `reqwest` call that never repeats the
-/// request URL. `reqwest::Error`'s own `Display` embeds it, and for AllDebrid
-/// that URL can be a short-lived *signed* file link — which must not end up in
-/// `torrent_downloads.error_message`, a field served by `GET /torrent-downloads`.
-fn describe_http_failure(err: &reqwest::Error) -> String {
-    let kind = if err.is_timeout() {
-        "timeout"
-    } else if err.is_connect() {
-        "connection"
-    } else if err.is_body() || err.is_decode() {
-        "body"
-    } else if err.is_redirect() {
-        "redirect"
-    } else {
-        "request"
-    };
-    match err.status() {
-        Some(status) => format!("{kind} error (HTTP {status})"),
-        None => format!("{kind} error"),
-    }
-}
-
 /// Human-readable text for an AllDebrid `statusCode`.
 fn status_message(status_code: i32, status: Option<&str>) -> String {
     let text = match status_code {
@@ -623,9 +593,9 @@ fn status_message(status_code: i32, status: Option<&str>) -> String {
 }
 
 /// An in-flight magnet is stalled when it has not received a single byte and
-/// has stayed that way for at least [`STALL_TIMEOUT_MINUTES`].
-fn is_stalled(downloaded: i64, idle_minutes: i64) -> bool {
-    downloaded == 0 && idle_minutes >= STALL_TIMEOUT_MINUTES
+/// has stayed that way for at least `stall_minutes`.
+fn is_stalled(downloaded: i64, idle_minutes: i64, stall_minutes: i64) -> bool {
+    downloaded == 0 && idle_minutes >= stall_minutes
 }
 
 /// Message shown on the history row when a stalled magnet is abandoned.
@@ -956,7 +926,10 @@ pub async fn run_alldebrid_poller(pool: PgPool, interval_seconds: u64) {
     let mut api_backoff = Duration::ZERO;
 
     loop {
-        let wait = match poll_alldebrid_downloads(&pool, &mut fetch_attempts).await {
+        // Re-read the tuning every cycle so a Backoffice change (concurrency,
+        // stall timeout) takes effect on the next poll without an API restart.
+        let settings = DownloadSettings::load(&pool).await;
+        let wait = match poll_alldebrid_downloads(&pool, &mut fetch_attempts, &settings).await {
             Ok(outcome) if outcome.status_errors > 0 => {
                 api_backoff = if api_backoff.is_zero() {
                     active_wait
@@ -997,10 +970,10 @@ pub async fn run_alldebrid_poller(pool: PgPool, interval_seconds: u64) {
     }
 }
 
-/// Run one poll cycle. Rows are handled concurrently (bounded by
-/// [`POLL_CONCURRENCY`]) because a row whose magnet is ready spends most of its
-/// time streaming a file: handling rows one by one used to stall every other
-/// magnet's progress for the duration of that transfer.
+/// Run one poll cycle. Rows are handled concurrently (bounded by the
+/// `concurrent_alldebrid_downloads` limit) because a row whose magnet is ready
+/// spends most of its time streaming a file: handling rows one by one used to
+/// stall every other magnet's progress for the duration of that transfer.
 ///
 /// Note: AllDebrid exposes no way to batch `/magnet/status` by id (`id[]` is
 /// ignored and returns the whole magnet list — hundreds of entries on a normal
@@ -1008,6 +981,7 @@ pub async fn run_alldebrid_poller(pool: PgPool, interval_seconds: u64) {
 async fn poll_alldebrid_downloads(
     pool: &PgPool,
     fetch_attempts: &mut HashMap<Uuid, u32>,
+    settings: &DownloadSettings,
 ) -> anyhow::Result<PollOutcome> {
     if !alldebrid_enabled(pool).await || !is_torrent_import_enabled(pool).await {
         return Ok(PollOutcome {
@@ -1038,7 +1012,7 @@ async fn poll_alldebrid_downloads(
     );
     // A row streaming its files holds its permit for the whole transfer, so this
     // also caps how many AllDebrid downloads run at once.
-    let limit = Arc::new(tokio::sync::Semaphore::new(POLL_CONCURRENCY));
+    let limit = Arc::new(tokio::sync::Semaphore::new(settings.alldebrid_concurrency));
     let mut set: tokio::task::JoinSet<(Uuid, RowOutcome)> = tokio::task::JoinSet::new();
 
     for row in &rows {
@@ -1048,13 +1022,14 @@ async fn poll_alldebrid_downloads(
         let pool = pool.clone();
         let client = Arc::clone(&client);
         let limit = Arc::clone(&limit);
+        let settings = *settings;
         set.spawn(async move {
             let Ok(_permit) = limit.acquire_owned().await else {
                 // Only happens if the semaphore is closed, which nothing does.
                 warn!("[ALLDEBRID] Download slot unavailable for {tid}");
                 return (tid, RowOutcome::Skipped);
             };
-            handle_row(pool, client, tid, external_id, created_at).await
+            handle_row(pool, client, tid, external_id, created_at, &settings).await
         });
     }
 
@@ -1134,6 +1109,7 @@ async fn handle_row(
     tid: Uuid,
     external_id: Option<String>,
     created_at: DateTime<Utc>,
+    settings: &DownloadSettings,
 ) -> (Uuid, RowOutcome) {
     let Some(external_id) = external_id else {
         let age = Utc::now() - created_at;
@@ -1147,7 +1123,7 @@ async fn handle_row(
     match client.magnet_status(&external_id).await {
         Ok(entry) => (
             tid,
-            handle_magnet_status(&pool, client.as_ref(), tid, &external_id, &entry).await,
+            handle_magnet_status(&pool, client.as_ref(), tid, &external_id, &entry, settings).await,
         ),
         Err(e) => {
             warn!(
@@ -1234,6 +1210,7 @@ async fn handle_magnet_status(
     tid: Uuid,
     external_id: &str,
     entry: &MagnetStatusEntry,
+    settings: &DownloadSettings,
 ) -> RowOutcome {
     let status_code = entry.status_code.unwrap_or(0);
 
@@ -1276,7 +1253,8 @@ async fn handle_magnet_status(
         };
         if let Some(stall_started) = record_inflight_progress(pool, tid, &live).await {
             let idle_minutes = (Utc::now() - stall_started).num_minutes();
-            if is_stalled(downloaded, idle_minutes) {
+            let stall_minutes = settings.magnet_stall_timeout.as_secs() as i64 / 60;
+            if is_stalled(downloaded, idle_minutes, stall_minutes) {
                 let message = stall_message(idle_minutes, seeders);
                 warn!("[ALLDEBRID] Magnet {external_id} (torrent {tid}) stalled: {message}");
                 mark_error(pool, tid, &message).await;
@@ -1645,10 +1623,14 @@ mod tests {
 
     #[test]
     fn stall_detection_needs_zero_bytes_and_time() {
-        assert!(!is_stalled(0, STALL_TIMEOUT_MINUTES - 1));
-        assert!(is_stalled(0, STALL_TIMEOUT_MINUTES));
+        let stall_minutes = crate::downloads::settings::DEFAULT_MAGNET_STALL_TIMEOUT_MINUTES as i64;
+        assert!(!is_stalled(0, stall_minutes - 1, stall_minutes));
+        assert!(is_stalled(0, stall_minutes, stall_minutes));
         // A magnet that moved at least one byte is never considered stalled.
-        assert!(!is_stalled(1, STALL_TIMEOUT_MINUTES * 10));
+        assert!(!is_stalled(1, stall_minutes * 10, stall_minutes));
+        // The threshold is configurable: a shorter one trips earlier.
+        assert!(is_stalled(0, 5, 5));
+        assert!(!is_stalled(0, 5, 6));
 
         assert_eq!(
             stall_message(42, Some(0)),
@@ -1665,25 +1647,6 @@ mod tests {
             stall_message(10, None),
             "No peer: 0 bytes downloaded in 10 min (seeders unknown)"
         );
-    }
-
-    #[test]
-    fn describe_http_failure_never_repeats_the_request_url() {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        // Nothing listens on port 1, so this always fails at connect time.
-        let err = runtime
-            .block_on(reqwest::get("http://127.0.0.1:1/unlocked?sig=supersecret"))
-            .expect_err("connecting to port 1 must fail");
-
-        let described = describe_http_failure(&err);
-        assert!(
-            !described.contains("127.0.0.1") && !described.contains("supersecret"),
-            "the persisted error must not carry the signed link, got: {described}"
-        );
-        assert!(described.contains("error"), "got: {described}");
     }
 
     #[test]
@@ -1963,7 +1926,15 @@ mod tests {
             filename: Some("Aposimz T04.cbr".to_string()),
         };
 
-        let outcome = handle_magnet_status(&pool, &client, id, "7", &entry).await;
+        let outcome = handle_magnet_status(
+            &pool,
+            &client,
+            id,
+            "7",
+            &entry,
+            &DownloadSettings::default(),
+        )
+        .await;
         assert!(matches!(outcome, RowOutcome::Skipped));
 
         let (status, message): (String, Option<String>) =

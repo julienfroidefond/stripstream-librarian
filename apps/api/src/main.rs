@@ -47,8 +47,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::state::{
-    load_concurrent_ddl_provider_downloads, load_concurrent_renders,
-    load_concurrent_telegram_downloads, load_dynamic_settings, AppState, Metrics, PageRenderLocks,
+    load_concurrent_renders, load_dynamic_settings, AppState, Metrics, PageRenderLocks,
     ReadRateLimit,
 };
 
@@ -71,16 +70,10 @@ async fn main() -> anyhow::Result<()> {
     let concurrent_renders = load_concurrent_renders(&pool).await;
     info!("Using concurrent_renders limit: {}", concurrent_renders);
 
-    let concurrent_telegram_downloads = load_concurrent_telegram_downloads(&pool).await;
+    let download_settings = crate::downloads::settings::DownloadSettings::load(&pool).await;
     info!(
-        "Using concurrent_telegram_downloads limit: {}",
-        concurrent_telegram_downloads
-    );
-
-    let concurrent_ddl_provider_downloads = load_concurrent_ddl_provider_downloads(&pool).await;
-    info!(
-        "Using concurrent_ddl_provider_downloads limit: {}",
-        concurrent_ddl_provider_downloads
+        "Using download limits: telegram_concurrency={}, ddl_concurrency={}",
+        download_settings.telegram_concurrency, download_settings.ddl_concurrency
     );
 
     let dynamic_settings = load_dynamic_settings(&pool).await;
@@ -114,11 +107,11 @@ async fn main() -> anyhow::Result<()> {
         prowlarr_fetch_lock: Arc::new(Mutex::new(())),
         pending_tg_auth: Arc::new(Mutex::new(None)),
         telegram_downloads: crate::downloads::worker::DownloadSlots::new(
-            Arc::new(Semaphore::new(concurrent_telegram_downloads)),
+            Arc::new(Semaphore::new(download_settings.telegram_concurrency)),
             Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         ),
         ddl_provider_downloads: crate::downloads::worker::DownloadSlots::new(
-            Arc::new(Semaphore::new(concurrent_ddl_provider_downloads)),
+            Arc::new(Semaphore::new(download_settings.ddl_concurrency)),
             Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         ),
     };

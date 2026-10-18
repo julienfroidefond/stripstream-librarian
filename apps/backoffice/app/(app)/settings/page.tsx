@@ -34,7 +34,7 @@ export default async function SettingsPageWrapper({ searchParams }: { searchPara
     getSettings().catch(() => ({
       image_processing: { format: "webp", quality: 85, filter: "lanczos3", max_width: 2160 },
       cache: { enabled: true, directory: "/tmp/stripstream-image-cache", max_size_mb: 10000, memory_max_size_mb: 128 },
-      limits: { concurrent_renders: 4, timeout_seconds: 12, rate_limit_per_second: 120, concurrent_telegram_downloads: 2, telegram_download_connections: 4 },
+      limits: { concurrent_renders: 4, timeout_seconds: 12, rate_limit_per_second: 120, concurrent_telegram_downloads: 2, telegram_download_connections: 4, concurrent_ddl_provider_downloads: 2, ddl_download_connections: 4, download_max_attempts: 5, download_stall_timeout_seconds: 180, download_timeout_minutes: 30, concurrent_alldebrid_downloads: 4, alldebrid_stall_timeout_minutes: 30 },
       thumbnail: { enabled: true, width: 300, height: 400, quality: 80, format: "webp", directory: "/data/thumbnails" },
       ai_tagging: { enabled: false, base_url: "https://openrouter.ai/api/v1", api_key: "", model: "openrouter/free", max_tags: 5 }
     })),

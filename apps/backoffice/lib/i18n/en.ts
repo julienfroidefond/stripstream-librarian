@@ -735,6 +735,7 @@ const en: Record<TranslationKey, string> = {
   "settings.downloadTools": "Download Tools",
   "settings.sectionProvider": "Provider",
   "settings.sectionDownloadClients": "Download clients",
+  "settings.sectionDownloadEngine": "Download engine",
   "settings.sectionDdl": "DDL",
   "settings.sectionTelegram": "Telegram",
   "settings.downloadsEnabled": "Enable download features",
@@ -973,6 +974,10 @@ const en: Record<TranslationKey, string> = {
   "settings.alldebridApiKeyConfigured": "•••••••• (key saved)",
   "settings.alldebridEnabled": "Enable AllDebrid",
   "settings.alldebridHelp": "The API key is never shown again once saved. Leave the field empty to keep the current key.",
+  "settings.alldebridConcurrency": "Concurrent AllDebrid downloads",
+  "settings.alldebridConcurrencyHelp": "How many magnets are handled in parallel. A downloading magnet holds its slot until the transfer finishes.",
+  "settings.alldebridStallTimeout": "Stalled magnet timeout (minutes)",
+  "settings.alldebridStallTimeoutHelp": "A magnet that stays at 0 bytes for this long is marked as failed (dead torrent or unreachable tracker). The magnet is not deleted.",
 
   // Settings - Telegram Notifications
   "settings.notifications": "Notifications",
@@ -1542,6 +1547,19 @@ const en: Record<TranslationKey, string> = {
 
   // Direct download providers (JSON / HTML catalogues)
   "ddlProviders.title": "Direct download",
+  "ddlEngine.title": "Direct downloads (DDL)",
+  "ddlEngine.desc": "Tuning for direct downloads from external catalogues. The shared settings also apply to Telegram.",
+  "ddlEngine.concurrent": "Concurrent DDL downloads",
+  "ddlEngine.concurrentHelp": "How many files are downloaded in parallel from external catalogues.",
+  "ddlEngine.connections": "Connections per file",
+  "ddlEngine.connectionsHelp": "Parallel HTTP connections for a single file. The server must honour Range requests; otherwise a single stream is used.",
+  "ddlEngine.maxAttempts": "Attempts per block",
+  "ddlEngine.maxAttemptsHelp": "How many times a block is retried before the download is abandoned.",
+  "ddlEngine.stallTimeout": "Inactivity timeout (seconds)",
+  "ddlEngine.stallTimeoutHelp": "How long a request may deliver no data before it is considered stuck and retried.",
+  "ddlEngine.transferTimeout": "Max time per file (minutes)",
+  "ddlEngine.transferTimeoutHelp": "After this, the download is abandoned and marked as failed.",
+  "ddlEngine.sharedNote": "Attempts, inactivity timeout and max time are shared by every download engine.",
   "ddlProviders.desc": "Search and import files from external catalogues straight into the library (automatic import, then indexing).",
   "ddlProviders.loading": "Loading providers...",
   "ddlProviders.loadError": "Could not load the providers.",

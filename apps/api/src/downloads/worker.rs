@@ -32,6 +32,61 @@ pub trait DownloadQueue: Send + Sync + 'static {
     async fn mark_failed(&self, pool: &PgPool, id: Uuid, error: &str);
 }
 
+/// Table-driven [`DownloadQueue`] shared by the download tables.
+///
+/// Every "queued → downloading → failed" table has the same shape (`id`,
+/// `status`, `error_message`, `updated_at`), so the claim/fail SQL only differs
+/// by the table name. `table` comes from a compile-time constant in this crate
+/// — never from user input — so interpolating it is safe and keeps a single SQL
+/// definition instead of one near-identical copy per download flow.
+#[derive(Debug, Clone, Copy)]
+pub struct SqlDownloadQueue {
+    table: &'static str,
+}
+
+impl SqlDownloadQueue {
+    pub const fn new(table: &'static str) -> Self {
+        Self { table }
+    }
+}
+
+/// Telegram book downloads (`telegram_book_links`).
+pub const TELEGRAM_DOWNLOAD_QUEUE: SqlDownloadQueue = SqlDownloadQueue::new("telegram_book_links");
+
+/// Direct provider downloads (`ddl_provider_downloads`).
+pub const DDL_DOWNLOAD_QUEUE: SqlDownloadQueue = SqlDownloadQueue::new("ddl_provider_downloads");
+
+#[async_trait::async_trait]
+impl DownloadQueue for SqlDownloadQueue {
+    async fn claim(&self, pool: &PgPool, id: Uuid) -> bool {
+        let sql = format!(
+            "UPDATE {} SET status = 'downloading', error_message = NULL, updated_at = NOW() \
+             WHERE id = $1 AND status = 'queued'",
+            self.table
+        );
+        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .bind(id)
+            .execute(pool)
+            .await
+            .map(|result| result.rows_affected() > 0)
+            .unwrap_or(false)
+    }
+
+    async fn mark_failed(&self, pool: &PgPool, id: Uuid, error: &str) {
+        // Never resurrect a download the user dismissed while it was failing.
+        let sql = format!(
+            "UPDATE {} SET status = 'failed', error_message = $1, updated_at = NOW() \
+             WHERE id = $2 AND status <> 'dismissed'",
+            self.table
+        );
+        let _ = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .bind(error)
+            .bind(id)
+            .execute(pool)
+            .await;
+    }
+}
+
 /// A concurrency limit plus the abort handles of its running downloads.
 #[derive(Clone)]
 pub struct DownloadSlots {
@@ -208,5 +263,110 @@ mod tests {
     async fn cancel_is_a_noop_for_unknown_ids() {
         // Just exercises the lock/remove path without panicking.
         slots().cancel(Uuid::new_v4()).await;
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn sql_queue_generates_valid_sql_for_every_table(pool: PgPool) {
+        // Runs the generated SQL against both download tables: a typo in a table
+        // or column name would surface here as a real query error.
+        let telegram_id = insert_telegram_link(&pool, "queued").await;
+        let ddl_id = insert_ddl_download(&pool, "queued").await;
+
+        for (queue, id) in [
+            (TELEGRAM_DOWNLOAD_QUEUE, telegram_id),
+            (DDL_DOWNLOAD_QUEUE, ddl_id),
+        ] {
+            assert!(queue.claim(&pool, id).await);
+            // A row already claimed is no longer 'queued'.
+            assert!(!queue.claim(&pool, id).await);
+            queue.mark_failed(&pool, id, "boom").await;
+        }
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn sql_queue_claim_clears_a_stale_error(pool: PgPool) {
+        let id = insert_telegram_link(&pool, "queued").await;
+        sqlx::query("UPDATE telegram_book_links SET error_message = 'old' WHERE id = $1")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert!(TELEGRAM_DOWNLOAD_QUEUE.claim(&pool, id).await);
+
+        let (status, error): (String, Option<String>) =
+            sqlx::query_as("SELECT status, error_message FROM telegram_book_links WHERE id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(status, "downloading");
+        assert_eq!(error, None, "a requeued row must not show a stale error");
+
+        TELEGRAM_DOWNLOAD_QUEUE.mark_failed(&pool, id, "boom").await;
+        let (status, error): (String, Option<String>) =
+            sqlx::query_as("SELECT status, error_message FROM telegram_book_links WHERE id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(status, "failed");
+        assert_eq!(error.as_deref(), Some("boom"));
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn sql_queue_never_resurrects_a_dismissed_row(pool: PgPool) {
+        let id = insert_ddl_download(&pool, "dismissed").await;
+
+        assert!(!DDL_DOWNLOAD_QUEUE.claim(&pool, id).await);
+        DDL_DOWNLOAD_QUEUE.mark_failed(&pool, id, "boom").await;
+
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM ddl_provider_downloads WHERE id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(status, "dismissed");
+    }
+
+    /// Insert a `telegram_book_links` row with the given status.
+    async fn insert_telegram_link(pool: &PgPool, status: &str) -> Uuid {
+        let source_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO telegram_sources (id, channel_username) VALUES ($1, $2)")
+            .bind(source_id)
+            .bind(format!("chan-{source_id}"))
+            .execute(pool)
+            .await
+            .unwrap();
+
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO telegram_book_links (id, source_id, message_id, filename, status) \
+             VALUES ($1, $2, 1, 'a.cbz', $3)",
+        )
+        .bind(id)
+        .bind(source_id)
+        .bind(status)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    /// Insert a `ddl_provider_downloads` row with the given status.
+    async fn insert_ddl_download(pool: &PgPool, status: &str) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO ddl_provider_downloads \
+                (id, provider, external_id, filename, series_name, status) \
+             VALUES ($1, 'fourtoutici', 'ext-1', 'a.pdf', 'A', $2)",
+        )
+        .bind(id)
+        .bind(status)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
     }
 }

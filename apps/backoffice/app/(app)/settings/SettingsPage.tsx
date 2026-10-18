@@ -13,6 +13,7 @@ import { StatusMappingsCard } from "./components/StatusMappingsCard";
 import { ProwlarrCard } from "./components/ProwlarrCard";
 import { QBittorrentCard } from "./components/QBittorrentCard";
 import { AlldebridCard } from "./components/AlldebridCard";
+import type { AlldebridLimits } from "./components/AlldebridCard";
 import { TelegramCard } from "./components/TelegramCard";
 import { KomgaSyncCard } from "./components/KomgaSyncCard";
 import { AnilistTab } from "./components/AnilistTab";
@@ -20,6 +21,7 @@ import { RenameFormatCard } from "./components/RenameFormatCard";
 import { ArchivesTab } from "./components/ArchivesTab";
 import { TelegramMonitorCard } from "./components/TelegramMonitorCard";
 import { DdlProvidersCard } from "./components/DdlProvidersCard";
+import { DdlEngineCard, type DdlEngineLimits } from "./components/DdlEngineCard";
 import { AiTaggingCard } from "./components/AiTaggingCard";
 import { DownloadClientCard } from "./components/DownloadClientCard";
 import { isClientConfigured } from "@/lib/downloadClient";
@@ -136,6 +138,17 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
     } finally {
       setIsSaving(false);
     }
+  }
+
+  /**
+   * Persist one or more `limits` fields, keeping the rest of the object intact.
+   * Every download-engine card writes through here so a concurrent save cannot
+   * drop a sibling's value.
+   */
+  function saveDownloadLimits(partial: Partial<DdlEngineLimits & AlldebridLimits>) {
+    const newLimits = { ...settings.limits, ...partial };
+    setSettings({ ...settings, limits: newLimits });
+    void handleUpdateSetting("limits", newLimits);
   }
 
   async function handleClearCache() {
@@ -624,9 +637,14 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
                 <QBittorrentCard handleUpdateSetting={handleUpdateSetting} initialQbittorrent={initialQbittorrent} initialTorrentImport={initialTorrentImport} onConfiguredChange={setQbConfigured} />
               </SettingsColumn>
               <SettingsColumn>
-                <AlldebridCard handleUpdateSetting={handleUpdateSetting} initialData={initialAlldebrid} onConfiguredChange={setAlldebridConfigured} />
+                <AlldebridCard handleUpdateSetting={handleUpdateSetting} initialData={initialAlldebrid} limits={settings.limits} onSaveLimits={saveDownloadLimits} onConfiguredChange={setAlldebridConfigured} />
               </SettingsColumn>
             </SettingsColumns>
+          </SettingsSection>
+
+          {/* How the transfers themselves are tuned (DDL concurrency + shared knobs) */}
+          <SettingsSection title={t("settings.sectionDownloadEngine")}>
+            <DdlEngineCard limits={settings.limits} onSave={saveDownloadLimits} />
           </SettingsSection>
 
           {/* Direct download providers (JSON / HTML catalogues) */}

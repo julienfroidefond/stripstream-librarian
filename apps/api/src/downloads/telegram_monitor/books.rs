@@ -10,9 +10,9 @@ use std::sync::Arc;
 
 use crate::downloads::missing;
 use crate::downloads::ranged::{download_ranged, FileSink, RangeFetcher, RangeSink, RangedConfig};
+use crate::downloads::settings::DownloadSettings;
 use crate::downloads::target::{finalize_download, prepare_destination};
-use crate::downloads::worker::DownloadQueue;
-use crate::state::load_telegram_download_connections;
+use crate::downloads::worker::TELEGRAM_DOWNLOAD_QUEUE;
 use crate::{error::ApiError, state::AppState};
 
 use super::auth::{load_tg_settings, save_session_to_db};
@@ -419,7 +419,7 @@ pub async fn download_book(
         .spawn(
             state.pool.clone(),
             id,
-            Arc::new(TelegramDownloadQueue),
+            Arc::new(TELEGRAM_DOWNLOAD_QUEUE),
             move |pool| {
                 Box::pin(async move {
                     do_download(
@@ -445,36 +445,8 @@ pub async fn download_book(
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
-/// Claim/fail SQL for the Telegram book download queue.
-struct TelegramDownloadQueue;
-
-#[async_trait::async_trait]
-impl DownloadQueue for TelegramDownloadQueue {
-    async fn claim(&self, pool: &sqlx::PgPool, id: Uuid) -> bool {
-        sqlx::query(
-            "UPDATE telegram_book_links SET status = 'downloading', updated_at = NOW() \
-             WHERE id = $1 AND status = 'queued'",
-        )
-        .bind(id)
-        .execute(pool)
-        .await
-        .map(|result| result.rows_affected() > 0)
-        .unwrap_or(false)
-    }
-
-    async fn mark_failed(&self, pool: &sqlx::PgPool, id: Uuid, error: &str) {
-        // Don't overwrite a 'dismissed' status.
-        let _ = sqlx::query(
-            "UPDATE telegram_book_links SET status = 'failed', error_message = $1, updated_at = NOW() \
-             WHERE id = $2 AND status != 'dismissed'",
-        )
-        .bind(error)
-        .bind(id)
-        .execute(pool)
-        .await;
-    }
-}
-
+// Claim/fail SQL for the Telegram book download queue lives in
+// `worker::SqlDownloadQueue`; see `TELEGRAM_DOWNLOAD_QUEUE`.
 #[allow(clippy::too_many_arguments)]
 pub async fn do_download(
     pool: sqlx::PgPool,
@@ -492,7 +464,8 @@ pub async fn do_download(
 ) -> anyhow::Result<()> {
     use grammers_client::types::{Downloadable, Media};
 
-    let connection_count = load_telegram_download_connections(&pool).await;
+    let settings = DownloadSettings::load(&pool).await;
+    let connection_count = settings.telegram_connections;
     let clients = open_clients(api_id, &api_hash, &session_bytes, connection_count).await?;
     let primary = clients
         .first()
@@ -568,7 +541,7 @@ pub async fn do_download(
         reporter,
         RangedConfig {
             workers_per_fetcher: 2,
-            ..Default::default()
+            ..settings.ranged_config()
         },
     )
     .await;

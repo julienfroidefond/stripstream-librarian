@@ -733,6 +733,7 @@ const fr = {
   "settings.downloadTools": "Outils de téléchargement",
   "settings.sectionProvider": "Provider",
   "settings.sectionDownloadClients": "Clients de téléchargement",
+  "settings.sectionDownloadEngine": "Moteur de téléchargement",
   "settings.sectionDdl": "DDL",
   "settings.sectionTelegram": "Telegram",
   "settings.downloadsEnabled": "Activer les fonctionnalités de téléchargement",
@@ -971,6 +972,10 @@ const fr = {
   "settings.alldebridApiKeyConfigured": "•••••••• (clé enregistrée)",
   "settings.alldebridEnabled": "Activer AllDebrid",
   "settings.alldebridHelp": "La clé API n'est jamais réaffichée après l'enregistrement. Laissez le champ vide pour conserver la clé actuelle.",
+  "settings.alldebridConcurrency": "Téléchargements AllDebrid simultanés",
+  "settings.alldebridConcurrencyHelp": "Nombre de magnets traités en parallèle. Un magnet en cours de transfert occupe son emplacement jusqu'à la fin.",
+  "settings.alldebridStallTimeout": "Délai avant échec d'un magnet bloqué (minutes)",
+  "settings.alldebridStallTimeoutHelp": "Un magnet qui reste à 0 octet pendant cette durée est marqué en échec (torrent mort ou tracker inaccessible). Le magnet n'est pas supprimé.",
 
   // Settings - Telegram Notifications
   "settings.notifications": "Notifications",
@@ -1540,6 +1545,19 @@ const fr = {
 
   // Direct download providers (JSON / HTML catalogues)
   "ddlProviders.title": "Téléchargement direct",
+  "ddlEngine.title": "Téléchargements directs (DDL)",
+  "ddlEngine.desc": "Réglages des téléchargements directs depuis les catalogues externes. Les réglages partagés s'appliquent aussi à Telegram.",
+  "ddlEngine.concurrent": "Téléchargements DDL simultanés",
+  "ddlEngine.concurrentHelp": "Nombre de fichiers téléchargés en parallèle depuis les catalogues externes.",
+  "ddlEngine.connections": "Connexions par fichier",
+  "ddlEngine.connectionsHelp": "Connexions HTTP parallèles pour un même fichier. Le serveur doit accepter les requêtes Range ; sinon un seul flux est utilisé.",
+  "ddlEngine.maxAttempts": "Tentatives par bloc",
+  "ddlEngine.maxAttemptsHelp": "Nombre de tentatives d'un bloc avant d'abandonner le téléchargement.",
+  "ddlEngine.stallTimeout": "Délai d'inactivité (secondes)",
+  "ddlEngine.stallTimeoutHelp": "Durée sans données après laquelle une requête est considérée comme bloquée et relancée.",
+  "ddlEngine.transferTimeout": "Délai maximal par fichier (minutes)",
+  "ddlEngine.transferTimeoutHelp": "Au-delà, le téléchargement est abandonné et marqué en échec.",
+  "ddlEngine.sharedNote": "Les tentatives, le délai d'inactivité et le délai maximal sont partagés par tous les moteurs de téléchargement.",
   "ddlProviders.desc": "Rechercher et importer des fichiers depuis des catalogues externes, directement dans la bibliothèque (import automatique puis indexation).",
   "ddlProviders.loading": "Chargement des fournisseurs...",
   "ddlProviders.loadError": "Impossible de charger les fournisseurs.",

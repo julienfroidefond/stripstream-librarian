@@ -2,6 +2,8 @@ pub mod alldebrid;
 mod blacklist;
 pub mod ddl_provider;
 pub mod detection;
+mod http_error;
+pub mod http_range;
 mod import_pipeline;
 mod missing;
 
@@ -9,6 +11,7 @@ pub mod prowlarr;
 pub mod qbittorrent;
 pub mod ranged;
 pub mod rss_poll;
+pub mod settings;
 mod store;
 pub mod target;
 pub mod telegram_monitor;

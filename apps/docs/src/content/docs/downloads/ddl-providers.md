@@ -75,12 +75,36 @@ Le bouton **Ignorer** masque une entrée sans la supprimer définitivement.
 ## Flux d'import
 
 1. Clic sur **Télécharger** — l'entrée passe en *En attente*.
-2. Le fichier est téléchargé en streaming dans le répertoire de la série (résolu comme pour Telegram : fichier existant → répertoire homonyme → nouveau répertoire).
+2. Le fichier est rapatrié dans le répertoire de la série (résolu comme pour Telegram : fichier existant → répertoire homonyme → nouveau répertoire).
 3. Le fichier est renommé selon le [template de renommage](/books/renaming/) si la série n'a pas encore de livre.
 4. Un scan est déclenché automatiquement pour intégrer le nouveau fichier.
 5. Statut final : **Importé** ou **Erreur**.
 
-Le nombre de téléchargements simultanés se règle via le paramètre `concurrent_ddl_provider_downloads` (défaut : 2).
+Le téléchargement écrit d'abord dans un `.tmp`, renommé une fois complet ; un fichier vide n'est jamais
+conservé et est signalé en **Erreur**. Le réglage **Délai maximal par fichier** borne la durée totale :
+au-delà, le transfert est abandonné et le `.tmp` supprimé.
+
+## Moteur de téléchargement DDL
+
+Settings → onglet **Téléchargements** → section **Moteur de téléchargement**, carte **Téléchargements
+directs (DDL)**. Les trois derniers réglages sont **partagés par tous les moteurs de téléchargement**
+(DDL et Telegram) ; les deux premiers ne concernent que les téléchargements directs.
+
+| Réglage | Clé `limits` | Défaut | Portée |
+|---------|--------------|--------|--------|
+| Téléchargements DDL simultanés | `concurrent_ddl_provider_downloads` | 2 | DDL |
+| Connexions par fichier | `ddl_download_connections` | 4 | DDL |
+| Tentatives par bloc | `download_max_attempts` | 5 | partagé |
+| Délai d'inactivité (secondes) | `download_stall_timeout_seconds` | 180 | partagé |
+| Délai maximal par fichier (minutes) | `download_timeout_minutes` | 30 | partagé |
+
+Quand le serveur répond aux requêtes `Range` (c'est le cas de la plupart des hébergeurs de fichiers),
+le fichier est découpé en blocs répartis sur plusieurs connexions parallèles : plus rapide sur les gros
+tomes, et un bloc en échec est **relancé sur place** sans repartir de zéro. Chaque bloc est retenté
+jusqu'à **Tentatives par bloc** fois, et une connexion qui n'envoie plus rien pendant **Délai
+d'inactivité** est considérée comme bloquée puis relancée. Si le serveur ignore `Range` (ou ne
+communique pas la taille), Stripstream bascule automatiquement sur un **flux unique** — le
+téléchargement reste fonctionnel, seule la parallélisation est perdue.
 
 :::note[Détails techniques]
 **Suivi** : chaque requête réelle est persistée dans `ddl_provider_downloads` (`queued` → `downloading` → `imported` / `failed`). Une même entrée (`provider` + `external_id`) est réutilisée : relancer un téléchargement réinitialise la ligne existante.
