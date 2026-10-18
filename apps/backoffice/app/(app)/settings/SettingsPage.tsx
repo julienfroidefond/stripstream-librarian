@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button, FormInput, FormSelect, Icon, SettingsCard, SettingsColumn, SettingsColumns, SettingsPageHeader, SettingsRow, SettingsSections, SettingsTabs, Switch, toast, type SettingsTabItem } from "@/app/components/ui";
+import { Button, FormInput, FormSelect, Icon, SettingsCard, SettingsColumn, SettingsColumns, SettingsPageHeader, SettingsRow, SettingsSection, SettingsSections, SettingsTabs, Switch, toast, type SettingsTabItem } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, UserDto } from "@/lib/api";
 import type { DownloadClient } from "@/lib/api";
@@ -564,8 +564,8 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       {activeTab === "ai" && (<SettingsSections layout="stack"><AiTaggingCard handleUpdateSetting={handleUpdateSetting} initialData={settings.ai_tagging ?? null} /></SettingsSections>)}
 
       {activeTab === "downloadTools" && (
-        <SettingsSections layout="stack">
-          {/* Downloads feature toggle */}
+        <div className="space-y-8">
+          {/* Master switch: it gates the whole tab, so it sits above the sections. */}
           <SettingsCard
             icon="play"
             title={t("settings.downloadsEnabled")}
@@ -598,50 +598,53 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
             }
           />
 
-          {/* Two fixed columns: where releases come from (left), and where they go (right). */}
-          <SettingsColumns>
-            <SettingsColumn>
-              {/* Prowlarr */}
-              <ProwlarrCard handleUpdateSetting={handleUpdateSetting} initialData={initialProwlarr} />
+          {/* Where releases are searched */}
+          <SettingsSection title={t("settings.sectionProvider")}>
+            <ProwlarrCard handleUpdateSetting={handleUpdateSetting} initialData={initialProwlarr} />
+          </SettingsSection>
 
-              {/* Telegram Monitor */}
-              <TelegramMonitorCard
-                initialLibraries={initialLibraries}
-                initialConcurrentDownloads={settings.limits.concurrent_telegram_downloads ?? 2}
-                onSaveConcurrentDownloads={(value) => {
-                  const newLimits = { ...settings.limits, concurrent_telegram_downloads: value };
-                  setSettings({ ...settings, limits: newLimits });
-                  handleUpdateSetting("limits", newLimits);
-                }}
-                initialDownloadConnections={settings.limits.telegram_download_connections ?? 4}
-                onSaveDownloadConnections={(value) => {
-                  const newLimits = { ...settings.limits, telegram_download_connections: value };
-                  setSettings({ ...settings, limits: newLimits });
-                  handleUpdateSetting("limits", newLimits);
-                }}
-              />
+          {/* Where they are handed over: the choice is made once, then the two alternatives */}
+          <SettingsSection title={t("settings.sectionDownloadClients")}>
+            <DownloadClientCard
+              handleUpdateSetting={handleUpdateSetting}
+              initialClient={initialDownloadClient}
+              qbConfigured={isClientConfigured("qbittorrent", initialQbittorrent)}
+              alldebridConfigured={isClientConfigured("alldebrid", initialAlldebrid)}
+            />
+            <SettingsColumns>
+              <SettingsColumn>
+                <QBittorrentCard handleUpdateSetting={handleUpdateSetting} initialQbittorrent={initialQbittorrent} initialTorrentImport={initialTorrentImport} />
+              </SettingsColumn>
+              <SettingsColumn>
+                <AlldebridCard handleUpdateSetting={handleUpdateSetting} initialData={initialAlldebrid} />
+              </SettingsColumn>
+            </SettingsColumns>
+          </SettingsSection>
 
-              {/* Direct download providers (JSON / HTML catalogues) */}
-              <DdlProvidersCard />
-            </SettingsColumn>
+          {/* Direct download providers (JSON / HTML catalogues) */}
+          <SettingsSection title={t("settings.sectionDdl")}>
+            <DdlProvidersCard />
+          </SettingsSection>
 
-            <SettingsColumn>
-              {/* Download client choice — the only place it is made */}
-              <DownloadClientCard
-                handleUpdateSetting={handleUpdateSetting}
-                initialClient={initialDownloadClient}
-                qbConfigured={isClientConfigured("qbittorrent", initialQbittorrent)}
-                alldebridConfigured={isClientConfigured("alldebrid", initialAlldebrid)}
-              />
-
-              {/* qBittorrent */}
-              <QBittorrentCard handleUpdateSetting={handleUpdateSetting} initialQbittorrent={initialQbittorrent} initialTorrentImport={initialTorrentImport} />
-
-              {/* AllDebrid */}
-              <AlldebridCard handleUpdateSetting={handleUpdateSetting} initialData={initialAlldebrid} />
-            </SettingsColumn>
-          </SettingsColumns>
-        </SettingsSections>
+          {/* Telegram link monitoring */}
+          <SettingsSection title={t("settings.sectionTelegram")}>
+            <TelegramMonitorCard
+              initialLibraries={initialLibraries}
+              initialConcurrentDownloads={settings.limits.concurrent_telegram_downloads ?? 2}
+              onSaveConcurrentDownloads={(value) => {
+                const newLimits = { ...settings.limits, concurrent_telegram_downloads: value };
+                setSettings({ ...settings, limits: newLimits });
+                handleUpdateSetting("limits", newLimits);
+              }}
+              initialDownloadConnections={settings.limits.telegram_download_connections ?? 4}
+              onSaveDownloadConnections={(value) => {
+                const newLimits = { ...settings.limits, telegram_download_connections: value };
+                setSettings({ ...settings, limits: newLimits });
+                handleUpdateSetting("limits", newLimits);
+              }}
+            />
+          </SettingsSection>
+        </div>
       )}
 
       {activeTab === "notifications" && (<SettingsSections layout="stack">

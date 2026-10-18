@@ -118,6 +118,36 @@ export function SettingsColumn({ children, className = "" }: SettingsColumnsProp
   return <div className={`space-y-5 ${className}`}>{children}</div>;
 }
 
+interface SettingsSectionProps {
+  /**
+   * Eyebrow heading naming the group. Card titles are already `<h2>`, so this is a
+   * label above them rather than a second title level.
+   */
+  title: ReactNode;
+  children: ReactNode;
+  className?: string;
+}
+
+/**
+ * A named group of settings panels inside a tab: an eyebrow heading and a hairline
+ * rule, then a vertical flow of panels. Use it when a tab holds several kinds of
+ * thing — where releases come from, where they go, what fetches them.
+ *
+ * The tab owns the spacing *between* sections (`space-y-8`); this component owns the
+ * spacing inside it.
+ */
+export function SettingsSection({ title, children, className = "" }: SettingsSectionProps) {
+  return (
+    <section className={`space-y-3 ${className}`}>
+      <div className="flex items-center gap-3">
+        <h2 className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h2>
+        <span aria-hidden className="h-px flex-1 bg-border/60" />
+      </div>
+      <div className="space-y-5">{children}</div>
+    </section>
+  );
+}
+
 interface SettingsRowProps {
   /** Row title, rendered in a left gutter (stacked above on small screens). */
   label: ReactNode;

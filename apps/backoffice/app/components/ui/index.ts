@@ -21,7 +21,7 @@ export {
   FormField, FormLabel, FormInput, FormSelect, FormRow, 
   FormSection, FormError, FormDescription 
 } from "./Form";
-export { SettingsCard, SettingsColumn, SettingsColumns, SettingsField, SettingsRow, SettingsSections } from "./SettingsCard";
+export { SettingsCard, SettingsColumn, SettingsColumns, SettingsField, SettingsRow, SettingsSection, SettingsSections } from "./SettingsCard";
 export { SettingsPageHeader } from "./SettingsPageHeader";
 export { SettingsTabs } from "./SettingsTabs";
 export type { SettingsTabItem } from "./SettingsTabs";
