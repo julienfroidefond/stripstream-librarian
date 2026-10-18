@@ -77,6 +77,24 @@ describe("DownloadClientProvider", () => {
       )
     );
   });
+
+  it("exposes no client while the stored choice is still unknown", async () => {
+    // A settings fetch that never settles: the choice stays unknown.
+    const fetchMock = vi.fn(() => new Promise(() => {}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <DownloadClientProvider initialClients={{ qbittorrent: true, alldebrid: true }}>
+        <DownloadClientButton downloadUrl="magnet:?x" releaseId="r1" />
+      </DownloadClientProvider>
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    // Both clients are configured, so the old code exposed qBittorrent (first
+    // in order) before knowing whether the choice was AllDebrid: a click in
+    // that window would have sent the snatch to the wrong backend.
+    expect(screen.queryByRole("button")).toBeNull();
+  });
 });
 
 describe("DownloadClientIndicator", () => {

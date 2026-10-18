@@ -57,4 +57,21 @@ describe("DownloadClientCard", () => {
     const radios = screen.getAllByRole("radio");
     expect(radios[1]).toBeChecked();
   });
+
+  it("ignores a stored choice whose client is no longer configured", () => {
+    render(
+      <DownloadClientCard
+        handleUpdateSetting={vi.fn()}
+        initialClient="alldebrid"
+        qbConfigured
+        alldebridConfigured={false}
+      />
+    );
+
+    // AllDebrid is stored but unconfigured, so snatches actually go to
+    // qBittorrent: the card must show the same client as the runtime fallback.
+    const radios = screen.getAllByRole("radio");
+    expect(radios[0]).toBeChecked();
+    expect(radios[1]).not.toBeChecked();
+  });
 });

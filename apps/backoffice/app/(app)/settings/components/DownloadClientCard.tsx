@@ -41,10 +41,13 @@ export function DownloadClientCard({
     qbittorrent: qbConfigured,
     alldebrid: alldebridConfigured,
   };
-  // Mirror the runtime fallback: when nothing is stored yet, the first
-  // configured client is the one snatches actually use.
-  const [client, setClient] = useState<DownloadClient | null>(
-    () => initialClient ?? DOWNLOAD_CLIENTS.find((c) => configured[c]) ?? null,
+  // Mirror the runtime fallback exactly (see `DownloadClientProvider`): a
+  // stored choice whose client is no longer configured is not the client
+  // snatches actually use, so it must not look selected here.
+  const [client, setClient] = useState<DownloadClient | null>(() =>
+    initialClient && configured[initialClient]
+      ? initialClient
+      : (DOWNLOAD_CLIENTS.find((c) => configured[c]) ?? null),
   );
 
   function choose(next: DownloadClient) {

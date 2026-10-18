@@ -236,7 +236,6 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
 
               {/* Results */}
               {!isSearching && results.length > 0 && (
-                <DownloadClientProvider initialClients={{ qbittorrent: isQbConfigured, alldebrid: isAlldebridConfigured }}>
                 <div>
                   <p className="text-sm text-muted-foreground mb-3">
                     {t("prowlarr.resultCount", { count: results.length, plural: results.length !== 1 ? "s" : "" })}
@@ -358,7 +357,6 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
                     </table>
                   </div>
                 </div>
-                </DownloadClientProvider>
               )}
 
               {/* No results */}
@@ -370,7 +368,12 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
   );
 
   return (
-    <>
+    // The provider is mounted with the modal rather than around the results
+    // table: it reads the client chosen in Settings on mount, and a provider
+    // that appears only once results are rendered would expose a fallback
+    // client for the first frames — long enough to send a snatch to the wrong
+    // backend.
+    <DownloadClientProvider initialClients={{ qbittorrent: isQbConfigured, alldebrid: isAlldebridConfigured }}>
       {children ? (
         children(handleOpen)
       ) : (
@@ -384,6 +387,6 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
         </button>
       )}
       {modal}
-    </>
+    </DownloadClientProvider>
   );
 }

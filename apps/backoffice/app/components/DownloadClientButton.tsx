@@ -53,6 +53,11 @@ export function DownloadClientProvider({
     alldebrid: initialClients?.alldebrid ?? false,
   }));
   const [preferred, setPreferred] = useState<DownloadClient | null>(initialClient ?? null);
+  // Whether the client chosen in Settings is known. When the server did not
+  // supply it, it is only known once the settings fetch resolves: until then no
+  // client is exposed at all, because falling back to the first configured one
+  // would silently send a snatch to the wrong backend.
+  const [preferredResolved, setPreferredResolved] = useState(initialClient !== undefined);
 
   // Resolve any client the server did not tell us about.
   useEffect(() => {
@@ -92,7 +97,9 @@ export function DownloadClientProvider({
       .then((resp) => (resp.ok ? resp.json() : null))
       .catch(() => null)
       .then((data) => {
-        if (active) setPreferred(readDownloadClientSetting(data));
+        if (!active) return;
+        setPreferred(readDownloadClientSetting(data));
+        setPreferredResolved(true);
       });
     return () => {
       active = false;
@@ -100,8 +107,13 @@ export function DownloadClientProvider({
   }, [initialClient]);
 
   const available = useMemo(() => DOWNLOAD_CLIENTS.filter((c) => availability[c]), [availability]);
-  // Fall back to the first available client when the stored choice is unusable.
-  const activeClient = preferred && availability[preferred] ? preferred : (available[0] ?? null);
+  // Fall back to the first available client when the stored choice is unusable,
+  // but never before that choice is known (see `preferredResolved`).
+  const activeClient = !preferredResolved
+    ? null
+    : preferred && availability[preferred]
+      ? preferred
+      : (available[0] ?? null);
 
   return (
     <DownloadClientContext.Provider value={{ available, client: activeClient, onDownloadStarted }}>
