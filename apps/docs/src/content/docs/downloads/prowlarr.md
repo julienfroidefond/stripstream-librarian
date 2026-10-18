@@ -52,7 +52,7 @@ Quand vous cliquez sur ↓, Stripstream envoie le torrent au client sélectionn�
 
 ### Choix du client
 
-Quand **qBittorrent et AllDebrid sont tous les deux configurés**, un sélecteur **Client de téléchargement** apparaît au-dessus de la section *Disponibles au téléchargement* (et dans les fenêtres de détection). Le choix est mémorisé dans le navigateur et s'applique à tous les envois suivants.
+Quand **qBittorrent et AllDebrid sont tous les deux configurés**, un sélecteur **Client de téléchargement** apparaît dans l'en-tête de la page *Téléchargements* (et dans les fenêtres de détection). Le choix est mémorisé dans le navigateur et s'applique à tous les envois suivants. Avec un seul client configuré, l'en-tête affiche simplement le client utilisé (`Client : qBittorrent`) — les snatchs ne partent jamais vers les deux.
 
 Chaque ligne de l'historique affiche un badge avec le client qui a traité le téléchargement : `qBittorrent` ou `AllDebrid`.
 
@@ -91,7 +91,9 @@ Le mode replace ignore la liste `expected_volumes` au moment de l'import et impo
 | **Erreur** | Import échoué |
 
 **Actions** :
-- **Retry (↺)** — relancer l'import pour les statuts Erreur, Partiel, Aucun fichier importé
+- **Retry (↺)** — relancer l'import pour les statuts Erreur, Partiel, Aucun fichier importé. Sur une
+  entrée [AllDebrid](/integrations/alldebrid) dont le magnet a été abandonné par le débrideur, Retry
+  relance le magnet lui-même
 - **Annuler / Supprimer** — interrompre un téléchargement en cours ou retirer l'entrée
 
 ## Blacklist

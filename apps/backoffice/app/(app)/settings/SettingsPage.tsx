@@ -596,6 +596,12 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       {/* Prowlarr */}
       <ProwlarrCard handleUpdateSetting={handleUpdateSetting} initialData={initialProwlarr} />
 
+      {/* Download client choice — qBittorrent and AllDebrid are alternatives, not cumulative */}
+      <p className="settings-well flex items-start gap-2.5 rounded-xl p-3.5 text-sm leading-relaxed text-muted-foreground">
+        <Icon name="info" size="sm" mono className="mt-0.5 shrink-0 text-primary" />
+        {t("settings.downloadClientHelp")}
+      </p>
+
       {/* qBittorrent */}
       <QBittorrentCard handleUpdateSetting={handleUpdateSetting} initialQbittorrent={initialQbittorrent} initialTorrentImport={initialTorrentImport} />
 

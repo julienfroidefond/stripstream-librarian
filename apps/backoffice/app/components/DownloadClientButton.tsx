@@ -160,6 +160,33 @@ export function DownloadClientSelector() {
   );
 }
 
+/**
+ * Always-visible indication of the client snatches use.
+ *
+ * Renders the segmented selector when several clients are configured and a
+ * static chip when only one is, so the destination is never a surprise. Renders
+ * nothing when no client is configured.
+ */
+export function DownloadClientIndicator() {
+  const { t } = useTranslation();
+  const { available, client } = useContext(DownloadClientContext);
+  if (available.length === 0 || !client) return null;
+
+  if (available.length === 1) {
+    return (
+      <span
+        title={t("downloadClient.activeHint")}
+        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+      >
+        <Icon name="download" size="sm" />
+        {t("downloadClient.active", { client: DOWNLOAD_CLIENT_LABELS[client] })}
+      </span>
+    );
+  }
+
+  return <DownloadClientSelector />;
+}
+
 /** Small "handled by <client>" chip for a download row. */
 export function DownloadClientBadge({ client }: { client: DownloadClient }) {
   const label = DOWNLOAD_CLIENT_LABELS[client] ?? client;

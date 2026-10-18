@@ -35,10 +35,11 @@ Le parcours est inchangé : depuis une release disponible (page Téléchargement
 d'une série, détection de téléchargements d'une bibliothèque), le bouton de téléchargement envoie la
 release au **client sélectionné**.
 
-Quand **plusieurs clients sont configurés**, un sélecteur **Client de téléchargement** apparaît
-au-dessus de la liste des volumes disponibles (qBittorrent / AllDebrid). Le choix est mémorisé dans
-le navigateur. Chaque ligne de l'historique affiche un badge indiquant le client qui l'a traitée, et
-les messages d'envoi nomment le client (« Envoyer à AllDebrid »).
+Quand **plusieurs clients sont configurés**, un sélecteur **Client de téléchargement** apparaît dans
+l'en-tête de la page *Téléchargements* (qBittorrent / AllDebrid) ; le choix est mémorisé dans le
+navigateur. Avec un seul client configuré, l'en-tête affiche simplement celui-ci (`Client : AllDebrid`).
+Chaque ligne de l'historique affiche un badge indiquant le client qui l'a traitée, et les messages
+d'envoi nomment le client (« Envoyer à AllDebrid »).
 
 Le **mode Replace** se comporte comme avec qBittorrent : tous les fichiers du torrent sont importés,
 pas seulement les volumes manquants.

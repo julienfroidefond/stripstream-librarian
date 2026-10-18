@@ -13,7 +13,7 @@ import {
   DdlProviderDownloadDto,
 } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, Button, Icon, toast } from "@/app/components/ui";
-import { DownloadClientProvider, DownloadClientButton, DownloadClientSelector, DownloadClientBadge } from "@/app/components/DownloadClientButton";
+import { DownloadClientProvider, DownloadClientButton, DownloadClientIndicator, DownloadClientBadge } from "@/app/components/DownloadClientButton";
 import { useTranslation } from "@/lib/i18n/context";
 import { compressVolumes } from "@/lib/volumeRanges";
 import { formatDateTime, formatEta, formatSpeed, formatVolumes } from "@/lib/format";
@@ -328,17 +328,20 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
   const handleStatusFilterChange = (id: StatusFilter) => { setStatusFilter(id); setPage(1); };
 
   return (
-    <>
+    <DownloadClientProvider initialClients={{ qbittorrent: qbConfigured, alldebrid: alldebridConfigured }} onDownloadStarted={() => refresh(false)}>
       <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
         <h1 className="text-xl sm:text-3xl font-bold text-foreground flex items-center gap-2 sm:gap-3">
           <Icon name="download" size="lg" className="sm:hidden text-success" />
           <Icon name="download" size="xl" className="hidden sm:block text-success" />
           {t("downloads.title")}
         </h1>
-        <Button onClick={() => refresh(true)} disabled={isRefreshing} variant="outline" size="sm">
-          {isRefreshing ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="refresh" size="sm" />}
-          <span className="ml-2 hidden sm:inline">{t("downloads.refresh")}</span>
-        </Button>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <DownloadClientIndicator />
+          <Button onClick={() => refresh(true)} disabled={isRefreshing} variant="outline" size="sm">
+            {isRefreshing ? <Icon name="spinner" size="sm" className="animate-spin" /> : <Icon name="refresh" size="sm" />}
+            <span className="ml-2 hidden sm:inline">{t("downloads.refresh")}</span>
+          </Button>
+        </div>
       </div>
 
       {/* Filter bar */}
@@ -397,27 +400,25 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
       )}
 
       {(latestFound.length > 0 || telegramAvailable.length > 0) && (
-        <DownloadClientProvider initialClients={{ qbittorrent: qbConfigured, alldebrid: alldebridConfigured }} onDownloadStarted={() => refresh(false)}>
-          <AvailableDownloadsSection
-            latestFound={latestFound}
-            telegramAvailable={telegramAvailable}
-            onRefresh={() => refresh(false)}
-            onTelegramDownloaded={(bookId) => {
-              setTelegramAvailable(prev => prev.map(group => ({
-                ...group,
-                books: group.books.map(book => book.id === bookId ? { ...book, status: "queued" } : book),
-              })));
-            }}
-          />
-        </DownloadClientProvider>
+        <AvailableDownloadsSection
+          latestFound={latestFound}
+          telegramAvailable={telegramAvailable}
+          onRefresh={() => refresh(false)}
+          onTelegramDownloaded={(bookId) => {
+            setTelegramAvailable(prev => prev.map(group => ({
+              ...group,
+              books: group.books.map(book => book.id === bookId ? { ...book, status: "queued" } : book),
+            })));
+          }}
+        />
       )}
-    </>
+    </DownloadClientProvider>
   );
 }
 
 const RETRYABLE_STATUSES = new Set(["importing", "error", "no_files_imported", "partial"]);
 
-function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onDeleted: () => void; onRetried: () => void }) {
+export function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onDeleted: () => void; onRetried: () => void }) {
   const { t } = useTranslation();
   const [deleting, setDeleting] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -1147,7 +1148,6 @@ export function AvailableDownloadsSection({
           </button>
         </h2>
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          <DownloadClientSelector />
           {libraries.length > 1 && (
             <select
               value={filterLib}

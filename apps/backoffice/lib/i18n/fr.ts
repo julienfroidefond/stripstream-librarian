@@ -735,7 +735,8 @@ const fr = {
   "settings.media": "Images & cache",
   "settings.downloadTools": "Outils de téléchargement",
   "settings.downloadsEnabled": "Activer les fonctionnalités de téléchargement",
-  "settings.downloadsEnabledDesc": "Active l'interface de recherche Prowlarr, l'envoi vers qBittorrent et les jobs de détection de téléchargements.",
+  "settings.downloadsEnabledDesc": "Active l'interface de recherche Prowlarr, l'envoi vers le client de téléchargement et les jobs de détection de téléchargements.",
+  "settings.downloadClientHelp": "Les snatchs partent toujours vers un seul client, jamais vers les deux. Si qBittorrent et AllDebrid sont tous les deux configurés, un sélecteur « Client de téléchargement » apparaît sur la page Téléchargements pour choisir celui qui reçoit chaque envoi.",
   "settings.metadata": "Métadonnées",
   "settings.readingStatus": "Statut de lecture",
   "settings.archives": "Archives",
@@ -940,6 +941,8 @@ const fr = {
 
   // Download client (qBittorrent / AllDebrid)
   "downloadClient.select": "Client de téléchargement",
+  "downloadClient.active": "Client : {{client}}",
+  "downloadClient.activeHint": "Les snatchs partent vers un seul client. Configure-en un second pour pouvoir en changer ici.",
   "downloadClient.sendTo": "Envoyer à {{client}}",
   "downloadClient.sentTo": "Envoyé à {{client}}",
   "downloadClient.sentError": "Échec de l'envoi à {{client}}",

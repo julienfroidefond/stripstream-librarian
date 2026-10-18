@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DownloadClientBadge,
   DownloadClientButton,
+  DownloadClientIndicator,
   DownloadClientProvider,
   DownloadClientSelector,
   isClientConfigured,
@@ -54,6 +55,42 @@ describe("DownloadClientSelector", () => {
     expect(ad).toHaveAttribute("aria-pressed", "true");
     expect(qb).toHaveAttribute("aria-pressed", "false");
     expect(window.localStorage.getItem("sl.downloadClient")).toBe("alldebrid");
+  });
+});
+
+describe("DownloadClientIndicator", () => {
+  it("shows the only configured client as a static label", () => {
+    render(
+      <DownloadClientProvider initialClients={{ qbittorrent: true, alldebrid: false }}>
+        <DownloadClientIndicator />
+      </DownloadClientProvider>
+    );
+
+    // The translation mock echoes the key and interpolates its variables.
+    expect(screen.getByText(/downloadClient\.active/)).toBeInTheDocument();
+    expect(screen.queryByRole("group")).toBeNull();
+  });
+
+  it("falls back to the segmented selector when several clients are available", () => {
+    render(
+      <DownloadClientProvider initialClients={{ qbittorrent: true, alldebrid: true }}>
+        <DownloadClientIndicator />
+      </DownloadClientProvider>
+    );
+
+    expect(screen.getByRole("group")).toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(2);
+  });
+
+  it("renders nothing when no client is configured", () => {
+    render(
+      <DownloadClientProvider initialClients={{ qbittorrent: false, alldebrid: false }}>
+        <DownloadClientIndicator />
+      </DownloadClientProvider>
+    );
+
+    expect(screen.queryByRole("group")).toBeNull();
+    expect(screen.queryByText(/downloadClient\.active/)).toBeNull();
   });
 });
 
