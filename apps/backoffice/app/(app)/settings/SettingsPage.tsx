@@ -11,6 +11,7 @@ import { MetadataProvidersCard } from "./components/MetadataProvidersCard";
 import { StatusMappingsCard } from "./components/StatusMappingsCard";
 import { ProwlarrCard } from "./components/ProwlarrCard";
 import { QBittorrentCard } from "./components/QBittorrentCard";
+import { AlldebridCard } from "./components/AlldebridCard";
 import { TelegramCard } from "./components/TelegramCard";
 import { KomgaSyncCard } from "./components/KomgaSyncCard";
 import { AnilistTab } from "./components/AnilistTab";
@@ -28,6 +29,7 @@ interface SettingsPageProps {
   initialTab?: string;
   initialProwlarr: Record<string, unknown> | null;
   initialQbittorrent: Record<string, unknown> | null;
+  initialAlldebrid: Record<string, unknown> | null;
   initialTorrentImport: Record<string, unknown> | null;
   initialTelegram: Record<string, unknown> | null;
   initialAnilist: Record<string, unknown> | null;
@@ -46,7 +48,7 @@ interface SettingsPageProps {
   tokensContent?: ReactNode;
 }
 
-export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, initialRenameFormatHs, initialRenameFormatInt, initialRenameFormatOneshot, initialDownloadsEnabled, initialLibraries, versions, tokensContent }: SettingsPageProps) {
+export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialAlldebrid, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, initialRenameFormatHs, initialRenameFormatInt, initialRenameFormatOneshot, initialDownloadsEnabled, initialLibraries, versions, tokensContent }: SettingsPageProps) {
   const { t, locale, setLocale } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -596,6 +598,9 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
 
       {/* qBittorrent */}
       <QBittorrentCard handleUpdateSetting={handleUpdateSetting} initialQbittorrent={initialQbittorrent} initialTorrentImport={initialTorrentImport} />
+
+      {/* AllDebrid */}
+      <AlldebridCard handleUpdateSetting={handleUpdateSetting} initialData={initialAlldebrid} />
 
       {/* Telegram Monitor */}
       <TelegramMonitorCard
