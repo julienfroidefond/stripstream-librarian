@@ -8,6 +8,7 @@ import { getBookCoverUrl } from "@/lib/api";
 import type { SeriesDto, LibraryDto } from "@/lib/api";
 import { matchesSearchText } from "@/lib/search";
 import { useTranslation } from "@/lib/i18n/context";
+import { JacketGrid } from "@/app/components/motion/JacketGrid";
 import { toast } from "@/app/components/ui";
 import { LibraryMultiBadgeSelector } from "../jobs/components/LibraryBadgeSelector";
 
@@ -812,7 +813,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
             {seriesFilter === null ? t("genres.noUntagged") : t("common.noData")}
           </div>
         ) : seriesView === "cards" ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+          <JacketGrid className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
             {displayedSeries.map(s => {
               const isSelected = selected.has(s.series_id);
               return (
@@ -864,7 +865,7 @@ export function GenresClient({ initialGenres, initialUntagged, libraries, initia
                 </div>
               );
             })}
-          </div>
+          </JacketGrid>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-border">
             <table className="w-full min-w-[620px] text-sm">

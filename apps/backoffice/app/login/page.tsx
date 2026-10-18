@@ -4,6 +4,8 @@ import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { useState, Suspense } from "react";
 
+import { Magnetic } from "@/app/components/motion";
+
 function LoginForm() {
   const searchParams = useSearchParams();
   const from = searchParams.get("from") || "/";
@@ -52,7 +54,7 @@ function LoginForm() {
       />
 
       {/* Hero */}
-      <div className="relative flex flex-col items-center mb-10">
+      <div className="relative flex flex-col items-center mb-10 animate-fade-in-down">
         <h1 className="text-4xl font-bold tracking-tight text-foreground">
           StripStream{" "}
           <span className="text-primary font-light">: Librarian</span>
@@ -64,8 +66,8 @@ function LoginForm() {
 
       {/* Form card */}
       <div
-        className="relative w-full max-w-sm rounded-2xl border border-white/20 backdrop-blur-sm p-8"
-        style={{ boxShadow: "0 24px 48px -12px rgb(0 0 0 / 0.18)" }}
+        className="relative w-full max-w-sm rounded-2xl border border-white/20 backdrop-blur-sm p-8 animate-fade-in-up"
+        style={{ animationDelay: "80ms", boxShadow: "0 24px 48px -12px rgb(0 0 0 / 0.18)" }}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -120,7 +122,7 @@ function LoginForm() {
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-destructive/10 border border-destructive/20 text-sm text-destructive">
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-destructive/10 border border-destructive/20 text-sm text-destructive animate-shake">
               <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                 <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
@@ -128,31 +130,33 @@ function LoginForm() {
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="
-              w-full h-11 mt-2
-              inline-flex items-center justify-center gap-2
-              rounded-xl font-medium text-sm
-              bg-primary text-primary-foreground
-              hover:bg-primary/90
-              transition-all duration-200 ease-out
-              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
-              disabled:pointer-events-none disabled:opacity-50
-              active:scale-[0.98]
-            "
-            style={{ boxShadow: "0 4px 16px -4px hsl(198 78% 37% / 0.5)" }}
-          >
-            {loading ? (
-              <>
-                <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                </svg>
-                Connexion…
-              </>
-            ) : "Se connecter"}
-          </button>
+          <Magnetic className="mt-2" strength={0.18} max={8}>
+            <button
+              type="submit"
+              disabled={loading}
+              className="
+                w-full h-11
+                inline-flex items-center justify-center gap-2
+                rounded-xl font-medium text-sm
+                bg-primary text-primary-foreground
+                hover:bg-primary/90
+                transition-all duration-200 ease-out
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
+                disabled:pointer-events-none disabled:opacity-50
+                active:scale-[0.98]
+              "
+              style={{ boxShadow: "0 4px 16px -4px hsl(198 78% 37% / 0.5)" }}
+            >
+              {loading ? (
+                <>
+                  <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                  </svg>
+                  Connexion…
+                </>
+              ) : "Se connecter"}
+            </button>
+          </Magnetic>
         </form>
       </div>
     </div>

@@ -34,7 +34,7 @@ export function SeriesRelatedCarousel({
         <span>{t("series.relatedTitle")}</span>
         <span className="h-px flex-1 bg-border" />
       </h2>
-      <div className="flex gap-5 overflow-x-auto pb-4 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
+      <div className="flex gap-5 overflow-x-auto pb-4 -mx-1 px-1 stagger-deal" style={{ scrollbarWidth: "none" }}>
         {items.map((series) => {
           const coverUrl = series.first_book_id
             ? getBookCoverUrl(series.first_book_id, series.first_book_updated_at ?? undefined)

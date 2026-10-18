@@ -7,6 +7,7 @@ import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 import { StatsOverviewSection } from "./_components/StatsOverviewSection";
 import { StatsBreakdownSection } from "./_components/StatsBreakdownSection";
 import { Skeleton } from "@/app/components/ui";
+import { GlowLayer, Magnetic } from "@/app/components/motion";
 
 export const dynamic = "force-dynamic";
 
@@ -72,18 +73,20 @@ function QuickLinks({ t }: { t: TranslateFunction }) {
     { href: "/jobs", label: t("nav.jobs"), bg: "bg-destructive/10", text: "text-destructive", hoverBg: "group-hover:bg-destructive", hoverText: "group-hover:text-destructive-foreground", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /> },
   ];
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div data-reveal className="grid grid-cols-2 md:grid-cols-4 gap-4 stagger-children">
       {links.map((l) => (
-        <Link
-          key={l.href}
-          href={l.href as any}
-          className="group p-4 bg-card/80 backdrop-blur-sm rounded-xl border border-border/50 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-3"
-        >
-          <div className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 ${l.bg} ${l.hoverBg}`}>
-            <svg className={`w-5 h-5 ${l.text} ${l.hoverText}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">{l.icon}</svg>
-          </div>
-          <span className="font-medium text-foreground text-sm">{l.label}</span>
-        </Link>
+        <Magnetic key={l.href}>
+          <Link
+            href={l.href as any}
+            className="group relative h-full overflow-hidden p-4 bg-card/80 backdrop-blur-sm rounded-xl border border-border/50 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 flex items-center gap-3"
+          >
+            <GlowLayer />
+            <div className={`relative w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-200 ${l.bg} ${l.hoverBg}`}>
+              <svg className={`w-5 h-5 ${l.text} ${l.hoverText}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">{l.icon}</svg>
+            </div>
+            <span className="relative font-medium text-foreground text-sm">{l.label}</span>
+          </Link>
+        </Magnetic>
       ))}
     </div>
   );
@@ -118,28 +121,49 @@ export default async function DashboardPage() {
       {/* Header — renders immediately, no fetch */}
       <div className="mb-2">
         <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
-          <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-8 h-8 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
           </svg>
-          {t("dashboard.title")}
+          {/* Masqued rise: the title climbs out from under its own baseline. */}
+          <span className="block overflow-hidden pb-0.5">
+            <span className="block animate-mask-rise" style={{ animationDelay: "60ms" }}>
+              {t("dashboard.title")}
+            </span>
+          </span>
         </h1>
-        <p className="text-muted-foreground mt-2 max-w-2xl">{t("dashboard.subtitle")}</p>
+        <p
+          className="text-muted-foreground mt-2 max-w-2xl animate-fade-in-up"
+          style={{ animationDelay: "160ms" }}
+        >
+          {t("dashboard.subtitle")}
+        </p>
+        {/* Trait d'accent, tracé une fois le titre posé. */}
+        <span
+          className="mt-4 block h-0.5 w-24 origin-left rounded-full bg-gradient-to-r from-primary to-highlight animate-draw-line"
+          style={{ animationDelay: "420ms" }}
+        />
       </div>
 
       {/* Overview: stat cards + currently reading + distribution charts */}
-      <Suspense fallback={<OverviewSkeleton />}>
-        <StatsOverviewSection t={t} locale={locale} />
-      </Suspense>
+      <div data-reveal className="space-y-6">
+        <Suspense fallback={<OverviewSkeleton />}>
+          <StatsOverviewSection t={t} locale={locale} />
+        </Suspense>
+      </div>
 
       {/* Time-series charts with period selector */}
-      <Suspense fallback={<TimeSeriesSkeleton />}>
-        <TimeSeriesSection locale={locale} labels={timeSeriesLabels} />
-      </Suspense>
+      <div data-reveal className="space-y-6">
+        <Suspense fallback={<TimeSeriesSkeleton />}>
+          <TimeSeriesSection locale={locale} labels={timeSeriesLabels} />
+        </Suspense>
+      </div>
 
       {/* Breakdown: libraries + top series + downloads */}
-      <Suspense fallback={<BreakdownSkeleton />}>
-        <StatsBreakdownSection t={t} locale={locale} />
-      </Suspense>
+      <div data-reveal className="space-y-6">
+        <Suspense fallback={<BreakdownSkeleton />}>
+          <StatsBreakdownSection t={t} locale={locale} />
+        </Suspense>
+      </div>
 
       {/* Quick links — always visible, no fetch */}
       <QuickLinks t={t} />

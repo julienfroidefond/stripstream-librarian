@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@/app/components/ui";
+import { JacketGrid } from "@/app/components/motion/JacketGrid";
 import { useTranslation } from "@/lib/i18n/context";
 import type { DiscoverySuggestion } from "../page";
 import { DiscoveryCard } from "./DiscoveryCard";
@@ -272,7 +273,7 @@ export function DiscoveryGrid({
               {t("discovery.noResults")}
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            <JacketGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
               {visibleSuggestions.map((suggestion) => (
                 <DiscoveryCard
                   key={`${activeProvider}-${suggestion.external_id}`}
@@ -282,7 +283,7 @@ export function DiscoveryGrid({
                   onHidden={(id) => setSuggestions((prev) => prev.filter((s) => s.external_id !== id))}
                 />
               ))}
-            </div>
+            </JacketGrid>
           )}
         </>
       )}

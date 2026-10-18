@@ -57,21 +57,25 @@ export function NavDropdown({
         title={label}
         aria-haspopup="menu"
         aria-expanded={open}
-        className={`flex items-center px-2 lg:px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200 active:scale-[0.98] ${
+        className={`group flex items-center px-2 lg:px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-200 active:scale-[0.98] ${
           isActive
             ? "text-primary bg-primary/10 hover:bg-primary/15"
             : "text-muted-foreground hover:text-foreground hover:bg-accent"
         }`}
       >
-        <NavIcon name={icon} className={color} />
+        <NavIcon name={icon} className={`${color ?? ""} transition-transform duration-200 ease-out group-hover:scale-110`} />
         <span className="ml-2 hidden xl:inline">{label}</span>
-        <Icon name="chevronDown" size="sm" className="!w-3 !h-3 ml-1 opacity-60" />
+        <Icon
+          name="chevronDown"
+          size="sm"
+          className={`!w-3 !h-3 ml-1 opacity-60 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+        />
       </button>
 
       {open && (
         <div
           role="menu"
-          className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-44 rounded-lg border border-border/60 bg-popover shadow-lg z-50 overflow-hidden py-1"
+          className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-44 rounded-lg border border-border/60 bg-popover shadow-lg z-50 overflow-hidden py-1 origin-top animate-scale-in stagger-children"
         >
           {items.map((item) => (
             <Link

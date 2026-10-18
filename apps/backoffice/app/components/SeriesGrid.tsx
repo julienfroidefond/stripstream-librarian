@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { getBookCoverUrl, type SeriesDto } from "@/lib/api";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
+import { JacketGrid } from "./motion/JacketGrid";
 import { MarkSeriesReadButton } from "./MarkSeriesReadButton";
 
 interface SeriesGridProps {
@@ -16,7 +17,7 @@ interface SeriesGridProps {
 
 export function SeriesGrid({ series, sort, hasActiveUser, t, knownStatuses, showCommunityScore = false }: SeriesGridProps) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
+    <JacketGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
       {series.map((s, index) => {
         const year = s.start_year;
         const previousYear = index > 0 ? series[index - 1].start_year : undefined;
@@ -116,6 +117,6 @@ export function SeriesGrid({ series, sort, hasActiveUser, t, knownStatuses, show
           </Fragment>
         );
       })}
-    </div>
+    </JacketGrid>
   );
 }

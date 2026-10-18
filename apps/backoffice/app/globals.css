@@ -255,23 +255,243 @@ body::before {
   outline-offset: 2px;
 }
 
-/* Animations */
+/* ------------------------------------------------------------------
+   Motion system
+   CSS-only animations (opacity plus the independent `translate` / `scale` /
+   `rotate` properties, so they never clobber a Tailwind `transform` utility
+   on the same element and the compositor can run them off the main thread),
+   shared across the backoffice. The `prefers-reduced-motion` block at the
+   end of this file neutralises everything for users who ask for less motion.
+   ------------------------------------------------------------------ */
+
+:root {
+  /* Langage de mouvement « projection » : une seule famille de courbes pour
+     toute l'application — un départ vif, une arrivée posée. Les amplitudes et
+     les durées sont franches : un geste doit se lire, pas se deviner. */
+  --ease-projection: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);
+  --motion-base: 560ms;
+  --motion-slow: 780ms;
+  --motion-cinema: 1050ms;
+  /* Perspective commune aux gestes 3D (affiches qui pivotent). */
+  --perspective: 1100px;
+}
+
+/* Entrée en scène : une seule fois, jamais en boucle. */
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
-.animate-fade-in {
-  animation: fade-in 0.3s ease-in;
+/* Texte et listes : ça monte en faisant le point. Le flou d'entrée fait
+   office de mise au point — l'objectif se règle sur ce qui entre en scène. */
+@keyframes reveal-up {
+  from { opacity: 0; translate: 0 28px; filter: blur(8px); }
+  to { opacity: 1; translate: 0 0; filter: blur(0px); }
+}
+
+@keyframes reveal-down {
+  from { opacity: 0; translate: 0 -28px; filter: blur(8px); }
+  to { opacity: 1; translate: 0 0; filter: blur(0px); }
+}
+
+/* Couvertures et cartes : elles montent, grandissent et font le point. */
+@keyframes settle {
+  from { opacity: 0; translate: 0 40px; scale: 0.92; filter: blur(10px); }
+  to { opacity: 1; translate: 0 0; scale: 1; filter: blur(0px); }
+}
+
+/* Rail horizontal : les cartes arrivent de la droite en pivotant, comme une
+   main qu'on étale sur la table. */
+@keyframes deal {
+  from { opacity: 0; transform: perspective(var(--perspective)) translateX(84px) rotateY(-24deg) scale(0.9); filter: blur(10px); }
+  to { opacity: 1; transform: perspective(var(--perspective)) translateX(0) rotateY(0deg) scale(1); filter: blur(0px); }
+}
+
+/* Bandeau/hero : il se soulève en pivotant vers le spectateur. */
+@keyframes lift {
+  from { opacity: 0; transform: perspective(var(--perspective)) translateY(56px) rotateX(18deg) rotateZ(-3deg) scale(0.9); filter: blur(12px); }
+  to { opacity: 1; transform: perspective(var(--perspective)) translateY(0) rotateX(0deg) rotateZ(0deg) scale(1); filter: blur(0px); }
+}
+
+/* Titre révélé par un masque : chaque mot remonte depuis sous sa ligne de
+   base, masqué par son parent en `overflow: hidden`. */
+@keyframes mask-rise {
+  from { translate: 0 110%; }
+}
+
+/* Couverture qui se lève dans son cadre, masquée par lui. */
+@keyframes cover-rise {
+  from { translate: 0 105%; }
+}
+
+/* Trait d'accent qui se trace sous un titre, une fois le titre posé. */
+@keyframes draw-line {
+  from { scale: 0 1; }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; scale: 0.9; filter: blur(6px); }
+  to { opacity: 1; scale: 1; filter: blur(0px); }
 }
 
 @keyframes slide-in-right {
-  from { opacity: 0; transform: translateX(100%); }
-  to { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; translate: 100% 0; }
+  to { opacity: 1; translate: 0 0; }
 }
 
-.animate-slide-in-right {
-  animation: slide-in-right 0.3s ease-out;
+@keyframes slide-out-right {
+  from { opacity: 1; translate: 0 0; }
+  to { opacity: 0; translate: 24px 0; }
+}
+
+@keyframes route-in {
+  from { opacity: 0; translate: 0 28px; filter: blur(8px); }
+  to { opacity: 1; translate: 0 0; filter: blur(0px); }
+}
+
+@keyframes count-in {
+  from { opacity: 0; translate: 0 70%; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+@keyframes shimmer {
+  from { translate: -100% 0; }
+  to { translate: 100% 0; }
+}
+
+@keyframes sheen {
+  from { translate: -120% 0; }
+  to { translate: 220% 0; }
+}
+
+@keyframes shake {
+  0%, 100% { translate: 0 0; }
+  20% { translate: -6px 0; }
+  40% { translate: 6px 0; }
+  60% { translate: -4px 0; }
+  80% { translate: 4px 0; }
+}
+
+/* Entrance animations use `backwards` fill: the start state is held during the
+   delay, then the animation plays and *releases* — the element returns to its
+   own styles. That matters because `both` would retain `filter: blur(0px)`
+   (a containing block for fixed descendants) and `transform` forever. Exit
+   animations use `forwards` so the element stays gone until it unmounts. */
+.animate-fade-in { animation: fade-in var(--motion-base) var(--ease-out) backwards; }
+.animate-fade-in-up { animation: reveal-up var(--motion-slow) var(--ease-projection) backwards; }
+.animate-fade-in-down { animation: reveal-down var(--motion-slow) var(--ease-projection) backwards; }
+.animate-lift { animation: lift var(--motion-cinema) var(--ease-projection) backwards; }
+.animate-mask-rise { animation: mask-rise var(--motion-slow) var(--ease-projection) backwards; }
+.animate-cover-rise { animation: cover-rise var(--motion-cinema) var(--ease-projection) backwards; }
+.animate-draw-line { animation: draw-line var(--motion-slow) var(--ease-projection) backwards; }
+.animate-scale-in { animation: scale-in 300ms var(--ease-projection) backwards; }
+.animate-slide-in-right { animation: slide-in-right 340ms var(--ease-projection) backwards; }
+.animate-slide-out-right { animation: slide-out-right 180ms var(--ease-in) forwards; }
+.animate-route-in { animation: route-in var(--motion-slow) var(--ease-projection) backwards; }
+.animate-count-in { animation: count-in var(--motion-slow) var(--ease-projection) backwards; }
+.animate-shake { animation: shake 480ms var(--ease-out) backwards; }
+
+/* Staggered entrance for list/menu containers. Children rise in sequence;
+   the step is a readable 60ms and the delay is capped past the 9th item so a
+   long grid still lands as one gesture instead of a slow wave. Applied to
+   fresh mounts only (lists, dropdowns, drawers). */
+.stagger-children > * {
+  animation: reveal-up var(--motion-slow) var(--ease-projection) backwards;
+}
+
+/* Rail variant: cards are dealt in from the right, pivoting as they land. */
+.stagger-deal > * {
+  animation: deal var(--motion-slow) var(--ease-projection) backwards;
+}
+
+:is(.stagger-children, .stagger-deal) > *:nth-child(1) { animation-delay: 0ms; }
+:is(.stagger-children, .stagger-deal) > *:nth-child(2) { animation-delay: 60ms; }
+:is(.stagger-children, .stagger-deal) > *:nth-child(3) { animation-delay: 120ms; }
+:is(.stagger-children, .stagger-deal) > *:nth-child(4) { animation-delay: 180ms; }
+:is(.stagger-children, .stagger-deal) > *:nth-child(5) { animation-delay: 240ms; }
+:is(.stagger-children, .stagger-deal) > *:nth-child(6) { animation-delay: 300ms; }
+:is(.stagger-children, .stagger-deal) > *:nth-child(7) { animation-delay: 360ms; }
+:is(.stagger-children, .stagger-deal) > *:nth-child(8) { animation-delay: 420ms; }
+:is(.stagger-children, .stagger-deal) > *:nth-child(n + 9) { animation-delay: 480ms; }
+
+/* Skeleton shimmer — a light sweep instead of the flat opacity pulse.
+   No positioning of its own, so it can be layered onto both static and
+   absolutely-positioned placeholders; the host creates the positioning
+   context for the `::after` sweep. */
+.skeleton-shimmer {
+  overflow: hidden;
+  background-color: var(--color-muted);
+}
+
+.skeleton-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  translate: -100% 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--color-card) 85%, transparent),
+    transparent
+  );
+  animation: shimmer 1.6s var(--ease-out) infinite;
+}
+
+.dark .skeleton-shimmer::after {
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.08), transparent);
+}
+
+/* Progress sheen — a running highlight on an in-flight determinate bar.
+   Consumed by ProgressBar as a conditional class, so the markup is
+   unchanged (the fill just becomes the positioning context). */
+.progress-active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  translate: -120% 0;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.45), transparent);
+  animation: sheen 2.2s var(--ease-out) infinite;
+}
+
+/* Scroll reveal — driven by <MotionReveal/> via the `[data-reveal]`
+   attribute. The hidden state only applies once the `.js-motion` flag is
+   set on <html> (pre-paint inline script), so the content stays visible
+   without JavaScript and there is no flash of unstyled content. */
+.js-motion [data-reveal] {
+  opacity: 0;
+  translate: 0 32px;
+  filter: blur(8px);
+  transition:
+    opacity var(--motion-slow) var(--ease-projection),
+    translate var(--motion-slow) var(--ease-projection),
+    filter var(--motion-slow) var(--ease-projection);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+.js-motion [data-reveal].is-revealed {
+  opacity: 1;
+  translate: none;
+  filter: none;
+}
+
+/* Jacket grids — les couvertures se posent ligne par ligne.
+   <JacketGrid/> guette chaque carte et écrit `data-jacket="revealed"` avec un
+   délai égal à son rang dans sa ligne (variable `--jacket-delay`) : une ligne
+   se déploie de gauche à droite, les suivantes attendent le défilement.
+   L'état caché n'existe que sous `.js-motion` (sans JavaScript les couvertures
+   sont là) et le geste est porté par une animation à remplissage `backwards` :
+   elle libère `translate`/`scale`/`filter` en fin de course, donc l'effet de
+   survol des cartes (qui passe par ces mêmes propriétés) garde la main. */
+.js-motion [data-jackets] > * {
+  opacity: 0;
+}
+
+.js-motion [data-jackets] > *[data-jacket="revealed"] {
+  opacity: 1;
+  animation: settle var(--motion-cinema) var(--ease-projection) backwards;
+  animation-delay: var(--jacket-delay, 0ms);
 }
 
 /* Line clamp utilities */
@@ -323,4 +543,40 @@ body::before {
 
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+/* ------------------------------------------------------------------
+   Reduced motion
+   Collapse every animation/transition to an instant state change and
+   disable smooth scrolling. Spinners keep a slow rotation (instead of
+   freezing) so an in-flight request is still legible.
+   ------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* A spinner is a status, not decoration: keep it turning, just slower. */
+  .animate-spin {
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
+  }
+
+  .js-motion [data-reveal],
+  .js-motion [data-reveal].is-revealed {
+    opacity: 1;
+    translate: none;
+    filter: none;
+  }
+
+  .js-motion [data-jackets] > * {
+    opacity: 1;
+  }
 }
