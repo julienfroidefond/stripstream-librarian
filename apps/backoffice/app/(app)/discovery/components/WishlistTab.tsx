@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Icon } from "@/app/components/ui";
+import { JacketGrid } from "@/app/components/motion/JacketGrid";
 import { useTranslation } from "@/lib/i18n/context";
 import { getBookCoverUrl, type SeriesDto } from "@/lib/api";
 
@@ -57,7 +58,7 @@ export function WishlistTab({ libraries }: { libraries: Library[] }) {
       <p className="text-sm text-muted-foreground">
         {t("discovery.wishlistCount", { count: String(series.length), plural: series.length !== 1 ? "s" : "" })}
       </p>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+      <JacketGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
         {series.map((s) => (
           <Link key={s.series_id} href={`/series/${s.series_id}`} className="group block">
             <div className="bg-card rounded-xl shadow-sm border border-border/60 overflow-hidden group-hover:shadow-md group-hover:-translate-y-1 transition-all duration-200">
@@ -106,7 +107,7 @@ export function WishlistTab({ libraries }: { libraries: Library[] }) {
             </div>
           </Link>
         ))}
-      </div>
+      </JacketGrid>
     </div>
   );
 }

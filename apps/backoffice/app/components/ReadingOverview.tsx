@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Card, Icon, type IconName } from "@/app/components/ui";
+import { JacketGrid } from "@/app/components/motion/JacketGrid";
 import { getBookCoverUrl } from "@/lib/api";
 import type {
   UserReadingOverviewDto,
@@ -270,7 +271,7 @@ function SeriesBooksGrid({
   }
 
   return (
-    <div className="grid grid-cols-4 sm:grid-cols-6 xl:grid-cols-8 gap-3 pt-1 pb-4">
+    <JacketGrid className="grid grid-cols-4 sm:grid-cols-6 xl:grid-cols-8 gap-3 pt-1 pb-4">
       {books
         ? books.map((book) => <VolumeTile key={book.book_id} book={book} />)
         : Array.from({ length: Math.max(1, Math.min(booksTotal, 8)) }, (_, i) => (
@@ -279,7 +280,7 @@ function SeriesBooksGrid({
               <div className="h-2.5 w-8 mt-1.5 rounded bg-muted animate-pulse" />
             </div>
           ))}
-    </div>
+    </JacketGrid>
   );
 }
 
@@ -452,7 +453,7 @@ function UserOverview({ user }: { user: UserReadingOverviewDto }) {
       {user.currently_reading.length > 0 && (
         <section>
           <SectionTitle count={user.currently_reading.length}>{t("settings.readingOverview.currentlyReading")}</SectionTitle>
-          <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-2 snap-x scrollbar-thin">
+          <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-2 snap-x scrollbar-thin stagger-deal">
             {user.currently_reading.map((book) => (
               <CurrentlyReadingCard key={book.book_id} book={book} />
             ))}

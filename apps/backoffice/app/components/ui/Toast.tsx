@@ -10,7 +10,13 @@ interface ToastItem {
   id: number;
   message: string;
   variant: ToastVariant;
+  /** Set while the exit animation plays, just before the toast is removed. */
+  leaving?: boolean;
 }
+
+// How long a toast stays on screen, then how long its exit animation lasts.
+const TOAST_DURATION = 3000;
+const TOAST_EXIT = 180;
 
 // Module-level store — no Provider needed
 let toasts: ToastItem[] = [];
@@ -26,8 +32,18 @@ function addToast(message: string, variant: ToastVariant = "success") {
   toasts = [...toasts, { id, message, variant }];
   notify();
   setTimeout(() => {
+    beginRemoveToast(id);
+  }, TOAST_DURATION);
+}
+
+/** Flags a toast as leaving so it plays its exit animation, then drops it. */
+function beginRemoveToast(id: number) {
+  if (!toasts.some((t) => t.id === id && !t.leaving)) return;
+  toasts = toasts.map((t) => (t.id === id ? { ...t, leaving: true } : t));
+  notify();
+  setTimeout(() => {
     removeToast(id);
-  }, 3000);
+  }, TOAST_EXIT);
 }
 
 function removeToast(id: number) {
@@ -63,7 +79,7 @@ export function Toaster() {
   return createPortal(
     <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
       {items.map((t) => (
-        <ToastCard key={t.id} item={t} onDismiss={() => removeToast(t.id)} />
+        <ToastCard key={t.id} item={t} onDismiss={() => beginRemoveToast(t.id)} />
       ))}
     </div>,
     document.body
@@ -85,7 +101,9 @@ const variantIcons: Record<ToastVariant, "check" | "warning" | "eye"> = {
 function ToastCard({ item, onDismiss }: { item: ToastItem; onDismiss: () => void }) {
   return (
     <div
-      className={`flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg backdrop-blur-sm animate-slide-in-right min-w-[280px] max-w-[420px] ${variantStyles[item.variant]}`}
+      className={`flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg backdrop-blur-sm min-w-[280px] max-w-[420px] ${
+        item.leaving ? "animate-slide-out-right" : "animate-slide-in-right"
+      } ${variantStyles[item.variant]}`}
     >
       <Icon name={variantIcons[item.variant]} size="sm" />
       <span className="text-sm font-medium flex-1">{item.message}</span>

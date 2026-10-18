@@ -1,6 +1,7 @@
 import { fetchBooks, fetchAllSeries, BooksPageDto, SeriesPageDto, getBookCoverUrl } from "@/lib/api";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { BooksGrid } from "@/app/components/BookCard";
+import { JacketGrid } from "@/app/components/motion/JacketGrid";
 import { OffsetPagination } from "@/app/components/ui";
 import Image from "next/image";
 import Link from "next/link";
@@ -74,7 +75,7 @@ export default async function AuthorDetailPage({
           <h2 className="text-xl font-semibold text-foreground mb-4">
             {t("authors.seriesBy", { name: authorName })}
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
+          <JacketGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
             {authorSeries.map((s) => (
               <Link
                 key={`${s.library_id}-${s.series_id}`}
@@ -110,7 +111,7 @@ export default async function AuthorDetailPage({
                 </div>
               </Link>
             ))}
-          </div>
+          </JacketGrid>
         </section>
       )}
 

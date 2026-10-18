@@ -12,6 +12,9 @@ import { NavDropdown } from "@/app/components/NavDropdown";
 import type { IconName } from "@/app/components/ui/Icon";
 import { LogoutButton } from "@/app/components/LogoutButton";
 import { MobileNav } from "@/app/components/MobileNav";
+import { MotionReveal } from "@/app/components/MotionReveal";
+import { RouteTransition } from "@/app/components/RouteTransition";
+import { ScrollProgress } from "@/app/components/motion";
 import { UserSwitcher } from "@/app/components/UserSwitcher";
 import { fetchUsers, fetchDownloadsEnabled } from "@/lib/api";
 import { getServerTranslations } from "@/lib/i18n/server";
@@ -128,7 +131,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
                 />
               ) : (
                 <NavLink key={entry.href} href={entry.href} title={t(entry.labelKey)}>
-                  <NavIcon name={entry.icon} className={entry.color} />
+                  <NavIcon
+                    name={entry.icon}
+                    className={`${entry.color ?? ""} transition-transform duration-200 ease-out group-hover:scale-110`}
+                  />
                   <span className="ml-2 hidden xl:inline">{t(entry.labelKey)}</span>
                 </NavLink>
               )
@@ -185,6 +191,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             />
           </div>
         </div>
+
+        {/* Fil de progression de lecture, posé sur le bord bas de l'en-tête. */}
+        <ScrollProgress className="absolute inset-x-0 bottom-0 h-[2px] bg-gradient-to-r from-primary via-highlight to-warning" />
       </header>
 
       <main
@@ -197,10 +206,11 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           paddingBottom: "max(4rem, env(safe-area-inset-bottom))",
         }}
       >
-        {children}
+        <RouteTransition>{children}</RouteTransition>
       </main>
 
       <Toaster />
+      <MotionReveal />
     </>
   );
 }

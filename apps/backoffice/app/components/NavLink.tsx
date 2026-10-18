@@ -20,7 +20,7 @@ export function NavLink({
       href={href as "/"}
       title={title}
       className={`
-        flex items-center
+        group flex items-center
         px-2 lg:px-3 py-2
         rounded-lg
         text-sm font-medium

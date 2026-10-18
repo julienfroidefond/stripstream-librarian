@@ -174,7 +174,7 @@ describe("Toast", () => {
 
   afterEach(() => {
     act(() => {
-      vi.runOnlyPendingTimers();
+      vi.runAllTimers();
     });
     vi.useRealTimers();
   });
@@ -188,8 +188,15 @@ describe("Toast", () => {
     });
     expect(screen.getByText("Saved")).toBeInTheDocument();
 
+    // After the display window the toast starts its exit animation…
     act(() => {
       vi.advanceTimersByTime(3000);
+    });
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+
+    // …and is dropped once the animation has played.
+    act(() => {
+      vi.advanceTimersByTime(200);
     });
     expect(screen.queryByText("Saved")).toBeNull();
   });
@@ -204,6 +211,9 @@ describe("Toast", () => {
     expect(message.parentElement?.className).toContain("border-destructive/50");
 
     fireEvent.click(screen.getByRole("button"));
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
     expect(screen.queryByText("Oops")).toBeNull();
   });
 

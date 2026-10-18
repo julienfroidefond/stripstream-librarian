@@ -46,12 +46,12 @@ export async function StatsOverviewSection({ t, locale }: Props) {
     <>
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <StatCard icon="book" label={t("dashboard.books")} value={formatNumber(overview.total_books, locale)} color="success" />
-        <StatCard icon="series" label={t("dashboard.series")} value={formatNumber(overview.total_series, locale)} color="primary" />
-        <StatCard icon="library" label={t("dashboard.libraries")} value={formatNumber(overview.total_libraries, locale)} color="warning" />
-        <StatCard icon="pages" label={t("dashboard.pages")} value={formatNumber(overview.total_pages, locale)} color="primary" />
-        <StatCard icon="author" label={t("dashboard.authors")} value={formatNumber(overview.total_authors, locale)} color="success" />
-        <StatCard icon="size" label={t("dashboard.totalSize")} value={formatBytes(overview.total_size_bytes)} color="warning" />
+        <StatCard icon="book" label={t("dashboard.books")} value={formatNumber(overview.total_books, locale)} countTo={overview.total_books} locale={locale} color="success" />
+        <StatCard icon="series" label={t("dashboard.series")} value={formatNumber(overview.total_series, locale)} countTo={overview.total_series} locale={locale} color="primary" />
+        <StatCard icon="library" label={t("dashboard.libraries")} value={formatNumber(overview.total_libraries, locale)} countTo={overview.total_libraries} locale={locale} color="warning" />
+        <StatCard icon="pages" label={t("dashboard.pages")} value={formatNumber(overview.total_pages, locale)} countTo={overview.total_pages} locale={locale} color="primary" />
+        <StatCard icon="author" label={t("dashboard.authors")} value={formatNumber(overview.total_authors, locale)} countTo={overview.total_authors} locale={locale} color="success" />
+        <StatCard icon="size" label={t("dashboard.totalSize")} value={formatBytes(overview.total_size_bytes, locale)} color="warning" />
       </div>
 
       {/* Currently reading + Recently read */}

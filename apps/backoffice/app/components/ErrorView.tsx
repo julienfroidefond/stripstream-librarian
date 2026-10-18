@@ -24,7 +24,7 @@ export function ErrorView({ error, reset }: ErrorViewProps) {
   }, [error]);
 
   return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
+    <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center animate-fade-in-up">
       <h1 className="text-2xl font-bold text-foreground">{t("error.title")}</h1>
       <p className="mt-2 max-w-md text-sm text-muted-foreground">{t("error.description")}</p>
       {error.digest && (

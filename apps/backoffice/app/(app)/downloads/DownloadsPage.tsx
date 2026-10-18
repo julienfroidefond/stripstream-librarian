@@ -589,12 +589,12 @@ export function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadD
 
       {showConfirm && createPortal(
         <>
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none" />
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none animate-fade-in" />
           <div
             className="fixed inset-0 flex items-center justify-center z-50 p-4"
             onClick={(event) => { if (event.target === event.currentTarget) setShowConfirm(false); }}
           >
-            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-in">
               <div className="p-6">
                 <h3 className="text-lg font-semibold text-foreground mb-2">
                   {dl.status === "downloading" ? t("downloads.cancel") : t("downloads.delete")}
@@ -748,12 +748,12 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
 
       {showConfirm && createPortal(
         <>
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none" />
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none animate-fade-in" />
           <div
             className="fixed inset-0 flex items-center justify-center z-50 p-4"
             onClick={(event) => { if (event.target === event.currentTarget) setShowConfirm(false); }}
           >
-            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-in">
               <div className="p-6">
                 <h3 className="text-lg font-semibold text-foreground mb-2">
                   {(item.status === "queued" || item.status === "downloading") ? t("downloads.cancel") : t("downloads.delete")}
@@ -930,12 +930,12 @@ function DdlProviderDownloadRow({ item, onRefresh }: { item: DdlProviderDownload
 
       {showConfirm && createPortal(
         <>
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none" />
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none animate-fade-in" />
           <div
             className="fixed inset-0 flex items-center justify-center z-50 p-4"
             onClick={(event) => { if (event.target === event.currentTarget) setShowConfirm(false); }}
           >
-            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-in">
               <div className="p-6">
                 <h3 className="text-lg font-semibold text-foreground mb-2">
                   {isActive ? t("downloads.cancel") : t("downloads.delete")}

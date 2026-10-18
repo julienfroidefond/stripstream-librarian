@@ -142,7 +142,7 @@ export function LibraryActions({
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none"
+            className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 pointer-events-none animate-fade-in"
           />
 
           {/* Modal */}
@@ -150,7 +150,7 @@ export function LibraryActions({
             className="fixed inset-0 flex items-center justify-center z-50 p-4"
             onClick={(event) => { if (event.target === event.currentTarget) setIsOpen(false); }}
           >
-            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-card border border-border/50 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-scale-in">
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 bg-muted/30">
                 <div className="flex items-center gap-2.5">

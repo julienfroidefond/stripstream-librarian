@@ -12,7 +12,7 @@ export async function NotFoundView() {
   const { t } = await getServerTranslations();
 
   return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
+    <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center animate-fade-in-up">
       <p aria-hidden="true" className="text-6xl font-bold tracking-tight text-muted-foreground/30">
         404
       </p>

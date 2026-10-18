@@ -132,8 +132,9 @@ export default async function SeriesDetailPage({
         <span className="text-foreground font-medium">{displayName}</span>
       </div>
 
-      {/* Series Header */}
-      <div className="flex flex-col sm:flex-row gap-6">
+      {/* Series Header — the whole band lifts off the page, the cover rises
+          into its frame from behind the bottom edge. */}
+      <div className="flex flex-col sm:flex-row gap-6 animate-lift">
         {(coverBookId || seriesCoverUrl) && (
           <div className="flex-shrink-0">
             <div className="w-40 aspect-[2/3] relative rounded-xl overflow-hidden shadow-card border border-border">
@@ -142,7 +143,7 @@ export default async function SeriesDetailPage({
                   src={getBookCoverUrl(coverBookId, coverBookUpdatedAt)}
                   alt={t("books.coverOf", { name: displayName })}
                   fill
-                  className="object-cover"
+                  className="object-cover animate-cover-rise"
                   sizes="160px"
                 />
               ) : (
@@ -150,7 +151,7 @@ export default async function SeriesDetailPage({
                 <img
                   src={seriesCoverUrl!}
                   alt={t("books.coverOf", { name: displayName })}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover animate-cover-rise"
                 />
               )}
             </div>
@@ -158,7 +159,13 @@ export default async function SeriesDetailPage({
         )}
 
         <div className="flex-1 space-y-4">
-          <h1 className="text-3xl font-bold text-foreground">{displayName}</h1>
+          <h1 className="text-3xl font-bold text-foreground">
+            <span className="block overflow-hidden pb-0.5">
+              <span className="block animate-mask-rise" style={{ animationDelay: "160ms" }}>
+                {displayName}
+              </span>
+            </span>
+          </h1>
 
           <div className="flex flex-wrap items-center gap-3">
             {seriesMeta && seriesMeta.authors.length > 0 && (

@@ -69,6 +69,14 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   return (
     <html lang={locale} suppressHydrationWarning>
       <head>
+        {/* Flag set before first paint so the scroll-reveal system can hide
+            `[data-reveal]` surfaces without flashing them first. Without JS
+            the attribute is simply never set and everything stays visible. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "document.documentElement.classList.add('js-motion');",
+          }}
+        />
         {/* Explicit apple-touch-icons (iOS ignores manifest.json icons) */}
         <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
         <link rel="apple-touch-icon" sizes="167x167" href="/icons/apple-touch-icon-167.png" />

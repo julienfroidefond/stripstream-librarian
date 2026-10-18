@@ -29,11 +29,12 @@ export function ProgressBar({
   className = "" 
 }: ProgressBarProps) {
   const percent = Math.min(100, Math.max(0, (value / max) * 100));
+  const inFlight = percent > 0 && percent < 100;
   
   return (
     <div className={`relative ${sizeStyles[size]} bg-muted/50 rounded-full overflow-hidden ${className}`}>
       <div 
-        className={`absolute inset-y-0 left-0 rounded-full transition-all duration-500 ease-out ${variantStyles[variant]}`}
+        className={`absolute inset-y-0 left-0 rounded-full overflow-hidden transition-all duration-500 ease-out ${variantStyles[variant]} ${inFlight ? "progress-active" : ""}`}
         style={{ width: `${percent}%` }}
       />
       {showLabel && (
@@ -60,11 +61,12 @@ export function MiniProgressBar({
   className = "" 
 }: MiniProgressBarProps) {
   const percent = Math.min(100, Math.max(0, (value / max) * 100));
+  const inFlight = percent > 0 && percent < 100;
   
   return (
     <div className={`flex-1 h-1.5 bg-muted/50 rounded-full overflow-hidden ${className}`}>
       <div 
-        className={`h-full rounded-full transition-all duration-500 ease-out ${variantStyles[variant]}`}
+        className={`relative h-full rounded-full overflow-hidden transition-all duration-500 ease-out ${variantStyles[variant]} ${inFlight ? "progress-active" : ""}`}
         style={{ width: `${percent}%` }}
       />
     </div>

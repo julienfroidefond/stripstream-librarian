@@ -3,6 +3,7 @@ import { BooksGrid, EmptyState } from "@/app/components/BookCard";
 import { LiveSearchForm } from "@/app/components/LiveSearchForm";
 import { RefreshButton } from "@/app/components/RefreshButton";
 import { Card, CardContent, OffsetPagination } from "@/app/components/ui";
+import { JacketGrid } from "@/app/components/motion/JacketGrid";
 import Link from "next/link";
 import Image from "next/image";
 import { getServerTranslations } from "@/lib/i18n/server";
@@ -141,7 +142,7 @@ export default async function BooksPage({
       {seriesHits.length > 0 && (
         <div className="mb-8">
           <h2 className="text-lg font-semibold text-foreground mb-3">{t("books.seriesHeading")}</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          <JacketGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {seriesHits.map((s) => (
               <Link
                 key={`${s.library_id}-${s.series_id}`}
@@ -169,7 +170,7 @@ export default async function BooksPage({
                 </div>
               </Link>
             ))}
-          </div>
+          </JacketGrid>
         </div>
       )}
 

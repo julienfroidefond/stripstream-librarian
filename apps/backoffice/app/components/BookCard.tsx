@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { BookDto, ReadingStatus } from "../../lib/api";
 import { useTranslation } from "@/lib/i18n/context";
+import { JacketGrid } from "./motion/JacketGrid";
 import { MarkBookReadButton } from "./MarkBookReadButton";
 
 const readingStatusOverlayClasses: Record<ReadingStatus, string | null> = {
@@ -37,7 +38,7 @@ const BookImage = memo(function BookImage({ src, alt, dimmed }: { src: string; a
     <div className="relative aspect-[2/3] overflow-hidden bg-muted">
       {/* Skeleton */}
       <div
-        className={`absolute inset-0 bg-muted/50 animate-pulse transition-opacity duration-300 ${
+        className={`absolute inset-0 skeleton-shimmer transition-opacity duration-300 ${
           isLoaded ? 'opacity-0 pointer-events-none' : 'opacity-100'
         }`}
       />
@@ -206,11 +207,11 @@ interface BooksGridProps {
 
 export function BooksGrid({ books, compact, hasActiveUser = true }: BooksGridProps) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
+    <JacketGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
       {books.map((book) => (
         <BookCard key={book.id} book={book} compact={compact} hasActiveUser={hasActiveUser} />
       ))}
-    </div>
+    </JacketGrid>
   );
 }
 
@@ -256,20 +257,28 @@ function MissingBookCard({ book }: { book: MissingBook }) {
     </>
   );
 
-  const baseClass = "group bg-card rounded-xl border border-dashed border-border/60 shadow-sm overflow-hidden opacity-50";
+  const baseClass = "group bg-card rounded-xl border border-dashed border-border/60 shadow-sm overflow-hidden";
+  // Dim the card contents rather than the root element: the root also carries
+  // the stagger entrance animation, and an animated `opacity` would win over
+  // an `opacity-*` utility on the same element.
+  const dimmedContent = (
+    <div className="opacity-50 transition-opacity duration-200 group-hover:opacity-100">
+      {content}
+    </div>
+  );
 
   if (book.href) {
     return (
       <Link
         href={book.href as `/books/missing?${string}`}
-        className={`${baseClass} hover:opacity-100 hover:shadow-md hover:-translate-y-1 transition-all duration-200`}
+        className={`${baseClass} hover:shadow-md hover:-translate-y-1 transition-all duration-200`}
       >
-        {content}
+        {dimmedContent}
       </Link>
     );
   }
 
-  return <div className={baseClass}>{content}</div>;
+  return <div className={baseClass}>{dimmedContent}</div>;
 }
 
 export function BooksGridWithMissing({
@@ -329,7 +338,7 @@ export function BooksGridWithMissing({
   });
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
+    <JacketGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
       {merged.map((item, idx) =>
         item.kind === "owned" ? (
           <BookCard key={item.book.id} book={item.book} compact={compact} hasActiveUser={hasActiveUser} />
@@ -340,7 +349,7 @@ export function BooksGridWithMissing({
           />
         )
       )}
-    </div>
+    </JacketGrid>
   );
 }
 

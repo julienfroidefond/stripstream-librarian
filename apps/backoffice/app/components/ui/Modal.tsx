@@ -39,12 +39,12 @@ export function Modal({ isOpen, onClose, title, children, footer, maxWidth = "2x
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm animate-fade-in"
       onClick={() => !disableClose && onClose()}
     >
       <div
         data-testid="modal-panel"
-        className={`bg-card border border-border/50 rounded-xl shadow-2xl w-full ${MAX_WIDTH_MAP[maxWidth]} max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200`}
+        className={`bg-card border border-border/50 rounded-xl shadow-2xl w-full ${MAX_WIDTH_MAP[maxWidth]} max-h-[90vh] overflow-y-auto animate-scale-in`}
         onClick={(event) => event.stopPropagation()}
       >
         {/* Header */}
