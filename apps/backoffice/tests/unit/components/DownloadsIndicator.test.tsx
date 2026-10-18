@@ -25,10 +25,21 @@ class FakeEventSource {
   }
 }
 
+const STREAM_URL = "/api/downloads/stream";
+
 function sourceFor(url: string): FakeEventSource {
   const source = FakeEventSource.instances.find((instance) => instance.url === url);
   if (!source) throw new Error(`no EventSource opened for ${url}`);
   return source;
+}
+
+/** Emits a `/api/downloads/stream` frame with the sources not listed left empty. */
+function emit(payload: {
+  torrent?: unknown[];
+  telegram?: unknown[];
+  ddl?: unknown[];
+}) {
+  act(() => sourceFor(STREAM_URL).emit({ torrent: [], telegram: [], ddl: [], ...payload }));
 }
 
 function ddlDownload(overrides: Record<string, unknown> = {}) {
@@ -72,16 +83,25 @@ describe("DownloadsIndicator", () => {
     expect(screen.getByTitle("downloadsIndicator.viewAll")).toBeInTheDocument();
   });
 
+  it("watches every source over a single connection", () => {
+    render(<DownloadsIndicator />);
+
+    // One long-lived connection per source would saturate the browser's
+    // per-origin cap and stall client-side navigation.
+    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(FakeEventSource.instances[0].url).toBe(STREAM_URL);
+  });
+
   it("counts active DDL downloads in the badge", () => {
     render(<DownloadsIndicator />);
 
-    act(() =>
-      sourceFor("/api/ddl-provider-downloads/stream").emit([
+    emit({
+      ddl: [
         ddlDownload({ id: "d1", status: "downloading" }),
         ddlDownload({ id: "d2", status: "imported" }),
         ddlDownload({ id: "d3", status: "failed" }),
-      ])
-    );
+      ],
+    });
 
     expect(badgeCount()).toBe(1);
   });
@@ -89,11 +109,7 @@ describe("DownloadsIndicator", () => {
   it("counts queued DDL downloads too", () => {
     render(<DownloadsIndicator />);
 
-    act(() =>
-      sourceFor("/api/ddl-provider-downloads/stream").emit([
-        ddlDownload({ id: "d1", status: "queued", bytes_downloaded: 0 }),
-      ])
-    );
+    emit({ ddl: [ddlDownload({ id: "d1", status: "queued", bytes_downloaded: 0 })] });
 
     expect(badgeCount()).toBe(1);
   });
@@ -101,11 +117,7 @@ describe("DownloadsIndicator", () => {
   it("shows a queued DDL download as queued rather than downloading", () => {
     render(<DownloadsIndicator />);
 
-    act(() =>
-      sourceFor("/api/ddl-provider-downloads/stream").emit([
-        ddlDownload({ id: "d1", status: "queued", bytes_downloaded: 0 }),
-      ])
-    );
+    emit({ ddl: [ddlDownload({ id: "d1", status: "queued", bytes_downloaded: 0 })] });
 
     fireEvent.click(screen.getByTitle(/downloadsIndicator\.downloadCount/));
 
@@ -116,8 +128,8 @@ describe("DownloadsIndicator", () => {
   it("aggregates torrent, telegram and DDL downloads", () => {
     render(<DownloadsIndicator />);
 
-    act(() =>
-      sourceFor("/api/torrent-downloads/stream").emit([
+    emit({
+      torrent: [
         {
           id: "t1",
           source: "prowlarr",
@@ -130,10 +142,8 @@ describe("DownloadsIndicator", () => {
           eta: 0,
           error_message: null,
         },
-      ])
-    );
-    act(() =>
-      sourceFor("/api/telegram-monitor/downloads/stream").emit([
+      ],
+      telegram: [
         {
           id: "tg1",
           series_name: "Berserk",
@@ -146,9 +156,9 @@ describe("DownloadsIndicator", () => {
           status: "downloading",
           error_message: null,
         },
-      ])
-    );
-    act(() => sourceFor("/api/ddl-provider-downloads/stream").emit([ddlDownload()]));
+      ],
+      ddl: [ddlDownload()],
+    });
 
     expect(badgeCount()).toBe(3);
   });
@@ -156,11 +166,10 @@ describe("DownloadsIndicator", () => {
   it("drops DDL downloads once they are imported", () => {
     render(<DownloadsIndicator />);
 
-    const source = sourceFor("/api/ddl-provider-downloads/stream");
-    act(() => source.emit([ddlDownload({ status: "downloading" })]));
+    emit({ ddl: [ddlDownload({ status: "downloading" })] });
     expect(badgeCount()).toBe(1);
 
-    act(() => source.emit([ddlDownload({ status: "imported" })]));
+    emit({ ddl: [ddlDownload({ status: "imported" })] });
     expect(screen.getByTitle("downloadsIndicator.viewAll")).toBeInTheDocument();
   });
 });

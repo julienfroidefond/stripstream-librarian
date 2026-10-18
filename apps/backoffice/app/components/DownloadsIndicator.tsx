@@ -52,6 +52,13 @@ interface DdlProviderDownload {
   error_message: string | null;
 }
 
+/** Payload of `/api/downloads/stream` — the three sources over one connection. */
+interface DownloadsPayload {
+  torrent: Omit<Download, "source">[];
+  telegram: TelegramDownload[];
+  ddl: DdlProviderDownload[];
+}
+
 const STATUS_ACTIVE = new Set(["downloading", "completed", "importing"]);
 
 function normalizeTorrentDownload(download: Omit<Download, "source">): Download {
@@ -134,33 +141,23 @@ export function DownloadsIndicator() {
   const [activeDdlDownloads, setActiveDdlDownloads] = useState<Download[]>([]);
   const { isOpen, setIsOpen, buttonRef, popinRef, popinStyle } = usePopin();
 
-  useEventSource<Omit<Download, "source">[]>({
-    url: "/api/torrent-downloads/stream",
-    onMessage: (allDownloads) => {
+  useEventSource<DownloadsPayload>({
+    url: "/api/downloads/stream",
+    onMessage: ({ torrent, telegram, ddl }) => {
       setActiveTorrentDownloads(
-        allDownloads
+        torrent
           .filter(d => STATUS_ACTIVE.has(d.status))
           .map(normalizeTorrentDownload)
       );
-    },
-  });
 
-  useEventSource<TelegramDownload[]>({
-    url: "/api/telegram-monitor/downloads/stream",
-    onMessage: (allDownloads) => {
       setActiveTelegramDownloads(
-        allDownloads
+        telegram
           .filter(download => download.status === "downloading")
           .map(normalizeTelegramDownload)
       );
-    },
-  });
 
-  useEventSource<DdlProviderDownload[]>({
-    url: "/api/ddl-provider-downloads/stream",
-    onMessage: (allDownloads) => {
       setActiveDdlDownloads(
-        allDownloads
+        ddl
           .filter(download => download.status === "queued" || download.status === "downloading")
           .map(normalizeDdlDownload)
       );
