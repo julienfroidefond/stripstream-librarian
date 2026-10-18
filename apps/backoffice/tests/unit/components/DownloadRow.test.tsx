@@ -106,4 +106,22 @@ describe("DownloadRow — torrent details", () => {
 
     expect(screen.queryByText(/downloads\.seeders/)).not.toBeInTheDocument();
   });
+
+  it("keeps the progress bar at 100% while the download is importing", () => {
+    renderRow(torrentDownload({ client: "alldebrid", status: "importing", progress: 1 }));
+
+    expect(screen.getByText("100%")).toBeInTheDocument();
+  });
+
+  it("hides the bar for an import retried from a partially-downloaded state", () => {
+    renderRow(torrentDownload({ client: "alldebrid", status: "importing", progress: 0.6 }));
+
+    expect(screen.queryByText("60%")).not.toBeInTheDocument();
+  });
+
+  it("hides the bar while the download is still transferring", () => {
+    renderRow(torrentDownload({ client: "alldebrid", status: "downloading", progress: 0.6 }));
+
+    expect(screen.getByText("60%")).toBeInTheDocument();
+  });
 });

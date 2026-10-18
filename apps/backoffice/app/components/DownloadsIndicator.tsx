@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useTranslation } from "@/lib/i18n/context";
 import { MiniProgressBar, ProgressBar } from "./ui/ProgressBar";
 import { formatEta, formatSpeed, formatVolumes } from "@/lib/format";
+import { showsDownloadProgress } from "@/lib/download";
 import { useEventSource } from "@/lib/useEventSource";
 import { usePopin } from "@/lib/usePopin";
 
@@ -297,16 +298,16 @@ export function DownloadsIndicator() {
                         </p>
                       )}
 
-                      {dl.status === "downloading" && (
+                      {showsDownloadProgress(dl.status, dl.progress) && (
                         <div className="flex items-center gap-2 mt-1">
                           <MiniProgressBar value={dl.progress * 100} />
                           <span className="text-xs font-medium text-muted-foreground tabular-nums">
                             {Math.round(dl.progress * 100)}%
                           </span>
-                          {dl.download_speed > 0 && (
+                          {dl.status === "downloading" && dl.download_speed > 0 && (
                             <span className="text-3xs text-muted-foreground">{formatSpeed(dl.download_speed)}</span>
                           )}
-                          {dl.eta > 0 && dl.eta < 8640000 && (
+                          {dl.status === "downloading" && dl.eta > 0 && dl.eta < 8640000 && (
                             <span className="text-3xs text-muted-foreground">ETA {formatEta(dl.eta)}</span>
                           )}
                         </div>

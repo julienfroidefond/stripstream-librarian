@@ -172,4 +172,54 @@ describe("DownloadsIndicator", () => {
     emit({ ddl: [ddlDownload({ status: "imported" })] });
     expect(screen.getByTitle("downloadsIndicator.viewAll")).toBeInTheDocument();
   });
+
+  it("keeps a torrent at 100% while it imports", () => {
+    render(<DownloadsIndicator />);
+
+    emit({
+      torrent: [
+        {
+          id: "t1",
+          source: "prowlarr",
+          library_id: "l1",
+          series_name: "Berserk",
+          expected_volumes: [1],
+          status: "importing",
+          progress: 1,
+          download_speed: 0,
+          eta: 0,
+          error_message: null,
+        },
+      ],
+    });
+
+    fireEvent.click(screen.getByTitle(/downloadsIndicator\.downloadCount/));
+
+    expect(screen.getByText("100%")).toBeInTheDocument();
+  });
+
+  it("hides the bar for an import retried from a partially-downloaded state", () => {
+    render(<DownloadsIndicator />);
+
+    emit({
+      torrent: [
+        {
+          id: "t1",
+          source: "prowlarr",
+          library_id: "l1",
+          series_name: "Berserk",
+          expected_volumes: [1],
+          status: "importing",
+          progress: 0.5,
+          download_speed: 0,
+          eta: 0,
+          error_message: null,
+        },
+      ],
+    });
+
+    fireEvent.click(screen.getByTitle(/downloadsIndicator\.downloadCount/));
+
+    expect(screen.queryByText("50%")).not.toBeInTheDocument();
+  });
 });

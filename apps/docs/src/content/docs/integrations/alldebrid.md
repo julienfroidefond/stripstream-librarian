@@ -62,6 +62,11 @@ pas seulement les volumes manquants.
 4. L'import enchaîne le pipeline habituel : extraction des volumes, matching de série, nommage,
    déduplication par format, scan et refresh des métadonnées.
 
+La barre de progression peut sembler plafonner pendant la phase AllDebrid (souvent ~97 %) : le
+pourcentage de cette phase porte sur le **torrent complet**, alors qu'AllDebrid ne récupère en
+pratique que les fichiers de livre. Dès que la copie locale est terminée, la barre passe à **100 %**
+et **reste affichée pendant tout l'import**, puis la ligne bascule sur le statut *Importé*.
+
 Les statuts de l'historique sont les mêmes que pour qBittorrent (En cours, Terminé, Import en cours,
 Importé, Partiel, Aucun fichier importé, Erreur) — voir [Téléchargements](/downloads/overview).
 

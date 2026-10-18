@@ -4,6 +4,7 @@ import {
   fetchSharedFile,
   filenameFromContentDisposition,
   isIosStandalone,
+  showsDownloadProgress,
 } from "@/lib/download";
 
 afterEach(() => {
@@ -39,6 +40,23 @@ describe("filenameFromContentDisposition", () => {
     expect(filenameFromContentDisposition(null)).toBeNull();
     expect(filenameFromContentDisposition("attachment")).toBeNull();
     expect(filenameFromContentDisposition("attachment; filename*=UTF-8''%E9")).toBeNull();
+  });
+});
+
+describe("showsDownloadProgress", () => {
+  it("always shows the bar while downloading, even below 100%", () => {
+    expect(showsDownloadProgress("downloading", 0.42)).toBe(true);
+  });
+
+  it("keeps the bar at 100% through the completed and importing steps", () => {
+    expect(showsDownloadProgress("completed", 1)).toBe(true);
+    expect(showsDownloadProgress("importing", 1)).toBe(true);
+  });
+
+  it("hides the bar once the transfer stopped before reaching 100%", () => {
+    expect(showsDownloadProgress("importing", 0.6)).toBe(false);
+    expect(showsDownloadProgress("error", 1)).toBe(false);
+    expect(showsDownloadProgress("imported", 1)).toBe(false);
   });
 });
 
