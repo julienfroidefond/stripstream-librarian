@@ -13,7 +13,7 @@ Ce mode automatise la recherche de torrents via Prowlarr et leur téléchargemen
 | [qBittorrent](/integrations/qbittorrent) | URL + nom d'utilisateur + mot de passe |
 | [AllDebrid](/integrations/alldebrid) *(alternative)* | Clé API + compte premium |
 
-Un seul client de téléchargement suffit ; configurez les deux pour pouvoir choisir au moment de l'envoi.
+Un seul client suffit. Si les deux sont configurés, celui qui reçoit **tous** les snatchs se choisit dans *Paramètres → Outils de téléchargement → Client de téléchargement* (voir [Choix du client](#choix-du-client)) ; à défaut de choix explicite, c'est le premier des deux configuré.
 
 ## Détection des volumes manquants
 

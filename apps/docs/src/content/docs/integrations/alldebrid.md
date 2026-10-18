@@ -65,12 +65,15 @@ Un torrent sans seeder ne démarre jamais : AllDebrid reste à 0 octet indéfini
 tournerait « En cours » sans fin. Pour éviter cela, Stripstream abandonne automatiquement un magnet qui
 n'a téléchargé **aucun octet** après **30 minutes**, avec le message explicite
 `No peer: 0 bytes downloaded in 30 min (0 seeders)`. Le compteur de seeders est affiché en orange
-lorsqu'il est à zéro, ce qui permet de repérer le problème avant l'abandon.
+lorsqu'il est à zéro, ce qui permet de repérer le problème avant l'abandon. Quand AllDebrid ne
+communique pas le nombre de seeders, le message le dit (`seeders unknown`) plutôt que d'annoncer
+« 0 seeder » à tort.
 
 Le magnet n'est pas supprimé d'AllDebrid : **Retry** réarme la fenêtre de surveillance, ce qui laisse
 30 minutes supplémentaires au torrent pour trouver des pairs (AllDebrid refuse de « relancer » un
-magnet qu'il considère déjà actif). Si le torrent reste sans pair, envisagez une autre release ou un
-autre client (qBittorrent).
+magnet qu'il considère déjà actif). Tant qu'il n'est ni relancé ni supprimé, ce magnet continue
+d'**occuper l'un des 30 slots actifs** d'AllDebrid sans progresser. Si le torrent reste sans pair,
+envisagez une autre release ou un autre client (qBittorrent).
 
 ## Relancer un téléchargement en erreur
 
@@ -88,19 +91,28 @@ Le bouton **Retry (↺)** de l'historique s'adapte au type d'échec :
 **Formats récupérés** — `cbz`, `cbr`, `pdf`, `epub`. Un magnet qui ne contient aucun fichier de ces
 extensions n'importe rien (statut *Aucun fichier importé*).
 
-**Boucle de suivi unique** — contrairement à qBittorrent (un slot par téléchargement, parallélisé),
-AllDebrid est interrogé par une seule sonde séquentielle : 5 s quand un magnet progresse, 15 s au
-repos. AllDebrid limite le nombre de magnets actifs simultanés (30) et le débit de l'API (12 req/s) ;
-c'est le débrideur qui assure le téléchargement, pas Stripstream.
+**Boucle de suivi** — AllDebrid est interrogé par une sonde dédiée, avec une attente de 5 s quand un
+magnet progresse et 15 s au repos. Les lignes en cours sont traitées **en parallèle** (4 au maximum) :
+une ligne occupée à rapatrier ses fichiers ne bloque plus la progression des autres. AllDebrid limite
+le nombre de magnets actifs simultanés (30) et le débit de l'API (12 req/s) ; c'est le débrideur qui
+assure le téléchargement, pas Stripstream. L'API n'offre aucun moyen d'interroger plusieurs magnets en
+une requête (`id[]` est ignoré et renvoie la liste complète du compte), donc il reste un appel de
+statut par ligne ; en cas d'erreurs répétées (débit, panne), le rythme de la sonde ralentit
+progressivement (5 s → 60 s) jusqu'au premier cycle propre.
 
 **Codes de statut AllDebrid** — `0` à `3` en téléchargement, `4` terminé, `≥ 5` erreur.
 
 **Récupération des fichiers** — le téléchargement des fichiers depuis AllDebrid est retenté jusqu'à
 3 fois avant de marquer l'entrée en erreur, pour qu'une coupure réseau passagère ne condamne pas un
-magnet terminé.
+magnet terminé. Chaque fichier est écrit dans un `.tmp` puis renommé, et le transfert n'a pas de durée
+maximale (seule une connexion qui n'envoie plus rien pendant 2 minutes est coupée) : un gros volume
+lent n'est pas interrompu. Les messages d'erreur stockés sur la ligne ne contiennent **jamais** l'URL
+signée du fichier.
 
-**Doublons** — un magnet déjà suivi par AllDebrid (même hash) est réutilisé au lieu d'être envoyé
-une seconde fois.
+**Doublons** — un magnet déjà suivi par AllDebrid (même hash, insensible à la casse) est réutilisé au
+lieu d'être envoyé une seconde fois. La base garantit qu'**une seule ligne active** existe par hash
+côté AllDebrid : deux envois simultanés de la même release ne peuvent pas créer deux magnets, le second
+récupère la ligne du premier. Une release déjà importée peut en revanche être renvoyée.
 
 **Endpoints admin** (jetons `admin`, documentés dans l'OpenAPI administrateur `/admin/openapi.json`) :
 
