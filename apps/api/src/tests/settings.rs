@@ -741,3 +741,164 @@ fn compute_dir_stats_terminates_on_self_referencing_symlink() {
     assert_eq!(count, 1);
     assert_eq!(size, 32);
 }
+
+// ---------------------------------------------------------------------------
+// Secret redaction (alldebrid.api_key)
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_settings_redacts_alldebrid_api_key(pool: PgPool) {
+    let state = test_state(pool.clone());
+
+    sqlx::query("UPDATE app_settings SET value = $1 WHERE key = 'alldebrid'")
+        .bind(json!({ "api_key": "super-secret", "enabled": true }))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let Json(value) = get_settings(State(state)).await.unwrap();
+
+    assert_eq!(value["alldebrid"]["api_key"], REDACTED_SECRET);
+    assert_eq!(value["alldebrid"]["enabled"], true);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_setting_redacts_alldebrid_api_key(pool: PgPool) {
+    let state = test_state(pool.clone());
+
+    sqlx::query("UPDATE app_settings SET value = $1 WHERE key = 'alldebrid'")
+        .bind(json!({ "api_key": "super-secret", "enabled": false }))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let Json(value) = get_setting(State(state), key_path("alldebrid"))
+        .await
+        .unwrap();
+
+    assert_eq!(value["api_key"], REDACTED_SECRET);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_settings_keeps_empty_alldebrid_api_key_visible(pool: PgPool) {
+    let state = test_state(pool);
+
+    let Json(value) = get_settings(State(state)).await.unwrap();
+
+    // The migration seeds an empty key: nothing to hide yet.
+    assert_eq!(value["alldebrid"]["api_key"], "");
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn update_setting_preserves_api_key_when_left_blank(pool: PgPool) {
+    let state = test_state(pool.clone());
+
+    sqlx::query("UPDATE app_settings SET value = $1 WHERE key = 'alldebrid'")
+        .bind(json!({ "api_key": "stored-secret", "enabled": false }))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let Json(returned) = update_setting(
+        State(state),
+        key_path("alldebrid"),
+        setting_body(json!({ "api_key": "", "enabled": true })),
+    )
+    .await
+    .unwrap();
+
+    // The response is redacted...
+    assert_eq!(returned["api_key"], REDACTED_SECRET);
+    // ...but the stored secret is preserved and `enabled` still updated.
+    assert_eq!(
+        get_setting_row(&pool, "alldebrid").await,
+        json!({ "api_key": "stored-secret", "enabled": true })
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn update_setting_preserves_api_key_when_redacted_placeholder_is_sent(pool: PgPool) {
+    let state = test_state(pool.clone());
+
+    sqlx::query("UPDATE app_settings SET value = $1 WHERE key = 'alldebrid'")
+        .bind(json!({ "api_key": "stored-secret", "enabled": true }))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let _ = update_setting(
+        State(state),
+        key_path("alldebrid"),
+        setting_body(json!({ "api_key": REDACTED_SECRET, "enabled": false })),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        get_setting_row(&pool, "alldebrid").await,
+        json!({ "api_key": "stored-secret", "enabled": false })
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn update_setting_stores_a_new_api_key_and_redacts_the_response(pool: PgPool) {
+    let state = test_state(pool.clone());
+
+    let Json(returned) = update_setting(
+        State(state),
+        key_path("alldebrid"),
+        setting_body(json!({ "api_key": "brand-new", "enabled": true })),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(returned["api_key"], REDACTED_SECRET);
+    assert_eq!(
+        get_setting_row(&pool, "alldebrid").await["api_key"],
+        json!("brand-new")
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn update_setting_preserves_api_key_when_the_field_is_absent(pool: PgPool) {
+    let state = test_state(pool.clone());
+
+    sqlx::query("UPDATE app_settings SET value = $1 WHERE key = 'alldebrid'")
+        .bind(json!({ "api_key": "stored-secret", "enabled": true }))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // A partial update (no `api_key` at all) must not wipe the stored key.
+    let Json(returned) = update_setting(
+        State(state),
+        key_path("alldebrid"),
+        setting_body(json!({ "enabled": false })),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(returned["api_key"], REDACTED_SECRET);
+    assert_eq!(
+        get_setting_row(&pool, "alldebrid").await,
+        json!({ "api_key": "stored-secret", "enabled": false })
+    );
+}
+
+#[test]
+fn redact_secrets_only_masks_non_empty_fields_of_known_keys() {
+    let mut value = json!({ "api_key": "abc", "enabled": true });
+    redact_secrets("alldebrid", &mut value);
+    assert_eq!(value["api_key"], REDACTED_SECRET);
+    assert_eq!(value["enabled"], true);
+
+    // An empty secret stays empty so "not yet configured" remains visible.
+    let mut empty = json!({ "api_key": "" });
+    redact_secrets("alldebrid", &mut empty);
+    assert_eq!(empty["api_key"], "");
+
+    // An unknown key keeps its `api_key` field untouched.
+    let mut other = json!({ "api_key": "keep" });
+    redact_secrets("custom", &mut other);
+    assert_eq!(other["api_key"], "keep");
+}
