@@ -14,10 +14,13 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
-    error::ApiError,
-    state::{
-        load_dynamic_settings, AppState, DiskCacheStatsSnapshot, MAX_TELEGRAM_DOWNLOAD_CONNECTIONS,
+    downloads::settings::{
+        MAX_DOWNLOAD_CONCURRENCY, MAX_HTTP_CONNECTIONS, MAX_MAGNET_STALL_TIMEOUT_MINUTES,
+        MAX_MAX_ATTEMPTS, MAX_STALL_TIMEOUT_SECS, MAX_TELEGRAM_CONNECTIONS,
+        MAX_TRANSFER_TIMEOUT_MINUTES,
     },
+    error::ApiError,
+    state::{load_dynamic_settings, AppState, DiskCacheStatsSnapshot},
 };
 
 const DISK_CACHE_STATS_TTL: Duration = Duration::from_secs(30);
@@ -206,12 +209,22 @@ fn validate_setting(key: &str, value: &Value) -> Result<(), ApiError> {
 }
 
 fn validate_limits(value: &Value) -> Result<(), ApiError> {
+    // Every key here is a positive integer. A stored 0 would build a
+    // `Semaphore::new(0)` (blocking every download) or a zero-length timeout;
+    // both are rejected up front so the read-side clamp is only a safety net.
     for field in [
         "concurrent_renders",
         "concurrent_telegram_downloads",
+        "concurrent_ddl_provider_downloads",
+        "concurrent_alldebrid_downloads",
         "rate_limit_per_second",
         "timeout_seconds",
         "telegram_download_connections",
+        "ddl_download_connections",
+        "download_max_attempts",
+        "download_stall_timeout_seconds",
+        "download_timeout_minutes",
+        "alldebrid_stall_timeout_minutes",
     ] {
         if let Some(n) = value.get(field) {
             let n = n.as_u64().ok_or_else(|| {
@@ -225,14 +238,40 @@ fn validate_limits(value: &Value) -> Result<(), ApiError> {
         }
     }
 
-    if let Some(n) = value
-        .get("telegram_download_connections")
-        .and_then(|v| v.as_u64())
-    {
-        if n > MAX_TELEGRAM_DOWNLOAD_CONNECTIONS as u64 {
-            return Err(ApiError::bad_request(format!(
-                "limits.telegram_download_connections must be at most {MAX_TELEGRAM_DOWNLOAD_CONNECTIONS}"
-            )));
+    // Per-field ceilings: a typo must not open hundreds of sockets or hold a
+    // download slot for a day.
+    for (field, max) in [
+        (
+            "concurrent_telegram_downloads",
+            MAX_DOWNLOAD_CONCURRENCY as u64,
+        ),
+        (
+            "concurrent_ddl_provider_downloads",
+            MAX_DOWNLOAD_CONCURRENCY as u64,
+        ),
+        (
+            "concurrent_alldebrid_downloads",
+            MAX_DOWNLOAD_CONCURRENCY as u64,
+        ),
+        (
+            "telegram_download_connections",
+            MAX_TELEGRAM_CONNECTIONS as u64,
+        ),
+        ("ddl_download_connections", MAX_HTTP_CONNECTIONS as u64),
+        ("download_max_attempts", MAX_MAX_ATTEMPTS as u64),
+        ("download_stall_timeout_seconds", MAX_STALL_TIMEOUT_SECS),
+        ("download_timeout_minutes", MAX_TRANSFER_TIMEOUT_MINUTES),
+        (
+            "alldebrid_stall_timeout_minutes",
+            MAX_MAGNET_STALL_TIMEOUT_MINUTES,
+        ),
+    ] {
+        if let Some(n) = value.get(field).and_then(|v| v.as_u64()) {
+            if n > max {
+                return Err(ApiError::bad_request(format!(
+                    "limits.{field} must be at most {max}"
+                )));
+            }
         }
     }
     Ok(())

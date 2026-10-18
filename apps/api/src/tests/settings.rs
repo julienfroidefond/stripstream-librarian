@@ -614,22 +614,20 @@ fn validate_limits_bounds_telegram_download_connections() {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn load_telegram_download_connections_defaults_then_clamps(pool: PgPool) {
-    use crate::state::{
-        load_telegram_download_connections, DEFAULT_TELEGRAM_DOWNLOAD_CONNECTIONS,
-        MAX_TELEGRAM_DOWNLOAD_CONNECTIONS,
+async fn download_settings_default_then_clamp_and_validate(pool: PgPool) {
+    use crate::downloads::settings::{
+        DownloadSettings, DEFAULT_TELEGRAM_CONNECTIONS, MAX_DOWNLOAD_CONCURRENCY,
+        MAX_TELEGRAM_CONNECTIONS,
     };
 
     assert_eq!(
-        load_telegram_download_connections(&pool).await,
-        DEFAULT_TELEGRAM_DOWNLOAD_CONNECTIONS
+        DownloadSettings::load(&pool).await.telegram_connections,
+        DEFAULT_TELEGRAM_CONNECTIONS
     );
 
-    let cases = [
-        (6u64, 6usize),
-        (0, 1),
-        (99, MAX_TELEGRAM_DOWNLOAD_CONNECTIONS),
-    ];
+    // The loader clamps out-of-range stored values (a safety net behind the
+    // write-side validation).
+    let cases = [(6u64, 6usize), (0, 1), (99, MAX_TELEGRAM_CONNECTIONS)];
     for (stored, expected) in cases {
         sqlx::query("UPDATE app_settings SET value = $1 WHERE key = 'limits'")
             .bind(json!({ "telegram_download_connections": stored }))
@@ -637,11 +635,39 @@ async fn load_telegram_download_connections_defaults_then_clamps(pool: PgPool) {
             .await
             .unwrap();
         assert_eq!(
-            load_telegram_download_connections(&pool).await,
+            DownloadSettings::load(&pool).await.telegram_connections,
             expected,
             "stored value {stored}"
         );
     }
+
+    // The newly exposed keys are validated on write.
+    for field in [
+        "concurrent_ddl_provider_downloads",
+        "concurrent_alldebrid_downloads",
+        "ddl_download_connections",
+        "download_max_attempts",
+        "download_stall_timeout_seconds",
+        "download_timeout_minutes",
+        "alldebrid_stall_timeout_minutes",
+    ] {
+        assert!(
+            validate_setting("limits", &json!({ field: 1 })).is_ok(),
+            "{field} = 1 must be accepted"
+        );
+        assert!(
+            validate_setting("limits", &json!({ field: 0 })).is_err(),
+            "{field} = 0 must be rejected"
+        );
+    }
+    assert_eq!(
+        expect_err(validate_setting(
+            "limits",
+            &json!({ "concurrent_ddl_provider_downloads": MAX_DOWNLOAD_CONCURRENCY + 1 }),
+        ))
+        .status,
+        StatusCode::BAD_REQUEST
+    );
 }
 
 #[test]

@@ -31,6 +31,13 @@ export type Settings = {
     rate_limit_per_second: number;
     concurrent_telegram_downloads: number;
     telegram_download_connections: number;
+    concurrent_ddl_provider_downloads: number;
+    ddl_download_connections: number;
+    download_max_attempts: number;
+    download_stall_timeout_seconds: number;
+    download_timeout_minutes: number;
+    concurrent_alldebrid_downloads: number;
+    alldebrid_stall_timeout_minutes: number;
   };
   thumbnail: {
     enabled: boolean;

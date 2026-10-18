@@ -9,6 +9,7 @@
 //!   scan job (same "download straight into the library" model as Telegram).
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::Arc;
 
 use sqlx::Row;
@@ -17,9 +18,16 @@ use tracing::info;
 use uuid::Uuid;
 
 use parsers::{extract_series_name_from_filename, extract_volume, title_matches_series_tolerant};
+use stripstream_core::http::build_http_client_with_custom_agent;
 
+use crate::downloads::http_error::describe_http_failure;
+use crate::downloads::http_range::{probe_remote_file, HttpRangeFetcher};
+use crate::downloads::ranged::{
+    download_ranged, FileSink, ProgressReporter, RangeFetcher, RangeSink,
+};
+use crate::downloads::settings::DownloadSettings;
 use crate::downloads::target::{finalize_download, prepare_destination, DownloadProgress};
-use crate::downloads::worker::DownloadQueue;
+use crate::downloads::worker::DDL_DOWNLOAD_QUEUE;
 use crate::error::ApiError;
 use crate::state::AppState;
 
@@ -27,7 +35,7 @@ use super::types::{
     DdlProviderDownloadDto, DdlProviderSearchResponse, DdlProviderSearchResultDto,
     StartDdlProviderDownloadRequest,
 };
-use super::{load_config, require_enabled, DdlProviderFile, BROWSER_USER_AGENT, DOWNLOAD_TIMEOUT};
+use super::{load_config, require_enabled, DdlProviderFile, BROWSER_USER_AGENT};
 
 // ---------------------------------------------------------------------------
 // Search
@@ -277,7 +285,7 @@ pub async fn start_ddl_download(
         .spawn(
             state.pool.clone(),
             download_id,
-            Arc::new(DdlDownloadQueue),
+            Arc::new(DDL_DOWNLOAD_QUEUE),
             move |pool| {
                 Box::pin(async move {
                     do_download(
@@ -331,42 +339,8 @@ pub(super) async fn queue_ddl_download(
     .await
 }
 
-/// Claim/fail SQL for the DDL provider download queue.
-struct DdlDownloadQueue;
-
-#[async_trait::async_trait]
-impl DownloadQueue for DdlDownloadQueue {
-    async fn claim(&self, pool: &sqlx::PgPool, id: Uuid) -> bool {
-        start_downloading(pool, id).await
-    }
-
-    async fn mark_failed(&self, pool: &sqlx::PgPool, id: Uuid, error: &str) {
-        // Do not resurrect a download dismissed while it was failing.
-        let _ = sqlx::query(
-            "UPDATE ddl_provider_downloads SET status = 'failed', error_message = $2, updated_at = NOW() \
-             WHERE id = $1 AND status <> 'dismissed'",
-        )
-        .bind(id)
-        .bind(error)
-        .execute(pool)
-        .await;
-    }
-}
-
-/// Flip a `queued` row to `downloading`. Returns `false` when the row is no
-/// longer queued (dismissed or deleted).
-async fn start_downloading(pool: &sqlx::PgPool, id: Uuid) -> bool {
-    sqlx::query(
-        "UPDATE ddl_provider_downloads SET status = 'downloading', error_message = NULL, updated_at = NOW() \
-         WHERE id = $1 AND status = 'queued'",
-    )
-    .bind(id)
-    .execute(pool)
-    .await
-    .map(|r| r.rows_affected() > 0)
-    .unwrap_or(false)
-}
-
+// The claim/fail SQL for this queue lives in `worker::SqlDownloadQueue`; see
+// `DDL_DOWNLOAD_QUEUE`.
 async fn do_download(
     pool: &sqlx::PgPool,
     download_id: Uuid,
@@ -386,36 +360,17 @@ async fn do_download(
         dest_path.display()
     );
 
-    let client = stripstream_core::http::build_http_client_with_custom_agent(
-        DOWNLOAD_TIMEOUT,
-        BROWSER_USER_AGENT,
-    )?;
+    let settings = DownloadSettings::load(pool).await;
+    // The client's *total* request timeout must cover a whole file: the streaming
+    // fallback issues a single request, and a large file routinely exceeds a short
+    // cap. The ranged path bounds inactivity per request inside the engine.
+    let client =
+        build_http_client_with_custom_agent(settings.transfer_timeout, BROWSER_USER_AGENT)?;
 
-    let result = tokio::time::timeout(DOWNLOAD_TIMEOUT, async {
-        let mut response = client.get(&file_url).send().await?;
-        if !response.status().is_success() {
-            anyhow::bail!("DDL provider returned HTTP {}", response.status());
-        }
-
-        let mut file = tokio::fs::File::create(&tmp_path).await?;
-        let mut progress = DownloadProgress::new();
-
-        while let Some(chunk) = response.chunk().await? {
-            file.write_all(&chunk).await?;
-            if let Some(written) = progress.advance(chunk.len() as i64) {
-                let _ = sqlx::query(
-                    "UPDATE ddl_provider_downloads SET bytes_downloaded = $1, updated_at = NOW() WHERE id = $2",
-                )
-                .bind(written)
-                .bind(download_id)
-                .execute(pool)
-                .await;
-            }
-        }
-
-        file.flush().await?;
-        Ok::<i64, anyhow::Error>(progress.written())
-    })
+    let result = tokio::time::timeout(
+        settings.transfer_timeout,
+        download_file(pool, download_id, &client, &file_url, &tmp_path, &settings),
+    )
     .await;
 
     let bytes_written = match result {
@@ -426,7 +381,10 @@ async fn do_download(
         }
         Err(_) => {
             let _ = tokio::fs::remove_file(&tmp_path).await;
-            anyhow::bail!("download timed out after 30 minutes");
+            anyhow::bail!(
+                "download timed out after {} minutes",
+                settings.transfer_timeout.as_secs() / 60
+            );
         }
     };
 
@@ -456,6 +414,174 @@ async fn do_download(
         dest_path.display()
     );
     Ok(())
+}
+
+/// Fetch `url` into `tmp_path`, returning the number of bytes written.
+///
+/// When the server honours `Range` requests the transfer goes through the shared
+/// multi-connection engine (several sockets, per-block retry, resume-friendly
+/// offsets); otherwise it falls back to a single stream — the only option on a
+/// server that ignores ranges or hides the file size.
+async fn download_file(
+    pool: &sqlx::PgPool,
+    download_id: Uuid,
+    client: &reqwest::Client,
+    url: &str,
+    tmp_path: &Path,
+    settings: &DownloadSettings,
+) -> anyhow::Result<i64> {
+    match probe_remote_file(client, url).await {
+        Ok(probe) if probe.accepts_ranges && probe.total_size > 0 => {
+            download_ranged_to_file(
+                pool,
+                download_id,
+                client,
+                url,
+                tmp_path,
+                probe.total_size,
+                settings,
+            )
+            .await
+        }
+        Ok(probe) => {
+            info!(
+                "DDL provider download {download_id}: streaming (ranges: {}, size: {})",
+                probe.accepts_ranges, probe.total_size
+            );
+            stream_to_file(pool, download_id, client, url, tmp_path).await
+        }
+        Err(e) => {
+            // A failed probe is not fatal on its own: let the plain stream try
+            // and surface whatever error the server actually returns.
+            info!("DDL provider download {download_id}: range probe failed ({e:#}), streaming");
+            stream_to_file(pool, download_id, client, url, tmp_path).await
+        }
+    }
+}
+
+/// Multi-connection ranged transfer into `tmp_path`.
+async fn download_ranged_to_file(
+    pool: &sqlx::PgPool,
+    download_id: Uuid,
+    client: &reqwest::Client,
+    url: &str,
+    tmp_path: &Path,
+    total_size: i64,
+    settings: &DownloadSettings,
+) -> anyhow::Result<i64> {
+    info!(
+        "DDL provider download {download_id}: {total_size} bytes over {} connection(s)",
+        settings.http_connections
+    );
+
+    let fetchers: Vec<Arc<dyn RangeFetcher>> = (0..settings.http_connections)
+        .map(|_| Arc::new(HttpRangeFetcher::new(client.clone(), url)) as Arc<dyn RangeFetcher>)
+        .collect();
+    let sink: Arc<dyn RangeSink> = Arc::new(FileSink::create(tmp_path, total_size).await?);
+    let reporter = Arc::new(DdlProgress::new(pool.clone(), download_id));
+
+    let result = download_ranged(
+        fetchers,
+        sink.clone(),
+        total_size,
+        reporter,
+        settings.ranged_config(),
+    )
+    .await;
+    // Close the file before anything renames it.
+    drop(sink);
+
+    result.map_err(|e| anyhow::anyhow!("{e}"))?;
+    Ok(total_size)
+}
+
+/// Single-connection fallback for servers that ignore `Range` or hide the size.
+async fn stream_to_file(
+    pool: &sqlx::PgPool,
+    download_id: Uuid,
+    client: &reqwest::Client,
+    url: &str,
+    tmp_path: &Path,
+) -> anyhow::Result<i64> {
+    let mut response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", describe_http_failure(&e)))?;
+    if !response.status().is_success() {
+        anyhow::bail!("DDL provider returned HTTP {}", response.status());
+    }
+
+    let mut file = tokio::fs::File::create(tmp_path).await?;
+    let mut progress = DownloadProgress::new();
+
+    loop {
+        match response.chunk().await {
+            Ok(Some(chunk)) => {
+                file.write_all(&chunk).await?;
+                if let Some(written) = progress.advance(chunk.len() as i64) {
+                    store_progress(pool, download_id, written).await;
+                }
+            }
+            Ok(None) => break,
+            Err(e) => return Err(anyhow::anyhow!("{}", describe_http_failure(&e))),
+        }
+    }
+
+    file.flush().await?;
+    Ok(progress.written())
+}
+
+/// Persist a transfer's byte count, best-effort: a progress update that fails
+/// must never fail the download itself.
+async fn store_progress(pool: &sqlx::PgPool, download_id: Uuid, bytes: i64) {
+    let _ = sqlx::query(
+        "UPDATE ddl_provider_downloads SET bytes_downloaded = $1, updated_at = NOW() WHERE id = $2",
+    )
+    .bind(bytes)
+    .bind(download_id)
+    .execute(pool)
+    .await;
+}
+
+/// Throttled progress reporter for the ranged engine: the byte count is only
+/// written to the database every [`PROGRESS_UPDATE_BYTES`] instead of once per
+/// block.
+///
+/// [`PROGRESS_UPDATE_BYTES`]: crate::downloads::target::PROGRESS_UPDATE_BYTES
+struct DdlProgress {
+    pool: sqlx::PgPool,
+    download_id: Uuid,
+    progress: std::sync::Mutex<DownloadProgress>,
+}
+
+impl DdlProgress {
+    fn new(pool: sqlx::PgPool, download_id: Uuid) -> Self {
+        Self {
+            pool,
+            download_id,
+            progress: std::sync::Mutex::new(DownloadProgress::new()),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl ProgressReporter for DdlProgress {
+    async fn report(&self, bytes_written: i64) {
+        // Scope the guard so it is released before the `await`: a `MutexGuard`
+        // held across an await point would make this future non-`Send` and break
+        // the engine's `JoinSet`.
+        let due = {
+            let Ok(mut progress) = self.progress.lock() else {
+                return;
+            };
+            let delta = bytes_written - progress.written();
+            progress.advance(delta).is_some()
+        };
+        if due {
+            store_progress(&self.pool, self.download_id, bytes_written).await;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -549,6 +675,7 @@ pub async fn probe(state: &AppState, provider_id: &str, query: &str) -> Result<u
 mod tests {
     use super::super::{fourtoutici::normalize_for_match, save_config, DdlProvidersConfig};
     use super::*;
+    use crate::downloads::worker::DownloadQueue;
 
     /// Build a DDL provider file the way `fourtoutici::parse_files` does, i.e. with
     /// the rewritten `match_name`.
@@ -856,7 +983,7 @@ mod tests {
         .await
         .unwrap();
 
-        DdlDownloadQueue.mark_failed(&pool, id, "boom").await;
+        DDL_DOWNLOAD_QUEUE.mark_failed(&pool, id, "boom").await;
 
         let status: String =
             sqlx::query_scalar("SELECT status FROM ddl_provider_downloads WHERE id = $1")

@@ -37,9 +37,6 @@ pub const BROWSER_USER_AGENT: &str =
 /// Timeout for provider search/test requests.
 pub(crate) const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// Timeout for a whole file download.
-pub(crate) const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
-
 /// Static metadata describing a provider.
 #[derive(Debug, Clone)]
 pub struct DdlProviderMeta {
