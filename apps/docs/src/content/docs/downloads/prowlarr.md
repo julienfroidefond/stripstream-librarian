@@ -1,9 +1,9 @@
 ---
 title: Téléchargements — Prowlarr
-description: Trouver et télécharger automatiquement des volumes manquants via Prowlarr et qBittorrent
+description: Trouver et télécharger automatiquement des volumes manquants via Prowlarr et votre client de téléchargement (qBittorrent ou AllDebrid)
 ---
 
-Ce mode automatise la recherche de torrents via Prowlarr et leur téléchargement via qBittorrent, puis importe les fichiers dans votre bibliothèque.
+Ce mode automatise la recherche de torrents via Prowlarr et leur téléchargement via **qBittorrent ou [AllDebrid](/integrations/alldebrid)**, puis importe les fichiers dans votre bibliothèque.
 
 ## Prérequis
 
@@ -11,6 +11,9 @@ Ce mode automatise la recherche de torrents via Prowlarr et leur téléchargemen
 |-------------|--------------------------|
 | [Prowlarr](/integrations/prowlarr) | URL + clé API |
 | [qBittorrent](/integrations/qbittorrent) | URL + nom d'utilisateur + mot de passe |
+| [AllDebrid](/integrations/alldebrid) *(alternative)* | Clé API + compte premium |
+
+Un seul client de téléchargement suffit ; configurez les deux pour pouvoir choisir au moment de l'envoi.
 
 ## Détection des volumes manquants
 
@@ -35,7 +38,7 @@ Pour chaque release Prowlarr dans la liste dépliée :
 - Indexeur source
 - Nombre de seeders (vert ≥ 10, orange ≥ 3, rouge sinon)
 - Taille
-- **Bouton ↓ (bleu)** — envoie la release à qBittorrent
+- **Bouton ↓ (bleu)** — envoie la release au client de téléchargement
 - **Bouton × (neutre)** — blacklist : masque définitivement cette release dans les *Releases masquées*
 - **Bouton poubelle** — supprime la release sans blacklister
 
@@ -43,9 +46,15 @@ Le badge `!` sur une ligne signale une release qui a déjà échoué à l'import
 
 **Masquer ces résultats** : supprime toutes les releases Prowlarr d'une série sans les blacklister (lien discret en bas du groupe déplié).
 
-## Envoi à qBittorrent
+## Envoi au client de téléchargement
 
-Quand vous cliquez sur ↓, Stripstream envoie le torrent à qBittorrent. La release passe dans l'historique en haut de la page avec suivi en temps réel (progression, vitesse, ETA).
+Quand vous cliquez sur ↓, Stripstream envoie le torrent au client sélectionné. La release passe dans l'historique en haut de la page avec suivi en temps réel (progression, vitesse, ETA).
+
+### Choix du client
+
+Quand **qBittorrent et AllDebrid sont tous les deux configurés**, un sélecteur **Client de téléchargement** apparaît au-dessus de la section *Disponibles au téléchargement* (et dans les fenêtres de détection). Le choix est mémorisé dans le navigateur et s'applique à tous les envois suivants.
+
+Chaque ligne de l'historique affiche un badge avec le client qui a traité le téléchargement : `qBittorrent` ou `AllDebrid`.
 
 ### Mode Replace
 
@@ -53,7 +62,7 @@ L'option **Replace** importe tous les fichiers du torrent sans se limiter aux vo
 
 ## Import automatique
 
-Quand qBittorrent termine, Stripstream importe les fichiers dans la bibliothèque. Le nom du fichier final suit ces règles :
+Quand le client termine, Stripstream importe les fichiers dans la bibliothèque. Le nom du fichier final suit ces règles :
 
 1. Si la série a déjà des livres, le nommage du fichier existant le plus pertinent est repris.
 2. Sinon, le [template de renommage](/books/renaming/#renommage-automatique-à-limport) est appliqué (ex. `{series_name} - T{volume_padded}`).
@@ -73,7 +82,7 @@ Le mode replace ignore la liste `expected_volumes` au moment de l'import et impo
 
 | Statut | Description |
 |--------|-------------|
-| **En cours** | Téléchargement en progression dans qBittorrent |
+| **En cours** | Téléchargement en progression dans le client |
 | **Terminé** | Torrent terminé, en attente d'import |
 | **Import en cours** | Fichiers en cours de copie |
 | **Importé** | Fichiers copiés, scan lancé |

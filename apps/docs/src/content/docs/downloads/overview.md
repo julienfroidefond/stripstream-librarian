@@ -1,17 +1,18 @@
 ---
 title: Téléchargements — Vue d'ensemble
-description: Trois modes pour compléter votre bibliothèque — Prowlarr+qBittorrent, Telegram Monitor et fournisseurs directs
+description: Quatre modes pour compléter votre bibliothèque — Prowlarr (qBittorrent ou AllDebrid), Telegram Monitor et fournisseurs directs
 ---
 
-Stripstream propose trois façons de télécharger des volumes manquants :
+Stripstream propose quatre façons de télécharger des volumes manquants — trois sources et, pour les torrents, le choix du client de téléchargement :
 
 | Mode | Prérequis | Fonctionnement |
 |------|-----------|----------------|
 | [Prowlarr + qBittorrent](prowlarr) | Prowlarr + qBittorrent configurés | Recherche automatique de torrents, téléchargement via qBittorrent, import auto |
+| [Prowlarr + AllDebrid](/integrations/alldebrid) | Prowlarr + compte AllDebrid premium | Même recherche, téléchargement débridé côté AllDebrid — aucun client BitTorrent local |
 | [Telegram Monitor](telegram) | Compte Telegram + API ID/Hash | Surveillance de channels Telegram, téléchargement direct sans torrent |
 | [Fournisseurs directs](ddl-providers) | Aucun (catalogues publics) | Recherche dans des catalogues externes (Fourtoutici…), import direct dans la bibliothèque |
 
-Les trois modes alimentent la page **Téléchargements** : les offres des **fournisseurs directs** y apparaissent comme releases (badge vert) et leurs téléchargements dans l'historique. Une recherche ciblée reste possible depuis la fenêtre *Actions → Téléchargement direct* d'une série ou d'un livre ; le fichier est alors importé puis indexé immédiatement.
+Les quatre modes alimentent la page **Téléchargements** : les offres des **fournisseurs directs** y apparaissent comme releases (badge vert) et leurs téléchargements dans l'historique. Une recherche ciblée reste possible depuis la fenêtre *Actions → Téléchargement direct* d'une série ou d'un livre ; le fichier est alors importé puis indexé immédiatement.
 
 ## Activation
 
@@ -19,7 +20,7 @@ Les téléchargements sont désactivés par défaut. Pour les activer :
 
 **Settings → Téléchargements → activer "Activer les téléchargements"**
 
-Ce toggle contrôle la visibilité de la page Téléchargements, les boutons d'envoi à qBittorrent et les options de détection automatique dans les bibliothèques.
+Ce toggle contrôle la visibilité de la page Téléchargements, les boutons d'envoi au client de téléchargement et les options de détection automatique dans les bibliothèques.
 
 ---
 
@@ -77,7 +78,7 @@ Quand un téléchargement apporte un volume que la bibliothèque possède déjà
 - l'ancien fichier est **supprimé physiquement** du disque ;
 - le livre existant et sa **progression de lecture** sont conservés — aucune nouvelle fiche n'est créée.
 
-Ce comportement vaut pour **Prowlarr + qBittorrent**, **Telegram Monitor** et les **fournisseurs directs**. Avec le [mode Replace](prowlarr#mode-replace), le plus récent gagne également, quel que soit le volume attendu.
+Ce comportement vaut pour **Prowlarr** (qBittorrent comme [AllDebrid](/integrations/alldebrid)), **Telegram Monitor** et les **fournisseurs directs**. Avec le [mode Replace](prowlarr#mode-replace), le plus récent gagne également, quel que soit le volume attendu.
 
 :::note
 Seuls les volumes **réguliers** participent au remplacement. Les hors-séries, intégrales et one-shots ne sont pas concernés.

@@ -30,7 +30,7 @@ Par défaut, Docker crée ces dossiers à côté du `docker-compose.yml` :
 |----------------|------------------------|-------|
 | `LIBRARIES_HOST_PATH` | `./libraries` | Vos fichiers CBZ/CBR/PDF/EPUB |
 | `THUMBNAILS_HOST_PATH` | `./data/thumbnails` | Miniatures générées |
-| `DOWNLOADS_HOST_PATH` | `./data/downloads` | Téléchargements qBittorrent |
+| `DOWNLOADS_HOST_PATH` | `./data/downloads` | Téléchargements (qBittorrent / AllDebrid) |
 
 Pour pointer vers une collection existante ailleurs sur le disque :
 

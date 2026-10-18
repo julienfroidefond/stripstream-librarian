@@ -33,7 +33,7 @@ Le renommage **ne modifie pas le titre** stocké en base : seuls le nom de fichi
 
 Le même template est aussi utilisé lors des imports automatiques :
 
-- **Prowlarr / qBittorrent** — quand un torrent terminé est importé dans la bibliothèque
+- **Prowlarr / qBittorrent / AllDebrid** — quand un torrent terminé est importé dans la bibliothèque
 - **Telegram Monitor** — quand un fichier Telegram est téléchargé directement dans une série
 
 Si la série possède déjà des livres, Stripstream continue de privilégier le nommage existant comme référence pour rester cohérent avec les fichiers déjà présents. Si la série n'a pas encore de livre, le fichier importé est renommé avec le template configuré.

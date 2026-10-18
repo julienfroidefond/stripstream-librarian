@@ -77,7 +77,7 @@ export default defineConfig({
 					label: 'Téléchargements',
 					items: [
 						{ label: 'Vue d\'ensemble', slug: 'downloads/overview' },
-						{ label: 'Prowlarr + qBittorrent', slug: 'downloads/prowlarr' },
+						{ label: 'Prowlarr + qBittorrent / AllDebrid', slug: 'downloads/prowlarr' },
 						{ label: 'Telegram Monitor', slug: 'downloads/telegram' },
 						{ label: 'Fournisseurs directs', slug: 'downloads/ddl-providers' },
 					],
@@ -100,6 +100,7 @@ export default defineConfig({
 						{ label: 'AniList', slug: 'integrations/anilist' },
 						{ label: 'Prowlarr', slug: 'integrations/prowlarr' },
 						{ label: 'qBittorrent', slug: 'integrations/qbittorrent' },
+						{ label: 'AllDebrid', slug: 'integrations/alldebrid' },
 						{ label: 'Komga', slug: 'integrations/komga' },
 						{ label: 'Telegram — Notifications', slug: 'integrations/telegram' },
 					{ label: 'Telegram Monitor', slug: 'integrations/telegram-monitor' },
