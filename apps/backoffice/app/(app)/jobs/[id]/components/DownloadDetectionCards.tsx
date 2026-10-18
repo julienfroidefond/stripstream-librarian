@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, ReportStatGrid } from "@/app/components/ui";
-import { QbittorrentProvider, QbittorrentDownloadButton } from "@/app/components/QbittorrentDownloadButton";
+import { DownloadClientProvider, DownloadClientButton, DownloadClientSelector } from "@/app/components/DownloadClientButton";
 import type { DownloadDetectionReportDto, DownloadDetectionResultDto } from "@/lib/api";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 import { compressVolumes } from "@/lib/volumeRanges";
@@ -155,20 +155,22 @@ export function DownloadDetectionErrorsCard({ results, t }: {
   );
 }
 
-export function DownloadDetectionResultsCard({ results, libraryId, qbConfigured, t }: {
+export function DownloadDetectionResultsCard({ results, libraryId, qbConfigured, alldebridConfigured, t }: {
   results: DownloadDetectionResultDto[];
   libraryId: string | null;
   qbConfigured?: boolean;
+  alldebridConfigured?: boolean;
   t: TranslateFunction;
 }) {
   if (results.length === 0) return null;
 
   return (
-    <QbittorrentProvider initialConfigured={qbConfigured}>
+    <DownloadClientProvider initialClients={{ qbittorrent: qbConfigured, alldebrid: alldebridConfigured }}>
       <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle>{t("jobDetail.downloadAvailableReleases")}</CardTitle>
           <CardDescription>{t("jobDetail.downloadAvailableReleasesDesc", { count: String(results.length) })}</CardDescription>
+          <div className="pt-2"><DownloadClientSelector /></div>
         </CardHeader>
         <CardContent className="space-y-4 max-h-[700px] overflow-y-auto">
           {results.map((r) => (
@@ -219,7 +221,7 @@ export function DownloadDetectionResultsCard({ results, libraryId, qbConfigured,
                         </div>
                       </div>
                       {release.download_url && (
-                        <QbittorrentDownloadButton
+                        <DownloadClientButton
                           downloadUrl={release.download_url}
                           releaseId={`${r.id}-${idx}`}
                           libraryId={libraryId ?? undefined}
@@ -237,6 +239,6 @@ export function DownloadDetectionResultsCard({ results, libraryId, qbConfigured,
           ))}
         </CardContent>
       </Card>
-    </QbittorrentProvider>
+    </DownloadClientProvider>
   );
 }

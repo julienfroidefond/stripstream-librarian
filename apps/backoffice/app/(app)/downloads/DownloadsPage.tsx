@@ -13,7 +13,7 @@ import {
   DdlProviderDownloadDto,
 } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, Button, Icon, toast } from "@/app/components/ui";
-import { QbittorrentProvider, QbittorrentDownloadButton } from "@/app/components/QbittorrentDownloadButton";
+import { DownloadClientProvider, DownloadClientButton, DownloadClientSelector, DownloadClientBadge } from "@/app/components/DownloadClientButton";
 import { useTranslation } from "@/lib/i18n/context";
 import { compressVolumes } from "@/lib/volumeRanges";
 import { formatDateTime, formatEta, formatSpeed, formatVolumes } from "@/lib/format";
@@ -71,6 +71,7 @@ interface DownloadsPageProps {
   initialDownloads: TorrentDownloadDto[];
   initialLatestFound: LatestFoundPerLibraryDto[];
   qbConfigured?: boolean;
+  alldebridConfigured?: boolean;
   initialTelegramAvailable?: TelegramAvailableGroupDto[];
   initialTelegramDownloads?: TelegramDownloadItemDto[];
   initialDdlProviderDownloads?: DdlProviderDownloadDto[];
@@ -267,7 +268,7 @@ function buildUnifiedAvailableGroups(
   return Array.from(groups.values()).filter(group => group.sources.length > 0);
 }
 
-export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigured, initialTelegramAvailable = [], initialTelegramDownloads = [], initialDdlProviderDownloads = [] }: DownloadsPageProps) {
+export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigured, alldebridConfigured, initialTelegramAvailable = [], initialTelegramDownloads = [], initialDdlProviderDownloads = [] }: DownloadsPageProps) {
   const { t } = useTranslation();
   const [downloads, setDownloads] = useState<TorrentDownloadDto[]>(initialDownloads);
   const [telegramDownloads, setTelegramDownloads] = useState<TelegramDownloadItemDto[]>(initialTelegramDownloads);
@@ -396,7 +397,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
       )}
 
       {(latestFound.length > 0 || telegramAvailable.length > 0) && (
-        <QbittorrentProvider initialConfigured={qbConfigured} onDownloadStarted={() => refresh(false)}>
+        <DownloadClientProvider initialClients={{ qbittorrent: qbConfigured, alldebrid: alldebridConfigured }} onDownloadStarted={() => refresh(false)}>
           <AvailableDownloadsSection
             latestFound={latestFound}
             telegramAvailable={telegramAvailable}
@@ -408,7 +409,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
               })));
             }}
           />
-        </QbittorrentProvider>
+        </DownloadClientProvider>
       )}
     </>
   );
@@ -474,6 +475,7 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
             <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full ${statusClass(dl.status)}`}>
               {statusLabel(dl.status, t)}
             </span>
+            <DownloadClientBadge client={dl.client} />
             {dl.expected_volumes.length > 0 && (
               <span className="text-2xs text-muted-foreground">{formatVolumes(dl.expected_volumes)}</span>
             )}
@@ -495,6 +497,7 @@ function DownloadRow({ dl, onDeleted, onRetried }: { dl: TorrentDownloadDto; onD
               <span className={`text-3xs font-medium px-1.5 py-0.5 rounded-full shrink-0 ${statusClass(dl.status)}`}>
                 {statusLabel(dl.status, t)}
               </span>
+              <DownloadClientBadge client={dl.client} />
             </div>
             <div className="flex items-center gap-2 mt-0.5 text-2xs text-muted-foreground">
               {dl.expected_volumes.length > 0 && <span>{formatVolumes(dl.expected_volumes)}</span>}
@@ -1132,6 +1135,7 @@ export function AvailableDownloadsSection({
           </button>
         </h2>
         <div className="flex items-center gap-2 flex-wrap justify-end">
+          <DownloadClientSelector />
           {libraries.length > 1 && (
             <select
               value={filterLib}
@@ -1333,7 +1337,7 @@ export function AvailableDownloadsSection({
                           </button>
                         ) : (
                           source.release.download_url && (
-                            <QbittorrentDownloadButton
+                            <DownloadClientButton
                               downloadUrl={source.release.download_url}
                               releaseId={`${source.entryId}-${source.releaseIndex}`}
                               libraryId={r.library_id}

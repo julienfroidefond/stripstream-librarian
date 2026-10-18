@@ -40,7 +40,7 @@ export default async function SeriesDetailPage({
   }
   const libraryId = seriesDto.library_id;
 
-  const [library, seriesMeta, metadataLinks, readingStatusLink, prowlarrConfigured, qbConfigured, metadataProviders, renameFormat, renameFormatHs, renameFormatInt, renameFormatOneshot, telegramStatus, ddlProviderEnabled] = await Promise.all([
+  const [library, seriesMeta, metadataLinks, readingStatusLink, prowlarrConfigured, qbConfigured, alldebridConfigured, metadataProviders, renameFormat, renameFormatHs, renameFormatInt, renameFormatOneshot, telegramStatus, ddlProviderEnabled] = await Promise.all([
     fetchLibraries().then((libs) => libs.find((l) => l.id === libraryId)),
     fetchSeriesMetadata(seriesId).catch(() => null as SeriesMetadataDto | null),
     getMetadataLink(seriesId).catch(() => [] as ExternalMetadataLinkDto[]),
@@ -48,6 +48,9 @@ export default async function SeriesDetailPage({
     fetchDownloadsEnabled(),
     apiFetch<{ url?: string; username?: string }>("/settings/qbittorrent", { next: { revalidate: 3600 } })
       .then(d => !!(d?.url?.trim() && d?.username?.trim()))
+      .catch(() => false),
+    apiFetch<{ enabled?: boolean; api_key?: string }>("/settings/alldebrid", { next: { revalidate: 3600 } })
+      .then(d => d?.enabled === true && !!d?.api_key?.trim())
       .catch(() => false),
     apiFetch<{ comicvine?: { api_key?: string } }>("/settings/metadata_providers", { next: { revalidate: 3600 } }).catch(() => null),
     apiFetch<string>("/settings/rename_format", { next: { revalidate: 3600 } }).catch(() => null),
@@ -336,6 +339,7 @@ export default async function SeriesDetailPage({
             readingStatusLink={readingStatusLink}
             prowlarrConfigured={prowlarrConfigured}
             qbConfigured={qbConfigured}
+            alldebridConfigured={alldebridConfigured}
             telegramEnabled={telegramEnabled}
             ddlProviderEnabled={ddlProviderEnabled}
             ownedVolumes={ownedVolumes}

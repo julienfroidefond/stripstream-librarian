@@ -15,6 +15,8 @@ import {
   listFolders,
   listKomgaReports,
 } from "@/lib/api";
+import { POST as adAdd } from "@/app/api/alldebrid/add/route";
+import { GET as adTest } from "@/app/api/alldebrid/test/route";
 import { GET as komgaReports } from "@/app/api/komga/reports/route";
 import { GET as komgaReport } from "@/app/api/komga/reports/[id]/route";
 import { POST as komgaSync } from "@/app/api/komga/sync/route";
@@ -65,6 +67,12 @@ describe("connection test routes", () => {
     expect(mockApi).toHaveBeenCalledWith("/qbittorrent/test");
   });
 
+  it("GET alldebrid test", async () => {
+    mockApi.mockResolvedValue({ ok: true });
+    await adTest();
+    expect(mockApi).toHaveBeenCalledWith("/alldebrid/test");
+  });
+
   it("GET telegram test", async () => {
     mockApi.mockResolvedValue({ ok: true });
     await telegramTest();
@@ -86,6 +94,15 @@ describe("download routes", () => {
   it("POST qbittorrent add forwards body", async () => {
     mockApi.mockResolvedValue({ ok: true });
     expect((await qbAdd(jsonRequest("/api/qbittorrent/add", { method: "POST", body: { url: "magnet:?x" } }))).status).toBe(200);
+  });
+
+  it("POST alldebrid add forwards body", async () => {
+    mockApi.mockResolvedValue({ ok: true });
+    await adAdd(jsonRequest("/api/alldebrid/add", { method: "POST", body: { url: "magnet:?x" } }));
+    expect(mockApi).toHaveBeenCalledWith("/alldebrid/add", {
+      method: "POST",
+      body: JSON.stringify({ url: "magnet:?x" }),
+    });
   });
 
   it("GET torrent downloads", async () => {

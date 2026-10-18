@@ -935,13 +935,18 @@ const en: Record<TranslationKey, string> = {
   "prowlarr.notConfigured": "Prowlarr is not configured",
   "prowlarr.download": "Download",
   "prowlarr.info": "Info",
-  "prowlarr.sendToQbittorrent": "Send to qBittorrent",
   "prowlarr.sending": "Sending...",
-  "prowlarr.sentSuccess": "Sent to qBittorrent",
-  "prowlarr.sentError": "Failed to send to qBittorrent",
   "prowlarr.replaceAndDownload": "Download and replace existing",
   "prowlarr.confirmReplace": "This will re-download all volumes in the pack, including those already present. Continue?",
   "prowlarr.missingVol": "Vol. {{vol}}",
+
+  // Download client (qBittorrent / AllDebrid)
+  "downloadClient.select": "Download client",
+  "downloadClient.sendTo": "Send to {{client}}",
+  "downloadClient.sentTo": "Sent to {{client}}",
+  "downloadClient.sentError": "Failed to send to {{client}}",
+  "downloadClient.reviewTitle": "Match needs review",
+  "downloadClient.reviewConfirm": "The title or volume number is ambiguous. Confirm sending to {{client}}?",
 
   // Settings - qBittorrent
   "settings.qbittorrent": "qBittorrent",
@@ -950,6 +955,15 @@ const en: Record<TranslationKey, string> = {
   "settings.qbittorrentUrlPlaceholder": "http://localhost:8080",
   "settings.qbittorrentUsername": "Username",
   "settings.qbittorrentPassword": "Password",
+
+  // Settings - AllDebrid
+  "settings.alldebrid": "AllDebrid",
+  "settings.alldebridDesc": "Use AllDebrid as an alternative download client to qBittorrent. Prowlarr snatches are debrided then imported automatically.",
+  "settings.alldebridApiKey": "API key",
+  "settings.alldebridApiKeyPlaceholder": "AllDebrid API key",
+  "settings.alldebridApiKeyConfigured": "•••••••• (key saved)",
+  "settings.alldebridEnabled": "Enable AllDebrid",
+  "settings.alldebridHelp": "The API key is never shown again once saved. Leave the field empty to keep the current key.",
 
   // Settings - Telegram Notifications
   "settings.notifications": "Notifications",

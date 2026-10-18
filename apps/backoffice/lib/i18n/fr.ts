@@ -933,13 +933,18 @@ const fr = {
   "prowlarr.notConfigured": "Prowlarr n'est pas configuré",
   "prowlarr.download": "Télécharger",
   "prowlarr.info": "Info",
-  "prowlarr.sendToQbittorrent": "Envoyer à qBittorrent",
   "prowlarr.sending": "Envoi...",
-  "prowlarr.sentSuccess": "Envoyé à qBittorrent",
-  "prowlarr.sentError": "Échec de l'envoi à qBittorrent",
   "prowlarr.replaceAndDownload": "Télécharger et remplacer les existants",
   "prowlarr.confirmReplace": "Cela va retélécharger tous les volumes du pack, y compris ceux déjà présents. Continuer ?",
   "prowlarr.missingVol": "T{{vol}}",
+
+  // Download client (qBittorrent / AllDebrid)
+  "downloadClient.select": "Client de téléchargement",
+  "downloadClient.sendTo": "Envoyer à {{client}}",
+  "downloadClient.sentTo": "Envoyé à {{client}}",
+  "downloadClient.sentError": "Échec de l'envoi à {{client}}",
+  "downloadClient.reviewTitle": "Correspondance à vérifier",
+  "downloadClient.reviewConfirm": "Le titre ou le numéro de tome est ambigu. Confirmer l'envoi à {{client}} ?",
 
   // Settings - qBittorrent
   "settings.qbittorrent": "qBittorrent",
@@ -948,6 +953,15 @@ const fr = {
   "settings.qbittorrentUrlPlaceholder": "http://localhost:8080",
   "settings.qbittorrentUsername": "Nom d'utilisateur",
   "settings.qbittorrentPassword": "Mot de passe",
+
+  // Settings - AllDebrid
+  "settings.alldebrid": "AllDebrid",
+  "settings.alldebridDesc": "Utiliser AllDebrid comme client de téléchargement alternatif à qBittorrent. Les snatchs Prowlarr sont débridés puis importés automatiquement.",
+  "settings.alldebridApiKey": "Clé API",
+  "settings.alldebridApiKeyPlaceholder": "Clé API AllDebrid",
+  "settings.alldebridApiKeyConfigured": "•••••••• (clé enregistrée)",
+  "settings.alldebridEnabled": "Activer AllDebrid",
+  "settings.alldebridHelp": "La clé API n'est jamais réaffichée après l'enregistrement. Laissez le champ vide pour conserver la clé actuelle.",
 
   // Settings - Telegram Notifications
   "settings.notifications": "Notifications",
