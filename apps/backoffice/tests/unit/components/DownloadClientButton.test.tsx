@@ -19,6 +19,12 @@ describe("isClientConfigured", () => {
     expect(isClientConfigured("qbittorrent", null)).toBe(false);
     expect(isClientConfigured("qbittorrent", { url: "http://qb" })).toBe(false);
     expect(isClientConfigured("qbittorrent", { url: "http://qb", username: " admin " })).toBe(true);
+    // A client switched off is never usable, even with valid credentials.
+    expect(
+      isClientConfigured("qbittorrent", { url: "http://qb", username: "admin", enabled: false })
+    ).toBe(false);
+    // Missing flag (config saved before it existed) defaults to enabled.
+    expect(isClientConfigured("qbittorrent", { url: "http://qb", username: "admin" })).toBe(true);
   });
 
   it("requires the enabled flag and a key for AllDebrid", () => {

@@ -3,9 +3,18 @@ import { describe, expect, it, vi } from "vitest";
 
 import { AlldebridCard } from "@/app/(app)/settings/components/AlldebridCard";
 
-function renderCard(initialData: Record<string, unknown> | null = null) {
+function renderCard(
+  initialData: Record<string, unknown> | null = null,
+  onConfiguredChange?: (configured: boolean) => void
+) {
   const handleUpdateSetting = vi.fn().mockResolvedValue(undefined);
-  render(<AlldebridCard handleUpdateSetting={handleUpdateSetting} initialData={initialData} />);
+  render(
+    <AlldebridCard
+      handleUpdateSetting={handleUpdateSetting}
+      initialData={initialData}
+      onConfiguredChange={onConfiguredChange}
+    />
+  );
   return { handleUpdateSetting };
 }
 
@@ -14,6 +23,8 @@ function apiKeyInput() {
   return document.querySelector('input[type="password"]') as HTMLInputElement;
 }
 
+const enabledSwitch = () => screen.getByRole("checkbox", { name: "settings.alldebridEnabled" });
+
 describe("AlldebridCard", () => {
   it("renders empty defaults and a disabled test button", () => {
     renderCard();
@@ -21,7 +32,7 @@ describe("AlldebridCard", () => {
     expect(screen.getByText("settings.alldebrid")).toBeInTheDocument();
     expect(apiKeyInput()).toHaveValue("");
     expect(apiKeyInput()).toHaveAttribute("placeholder", "settings.alldebridApiKeyPlaceholder");
-    expect(screen.getByRole("combobox")).toHaveValue("false");
+    expect(enabledSwitch()).not.toBeChecked();
     expect(screen.getByRole("button", { name: "settings.testConnection" })).toBeDisabled();
   });
 
@@ -30,7 +41,7 @@ describe("AlldebridCard", () => {
 
     expect(apiKeyInput()).toHaveValue("");
     expect(apiKeyInput()).toHaveAttribute("placeholder", "settings.alldebridApiKeyConfigured");
-    expect(screen.getByRole("combobox")).toHaveValue("true");
+    expect(enabledSwitch()).toBeChecked();
     expect(screen.getByRole("button", { name: "settings.testConnection" })).toBeEnabled();
   });
 
@@ -51,7 +62,7 @@ describe("AlldebridCard", () => {
   it("keeps the test button disabled when enabled but no key is stored", () => {
     renderCard({ enabled: true });
 
-    expect(screen.getByRole("combobox")).toHaveValue("true");
+    expect(enabledSwitch()).toBeChecked();
     expect(screen.getByRole("button", { name: "settings.testConnection" })).toBeDisabled();
   });
 
@@ -66,9 +77,30 @@ describe("AlldebridCard", () => {
   it("saves the enabled toggle without touching the key", () => {
     const { handleUpdateSetting } = renderCard({ api_key: "********", enabled: true });
 
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "false" } });
+    fireEvent.click(enabledSwitch());
 
     expect(handleUpdateSetting).toHaveBeenCalledWith("alldebrid", { enabled: false });
     expect(apiKeyInput()).toHaveValue("");
+    expect(enabledSwitch()).not.toBeChecked();
+  });
+
+  it("reports its usability to the parent (enabled and keyed)", () => {
+    const onConfiguredChange = vi.fn();
+    renderCard({ api_key: "********", enabled: true }, onConfiguredChange);
+
+    expect(onConfiguredChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.click(enabledSwitch());
+    expect(onConfiguredChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("hides the API key from browser and password-manager autofill", () => {
+    renderCard();
+    const input = apiKeyInput();
+
+    expect(input).toHaveAttribute("autocomplete", "off");
+    expect(input).toHaveAttribute("data-lpignore", "true");
+    expect(input).toHaveAttribute("data-1p-ignore");
+    expect(input).toHaveAttribute("data-bwignore");
   });
 });
