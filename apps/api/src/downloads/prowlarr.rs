@@ -92,6 +92,13 @@ struct ProwlarrConfig {
     url: String,
     api_key: String,
     categories: Option<Vec<i32>>,
+    /// Defaults to enabled so configurations saved before the flag existed keep working.
+    #[serde(default = "default_true")]
+    enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 pub(crate) async fn load_prowlarr_config_internal(
@@ -109,6 +116,10 @@ async fn load_prowlarr_config(pool: &sqlx::PgPool) -> Result<(String, String, Ve
         .await
         .map_err(|e| ApiError::internal(format!("invalid prowlarr config: {e}")))?
         .ok_or_else(|| ApiError::bad_request("Prowlarr is not configured"))?;
+
+    if !config.enabled {
+        return Err(ApiError::bad_request("Prowlarr is disabled"));
+    }
 
     if config.url.is_empty() || config.api_key.is_empty() {
         return Err(ApiError::bad_request(
