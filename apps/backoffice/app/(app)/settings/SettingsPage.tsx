@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button, FormInput, FormSelect, Icon, SettingsCard, SettingsPageHeader, SettingsRow, SettingsSections, SettingsTabs, Switch, toast, type SettingsTabItem } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { Settings, CacheStats, ClearCacheResponse, ThumbnailStats, UserDto } from "@/lib/api";
+import type { DownloadClient } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n/context";
 import type { Locale } from "@/lib/i18n/types";
 import { MetadataProvidersCard } from "./components/MetadataProvidersCard";
@@ -20,6 +21,8 @@ import { ArchivesTab } from "./components/ArchivesTab";
 import { TelegramMonitorCard } from "./components/TelegramMonitorCard";
 import { DdlProvidersCard } from "./components/DdlProvidersCard";
 import { AiTaggingCard } from "./components/AiTaggingCard";
+import { DownloadClientCard } from "./components/DownloadClientCard";
+import { isClientConfigured } from "@/lib/downloadClient";
 
 interface SettingsPageProps {
   initialSettings: Settings;
@@ -43,12 +46,13 @@ interface SettingsPageProps {
   initialRenameFormatInt?: string | null;
   initialRenameFormatOneshot?: string | null;
   initialDownloadsEnabled: boolean;
+  initialDownloadClient: DownloadClient | null;
   initialLibraries: import("@/lib/api").LibraryDto[];
   versions?: { api: string; indexer: string; backoffice: string };
   tokensContent?: ReactNode;
 }
 
-export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialAlldebrid, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, initialRenameFormatHs, initialRenameFormatInt, initialRenameFormatOneshot, initialDownloadsEnabled, initialLibraries, versions, tokensContent }: SettingsPageProps) {
+export default function SettingsPage({ initialSettings, initialCacheStats, initialThumbnailStats, users, initialTab, initialProwlarr, initialQbittorrent, initialAlldebrid, initialTorrentImport, initialTelegram, initialAnilist, initialKomga, initialMetadataProviders, initialStatusMappings, initialSeriesStatuses, initialProviderStatuses, initialRenameFormat, initialRenameFormatHs, initialRenameFormatInt, initialRenameFormatOneshot, initialDownloadsEnabled, initialDownloadClient, initialLibraries, versions, tokensContent }: SettingsPageProps) {
   const { t, locale, setLocale } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -596,11 +600,13 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       {/* Prowlarr */}
       <ProwlarrCard handleUpdateSetting={handleUpdateSetting} initialData={initialProwlarr} />
 
-      {/* Download client choice — qBittorrent and AllDebrid are alternatives, not cumulative */}
-      <p className="settings-well flex items-start gap-2.5 rounded-xl p-3.5 text-sm leading-relaxed text-muted-foreground">
-        <Icon name="info" size="sm" mono className="mt-0.5 shrink-0 text-primary" />
-        {t("settings.downloadClientHelp")}
-      </p>
+      {/* Download client choice — the only place it is made */}
+      <DownloadClientCard
+        handleUpdateSetting={handleUpdateSetting}
+        initialClient={initialDownloadClient}
+        qbConfigured={isClientConfigured("qbittorrent", initialQbittorrent)}
+        alldebridConfigured={isClientConfigured("alldebrid", initialAlldebrid)}
+      />
 
       {/* qBittorrent */}
       <QBittorrentCard handleUpdateSetting={handleUpdateSetting} initialQbittorrent={initialQbittorrent} initialTorrentImport={initialTorrentImport} />

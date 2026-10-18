@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { Icon, Modal } from "./ui";
 import type { ProwlarrRelease, ProwlarrSearchResponse } from "../../lib/api";
 import { useTranslation } from "@/lib/i18n/context";
-import { DownloadClientProvider, DownloadClientButton, DownloadClientSelector, isClientConfigured } from "./DownloadClientButton";
+import { DownloadClientProvider, DownloadClientButton } from "./DownloadClientButton";
+import { isClientConfigured } from "@/lib/downloadClient";
 import { compressVolumes, stripLeadingArticle } from "@/lib/volumeRanges";
 
 interface MissingBookItem {
@@ -237,13 +238,10 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
               {!isSearching && results.length > 0 && (
                 <DownloadClientProvider initialClients={{ qbittorrent: isQbConfigured, alldebrid: isAlldebridConfigured }}>
                 <div>
-                  <div className="flex items-center justify-between gap-3 mb-3">
-                    <p className="text-sm text-muted-foreground">
-                      {t("prowlarr.resultCount", { count: results.length, plural: results.length !== 1 ? "s" : "" })}
-                      {query && <span className="ml-1 text-xs opacity-70">({query})</span>}
-                    </p>
-                    <DownloadClientSelector />
-                  </div>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    {t("prowlarr.resultCount", { count: results.length, plural: results.length !== 1 ? "s" : "" })}
+                    {query && <span className="ml-1 text-xs opacity-70">({query})</span>}
+                  </p>
                   <div className="overflow-x-auto rounded-lg border border-border">
                     <table className="w-full min-w-[640px] text-sm">
                       <thead>

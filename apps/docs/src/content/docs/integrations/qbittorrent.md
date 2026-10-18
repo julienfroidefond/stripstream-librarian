@@ -16,7 +16,7 @@ Dans **Settings → Download tools → qBittorrent** :
 
 ## Envoyer un torrent à qBittorrent
 
-Depuis la page d'une série ou la page Téléchargements, cliquez sur le bouton de téléchargement à côté d'une release disponible. Le torrent est envoyé automatiquement à qBittorrent — ou à [AllDebrid](/integrations/alldebrid) si vous l'avez sélectionné dans le sélecteur **Client de téléchargement** de l'en-tête de la page Téléchargements. Avec un seul client configuré, l'en-tête affiche simplement celui-ci.
+Depuis la page d'une série ou la page Téléchargements, cliquez sur le bouton de téléchargement à côté d'une release disponible. Le torrent est envoyé au client choisi dans *Paramètres → Outils de téléchargement → Client de téléchargement* : **qBittorrent** par défaut, ou [AllDebrid](/integrations/alldebrid) si vous l'avez sélectionné. La page Téléchargements rappelle le client utilisé en lecture seule.
 
 **Mode Replace** : par défaut, Stripstream n'importe que les volumes manquants d'un torrent. En activant l'option **Replace**, tous les fichiers du torrent sont importés — y compris ceux que vous possédez déjà. Utile pour remplacer des fichiers par une version de meilleure qualité.
 

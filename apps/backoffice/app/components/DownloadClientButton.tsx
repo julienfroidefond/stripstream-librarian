@@ -4,67 +4,35 @@ import { useState, useEffect, useMemo, createContext, useContext, type ReactNode
 import { Icon, Button, Modal } from "./ui";
 import { useTranslation } from "@/lib/i18n/context";
 import type { DownloadClient } from "@/lib/api";
+import {
+  DOWNLOAD_CLIENTS,
+  DOWNLOAD_CLIENT_LABELS,
+  DOWNLOAD_CLIENT_SETTING_KEY,
+  downloadClientAddEndpoint,
+  isClientConfigured,
+  readDownloadClientSetting,
+} from "@/lib/downloadClient";
 
-/** Brand names of the supported download clients — never translated. */
-export const DOWNLOAD_CLIENT_LABELS: Record<DownloadClient, string> = {
-  qbittorrent: "qBittorrent",
-  alldebrid: "AllDebrid",
-};
-
-/** Stable order used to pick a default client when several are available. */
-const CLIENT_ORDER: DownloadClient[] = ["qbittorrent", "alldebrid"];
-
-/** `localStorage` key holding the user's preferred download client. */
-const STORAGE_KEY = "sl.downloadClient";
-
-/** Backoffice proxy endpoint accepting a snatch for the given client. */
-export function downloadClientAddEndpoint(client: DownloadClient): string {
-  return `/api/${client}/add`;
-}
-
-/**
- * Decide whether a client is usable from its settings payload.
- *
- * qBittorrent needs a URL and a username; AllDebrid must be enabled and hold a
- * non-empty API key. The API never returns the real AllDebrid key (it is
- * redacted as a non-empty placeholder), so a non-empty string is enough here.
- */
-export function isClientConfigured(client: DownloadClient, data: Record<string, unknown> | null): boolean {
-  if (!data) return false;
-  if (client === "qbittorrent") {
-    return !!(typeof data.url === "string" && data.url.trim() && typeof data.username === "string" && data.username.trim());
-  }
-  return data.enabled === true && typeof data.api_key === "string" && data.api_key.trim().length > 0;
-}
+// Re-exported for convenience: components, tests and callers import them from here.
+export * from "@/lib/downloadClient";
 
 interface DownloadClientContextValue {
-  /** Clients currently configured, in `CLIENT_ORDER`. */
+  /** Clients currently configured, in `DOWNLOAD_CLIENTS` order. */
   available: DownloadClient[];
   /** Active client, or `null` when none is configured. */
   client: DownloadClient | null;
-  setClient: (client: DownloadClient) => void;
   onDownloadStarted?: () => void;
 }
 
 const DownloadClientContext = createContext<DownloadClientContextValue>({
   available: [],
   client: null,
-  setClient: () => {},
 });
-
-function readStoredClient(): DownloadClient | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    return CLIENT_ORDER.includes(stored as DownloadClient) ? (stored as DownloadClient) : null;
-  } catch {
-    return null;
-  }
-}
 
 export function DownloadClientProvider({
   children,
   initialClients,
+  initialClient,
   onDownloadStarted,
 }: {
   children: ReactNode;
@@ -73,17 +41,22 @@ export function DownloadClientProvider({
    * set to `undefined`) is resolved client-side with a settings fetch.
    */
   initialClients?: Partial<Record<DownloadClient, boolean>>;
+  /**
+   * Client chosen in Settings. When omitted, it is read from the
+   * `download_client` setting on mount.
+   */
+  initialClient?: DownloadClient | null;
   onDownloadStarted?: () => void;
 }) {
   const [availability, setAvailability] = useState<Record<DownloadClient, boolean>>(() => ({
     qbittorrent: initialClients?.qbittorrent ?? false,
     alldebrid: initialClients?.alldebrid ?? false,
   }));
-  const [client, setClientState] = useState<DownloadClient | null>(() => readStoredClient());
+  const [preferred, setPreferred] = useState<DownloadClient | null>(initialClient ?? null);
 
   // Resolve any client the server did not tell us about.
   useEffect(() => {
-    const unknown = CLIENT_ORDER.filter((c) => initialClients?.[c] === undefined);
+    const unknown = DOWNLOAD_CLIENTS.filter((c) => initialClients?.[c] === undefined);
     if (unknown.length === 0) return;
     let active = true;
     Promise.all(
@@ -111,80 +84,52 @@ export function DownloadClientProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialClients?.qbittorrent, initialClients?.alldebrid]);
 
-  const available = useMemo(() => CLIENT_ORDER.filter((c) => availability[c]), [availability]);
-  // Fall back to the first available client when the stored choice is unusable.
-  const activeClient = client && availability[client] ? client : (available[0] ?? null);
+  // Read the client chosen in Settings when the server did not supply it.
+  useEffect(() => {
+    if (initialClient !== undefined) return;
+    let active = true;
+    fetch(`/api/settings/${DOWNLOAD_CLIENT_SETTING_KEY}`)
+      .then((resp) => (resp.ok ? resp.json() : null))
+      .catch(() => null)
+      .then((data) => {
+        if (active) setPreferred(readDownloadClientSetting(data));
+      });
+    return () => {
+      active = false;
+    };
+  }, [initialClient]);
 
-  function setClient(next: DownloadClient) {
-    setClientState(next);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      /* ignore private-mode / storage errors */
-    }
-  }
+  const available = useMemo(() => DOWNLOAD_CLIENTS.filter((c) => availability[c]), [availability]);
+  // Fall back to the first available client when the stored choice is unusable.
+  const activeClient = preferred && availability[preferred] ? preferred : (available[0] ?? null);
 
   return (
-    <DownloadClientContext.Provider value={{ available, client: activeClient, setClient, onDownloadStarted }}>
+    <DownloadClientContext.Provider value={{ available, client: activeClient, onDownloadStarted }}>
       {children}
     </DownloadClientContext.Provider>
   );
 }
 
-/** Segmented control to switch download client — hidden unless several are configured. */
-export function DownloadClientSelector() {
-  const { t } = useTranslation();
-  const { available, client, setClient } = useContext(DownloadClientContext);
-  if (available.length < 2) return null;
-
-  return (
-    <div
-      role="group"
-      aria-label={t("downloadClient.select")}
-      className="inline-flex items-center rounded-lg border border-border overflow-hidden"
-    >
-      {available.map((c) => (
-        <button
-          key={c}
-          type="button"
-          aria-pressed={client === c}
-          onClick={() => setClient(c)}
-          className={`px-2.5 py-1 text-xs font-medium transition-colors ${
-            client === c ? "bg-primary/15 text-primary" : "bg-card text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          {DOWNLOAD_CLIENT_LABELS[c]}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /**
- * Always-visible indication of the client snatches use.
+ * Read-only indication of the client snatches use.
  *
- * Renders the segmented selector when several clients are configured and a
- * static chip when only one is, so the destination is never a surprise. Renders
- * nothing when no client is configured.
+ * The choice itself lives in Settings — this chip only tells where snatches go.
+ * Renders nothing when no client is configured.
  */
 export function DownloadClientIndicator() {
   const { t } = useTranslation();
-  const { available, client } = useContext(DownloadClientContext);
-  if (available.length === 0 || !client) return null;
+  const { client } = useContext(DownloadClientContext);
+  if (!client) return null;
 
-  if (available.length === 1) {
-    return (
-      <span
-        title={t("downloadClient.activeHint")}
-        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
-      >
-        <Icon name="download" size="sm" />
-        {t("downloadClient.active", { client: DOWNLOAD_CLIENT_LABELS[client] })}
-      </span>
-    );
-  }
-
-  return <DownloadClientSelector />;
+  return (
+    <span
+      title={t("downloadClient.activeHint")}
+      className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+    >
+      <Icon name="download" size="sm" />
+      {t("downloadClient.active", { client: DOWNLOAD_CLIENT_LABELS[client] })}
+    </span>
+  );
 }
 
 /** Small "handled by <client>" chip for a download row. */

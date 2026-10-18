@@ -11,6 +11,7 @@ import {
   TelegramAvailableGroupDto,
   TelegramDownloadItemDto,
   DdlProviderDownloadDto,
+  DownloadClient,
 } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, Button, Icon, toast } from "@/app/components/ui";
 import { DownloadClientProvider, DownloadClientButton, DownloadClientIndicator, DownloadClientBadge } from "@/app/components/DownloadClientButton";
@@ -72,6 +73,8 @@ interface DownloadsPageProps {
   initialLatestFound: LatestFoundPerLibraryDto[];
   qbConfigured?: boolean;
   alldebridConfigured?: boolean;
+  /** Client chosen in Settings; read server-side to avoid a first-render flash. */
+  initialDownloadClient?: DownloadClient | null;
   initialTelegramAvailable?: TelegramAvailableGroupDto[];
   initialTelegramDownloads?: TelegramDownloadItemDto[];
   initialDdlProviderDownloads?: DdlProviderDownloadDto[];
@@ -268,7 +271,7 @@ function buildUnifiedAvailableGroups(
   return Array.from(groups.values()).filter(group => group.sources.length > 0);
 }
 
-export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigured, alldebridConfigured, initialTelegramAvailable = [], initialTelegramDownloads = [], initialDdlProviderDownloads = [] }: DownloadsPageProps) {
+export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigured, alldebridConfigured, initialDownloadClient = null, initialTelegramAvailable = [], initialTelegramDownloads = [], initialDdlProviderDownloads = [] }: DownloadsPageProps) {
   const { t } = useTranslation();
   const [downloads, setDownloads] = useState<TorrentDownloadDto[]>(initialDownloads);
   const [telegramDownloads, setTelegramDownloads] = useState<TelegramDownloadItemDto[]>(initialTelegramDownloads);
@@ -328,7 +331,7 @@ export function DownloadsPage({ initialDownloads, initialLatestFound, qbConfigur
   const handleStatusFilterChange = (id: StatusFilter) => { setStatusFilter(id); setPage(1); };
 
   return (
-    <DownloadClientProvider initialClients={{ qbittorrent: qbConfigured, alldebrid: alldebridConfigured }} onDownloadStarted={() => refresh(false)}>
+    <DownloadClientProvider initialClients={{ qbittorrent: qbConfigured, alldebrid: alldebridConfigured }} initialClient={initialDownloadClient} onDownloadStarted={() => refresh(false)}>
       <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
         <h1 className="text-xl sm:text-3xl font-bold text-foreground flex items-center gap-2 sm:gap-3">
           <Icon name="download" size="lg" className="sm:hidden text-success" />

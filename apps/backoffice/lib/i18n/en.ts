@@ -738,7 +738,11 @@ const en: Record<TranslationKey, string> = {
   "settings.downloadTools": "Download Tools",
   "settings.downloadsEnabled": "Enable download features",
   "settings.downloadsEnabledDesc": "Enables the Prowlarr search interface, sending to the download client, and download detection jobs.",
-  "settings.downloadClientHelp": "Snatches always go to a single client, never both. If both qBittorrent and AllDebrid are configured, a “Download client” selector appears on the Downloads page to pick which one receives each snatch.",
+  "settings.downloadClient": "Download client",
+  "settings.downloadClientDesc": "Snatches always go to a single client, never both. Choose here the one that receives every send.",
+  "settings.downloadClientQbittorrent": "Local BitTorrent client: files land on disk and are then imported.",
+  "settings.downloadClientAlldebrid": "Cloud debridging, then files are fetched back over HTTP.",
+  "settings.downloadClientNotConfigured": "Not configured — fill in its credentials below to select it.",
   "settings.metadata": "Metadata",
   "settings.readingStatus": "Reading Status",
   "settings.archives": "Archives",
@@ -942,9 +946,8 @@ const en: Record<TranslationKey, string> = {
   "prowlarr.missingVol": "Vol. {{vol}}",
 
   // Download client (qBittorrent / AllDebrid)
-  "downloadClient.select": "Download client",
   "downloadClient.active": "Client: {{client}}",
-  "downloadClient.activeHint": "Snatches go to a single client. Configure a second one to switch here.",
+  "downloadClient.activeHint": "The download client is chosen in settings.",
   "downloadClient.sendTo": "Send to {{client}}",
   "downloadClient.sentTo": "Sent to {{client}}",
   "downloadClient.sentError": "Failed to send to {{client}}",

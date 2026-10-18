@@ -52,7 +52,7 @@ Quand vous cliquez sur ↓, Stripstream envoie le torrent au client sélectionn�
 
 ### Choix du client
 
-Quand **qBittorrent et AllDebrid sont tous les deux configurés**, un sélecteur **Client de téléchargement** apparaît dans l'en-tête de la page *Téléchargements* (et dans les fenêtres de détection). Le choix est mémorisé dans le navigateur et s'applique à tous les envois suivants. Avec un seul client configuré, l'en-tête affiche simplement le client utilisé (`Client : qBittorrent`) — les snatchs ne partent jamais vers les deux.
+qBittorrent et AllDebrid sont des alternatives, jamais cumulatives : le client qui reçoit **tous** les snatchs se choisit dans *Paramètres → Outils de téléchargement → **Client de téléchargement***. C'est le seul endroit où le choisir — ni les modales de détection, ni l'en-tête de la page *Téléchargements* ne le demandent. Un client non configuré y apparaît grisé. L'en-tête de la page *Téléchargements* se contente d'un rappel en lecture seule (`Client : qBittorrent`).
 
 Chaque ligne de l'historique affiche un badge avec le client qui a traité le téléchargement : `qBittorrent` ou `AllDebrid`.
 

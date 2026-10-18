@@ -1,9 +1,6 @@
-import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, ReportStatGrid } from "@/app/components/ui";
-import { DownloadClientProvider, DownloadClientButton, DownloadClientSelector } from "@/app/components/DownloadClientButton";
 import type { DownloadDetectionReportDto, DownloadDetectionResultDto } from "@/lib/api";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
-import { compressVolumes } from "@/lib/volumeRanges";
 
 interface RssRelease {
   title: string;
@@ -152,93 +149,5 @@ export function DownloadDetectionErrorsCard({ results, t }: {
         ))}
       </CardContent>
     </Card>
-  );
-}
-
-export function DownloadDetectionResultsCard({ results, libraryId, qbConfigured, alldebridConfigured, t }: {
-  results: DownloadDetectionResultDto[];
-  libraryId: string | null;
-  qbConfigured?: boolean;
-  alldebridConfigured?: boolean;
-  t: TranslateFunction;
-}) {
-  if (results.length === 0) return null;
-
-  return (
-    <DownloadClientProvider initialClients={{ qbittorrent: qbConfigured, alldebrid: alldebridConfigured }}>
-      <Card className="lg:col-span-2">
-        <CardHeader>
-          <CardTitle>{t("jobDetail.downloadAvailableReleases")}</CardTitle>
-          <CardDescription>{t("jobDetail.downloadAvailableReleasesDesc", { count: String(results.length) })}</CardDescription>
-          <div className="pt-2"><DownloadClientSelector /></div>
-        </CardHeader>
-        <CardContent className="space-y-4 max-h-[700px] overflow-y-auto">
-          {results.map((r) => (
-            <div key={r.id} className="rounded-lg border border-success/20 bg-success/5 p-3">
-              <div className="flex items-center justify-between gap-2 mb-2">
-                {libraryId && r.series_id ? (
-                  <Link
-                    href={`/series/${r.series_id}`}
-                    className="font-semibold text-sm text-primary hover:underline truncate"
-                  >
-                    {r.series_name}
-                  </Link>
-                ) : (
-                  <span className="font-semibold text-sm text-foreground truncate">{r.series_name}</span>
-                )}
-                <span className="text-3xs px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap bg-warning/20 text-warning shrink-0">
-                  {t("jobDetail.downloadMissingCount", { count: String(r.missing_count) })}
-                </span>
-              </div>
-              {r.available_releases && r.available_releases.length > 0 && (
-                <div className="space-y-1.5">
-                  {r.available_releases.map((release, idx) => (
-                    <div key={idx} className="flex items-center gap-2 p-2 rounded bg-background/60 border border-border/40">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-mono text-foreground truncate" title={release.title}>{release.title}</p>
-                        <div className="flex items-center gap-3 mt-1 flex-wrap">
-                          {release.indexer && (
-                            <span className="text-3xs text-muted-foreground">{release.indexer}</span>
-                          )}
-                          {release.seeders != null && (
-                            <span className="text-3xs text-success font-medium">{release.seeders} {t("prowlarr.columnSeeders").toLowerCase()}</span>
-                          )}
-                          <span className="text-3xs text-muted-foreground">
-                            {(release.size / 1024 / 1024).toFixed(0)} MB
-                          </span>
-                          {release.match_confidence === "review" && (
-                            <span className="text-3xs px-1.5 py-0.5 rounded-full bg-warning/20 text-warning font-medium" title={release.match_reasons?.join(", ")}>
-                              {t("jobDetail.reviewNeeded")}
-                            </span>
-                          )}
-                          <div className="flex flex-wrap items-center gap-1">
-                            {compressVolumes(release.matched_missing_volumes).map((range) => (
-                              <span key={range} className="text-3xs px-1.5 py-0.5 rounded-full bg-success/20 text-success font-medium">
-                                {range}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                      {release.download_url && (
-                        <DownloadClientButton
-                          downloadUrl={release.download_url}
-                          releaseId={`${r.id}-${idx}`}
-                          libraryId={libraryId ?? undefined}
-                          seriesName={r.series_name}
-                          expectedVolumes={release.matched_missing_volumes}
-                          allVolumes={release.all_volumes}
-                          requiresReview={release.match_confidence === "review"}
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-    </DownloadClientProvider>
   );
 }
