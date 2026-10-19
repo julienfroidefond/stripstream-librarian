@@ -60,7 +60,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 1
+          # Full history: diffs are taken against origin/main.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Install Rust toolchain
@@ -73,6 +74,10 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
+
+      # Same runner as ci.yml, so the agent validates with the exact command CI uses.
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
 
       # pdfium-render binds libpdfium at runtime. Without it the PDF parser
       # tests are skipped, which is a false green for the agent.
@@ -93,17 +98,62 @@ jobs:
           prompt: |
             Implement the GitHub issue this event refers to.
 
-            - Read the full issue, including all comments, for context and acceptance criteria.
-            - Follow the repository conventions in AGENTS.md.
-            - Add or update tests for any behavior change.
-            - The runner provisions PostgreSQL (`DATABASE_URL` is set) and libpdfium,
-              so `cargo test --workspace` is expected to pass as-is. If database tests
-              fail to connect, the infrastructure is broken — report it instead of
-              rewriting the tests.
-            - Run `cargo fmt -- --check`, `cargo clippy --workspace --all-targets`, and `cargo test --workspace` before finishing.
-            - Create a dedicated branch and open a pull request that references the issue with `Closes #<number>`.
-            - Never merge and never push directly to `main`.
-            - If the issue is ambiguous or requires a product decision, comment on the issue with your questions instead of guessing.
+            ## Before coding
+            - Read the full issue, including all comments, and restate the acceptance
+              criteria as a checklist.
+            - Read AGENTS.md and the module-level AGENTS.md of every area you touch.
+            - If the issue spans several independent surfaces, or would touch more than
+              ~15 files, comment on the issue with a proposed split and stop.
+            - Search for existing code first (`rg`, and `semble` if available): helpers,
+              components, predicates, SQL queries. Reuse or extend them. Never copy-paste
+              an existing SQL block, predicate or UI fragment; if duplication is
+              unavoidable, justify it in the PR body.
+
+            ## Implementation
+            - Follow AGENTS.md: small cohesive modules, factor shared logic out, no dead
+              code, no unrelated reformatting.
+            - Update the docs in apps/docs/ when user-visible behavior changes.
+            - Add tests for the nominal path, the empty/no-op path, the boundary rows
+              that actually exist in the schema (for example `book_reading_progress`
+              rows with status = 'unread'), and the error path. Name them in the PR body.
+
+            ## Validation (must pass before opening the PR)
+            - `cargo fmt --all -- --check`
+            - `cargo clippy --workspace --all-targets -- -D warnings`
+            - `cargo nextest run --workspace` (PostgreSQL and libpdfium are installed; if
+              database tests cannot connect, report it instead of rewriting the tests).
+            - If you touched a web app: `npm ci && npx next typegen && npx tsc --noEmit
+              && npm run lint && npm run test:unit` in that app directory.
+            - If a test fails for reasons unrelated to your change, name it and show that
+              it also fails on the base commit.
+
+            ## Self-review before opening the PR
+            Stage everything (`git add -A`) so new files appear in the diff, then re-read
+            `git diff origin/main` (the checkout has full history). Then delegate a second
+            review to the `reviewer` subagent: give it the issue's acceptance criteria and
+            the base ref (`origin/main`); it can read the diff itself. Ask for findings
+            with `file:line`. Address every finding, or justify in the final response why
+            it does not apply.
+            Check the same axes yourself and fix what you find:
+            - duplication: is there an existing helper, component, predicate or SQL query
+              that should have been reused or factored out?
+            - dead code: unused imports or variables, unreachable branches, debug output;
+            - contracts: API structs, Client vs Admin OpenAPI, docs and TS DTOs agree,
+              including path and parameter names;
+            - completeness: every acceptance criterion has code and tests; every new i18n
+              key exists in both en.ts and fr.ts;
+            - scope: no unrelated changes, no version bump, no formatting noise.
+
+            ## Pull request
+            - Do not create a branch, commit, push or open the pull request yourself: the
+              runner does that after you finish, and uses your final response as the PR
+              body.
+            - Make the final response the PR body, with these sections: Contexte,
+              Changement, Réutilisation (existing code reused), Tests (names), Commandes
+              exécutées, Points d'attention / hors périmètre.
+            - Never push directly to `main`.
+            - If the issue is ambiguous or requires a product decision, stop and explain
+              the decision needed instead of guessing.
 
   comment:
     name: Reply to mention
@@ -132,7 +182,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 1
+          # Full history: diffs are taken against origin/main.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Install Rust toolchain
