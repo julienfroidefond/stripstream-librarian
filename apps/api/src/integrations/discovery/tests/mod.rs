@@ -131,39 +131,71 @@ async fn test_add_to_library_anilist_creates_metadata_link(pool: sqlx::PgPool) {
     );
 }
 
-// 4. SC provider normalization — sc_trending_bd → senscritique
+// 4. Discovery sources are normalized to the metadata provider backing them.
+//    Regression #112: `senscritique_bd` (the "SensCritique / Top BD" list) was
+//    not normalized, so the link was stored as `provider = 'senscritique_bd'`
+//    and refresh failed with "Unknown provider: senscritique_bd".
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn test_add_to_library_sc_provider_normalization(pool: sqlx::PgPool) {
+async fn test_add_to_library_discovery_source_normalization(pool: sqlx::PgPool) {
     let library_id = create_test_library(&pool).await;
     let state = test_state(pool.clone());
-    let req = make_request(library_id, "sc_trending_bd", "sc-789", "SC Trending Series");
 
-    let resp = add_to_library(State(state), Json(req)).await.unwrap().0;
+    for source in [
+        "sc_trending_bd",
+        "sc_trending_manga",
+        "sc_best_bd",
+        "sc_best_manga",
+        "senscritique_bd",
+    ] {
+        let title = format!("Series from {source}");
+        let req = make_request(library_id, source, &format!("sc-{source}"), &title);
+        let resp = add_to_library(State(state.clone()), Json(req))
+            .await
+            .unwrap()
+            .0;
 
-    // Metadata link should exist with provider = "senscritique" (not "sc_trending_bd")
-    let link_row = sqlx::query("SELECT provider FROM external_metadata_links WHERE series_id = $1")
+        let provider: String =
+            sqlx::query_scalar("SELECT provider FROM external_metadata_links WHERE series_id = $1")
+                .bind(resp.series_id)
+                .fetch_one(&pool)
+                .await
+                .expect("metadata link should exist for every discovery source");
+        assert_eq!(
+            provider, "senscritique",
+            "{source} should be normalized to senscritique"
+        );
+
+        // No link may keep the raw discovery source id as its provider.
+        let raw_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1 AND provider = $2",
+        )
         .bind(resp.series_id)
+        .bind(source)
         .fetch_one(&pool)
         .await
-        .expect("metadata link should exist for sc_ provider");
-    let provider: String = link_row.get("provider");
-    assert_eq!(
-        provider, "senscritique",
-        "sc_trending_bd should be normalized to senscritique"
-    );
+        .unwrap();
+        assert_eq!(
+            raw_count, 0,
+            "no link should exist with the raw {source} provider name"
+        );
+    }
+}
 
-    // Verify no link exists with original provider name
-    let raw_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM external_metadata_links WHERE series_id = $1 AND provider = 'sc_trending_bd'"
-    )
-    .bind(resp.series_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(
-        raw_count, 0,
-        "no link should exist with raw sc_trending_bd provider name"
-    );
+/// Regression #112: every discovery source must resolve to an implemented
+/// metadata provider, otherwise the link created from a discovery card is dead
+/// on the next refresh.
+#[test]
+fn every_supported_discovery_source_maps_to_a_provider() {
+    use crate::metadata_providers::{canonical_provider_name, get_provider};
+
+    for source in SUPPORTED_TRENDING_PROVIDERS {
+        let canonical = canonical_provider_name(source);
+        assert!(
+            get_provider(canonical).is_some(),
+            "discovery source '{source}' resolves to '{canonical}', \
+             which is not an implemented metadata provider"
+        );
+    }
 }
 
 // 5. Senscritique provider — metadata link created with correct provider
@@ -284,4 +316,54 @@ async fn test_unhide_removes_hidden(pool: sqlx::PgPool) {
     .await
     .unwrap();
     assert_eq!(count, 0, "hidden entry should be removed after unhide");
+}
+
+fn suggestion(provider: &str, external_id: &str, title: &str) -> DiscoverySuggestionDto {
+    DiscoverySuggestionDto {
+        provider: provider.to_string(),
+        external_id: external_id.to_string(),
+        title: title.to_string(),
+        authors: vec![],
+        description: None,
+        genres: vec![],
+        cover_url: None,
+        external_url: None,
+        rating: None,
+        start_year: None,
+        total_volumes: None,
+        status: None,
+    }
+}
+
+// 8. Regression #112: a suggestion carrying a discovery source id must be
+//    recognized as already owned when the stored link uses the canonical
+//    provider. The check compares external_id, so the compared series name is
+//    deliberately different to isolate the provider canonicalization.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn filter_already_owned_canonicalizes_discovery_provider(pool: sqlx::PgPool) {
+    let library_id = create_test_library(&pool).await;
+    let state = test_state(pool.clone());
+
+    let req = make_request(library_id, "senscritique", "sc-owned", "Owned Series");
+    let _ = add_to_library(State(state), Json(req)).await.unwrap();
+
+    let suggestions = vec![suggestion("senscritique_bd", "sc-owned", "Different Title")];
+
+    let filtered = filter_already_owned(&pool, "senscritique_bd", suggestions).await;
+
+    assert!(
+        filtered.is_empty(),
+        "a discovery-source suggestion must match the canonical link by external_id"
+    );
+}
+
+// 9. A non-owned suggestion is still returned (guards against over-filtering).
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn filter_already_owned_keeps_unowned_suggestions(pool: sqlx::PgPool) {
+    let suggestions = vec![suggestion("senscritique_bd", "sc-new", "Brand New")];
+
+    let filtered = filter_already_owned(&pool, "senscritique_bd", suggestions).await;
+
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].external_id, "sc-new");
 }

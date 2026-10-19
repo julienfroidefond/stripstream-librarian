@@ -221,10 +221,13 @@ pub async fn search_metadata(
         get_provider_for_library(&state, library_id).await?
     };
 
-    // Fall back to google_books if the configured provider isn't implemented yet
-    let provider = metadata_providers::get_provider(&provider_name)
-        .or_else(|| metadata_providers::get_provider("google_books"))
-        .ok_or_else(|| ApiError::bad_request(format!("unknown provider: {provider_name}")))?;
+    // A discovery source id (e.g. `senscritique_bd`) is not a metadata provider:
+    // resolve it first, otherwise the lookup below would silently fall back to
+    // Google Books and surface a confusing "Google Books" error (#112).
+    let provider = metadata_providers::resolve_provider(&provider_name).map_err(|unknown| {
+        ApiError::bad_request(format!("unknown metadata provider: {unknown}"))
+    })?;
+    let provider_name = provider.name().to_string();
 
     let mut provider_config =
         super::config::load_provider_config(&state.pool, &provider_name).await;

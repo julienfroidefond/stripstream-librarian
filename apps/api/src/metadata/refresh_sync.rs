@@ -42,8 +42,12 @@ pub(crate) async fn refresh_link(
     provider_name: &str,
     external_id: &str,
 ) -> Result<super::refresh::SeriesRefreshResult, String> {
-    let provider = metadata_providers::get_provider(provider_name)
-        .ok_or_else(|| format!("Unknown provider: {provider_name}"))?;
+    // Legacy links created before #112 may still carry a discovery source id
+    // (`senscritique_bd`, `sc_trending_bd`, …). Resolve it to the metadata
+    // provider that actually backs it instead of failing on an unknown provider.
+    let provider = metadata_providers::resolve_provider(provider_name)
+        .map_err(|unknown| format!("Unknown provider: {unknown}"))?;
+    let provider_name = provider.name();
 
     let config = super::config::load_provider_config(pool, provider_name).await;
 

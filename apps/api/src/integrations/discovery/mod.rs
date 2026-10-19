@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::metadata_providers::anilist;
+use crate::metadata_providers::canonical_provider_name;
 use crate::metadata_providers::senscritique;
 use crate::state::AppState;
 
@@ -135,6 +136,21 @@ async fn cleanup_expired(pool: &sqlx::PgPool) {
 
 // ─── Handlers ───────────────────────────────────────────────────────────────
 
+/// Discovery sources exposed by `GET /discovery/trending`.
+///
+/// Every one of them must resolve — via [`canonical_provider_name`] — to an
+/// implemented metadata provider, so links created from a discovery card can be
+/// refreshed (#112). The regression test lives in `tests::mod`.
+pub(crate) const SUPPORTED_TRENDING_PROVIDERS: &[&str] = &[
+    "anilist",
+    "senscritique",
+    "senscritique_bd",
+    "sc_trending_bd",
+    "sc_trending_manga",
+    "sc_best_bd",
+    "sc_best_manga",
+];
+
 /// GET /discovery/trending
 pub async fn trending(
     State(state): State<AppState>,
@@ -144,19 +160,10 @@ pub async fn trending(
     let limit = params.limit.unwrap_or(100).min(200) as usize;
     let offset = params.offset.unwrap_or(0).max(0) as usize;
 
-    let supported = [
-        "anilist",
-        "senscritique",
-        "senscritique_bd",
-        "sc_trending_bd",
-        "sc_trending_manga",
-        "sc_best_bd",
-        "sc_best_manga",
-    ];
-    if !supported.contains(&provider) {
+    if !SUPPORTED_TRENDING_PROVIDERS.contains(&provider) {
         return Err(ApiError::bad_request(format!(
             "trending not supported for provider '{provider}'. Supported: {}",
-            supported.join(", ")
+            SUPPORTED_TRENDING_PROVIDERS.join(", ")
         )));
     }
 
@@ -193,6 +200,18 @@ pub async fn trending(
     } else {
         fetch_and_cache_trending(&state.pool, provider, &cache_key, gql_period, gql_sort).await?
     };
+
+    // Cache rows written before #112 may still hold a discovery source id
+    // (`senscritique_bd`, `sc_trending_bd`, …) instead of the metadata provider
+    // that backs them. Normalize on read so clients never see an id that cannot
+    // be stored in `external_metadata_links.provider`.
+    let all_suggestions: Vec<DiscoverySuggestionDto> = all_suggestions
+        .into_iter()
+        .map(|mut suggestion| {
+            suggestion.provider = canonical_provider_name(&suggestion.provider).to_string();
+            suggestion
+        })
+        .collect();
 
     // Filter out already-owned, then paginate
     let filtered = filter_already_owned(&state.pool, provider, all_suggestions).await;
@@ -290,7 +309,7 @@ async fn fetch_and_cache_trending(
                 .get("rating")
                 .and_then(|rating| rating.as_f64());
             DiscoverySuggestionDto {
-                provider: provider.to_string(),
+                provider: canonical_provider_name(provider).to_string(),
                 external_id: c.external_id,
                 title: c.title,
                 authors: c.authors,
@@ -961,12 +980,10 @@ pub async fn add_to_library(
 ) -> Result<Json<AddToLibraryResponse>, ApiError> {
     use crate::series::helpers::{create_series_with_metadata, CreateSeriesParams};
 
-    // Normalize provider: sc_trending_bd, sc_best_manga, etc. → senscritique
-    let metadata_provider = if req.provider.starts_with("sc_") {
-        "senscritique".to_string()
-    } else {
-        req.provider.clone()
-    };
+    // Discovery sources (sc_trending_bd, sc_best_manga, senscritique_bd, …) are
+    // backed by the SensCritique metadata provider. Never store the source id as
+    // the link provider: refresh/sync would fail with "Unknown provider".
+    let metadata_provider = canonical_provider_name(&req.provider).to_string();
 
     // Build metadata_json with all the discovery-specific fields
     let metadata_json = serde_json::json!({
@@ -1024,6 +1041,9 @@ async fn filter_already_owned(
     if suggestions.is_empty() {
         return suggestions;
     }
+
+    // Links always store the canonical metadata provider, never the discovery source.
+    let provider = canonical_provider_name(provider);
 
     // 1. Filter by external_id (exact match via metadata links)
     let external_ids: Vec<String> = suggestions.iter().map(|s| s.external_id.clone()).collect();

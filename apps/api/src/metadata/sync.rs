@@ -248,10 +248,13 @@ async fn sync_books_from_links(
     let local_books = shared_sync::fetch_local_books(pool, library_id, series_name).await?;
 
     for link in links {
-        let provider = metadata_providers::get_provider(&link.provider)
+        // Legacy links may carry a discovery source id (#112); resolve it before
+        // looking up the provider so it does not silently fall back to Google Books.
+        let link_provider = metadata_providers::canonical_provider_name(&link.provider);
+        let provider = metadata_providers::get_provider(link_provider)
             .or_else(|| metadata_providers::get_provider("google_books"))
-            .ok_or_else(|| ApiError::internal(format!("unknown provider: {}", link.provider)))?;
-        let provider_config = super::config::load_provider_config(pool, &link.provider).await;
+            .ok_or_else(|| ApiError::internal(format!("unknown provider: {link_provider}")))?;
+        let provider_config = super::config::load_provider_config(pool, link_provider).await;
 
         let books = provider
             .get_series_books(&link.external_id, &provider_config)
@@ -260,7 +263,7 @@ async fn sync_books_from_links(
 
         shared_sync::delete_link_book_metadata(pool, link.id).await?;
 
-        let matched = if link.provider == "bdtheque" || link.provider == "bdphile" {
+        let matched = if link_provider == "bdtheque" || link_provider == "bdphile" {
             shared_sync::match_books_for_new_provider(&books, &local_books)
         } else {
             shared_sync::match_books(&books, &local_books)
