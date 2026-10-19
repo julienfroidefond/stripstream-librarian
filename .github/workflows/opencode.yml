@@ -20,6 +20,13 @@ env:
   # Same wiring as ci.yml: `#[sqlx::test]` creates a throwaway database per
   # test, which needs the CREATEDB privilege (POSTGRES_USER is a superuser).
   DATABASE_URL: postgres://stripstream:stripstream@localhost:5432/stripstream
+  # `external_directory` and `doom_loop` default to "ask". In a non-interactive
+  # CI run nobody can answer, so a single out-of-workspace path hangs the agent
+  # until the job timeout (observed on 2026-10-19: 53 min of silence at
+  # `/home/runner/work/work/...`). Deny instead: the tool fails fast and the
+  # agent recovers. /tmp stays writable for scratch files.
+  OPENCODE_CONFIG_CONTENT: >-
+    {"permission":{"external_directory":{"*":"deny","/tmp/**":"allow"},"doom_loop":"deny"}}
 
 jobs:
   issue:
