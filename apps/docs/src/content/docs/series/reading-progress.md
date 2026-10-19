@@ -74,7 +74,7 @@ Pour suivre votre lecture depuis le backoffice, sélectionnez un utilisateur dan
 
 Les tokens de scope **admin** ne peuvent pas non plus enregistrer la progression. Pour qu'une application externe (KOReader, Panels…) puisse suivre la lecture :
 
-1. Créez un utilisateur lecteur dans Settings → Tokens
+1. Créez un utilisateur lecteur dans **Paramètres → onglet Jetons**
 2. Créez un token **read** associé à cet utilisateur
 3. Utilisez ce token dans votre application — la progression sera enregistrée pour cet utilisateur
 
@@ -87,7 +87,7 @@ Votre progression peut être synchronisée avec d'autres services :
 - **AniList** : synchronisation bidirectionnelle (envoi et réception)
 - **Komga** : import uniquement (Komga → Stripstream)
 
-Ces synchronisations se configurent dans **Settings → onglet AniList / Komga**.
+Ces synchronisations se configurent dans **Paramètres → onglet Statut de lecture**.
 
 Voir [AniList](/integrations/anilist/) et [Komga](/integrations/komga/) pour le détail.
 

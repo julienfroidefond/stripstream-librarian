@@ -22,7 +22,7 @@ Ces identifiants sont liés à votre compte Telegram personnel. Ils permettent �
 
 ## Configuration
 
-Dans **Settings → Telegram Monitor** :
+Dans **Paramètres → onglet Outils de téléchargement → section Telegram** :
 
 1. **API ID** — le numéro fourni par my.telegram.org
 2. **API Hash** — la chaîne hexadécimale associée
@@ -100,7 +100,7 @@ C'est intentionnel : seules les séries que vous cherchez activement à complét
 Si une série n'a pas de metadata liée, utilisez la [recherche depuis la fiche série](/downloads/telegram#recherche-depuis-une-série) pour la trouver manuellement.
 :::
 
-Elle se déclenche via le bouton **Sync complet** dans Settings → Telegram Monitor ou dans la page Tâches.
+Elle se déclenche via le bouton **Sync complet** dans **Paramètres → onglet Outils de téléchargement → section Telegram** ou dans la page Tâches.
 
 ---
 

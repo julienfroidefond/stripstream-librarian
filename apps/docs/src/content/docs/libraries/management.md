@@ -58,7 +58,7 @@ Source utilisée pour récupérer automatiquement les informations de vos série
 
 | Valeur | Idéal pour |
 |--------|-----------|
-| Par défaut | Utilise le fournisseur configuré globalement dans les Settings |
+| Par défaut | Utilise le fournisseur configuré globalement dans les **Paramètres** |
 | Aucun | Désactive la recherche automatique de métadonnées |
 | Google Books | Livres, romans, BD en français |
 | ComicVine | Comics anglophones |
@@ -119,5 +119,5 @@ Lance périodiquement la détection de volumes manquants via Prowlarr. La détec
 | Hebdomadaire | Vérification hebdomadaire |
 
 :::note[Détails techniques]
-Cette section n'a d'effet que si les téléchargements sont activés dans **Settings → Téléchargements**.
+Cette section n'a d'effet que si les téléchargements sont activés dans **Paramètres → onglet Outils de téléchargement**.
 :::

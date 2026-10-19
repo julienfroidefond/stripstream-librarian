@@ -15,7 +15,7 @@ Les fournisseurs **Anna's Archive** et **Z-Library** sont prévus ; leurs résul
 
 ## Activer un fournisseur
 
-Settings → onglet **Téléchargements** → carte **Téléchargement direct**.
+**Paramètres → onglet Outils de téléchargement → section DDL → carte Téléchargement direct**.
 
 Comme les autres fonctions de téléchargement, les fournisseurs sont **désactivés par défaut** : activez ceux que vous voulez utiliser. Chaque fournisseur dispose de :
 - un **interrupteur** pour l'activer ou le désactiver individuellement ;
@@ -40,7 +40,7 @@ La recherche est aussi disponible depuis la fiche d'un **livre** et depuis la pa
 
 ## Recherche automatique en arrière-plan
 
-Settings → **Téléchargement direct** → section **Recherche automatique**.
+**Paramètres → onglet Outils de téléchargement → section DDL → carte Téléchargement direct → section Recherche automatique**.
 
 Un réglage **global** (commun à toutes les bibliothèques) lance périodiquement une recherche
 sur toutes les séries *approuvées* ayant des tomes manquants — exactement le même périmètre
@@ -86,9 +86,10 @@ au-delà, le transfert est abandonné et le `.tmp` supprimé.
 
 ## Moteur de téléchargement DDL
 
-Settings → onglet **Téléchargements** → section **Moteur de téléchargement**, carte **Téléchargements
-directs (DDL)**. Les trois derniers réglages sont **partagés par tous les moteurs de téléchargement**
-(DDL et Telegram) ; les deux premiers ne concernent que les téléchargements directs.
+**Paramètres → onglet Outils de téléchargement → section Moteur de téléchargement**, carte
+**Téléchargements directs (DDL)**. Les trois derniers réglages sont **partagés par tous les moteurs
+de téléchargement** (DDL et Telegram) ; les deux premiers ne concernent que les téléchargements
+directs.
 
 | Réglage | Clé `limits` | Défaut | Portée |
 |---------|--------------|--------|--------|

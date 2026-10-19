@@ -29,11 +29,11 @@ La regénération complète supprime temporairement toutes les miniatures pendan
 En dehors des miniatures, Stripstream peut rendre n'importe quelle page d'une archive à la demande pour les lecteurs externes. Les pages rendues sont mises en cache pour éviter de rouvrir les archives à chaque requête.
 
 :::note[Détails techniques]
-**Format de sortie des miniatures** : WebP, 300×400 px.
+**Format de sortie des miniatures** : réglable dans **Paramètres → onglet Images & cache** (WebP 300×400 px par défaut).
 
-**Rendu de pages à la demande** : formats JPEG, PNG, WebP ou original ; qualité 1–100 ; largeur max 1–2160 px ; filtres lanczos3, nearest, triangle/bilinear. Concurrence limitée à 8 via Semaphore.
+**Rendu de pages à la demande** : formats JPEG, PNG, WebP ou original ; qualité 1–100 ; largeur max 1–2160 px ; filtres lanczos3, nearest, triangle/bilinear. La concurrence est plafonnée par `limits.concurrent_renders` (8 par défaut, réglable dans **Paramètres → onglet Général**).
 
 **Cache des pages rendues** :
-- Mémoire LRU : 512 entrées
-- Disque : clé `SHA256(chemin + page + format + qualité + largeur)`, structure à deux niveaux
+- Mémoire : LRU **limité en octets** (`cache.memory_max_size_mb`, 128 Mo par défaut), redimensionnable à chaud
+- Disque : répertoire `cache.directory` (défaut `/tmp/stripstream-image-cache`), clé `SHA256(chemin + mtime + page + format + qualité + largeur)`, structure à deux niveaux
 :::

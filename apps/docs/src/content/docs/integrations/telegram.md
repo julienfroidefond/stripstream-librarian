@@ -7,7 +7,7 @@ L'intégration Telegram vous permet de recevoir des notifications sur votre tél
 
 ## Configuration
 
-Dans **Settings → onglet Notifications** :
+Dans **Paramètres → onglet Notifications** :
 
 1. **Bot token** — créez un bot Telegram via [@BotFather](https://t.me/botfather) et copiez le token
 2. **Chat ID** — l'identifiant du chat où envoyer les notifications (utilisateur ou groupe)

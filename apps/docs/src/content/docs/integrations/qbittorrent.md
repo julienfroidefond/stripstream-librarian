@@ -7,7 +7,7 @@ qBittorrent est le client de téléchargement **par défaut** utilisé par Strip
 
 ## Configuration
 
-Dans **Settings → Download tools → qBittorrent** :
+Dans **Paramètres → onglet Outils de téléchargement → carte qBittorrent** :
 - **URL** : adresse de votre instance qBittorrent (ex. `http://qbittorrent:8080`)
 - **Nom d'utilisateur** et **mot de passe** : identifiants de l'interface qBittorrent
 - **Activer qBittorrent** : interrupteur en haut à droite de la carte (activé par défaut). Désactivé, les snatchs ne sont plus envoyés à qBittorrent et le client n'apparaît plus comme sélectionnable dans le sélecteur *Client de téléchargement*.

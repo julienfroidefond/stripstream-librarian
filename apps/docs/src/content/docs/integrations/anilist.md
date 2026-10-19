@@ -16,7 +16,7 @@ L'intégration AniList permet de synchroniser votre progression de lecture dans 
 
 ### 2 — Configurer dans Stripstream
 
-Dans **Settings → onglet Statut de lecture** :
+Dans **Paramètres → onglet Statut de lecture** :
 
 ![Page de configuration AniList dans les paramètres](/screenshots/anilist-config.png)
 
@@ -45,7 +45,7 @@ Dans les paramètres de chaque bibliothèque (icône ⚙️), section **État de
 
 Le pull tire votre progression depuis AniList et met à jour les statuts de lecture locaux. Les séries que vous avez "en cours" ou "terminées" sur AniList sont mises à jour dans Stripstream.
 
-**Déclenchement** : bouton **Pull depuis AniList** dans Settings → AniList.
+**Déclenchement** : bouton **Pull depuis AniList** dans **Paramètres → onglet Statut de lecture**.
 
 Le rapport détaille par série : matched, updated, skipped, errors.
 
@@ -61,7 +61,7 @@ Stripstream ne marque jamais une série comme terminée sur AniList en se basant
 
 **Prévisualisation** : le bouton **Prévisualiser** affiche ce qui sera envoyé sans effectuer le push — utile pour vérifier avant la première synchronisation.
 
-**Déclenchement** : bouton **Push vers AniList** dans Settings → AniList, ou automatiquement selon la fréquence configurée par bibliothèque.
+**Déclenchement** : bouton **Push vers AniList** dans **Paramètres → onglet Statut de lecture**, ou automatiquement selon la fréquence configurée par bibliothèque.
 
 ---
 

@@ -38,7 +38,7 @@ Le bouton × est réversible : supprimer l'entrée depuis le panneau *Releases m
 4. Un scan est déclenché automatiquement pour intégrer le nouveau fichier
 5. Statut final : **Importé** ou **Erreur**
 
-Le nombre de téléchargements simultanés et le nombre de connexions par téléchargement sont configurables dans Settings → Telegram Monitor (défauts : 2 téléchargements, 4 connexions).
+Le nombre de téléchargements simultanés et le nombre de connexions par téléchargement sont configurables dans **Paramètres → onglet Outils de téléchargement → section Telegram** (défauts : 2 téléchargements, 4 connexions).
 
 ## Nommage à l'import
 

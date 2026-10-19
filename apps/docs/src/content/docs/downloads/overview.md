@@ -18,7 +18,7 @@ Les quatre modes alimentent la page **Téléchargements** : les offres des **fou
 
 Les téléchargements sont désactivés par défaut. Pour les activer :
 
-**Settings → Téléchargements → activer "Activer les téléchargements"**
+**Paramètres → onglet Outils de téléchargement → activer « Activer les fonctionnalités de téléchargement »**
 
 Ce toggle contrôle la visibilité de la page Téléchargements, les boutons d'envoi au client de téléchargement et les options de détection automatique dans les bibliothèques.
 
