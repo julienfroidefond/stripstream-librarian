@@ -18,7 +18,7 @@ import { DownloadClientProvider, DownloadClientButton, DownloadClientIndicator, 
 import { useTranslation } from "@/lib/i18n/context";
 import { compressVolumes } from "@/lib/volumeRanges";
 import { formatDateTime, formatEta, formatSpeed, formatVolumes } from "@/lib/format";
-import { showsDownloadProgress } from "@/lib/download";
+import { isTelegramDownloadRetryable, showsDownloadProgress } from "@/lib/download";
 import type { TranslationKey } from "@/lib/i18n/fr";
 
 type TFunction = (key: TranslationKey, vars?: Record<string, string | number>) => string;
@@ -724,7 +724,7 @@ function TelegramDownloadRow({ item, onRefresh }: { item: TelegramDownloadItemDt
 
         <span className="text-3xs text-muted-foreground shrink-0 tabular-nums hidden sm:block">{formatDateTime(item.updated_at, "fr")}</span>
 
-        {(item.status === "failed" || item.status === "imported") && (
+        {isTelegramDownloadRetryable(item.status) && (
           <button
             type="button"
             onClick={handleRetry}

@@ -41,6 +41,11 @@ export function showsDownloadProgress(status: string, progress: number): boolean
   return (status === "completed" || status === "importing") && progress >= 1;
 }
 
+/** Whether a Telegram download can be retried (failed or imported). */
+export function isTelegramDownloadRetryable(status: string): boolean {
+  return status === "failed" || status === "imported";
+}
+
 /** Fetch the book file as a `File` so it can be passed to `navigator.share`. */
 export async function fetchSharedFile(url: string, fallbackName = "book"): Promise<File> {
   const response = await fetch(url);
