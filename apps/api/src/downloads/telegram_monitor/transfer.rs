@@ -63,6 +63,16 @@ impl TelegramFetcher {
     }
 }
 
+/// `upload.getFile` rejects a `limit` that is not a multiple of 4 KiB with
+/// `400 LIMIT_INVALID`. The final block of a file is a short remainder, so the
+/// request has to be rounded up; the server then returns only the bytes left.
+const REQUEST_ALIGNMENT: i32 = 4 * 1024;
+
+fn aligned_limit(limit: i32) -> i32 {
+    // `i32::div_ceil` is still unstable, and `limit` is always positive here.
+    (limit + REQUEST_ALIGNMENT - 1) / REQUEST_ALIGNMENT * REQUEST_ALIGNMENT
+}
+
 #[async_trait]
 impl RangeFetcher for TelegramFetcher {
     async fn fetch(&self, offset: i64, limit: i32) -> Result<Vec<u8>, FetchError> {
@@ -73,7 +83,7 @@ impl RangeFetcher for TelegramFetcher {
             cdn_supported: false,
             location: self.location.clone(),
             offset,
-            limit,
+            limit: aligned_limit(limit),
         };
 
         let dc_id = self.dc_id.load(Ordering::Relaxed);
@@ -177,6 +187,16 @@ impl ProgressReporter for LinkProgress {
 mod tests {
     use super::*;
     use crate::downloads::ranged::FetchErrorKind;
+
+    #[test]
+    fn request_limits_are_rounded_up_to_the_telegram_block_size() {
+        // A short final block must never be sent as-is: Telegram answers a
+        // non-4 KiB-aligned limit with `400 LIMIT_INVALID`.
+        assert_eq!(aligned_limit(1), 4096);
+        assert_eq!(aligned_limit(4096), 4096);
+        assert_eq!(aligned_limit(4097), 8192);
+        assert_eq!(aligned_limit(512 * 1024), 512 * 1024);
+    }
 
     #[test]
     fn flood_wait_is_retried_after_the_advertised_delay() {

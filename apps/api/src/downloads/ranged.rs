@@ -84,9 +84,12 @@ impl std::error::Error for FetchError {}
 
 /// Fetches a byte range from a remote resource.
 ///
-/// Implementations must return exactly `limit` bytes (Telegram's
-/// `upload.getFile` with `precise = true` does), or an error. A short body is
-/// treated as a retryable inconsistency by the engine.
+/// Implementations should return exactly `limit` bytes, or an error. The final
+/// block may legitimately come back shorter when the transport rounds the
+/// requested length up and truncates at the end of the file (Telegram's
+/// `upload.getFile` requires a 4 KiB-aligned `limit`); the engine accepts that
+/// as long as the bytes reach `total_size`. Any other short body is treated as
+/// a retryable inconsistency.
 #[async_trait]
 pub trait RangeFetcher: Send + Sync {
     async fn fetch(&self, offset: i64, limit: i32) -> Result<Vec<u8>, FetchError>;
@@ -326,7 +329,7 @@ async fn worker(
         }
         let offset = (block * config.chunk_size as u64) as i64;
         let limit = (total_size - offset).clamp(1, config.chunk_size) as i32;
-        let data = fetch_block(&*fetcher, offset, limit, &config).await?;
+        let data = fetch_block(&*fetcher, offset, limit, total_size, &config).await?;
         sink.write_at(offset, &data)
             .await
             .map_err(RangedError::Io)?;
@@ -339,6 +342,7 @@ async fn fetch_block(
     fetcher: &dyn RangeFetcher,
     offset: i64,
     limit: i32,
+    total_size: i64,
     config: &RangedConfig,
 ) -> Result<Vec<u8>, RangedError> {
     let mut attempt = 0usize;
@@ -356,6 +360,14 @@ async fn fetch_block(
                 tokio::time::sleep(config.backoff(attempt)).await;
             }
             Ok(Ok(data)) if data.len() == limit as usize => return Ok(data),
+            Ok(Ok(data))
+                if data.len() <= limit as usize && offset + data.len() as i64 == total_size =>
+            {
+                // Transport-truncated final block: the request was rounded up
+                // past the end of the file, so the server returned only what is
+                // left. This still covers the whole block.
+                return Ok(data);
+            }
             Ok(Ok(data)) => {
                 if last_attempt {
                     return Err(RangedError::Incomplete {
@@ -449,6 +461,12 @@ mod tests {
         short: HashSet<u64>,
         /// artificial delay before answering.
         delay: Option<Duration>,
+        /// Emulate a transport that rounds requests up to this many bytes
+        /// (Telegram requires a 4 KiB-aligned `limit`).
+        request_alignment: Option<i64>,
+        /// Total file size, so a rounded-up final request is truncated at EOF
+        /// like Telegram does.
+        total_size: Option<i64>,
     }
 
     /// Mock fetcher that serves a byte pattern and can inject failures.
@@ -483,7 +501,7 @@ mod tests {
             self.used.lock().unwrap().push(self.id);
 
             let block = offset as u64 / self.chunk_size as u64;
-            let (delay, fatal, short, transient) = {
+            let (delay, fatal, short, transient, alignment, total_size) = {
                 let mut plan = self.plan.lock().unwrap();
                 let remaining = plan.transient.get_mut(&block).and_then(|r| {
                     if *r > 0 {
@@ -498,6 +516,8 @@ mod tests {
                     plan.fatal == Some(block),
                     plan.short.contains(&block),
                     remaining.is_some(),
+                    plan.request_alignment,
+                    plan.total_size,
                 )
             };
 
@@ -510,10 +530,17 @@ mod tests {
             if transient {
                 return Err(FetchError::transient("transient block"));
             }
+            let requested = match alignment {
+                Some(alignment) => (limit as i64 + alignment - 1) / alignment * alignment,
+                None => limit as i64,
+            };
+            let available = total_size
+                .map(|total| (total - offset).min(requested))
+                .unwrap_or(requested);
             let len = if short {
                 (limit as usize) / 2
             } else {
-                limit as usize
+                available as usize
             };
             Ok(pattern(offset, len))
         }
@@ -610,6 +637,36 @@ mod tests {
         assert_eq!(sink.contents().await, pattern(0, total as usize));
         let reports = reporter.reports.lock().await.clone();
         assert_eq!(reports.last().copied(), Some(total));
+    }
+
+    #[tokio::test]
+    async fn accepts_a_transport_truncated_final_block() {
+        // Telegram rejects a `limit` that is not a multiple of 4 KiB, so the
+        // last (short) block is requested rounded up and comes back truncated.
+        // This is exactly what failed in production: the engine treated the
+        // shorter final body as an error.
+        let chunk = 8; // stands in for 512 KiB
+        let total = chunk * 4 + 3;
+        let sink = MemorySink::new(total as usize);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (fetchers, mocks) = fetchers(3, chunk, calls.clone());
+        for mock in &mocks {
+            let mut plan = mock.plan.lock().unwrap();
+            plan.request_alignment = Some(4);
+            plan.total_size = Some(total);
+        }
+
+        download_ranged(
+            fetchers,
+            sink.clone(),
+            total,
+            Arc::new(Recorder::default()),
+            fast_config(chunk),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(sink.contents().await, pattern(0, total as usize));
     }
 
     #[tokio::test]
