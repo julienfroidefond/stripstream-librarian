@@ -829,12 +829,12 @@ const en: Record<TranslationKey, string> = {
   "settings.concurrentRenders": "Concurrent renders",
   "settings.concurrentRendersHelp": "Maximum number of parallel page renders and thumbnail generations",
   "settings.concurrentTelegramDownloads": "Concurrent Telegram downloads",
-  "settings.concurrentTelegramDownloadsHelp": "Reduce to avoid FLOOD_WAIT rate limit errors",
+  "settings.concurrentTelegramDownloadsHelp": "Applied immediately. Telegram throttles the whole account, so extra downloads share the same request and connection budget.",
   "settings.telegramDownloadConnections": "Telegram connections per download",
-  "settings.telegramDownloadConnectionsHelp": "Parallel connections used for a single download. More connections means faster large files; past 8 Telegram throttles and it gets slower.",
+  "settings.telegramDownloadConnectionsHelp": "Connections requested per download, taken from a budget of 8 shared by every running download. Applies to the next download.",
   "settings.timeoutSeconds": "Timeout (seconds)",
   "settings.rateLimit": "Rate limit (req/s)",
-  "settings.limitsNote": "Note: Changes to limits require a server restart to take effect. The \"Concurrent renders\" setting controls both page rendering and thumbnail generation parallelism.",
+  "settings.limitsNote": "Download settings (concurrent downloads, connections, attempts, timeouts) apply immediately, without a restart. The \"Concurrent renders\" setting only takes effect after a server restart and controls both page rendering and thumbnail generation parallelism.",
 
   // Settings - Thumbnails
   "settings.thumbnails": "Thumbnails",

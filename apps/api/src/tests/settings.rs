@@ -201,6 +201,31 @@ async fn update_setting_limits_refreshes_runtime_settings(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
+async fn update_setting_limits_applies_download_settings_without_restart(pool: PgPool) {
+    let state = test_state(pool.clone());
+
+    let _ = update_setting(
+        State(state.clone()),
+        key_path("limits"),
+        setting_body(json!({
+            "concurrent_telegram_downloads": 5,
+            "concurrent_ddl_provider_downloads": 3,
+        })),
+    )
+    .await
+    .unwrap();
+
+    // The running semaphores must pick the new values up immediately: saving
+    // the Backoffice form used to require an API restart.
+    assert_eq!(state.telegram_downloads.limit(), 5);
+    assert_eq!(state.ddl_provider_downloads.limit(), 3);
+
+    let settings = *state.download_settings.read().await;
+    assert_eq!(settings.telegram_concurrency, 5);
+    assert_eq!(settings.ddl_concurrency, 3);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
 async fn update_setting_image_processing_clamps_quality(pool: PgPool) {
     let state = test_state(pool.clone());
 

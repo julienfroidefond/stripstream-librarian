@@ -13,6 +13,7 @@ use sqlx::PgPool;
 use stripstream_core::settings::load_setting;
 
 use super::ranged::RangedConfig;
+use super::telegram_monitor::MAX_CONCURRENT_CONNECTIONS;
 
 /// Connections opened per Telegram download. One Telegram socket caps around
 /// 2 MB/s no matter the local bandwidth, so spreading a download over a handful
@@ -171,6 +172,19 @@ impl DownloadSettings {
         Self::from_limits(value.as_ref())
     }
 
+    /// Connections a single download should open.
+    ///
+    /// Sockets are a process-wide resource. Letting `telegram_concurrency`
+    /// downloads open `telegram_connections` sockets each would multiply the
+    /// account's connection count and trigger flood waits as soon as a third
+    /// download starts. Each download therefore gets at most its share of the
+    /// global budget (never less than one), and the per-download setting still
+    /// caps that share.
+    pub fn telegram_sockets_per_download(&self) -> usize {
+        let share = MAX_CONCURRENT_CONNECTIONS / self.telegram_concurrency.max(1);
+        self.telegram_connections.min(share.max(1))
+    }
+
     /// Ranged-engine tuning shared by the transfer paths: block retries and the
     /// per-request stall timeout. The remaining knobs keep their defaults.
     pub fn ranged_config(&self) -> RangedConfig {
@@ -305,6 +319,26 @@ mod tests {
             high.magnet_stall_timeout,
             Duration::from_secs(MAX_MAGNET_STALL_TIMEOUT_MINUTES * 60)
         );
+    }
+
+    #[test]
+    fn telegram_downloads_split_the_process_connection_budget() {
+        let settings = |concurrency, connections| {
+            DownloadSettings::from_limits(Some(&json!({
+                "concurrent_telegram_downloads": concurrency,
+                "telegram_download_connections": connections,
+            })))
+        };
+
+        // Two downloads x 4 sockets fill the 8-socket budget.
+        assert_eq!(settings(2, 4).telegram_sockets_per_download(), 4);
+        // A third download takes a smaller share instead of queuing for a socket.
+        assert_eq!(settings(3, 4).telegram_sockets_per_download(), 2);
+        assert_eq!(settings(4, 8).telegram_sockets_per_download(), 2);
+        // A download always gets at least one socket.
+        assert_eq!(settings(16, 4).telegram_sockets_per_download(), 1);
+        // The per-download setting still caps the share.
+        assert_eq!(settings(2, 1).telegram_sockets_per_download(), 1);
     }
 
     #[test]

@@ -7,6 +7,7 @@ use sqlx::{Pool, Postgres};
 use stripstream_core::settings::load_setting;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock, Semaphore};
 
+use crate::downloads::settings::DownloadSettings;
 use crate::downloads::telegram_monitor::PendingAuth;
 use crate::downloads::worker::DownloadSlots;
 use crate::stats::StatsCache;
@@ -41,6 +42,9 @@ pub struct AppState {
     pub telegram_downloads: DownloadSlots,
     /// DDL-provider HTTP downloads: concurrency limit + cancellable abort handles
     pub ddl_provider_downloads: DownloadSlots,
+    /// Transfer tuning read from `app_settings.limits`, refreshed whenever the
+    /// Backoffice saves that key so new downloads pick the change up at once.
+    pub download_settings: Arc<RwLock<DownloadSettings>>,
 }
 
 #[derive(Clone)]
@@ -187,14 +191,9 @@ pub(crate) fn test_state(pool: Pool<Postgres>) -> AppState {
         stats_cache: Arc::new(StatsCache::new()),
         prowlarr_fetch_lock: Arc::new(Mutex::new(())),
         pending_tg_auth: Arc::new(Mutex::new(None)),
-        telegram_downloads: DownloadSlots::new(
-            Arc::new(Semaphore::new(1)),
-            Arc::new(Mutex::new(HashMap::new())),
-        ),
-        ddl_provider_downloads: DownloadSlots::new(
-            Arc::new(Semaphore::new(1)),
-            Arc::new(Mutex::new(HashMap::new())),
-        ),
+        telegram_downloads: DownloadSlots::new(1, Arc::new(Mutex::new(HashMap::new()))),
+        ddl_provider_downloads: DownloadSlots::new(1, Arc::new(Mutex::new(HashMap::new()))),
+        download_settings: Arc::new(RwLock::new(DownloadSettings::default())),
     }
 }
 
