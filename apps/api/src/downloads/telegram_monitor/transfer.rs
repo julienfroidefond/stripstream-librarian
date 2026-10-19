@@ -12,11 +12,43 @@ use grammers_client::{Client, Config, InvocationError};
 use grammers_session::Session;
 use uuid::Uuid;
 
+use crate::downloads::limit::DynamicLimitPermit;
 use crate::downloads::ranged::{FetchError, ProgressReporter, RangeFetcher};
 
 use super::flood;
 
-/// Open `count` independent Telegram connections that all share the same
+/// The Telegram connections of one download, plus the slice of the
+/// process-wide connection budget they hold.
+///
+/// Telegram throttles the **account**, so a third simultaneous download must
+/// share the sockets the first two already opened instead of adding four more
+/// logins. The permits are released when the pool is dropped, i.e. when the
+/// transfer ends.
+pub struct ClientPool {
+    clients: Vec<Client>,
+    _budget: Vec<DynamicLimitPermit<'static>>,
+}
+
+impl ClientPool {
+    pub fn first(&self) -> Option<&Client> {
+        self.clients.first()
+    }
+
+    pub fn len(&self) -> usize {
+        self.clients.len()
+    }
+
+    #[allow(dead_code)] // symmetry with `len`, which clippy expects on a size-like type
+    pub fn is_empty(&self) -> bool {
+        self.clients.is_empty()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, Client> {
+        self.clients.iter()
+    }
+}
+
+/// Open up to `count` independent Telegram connections that all share the same
 /// session.
 ///
 /// Telegram caps the throughput of a single TCP connection, so spreading a
@@ -26,14 +58,42 @@ use super::flood;
 /// Connections are opened sequentially: booting several sockets at once for the
 /// same account adds a burst of `initConnection` calls that can itself trigger
 /// a flood wait when another download is already running.
+///
+/// The sockets come out of a process-wide budget, so downloads starting later
+/// get a smaller share rather than multiplying the account's connection count.
 pub async fn open_clients(
     api_id: i32,
     api_hash: &str,
     session_bytes: &[u8],
     count: usize,
-) -> anyhow::Result<Vec<Client>> {
-    let mut clients = Vec::with_capacity(count.max(1));
-    for _ in 0..count.max(1) {
+) -> anyhow::Result<ClientPool> {
+    let requested = count.max(1);
+    let gate = flood::gate();
+
+    // Take as many sockets as the shared budget allows without blocking, so
+    // two downloads that start together split it instead of queueing behind
+    // each other. At least one socket is always granted: waiting for a slot is
+    // preferable to running without any connection.
+    let mut budget = Vec::with_capacity(requested);
+    for _ in 0..requested {
+        match gate.try_acquire_connection() {
+            Some(permit) => budget.push(permit),
+            None => break,
+        }
+    }
+    if budget.is_empty() {
+        budget.push(gate.acquire_connection().await);
+    }
+    if budget.len() < requested {
+        tracing::info!(
+            "[TG] {} of {} Telegram connections available, sharing the budget with running downloads",
+            budget.len(),
+            requested
+        );
+    }
+
+    let mut clients = Vec::with_capacity(budget.len());
+    for _ in 0..budget.len() {
         let mut waited = Duration::ZERO;
         let client = loop {
             flood::gate().wait().await;
@@ -53,11 +113,7 @@ pub async fn open_clients(
                             return Err(err.into());
                         }
                         waited += delay;
-                        tracing::warn!(
-                            "[TG] FLOOD_WAIT during connect: pausing every Telegram call for {}s",
-                            delay.as_secs()
-                        );
-                        flood::gate().defer(delay).await;
+                        flood::gate().defer_flood(delay).await;
                     }
                     None => return Err(err.into()),
                 },
@@ -65,7 +121,10 @@ pub async fn open_clients(
         };
         clients.push(client);
     }
-    Ok(clients)
+    Ok(ClientPool {
+        clients,
+        _budget: budget,
+    })
 }
 
 /// Fetches byte ranges of one document through a single Telegram connection.
@@ -129,6 +188,9 @@ impl RangeFetcher for TelegramFetcher {
         match result {
             Ok(tl::enums::upload::File::File(file)) => {
                 drop(permit);
+                // A success is the signal that Telegram has calmed down; the
+                // gate may restore one request slot if enough time has passed.
+                gate.record_success();
                 Ok(file.bytes)
             }
             Ok(tl::enums::upload::File::CdnRedirect(_)) => {
@@ -140,9 +202,9 @@ impl RangeFetcher for TelegramFetcher {
             Err(err) => {
                 let (error, migrate_to) = classify_invocation_error(err);
                 if let Some(delay) = error.retry_after {
-                    // Defer before releasing the slot so a queued worker sees
-                    // the gate as soon as it starts.
-                    gate.defer(delay).await;
+                    // Defer (and narrow the request budget) before releasing the
+                    // slot so a queued worker sees the gate as soon as it starts.
+                    gate.defer_flood(delay).await;
                 }
                 drop(permit);
                 if let Some(dc) = migrate_to {

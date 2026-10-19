@@ -14,6 +14,9 @@
 //!   exponential backoff, which means a transient error never discards the
 //!   blocks already written — the file is only assembled once, unlike a
 //!   restart-from-zero retry loop.
+//! * A server-imposed cooldown (`FLOOD_WAIT`) does not count as a failed
+//!   attempt: the block waits it out, bounded separately by
+//!   [`RangedConfig::max_server_cooldown`].
 //! * A per-request stall timeout bounds *inactivity*, not the total duration, so
 //!   arbitrarily large files can be downloaded.
 //! * Progress is reported on a timer through [`ProgressReporter`].
@@ -119,6 +122,14 @@ pub struct RangedConfig {
     pub workers_per_fetcher: usize,
     /// Total attempts per block before giving up.
     pub max_attempts: usize,
+    /// Total time a single block may spend honouring server-imposed cooldowns
+    /// (Telegram's `FLOOD_WAIT`, for instance) before the transfer is abandoned.
+    ///
+    /// Such cooldowns do **not** count as failed attempts: a busy account can
+    /// legitimately pause a block for minutes without anything being wrong with
+    /// the data, and aborting the whole file after five retries would turn a
+    /// transient throttle into a failed download.
+    pub max_server_cooldown: Duration,
     /// Maximum inactivity before a single request is considered stalled.
     pub stall_timeout: Duration,
     /// How often progress is reported.
@@ -135,6 +146,7 @@ impl Default for RangedConfig {
             chunk_size: 512 * 1024,
             workers_per_fetcher: 2,
             max_attempts: 5,
+            max_server_cooldown: Duration::from_secs(30 * 60),
             stall_timeout: Duration::from_secs(180),
             progress_interval: Duration::from_secs(1),
             initial_backoff: Duration::from_secs(2),
@@ -345,10 +357,12 @@ async fn fetch_block(
     total_size: i64,
     config: &RangedConfig,
 ) -> Result<Vec<u8>, RangedError> {
-    let mut attempt = 0usize;
+    let max_attempts = config.max_attempts.max(1);
+    let mut failures = 0usize;
+    let mut server_cooldown = Duration::ZERO;
     loop {
-        attempt += 1;
-        let last_attempt = attempt >= config.max_attempts.max(1);
+        failures += 1;
+        let last_attempt = failures >= max_attempts;
 
         let outcome =
             tokio::time::timeout(config.stall_timeout, fetcher.fetch(offset, limit)).await;
@@ -357,7 +371,7 @@ async fn fetch_block(
                 if last_attempt {
                     return Err(RangedError::Stalled { offset });
                 }
-                tokio::time::sleep(config.backoff(attempt)).await;
+                tokio::time::sleep(config.backoff(failures)).await;
             }
             Ok(Ok(data)) if data.len() == limit as usize => return Ok(data),
             Ok(Ok(data))
@@ -376,7 +390,7 @@ async fn fetch_block(
                         received: data.len() as i64,
                     });
                 }
-                tokio::time::sleep(config.backoff(attempt)).await;
+                tokio::time::sleep(config.backoff(failures)).await;
             }
             Ok(Err(err)) => match err.kind {
                 FetchErrorKind::Fatal => {
@@ -386,14 +400,29 @@ async fn fetch_block(
                     })
                 }
                 FetchErrorKind::Transient => {
+                    if let Some(delay) = err.retry_after {
+                        // A server-requested cooldown (Telegram `FLOOD_WAIT`) is
+                        // a pause, not a failed attempt: the block data itself is
+                        // still expected. Only the cumulative cooldown budget can
+                        // give up, so a short flood never fails the transfer.
+                        server_cooldown += delay;
+                        if server_cooldown > config.max_server_cooldown {
+                            return Err(RangedError::Fetch {
+                                offset,
+                                source: err,
+                            });
+                        }
+                        failures -= 1;
+                        tokio::time::sleep(delay).await;
+                        continue;
+                    }
                     if last_attempt {
                         return Err(RangedError::Fetch {
                             offset,
                             source: err,
                         });
                     }
-                    let delay = err.retry_after.unwrap_or_else(|| config.backoff(attempt));
-                    tokio::time::sleep(delay).await;
+                    tokio::time::sleep(config.backoff(failures)).await;
                 }
             },
         }
@@ -461,6 +490,9 @@ mod tests {
         short: HashSet<u64>,
         /// artificial delay before answering.
         delay: Option<Duration>,
+        /// When set, transient failures carry a server-requested cooldown
+        /// (Telegram `FLOOD_WAIT`) of this duration instead of a plain backoff.
+        retry_in: Option<Duration>,
         /// Emulate a transport that rounds requests up to this many bytes
         /// (Telegram requires a 4 KiB-aligned `limit`).
         request_alignment: Option<i64>,
@@ -501,7 +533,7 @@ mod tests {
             self.used.lock().unwrap().push(self.id);
 
             let block = offset as u64 / self.chunk_size as u64;
-            let (delay, fatal, short, transient, alignment, total_size) = {
+            let (delay, fatal, short, transient, alignment, total_size, retry_in) = {
                 let mut plan = self.plan.lock().unwrap();
                 let remaining = plan.transient.get_mut(&block).and_then(|r| {
                     if *r > 0 {
@@ -518,6 +550,7 @@ mod tests {
                     remaining.is_some(),
                     plan.request_alignment,
                     plan.total_size,
+                    plan.retry_in,
                 )
             };
 
@@ -528,7 +561,10 @@ mod tests {
                 return Err(FetchError::fatal("fatal block"));
             }
             if transient {
-                return Err(FetchError::transient("transient block"));
+                return Err(match retry_in {
+                    Some(delay) => FetchError::retry_in("flood wait", delay),
+                    None => FetchError::transient("transient block"),
+                });
             }
             let requested = match alignment {
                 Some(alignment) => (limit as i64 + alignment - 1) / alignment * alignment,
@@ -593,6 +629,7 @@ mod tests {
             chunk_size,
             workers_per_fetcher: 2,
             max_attempts: 3,
+            max_server_cooldown: Duration::from_secs(1),
             stall_timeout: Duration::from_millis(200),
             progress_interval: Duration::from_millis(5),
             initial_backoff: Duration::from_millis(1),
@@ -723,6 +760,69 @@ mod tests {
         assert_eq!(sink.contents().await, pattern(0, total as usize));
         // 8 successful blocks + 3 blocks retried once.
         assert_eq!(calls.load(Ordering::Relaxed), 11);
+    }
+
+    #[tokio::test]
+    async fn server_cooldowns_do_not_consume_block_attempts() {
+        let chunk = 8;
+        let total = chunk;
+        let sink = MemorySink::new(total as usize);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (fetchers, mocks) = fetchers(1, chunk, calls.clone());
+        {
+            let mut plan = mocks[0].plan.lock().unwrap();
+            // More floods than `max_attempts`: a FLOOD_WAIT must be waited out,
+            // never counted as a failed attempt.
+            plan.transient.insert(0, 6);
+            plan.retry_in = Some(Duration::from_millis(1));
+        }
+
+        let mut config = fast_config(chunk);
+        config.max_attempts = 2;
+
+        download_ranged(
+            fetchers,
+            sink.clone(),
+            total,
+            Arc::new(Recorder::default()),
+            config,
+        )
+        .await
+        .expect("a flood wait must not exhaust the block attempts");
+
+        assert_eq!(sink.contents().await, pattern(0, total as usize));
+        assert_eq!(calls.load(Ordering::Relaxed), 7, "6 floods + 1 success");
+    }
+
+    #[tokio::test]
+    async fn server_cooldown_budget_is_bounded() {
+        let chunk = 8;
+        let total = chunk;
+        let sink = MemorySink::new(total as usize);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (fetchers, mocks) = fetchers(1, chunk, calls.clone());
+        {
+            let mut plan = mocks[0].plan.lock().unwrap();
+            plan.transient.insert(0, 100);
+            plan.retry_in = Some(Duration::from_millis(5));
+        }
+
+        let mut config = fast_config(chunk);
+        config.max_server_cooldown = Duration::from_millis(12);
+
+        let err = download_ranged(fetchers, sink, total, Arc::new(Recorder::default()), config)
+            .await
+            .unwrap_err();
+
+        match err {
+            RangedError::Fetch { offset, source } => {
+                assert_eq!(offset, 0);
+                assert_eq!(source.kind, FetchErrorKind::Transient);
+            }
+            other => panic!("unexpected error: {other}"),
+        }
+        // Two 5 ms cooldowns fit in the 12 ms budget, the third exceeds it.
+        assert_eq!(calls.load(Ordering::Relaxed), 3);
     }
 
     #[tokio::test]

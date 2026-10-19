@@ -18,6 +18,10 @@ pub use jobs::{
 };
 pub use types::*;
 
+/// Process-wide Telegram connection budget, exposed for the download settings
+/// that split it between simultaneous downloads.
+pub(crate) use flood::MAX_CONCURRENT_CONNECTIONS;
+
 #[cfg(test)]
 mod tests {
     use parsers::{extract_series_name_from_filename, extract_volume};

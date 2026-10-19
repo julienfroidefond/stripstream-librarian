@@ -107,13 +107,14 @@ async fn main() -> anyhow::Result<()> {
         prowlarr_fetch_lock: Arc::new(Mutex::new(())),
         pending_tg_auth: Arc::new(Mutex::new(None)),
         telegram_downloads: crate::downloads::worker::DownloadSlots::new(
-            Arc::new(Semaphore::new(download_settings.telegram_concurrency)),
+            download_settings.telegram_concurrency,
             Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         ),
         ddl_provider_downloads: crate::downloads::worker::DownloadSlots::new(
-            Arc::new(Semaphore::new(download_settings.ddl_concurrency)),
+            download_settings.ddl_concurrency,
             Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         ),
+        download_settings: Arc::new(RwLock::new(download_settings)),
     };
 
     // Liveness row read by the diagnostics page (`service_heartbeats`).

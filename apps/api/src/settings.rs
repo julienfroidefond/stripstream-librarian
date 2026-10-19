@@ -15,9 +15,9 @@ use uuid::Uuid;
 
 use crate::{
     downloads::settings::{
-        MAX_DOWNLOAD_CONCURRENCY, MAX_HTTP_CONNECTIONS, MAX_MAGNET_STALL_TIMEOUT_MINUTES,
-        MAX_MAX_ATTEMPTS, MAX_STALL_TIMEOUT_SECS, MAX_TELEGRAM_CONNECTIONS,
-        MAX_TRANSFER_TIMEOUT_MINUTES,
+        DownloadSettings, MAX_DOWNLOAD_CONCURRENCY, MAX_HTTP_CONNECTIONS,
+        MAX_MAGNET_STALL_TIMEOUT_MINUTES, MAX_MAX_ATTEMPTS, MAX_STALL_TIMEOUT_SECS,
+        MAX_TELEGRAM_CONNECTIONS, MAX_TRANSFER_TIMEOUT_MINUTES,
     },
     error::ApiError,
     state::{load_dynamic_settings, AppState, DiskCacheStatsSnapshot},
@@ -387,6 +387,19 @@ pub async fn update_setting(
         if key == "cache" {
             *state.disk_cache_stats.lock().await = None;
         }
+    }
+
+    // Download tuning lives under the same `limits` key: apply it to the running
+    // semaphores so a Backoffice change no longer needs an API restart.
+    if key == "limits" {
+        let download_settings = DownloadSettings::load(&state.pool).await;
+        state
+            .telegram_downloads
+            .set_limit(download_settings.telegram_concurrency);
+        state
+            .ddl_provider_downloads
+            .set_limit(download_settings.ddl_concurrency);
+        *state.download_settings.write().await = download_settings;
     }
 
     Ok(Json(value))

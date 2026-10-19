@@ -59,7 +59,7 @@ Deux paramètres s'affichent au-dessus de la liste de channels :
 | **Téléchargements simultanés** | Nombre maximal de fichiers téléchargés en parallèle (défaut : 2) |
 
 :::tip[FLOOD_WAIT]
-Telegram limite le débit par **compte**, pas par connexion. Un `FLOOD_WAIT` met donc en pause tous les téléchargements et toutes les synchronisations en cours, qui reprennent ensemble après la durée annoncée, et le nombre total de requêtes `upload.getFile` simultanées est plafonné à 8 quel que soit le nombre de téléchargements. Si des `FLOOD_WAIT` persistent malgré tout, réduisez le nombre de téléchargements simultanés ou de connexions par téléchargement. La modification prend effet après redémarrage du serveur.
+Telegram limite le débit par **compte**, pas par connexion. Un `FLOOD_WAIT` met donc en pause tous les téléchargements et toutes les synchronisations en cours, qui reprennent ensemble après la durée annoncée. Le nombre total de requêtes `upload.getFile` simultanées est plafonné à 8 quel que soit le nombre de téléchargements ; quand Telegram renvoie un `FLOOD_WAIT`, ce budget est automatiquement réduit (jusqu'à une requête à la fois) puis remonté progressivement une fois le compte redevenu calme. Le nombre de connexions est lui aussi partagé entre les téléchargements (8 au total), donc un troisième téléchargement simultané réutilise les sockets des deux premiers au lieu d'en ouvrir de nouvelles. Les valeurs enregistrées dans le Backoffice s'appliquent immédiatement, sans redémarrage.
 :::
 
 ### Ajouter un channel

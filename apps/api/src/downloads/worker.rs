@@ -12,9 +12,11 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use sqlx::PgPool;
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::Mutex;
 use tokio::task::AbortHandle;
 use uuid::Uuid;
+
+use super::limit::DynamicLimit;
 
 /// Boxed future produced by a download body.
 pub type DownloadFuture = Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + 'static>>;
@@ -90,7 +92,7 @@ impl DownloadQueue for SqlDownloadQueue {
 /// A concurrency limit plus the abort handles of its running downloads.
 #[derive(Clone)]
 pub struct DownloadSlots {
-    limit: Arc<Semaphore>,
+    limit: Arc<DynamicLimit>,
     /// `id -> (token, handle)`. The token identifies the spawn that owns the
     /// handle so a late-finishing task cannot evict a newer transfer's handle.
     abort_handles: Arc<Mutex<HashMap<Uuid, (Uuid, AbortHandle)>>>,
@@ -98,13 +100,25 @@ pub struct DownloadSlots {
 
 impl DownloadSlots {
     pub fn new(
-        limit: Arc<Semaphore>,
+        limit: usize,
         abort_handles: Arc<Mutex<HashMap<Uuid, (Uuid, AbortHandle)>>>,
     ) -> Self {
         Self {
-            limit,
+            limit: Arc::new(DynamicLimit::new(limit)),
             abort_handles,
         }
+    }
+
+    /// Applies a new concurrency limit at runtime, without interrupting the
+    /// transfers already running.
+    pub fn set_limit(&self, limit: usize) {
+        self.limit.set_limit(limit);
+    }
+
+    /// The currently configured concurrency limit.
+    #[cfg(test)]
+    pub fn limit(&self) -> usize {
+        self.limit.limit()
     }
 
     /// Cancels a queued/running download if it is still registered.
@@ -129,7 +143,7 @@ impl DownloadSlots {
         // which would otherwise leak a completed download's abort handle.
         let mut guard = self.abort_handles.lock().await;
         let task = tokio::spawn(async move {
-            let _permit = limit.acquire_owned().await;
+            let _permit = limit.acquire().await;
 
             if !queue.claim(&pool, id).await {
                 release(&abort_handles, id, token).await;
@@ -193,10 +207,7 @@ mod tests {
     }
 
     fn slots() -> DownloadSlots {
-        DownloadSlots::new(
-            Arc::new(Semaphore::new(1)),
-            Arc::new(Mutex::new(HashMap::new())),
-        )
+        DownloadSlots::new(1, Arc::new(Mutex::new(HashMap::new())))
     }
 
     async fn recv(signal: &mut mpsc::UnboundedReceiver<()>) {
@@ -263,6 +274,22 @@ mod tests {
     async fn cancel_is_a_noop_for_unknown_ids() {
         // Just exercises the lock/remove path without panicking.
         slots().cancel(Uuid::new_v4()).await;
+    }
+
+    #[test]
+    fn limit_can_be_changed_without_a_restart() {
+        let slots = DownloadSlots::new(2, Arc::new(Mutex::new(HashMap::new())));
+        assert_eq!(slots.limit(), 2);
+
+        slots.set_limit(5);
+        assert_eq!(slots.limit(), 5);
+
+        slots.set_limit(0);
+        assert_eq!(
+            slots.limit(),
+            1,
+            "a zero limit would block every download forever"
+        );
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]

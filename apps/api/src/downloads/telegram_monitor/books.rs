@@ -414,6 +414,10 @@ pub async fn download_book(
     .await?;
 
     let api_id_i32 = api_id as i32;
+    // Snapshot the tuning at spawn time. The value is refreshed whenever the
+    // Backoffice saves `limits`, so a change applies to the next download
+    // without restarting the API.
+    let settings = *state.download_settings.read().await;
 
     state
         .telegram_downloads
@@ -425,6 +429,7 @@ pub async fn download_book(
                 Box::pin(async move {
                     do_download(
                         pool,
+                        settings,
                         api_id_i32,
                         api_hash,
                         session_bytes,
@@ -451,6 +456,7 @@ pub async fn download_book(
 #[allow(clippy::too_many_arguments)]
 pub async fn do_download(
     pool: sqlx::PgPool,
+    settings: DownloadSettings,
     api_id: i32,
     api_hash: String,
     session_bytes: Vec<u8>,
@@ -465,8 +471,10 @@ pub async fn do_download(
 ) -> anyhow::Result<()> {
     use grammers_client::types::{Downloadable, Media};
 
-    let settings = DownloadSettings::load(&pool).await;
-    let connection_count = settings.telegram_connections;
+    // Split the process-wide connection budget between the configured
+    // simultaneous downloads, so a third download shares sockets instead of
+    // adding new logins and provoking a flood wait.
+    let connection_count = settings.telegram_sockets_per_download();
     let clients = open_clients(api_id, &api_hash, &session_bytes, connection_count).await?;
     let primary = clients
         .first()
