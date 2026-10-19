@@ -12,6 +12,7 @@ use crate::jobs::helpers::update_progress;
 use crate::{error::ApiError, state::AppState};
 
 use super::auth::{load_tg_settings, save_session_to_db};
+use super::flood;
 use super::types::*;
 
 #[utoipa::path(
@@ -55,7 +56,7 @@ pub async fn do_search_channels(
         session,
         api_id,
         api_hash,
-        params: Default::default(),
+        params: flood::init_params(),
     })
     .await
     .map_err(|e| ApiError::internal(format!("Connect: {e}")))?;
@@ -63,11 +64,10 @@ pub async fn do_search_channels(
     let mut results = Vec::new();
     let mut dialogs = client.iter_dialogs();
 
-    while let Some(dialog) = dialogs
-        .next()
-        .await
-        .map_err(|e| ApiError::internal(format!("iter dialogs: {e}")))?
-    {
+    loop {
+        let next = flood::next_on_flood!(dialogs)
+            .map_err(|e| ApiError::internal(format!("iter dialogs: {e}")))?;
+        let Some(dialog) = next else { break };
         let chat = dialog.chat().clone();
         let title = chat.name().to_string();
 
@@ -329,7 +329,7 @@ pub async fn do_sync(
         session,
         api_id,
         api_hash,
-        params: Default::default(),
+        params: flood::init_params(),
     })
     .await
     .map_err(|e| ApiError::internal(format!("Connect: {e}")))?;
@@ -454,7 +454,7 @@ pub async fn sync_one_source(
 ) -> anyhow::Result<(usize, usize, Vec<(String, usize, Vec<String>)>)> {
     use grammers_client::grammers_tl_types::enums::MessagesFilter;
 
-    let chat = match client.resolve_username(username).await? {
+    let chat = match flood::retry_on_flood(|| client.resolve_username(username)).await? {
         Some(c) => c,
         None => anyhow::bail!("Channel not found: {username}"),
     };
@@ -479,7 +479,10 @@ pub async fn sync_one_source(
 
         let mut series_count = 0usize;
         let mut extracted_names: BTreeSet<String> = BTreeSet::new();
-        while let Some(message) = iter.next().await? {
+        loop {
+            let Some(message) = flood::next_on_flood!(iter)? else {
+                break;
+            };
             synced += 1;
             series_count += 1;
             if let Some(Media::Document(doc)) = message.media() {
@@ -524,7 +527,7 @@ pub async fn sync_one_source(
 }
 
 pub async fn get_chat_title(client: &grammers_client::Client, username: &str) -> Option<String> {
-    match client.resolve_username(username).await {
+    match flood::retry_on_flood(|| client.resolve_username(username)).await {
         Ok(Some(chat)) => Some(chat.name().to_string()),
         _ => None,
     }
