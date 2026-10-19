@@ -83,6 +83,10 @@ pub struct BookItem {
     pub reading_current_page: Option<i32>,
     #[schema(value_type = Option<String>)]
     pub reading_last_read_at: Option<DateTime<Utc>>,
+    /// Size of the book file in bytes (latest `book_files` row)
+    pub file_size: Option<i64>,
+    pub summary: Option<String>,
+    pub publish_date: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -263,12 +267,20 @@ pub async fn list_books(
     let data_sql = format!(
         r#"
         SELECT b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors, s.name AS series, b.series_id, b.volume, b.volume_type, b.language, b.page_count, b.thumbnail_path, b.updated_at,
+               b.summary, b.publish_date, bf.size_bytes,
                COALESCE(brp.status, 'unread') AS reading_status,
                brp.current_page AS reading_current_page,
                brp.last_read_at AS reading_last_read_at,
                COUNT(*) OVER() AS total_count
         FROM books b
         LEFT JOIN series s ON s.id = b.series_id
+        LEFT JOIN LATERAL (
+          SELECT size_bytes
+          FROM book_files
+          WHERE book_id = b.id
+          ORDER BY updated_at DESC
+          LIMIT 1
+        ) bf ON TRUE
         LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ${uid_p}::uuid IS NOT NULL AND brp.user_id = ${uid_p}
         WHERE ($1::uuid IS NULL OR b.library_id = $1)
           AND ($2::text IS NULL OR b.kind = $2)
@@ -361,6 +373,9 @@ pub async fn list_books(
                 reading_status: row.get("reading_status"),
                 reading_current_page: row.get("reading_current_page"),
                 reading_last_read_at: row.get("reading_last_read_at"),
+                file_size: row.get("size_bytes"),
+                summary: row.get("summary"),
+                publish_date: row.get("publish_date"),
             }
         })
         .collect();

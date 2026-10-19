@@ -183,6 +183,7 @@ pub async fn ongoing_books(
                 b.id, b.library_id, b.kind, b.format, b.title, b.author, b.authors,
                 s.name AS series, b.series_id, b.volume, b.volume_type,
                 b.language, b.page_count, b.thumbnail_path, b.updated_at,
+                b.summary, b.publish_date, bf.size_bytes,
                 COALESCE(up.status, 'unread') AS reading_status,
                 up.current_page AS reading_current_page,
                 up.last_read_at AS reading_last_read_at,
@@ -194,6 +195,13 @@ pub async fn ongoing_books(
             FROM books b
             JOIN ongoing_series os ON b.series_id = os.series_id
             JOIN series s ON s.id = b.series_id
+            LEFT JOIN LATERAL (
+                SELECT size_bytes
+                FROM book_files
+                WHERE book_id = b.id
+                ORDER BY updated_at DESC
+                LIMIT 1
+            ) bf ON TRUE
             LEFT JOIN user_progress up ON up.book_id = b.id
             WHERE COALESCE(up.status, 'unread') != 'read'
               AND NOT EXISTS (
@@ -202,7 +210,8 @@ pub async fn ongoing_books(
               )
         )
         SELECT id, library_id, kind, format, title, author, authors, series, series_id, volume, volume_type,
-               language, page_count, thumbnail_path, updated_at, reading_status, reading_current_page, reading_last_read_at
+               language, page_count, thumbnail_path, updated_at, summary, publish_date, size_bytes,
+               reading_status, reading_current_page, reading_last_read_at
         FROM next_books
         WHERE rn = 1
         ORDER BY series_last_read_at DESC NULLS LAST
@@ -238,6 +247,9 @@ pub async fn ongoing_books(
                 reading_status: row.get("reading_status"),
                 reading_current_page: row.get("reading_current_page"),
                 reading_last_read_at: row.get("reading_last_read_at"),
+                file_size: row.get("size_bytes"),
+                summary: row.get("summary"),
+                publish_date: row.get("publish_date"),
             }
         })
         .collect();
