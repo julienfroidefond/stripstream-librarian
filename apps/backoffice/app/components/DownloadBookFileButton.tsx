@@ -7,9 +7,18 @@ import { ActionsMenuItem, Icon, toast } from "./ui";
 
 interface DownloadBookFileButtonProps {
   bookId: string;
+  /**
+   * Render a custom control instead of the default `ActionsMenuItem` — used by
+   * the always-visible download shortcut of the card clusters.
+   */
+  children?: (control: {
+    href: string;
+    download: true;
+    onClick: (e: React.MouseEvent<HTMLElement>) => Promise<void>;
+  }) => React.ReactNode;
 }
 
-export function DownloadBookFileButton({ bookId }: DownloadBookFileButtonProps) {
+export function DownloadBookFileButton({ bookId, children }: DownloadBookFileButtonProps) {
   const { t } = useTranslation();
   const url = getBookFileDownloadUrl(bookId);
 
@@ -31,6 +40,10 @@ export function DownloadBookFileButton({ bookId }: DownloadBookFileButtonProps) 
       if ((error as DOMException | undefined)?.name === "AbortError") return;
       window.open(url, "_blank", "noopener");
     }
+  }
+
+  if (children) {
+    return <>{children({ href: url, download: true, onClick: handleClick })}</>;
   }
 
   return (

@@ -35,3 +35,12 @@ export { toast, Toaster } from "./Toast";
 export { Modal } from "./Modal";
 export { ActionsMenu, ActionsMenuItem, ActionsMenuSection } from "./ActionsMenu";
 export { CoverFan } from "./CoverFan";
+export {
+  CoverCard,
+  CoverRow,
+  CoverImage,
+  CoverBadge,
+  CoverScrim,
+  CoverProgress,
+} from "./CoverCard";
+export type { CoverBadgeTone } from "./CoverCard";

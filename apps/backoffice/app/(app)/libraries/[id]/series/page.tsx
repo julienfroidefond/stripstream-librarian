@@ -1,13 +1,15 @@
 import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, fetchMetadataProviders, LibraryDto, SeriesDto, SeriesPageDto } from "@/lib/api";
 import { cookies } from "next/headers";
 import { OffsetPagination } from "@/app/components/ui";
-import { SeriesGrid } from "@/app/components/SeriesGrid";
+import { SeriesGrid, SeriesList } from "@/app/components/SeriesGrid";
+import { ViewModeToggle } from "@/app/components/ViewModeToggle";
 import { EmptyState } from "@/app/components/BookCard";
 import { LiveSearchForm } from "@/app/components/LiveSearchForm";
 import { notFound } from "next/navigation";
 import { LibrarySubPageHeader } from "@/app/components/LibrarySubPageHeader";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { paramString, paramInt, paramBool } from "@/lib/searchParams";
+import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/viewMode";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +24,7 @@ export default async function LibrarySeriesPage({
   const { t } = await getServerTranslations();
   const cookieStore = await cookies();
   const hasActiveUser = !!cookieStore.get("as_user_id")?.value;
+  const viewMode = parseViewMode(cookieStore.get(VIEW_MODE_COOKIE)?.value);
   const sp = await searchParams;
   const readingStatus = paramString(sp, "status");
   const sort = paramString(sp, "sort");
@@ -119,14 +122,21 @@ export default async function LibrarySeriesPage({
       />
 
       {/* Results count */}
-      <p className="text-sm text-muted-foreground">
-        {seriesPage.total} {t("series.title").toLowerCase()}
-      </p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {seriesPage.total} {t("series.title").toLowerCase()}
+        </p>
+        <ViewModeToggle viewMode={viewMode} />
+      </div>
 
       {/* Series Grid */}
       {series.length > 0 ? (
         <>
-          <SeriesGrid series={series} sort={sort} hasActiveUser={hasActiveUser} t={t} knownStatuses={KNOWN_STATUSES} />
+          {viewMode === "list" ? (
+            <SeriesList series={series} sort={sort} hasActiveUser={hasActiveUser} t={t} knownStatuses={KNOWN_STATUSES} />
+          ) : (
+            <SeriesGrid series={series} sort={sort} hasActiveUser={hasActiveUser} t={t} knownStatuses={KNOWN_STATUSES} />
+          )}
 
           <OffsetPagination
             currentPage={page}

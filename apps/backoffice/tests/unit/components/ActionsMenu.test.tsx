@@ -134,4 +134,67 @@ describe("ActionsMenu", () => {
 
     expect(menu().style.left).toBe("100px");
   });
+
+  it("renders an icon-only trigger with the label as accessible name for the cover variant", () => {
+    renderMenu({ variant: "cover", label: "More actions" });
+
+    const trigger = screen.getByRole("button", { name: "More actions" });
+    expect(trigger).toHaveAttribute("title", "More actions");
+    expect(trigger).toHaveClass("rounded-full");
+    expect(screen.queryByRole("button", { name: "Plus" })).toBeNull();
+  });
+
+  it("renders an icon-only outlined trigger for the inline variant", () => {
+    renderMenu({ variant: "inline", label: "More actions" });
+
+    const trigger = screen.getByRole("button", { name: "More actions" });
+    expect(trigger).toHaveClass("rounded-lg");
+    expect(trigger.textContent).toBe("");
+  });
+
+  it("renders the popin inside the cover when the variant is cover", () => {
+    const { container } = render(
+      <div data-cover-card>
+        <ActionsMenu variant="cover" label="More actions" closeLabel="Close">
+          <ActionsMenuItem onClick={vi.fn()}>First</ActionsMenuItem>
+        </ActionsMenu>
+      </div>
+    );
+    const cover = container.querySelector("[data-cover-card]") as HTMLElement;
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+
+    const popin = menu();
+    // Portaled into the artwork, not anchored to the viewport.
+    expect(cover.contains(popin)).toBe(true);
+    expect(popin.className).toContain("absolute inset-0");
+    expect(popin.style.position).toBe("");
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(popin.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("falls back to the anchored dropdown when no cover anchor exists", () => {
+    renderMenu({ variant: "cover", label: "More actions" });
+    const trigger = screen.getByRole("button", { name: "More actions" });
+    vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue(RECT);
+
+    fireEvent.click(trigger);
+
+    expect(menu().style.position).toBe("fixed");
+  });
+
+  it("does not mount the popin until first open when lazy", () => {
+    renderMenu({ lazy: true });
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Plus" }));
+    expect(menu().getAttribute("aria-hidden")).toBe("false");
+
+    // Once opened it stays mounted so child modals keep their state.
+    fireEvent.click(screen.getByRole("menuitem", { name: "First" }));
+    expect(document.querySelector('[role="menu"]')).not.toBeNull();
+    expect(menu().getAttribute("aria-hidden")).toBe("true");
+  });
 });

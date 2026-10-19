@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { SeriesGrid } from "@/app/components/SeriesGrid";
+import { SeriesGrid, SeriesList } from "@/app/components/SeriesGrid";
 import type { SeriesDto } from "@/lib/api";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 
@@ -48,6 +48,13 @@ describe("SeriesGrid", () => {
 
     expect(screen.getByRole("link", { name: "Frieren" })).toHaveAttribute("href", "/series/s1");
     expect(screen.getByRole("link", { name: "Berserk" })).toHaveAttribute("href", "/series/s2");
+  });
+
+  it("exposes an always-visible delete shortcut on the cover", () => {
+    renderGrid([makeSeries({ series_id: "s1", name: "Frieren" })]);
+
+    expect(screen.getByRole("button", { name: "seriesDetail.delete" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "common.moreActions" })).toBeInTheDocument();
   });
 
   it("inserts year section headers when sorted by release date", () => {
@@ -132,5 +139,54 @@ describe("SeriesGrid", () => {
       "series.readCount",
       expect.objectContaining({ read: "2", total: "4" })
     );
+  });
+});
+
+describe("SeriesList", () => {
+  function renderList(
+    series: SeriesDto[],
+    overrides: Partial<React.ComponentProps<typeof SeriesList>> = {}
+  ) {
+    render(
+      <SeriesList
+        series={series}
+        hasActiveUser
+        t={t}
+        knownStatuses={{}}
+        {...overrides}
+      />
+    );
+  }
+
+  it("renders enriched rows with provider, ratings and the always-visible actions", () => {
+    renderList([
+      makeSeries({
+        series_id: "s1",
+        name: "Frieren",
+        metadata_provider: "comicvine",
+        community_score: 4,
+        user_rating: 3,
+      }),
+    ]);
+
+    expect(screen.getByRole("link", { name: "Frieren" })).toHaveAttribute("href", "/series/s1");
+    expect(screen.getByText("Comicvine")).toBeInTheDocument();
+    expect(screen.getByText("4.0")).toBeInTheDocument();
+    expect(screen.getByText("3.0")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "markRead.read" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "common.moreActions" })).toBeInTheDocument();
+  });
+
+  it("shows the community score even when not sorting by it", () => {
+    renderList([makeSeries({ community_score: 4.5 })]);
+
+    expect(screen.getByText("4.5")).toBeInTheDocument();
+  });
+
+  it("hides the mark-read toggle but keeps the actions menu without an active user", () => {
+    renderList([makeSeries({ name: "Solo" })], { hasActiveUser: false });
+
+    expect(screen.queryByRole("button", { name: "markRead.read" })).toBeNull();
+    expect(screen.getByRole("button", { name: "common.moreActions" })).toBeInTheDocument();
   });
 });

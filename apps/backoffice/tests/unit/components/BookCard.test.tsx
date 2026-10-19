@@ -1,7 +1,14 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { BookCard, BooksGrid, BooksGridWithMissing, EmptyState } from "@/app/components/BookCard";
+import {
+  BookCard,
+  BooksGrid,
+  BooksGridWithMissing,
+  BooksList,
+  BooksListWithMissing,
+  EmptyState,
+} from "@/app/components/BookCard";
 import type { BookDto } from "@/lib/api";
 
 type CardBook = BookDto & { coverUrl?: string };
@@ -40,7 +47,7 @@ describe("BookCard", () => {
   it("renders the title, author, series and volume, and links to the book", () => {
     render(<BookCard book={makeBook()} />);
 
-    const link = screen.getByRole("link");
+    const link = screen.getByRole("link", { name: "Berserk vol. 1" });
     expect(link).toHaveAttribute("href", "/books/b1");
     expect(screen.getByRole("heading", { name: "Berserk vol. 1" })).toBeInTheDocument();
     expect(screen.getByText("Kentaro Miura")).toBeInTheDocument();
@@ -106,12 +113,14 @@ describe("BookCard compact", () => {
     expect(container.querySelector("h3")).toHaveTextContent("Berserk vol. 1");
   });
 
-  it("hides the read button when there is no active user", () => {
+  it("hides the mark-read control but keeps the actions menu without an active user", () => {
     const { rerender } = render(<BookCard compact book={makeBook()} hasActiveUser={false} />);
-    expect(screen.queryByRole("button")).toBeNull();
+    // The read toggle is user-scoped and hidden, but the `⋯` actions menu stays.
+    expect(screen.queryByRole("button", { name: "markRead.read" })).toBeNull();
+    expect(screen.getByRole("button", { name: "common.moreActions" })).toBeInTheDocument();
 
     rerender(<BookCard compact book={makeBook()} hasActiveUser />);
-    expect(screen.getByRole("button")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "markRead.read" })).toBeInTheDocument();
   });
 });
 
@@ -124,9 +133,90 @@ describe("BooksGrid", () => {
       />
     );
 
-    expect(screen.getAllByRole("link")).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: /^[AB]$/ })).toHaveLength(2);
     expect(screen.getByRole("heading", { name: "A" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "B" })).toBeInTheDocument();
+  });
+
+  it("exposes always-visible download and delete shortcuts on the cover", () => {
+    render(<BooksGrid books={[makeBook()]} hasActiveUser={false} />);
+
+    expect(screen.getByRole("link", { name: "bookDetail.downloadOriginal" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "bookDetail.delete" })).toBeInTheDocument();
+  });
+});
+
+describe("BooksList", () => {
+  it("renders enriched rows with summary, file size and date", () => {
+    render(
+      <BooksList
+        books={[
+          makeBook({
+            summary: "A dark fantasy saga.",
+            file_size: 2 * 1024 * 1024,
+            publish_date: "2021",
+          }),
+        ]}
+        hasActiveUser
+      />
+    );
+
+    const link = screen.getByRole("link", { name: "Berserk vol. 1" });
+    expect(link).toHaveAttribute("href", "/books/b1");
+    expect(screen.getByText("A dark fantasy saga.")).toBeInTheDocument();
+    expect(screen.getByText("2.0 MB")).toBeInTheDocument();
+    expect(screen.getByText("2021")).toBeInTheDocument();
+  });
+
+  it("shows both the read toggle and the actions menu when a user is active", () => {
+    render(<BooksList books={[makeBook()]} hasActiveUser />);
+
+    expect(screen.getByRole("button", { name: "markRead.read" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "common.moreActions" })).toBeInTheDocument();
+  });
+
+  it("shows the download and delete shortcuts on every row", () => {
+    render(<BooksList books={[makeBook()]} hasActiveUser={false} />);
+
+    expect(screen.getByRole("link", { name: "bookDetail.downloadOriginal" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "bookDetail.delete" })).toBeInTheDocument();
+  });
+});
+
+describe("BooksListWithMissing", () => {
+  it("delegates to BooksList when showMissing is false", () => {
+    render(
+      <BooksListWithMissing
+        books={[makeBook({ id: "a", title: "A" })]}
+        missingBooks={[{ title: "Missing", volume_number: 9, cover_url: null }]}
+        showMissing={false}
+        hasActiveUser={false}
+      />
+    );
+
+    expect(screen.queryByText("Missing")).toBeNull();
+    expect(screen.getByRole("heading", { name: "A" })).toBeInTheDocument();
+  });
+
+  it("merges owned and missing rows sorted by volume", () => {
+    render(
+      <BooksListWithMissing
+        books={[makeBook({ id: "owned-2", title: "Owned 2", volume: 2 })]}
+        missingBooks={[
+          { title: "Missing 1", volume_number: 1, cover_url: null },
+          { title: "Missing 3", volume_number: 3, cover_url: null, href: "/books/missing?series=1" },
+        ]}
+        showMissing
+        hasActiveUser={false}
+      />
+    );
+
+    const headings = screen.getAllByRole("heading").map((h) => h.textContent);
+    expect(headings).toEqual(["Missing 1", "Owned 2", "Missing 3"]);
+    expect(screen.getByRole("link", { name: "Missing 3" })).toHaveAttribute(
+      "href",
+      "/books/missing?series=1"
+    );
   });
 });
 

@@ -147,9 +147,9 @@ async fn get_book_basic_fields_populated(pool: sqlx::PgPool) {
     assert_eq!(row.get::<Option<i64>, _>("size_bytes").unwrap(), 1024);
 }
 
-fn query_q(q: &str) -> Query<ListBooksQuery> {
+fn query_all() -> Query<ListBooksQuery> {
     Query(ListBooksQuery {
-        q: Some(q.to_string()),
+        q: None,
         library_id: None,
         kind: None,
         format: None,
@@ -161,6 +161,13 @@ fn query_q(q: &str) -> Query<ListBooksQuery> {
         sort: None,
         metadata_provider: None,
         gap: None,
+    })
+}
+
+fn query_q(q: &str) -> Query<ListBooksQuery> {
+    Query(ListBooksQuery {
+        q: Some(q.to_string()),
+        ..query_all().0
     })
 }
 
@@ -210,4 +217,45 @@ async fn list_books_query_matches_scalar_author_accent_insensitively(pool: sqlx:
     assert_eq!(page.total, 1);
     assert_eq!(page.items.len(), 1);
     assert_eq!(page.items[0].title, "Le Devin");
+}
+
+/// The list payload carries what the backoffice list view renders on top of the
+/// card view: the summary, the publish date and the size of the latest
+/// `book_files` row.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_books_exposes_summary_date_and_file_size(pool: sqlx::PgPool) {
+    let state = test_state(pool.clone());
+    let lib_id = create_test_library(&pool, "comics").await;
+
+    let book_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO books (id, library_id, title, kind, authors, summary, publish_date) VALUES ($1, $2, $3, $4, '{}'::text[], $5, $6)",
+    )
+    .bind(book_id)
+    .bind(lib_id)
+    .bind("Berserk")
+    .bind("comic")
+    .bind("A dark fantasy saga.")
+    .bind("1989")
+    .execute(&pool)
+    .await
+    .unwrap();
+    create_test_book_file(&pool, book_id, "/libraries/comics/berserk_v1.cbz", "cbz").await;
+
+    let Json(page) = list_books(
+        State(state),
+        Query(ListBooksQuery {
+            library_id: Some(lib_id),
+            ..query_all().0
+        }),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page.items.len(), 1);
+    let item = &page.items[0];
+    assert_eq!(item.summary.as_deref(), Some("A dark fantasy saga."));
+    assert_eq!(item.publish_date.as_deref(), Some("1989"));
+    assert_eq!(item.file_size, Some(1024));
 }

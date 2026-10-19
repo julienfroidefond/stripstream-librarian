@@ -1,8 +1,9 @@
 import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, fetchDownloadsEnabled, fetchSeriesReadingLists, fetchSeriesRatings, hasEnabledDdlProvider, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto, ReadingListDto, TelegramMonitorStatus, SeriesRatingsDto } from "@/lib/api";
 import { cookies } from "next/headers";
-import { BooksGrid, EmptyState } from "@/app/components/BookCard";
+import { BooksGrid, BooksList, EmptyState } from "@/app/components/BookCard";
 import { SeriesRelatedCarousel } from "@/app/components/SeriesRelatedCarousel";
 import { BooksGridWithMissingToggle } from "@/app/components/ShowMissingToggle";
+import { ViewModeToggle } from "@/app/components/ViewModeToggle";
 import { MarkBookReadButton } from "@/app/components/MarkBookReadButton";
 import { ProviderIcon, providerLabel } from "@/app/components/ProviderIcon";
 import { SeriesActionsToolbar } from "@/app/components/SeriesActionsToolbar";
@@ -14,6 +15,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getServerTranslations } from "@/lib/i18n/server";
+import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/viewMode";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +31,7 @@ export default async function SeriesDetailPage({
   const cookieStore = await cookies();
   const activeUserId = cookieStore.get("as_user_id")?.value ?? "admin";
   const hasActiveUser = activeUserId !== "admin";
+  const viewMode = parseViewMode(cookieStore.get(VIEW_MODE_COOKIE)?.value);
   const searchParamsAwaited = await searchParams;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const limit = typeof searchParamsAwaited.limit === "string" ? parseInt(searchParamsAwaited.limit) : 24;
@@ -384,6 +387,7 @@ export default async function SeriesDetailPage({
                 missingBooks={missingForGrid}
                 compact
                 hasActiveUser={hasActiveUser}
+                viewMode={viewMode}
               />
             )}
 
@@ -394,7 +398,11 @@ export default async function SeriesDetailPage({
                   <span className="text-warning">{t("volumeType.hs")}</span>
                   <span className="h-px flex-1 bg-border" />
                 </h3>
-                <BooksGrid books={hsBooks} compact hasActiveUser={hasActiveUser} />
+                {viewMode === "list" ? (
+                  <BooksList books={hsBooks} hasActiveUser={hasActiveUser} />
+                ) : (
+                  <BooksGrid books={hsBooks} compact hasActiveUser={hasActiveUser} />
+                )}
               </div>
             )}
 
@@ -405,7 +413,11 @@ export default async function SeriesDetailPage({
                   <span className="text-highlight">{t("volumeType.oneshot")}</span>
                   <span className="h-px flex-1 bg-border" />
                 </h3>
-                <BooksGrid books={oneshotBooks} compact hasActiveUser={hasActiveUser} />
+                {viewMode === "list" ? (
+                  <BooksList books={oneshotBooks} hasActiveUser={hasActiveUser} />
+                ) : (
+                  <BooksGrid books={oneshotBooks} compact hasActiveUser={hasActiveUser} />
+                )}
               </div>
             )}
 
