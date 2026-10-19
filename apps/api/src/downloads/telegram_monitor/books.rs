@@ -17,6 +17,7 @@ use crate::{error::ApiError, state::AppState};
 
 use super::auth::{load_tg_settings, save_session_to_db};
 use super::channels::insert_document_message;
+use super::flood;
 use super::transfer::{open_clients, LinkProgress, TelegramFetcher};
 use super::types::*;
 
@@ -472,8 +473,7 @@ pub async fn do_download(
         .cloned()
         .ok_or_else(|| anyhow::anyhow!("no Telegram connection available"))?;
 
-    let chat = primary
-        .resolve_username(&channel_username)
+    let chat = flood::retry_on_flood(|| primary.resolve_username(&channel_username))
         .await?
         .ok_or_else(|| anyhow::anyhow!("Channel not found: {channel_username}"))?;
 
@@ -482,9 +482,7 @@ pub async fn do_download(
         .iter_messages(&chat)
         .offset_id((message_id + 1) as i32)
         .limit(1);
-    let message = iter
-        .next()
-        .await?
+    let message = flood::next_on_flood!(iter)?
         .ok_or_else(|| anyhow::anyhow!("Message {message_id} not found"))?;
 
     if message.id() as i64 != message_id {
@@ -712,7 +710,7 @@ pub async fn live_search(
         session,
         api_id: api_id as i32,
         api_hash,
-        params: Default::default(),
+        params: flood::init_params(),
     })
     .await
     .map_err(|e| ApiError::internal(format!("Telegram connect: {e}")))?;
@@ -729,7 +727,7 @@ pub async fn live_search(
     let mut new_books = 0usize;
 
     for (source_id, username, library_id) in &sources {
-        let chat = match client.resolve_username(username).await {
+        let chat = match flood::retry_on_flood(|| client.resolve_username(username)).await {
             Ok(Some(c)) => c,
             Ok(None) => {
                 error!("live_search: channel @{username} not found");
@@ -747,7 +745,7 @@ pub async fn live_search(
             .filter(MessagesFilter::InputMessagesFilterDocument);
 
         loop {
-            match iter.next().await {
+            match flood::next_on_flood!(iter) {
                 Ok(Some(message)) => {
                     if let Err(e) = insert_document_message(
                         &state.pool,

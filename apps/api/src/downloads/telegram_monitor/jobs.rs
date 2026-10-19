@@ -10,6 +10,7 @@ use crate::state::AppState;
 
 use super::auth::{load_tg_settings, save_session_to_db};
 use super::channels::{do_sync, insert_document_message};
+use super::flood;
 
 // ---------------------------------------------------------------------------
 // Manual job trigger: enqueue a pending telegram_sync job
@@ -378,7 +379,7 @@ pub async fn do_incremental_sync(
         session,
         api_id,
         api_hash,
-        params: Default::default(),
+        params: flood::init_params(),
     })
     .await
     .map_err(|e| ApiError::internal(format!("Connect: {e}")))?;
@@ -402,7 +403,7 @@ pub async fn do_incremental_sync(
         .ok()
         .flatten();
 
-        let chat = match client.resolve_username(username).await {
+        let chat = match flood::retry_on_flood(|| client.resolve_username(username)).await {
             Ok(Some(c)) => c,
             Ok(None) => {
                 error!("[TG_SYNC_INC] Channel @{username} not found");
@@ -418,7 +419,7 @@ pub async fn do_incremental_sync(
         let mut iter = client.iter_messages(&chat);
 
         loop {
-            match iter.next().await {
+            match flood::next_on_flood!(iter) {
                 Ok(Some(message)) => {
                     let msg_id = message.id() as i64;
                     if let Some(max_id) = max_known {

@@ -14,34 +14,57 @@ use uuid::Uuid;
 
 use crate::downloads::ranged::{FetchError, ProgressReporter, RangeFetcher};
 
+use super::flood;
+
 /// Open `count` independent Telegram connections that all share the same
 /// session.
 ///
 /// Telegram caps the throughput of a single TCP connection, so spreading a
 /// download over several sockets is what makes it fast; a single connection
 /// tops out around 2 MB/s regardless of the local bandwidth.
+///
+/// Connections are opened sequentially: booting several sockets at once for the
+/// same account adds a burst of `initConnection` calls that can itself trigger
+/// a flood wait when another download is already running.
 pub async fn open_clients(
     api_id: i32,
     api_hash: &str,
     session_bytes: &[u8],
     count: usize,
 ) -> anyhow::Result<Vec<Client>> {
-    let futures = (0..count.max(1)).map(|_| {
-        let session_bytes = session_bytes.to_vec();
-        let api_hash = api_hash.to_string();
-        async move {
-            let session = Session::load(&session_bytes)?;
-            let client = Client::connect(Config {
+    let mut clients = Vec::with_capacity(count.max(1));
+    for _ in 0..count.max(1) {
+        let mut waited = Duration::ZERO;
+        let client = loop {
+            flood::gate().wait().await;
+            let session = Session::load(session_bytes)?;
+            match Client::connect(Config {
                 session,
                 api_id,
-                api_hash,
-                params: Default::default(),
+                api_hash: api_hash.to_string(),
+                params: flood::init_params(),
             })
-            .await?;
-            anyhow::Ok(client)
-        }
-    });
-    let clients = futures::future::try_join_all(futures).await?;
+            .await
+            {
+                Ok(client) => break client,
+                Err(err) => match flood::authorization_flood_delay(&err) {
+                    Some(delay) => {
+                        if waited + delay > flood::MAX_TOTAL_FLOOD_RETRY {
+                            return Err(err.into());
+                        }
+                        waited += delay;
+                        tracing::warn!(
+                            "[TG] FLOOD_WAIT during connect: pausing every Telegram call for {}s",
+                            delay.as_secs()
+                        );
+                        flood::gate().defer(delay).await;
+                    }
+                    None => return Err(err.into()),
+                },
+            }
+        };
+        clients.push(client);
+    }
     Ok(clients)
 }
 
@@ -86,6 +109,16 @@ impl RangeFetcher for TelegramFetcher {
             limit: aligned_limit(limit),
         };
 
+        // Every connection of every running download shares the same gate and
+        // the same request budget: flood waits are per account, so one blocked
+        // worker must pause the others instead of letting them extend it.
+        let gate = flood::gate();
+        gate.wait().await;
+        let permit = gate.acquire_file_request().await;
+        // A flood wait may have been reported by another worker while this one
+        // was queued for a request slot.
+        gate.wait().await;
+
         let dc_id = self.dc_id.load(Ordering::Relaxed);
         let result = if dc_id == 0 {
             self.client.invoke(&request).await
@@ -94,12 +127,24 @@ impl RangeFetcher for TelegramFetcher {
         };
 
         match result {
-            Ok(tl::enums::upload::File::File(file)) => Ok(file.bytes),
-            Ok(tl::enums::upload::File::CdnRedirect(_)) => Err(FetchError::fatal(
-                "Telegram returned a CDN redirect although cdn_supported = false",
-            )),
+            Ok(tl::enums::upload::File::File(file)) => {
+                drop(permit);
+                Ok(file.bytes)
+            }
+            Ok(tl::enums::upload::File::CdnRedirect(_)) => {
+                drop(permit);
+                Err(FetchError::fatal(
+                    "Telegram returned a CDN redirect although cdn_supported = false",
+                ))
+            }
             Err(err) => {
                 let (error, migrate_to) = classify_invocation_error(err);
+                if let Some(delay) = error.retry_after {
+                    // Defer before releasing the slot so a queued worker sees
+                    // the gate as soon as it starts.
+                    gate.defer(delay).await;
+                }
+                drop(permit);
                 if let Some(dc) = migrate_to {
                     self.dc_id.store(dc, Ordering::Relaxed);
                 }
@@ -134,15 +179,11 @@ fn classify_rpc(code: i32, name: &str, value: Option<u32>) -> (FetchError, Optio
         let message = format!("rpc error {code}: {name}");
         return (FetchError::transient(message), value.map(|dc| dc as i32));
     }
-    if code == 420 {
-        // Grammers already sleeps out short flood waits; a 420 reaching us means
-        // the delay is long, so honour it explicitly.
-        let seconds = u64::from(value.unwrap_or(5)) + 1;
+    if let Some(delay) = flood::flood_wait_delay(code, value) {
+        // `open_clients` disables grammers' per-connection auto-sleep, so every
+        // 420 reaches this point and the process-wide gate pauses all workers.
         return (
-            FetchError::retry_in(
-                format!("rpc error {code}: {name}"),
-                Duration::from_secs(seconds),
-            ),
+            FetchError::retry_in(format!("rpc error {code}: {name}"), delay),
             None,
         );
     }
@@ -185,6 +226,8 @@ impl ProgressReporter for LinkProgress {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::downloads::ranged::FetchErrorKind;
 
