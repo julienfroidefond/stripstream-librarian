@@ -51,6 +51,7 @@ function seriesDerived(
   index: number,
   sort: string | undefined,
   showCommunityScore: boolean,
+  hasActiveUser: boolean,
   t: TranslateFunction,
 ) {
   const s = series[index];
@@ -67,7 +68,7 @@ function seriesDerived(
     : t("series.noCommunityScore");
 
   const displayName = s.name === "unclassified" ? t("books.unclassified") : s.name;
-  const allRead = s.book_count > 0 && s.books_read_count >= s.book_count;
+  const allRead = hasActiveUser && s.book_count > 0 && s.books_read_count >= s.book_count;
   const statusTone = s.series_status ? seriesStatusTones[s.series_status] ?? "muted" : null;
 
   return { s, year, showYearGroup, showCommunityGroup, communityGroupLabel, displayName, allRead, statusTone };
@@ -87,7 +88,7 @@ export function SeriesGrid({ series, sort, hasActiveUser, t, knownStatuses, show
   return (
     <JacketGrid className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
       {series.map((s, index) => {
-        const { showYearGroup, year, showCommunityGroup, communityGroupLabel, displayName, allRead, statusTone } = seriesDerived(series, index, sort, showCommunityScore, t);
+        const { showYearGroup, year, showCommunityGroup, communityGroupLabel, displayName, allRead, statusTone } = seriesDerived(series, index, sort, showCommunityScore, hasActiveUser, t);
         const firstBook = seriesCoverUrl(s);
 
         return (
@@ -143,11 +144,13 @@ export function SeriesGrid({ series, sort, hasActiveUser, t, knownStatuses, show
                 </div>
               )}
 
-              <CoverProgress
-                value={s.books_read_count}
-                max={s.book_count}
-                label={t("series.readCount", { read: String(s.books_read_count), total: String(s.book_count), plural: s.book_count !== 1 ? "s" : "" })}
-              />
+              {hasActiveUser && (
+                <CoverProgress
+                  value={s.books_read_count}
+                  max={s.book_count}
+                  label={t("series.readCount", { read: String(s.books_read_count), total: String(s.book_count), plural: s.book_count !== 1 ? "s" : "" })}
+                />
+              )}
 
               <CoverScrim reserveActions>
                 <h3 className="text-xs font-medium text-white line-clamp-2" title={s.name}>
@@ -163,7 +166,9 @@ export function SeriesGrid({ series, sort, hasActiveUser, t, knownStatuses, show
                           : "bg-white/15 text-white/90"
                     }`}
                   >
-                    {t("series.readCount", { read: String(s.books_read_count), total: String(s.book_count), plural: s.book_count !== 1 ? "s" : "" })}
+                    {hasActiveUser
+                      ? t("series.readCount", { read: String(s.books_read_count), total: String(s.book_count), plural: s.book_count !== 1 ? "s" : "" })
+                      : t("books.bookCount", { count: String(s.book_count), plural: s.book_count !== 1 ? "s" : "" })}
                   </span>
                 </div>
               </CoverScrim>
@@ -197,12 +202,17 @@ export function SeriesList({ series, sort, hasActiveUser, t, knownStatuses, show
   return (
     <div className="flex flex-col gap-2">
       {series.map((s, index) => {
-        const { showYearGroup, year, showCommunityGroup, communityGroupLabel, displayName, allRead, statusTone } = seriesDerived(series, index, sort, showCommunityScore, t);
-        const readLabel = t("series.readCount", {
-          read: String(s.books_read_count),
-          total: String(s.book_count),
-          plural: s.book_count !== 1 ? "s" : "",
-        });
+        const { showYearGroup, year, showCommunityGroup, communityGroupLabel, displayName, allRead, statusTone } = seriesDerived(series, index, sort, showCommunityScore, hasActiveUser, t);
+        const readLabel = hasActiveUser
+          ? t("series.readCount", {
+              read: String(s.books_read_count),
+              total: String(s.book_count),
+              plural: s.book_count !== 1 ? "s" : "",
+            })
+          : t("books.bookCount", {
+              count: String(s.book_count),
+              plural: s.book_count !== 1 ? "s" : "",
+            });
         const readPercent = s.book_count > 0 ? Math.round((s.books_read_count / s.book_count) * 100) : 0;
 
         return (
@@ -282,7 +292,7 @@ export function SeriesList({ series, sort, hasActiveUser, t, knownStatuses, show
                   )}
                 </div>
 
-                {s.books_read_count > 0 && !allRead && (
+                {hasActiveUser && s.books_read_count > 0 && !allRead && (
                   <span
                     className="flex items-center gap-2"
                     role="progressbar"

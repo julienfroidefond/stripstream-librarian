@@ -20,6 +20,7 @@ export default async function LibraryBooksPage({
   const { id } = await params;
   const { t } = await getServerTranslations();
   const cookieStore = await cookies();
+  const hasActiveUser = !!cookieStore.get("as_user_id")?.value;
   const viewMode = parseViewMode(cookieStore.get(VIEW_MODE_COOKIE)?.value);
   const searchParamsAwaited = await searchParams;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
@@ -72,7 +73,11 @@ export default async function LibraryBooksPage({
             <ViewModeToggle viewMode={viewMode} />
           </div>
 
-          {viewMode === "list" ? <BooksList books={books} /> : <BooksGrid books={books} />}
+          {viewMode === "list" ? (
+            <BooksList books={books} hasActiveUser={hasActiveUser} />
+          ) : (
+            <BooksGrid books={books} hasActiveUser={hasActiveUser} />
+          )}
           
           <OffsetPagination
             currentPage={page}

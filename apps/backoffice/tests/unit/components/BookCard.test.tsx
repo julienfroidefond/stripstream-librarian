@@ -76,6 +76,16 @@ describe("BookCard", () => {
     expect(screen.queryByText("status.read")).toBeNull();
   });
 
+  it("hides the reader-scoped status when no user is selected", () => {
+    const { container } = render(
+      <BookCard book={makeBook({ reading_status: "read" })} hasActiveUser={false} />
+    );
+
+    expect(screen.queryByText("status.read")).toBeNull();
+    fireEvent.load(container.querySelector("img") as HTMLImageElement);
+    expect(container.querySelector("img")?.className).not.toContain("opacity-40");
+  });
+
   it("falls back to the kind when the format is missing", () => {
     render(<BookCard book={makeBook({ format: null, kind: "pdf" })} />);
     expect(screen.getByText("pdf")).toBeInTheDocument();

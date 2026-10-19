@@ -18,6 +18,7 @@ use uuid::Uuid;
 use super::*;
 use crate::auth::AuthUser;
 use crate::error::ApiError;
+use crate::series::activity::get_series_user_activity;
 use crate::state::test_state;
 
 use crate::AppState;
@@ -1022,6 +1023,129 @@ async fn get_stats_breakdown_scopes_library_and_series_counts_to_user(pool: PgPo
     assert_eq!(scoped.by_library[0].unread_count, 1);
     assert_eq!(scoped.top_series[0].read_count, 1);
     assert_eq!(scoped.top_series[0].book_count, 2);
+}
+
+// ---------------------------------------------------------------------------
+// get_series_user_activity
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_series_user_activity_returns_all_readers_and_ratings(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let other_series = create_series(&pool, library, "S2").await;
+    let alice = create_user(&pool, "alice").await;
+    let bob = create_user(&pool, "bob").await;
+    let carol = create_user(&pool, "carol").await;
+    let dave = create_user(&pool, "dave").await;
+
+    let b1 = create_simple_book(&pool, library, Some(series), "B1", 10).await;
+    let b2 = create_simple_book(&pool, library, Some(series), "B2", 20).await;
+    let other = create_simple_book(&pool, library, Some(other_series), "Other", 30).await;
+
+    set_progress(&pool, b1, alice, "read", None, Some(Utc::now())).await;
+    set_progress(&pool, b2, alice, "reading", Some(3), None).await;
+    set_progress(&pool, b1, bob, "read", None, None).await;
+    // Activity on another series must not leak into this series' activity.
+    set_progress(&pool, other, dave, "read", None, Some(Utc::now())).await;
+
+    sqlx::query("INSERT INTO series_user_ratings (user_id, series_id, rating) VALUES ($1, $2, $3)")
+        .bind(alice)
+        .bind(series)
+        .bind(8i16)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO series_user_ratings (user_id, series_id, rating) VALUES ($1, $2, $3)")
+        .bind(carol)
+        .bind(series)
+        .bind(6i16)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO series_user_ratings (user_id, series_id, rating) VALUES ($1, $2, $3)")
+        .bind(dave)
+        .bind(other_series)
+        .bind(9i16)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let Json(rows) = get_series_user_activity(State(state), Path(series))
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 3);
+
+    let alice_row = rows.iter().find(|r| r.user_id == alice).unwrap();
+    assert_eq!(alice_row.username, "alice");
+    assert_eq!(alice_row.books_read, 1);
+    assert_eq!(alice_row.books_reading, 1);
+    assert_eq!(alice_row.books_total, 2);
+    assert_eq!(alice_row.rating, Some(8));
+    assert!(alice_row.last_read_at.is_some());
+
+    let bob_row = rows.iter().find(|r| r.user_id == bob).unwrap();
+    assert_eq!(bob_row.books_read, 1);
+    assert_eq!(bob_row.books_reading, 0);
+    assert_eq!(bob_row.rating, None);
+
+    let carol_row = rows.iter().find(|r| r.user_id == carol).unwrap();
+    assert_eq!(carol_row.books_read, 0);
+    assert_eq!(carol_row.books_reading, 0);
+    assert_eq!(carol_row.rating, Some(6));
+
+    assert!(rows.iter().all(|r| r.user_id != dave));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_series_user_activity_ignores_unread_only_rows(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let reader = create_user(&pool, "reader").await;
+    let opener = create_user(&pool, "opener").await;
+
+    let b1 = create_simple_book(&pool, library, Some(series), "B1", 10).await;
+    set_progress(&pool, b1, reader, "read", None, Some(Utc::now())).await;
+    // Opening a book creates an `unread` row with a timestamp; that must not
+    // make the user look like a reader of the series.
+    set_progress(&pool, b1, opener, "unread", None, Some(Utc::now())).await;
+
+    let Json(rows) = get_series_user_activity(State(state), Path(series))
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].user_id, reader);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_series_user_activity_empty_without_readers_or_ratings(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let _ = create_user(&pool, "lurker").await;
+    let _ = create_simple_book(&pool, library, Some(series), "B1", 10).await;
+
+    let Json(rows) = get_series_user_activity(State(state), Path(series))
+        .await
+        .unwrap();
+
+    assert!(rows.is_empty());
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_series_user_activity_unknown_series_returns_404(pool: PgPool) {
+    let state = test_state(pool);
+
+    let err = match get_series_user_activity(State(state), Path(Uuid::new_v4())).await {
+        Ok(_) => panic!("expected a not-found error"),
+        Err(err) => err,
+    };
+
+    assert_eq!(err.status, StatusCode::NOT_FOUND);
 }
 
 // ---------------------------------------------------------------------------

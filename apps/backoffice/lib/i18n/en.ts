@@ -272,6 +272,8 @@ const en: Record<TranslationKey, string> = {
   "series.sortCommunityScore": "Community score",
   "series.noCommunityScore": "Unrated",
   "series.myRatings": "My ratings",
+  "series.userRatings": "Reader ratings",
+  "series.userReading": "Reader progress",
   "series.ratedOnly": "Rated only",
   "series.unratedOnly": "Unrated",
   "series.groupByReadingListOff": "All series",

@@ -19,6 +19,7 @@ import {
   fetchLibraries,
   fetchRelatedSeries,
   fetchSeriesById,
+  fetchSeriesUserActivity,
   fetchStats,
   listFolders,
   markSeriesRead,
@@ -258,6 +259,15 @@ describe("series", () => {
   it("limits related series", async () => {
     await fetchRelatedSeries("ser-1", 5);
     expect(lastCall().url).toBe("http://api:7080/series/ser-1/related?limit=5");
+  });
+
+  it("fetches every reader's activity for a series", async () => {
+    await fetchSeriesUserActivity("ser-1");
+    expect(lastCall().url).toBe("http://api:7080/admin/series/ser-1/activity");
+    expect(lastCall().init.next).toEqual({
+      revalidate: 15,
+      tags: ["series", "series:ser-1"],
+    });
   });
 
   it("merges a source series into a target", async () => {

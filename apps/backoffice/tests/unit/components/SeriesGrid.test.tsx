@@ -124,7 +124,24 @@ describe("SeriesGrid", () => {
     expect(screen.getByText("3")).toBeInTheDocument();
   });
 
-  it("calls translate for the read count", () => {
+  it("shows the read count when a user is active", () => {
+    const spy = vi.fn((key: string) => key);
+    render(
+      <SeriesGrid
+        series={[makeSeries({ book_count: 4, books_read_count: 2 })]}
+        hasActiveUser
+        t={spy as unknown as TranslateFunction}
+        knownStatuses={{}}
+      />
+    );
+
+    expect(spy).toHaveBeenCalledWith(
+      "series.readCount",
+      expect.objectContaining({ read: "2", total: "4" })
+    );
+  });
+
+  it("shows the book count instead of reader progress in admin mode", () => {
     const spy = vi.fn((key: string) => key);
     render(
       <SeriesGrid
@@ -136,8 +153,12 @@ describe("SeriesGrid", () => {
     );
 
     expect(spy).toHaveBeenCalledWith(
+      "books.bookCount",
+      expect.objectContaining({ count: "4" })
+    );
+    expect(spy).not.toHaveBeenCalledWith(
       "series.readCount",
-      expect.objectContaining({ read: "2", total: "4" })
+      expect.anything()
     );
   });
 });

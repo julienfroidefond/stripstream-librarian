@@ -270,6 +270,8 @@ const fr = {
   "series.sortCommunityScore": "Note communauté",
   "series.noCommunityScore": "Sans note",
   "series.myRatings": "Mes notes",
+  "series.userRatings": "Notes des lecteurs",
+  "series.userReading": "Lectures des lecteurs",
   "series.ratedOnly": "Notées uniquement",
   "series.unratedOnly": "Non notées",
   "series.groupByReadingListOff": "Toutes les séries",

@@ -53,7 +53,7 @@ export default async function SeriesPage({
     fetchLibraries().catch(() => [] as LibraryDto[]),
     isGroupedByList || isRecommendationsView
       ? Promise.resolve({ items: [] as SeriesDto[], total: 0, page: 1, limit } as SeriesPageDto)
-      : fetchAllSeries(libraryId, searchQuery || undefined, readingStatus, page, limit, sort, seriesStatus, hasMissing, metadataProvider, undefined, booksFilter === "wishlist", booksFilter === "in_library", volumeTypeFilter || undefined, ratedOnly || undefined).catch(
+      : fetchAllSeries(libraryId, searchQuery || undefined, hasActiveUser ? readingStatus : undefined, page, limit, sort, seriesStatus, hasMissing, metadataProvider, undefined, booksFilter === "wishlist", booksFilter === "in_library", volumeTypeFilter || undefined, hasActiveUser ? ratedOnly || undefined : undefined).catch(
           () => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }) as SeriesPageDto
         ),
     isRecommendationsView ? Promise.resolve([] as string[]) : fetchSeriesStatuses().catch(() => [] as string[]),
@@ -73,7 +73,7 @@ export default async function SeriesPage({
     { value: "community_score", label: t("series.sortCommunityScore") },
   ];
 
-  const hasFilters = searchQuery || libraryId || readingStatus || sort || seriesStatus || hasMissing || booksFilter || volumeTypeFilter || metadataProvider || ratedOnly;
+  const hasFilters = searchQuery || libraryId || (hasActiveUser && readingStatus) || sort || seriesStatus || hasMissing || booksFilter || volumeTypeFilter || metadataProvider || (hasActiveUser && ratedOnly);
 
   const libraryOptions = [
     { value: "", label: t("books.allLibraries") },
@@ -209,7 +209,7 @@ export default async function SeriesPage({
             fields={[
               { name: "q", type: "text", label: t("common.search"), placeholder: t("series.searchPlaceholder") },
               { name: "library", type: "select", label: t("books.library"), options: libraryOptions },
-              { name: "status", type: "select", label: t("series.reading"), options: statusOptions },
+              ...(hasActiveUser ? [{ name: "status", type: "select" as const, label: t("series.reading"), options: statusOptions }] : []),
               { name: "series_status", type: "select", label: t("editSeries.status"), options: seriesStatusOptions },
               { name: "has_missing", type: "select", label: t("series.missing"), options: missingOptions },
               { name: "books_filter", type: "select", label: t("series.wishlist"), options: wishlistOptions },
@@ -241,6 +241,7 @@ export default async function SeriesPage({
                 seriesCountLabel={t("readingLists.seriesCount", { count: list.series_count, plural: list.series_count !== 1 ? "s" : "" })}
                 booksLabel={t("dashboard.books")}
                 readLabel={t("status.read")}
+                hasActiveUser={hasActiveUser}
               />
             ))}
           </div>

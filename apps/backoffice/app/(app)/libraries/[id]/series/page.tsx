@@ -36,7 +36,7 @@ export default async function LibrarySeriesPage({
 
   const [library, seriesPage, dbStatuses] = await Promise.all([
     fetchLibraries().then(libs => libs.find(l => l.id === id)),
-    fetchAllSeries(id, undefined, readingStatus, page, limit, sort, seriesStatus, hasMissing, metadataProvider).catch(
+    fetchAllSeries(id, undefined, hasActiveUser ? readingStatus : undefined, page, limit, sort, seriesStatus, hasMissing, metadataProvider).catch(
       () => ({ items: [] as SeriesDto[], total: 0, page: 1, limit }) as SeriesPageDto
     ),
     fetchSeriesStatuses().catch(() => [] as string[]),
@@ -88,7 +88,7 @@ export default async function LibrarySeriesPage({
     ...metadataProviders.map((provider) => ({ value: provider.id, label: provider.label })),
   ];
 
-  const hasFilters = readingStatus || sort || seriesStatus || hasMissing || metadataProvider;
+  const hasFilters = (hasActiveUser && readingStatus) || sort || seriesStatus || hasMissing || metadataProvider;
 
   return (
     <div className="space-y-6">
@@ -113,7 +113,7 @@ export default async function LibrarySeriesPage({
           sort: sort || "",
         }}
         fields={[
-          { name: "status", type: "select", label: t("series.reading"), options: statusOptions },
+          ...(hasActiveUser ? [{ name: "status", type: "select" as const, label: t("series.reading"), options: statusOptions }] : []),
           { name: "series_status", type: "select", label: t("editSeries.status"), options: seriesStatusOptions },
           { name: "has_missing", type: "select", label: t("series.missing"), options: missingOptions },
           { name: "metadata_provider", type: "select", label: t("series.metadata"), options: metadataOptions },

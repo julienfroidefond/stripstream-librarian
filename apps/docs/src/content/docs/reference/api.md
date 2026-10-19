@@ -46,6 +46,7 @@ Accessibles avec un token de scope `admin` :
 - Intégrations externes (Prowlarr, qBittorrent, AllDebrid, Komga)
 - Paramètres application et gestion du cache
 - Diagnostic de santé : `GET /diagnostics` (versions, base de données, caches, miniatures, tâches, bibliothèques)
+- Vue transversale de lecture et d'activité : `GET /admin/reading-overview`, `GET /admin/series/{series_id}/activity`
 
 ## Authentification
 

@@ -1,13 +1,13 @@
-import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, fetchDownloadsEnabled, fetchSeriesReadingLists, fetchSeriesRatings, hasEnabledDdlProvider, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto, ReadingListDto, TelegramMonitorStatus, SeriesRatingsDto } from "@/lib/api";
+import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, fetchDownloadsEnabled, fetchSeriesReadingLists, fetchSeriesRatings, fetchSeriesUserActivity, hasEnabledDdlProvider, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto, ReadingListDto, TelegramMonitorStatus, SeriesRatingsDto, SeriesUserActivityDto } from "@/lib/api";
 import { cookies } from "next/headers";
 import { BooksGrid, BooksList, EmptyState } from "@/app/components/BookCard";
 import { SeriesRelatedCarousel } from "@/app/components/SeriesRelatedCarousel";
 import { BooksGridWithMissingToggle } from "@/app/components/ShowMissingToggle";
 import { ViewModeToggle } from "@/app/components/ViewModeToggle";
-import { MarkBookReadButton } from "@/app/components/MarkBookReadButton";
 import { ProviderIcon, providerLabel } from "@/app/components/ProviderIcon";
 import { SeriesActionsToolbar } from "@/app/components/SeriesActionsToolbar";
 import { SeriesRatingControl } from "@/app/components/SeriesRatingControl";
+import { SeriesUserRatings, SeriesUserReading } from "@/app/components/SeriesUserActivity";
 import { OffsetPagination } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { Icon } from "@/app/components/ui/Icon";
@@ -68,8 +68,9 @@ export default async function SeriesDetailPage({
   // Get series name from metadata for display
   const seriesName = seriesMeta?.series_name ?? "";
 
-  // Fetch books, related series and ratings in parallel
-  const [booksPage, relatedSeries, seriesReadingLists, seriesRatings] = await Promise.all([
+  // Fetch books, related series and ratings in parallel. In admin mode (no
+  // reader selected) the per-series activity replaces the single-user view.
+  const [booksPage, relatedSeries, seriesReadingLists, seriesRatings, seriesUserActivity] = await Promise.all([
     fetchBooks(libraryId, seriesId, page, limit).catch(() => ({
       items: [] as BookDto[],
       total: 0,
@@ -79,7 +80,14 @@ export default async function SeriesDetailPage({
     fetchRelatedSeries(seriesId, 12).catch(() => []),
     fetchSeriesReadingLists(seriesId).catch(() => [] as ReadingListDto[]),
     fetchSeriesRatings(seriesId).catch(() => null as SeriesRatingsDto | null),
+    hasActiveUser
+      ? Promise.resolve([] as SeriesUserActivityDto[])
+      : fetchSeriesUserActivity(seriesId).catch(() => [] as SeriesUserActivityDto[]),
   ]);
+
+  const hasUserReading = seriesUserActivity.some(
+    (activity) => activity.books_read > 0 || activity.books_reading > 0
+  );
 
   const hiddenProviders: string[] = [];
   if (!metadataProviders?.comicvine?.api_key) hiddenProviders.push("comicvine");
@@ -220,13 +228,18 @@ export default async function SeriesDetailPage({
 
           {/* Ratings section */}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            {/* My rating */}
-            <SeriesRatingControl
-              key={activeUserId}
-              seriesId={seriesId}
-              initialRating={seriesRatings?.user_rating ?? null}
-              hasAniListLink={!!readingStatusLink}
-            />
+            {/* My rating — a reader-only action, replaced by every reader's
+                read-only rating when no user is selected (admin mode). */}
+            {hasActiveUser ? (
+              <SeriesRatingControl
+                key={activeUserId}
+                seriesId={seriesId}
+                initialRating={seriesRatings?.user_rating ?? null}
+                hasAniListLink={!!readingStatusLink}
+              />
+            ) : (
+              <SeriesUserRatings items={seriesUserActivity} />
+            )}
 
             {/* Provider score badges */}
             {seriesRatings && seriesRatings.provider_ratings.length > 0 && (
@@ -293,20 +306,29 @@ export default async function SeriesDetailPage({
             <span className="text-muted-foreground">
               <span className="font-semibold text-foreground">{booksPage.total}</span> {t("dashboard.books").toLowerCase()}
             </span>
-            <span className="w-px h-4 bg-border" />
-            <span className="text-muted-foreground">
-              {t("series.readCount", { read: String(booksReadCount), total: String(booksPage.total), plural: booksPage.total !== 1 ? "s" : "" })}
-            </span>
+            {hasActiveUser ? (
+              <>
+                <span className="w-px h-4 bg-border" />
+                <span className="text-muted-foreground">
+                  {t("series.readCount", { read: String(booksReadCount), total: String(booksPage.total), plural: booksPage.total !== 1 ? "s" : "" })}
+                </span>
 
-            {/* Reading progress bar */}
-            <div className="flex items-center gap-2 flex-1 min-w-[120px] max-w-[200px]">
-              <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-success rounded-full transition-all"
-                  style={{ width: `${booksPage.total > 0 ? (booksReadCount / booksPage.total) * 100 : 0}%` }}
-                />
-              </div>
-            </div>
+                {/* Reading progress bar */}
+                <div className="flex items-center gap-2 flex-1 min-w-[120px] max-w-[200px]">
+                  <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-success rounded-full transition-all"
+                      style={{ width: `${booksPage.total > 0 ? (booksReadCount / booksPage.total) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : hasUserReading ? (
+              <>
+                <span className="w-px h-4 bg-border" />
+                <SeriesUserReading items={seriesUserActivity} />
+              </>
+            ) : null}
 
             {/* Collection progress bar (owned / expected) */}
             {missingData && missingData.total_external > 0 && (

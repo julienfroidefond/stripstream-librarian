@@ -217,6 +217,23 @@ export async function deleteSeriesRating(seriesId: string): Promise<void> {
   });
 }
 
+export type SeriesUserActivityDto = {
+  user_id: string;
+  username: string;
+  books_read: number;
+  books_reading: number;
+  books_total: number;
+  last_read_at: string | null;
+  rating: number | null;
+};
+
+/** Admin view: every reader's progress and rating for one series. */
+export async function fetchSeriesUserActivity(seriesId: string): Promise<SeriesUserActivityDto[]> {
+  return apiFetch<SeriesUserActivityDto[]>(`/admin/series/${seriesId}/activity`, {
+    next: { revalidate: 15, tags: ["series", `series:${seriesId}`] },
+  });
+}
+
 export async function fetchAllGenres(): Promise<string[]> {
   return apiFetch<string[]>("/series/genres").catch(() => []);
 }
