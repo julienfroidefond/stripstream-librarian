@@ -791,6 +791,7 @@ fn format_matches(source: &ImageFormat, target: &OutputFormat) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::test_state;
 
     #[test]
     fn cache_key_changes_when_mtime_changes() {
@@ -847,5 +848,367 @@ mod tests {
             read_from_disk_cache(cache_path).await.as_deref(),
             Some(expected.as_ref())
         );
+    }
+
+    #[test]
+    fn output_format_parse_accepts_aliases_and_rejects_unknown() {
+        assert!(matches!(
+            OutputFormat::parse(None).unwrap(),
+            OutputFormat::Original
+        ));
+        assert!(matches!(
+            OutputFormat::parse(Some("original")).unwrap(),
+            OutputFormat::Original
+        ));
+        assert!(matches!(
+            OutputFormat::parse(Some("jpeg")).unwrap(),
+            OutputFormat::Jpeg
+        ));
+        assert!(matches!(
+            OutputFormat::parse(Some("jpg")).unwrap(),
+            OutputFormat::Jpeg
+        ));
+        assert!(matches!(
+            OutputFormat::parse(Some("png")).unwrap(),
+            OutputFormat::Png
+        ));
+        assert!(matches!(
+            OutputFormat::parse(Some("webp")).unwrap(),
+            OutputFormat::Webp
+        ));
+        assert!(OutputFormat::parse(Some("bmp")).is_err());
+    }
+
+    #[test]
+    fn output_format_exposes_content_type_and_extension() {
+        assert_eq!(OutputFormat::Jpeg.content_type(), "image/jpeg");
+        assert_eq!(OutputFormat::Png.content_type(), "image/png");
+        assert_eq!(OutputFormat::Webp.content_type(), "image/webp");
+        assert_eq!(OutputFormat::Original.extension(), "orig");
+        assert_eq!(OutputFormat::Jpeg.extension(), "jpg");
+        assert_eq!(OutputFormat::Png.extension(), "png");
+        assert_eq!(OutputFormat::Webp.extension(), "webp");
+    }
+
+    #[test]
+    fn get_cache_path_shards_by_prefix_and_appends_extension() {
+        let cache_key = "ab12cd34ef56";
+        let path = get_cache_path(cache_key, &OutputFormat::Png, Path::new("/cache"));
+
+        assert_eq!(path, PathBuf::from(format!("/cache/ab/{cache_key}.png")));
+    }
+
+    #[test]
+    fn detect_content_type_recognises_common_formats() {
+        assert_eq!(
+            detect_content_type(&solid_png(2, 2, [255, 0, 0, 255])),
+            "image/png"
+        );
+        assert_eq!(
+            detect_content_type(&solid_jpeg(2, 2, [0, 255, 0])),
+            "image/jpeg"
+        );
+        // `guess_format` reads the RIFF/WEBP magic even without a decoder.
+        let webp = [b'R', b'I', b'F', b'F', 0, 0, 0, 0, b'W', b'E', b'B', b'P'];
+        assert_eq!(detect_content_type(&webp), "image/webp");
+        assert_eq!(
+            detect_content_type(b"not an image at all"),
+            "application/octet-stream"
+        );
+    }
+
+    #[test]
+    fn parse_filter_maps_names_and_defaults_to_triangle() {
+        assert_eq!(
+            parse_filter("lanczos3"),
+            image::imageops::FilterType::Lanczos3
+        );
+        assert_eq!(
+            parse_filter("nearest"),
+            image::imageops::FilterType::Nearest
+        );
+        assert_eq!(
+            parse_filter("triangle"),
+            image::imageops::FilterType::Triangle
+        );
+        // Unknown values must not fail the request: they fall back to Triangle.
+        assert_eq!(
+            parse_filter("catmullrom"),
+            image::imageops::FilterType::Triangle
+        );
+    }
+
+    #[test]
+    fn format_matches_only_the_same_image_family() {
+        assert!(format_matches(&ImageFormat::Jpeg, &OutputFormat::Jpeg));
+        assert!(format_matches(&ImageFormat::Png, &OutputFormat::Png));
+        assert!(format_matches(&ImageFormat::WebP, &OutputFormat::Webp));
+        assert!(!format_matches(&ImageFormat::Png, &OutputFormat::Jpeg));
+        assert!(!format_matches(&ImageFormat::Jpeg, &OutputFormat::Webp));
+        assert!(!format_matches(&ImageFormat::Avif, &OutputFormat::Png));
+    }
+
+    #[test]
+    fn transcode_image_returns_the_input_when_no_work_is_needed() {
+        let png = solid_png(4, 4, [10, 20, 30, 255]);
+
+        // Same format, no resize → strict passthrough (no re-encode).
+        let out = transcode_image(
+            &png,
+            &OutputFormat::Png,
+            100,
+            0,
+            image::imageops::FilterType::Triangle,
+        )
+        .unwrap();
+
+        assert_eq!(out, png);
+    }
+
+    #[test]
+    fn transcode_image_resizes_and_re_encodes() {
+        let png = solid_png(4, 4, [10, 20, 30, 255]);
+
+        // Width 2 → aspect-preserving resize to 2×2, still PNG.
+        let resized = transcode_image(
+            &png,
+            &OutputFormat::Png,
+            100,
+            2,
+            image::imageops::FilterType::Triangle,
+        )
+        .unwrap();
+        let decoded = image::load_from_memory(&resized).unwrap();
+        assert_eq!(decoded.width(), 2);
+        assert_eq!(decoded.height(), 2);
+
+        // Forced JPEG output even though the source is PNG.
+        let jpeg = transcode_image(
+            &png,
+            &OutputFormat::Jpeg,
+            90,
+            0,
+            image::imageops::FilterType::Triangle,
+        )
+        .unwrap();
+        assert_eq!(image::guess_format(&jpeg).unwrap(), ImageFormat::Jpeg);
+
+        // WebP output keeps the RIFF/WEBP container magic.
+        let webp = transcode_image(
+            &png,
+            &OutputFormat::Webp,
+            80,
+            0,
+            image::imageops::FilterType::Triangle,
+        )
+        .unwrap();
+        assert_eq!(&webp[0..4], b"RIFF");
+        assert_eq!(&webp[8..12], b"WEBP");
+    }
+
+    #[test]
+    fn file_mtime_ns_is_zero_for_a_missing_file_and_positive_otherwise() {
+        assert_eq!(file_mtime_ns("/definitely/not/here.cbz"), 0);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("x.cbz");
+        std::fs::write(&path, b"x").unwrap();
+        assert!(file_mtime_ns(&path.to_string_lossy()) > 0);
+    }
+
+    #[tokio::test]
+    async fn image_response_returns_304_for_a_matching_etag() {
+        let bytes: Arc<[u8]> = Arc::from(&solid_png(2, 2, [0, 0, 0, 255])[..]);
+
+        let first = image_response(bytes.clone(), OutputFormat::Png, None, &HeaderMap::new());
+        assert_eq!(first.status(), StatusCode::OK);
+        assert_eq!(first.headers()[header::CONTENT_TYPE], "image/png");
+        assert_eq!(
+            first.headers()[header::CACHE_CONTROL],
+            "public, max-age=31536000, immutable"
+        );
+        let etag = first.headers()[header::ETAG].to_str().unwrap().to_string();
+
+        let mut request_headers = HeaderMap::new();
+        request_headers.insert(header::IF_NONE_MATCH, HeaderValue::from_str(&etag).unwrap());
+        let second = image_response(bytes, OutputFormat::Png, None, &request_headers);
+
+        assert_eq!(second.status(), StatusCode::NOT_MODIFIED);
+    }
+
+    fn solid_png(width: u32, height: u32, rgba: [u8; 4]) -> Vec<u8> {
+        let image = image::RgbaImage::from_pixel(width, height, image::Rgba(rgba));
+        let mut out = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(&mut out, ImageFormat::Png)
+            .unwrap();
+        out.into_inner()
+    }
+
+    fn solid_jpeg(width: u32, height: u32, rgb: [u8; 3]) -> Vec<u8> {
+        let image = image::RgbImage::from_pixel(width, height, image::Rgb(rgb));
+        let mut out = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgb8(image)
+            .write_to(&mut out, ImageFormat::Jpeg)
+            .unwrap();
+        out.into_inner()
+    }
+
+    /// Write a one-entry CBZ (stored, no compression) — the image bytes are used
+    /// verbatim by `parsers::extract_page`.
+    fn write_cbz(path: &Path, entry: &str, data: &[u8]) {
+        use std::io::Write;
+        let file = std::fs::File::create(path).unwrap();
+        let mut zip = ::zip::ZipWriter::new(file);
+        let opts: ::zip::write::SimpleFileOptions = ::zip::write::SimpleFileOptions::default()
+            .compression_method(::zip::CompressionMethod::Stored);
+        zip.start_file(entry, opts).unwrap();
+        zip.write_all(data).unwrap();
+        zip.finish().unwrap();
+    }
+
+    fn first_pixel(bytes: &[u8]) -> [u8; 4] {
+        image::load_from_memory(bytes)
+            .unwrap()
+            .to_rgba8()
+            .get_pixel(0, 0)
+            .0
+    }
+
+    fn count_files(directory: &Path) -> usize {
+        let mut count = 0;
+        for entry in std::fs::read_dir(directory).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                count += count_files(&entry.path());
+            } else {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    /// End-to-end exercise of the double cache: the memory cache serves the
+    /// second request, and a real in-place file change (different mtime and
+    /// content) must invalidate both levels — the rendered page must reflect the
+    /// new bytes instead of the stale ones.
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn get_page_serves_memory_cache_then_invalidates_on_file_change(pool: sqlx::PgPool) {
+        let cache_dir = tempfile::tempdir().unwrap();
+        let library_dir = tempfile::tempdir().unwrap();
+        let book_path = library_dir.path().join("T01.cbz");
+        write_cbz(&book_path, "001.png", &solid_png(8, 8, [255, 0, 0, 255]));
+
+        let state = test_state(pool.clone());
+        state.settings.write().await.cache_directory =
+            cache_dir.path().to_string_lossy().to_string();
+
+        let library_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
+            .bind(library_id)
+            .bind("pages-e2e")
+            .bind("/libraries/pages-e2e")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let book_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO books (id, library_id, title, kind, authors, locked_fields) VALUES ($1, $2, 'T01', 'comic', '{}'::text[], '{}'::jsonb)",
+        )
+        .bind(book_id)
+        .bind(library_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let book_file_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO book_files (id, book_id, format, abs_path, size_bytes, mtime, fingerprint, parse_status) VALUES ($1, $2, 'cbz', $3, 1024, NOW(), 'fp', 'ok')",
+        )
+        .bind(book_file_id)
+        .bind(book_id)
+        .bind(book_path.to_string_lossy().to_string())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let request = || {
+            Query(PageQuery {
+                format: Some("png".to_string()),
+                quality: Some(100),
+                width: Some(8),
+            })
+        };
+
+        // 1) Cold miss: rendered from disk and stored in both caches.
+        let first = get_page(
+            State(state.clone()),
+            AxumPath((book_id, 1)),
+            request(),
+            HeaderMap::new(),
+        )
+        .await
+        .expect("first render");
+        assert_eq!(first.status(), StatusCode::OK);
+        assert_eq!(first.headers()[header::CONTENT_TYPE], "image/png");
+        let etag_before = first.headers()[header::ETAG].to_str().unwrap().to_string();
+        let body_before = axum::body::to_bytes(first.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(first_pixel(&body_before), [255, 0, 0, 255]);
+        assert_eq!(state.metrics.page_cache_misses.load(Ordering::Relaxed), 1);
+        assert_eq!(state.metrics.page_cache_hits.load(Ordering::Relaxed), 0);
+
+        // 2) Warm hit: served from the memory cache, identical bytes and etag.
+        let second = get_page(
+            State(state.clone()),
+            AxumPath((book_id, 1)),
+            request(),
+            HeaderMap::new(),
+        )
+        .await
+        .expect("cached render");
+        assert_eq!(second.status(), StatusCode::OK);
+        assert_eq!(
+            second.headers()[header::ETAG].to_str().unwrap(),
+            etag_before
+        );
+        let body_second = axum::body::to_bytes(second.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(body_second, body_before);
+        assert_eq!(state.metrics.page_cache_hits.load(Ordering::Relaxed), 1);
+
+        // 3) Replace the archive in place and bump its mtime.
+        write_cbz(&book_path, "001.png", &solid_png(8, 8, [0, 0, 255, 255]));
+        let future = std::time::SystemTime::now() + Duration::from_secs(10);
+        std::fs::File::options()
+            .write(true)
+            .open(&book_path)
+            .unwrap()
+            .set_modified(future)
+            .unwrap();
+
+        // 4) The changed mtime yields a new key: both caches miss and the new
+        //    content is rendered instead of the stale page.
+        let third = get_page(
+            State(state.clone()),
+            AxumPath((book_id, 1)),
+            request(),
+            HeaderMap::new(),
+        )
+        .await
+        .expect("render after replacement");
+        assert_eq!(third.status(), StatusCode::OK);
+        assert_ne!(third.headers()[header::ETAG].to_str().unwrap(), etag_before);
+        let body_after = axum::body::to_bytes(third.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(first_pixel(&body_after), [0, 0, 255, 255]);
+        assert_eq!(state.metrics.page_cache_misses.load(Ordering::Relaxed), 2);
+
+        // 5) The disk cache now holds one entry per version, sharded on disk.
+        assert_eq!(count_files(cache_dir.path()), 2);
     }
 }

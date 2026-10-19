@@ -340,3 +340,314 @@ pub fn decode_xml_entities(s: &str) -> String {
         .replace("&quot;", "\"")
         .replace("&apos;", "'")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    /// Minimal valid JPEG: only the SOI/EOI markers. `is_image_name` matches on
+    /// the extension alone and `analyze_epub` never decodes the bytes, so this is
+    /// enough to exercise the whole path/index pipeline.
+    const JPEG: &[u8] = &[0xFF, 0xD8, 0xFF, 0xD9];
+
+    const CONTAINER: &[u8] = br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#;
+
+    fn write_epub(path: &Path, entries: &[(&str, &[u8])]) {
+        let file = std::fs::File::create(path).expect("create epub");
+        let mut zip = zip::ZipWriter::new(file);
+        let opts: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for (name, data) in entries {
+            zip.start_file(*name, opts).expect("start entry");
+            zip.write_all(data).expect("write entry");
+        }
+        zip.finish().expect("finish epub");
+    }
+
+    /// OPF whose spine order (`zzz` then `aaa`) is deliberately the reverse of the
+    /// alphabetical order, so a passing test proves the spine drives the index.
+    const OPF: &str = r#"<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <manifest>
+    <item id="p1" href="page1.xhtml" media-type="application/xhtml+xml"/>
+    <item id="p2" href="page2.xhtml" media-type="application/xhtml+xml"/>
+    <item id="i1" href="img/zzz.jpg" media-type="image/jpeg"/>
+    <item id="i2" href="img/aaa.jpg" media-type="image/jpeg"/>
+  </manifest>
+  <spine>
+    <itemref idref="p1"/>
+    <itemref idref="p2"/>
+  </spine>
+</package>"#;
+
+    fn spine_epub_entries() -> Vec<(&'static str, &'static [u8])> {
+        vec![
+            ("META-INF/container.xml", CONTAINER),
+            ("OEBPS/content.opf", OPF.as_bytes()),
+            (
+                "OEBPS/page1.xhtml",
+                br#"<html><body><img src="img/zzz.jpg"/></body></html>"#,
+            ),
+            (
+                "OEBPS/page2.xhtml",
+                br#"<html><body><img src="img/aaa.jpg"/></body></html>"#,
+            ),
+            ("OEBPS/img/zzz.jpg", JPEG),
+            ("OEBPS/img/aaa.jpg", JPEG),
+        ]
+    }
+
+    #[test]
+    fn build_epub_image_index_follows_spine_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.epub");
+        write_epub(&path, &spine_epub_entries());
+
+        let images = build_epub_image_index(&path).unwrap();
+
+        assert_eq!(images, vec!["OEBPS/img/zzz.jpg", "OEBPS/img/aaa.jpg"]);
+    }
+
+    #[test]
+    fn build_epub_image_index_dedups_img_and_svg_references() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.epub");
+        let page = br#"<html><body>
+            <img src="img/a.jpg"/>
+            <svg xmlns:xlink="http://www.w3.org/1999/xlink"><image xlink:href="img/a.jpg"/></svg>
+        </body></html>"#;
+        write_epub(
+            &path,
+            &[
+                ("META-INF/container.xml", CONTAINER),
+                (
+                    "OEBPS/content.opf",
+                    br#"<package><manifest>
+                        <item id="p1" href="page1.xhtml" media-type="application/xhtml+xml"/>
+                    </manifest><spine><itemref idref="p1"/></spine></package>"#,
+                ),
+                ("OEBPS/page1.xhtml", page),
+                ("OEBPS/img/a.jpg", JPEG),
+            ],
+        );
+
+        let images = build_epub_image_index(&path).unwrap();
+        assert_eq!(images, vec!["OEBPS/img/a.jpg"]);
+    }
+
+    #[test]
+    fn build_epub_image_index_percent_decodes_and_resolves_references() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.epub");
+        write_epub(
+            &path,
+            &[
+                ("META-INF/container.xml", CONTAINER),
+                (
+                    "OEBPS/content.opf",
+                    br#"<package><manifest>
+                        <item id="p1" href="page1.xhtml" media-type="application/xhtml+xml"/>
+                    </manifest><spine><itemref idref="p1"/></spine></package>"#,
+                ),
+                (
+                    "OEBPS/page1.xhtml",
+                    br#"<html><body><img src="../OEBPS/img/a%20b.jpg"/></body></html>"#,
+                ),
+                ("OEBPS/img/a b.jpg", JPEG),
+            ],
+        );
+
+        let images = build_epub_image_index(&path).unwrap();
+        assert_eq!(images, vec!["OEBPS/img/a b.jpg"]);
+    }
+
+    #[test]
+    fn build_epub_image_index_falls_back_to_zip_listing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.epub");
+        // The spine references text-only pages: no image is found while walking
+        // it, so the CBZ-style listing of the ZIP takes over (sorted naturally).
+        write_epub(
+            &path,
+            &[
+                ("META-INF/container.xml", CONTAINER),
+                (
+                    "OEBPS/content.opf",
+                    br#"<package><manifest>
+                        <item id="p1" href="page1.xhtml" media-type="application/xhtml+xml"/>
+                        <item id="i1" href="img/2.jpg" media-type="image/jpeg"/>
+                        <item id="i2" href="img/10.jpg" media-type="image/jpeg"/>
+                    </manifest><spine><itemref idref="p1"/></spine></package>"#,
+                ),
+                (
+                    "OEBPS/page1.xhtml",
+                    br#"<html><body><p>text</p></body></html>"#,
+                ),
+                ("OEBPS/img/10.jpg", JPEG),
+                ("OEBPS/img/2.jpg", JPEG),
+            ],
+        );
+
+        let images = build_epub_image_index(&path).unwrap();
+        // Natural sort: 2 before 10 (not "10" before "2" as a byte sort would).
+        assert_eq!(images, vec!["OEBPS/img/2.jpg", "OEBPS/img/10.jpg"]);
+    }
+
+    #[test]
+    fn build_epub_image_index_rejects_a_zip_without_container() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("not-an.epub");
+        write_epub(&path, &[("OEBPS/img/a.jpg", JPEG)]);
+
+        let err = build_epub_image_index(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("container.xml"),
+            "unexpected: {err}"
+        );
+    }
+
+    #[test]
+    fn build_epub_image_index_errors_when_no_image_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.epub");
+        write_epub(
+            &path,
+            &[
+                ("META-INF/container.xml", CONTAINER),
+                ("OEBPS/content.opf", OPF.as_bytes()),
+                ("OEBPS/page1.xhtml", br#"<html><body>text</body></html>"#),
+            ],
+        );
+
+        let err = build_epub_image_index(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("no images found"),
+            "unexpected: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_epub_opf_reads_manifest_and_spine() {
+        let (manifest, spine) = parse_epub_opf(OPF, "OEBPS").unwrap();
+
+        assert_eq!(spine, vec!["p1", "p2"]);
+        assert_eq!(manifest["i1"].href, "OEBPS/img/zzz.jpg");
+        assert_eq!(manifest["i1"].media_type, "image/jpeg");
+        assert_eq!(manifest["p1"].href, "OEBPS/page1.xhtml");
+        assert_eq!(manifest["p1"].media_type, "application/xhtml+xml");
+    }
+
+    #[test]
+    fn get_epub_image_index_invalidates_on_mtime_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.epub");
+
+        write_epub(&path, &spine_epub_entries());
+        assert_eq!(
+            get_epub_image_index(&path).unwrap(),
+            vec!["OEBPS/img/zzz.jpg", "OEBPS/img/aaa.jpg"]
+        );
+
+        // Replace the file in place with a different index. Force a future mtime
+        // so the test is robust regardless of filesystem mtime resolution.
+        let mtime_before = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let mut entries = spine_epub_entries();
+        // Both the page reference and the entry name must change, otherwise the
+        // rebuilt index would (correctly) be identical.
+        entries[2] = (
+            "OEBPS/page1.xhtml",
+            br#"<html><body><img src="img/zzz2.jpg"/></body></html>"#,
+        );
+        entries[4] = ("OEBPS/img/zzz2.jpg", JPEG);
+        write_epub(&path, &entries);
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(mtime_before + std::time::Duration::from_secs(10))
+            .unwrap();
+
+        assert_eq!(
+            get_epub_image_index(&path).unwrap(),
+            vec!["OEBPS/img/zzz2.jpg", "OEBPS/img/aaa.jpg"],
+            "cache must invalidate when the epub mtime changes"
+        );
+    }
+
+    #[test]
+    fn analyze_and_extract_epub_pages() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.epub");
+        write_epub(&path, &spine_epub_entries());
+
+        assert_eq!(parse_epub_page_count(&path).unwrap(), 2);
+
+        let (count, first_page) = analyze_epub(&path).unwrap();
+        assert_eq!(count, 2);
+        assert_eq!(first_page, JPEG);
+
+        assert_eq!(extract_epub_page(&path, 2).unwrap(), JPEG);
+
+        let err = extract_epub_page(&path, 3).unwrap_err();
+        assert!(
+            err.to_string().contains("out of range"),
+            "unexpected: {err}"
+        );
+    }
+
+    #[test]
+    fn resolve_epub_path_handles_roots_and_parent_segments() {
+        assert_eq!(resolve_epub_path("OEBPS", "img/a.jpg"), "OEBPS/img/a.jpg");
+        assert_eq!(
+            resolve_epub_path("OEBPS/pages", "../img/a.jpg"),
+            "OEBPS/img/a.jpg"
+        );
+        assert_eq!(
+            resolve_epub_path("OEBPS", "/absolute/a.jpg"),
+            "absolute/a.jpg"
+        );
+        assert_eq!(resolve_epub_path("", "img/a.jpg"), "img/a.jpg");
+    }
+
+    #[test]
+    fn normalize_epub_path_collapses_dots_and_empty_segments() {
+        assert_eq!(normalize_epub_path("a/../b/./c//d"), "b/c/d");
+        assert_eq!(normalize_epub_path("../../a"), "a");
+        assert_eq!(normalize_epub_path(""), "");
+    }
+
+    #[test]
+    fn percent_decode_epub_decodes_and_tolerates_malformed_sequences() {
+        assert_eq!(percent_decode_epub("plain.jpg"), "plain.jpg");
+        assert_eq!(percent_decode_epub("a%20b.jpg"), "a b.jpg");
+        assert_eq!(percent_decode_epub("%C3%A9"), "é");
+        // Truncated and non-hex sequences are passed through untouched.
+        assert_eq!(percent_decode_epub("100%"), "100%");
+        assert_eq!(percent_decode_epub("%ZZ"), "%ZZ");
+    }
+
+    #[test]
+    fn epub_hex_val_parses_all_hex_digits() {
+        assert_eq!(epub_hex_val(b'0'), Some(0));
+        assert_eq!(epub_hex_val(b'9'), Some(9));
+        assert_eq!(epub_hex_val(b'a'), Some(10));
+        assert_eq!(epub_hex_val(b'F'), Some(15));
+        assert_eq!(epub_hex_val(b'g'), None);
+        assert_eq!(epub_hex_val(b' '), None);
+    }
+
+    #[test]
+    fn decode_xml_entities_expands_the_known_entities() {
+        assert_eq!(decode_xml_entities("no ampersand"), "no ampersand");
+        assert_eq!(
+            decode_xml_entities("R&amp;D &lt;3 &gt;2 &quot;x&quot; &apos;y&apos;"),
+            "R&D <3 >2 \"x\" 'y'"
+        );
+    }
+}

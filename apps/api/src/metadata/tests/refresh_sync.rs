@@ -289,3 +289,53 @@ async fn migration_0129_merges_aliases_only_series(pool: sqlx::PgPool) {
     assert_eq!(remaining[0].1, "senscritique");
     assert_ne!(remaining[0].0, pending_id);
 }
+
+/// Regression #112: `refresh_link` must reject a name that is not a metadata
+/// provider with an explicit error instead of silently falling back to Google
+/// Books (the old behaviour surfaced a confusing, misleading error). The
+/// provider is resolved before any DB read or network call, so a random link id
+/// is enough to exercise the rejection.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn refresh_link_rejects_unknown_provider_without_fallback(pool: sqlx::PgPool) {
+    let err = refresh_link(
+        &pool,
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        "Gon",
+        "prowlarr",
+        "ext-1",
+    )
+    .await
+    .err()
+    .expect("an unknown provider must be rejected");
+
+    assert_eq!(err, "Unknown provider: prowlarr");
+    assert!(
+        !err.to_lowercase().contains("google"),
+        "must not silently fall back to Google Books: {err}"
+    );
+}
+
+/// Regression #112: a link stored with a discovery source id must refresh
+/// through the provider that backs it. Resolution succeeds and the call only
+/// fails later, on the missing link row — proving the alias was canonicalized
+/// rather than rejected.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn refresh_link_accepts_discovery_source_alias(pool: sqlx::PgPool) {
+    let err = refresh_link(
+        &pool,
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        "Gon",
+        "senscritique_bd",
+        "franchise:1",
+    )
+    .await
+    .err()
+    .expect("the link row does not exist");
+
+    assert!(
+        !err.contains("Unknown provider"),
+        "a discovery source alias must resolve before the DB lookup: {err}"
+    );
+}

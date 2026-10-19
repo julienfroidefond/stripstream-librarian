@@ -233,6 +233,22 @@ pub(crate) async fn sync_series_from_links(
     Ok(report)
 }
 
+/// Resolve the effective metadata provider name for a stored link (#112).
+///
+/// Discovery source ids (`senscritique_bd`, `sc_trending_bd`, …) are
+/// canonicalized to the provider that implements them. A name that matches no
+/// provider — e.g. a link created from a Prowlarr download — falls back to
+/// Google Books, the historic behaviour. Returns `None` only when even the
+/// fallback provider is unavailable.
+fn resolve_link_provider_name(provider_name: &str) -> Option<String> {
+    let canonical = metadata_providers::canonical_provider_name(provider_name);
+    if metadata_providers::get_provider(canonical).is_some() {
+        Some(canonical.to_string())
+    } else {
+        metadata_providers::get_provider("google_books").map(|_| "google_books".to_string())
+    }
+}
+
 /// Fetch provider books for every approved link, match them, persist the
 /// external rows, then push the merged (primary-first) metadata to local books.
 async fn sync_books_from_links(
@@ -250,11 +266,11 @@ async fn sync_books_from_links(
     for link in links {
         // Legacy links may carry a discovery source id (#112); resolve it before
         // looking up the provider so it does not silently fall back to Google Books.
-        let link_provider = metadata_providers::canonical_provider_name(&link.provider);
-        let provider = metadata_providers::get_provider(link_provider)
-            .or_else(|| metadata_providers::get_provider("google_books"))
+        let link_provider = resolve_link_provider_name(&link.provider)
+            .ok_or_else(|| ApiError::internal(format!("unknown provider: {}", link.provider)))?;
+        let provider = metadata_providers::get_provider(&link_provider)
             .ok_or_else(|| ApiError::internal(format!("unknown provider: {link_provider}")))?;
-        let provider_config = super::config::load_provider_config(pool, link_provider).await;
+        let provider_config = super::config::load_provider_config(pool, &link_provider).await;
 
         let books = provider
             .get_series_books(&link.external_id, &provider_config)

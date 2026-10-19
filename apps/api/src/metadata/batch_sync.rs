@@ -23,10 +23,14 @@ pub(super) async fn search_and_evaluate(
     provider_name: &str,
     detailed: bool,
 ) -> SearchOutcome {
-    let provider = match metadata_providers::get_provider(provider_name) {
-        Some(p) => p,
-        None => return SearchOutcome::Error(format!("Unknown provider: {provider_name}")),
+    // Canonicalize discovery source ids before lookup (#112) so a legacy name
+    // does not produce a spurious "unknown provider" error. `resolve_provider`
+    // reports the canonical name it rejected.
+    let provider = match metadata_providers::resolve_provider(provider_name) {
+        Ok(p) => p,
+        Err(unknown) => return SearchOutcome::Error(format!("Unknown provider: {unknown}")),
     };
+    let provider_name = provider.name();
 
     let mut config = super::config::load_provider_config(pool, provider_name).await;
     config.detailed = detailed;

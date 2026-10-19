@@ -154,9 +154,13 @@ pub async fn sync_komga_read_books(
 
     let total_komga_read = komga_books.len() as i64;
 
-    // Build local lookup maps
+    // Build local lookup maps. The series name lives in `series` (the legacy
+    // `books.series` text column was dropped in migration 0071).
     let rows = sqlx::query(
-        "SELECT id, title, COALESCE(series, '') as series, LOWER(title) as title_lower, LOWER(COALESCE(series, '')) as series_lower FROM books",
+        "SELECT b.id, b.title, COALESCE(s.name, '') AS series, \
+                LOWER(b.title) AS title_lower, LOWER(COALESCE(s.name, '')) AS series_lower \
+         FROM books b \
+         LEFT JOIN series s ON s.id = b.series_id",
     )
     .fetch_all(&state.pool)
     .await?;
@@ -415,3 +419,7 @@ pub async fn get_sync_report(
         created_at: row.get("created_at"),
     }))
 }
+
+#[cfg(test)]
+#[path = "tests/komga.rs"]
+mod tests;

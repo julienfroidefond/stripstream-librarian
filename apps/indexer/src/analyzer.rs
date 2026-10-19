@@ -1153,3 +1153,453 @@ fn spawn_cancellation_poller(
     });
     (flag, handle)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ─── Fixtures ───────────────────────────────────────────────────────
+
+    fn rgb_image(width: u32, height: u32) -> image::RgbImage {
+        image::RgbImage::from_fn(width, height, |x, y| {
+            image::Rgb([(x % 251) as u8, (y % 251) as u8, 128])
+        })
+    }
+
+    fn png_bytes(width: u32, height: u32) -> Vec<u8> {
+        let img = image::DynamicImage::ImageRgb8(rgb_image(width, height));
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut cursor, image::ImageFormat::Png).unwrap();
+        cursor.into_inner()
+    }
+
+    fn jpeg_bytes(width: u32, height: u32, quality: u8) -> Vec<u8> {
+        let rgb = rgb_image(width, height);
+        let mut buf = Vec::new();
+        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, quality);
+        encoder
+            .encode(rgb.as_raw(), width, height, image::ExtendedColorType::Rgb8)
+            .unwrap();
+        buf
+    }
+
+    fn webp_bytes(width: u32, height: u32) -> Vec<u8> {
+        let rgb = rgb_image(width, height);
+        webp::Encoder::new(rgb.as_raw(), webp::PixelLayout::Rgb, width, height)
+            .encode(80.0)
+            .to_vec()
+    }
+
+    fn config(dir: &str, format: Option<&str>, width: u32, height: u32) -> ThumbnailConfig {
+        ThumbnailConfig {
+            enabled: true,
+            format: format.map(|f| f.to_string()),
+            width,
+            height,
+            quality: 80,
+            directory: dir.to_string(),
+            timeout_secs: 60,
+        }
+    }
+
+    // ─── Pure helpers ───────────────────────────────────────────────────
+
+    #[test]
+    fn detect_image_ext_recognizes_png_webp_and_falls_back_to_jpg() {
+        assert_eq!(detect_image_ext(&png_bytes(2, 2)), "png");
+        assert_eq!(detect_image_ext(&webp_bytes(2, 2)), "webp");
+        assert_eq!(detect_image_ext(&jpeg_bytes(2, 2, 80)), "jpg");
+        // Unknown bytes default to the most common comic page format.
+        assert_eq!(detect_image_ext(b"definitely not an image"), "jpg");
+    }
+
+    #[test]
+    fn book_format_from_str_maps_supported_extensions() {
+        assert_eq!(book_format_from_str("cbz"), Some(BookFormat::Cbz));
+        assert_eq!(book_format_from_str("cbr"), Some(BookFormat::Cbr));
+        assert_eq!(book_format_from_str("pdf"), Some(BookFormat::Pdf));
+        assert_eq!(book_format_from_str("epub"), Some(BookFormat::Epub));
+        assert_eq!(
+            book_format_from_str("CBZ"),
+            None,
+            "matching is case-sensitive"
+        );
+        assert_eq!(book_format_from_str("zip"), None);
+    }
+
+    #[test]
+    fn generate_thumbnail_defaults_to_downscaled_webp() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = config(dir.path().to_str().unwrap(), None, 300, 400);
+
+        let out = generate_thumbnail(&png_bytes(600, 800), &cfg).unwrap();
+
+        assert_eq!(image::guess_format(&out).unwrap(), image::ImageFormat::WebP);
+        let decoded = image::load_from_memory(&out).unwrap();
+        assert_eq!(decoded.dimensions(), (300, 400));
+    }
+
+    #[test]
+    fn generate_thumbnail_never_upscales() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = config(dir.path().to_str().unwrap(), Some("png"), 300, 400);
+
+        let out = generate_thumbnail(&png_bytes(100, 120), &cfg).unwrap();
+
+        assert_eq!(image::guess_format(&out).unwrap(), image::ImageFormat::Png);
+        let decoded = image::load_from_memory(&out).unwrap();
+        assert_eq!(decoded.dimensions(), (100, 120));
+    }
+
+    #[test]
+    fn generate_thumbnail_honors_explicit_format() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir = dir.path().to_str().unwrap();
+
+        let jpeg =
+            generate_thumbnail(&png_bytes(400, 600), &config(dir, Some("jpeg"), 100, 150)).unwrap();
+        assert_eq!(
+            image::guess_format(&jpeg).unwrap(),
+            image::ImageFormat::Jpeg
+        );
+
+        let png =
+            generate_thumbnail(&png_bytes(400, 600), &config(dir, Some("png"), 100, 150)).unwrap();
+        assert_eq!(image::guess_format(&png).unwrap(), image::ImageFormat::Png);
+
+        // "original" re-encodes in the source format.
+        let png_src = generate_thumbnail(
+            &png_bytes(400, 600),
+            &config(dir, Some("original"), 100, 150),
+        )
+        .unwrap();
+        assert_eq!(
+            image::guess_format(&png_src).unwrap(),
+            image::ImageFormat::Png
+        );
+
+        let jpg_src = generate_thumbnail(
+            &jpeg_bytes(400, 600, 80),
+            &config(dir, Some("original"), 100, 150),
+        )
+        .unwrap();
+        assert_eq!(
+            image::guess_format(&jpg_src).unwrap(),
+            image::ImageFormat::Jpeg
+        );
+    }
+
+    #[test]
+    fn fast_jpeg_decode_scales_jpeg_and_rejects_non_jpeg() {
+        let (img, orig_w, orig_h) = fast_jpeg_decode(&jpeg_bytes(800, 1000, 80), 300, 400)
+            .expect("a valid JPEG must decode");
+        assert_eq!((orig_w, orig_h), (800, 1000));
+
+        let (w, h) = img.dimensions();
+        assert!(w > 0 && h > 0);
+        assert!(w <= 800 && h <= 1000);
+        assert!(
+            (w, h) != (800, 1000),
+            "DCT scaling should shrink a large JPEG"
+        );
+
+        // Non-JPEG input bypasses the fast path.
+        assert!(fast_jpeg_decode(&png_bytes(10, 10), 300, 400).is_none());
+        assert!(fast_jpeg_decode(&webp_bytes(10, 10), 300, 400).is_none());
+    }
+
+    #[test]
+    fn raw_image_round_trip_writes_thumbnail_and_removes_raw() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_str = dir.path().to_str().unwrap();
+        let book_id = Uuid::new_v4();
+
+        let raw_path = save_raw_image(book_id, &png_bytes(600, 800), dir_str).unwrap();
+        assert!(raw_path.ends_with(&format!("{book_id}.raw")));
+        assert!(Path::new(&raw_path).exists());
+
+        let thumb_path =
+            resize_raw_to_thumbnail(book_id, &raw_path, &config(dir_str, Some("png"), 150, 200))
+                .unwrap();
+        assert!(thumb_path.ends_with(&format!("{book_id}.png")));
+        assert!(Path::new(&thumb_path).exists(), "thumbnail must be written");
+        assert!(!Path::new(&raw_path).exists(), "raw file must be removed");
+
+        let decoded = image::load_from_memory(&std::fs::read(&thumb_path).unwrap()).unwrap();
+        assert_eq!(decoded.dimensions(), (150, 200));
+    }
+
+    // ─── Integration tests (require PostgreSQL) ─────────────────────────
+
+    fn write_test_cbz(path: &Path, images: usize) -> std::io::Result<()> {
+        use std::io::Write;
+        let file = std::fs::File::create(path)?;
+        let mut zip = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for i in 0..images {
+            zip.start_file(format!("{:03}.png", i + 1), opts)
+                .map_err(std::io::Error::other)?;
+            zip.write_all(&png_bytes(600, 800))?;
+        }
+        zip.finish().map_err(std::io::Error::other)?;
+        Ok(())
+    }
+
+    async fn create_library(pool: &sqlx::PgPool) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES ($1, $2, $3)")
+            .bind(id)
+            .bind(format!("lib-{id}"))
+            .bind(format!("/tmp/{id}"))
+            .execute(pool)
+            .await
+            .unwrap();
+        id
+    }
+
+    async fn create_series(pool: &sqlx::PgPool, library_id: Uuid) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO series (id, library_id, name) VALUES ($1, $2, 'Gon')")
+            .bind(id)
+            .bind(library_id)
+            .execute(pool)
+            .await
+            .unwrap();
+        id
+    }
+
+    async fn create_book(
+        pool: &sqlx::PgPool,
+        library_id: Uuid,
+        series_id: Uuid,
+        abs_path: &Path,
+        format: &str,
+    ) -> Uuid {
+        let book_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO books (id, library_id, series_id, kind, title, format) \
+             VALUES ($1, $2, $3, 'comic', 'Gon T01', $4)",
+        )
+        .bind(book_id)
+        .bind(library_id)
+        .bind(series_id)
+        .bind(format)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO book_files (id, book_id, format, abs_path, size_bytes, mtime, fingerprint) \
+             VALUES ($1, $2, $3, $4, 1024, NOW(), 'fp')",
+        )
+        .bind(Uuid::new_v4())
+        .bind(book_id)
+        .bind(format)
+        .bind(abs_path.to_string_lossy().to_string())
+        .execute(pool)
+        .await
+        .unwrap();
+
+        book_id
+    }
+
+    async fn create_job(pool: &sqlx::PgPool) -> Uuid {
+        let job_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO index_jobs (id, library_id, type, status) VALUES ($1, NULL, 'scan', 'running')",
+        )
+        .bind(job_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        job_id
+    }
+
+    async fn set_thumbnail_dir(pool: &sqlx::PgPool, directory: &str) {
+        sqlx::query(
+            "INSERT INTO app_settings (key, value) VALUES ('thumbnail', $1) \
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        )
+        .bind(serde_json::json!({
+            "enabled": true,
+            "format": "webp",
+            "width": 300,
+            "height": 400,
+            "quality": 80,
+            "directory": directory,
+        }))
+        .execute(pool)
+        .await
+        .unwrap();
+
+        // Keep the analysis timeout generous so a loaded CI machine never flakes.
+        sqlx::query(
+            "INSERT INTO app_settings (key, value) VALUES ('limits', $1) \
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        )
+        .bind(serde_json::json!({ "concurrent_renders": 1, "timeout_seconds": 120 }))
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn analyze_library_books_sets_page_count_and_thumbnail(pool: sqlx::PgPool) {
+        let books_dir = tempfile::tempdir().unwrap();
+        let thumb_dir = tempfile::tempdir().unwrap();
+        let cbz = books_dir.path().join("Gon T01.cbz");
+        write_test_cbz(&cbz, 3).unwrap();
+
+        let lib = create_library(&pool).await;
+        let series = create_series(&pool, lib).await;
+        let book = create_book(&pool, lib, series, &cbz, "cbz").await;
+        let job = create_job(&pool).await;
+        set_thumbnail_dir(&pool, thumb_dir.path().to_str().unwrap()).await;
+
+        let state = AppState { pool: pool.clone() };
+        analyze_library_books(&state, job, Some(lib), false)
+            .await
+            .expect("analysis must succeed");
+
+        let (page_count, thumbnail_path): (Option<i32>, Option<String>) =
+            sqlx::query_as("SELECT page_count, thumbnail_path FROM books WHERE id = $1")
+                .bind(book)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(page_count, Some(3), "the CBZ holds three images");
+
+        let thumb_path = thumbnail_path.expect("a thumbnail path must be stored");
+        assert!(
+            thumb_path.ends_with(&format!("{book}.webp")),
+            "unexpected thumbnail path: {thumb_path}"
+        );
+        let decoded =
+            image::load_from_memory(&std::fs::read(&thumb_path).unwrap()).expect("valid image");
+        assert!(decoded.width() <= 300 && decoded.height() <= 400);
+
+        let events: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM index_job_events WHERE job_id = $1 AND event_type = 'thumbnail_generated'",
+        )
+        .bind(job)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(events, 1, "a thumbnail_generated event must be recorded");
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn analyze_library_books_records_parse_error_for_corrupt_archive(pool: sqlx::PgPool) {
+        let books_dir = tempfile::tempdir().unwrap();
+        let thumb_dir = tempfile::tempdir().unwrap();
+        let corrupt = books_dir.path().join("Gon T02.cbz");
+        std::fs::write(&corrupt, b"this is definitely not a zip archive").unwrap();
+
+        let lib = create_library(&pool).await;
+        let series = create_series(&pool, lib).await;
+        let book = create_book(&pool, lib, series, &corrupt, "cbz").await;
+        let job = create_job(&pool).await;
+        set_thumbnail_dir(&pool, thumb_dir.path().to_str().unwrap()).await;
+
+        let state = AppState { pool: pool.clone() };
+        analyze_library_books(&state, job, Some(lib), false)
+            .await
+            .expect("a corrupt book must not fail the whole job");
+
+        let page_count: Option<i32> =
+            sqlx::query_scalar("SELECT page_count FROM books WHERE id = $1")
+                .bind(book)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(page_count.is_none(), "the page count cannot be recovered");
+
+        let (status, error): (String, Option<String>) = sqlx::query_as(
+            "SELECT parse_status, parse_error_opt FROM book_files WHERE book_id = $1",
+        )
+        .bind(book)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(status, "error");
+        assert!(error.is_some(), "the parse error must be persisted");
+
+        let error_events: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM index_job_events WHERE job_id = $1 AND level = 'error'",
+        )
+        .bind(job)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(error_events, 1);
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn regenerate_thumbnails_clears_stale_files_and_rebuilds(pool: sqlx::PgPool) {
+        let books_dir = tempfile::tempdir().unwrap();
+        let thumb_dir = tempfile::tempdir().unwrap();
+        let cbz = books_dir.path().join("Gon T03.cbz");
+        write_test_cbz(&cbz, 2).unwrap();
+
+        let lib = create_library(&pool).await;
+        let series = create_series(&pool, lib).await;
+        let book = create_book(&pool, lib, series, &cbz, "cbz").await;
+        let job = create_job(&pool).await;
+        set_thumbnail_dir(&pool, thumb_dir.path().to_str().unwrap()).await;
+
+        // Pretend a previous run produced a stale thumbnail.
+        let stale = thumb_dir.path().join(format!("{book}.webp"));
+        std::fs::write(&stale, b"stale bytes").unwrap();
+        sqlx::query("UPDATE books SET page_count = 2, thumbnail_path = $2 WHERE id = $1")
+            .bind(book)
+            .bind(stale.to_string_lossy().to_string())
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let state = AppState { pool: pool.clone() };
+        regenerate_thumbnails(&state, job, Some(lib))
+            .await
+            .expect("regeneration must succeed");
+
+        let thumb_path: Option<String> =
+            sqlx::query_scalar("SELECT thumbnail_path FROM books WHERE id = $1")
+                .bind(book)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let thumb_path = thumb_path.expect("a fresh thumbnail must be stored");
+        let bytes = std::fs::read(&thumb_path).unwrap();
+        assert!(
+            image::load_from_memory(&bytes).is_ok(),
+            "the stale placeholder must be replaced by a real image"
+        );
+    }
+
+    #[sqlx::test(migrations = "../../infra/migrations")]
+    async fn cleanup_orphaned_thumbnails_deletes_unknown_files(pool: sqlx::PgPool) {
+        let thumb_dir = tempfile::tempdir().unwrap();
+        set_thumbnail_dir(&pool, thumb_dir.path().to_str().unwrap()).await;
+
+        let lib = create_library(&pool).await;
+        let series = create_series(&pool, lib).await;
+        let kept_book = create_book(&pool, lib, series, Path::new("/tmp/kept.cbz"), "cbz").await;
+
+        let kept = thumb_dir.path().join(format!("{kept_book}.webp"));
+        std::fs::write(&kept, b"keep me").unwrap();
+        let orphan = thumb_dir.path().join(format!("{}.webp", Uuid::new_v4()));
+        std::fs::write(&orphan, b"orphan").unwrap();
+
+        // A non-UUID file must be ignored, not deleted.
+        let unrelated = thumb_dir.path().join("README.txt");
+        std::fs::write(&unrelated, b"notes").unwrap();
+
+        let state = AppState { pool: pool.clone() };
+        cleanup_orphaned_thumbnails(&state).await.unwrap();
+
+        assert!(kept.exists(), "a thumbnail of a live book must be kept");
+        assert!(!orphan.exists(), "an orphaned thumbnail must be deleted");
+        assert!(unrelated.exists(), "unrelated files must not be touched");
+    }
+}

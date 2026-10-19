@@ -1,7 +1,9 @@
 mod cleanup;
 mod create;
 mod list;
+mod merge;
 mod ratings;
+mod recommendations;
 mod related;
 
 use super::helpers::get_or_create_series;
