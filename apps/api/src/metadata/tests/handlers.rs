@@ -271,6 +271,46 @@ fn search_request_with_provider_override() {
     assert_eq!(req.provider.as_deref(), Some("myanimelist"));
 }
 
+/// Regression #112: an unknown provider must fail loudly (400 naming the
+/// provider) instead of silently falling back to Google Books, which used to
+/// surface a misleading "Google Books" error far from the real cause.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn search_metadata_rejects_unknown_provider(pool: PgPool) {
+    let state = test_state(pool.clone());
+
+    let library_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO libraries (id, name, root_path) VALUES ($1, 'search', '/libraries/search')",
+    )
+    .bind(library_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let error = match search_metadata(
+        State(state.clone()),
+        Json(MetadataSearchRequest {
+            library_id: library_id.to_string(),
+            series_name: "Blacksad".to_string(),
+            provider: Some("not_a_provider".to_string()),
+        }),
+    )
+    .await
+    {
+        Ok(_) => panic!("an unknown provider must be rejected, not silently resolved"),
+        Err(error) => error,
+    };
+
+    assert_eq!(error.status, axum::http::StatusCode::BAD_REQUEST);
+    assert!(
+        error
+            .message
+            .contains("unknown metadata provider: not_a_provider"),
+        "the error must name the rejected provider, got: {}",
+        error.message
+    );
+}
+
 // -----------------------------------------------------------------------
 // MetadataMatchRequest deserialization
 // -----------------------------------------------------------------------

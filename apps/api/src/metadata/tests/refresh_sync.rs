@@ -159,3 +159,133 @@ async fn rematch_skips_volumes_already_linked_in_the_same_link(pool: sqlx::PgPoo
             .unwrap();
     assert_eq!(total, 1);
 }
+
+async fn seed_link_with(
+    pool: &PgPool,
+    lib_id: Uuid,
+    series_id: Uuid,
+    provider: &str,
+    external_id: &str,
+    status: &str,
+) -> Uuid {
+    let link_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO external_metadata_links \
+             (id, library_id, series_id, provider, external_id, status) \
+         VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(link_id)
+    .bind(lib_id)
+    .bind(series_id)
+    .bind(provider)
+    .bind(external_id)
+    .bind(status)
+    .execute(pool)
+    .await
+    .unwrap();
+    link_id
+}
+
+/// Regression #112: migration 0129 must merge legacy links that carry a
+/// discovery source id (`senscritique_bd`, `sc_trending_bd`, …) onto the
+/// canonical `senscritique` provider while keeping a single link per series.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn migration_0129_canonicalizes_legacy_discovery_links(pool: sqlx::PgPool) {
+    const MIGRATION: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../infra/migrations/0129_canonicalize_discovery_metadata_providers.sql"
+    ));
+
+    let (lib_id, series_id) = seed_library_and_series(&pool).await;
+
+    // Legacy state: the broken add-to-library path stored `senscritique_bd`, and
+    // the series was later linked again through the canonical `senscritique`
+    // provider. The UNIQUE(series_id, provider) constraint forbids keeping both.
+    let legacy_id = seed_link_with(
+        &pool,
+        lib_id,
+        series_id,
+        "senscritique_bd",
+        "sc:legacy",
+        "approved",
+    )
+    .await;
+    let canonical_id = seed_link_with(
+        &pool,
+        lib_id,
+        series_id,
+        "senscritique",
+        "sc:canonical",
+        "pending",
+    )
+    .await;
+
+    // External book rows attached to the doomed link must not block the merge.
+    seed_external_book(&pool, legacy_id, "1", 1, None).await;
+    seed_external_book(&pool, canonical_id, "2", 2, None).await;
+
+    sqlx::raw_sql(MIGRATION).execute(&pool).await.unwrap();
+
+    let remaining: Vec<(Uuid, String, String)> = sqlx::query_as(
+        "SELECT id, provider, external_id FROM external_metadata_links \
+         WHERE series_id = $1 ORDER BY provider",
+    )
+    .bind(series_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(remaining.len(), 1, "only one link may survive per series");
+    let (surviving_id, provider, external_id) = &remaining[0];
+    assert_eq!(provider, "senscritique", "the alias must be canonicalized");
+    assert_eq!(
+        surviving_id, &legacy_id,
+        "a discovery-source alias must not lose its link against a canonical one"
+    );
+    assert_eq!(external_id, "sc:legacy");
+}
+
+/// Migration 0129 must resolve a series whose only links are discovery aliases
+/// down to a single `senscritique` link, preferring the approved one.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn migration_0129_merges_aliases_only_series(pool: sqlx::PgPool) {
+    const MIGRATION: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../infra/migrations/0129_canonicalize_discovery_metadata_providers.sql"
+    ));
+
+    let (lib_id, series_id) = seed_library_and_series(&pool).await;
+
+    let pending_id = seed_link_with(
+        &pool,
+        lib_id,
+        series_id,
+        "sc_trending_bd",
+        "sc:pending",
+        "pending",
+    )
+    .await;
+    let approved_id = seed_link_with(
+        &pool,
+        lib_id,
+        series_id,
+        "sc_best_manga",
+        "sc:approved",
+        "approved",
+    )
+    .await;
+
+    sqlx::raw_sql(MIGRATION).execute(&pool).await.unwrap();
+
+    let remaining: Vec<(Uuid, String)> =
+        sqlx::query_as("SELECT id, provider FROM external_metadata_links WHERE series_id = $1")
+            .bind(series_id)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].0, approved_id, "the approved link wins");
+    assert_eq!(remaining[0].1, "senscritique");
+    assert_ne!(remaining[0].0, pending_id);
+}

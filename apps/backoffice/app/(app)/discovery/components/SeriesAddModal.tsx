@@ -116,6 +116,10 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
   const [searchError, setSearchError] = useState<string | null>(null);
 
   const [selectedCandidate, setSelectedCandidate] = useState<SeriesCandidateDto | null>(null);
+  // Discovery only: true while the clicked discovery item is still the implicit
+  // selection. Any explicit provider search or candidate toggle unpins it so the
+  // "add" button can no longer silently fall back to the SensCritique item (#112).
+  const [suggestionPinned, setSuggestionPinned] = useState(false);
   // Prowlarr only: existing series selected for download routing
   const [selectedExisting, setSelectedExisting] = useState<SeriesDto | null>(null);
 
@@ -129,12 +133,28 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
       .catch(() => setProviders([]));
   }, []);
 
-  async function runSearch(libId: string, query: string, provider?: string) {
+  /**
+   * Run a metadata search.
+   *
+   * `includeSuggestion` is only set for the very first search of a discovery
+   * card: it pins the discovery item at the top of the results and pre-selects
+   * it. Every later search (provider pill, edited query, Enter) must leave the
+   * user's choice alone — re-selecting the discovery item there silently forced
+   * the SensCritique provider and broke the link on refresh (#112).
+   */
+  async function runSearch(
+    libId: string,
+    query: string,
+    provider?: string,
+    { includeSuggestion = false }: { includeSuggestion?: boolean } = {},
+  ) {
     setSearching(true);
     setSearchError(null);
     setMetaCandidates([]);
     setExistingSeries([]);
+    setSelectedCandidate(null);
     setSelectedExisting(null);
+    setSuggestionPinned(false);
 
     const q = query.trim() || seriesTitle;
 
@@ -159,13 +179,17 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
       else setSearchError(data?.error ?? t("common.error"));
     }
 
-    // Discovery: inject suggestion at top if not already in results, and pre-select it
-    if (mode === "discovery" && suggestion) {
+    // Discovery: on the first search only, inject the clicked suggestion at the
+    // top if it is not already in the results, and pre-select it.
+    if (mode === "discovery" && includeSuggestion && suggestion) {
       const alreadyPresent = candidates.some((c) => c.external_id === suggestion.external_id);
       const withSuggestion = alreadyPresent ? candidates : [suggestionToCandidate(suggestion), ...candidates];
       setMetaCandidates(withSuggestion);
       const match = withSuggestion.find((c) => c.external_id === suggestion.external_id);
-      if (match) setSelectedCandidate(match);
+      if (match) {
+        setSelectedCandidate(match);
+        setSuggestionPinned(true);
+      }
     } else {
       setMetaCandidates(candidates);
     }
@@ -179,10 +203,13 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
     setSearchProvider(seriesProvider);
     setSelectedCandidate(null);
     setSelectedExisting(null);
+    setSuggestionPinned(false);
     setStep("search");
-    runSearch(libId, seriesTitle, seriesProvider || undefined);
+    runSearch(libId, seriesTitle, seriesProvider || undefined, {
+      includeSuggestion: mode === "discovery",
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seriesTitle, seriesProvider]);
+  }, [seriesTitle, seriesProvider, mode]);
 
   const open = useCallback(() => {
     setIsOpen(true);
@@ -192,6 +219,7 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
     setExistingSeries([]);
     setSelectedCandidate(null);
     setSelectedExisting(null);
+    setSuggestionPinned(false);
     setSearchError(null);
     setErrorMessage(null);
     setDownloadError(null);
@@ -218,6 +246,9 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
   }
 
   function selectCandidate(c: SeriesCandidateDto) {
+    // Any explicit toggle is a user decision: stop treating the discovery item
+    // as the implicit selection.
+    setSuggestionPinned(false);
     setSelectedCandidate(selectedCandidate?.external_id === c.external_id ? null : c);
     setSelectedExisting(null);
   }
@@ -266,7 +297,7 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
                 cover_url: null,
                 external_url: null,
               }
-            : suggestion
+            : mode === "discovery" && suggestionPinned && suggestion
               ? {
                   library_id: libraryId,
                   provider: suggestion.provider,
@@ -535,7 +566,7 @@ export function SeriesAddModal({ mode, libraries, onAdded, children, ...rest }: 
                 <div className="pt-1">
                   <button
                     onClick={() => handleConfirm(false)}
-                    disabled={searching}
+                    disabled={searching || (!selectedCandidate && !suggestionPinned)}
                     className="w-full px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40"
                   >
                     {t("discovery.addToLibrary")}

@@ -94,7 +94,7 @@ export function DiscoveryCard({
         )}
 
         {/* SensCritique average rating for the newest and best lists */}
-        {suggestion.provider.startsWith("sc_") && suggestion.rating !== null && (
+        {suggestion.provider === "senscritique" && suggestion.rating !== null && (
           <span className="absolute top-2 left-2 inline-flex items-center gap-1 text-2xs px-1.5 py-0.5 rounded-full font-semibold bg-black/60 text-warning backdrop-blur-sm tabular-nums">
             ★ {suggestion.rating.toFixed(1)}/10
           </span>

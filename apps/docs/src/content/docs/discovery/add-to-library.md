@@ -39,7 +39,7 @@ Sur la page **Séries**, le bouton **Nouvelle série** vous permet de :
 3. Créer la série avec un répertoire physique sur le disque
 
 :::note[Détails techniques]
-**Depuis les tendances** : pour SensCritique, un metadata link est créé automatiquement. AniList ne crée pas de metadata link lors de l'ajout depuis la découverte. Les providers `sc_*` (sc_trending_bd, sc_best_manga, etc.) sont normalisés vers `senscritique`.
+**Depuis les tendances** : pour SensCritique, un metadata link est créé automatiquement. AniList ne crée pas de metadata link lors de l'ajout depuis la découverte. Toutes les sources de découverte adossées à SensCritique (`senscritique_bd`, `sc_trending_bd`, `sc_best_manga`, etc.) sont normalisées vers le provider `senscritique` avant d'être enregistrées, afin que le rafraîchissement des métadonnées fonctionne. Si vous choisissez un autre provider dans l'assistant, c'est bien ce choix qui est enregistré.
 
 **Depuis Prowlarr** : le téléchargement est envoyé au client de téléchargement (qBittorrent ou AllDebrid) avec `series_name` et `expected_volumes` issus de la release Prowlarr.
 

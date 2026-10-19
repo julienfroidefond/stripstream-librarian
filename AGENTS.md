@@ -431,8 +431,12 @@ All three sync paths (approve, batch auto-match, refresh) share factored code:
 `available_providers()`: `google_books`, `open_library`, `comicvine`, `anilist`, `bdtheque`,
 `bdphile`, `senscritique`. All implement `MetadataProvider` (`search_series` + `get_series_books`).
 SensCritique uses a GraphQL API; BDTheque/BDphile scrape HTML. `bedetheque` was removed (Cloudflare
-blocking) — migration `0114` unlinks existing links. Discovery providers (`sc_trending_bd`,
-`sc_best_manga`, ...) are normalized to the provider name `senscritique` when creating metadata links.
+blocking) — migration `0114` unlinks existing links. Discovery sources backed by SensCritique
+(`senscritique_bd`, `sc_trending_bd`, `sc_trending_manga`, `sc_best_bd`, `sc_best_manga`) are
+**not** metadata providers: `metadata_providers::canonical_provider_name()` maps them to
+`senscritique`, and `metadata_providers::resolve_provider()` is the single chokepoint used by
+search / refresh to canonicalize then reject unknown names with an explicit error (never a silent
+`google_books` fallback). Migration `0129` heals legacy links that stored an alias.
 
 ### Indexer 2-Phase Pipeline
 

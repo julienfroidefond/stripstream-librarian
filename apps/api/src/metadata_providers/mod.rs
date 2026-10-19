@@ -47,6 +47,47 @@ pub fn available_providers() -> Vec<ProviderDescriptor> {
     .collect()
 }
 
+/// Discovery sources backed by the SensCritique metadata provider.
+///
+/// The discovery module exposes several ranking lists (`sc_trending_bd`,
+/// `sc_best_manga`, `senscritique_bd`, …) that are *discovery sources*, not
+/// metadata providers. They all resolve to the same [`senscritique`] provider,
+/// so their ids must never be stored in `external_metadata_links.provider` nor
+/// passed to [`get_provider`] — that yields an "unknown provider" error on the
+/// next metadata refresh.
+const SENSCRITIQUE_DISCOVERY_SOURCES: &[&str] = &[
+    "senscritique",
+    "senscritique_bd",
+    "sc_trending_bd",
+    "sc_trending_manga",
+    "sc_best_bd",
+    "sc_best_manga",
+];
+
+/// Map a discovery source id to the metadata provider that backs it.
+///
+/// Ids that are already a provider name are returned unchanged:
+/// `senscritique_bd` → `senscritique`, `sc_best_manga` → `senscritique`,
+/// `anilist` → `anilist`.
+pub fn canonical_provider_name(name: &str) -> &str {
+    if SENSCRITIQUE_DISCOVERY_SOURCES.contains(&name) {
+        "senscritique"
+    } else {
+        name
+    }
+}
+
+/// Resolve `name` to an implemented metadata provider.
+///
+/// Discovery source ids are canonicalized first (`senscritique_bd` →
+/// `senscritique`). On failure the *canonical* name is returned so callers can
+/// report exactly what was rejected — the old code silently fell back to Google
+/// Books, which surfaced a confusing error and hid the real one (#112).
+pub fn resolve_provider(name: &str) -> Result<Box<dyn MetadataProvider>, String> {
+    let canonical = canonical_provider_name(name);
+    get_provider(canonical).ok_or_else(|| canonical.to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Shared provider helpers
 // ---------------------------------------------------------------------------
@@ -231,5 +272,93 @@ mod helper_tests {
         assert_eq!(strip_html("<p>hello <b>world</b></p>"), "hello world");
         assert_eq!(strip_html("  plain text  "), "plain text");
         assert_eq!(strip_html("<div><span></span></div>"), "");
+    }
+
+    /// Regression #112: every discovery source must resolve to a real provider.
+    #[test]
+    fn canonical_provider_name_normalizes_every_discovery_source() {
+        for source in [
+            "senscritique",
+            "senscritique_bd",
+            "sc_trending_bd",
+            "sc_trending_manga",
+            "sc_best_bd",
+            "sc_best_manga",
+        ] {
+            assert_eq!(
+                canonical_provider_name(source),
+                "senscritique",
+                "{source} must be normalized to senscritique"
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_provider_name_keeps_real_providers_untouched() {
+        for provider in [
+            "google_books",
+            "open_library",
+            "comicvine",
+            "anilist",
+            "bdphile",
+            "bdtheque",
+            "prowlarr",
+        ] {
+            assert_eq!(canonical_provider_name(provider), provider);
+        }
+    }
+
+    /// Regression #112: a link created from any discovery list must resolve to a
+    /// real provider, no matter which SensCritique-backed source id it carries.
+    #[test]
+    fn resolve_provider_accepts_every_discovery_source() {
+        for source in [
+            "senscritique",
+            "senscritique_bd",
+            "sc_trending_bd",
+            "sc_trending_manga",
+            "sc_best_bd",
+            "sc_best_manga",
+        ] {
+            let provider = resolve_provider(source)
+                .unwrap_or_else(|_| panic!("{source} must resolve to a provider"));
+            assert_eq!(
+                provider.name(),
+                "senscritique",
+                "{source} must resolve to the senscritique provider"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_provider_accepts_real_providers() {
+        for provider in [
+            "google_books",
+            "open_library",
+            "comicvine",
+            "anilist",
+            "bdphile",
+            "bdtheque",
+            "senscritique",
+        ] {
+            assert_eq!(
+                resolve_provider(provider).unwrap().name(),
+                provider,
+                "{provider} must resolve to itself"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_provider_rejects_unknown_names() {
+        // `prowlarr` is not a metadata provider: it is a download source, so the
+        // refresh/search paths must reject it rather than fall back to Google
+        // Books.
+        for unknown in ["prowlarr", "senscritique_bd_typo", "", "google"] {
+            let err = resolve_provider(unknown)
+                .err()
+                .unwrap_or_else(|| panic!("{unknown} must not resolve"));
+            assert_eq!(err, unknown, "the rejected name must be reported verbatim");
+        }
     }
 }
