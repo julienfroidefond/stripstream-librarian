@@ -1,13 +1,16 @@
 import { fetchBooks, searchBooks, fetchLibraries, BookDto, LibraryDto, SeriesHitDto, getBookCoverUrl } from "@/lib/api";
-import { BooksGrid, EmptyState } from "@/app/components/BookCard";
+import { BooksGrid, BooksList, EmptyState } from "@/app/components/BookCard";
+import { ViewModeToggle } from "@/app/components/ViewModeToggle";
 import { LiveSearchForm } from "@/app/components/LiveSearchForm";
 import { RefreshButton } from "@/app/components/RefreshButton";
 import { Card, CardContent, OffsetPagination } from "@/app/components/ui";
 import { JacketGrid } from "@/app/components/motion/JacketGrid";
+import { cookies } from "next/headers";
 import Link from "next/link";
 import Image from "next/image";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { paramString, paramStringOr, paramInt } from "@/lib/searchParams";
+import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/viewMode";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +20,8 @@ export default async function BooksPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { t } = await getServerTranslations();
+  const cookieStore = await cookies();
+  const viewMode = parseViewMode(cookieStore.get(VIEW_MODE_COOKIE)?.value);
   const sp = await searchParams;
   const libraryId = paramString(sp, "library");
   const searchQuery = paramStringOr(sp, "q", "");
@@ -128,15 +133,14 @@ export default async function BooksPage({
       </Card>
 
       {/* Résultats */}
-      {searchQuery ? (
-        <p className="text-sm text-muted-foreground mb-4">
-          {t("books.resultCountFor", { count: String(total), plural: total !== 1 ? "s" : "", query: searchQuery })}
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {searchQuery
+            ? t("books.resultCountFor", { count: String(total), plural: total !== 1 ? "s" : "", query: searchQuery })
+            : t("books.resultCount", { count: String(total), plural: total !== 1 ? "s" : "" })}
         </p>
-      ) : (
-        <p className="text-sm text-muted-foreground mb-4">
-          {t("books.resultCount", { count: String(total), plural: total !== 1 ? "s" : "" })}
-        </p>
-      )}
+        <ViewModeToggle viewMode={viewMode} />
+      </div>
 
       {/* Séries matchantes */}
       {seriesHits.length > 0 && (
@@ -178,7 +182,7 @@ export default async function BooksPage({
       {displayBooks.length > 0 ? (
         <>
           {searchQuery && <h2 className="text-lg font-semibold text-foreground mb-3">{t("books.title")}</h2>}
-          <BooksGrid books={displayBooks} />
+          {viewMode === "list" ? <BooksList books={displayBooks} /> : <BooksGrid books={displayBooks} />}
 
           <OffsetPagination
             currentPage={page}

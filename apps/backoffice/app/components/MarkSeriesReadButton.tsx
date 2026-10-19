@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslation } from "@/lib/i18n/context";
-import { markReadClassName, useMarkRead } from "@/hooks/useMarkRead";
+import { inlineReadClassName, markReadClassName, overlayReadClassName, useMarkRead } from "@/hooks/useMarkRead";
 import { MarkReadButton } from "./MarkReadButton";
 
 interface MarkSeriesReadButtonProps {
@@ -10,9 +10,12 @@ interface MarkSeriesReadButtonProps {
   bookCount: number;
   booksReadCount: number;
   compact?: boolean;
+  iconOnly?: boolean;
+  /** Icon-only look: dark pill over a cover, neutral square in a list row. */
+  variant?: "overlay" | "inline";
 }
 
-export function MarkSeriesReadButton({ seriesId, seriesName, bookCount, booksReadCount, compact }: MarkSeriesReadButtonProps) {
+export function MarkSeriesReadButton({ seriesId, seriesName, bookCount, booksReadCount, compact, iconOnly, variant = "overlay" }: MarkSeriesReadButtonProps) {
   const { t } = useTranslation();
 
   const allRead = bookCount > 0 && booksReadCount >= bookCount;
@@ -33,8 +36,15 @@ export function MarkSeriesReadButton({ seriesId, seriesName, bookCount, booksRea
       label={label}
       loading={loading}
       compact={compact}
+      iconOnly={iconOnly}
       completed={allRead}
-      className={markReadClassName(allRead, compact)}
+      className={
+        iconOnly
+          ? variant === "inline"
+            ? inlineReadClassName(allRead)
+            : overlayReadClassName(allRead)
+          : markReadClassName(allRead, compact)
+      }
       onClick={handleClick}
     />
   );

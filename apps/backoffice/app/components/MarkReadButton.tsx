@@ -4,13 +4,15 @@ interface MarkReadButtonProps {
   label: string;
   loading: boolean;
   compact?: boolean;
+  /** Icon-only pill (used over a cover); the label stays as the accessible name. */
+  iconOnly?: boolean;
   /** Whether the item is already marked as read (controls which icon is shown) */
   completed: boolean;
   className: string;
   onClick: (e: React.MouseEvent) => void;
 }
 
-export function MarkReadButton({ label, loading, compact, completed, className, onClick }: MarkReadButtonProps) {
+export function MarkReadButton({ label, loading, compact, iconOnly, completed, className, onClick }: MarkReadButtonProps) {
   const size = compact ? "w-3.5 h-3.5" : "w-4 h-4";
 
   return (
@@ -35,7 +37,7 @@ export function MarkReadButton({ label, loading, compact, completed, className, 
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
         </svg>
       )}
-      {label}
+      {iconOnly ? <span className="sr-only">{label}</span> : label}
     </button>
   );
 }

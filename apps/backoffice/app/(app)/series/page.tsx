@@ -3,7 +3,8 @@ import { cookies } from "next/headers";
 import { ReadingListCard } from "@/app/components/ReadingListCard";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { paramString, paramStringOr, paramInt, paramBool } from "@/lib/searchParams";
-import { SeriesGrid } from "@/app/components/SeriesGrid";
+import { SeriesGrid, SeriesList } from "@/app/components/SeriesGrid";
+import { ViewModeToggle } from "@/app/components/ViewModeToggle";
 import { EmptyState } from "@/app/components/BookCard";
 import { LiveSearchForm } from "@/app/components/LiveSearchForm";
 import { RefreshButton } from "@/app/components/RefreshButton";
@@ -13,6 +14,7 @@ import Link from "next/link";
 import { ProviderIcon } from "@/app/components/ProviderIcon";
 import { ExternalLinkBadge } from "@/app/components/ExternalLinkBadge";
 import nextDynamic from "next/dynamic";
+import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/viewMode";
 const CreateSeriesButton = nextDynamic(
   () => import("@/app/components/CreateSeriesButton").then(m => m.CreateSeriesButton)
 );
@@ -27,6 +29,7 @@ export default async function SeriesPage({
   const { t } = await getServerTranslations();
   const cookieStore = await cookies();
   const hasActiveUser = !!cookieStore.get("as_user_id")?.value;
+  const viewMode = parseViewMode(cookieStore.get(VIEW_MODE_COOKIE)?.value);
   const sp = await searchParams;
   const libraryId = paramString(sp, "library");
   const searchQuery = paramStringOr(sp, "q", "");
@@ -378,14 +381,21 @@ export default async function SeriesPage({
         )
       ) : (<>
       {/* Results count */}
-      <p className="text-sm text-muted-foreground mb-4">
-        {seriesPage.total} {t("series.title").toLowerCase()}
-        {searchQuery && <> {t("series.matchingQuery")} &quot;{searchQuery}&quot;</>}
-      </p>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {seriesPage.total} {t("series.title").toLowerCase()}
+          {searchQuery && <> {t("series.matchingQuery")} &quot;{searchQuery}&quot;</>}
+        </p>
+        <ViewModeToggle viewMode={viewMode} />
+      </div>
 
       {series.length > 0 ? (
         <>
-          <SeriesGrid series={series} sort={sort} hasActiveUser={hasActiveUser} t={t} knownStatuses={KNOWN_STATUSES} showCommunityScore />
+          {viewMode === "list" ? (
+            <SeriesList series={series} sort={sort} hasActiveUser={hasActiveUser} t={t} knownStatuses={KNOWN_STATUSES} showCommunityScore />
+          ) : (
+            <SeriesGrid series={series} sort={sort} hasActiveUser={hasActiveUser} t={t} knownStatuses={KNOWN_STATUSES} showCommunityScore />
+          )}
 
           <OffsetPagination
             currentPage={page}

@@ -3,6 +3,8 @@
 import { useState, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 
+import { iconActionClassName } from "@/app/components/ui/iconAction";
+
 export interface UseMarkReadOptions {
   /** Target endpoint, e.g. `/api/books/<id>/progress`. */
   url: string;
@@ -67,4 +69,21 @@ export function markReadClassName(completed: boolean, compact?: boolean): string
       ? "border-success/30 bg-success/10 text-success hover:bg-success/20"
       : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary"
   }`;
+}
+
+/**
+ * Floating control laid over a cover: a small dark pill so it stays legible on
+ * any artwork, with the completed state picking up the success colour. Sized to
+ * match the other shortcuts of the cover cluster (`⋯`, download, delete).
+ */
+export function overlayReadClassName(completed: boolean): string {
+  return iconActionClassName("cover", completed ? "success" : "neutral");
+}
+
+/**
+ * Icon-only control for list rows: a neutral outlined square that sits
+ * naturally on a card background (unlike the dark overlay pill).
+ */
+export function inlineReadClassName(completed: boolean): string {
+  return iconActionClassName("inline", completed ? "success" : "neutral");
 }

@@ -1,9 +1,12 @@
 import { fetchLibraries, fetchBooks, getBookCoverUrl, LibraryDto, BookDto } from "@/lib/api";
-import { BooksGrid, EmptyState } from "@/app/components/BookCard";
+import { BooksGrid, BooksList, EmptyState } from "@/app/components/BookCard";
+import { ViewModeToggle } from "@/app/components/ViewModeToggle";
 import { LibrarySubPageHeader } from "@/app/components/LibrarySubPageHeader";
 import { OffsetPagination } from "@/app/components/ui";
 import { notFound } from "next/navigation";
+import { cookies } from "next/headers";
 import { getServerTranslations } from "@/lib/i18n/server";
+import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/viewMode";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +19,8 @@ export default async function LibraryBooksPage({
 }) {
   const { id } = await params;
   const { t } = await getServerTranslations();
+  const cookieStore = await cookies();
+  const viewMode = parseViewMode(cookieStore.get(VIEW_MODE_COOKIE)?.value);
   const searchParamsAwaited = await searchParams;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
   const series = typeof searchParamsAwaited.series === "string" ? searchParamsAwaited.series : undefined;
@@ -63,7 +68,11 @@ export default async function LibraryBooksPage({
 
       {books.length > 0 ? (
         <>
-          <BooksGrid books={books} />
+          <div className="flex justify-end">
+            <ViewModeToggle viewMode={viewMode} />
+          </div>
+
+          {viewMode === "list" ? <BooksList books={books} /> : <BooksGrid books={books} />}
           
           <OffsetPagination
             currentPage={page}
