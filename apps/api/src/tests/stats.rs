@@ -1100,6 +1100,43 @@ async fn get_series_user_activity_returns_all_readers_and_ratings(pool: PgPool) 
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_series_user_activity_ignores_unread_only_rows(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let reader = create_user(&pool, "reader").await;
+    let opener = create_user(&pool, "opener").await;
+
+    let b1 = create_simple_book(&pool, library, Some(series), "B1", 10).await;
+    set_progress(&pool, b1, reader, "read", None, Some(Utc::now())).await;
+    // Opening a book creates an `unread` row with a timestamp; that must not
+    // make the user look like a reader of the series.
+    set_progress(&pool, b1, opener, "unread", None, Some(Utc::now())).await;
+
+    let Json(rows) = get_series_user_activity(State(state), Path(series))
+        .await
+        .unwrap();
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].user_id, reader);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_series_user_activity_empty_without_readers_or_ratings(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let _ = create_user(&pool, "lurker").await;
+    let _ = create_simple_book(&pool, library, Some(series), "B1", 10).await;
+
+    let Json(rows) = get_series_user_activity(State(state), Path(series))
+        .await
+        .unwrap();
+
+    assert!(rows.is_empty());
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
 async fn get_series_user_activity_unknown_series_returns_404(pool: PgPool) {
     let state = test_state(pool);
 

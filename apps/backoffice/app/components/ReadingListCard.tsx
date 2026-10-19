@@ -9,11 +9,13 @@ type ReadingListCardProps = {
   seriesCountLabel: string;
   booksLabel: string;
   readLabel: string;
+  /** Reading progress is user-scoped; hide it when no reader is selected. */
+  hasActiveUser: boolean;
   action?: ReactNode;
 };
 
 /** Shared reading-list card for the Lists page and the Series list view. */
-export function ReadingListCard({ list, seriesCountLabel, booksLabel, readLabel, action }: ReadingListCardProps) {
+export function ReadingListCard({ list, seriesCountLabel, booksLabel, readLabel, hasActiveUser, action }: ReadingListCardProps) {
   const href = `/reading-lists/${list.id}` as any;
   const progress = list.book_count > 0 ? Math.round((list.books_read_count / list.book_count) * 100) : 0;
 
@@ -45,7 +47,7 @@ export function ReadingListCard({ list, seriesCountLabel, booksLabel, readLabel,
               <span className="text-xs text-muted-foreground">{booksLabel}</span>
             </div>
           </div>
-          {list.book_count > 0 && (
+          {hasActiveUser && list.book_count > 0 && (
             <div className="mt-3">
               <div className="mb-1 flex items-center justify-between text-2xs text-muted-foreground">
                 <span>{readLabel}</span>

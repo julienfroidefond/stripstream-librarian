@@ -4,7 +4,6 @@ import { BooksGrid, BooksList, EmptyState } from "@/app/components/BookCard";
 import { SeriesRelatedCarousel } from "@/app/components/SeriesRelatedCarousel";
 import { BooksGridWithMissingToggle } from "@/app/components/ShowMissingToggle";
 import { ViewModeToggle } from "@/app/components/ViewModeToggle";
-import { MarkBookReadButton } from "@/app/components/MarkBookReadButton";
 import { ProviderIcon, providerLabel } from "@/app/components/ProviderIcon";
 import { SeriesActionsToolbar } from "@/app/components/SeriesActionsToolbar";
 import { SeriesRatingControl } from "@/app/components/SeriesRatingControl";

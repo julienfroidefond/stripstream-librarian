@@ -9,10 +9,11 @@ import { Button, Card } from "@/app/components/ui";
 
 type Props = {
   initialLists: ReadingListDto[];
+  hasActiveUser: boolean;
 };
 
 
-export function ReadingListsClient({ initialLists }: Props) {
+export function ReadingListsClient({ initialLists, hasActiveUser }: Props) {
   const { t } = useTranslation();
   const [lists, setLists] = useState<ReadingListDto[]>(initialLists);
   const [showCreate, setShowCreate] = useState(false);
@@ -96,6 +97,7 @@ export function ReadingListsClient({ initialLists }: Props) {
               seriesCountLabel={t("readingLists.seriesCount", { count: list.series_count, plural: list.series_count !== 1 ? "s" : "" })}
               booksLabel={t("dashboard.books")}
               readLabel={t("status.read")}
+              hasActiveUser={hasActiveUser}
               action={(
                 <Button
                   type="button"

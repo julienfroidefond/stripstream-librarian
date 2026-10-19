@@ -79,7 +79,8 @@ pub async fn get_series_user_activity(
         LEFT JOIN progress p ON p.user_id = u.id
         LEFT JOIN series_user_ratings sur
             ON sur.series_id = $1 AND sur.user_id = u.id
-        WHERE p.user_id IS NOT NULL OR sur.rating IS NOT NULL
+        WHERE COALESCE(p.books_read, 0) + COALESCE(p.books_reading, 0) > 0
+           OR sur.rating IS NOT NULL
         ORDER BY p.last_read_at DESC NULLS LAST, u.username ASC
         "#,
     )
