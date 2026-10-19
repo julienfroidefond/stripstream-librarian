@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod archive;
 pub mod create;
 pub mod favorites;
@@ -12,6 +13,7 @@ pub mod related;
 mod tests;
 pub mod update;
 
+pub use activity::*;
 pub use archive::*;
 pub use create::*;
 pub use favorites::*;

@@ -62,6 +62,8 @@ La page **Progression** (menu principal) affiche une vue transversale par utilis
 
 Cette vue est en lecture seule : elle sert à inspecter rapidement la progression de tous les utilisateurs depuis l'administration.
 
+En mode admin, la page d'une série affiche également, en lecture seule, la progression de chaque lecteur (`lus / total`, avec les tomes en cours) ainsi que ses notes éventuelles. Les statuts de lecture propres à un utilisateur (badges « non lu / en cours / lu », filtres de statut) sont masqués tant qu'aucun lecteur n'est sélectionné.
+
 ---
 
 ## Compte admin et progression de lecture

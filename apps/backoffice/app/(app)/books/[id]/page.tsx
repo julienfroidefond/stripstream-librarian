@@ -125,11 +125,13 @@ export default async function BookDetailPage({
                 {book.volume != null && <span className="font-semibold">Vol. {book.volume}</span>}
               </Link>
             )}
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClassName}`}>
-              {statusLabel}
-              {book.reading_status === "reading" && book.reading_current_page != null && ` · p. ${book.reading_current_page}`}
-            </span>
-            {book.reading_last_read_at && (
+            {hasActiveUser && (
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClassName}`}>
+                {statusLabel}
+                {book.reading_status === "reading" && book.reading_current_page != null && ` · p. ${book.reading_current_page}`}
+              </span>
+            )}
+            {hasActiveUser && book.reading_last_read_at && (
               <span className="text-xs text-muted-foreground">
                 {new Date(book.reading_last_read_at).toLocaleDateString(locale)}
               </span>

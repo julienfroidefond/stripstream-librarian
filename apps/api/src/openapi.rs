@@ -153,6 +153,7 @@ pub struct ClientApiDoc;
         crate::series::get_series_ratings,
         crate::series::set_series_rating,
         crate::series::delete_series_rating,
+        crate::series::get_series_user_activity,
         crate::series::list_favorites,
         crate::series::is_favorite,
         crate::series::add_favorite,
@@ -334,6 +335,7 @@ pub struct ClientApiDoc;
             crate::series::ProviderRating,
             crate::series::SeriesRatingsResponse,
             crate::series::SetRatingRequest,
+            crate::series::SeriesUserActivity,
             // Reading
             crate::reading::progress::ReadingProgressResponse,
             crate::reading::progress::UpdateReadingProgressRequest,

@@ -21,6 +21,7 @@ export default async function BooksPage({
 }) {
   const { t } = await getServerTranslations();
   const cookieStore = await cookies();
+  const hasActiveUser = !!cookieStore.get("as_user_id")?.value;
   const viewMode = parseViewMode(cookieStore.get(VIEW_MODE_COOKIE)?.value);
   const sp = await searchParams;
   const libraryId = paramString(sp, "library");
@@ -39,7 +40,7 @@ export default async function BooksPage({
   let seriesHits: SeriesHitDto[] = [];
 
   const [booksPage, searchResponse] = await Promise.all([
-    fetchBooks(libraryId, undefined, page, limit, readingStatus, sort, undefined, format, metadataProvider, searchQuery || undefined).catch(() => ({
+    fetchBooks(libraryId, undefined, page, limit, hasActiveUser ? readingStatus : undefined, sort, undefined, format, metadataProvider, searchQuery || undefined).catch(() => ({
       items: [] as BookDto[],
       total: 0,
       page: 1,
@@ -94,7 +95,7 @@ export default async function BooksPage({
     { value: "latest", label: t("books.sortLatest") },
   ];
 
-  const hasFilters = searchQuery || libraryId || readingStatus || format || metadataProvider || sort;
+  const hasFilters = searchQuery || libraryId || (hasActiveUser && readingStatus) || format || metadataProvider || sort;
 
   return (
     <>
@@ -123,7 +124,7 @@ export default async function BooksPage({
             fields={[
               { name: "q", type: "text", label: t("common.search"), placeholder: t("books.searchPlaceholder") },
               { name: "library", type: "select", label: t("books.library"), options: libraryOptions },
-              { name: "status", type: "select", label: t("books.status"), options: statusOptions },
+              ...(hasActiveUser ? [{ name: "status", type: "select" as const, label: t("books.status"), options: statusOptions }] : []),
               { name: "format", type: "select", label: t("books.format"), options: formatOptions },
               { name: "metadata", type: "select", label: t("series.metadata"), options: metadataOptions },
               { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },
@@ -182,7 +183,11 @@ export default async function BooksPage({
       {displayBooks.length > 0 ? (
         <>
           {searchQuery && <h2 className="text-lg font-semibold text-foreground mb-3">{t("books.title")}</h2>}
-          {viewMode === "list" ? <BooksList books={displayBooks} /> : <BooksGrid books={displayBooks} />}
+          {viewMode === "list" ? (
+            <BooksList books={displayBooks} hasActiveUser={hasActiveUser} />
+          ) : (
+            <BooksGrid books={displayBooks} hasActiveUser={hasActiveUser} />
+          )}
 
           <OffsetPagination
             currentPage={page}

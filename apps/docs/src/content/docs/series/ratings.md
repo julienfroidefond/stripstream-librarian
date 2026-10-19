@@ -15,6 +15,12 @@ Sur la page de détail d'une série, un widget **étoiles** vous permet de noter
 
 La note est enregistrée par utilisateur — plusieurs comptes peuvent avoir des notes différentes sur la même série.
 
+## Mode admin
+
+Quand aucun lecteur n'est sélectionné dans le sélecteur d'utilisateur (mode **Admin**), le widget de notation est masqué : l'admin n'a pas d'identité de lecteur et ne peut donc pas noter une série.
+
+À la place, la page d'une série affiche en lecture seule les notes de **tous les lecteurs**, avec leur nom et leur note. Les notes de la communauté (providers) restent visibles dans les deux modes.
+
 ## Synchronisation avec AniList
 
 Si la série est liée à AniList et que votre compte AniList est connecté (voir [Intégration AniList](/integrations/anilist/)), votre note locale est **automatiquement poussée vers AniList** dès que vous la modifiez.

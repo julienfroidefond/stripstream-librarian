@@ -48,7 +48,8 @@ export const BookCard = memo(function BookCard({
 }: BookCardProps & { compact?: boolean }) {
   const { t } = useTranslation();
   const coverUrl = book.coverUrl || `/api/books/${book.id}/thumbnail`;
-  const status = readingStatus ?? book.reading_status;
+  // Reading status is reader-scoped: hide it when the admin has not selected a reader.
+  const status = hasActiveUser ? readingStatus ?? book.reading_status : null;
   const statusTone = status ? readingStatusTones[status] : null;
   const statusLabels: Record<ReadingStatus, string> = {
     unread: t("status.unread"),
@@ -84,7 +85,7 @@ export const BookCard = memo(function BookCard({
         )}
       </div>
 
-      {book.reading_current_page != null && book.page_count != null && (
+      {hasActiveUser && book.reading_current_page != null && book.page_count != null && (
         <CoverProgress
           value={book.reading_current_page}
           max={book.page_count}
@@ -318,7 +319,8 @@ function MissingBookRow({ book }: { book: MissingBook }) {
 function BookListRow({ book, hasActiveUser }: { book: BookDto & { coverUrl?: string }; hasActiveUser: boolean }) {
   const { t, locale } = useTranslation();
   const coverUrl = book.coverUrl || `/api/books/${book.id}/thumbnail`;
-  const status = book.reading_status;
+  // Reader-scoped status: hidden when the admin has not selected a reader.
+  const status = hasActiveUser ? book.reading_status : null;
   const isRead = status === "read";
   const volume = volumeLabel(book);
   const format = book.format ?? book.kind;
@@ -337,7 +339,11 @@ function BookListRow({ book, hasActiveUser }: { book: BookDto & { coverUrl?: str
 
   const progressLabel = t("books.readingProgress", { title: book.title });
   const hasProgress =
-    book.reading_current_page != null && book.page_count != null && book.page_count > 0 && !isRead;
+    hasActiveUser &&
+    book.reading_current_page != null &&
+    book.page_count != null &&
+    book.page_count > 0 &&
+    !isRead;
   const percent = hasProgress
     ? Math.min(100, Math.max(0, Math.round((book.reading_current_page! / book.page_count!) * 100)))
     : 0;
@@ -372,9 +378,11 @@ function BookListRow({ book, hasActiveUser }: { book: BookDto & { coverUrl?: str
               {volume}
             </span>
           )}
-          <CoverBadge tone={statusTones[status]} className="z-20 shrink-0">
-            {statusLabels[status]}
-          </CoverBadge>
+          {status && (
+            <CoverBadge tone={statusTones[status]} className="z-20 shrink-0">
+              {statusLabels[status]}
+            </CoverBadge>
+          )}
         </div>
 
         {book.summary && (

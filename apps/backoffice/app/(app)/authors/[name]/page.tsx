@@ -1,4 +1,5 @@
 import { fetchBooks, fetchAllSeries, BooksPageDto, SeriesPageDto, getBookCoverUrl } from "@/lib/api";
+import { cookies } from "next/headers";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { BooksGrid } from "@/app/components/BookCard";
 import { JacketGrid } from "@/app/components/motion/JacketGrid";
@@ -16,6 +17,8 @@ export default async function AuthorDetailPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { t } = await getServerTranslations();
+  const cookieStore = await cookies();
+  const hasActiveUser = !!cookieStore.get("as_user_id")?.value;
   const { name: encodedName } = await params;
   const authorName = decodeURIComponent(encodedName);
   const searchParamsAwaited = await searchParams;
@@ -121,7 +124,7 @@ export default async function AuthorDetailPage({
           <h2 className="text-xl font-semibold text-foreground mb-4">
             {t("authors.booksBy", { name: authorName })}
           </h2>
-          <BooksGrid books={booksPage.items} />
+          <BooksGrid books={booksPage.items} hasActiveUser={hasActiveUser} />
           <OffsetPagination
             currentPage={page}
             totalPages={totalPages}
