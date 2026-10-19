@@ -17,6 +17,7 @@ import { RouteTransition } from "@/app/components/RouteTransition";
 import { ScrollProgress } from "@/app/components/motion";
 import { UserSwitcher } from "@/app/components/UserSwitcher";
 import { fetchUsers, fetchDownloadsEnabled } from "@/lib/api";
+import { ACTIVE_USER_COOKIE, getActiveUser } from "@/lib/activeUser";
 import { getServerTranslations } from "@/lib/i18n/server";
 import type { TranslationKey } from "@/lib/i18n/fr";
 import type { NavHref } from "@/lib/navigation";
@@ -66,8 +67,7 @@ const navEntries: NavEntry[] = [
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const { t } = await getServerTranslations();
-  const cookieStore = await cookies();
-  const activeUserId = cookieStore.get("as_user_id")?.value || null;
+  const { userId: activeUserId } = await getActiveUser();
   const [users, downloadsEnabled] = await Promise.all([
     fetchUsers().catch(() => []),
     fetchDownloadsEnabled(),
@@ -78,9 +78,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     const userId = formData.get("user_id") as string;
     const store = await cookies();
     if (userId) {
-      store.set("as_user_id", userId, { path: "/", httpOnly: false, sameSite: "lax" });
+      store.set(ACTIVE_USER_COOKIE, userId, { path: "/", httpOnly: false, sameSite: "lax" });
     } else {
-      store.delete("as_user_id");
+      store.delete(ACTIVE_USER_COOKIE);
     }
     revalidatePath("/", "layout");
   }

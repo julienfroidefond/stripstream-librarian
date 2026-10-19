@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { SeriesGrid, SeriesList } from "@/app/components/SeriesGrid";
+import { progressLabel, SeriesGrid, SeriesList } from "@/app/components/SeriesGrid";
 import type { SeriesDto } from "@/lib/api";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 
@@ -41,6 +41,56 @@ function renderGrid(series: SeriesDto[], overrides: Partial<React.ComponentProps
     />
   );
 }
+
+describe("progressLabel", () => {
+  it("uses read progress when a reader is active", () => {
+    const spy = vi.fn((key: string) => key);
+
+    expect(
+      progressLabel(
+        { book_count: 2, books_read_count: 1 },
+        true,
+        spy as unknown as TranslateFunction
+      )
+    ).toBe("series.readCount");
+    expect(spy).toHaveBeenCalledWith("series.readCount", {
+      read: "1",
+      total: "2",
+      plural: "s",
+    });
+  });
+
+  it("uses the owned book count in admin mode", () => {
+    const spy = vi.fn((key: string) => key);
+
+    expect(
+      progressLabel(
+        { book_count: 4, books_read_count: 2 },
+        false,
+        spy as unknown as TranslateFunction
+      )
+    ).toBe("books.bookCount");
+    expect(spy).toHaveBeenCalledWith("books.bookCount", {
+      count: "4",
+      plural: "s",
+    });
+  });
+
+  it("keeps the plural empty for a single book", () => {
+    const spy = vi.fn((key: string) => key);
+
+    progressLabel(
+      { book_count: 1, books_read_count: 0 },
+      false,
+      spy as unknown as TranslateFunction
+    );
+
+    expect(spy).toHaveBeenCalledWith("books.bookCount", {
+      count: "1",
+      plural: "",
+    });
+  });
+});
 
 describe("SeriesGrid", () => {
   it("renders a card with a link per series", () => {

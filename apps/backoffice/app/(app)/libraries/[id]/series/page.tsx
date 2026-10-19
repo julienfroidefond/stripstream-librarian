@@ -8,6 +8,7 @@ import { LiveSearchForm } from "@/app/components/LiveSearchForm";
 import { notFound } from "next/navigation";
 import { LibrarySubPageHeader } from "@/app/components/LibrarySubPageHeader";
 import { getServerTranslations } from "@/lib/i18n/server";
+import { getActiveUser } from "@/lib/activeUser";
 import { paramString, paramInt, paramBool } from "@/lib/searchParams";
 import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/viewMode";
 
@@ -22,8 +23,8 @@ export default async function LibrarySeriesPage({
 }) {
   const { id } = await params;
   const { t } = await getServerTranslations();
+  const { hasActiveUser } = await getActiveUser();
   const cookieStore = await cookies();
-  const hasActiveUser = !!cookieStore.get("as_user_id")?.value;
   const viewMode = parseViewMode(cookieStore.get(VIEW_MODE_COOKIE)?.value);
   const sp = await searchParams;
   const readingStatus = paramString(sp, "status");

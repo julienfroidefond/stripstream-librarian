@@ -1,6 +1,6 @@
 import { fetchBooks, fetchAllSeries, BooksPageDto, SeriesPageDto, getBookCoverUrl } from "@/lib/api";
-import { cookies } from "next/headers";
 import { getServerTranslations } from "@/lib/i18n/server";
+import { getActiveUser } from "@/lib/activeUser";
 import { BooksGrid } from "@/app/components/BookCard";
 import { JacketGrid } from "@/app/components/motion/JacketGrid";
 import { OffsetPagination } from "@/app/components/ui";
@@ -17,8 +17,7 @@ export default async function AuthorDetailPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { t } = await getServerTranslations();
-  const cookieStore = await cookies();
-  const hasActiveUser = !!cookieStore.get("as_user_id")?.value;
+  const { hasActiveUser } = await getActiveUser();
   const { name: encodedName } = await params;
   const authorName = decodeURIComponent(encodedName);
   const searchParamsAwaited = await searchParams;

@@ -6,7 +6,9 @@ use serde::Serialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{error::ApiError, state::AppState};
+use crate::{
+    error::ApiError, reading::series_progress::SERIES_PROGRESS_AGGREGATES, state::AppState,
+};
 
 /// Reading progress and rating of one reader for a series (admin view).
 #[derive(Serialize, sqlx::FromRow, ToSchema)]
@@ -50,14 +52,11 @@ pub async fn get_series_user_activity(
         return Err(ApiError::not_found("series not found"));
     }
 
-    let rows = sqlx::query_as::<_, SeriesUserActivity>(
+    let sql = format!(
         r#"
         WITH progress AS (
             SELECT
-                brp.user_id,
-                COUNT(*) FILTER (WHERE brp.status = 'read') AS books_read,
-                COUNT(*) FILTER (WHERE brp.status = 'reading') AS books_reading,
-                MAX(brp.last_read_at) AS last_read_at
+                brp.user_id,{SERIES_PROGRESS_AGGREGATES}
             FROM book_reading_progress brp
             JOIN books b ON b.id = brp.book_id
             WHERE b.series_id = $1
@@ -82,11 +81,14 @@ pub async fn get_series_user_activity(
         WHERE COALESCE(p.books_read, 0) + COALESCE(p.books_reading, 0) > 0
            OR sur.rating IS NOT NULL
         ORDER BY p.last_read_at DESC NULLS LAST, u.username ASC
-        "#,
-    )
-    .bind(series_id)
-    .fetch_all(&state.pool)
-    .await?;
+        "#
+    );
+
+    // Only compile-time fragments are interpolated, never user input.
+    let rows = sqlx::query_as::<_, SeriesUserActivity>(sqlx::AssertSqlSafe(sql))
+        .bind(series_id)
+        .fetch_all(&state.pool)
+        .await?;
 
     Ok(Json(rows))
 }

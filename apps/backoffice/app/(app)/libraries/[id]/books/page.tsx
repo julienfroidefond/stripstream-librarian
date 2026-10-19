@@ -6,6 +6,7 @@ import { OffsetPagination } from "@/app/components/ui";
 import { notFound } from "next/navigation";
 import { cookies } from "next/headers";
 import { getServerTranslations } from "@/lib/i18n/server";
+import { getActiveUser } from "@/lib/activeUser";
 import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/viewMode";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +20,8 @@ export default async function LibraryBooksPage({
 }) {
   const { id } = await params;
   const { t } = await getServerTranslations();
+  const { hasActiveUser } = await getActiveUser();
   const cookieStore = await cookies();
-  const hasActiveUser = !!cookieStore.get("as_user_id")?.value;
   const viewMode = parseViewMode(cookieStore.get(VIEW_MODE_COOKIE)?.value);
   const searchParamsAwaited = await searchParams;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;

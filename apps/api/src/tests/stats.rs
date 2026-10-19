@@ -1330,6 +1330,26 @@ async fn get_reading_overview_series_progress_filters_out_untouched_series(pool:
         .all(|s| s.series_name != "Untouched"));
 }
 
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_reading_overview_ignores_unread_rows_for_series_progress(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let alice = create_user(&pool, "alice").await;
+
+    let book = create_simple_book(&pool, library, Some(series), "B1", 10).await;
+    // Opening a book creates an `unread` row with a timestamp; it must not
+    // count as progress nor make the series appear in the overview.
+    set_progress(&pool, book, alice, "unread", None, Some(Utc::now())).await;
+
+    let Json(resp) = get_reading_overview(State(state)).await.unwrap();
+    let alice = resp.iter().find(|u| u.username == "alice").unwrap();
+
+    assert_eq!(alice.books_read, 0);
+    assert_eq!(alice.books_reading, 0);
+    assert!(alice.series_progress.is_empty());
+}
+
 // ---------------------------------------------------------------------------
 // get_reading_overview_series_books
 // ---------------------------------------------------------------------------
