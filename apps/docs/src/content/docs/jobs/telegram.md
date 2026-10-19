@@ -33,7 +33,7 @@ La synchronisation incrémentale n'applique **pas** ce filtre : elle parcourt to
 
 ### Déclenchement
 
-**Manuel uniquement** — bouton *Sync complet* dans la page Tâches ou via **Settings → Telegram Monitor**. Il n'y a pas de planification automatique.
+**Manuel uniquement** — bouton *Sync complet* dans la page Tâches ou via **Paramètres → onglet Outils de téléchargement → section Telegram**. Il n'y a pas de planification automatique.
 
 ### Ce qu'elle fait
 
@@ -58,7 +58,7 @@ La progression indique le nombre de séries recherchées et la série en cours.
 
 ### Déclenchement
 
-**Automatique** : selon la période configurée dans **Settings → Telegram Monitor**. Par défaut, toutes les **30 minutes** dès que vous êtes authentifié.
+**Automatique** : selon la période configurée dans **Paramètres → onglet Outils de téléchargement → section Telegram**. Par défaut, toutes les **30 minutes** dès que vous êtes authentifié.
 
 **Manuel** : bouton *Synchro incrémentale* dans la page Tâches.
 

@@ -11,7 +11,7 @@ Il s'agit d'un import **unidirectionnel** : Komga → Stripstream uniquement. St
 
 ## Configuration
 
-Dans **Settings → onglet Komga** :
+Dans **Paramètres → onglet Statut de lecture** :
 
 1. **URL** — adresse complète de votre serveur Komga (ex. `https://komga.example.com`)
 2. **Nom d'utilisateur** — votre identifiant Komga

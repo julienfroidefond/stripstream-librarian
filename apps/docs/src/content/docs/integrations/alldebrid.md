@@ -15,7 +15,7 @@ qBittorrent.
 
 ## Configuration
 
-Dans **Settings → Download tools → AllDebrid** :
+Dans **Paramètres → onglet Outils de téléchargement → carte AllDebrid** :
 - **Clé API** : votre clé AllDebrid (AllDebrid → *Mon compte* → clé API). Un compte premium ou en
   essai est requis : un compte gratuit est refusé par le test de connexion.
 - **Activer AllDebrid** : interrupteur en haut à droite de la carte (désactivé par défaut). AllDebrid

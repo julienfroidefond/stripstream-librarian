@@ -7,7 +7,7 @@ Prowlarr est un gestionnaire d'indexeurs de torrents. Stripstream l'utilise pour
 
 ## Configuration
 
-Dans **Settings → Download tools → Prowlarr** :
+Dans **Paramètres → onglet Outils de téléchargement → carte Prowlarr** :
 - **URL** : adresse de votre instance Prowlarr (ex. `http://prowlarr:9696`)
 - **Clé API** : disponible dans Prowlarr → Settings → General → API Key
 - **Activer Prowlarr** : interrupteur en haut à droite de la carte (activé par défaut). Désactivé, les recherches Prowlarr (manuelles, détection automatique et polling RSS) échouent avec un message « Prowlarr is disabled ».
@@ -40,7 +40,7 @@ La fréquence se configure dans les paramètres de chaque bibliothèque → sect
 
 En complément de la détection classique (une requête par série), le polling RSS récupère les sorties récentes de tous vos indexeurs en parallèle et les compare en mémoire à vos séries. Il est plus rapide et consomme moins de requêtes.
 
-Configurez l'intervalle dans **Settings → Download tools → Prowlarr → Polling RSS automatique**.
+Configurez l'intervalle dans **Paramètres → onglet Outils de téléchargement → carte Prowlarr → Polling RSS automatique**.
 
 :::caution
 Certains indexeurs privés n'acceptent pas les requêtes RSS sans terme de recherche explicite. Ces indexeurs sont ignorés silencieusement par le polling RSS — leurs releases restent accessibles via la détection classique.

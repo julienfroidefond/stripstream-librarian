@@ -27,7 +27,7 @@ Tous les indexeurs ne supportent pas le mode RSS — certains trackers privés n
 
 Le polling RSS est **global** : une seule exécution couvre toutes vos bibliothèques.
 
-**Configuration de l'intervalle** : **Settings → Download tools → Prowlarr → Polling RSS automatique**
+**Configuration de l'intervalle** : **Paramètres → onglet Outils de téléchargement → carte Prowlarr → Polling RSS automatique**
 
 ---
 

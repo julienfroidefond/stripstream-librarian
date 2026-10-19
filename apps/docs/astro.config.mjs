@@ -21,6 +21,7 @@ export default defineConfig({
 						{ label: 'Configuration', slug: 'getting-started/configuration' },
 						{ label: 'Dashboard', slug: 'getting-started/dashboard' },
 						{ label: 'Diagnostic / Santé', slug: 'getting-started/diagnostics' },
+						{ label: 'Paramètres', slug: 'getting-started/settings' },
 					],
 				},
 				{
@@ -92,6 +93,7 @@ export default defineConfig({
 						{ label: 'Téléchargements', slug: 'jobs/telechargements' },
 						{ label: 'AniList', slug: 'jobs/anilist' },
 						{ label: 'Telegram Monitor', slug: 'jobs/telegram' },
+						{ label: 'Référence des tâches', slug: 'reference/jobs' },
 					],
 				},
 				{

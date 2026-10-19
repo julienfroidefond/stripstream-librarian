@@ -66,7 +66,7 @@ BDTheque et BDphile exposent l'ISBN (BDTheque) ou l'EAN (BDphile) des albums. Ce
 ComicVine nécessite une clé API gratuite :
 
 1. Créez un compte sur [comicvine.gamespot.com](https://comicvine.gamespot.com) et récupérez votre clé API dans les paramètres du compte
-2. Dans Stripstream : **Settings → onglet Général → Providers → ComicVine API Key**
+2. Dans Stripstream : **Paramètres → onglet Métadonnées → carte Fournisseurs de métadonnées → ComicVine API Key**
 
 Sans clé configurée, les recherches ComicVine échouent silencieusement et tombent sur le provider de secours.
 
@@ -74,7 +74,7 @@ Sans clé configurée, les recherches ComicVine échouent silencieusement et tom
 
 Les statuts retournés par les providers (`ongoing`, `ended`, `completed`…) ne sont pas toujours homogènes. Les **mappings de statut** permettent de normaliser ces valeurs vers vos propres labels.
 
-Accès : **Settings → onglet Général → Status Mappings**.
+Accès : **Paramètres → onglet Métadonnées → carte Correspondance de statuts**.
 
 :::note[Détails techniques]
 **SensCritique** : utilise l'API GraphQL `apollo.senscritique.com`. Recherche via `searchAutocomplete` avec déduplication par franchise. Mode détaillé via `groupProducts` pour distinguer les éditions. Format `external_id` : `franchise:{id}:edition:{base64(name)}`, rétrocompatible avec `franchise:{id}`. Rate limiting : retry avec backoff exponentiel sur HTTP 429 (1s, 2s, 4s, 3 retries). Statut inféré depuis la dernière date de sortie : < 18 mois → `ongoing`, ≥ 18 mois → `ended`.

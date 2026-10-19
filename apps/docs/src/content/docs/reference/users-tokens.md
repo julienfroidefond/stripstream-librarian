@@ -3,7 +3,7 @@ title: Utilisateurs & Tokens
 description: Gérer les utilisateurs et les tokens d'API
 ---
 
-La gestion des utilisateurs et des tokens se fait dans **Settings → onglet Jetons**.
+La gestion des utilisateurs et des tokens se fait dans **Paramètres → onglet Jetons**.
 
 ![Page utilisateurs et tokens API — liste des utilisateurs, création de token avec portée et utilisateur associé](/screenshots/users-tokens-page.png)
 
@@ -17,7 +17,7 @@ Il existe toujours un compte admin défini lors de la configuration initiale. Ce
 
 ### Créer un utilisateur lecteur
 
-Dans Settings → Tokens → section **Lecteurs**, entrez un nom d'utilisateur et validez. L'utilisateur est créé immédiatement.
+Dans **Paramètres → onglet Jetons** → section **Lecteurs**, entrez un nom d'utilisateur et validez. L'utilisateur est créé immédiatement.
 
 Les utilisateurs lecteurs :
 - Ont leur propre suivi de lecture (livres lus, en cours, non lus)
@@ -58,7 +58,7 @@ Les tokens permettent d'accéder à l'API sans passer par le backoffice. Ils son
 
 ### Créer un token
 
-Dans Settings → Tokens → section **Tokens API** :
+Dans **Paramètres → onglet Jetons** → section **Tokens API** :
 1. Donnez un nom descriptif (ex. `KOReader`, `Script backup`)
 2. Choisissez le niveau d'accès (`read` ou `admin`)
 3. Associez optionnellement un utilisateur lecteur — le token portera son contexte de lecture
