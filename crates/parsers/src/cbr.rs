@@ -359,3 +359,107 @@ pub fn convert_cbr_to_cbz(cbr_path: &Path) -> Result<PathBuf> {
 
     Ok(cbz_path)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    /// Minimal valid JPEG (SOI/EOI only): `is_image_name` matches on the
+    /// extension and none of these paths decode the bytes.
+    const JPEG: &[u8] = &[0xFF, 0xD8, 0xFF, 0xD9];
+    const SECOND: &[u8] = &[0x01, 0x02, 0x03, 0x04];
+
+    /// Write a ZIP archive under a `.cbr` name. Many releases are really ZIP
+    /// files with the wrong extension — the historical reason for the fallback
+    /// chain these tests pin down.
+    fn write_zip_named(path: &Path, entries: &[(&str, &[u8])]) {
+        let file = std::fs::File::create(path).expect("create archive");
+        let mut zip = zip::ZipWriter::new(file);
+        let opts: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for (name, data) in entries {
+            zip.start_file(*name, opts).expect("start entry");
+            zip.write_all(data).expect("write entry");
+        }
+        zip.finish().expect("finish archive");
+    }
+
+    #[test]
+    fn zip_named_cbr_falls_back_to_cbz_listing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.cbr");
+        write_zip_named(&path, &[("001.jpg", JPEG), ("002.jpg", SECOND)]);
+
+        let (count, first) = analyze_cbr(&path, true).unwrap();
+
+        assert_eq!(count, 2);
+        assert_eq!(first, JPEG);
+    }
+
+    #[test]
+    fn zip_named_cbr_without_fallback_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.cbr");
+        write_zip_named(&path, &[("001.jpg", JPEG)]);
+
+        assert!(analyze_cbr(&path, false).is_err());
+    }
+
+    #[test]
+    fn page_count_and_listing_fall_back_to_cbz() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.cbr");
+        write_zip_named(&path, &[("002.jpg", SECOND), ("001.jpg", JPEG)]);
+
+        assert_eq!(parse_cbr_page_count(&path).unwrap(), 2);
+        // Listing is naturally sorted, not archive order.
+        assert_eq!(
+            list_cbr_images(&path).unwrap(),
+            vec!["001.jpg".to_string(), "002.jpg".to_string()]
+        );
+    }
+
+    #[test]
+    fn extract_page_falls_back_to_cbz() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.cbr");
+        write_zip_named(&path, &[("001.jpg", JPEG), ("002.jpg", SECOND)]);
+
+        assert_eq!(extract_cbr_page(&path, 2, true).unwrap(), SECOND);
+
+        let err = extract_cbr_page(&path, 3, true).unwrap_err();
+        assert!(
+            err.to_string().contains("out of range"),
+            "unexpected: {err}"
+        );
+    }
+
+    #[test]
+    fn convert_refuses_when_the_cbz_already_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let cbr = dir.path().join("book.cbr");
+        write_zip_named(&cbr, &[("001.jpg", JPEG)]);
+        std::fs::write(dir.path().join("book.cbz"), b"already there").unwrap();
+
+        let err = convert_cbr_to_cbz(&cbr).unwrap_err();
+        assert!(
+            err.to_string().contains("already exists"),
+            "unexpected: {err}"
+        );
+    }
+
+    #[test]
+    fn convert_reports_a_zip_input_as_an_unrar_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let cbr = dir.path().join("book.cbr");
+        write_zip_named(&cbr, &[("001.jpg", JPEG)]);
+
+        // `convert_cbr_to_cbz` has no ZIP fallback by design: a mislabelled ZIP
+        // must fail explicitly rather than silently produce a wrong CBZ.
+        let err = convert_cbr_to_cbz(&cbr).unwrap_err();
+        assert!(err.to_string().contains("unrar"), "unexpected: {err}");
+        assert!(!dir.path().join("book.cbz").exists());
+        assert!(!dir.path().join("book.cbz.tmp").exists());
+    }
+}

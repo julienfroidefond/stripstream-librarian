@@ -580,3 +580,7 @@ async fn fetch_rss_for_indexer(
         .await
         .map_err(|e| format!("Failed to parse Prowlarr response for indexer {indexer_id}: {e}"))
 }
+
+#[cfg(test)]
+#[path = "tests/rss_poll.rs"]
+mod tests;

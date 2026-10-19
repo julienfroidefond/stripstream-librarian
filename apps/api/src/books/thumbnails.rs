@@ -127,3 +127,7 @@ pub async fn start_thumbnails_regenerate(
 
     Ok(Json(index_jobs::map_row(row)))
 }
+
+#[cfg(test)]
+#[path = "tests/thumbnails.rs"]
+mod tests;

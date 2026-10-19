@@ -361,4 +361,33 @@ mod helper_tests {
             assert_eq!(err, unknown, "the rejected name must be reported verbatim");
         }
     }
+
+    /// The provider list exposed to the UI must be exactly the set of providers
+    /// that `get_provider` implements: a descriptor without an implementation
+    /// would show up in the backoffice and then fail with a 400 at search or
+    /// refresh time. Guards against the two lists drifting apart.
+    #[test]
+    fn available_providers_are_all_implemented_and_resolvable() {
+        let descriptors = available_providers();
+        assert!(
+            !descriptors.is_empty(),
+            "the provider list must not be empty"
+        );
+
+        let mut seen = std::collections::HashSet::new();
+        for d in &descriptors {
+            assert!(seen.insert(d.id.clone()), "duplicate provider id: {}", d.id);
+
+            let provider = get_provider(&d.id)
+                .unwrap_or_else(|| panic!("{} is listed but not implemented", d.id));
+            assert_eq!(provider.name(), d.id.as_str());
+
+            assert_eq!(
+                resolve_provider(&d.id)
+                    .unwrap_or_else(|_| panic!("{} is listed but does not resolve", d.id))
+                    .name(),
+                d.id.as_str()
+            );
+        }
+    }
 }

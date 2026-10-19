@@ -434,9 +434,12 @@ SensCritique uses a GraphQL API; BDTheque/BDphile scrape HTML. `bedetheque` was 
 blocking) — migration `0114` unlinks existing links. Discovery sources backed by SensCritique
 (`senscritique_bd`, `sc_trending_bd`, `sc_trending_manga`, `sc_best_bd`, `sc_best_manga`) are
 **not** metadata providers: `metadata_providers::canonical_provider_name()` maps them to
-`senscritique`, and `metadata_providers::resolve_provider()` is the single chokepoint used by
-search / refresh to canonicalize then reject unknown names with an explicit error (never a silent
-`google_books` fallback). Migration `0129` heals legacy links that stored an alias.
+`senscritique`. `metadata_providers::resolve_provider()` is the single chokepoint used by search,
+batch and refresh to canonicalize then reject unknown names with an explicit error (never a silent
+`google_books` fallback). The legacy link-sync path (`sync::resolve_link_provider_name`) also
+canonicalizes, but keeps the historic `google_books` fallback for links that were created outside
+the metadata providers (e.g. Prowlarr downloads). Migration `0129` heals legacy links that stored an
+alias.
 
 ### Indexer 2-Phase Pipeline
 

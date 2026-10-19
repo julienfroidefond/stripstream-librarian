@@ -92,14 +92,13 @@ pub async fn merge_series(
         .execute(&mut *tx)
         .await?;
 
-    // 3. Move available downloads that target doesn't already have
+    // 3. Move the source's available download only if the target has none.
+    //    `available_downloads` is unique per series, so a blind move would trip
+    //    the unique constraint when both series already have a row.
     let downloads_result = sqlx::query(
         "UPDATE available_downloads SET series_id = $1 \
          WHERE series_id = $2 \
-         AND id NOT IN ( \
-             SELECT ad2.id FROM available_downloads ad2 \
-             WHERE ad2.series_id = $1 \
-         )",
+         AND NOT EXISTS (SELECT 1 FROM available_downloads WHERE series_id = $1)",
     )
     .bind(target_id)
     .bind(source_id)

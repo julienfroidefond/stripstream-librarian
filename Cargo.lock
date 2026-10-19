@@ -118,6 +118,7 @@ dependencies = [
  "uuid",
  "webp",
  "wiremock",
+ "zip",
 ]
 
 [[package]]
@@ -1593,12 +1594,14 @@ dependencies = [
  "serde_json",
  "sqlx",
  "stripstream-core",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "uuid",
  "walkdir",
  "webp",
+ "zip",
 ]
 
 [[package]]

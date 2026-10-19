@@ -291,3 +291,36 @@ async fn sync_series_metadata_preserves_locked_description(pool: sqlx::PgPool) {
             .unwrap();
     assert_eq!(description.as_deref(), Some("Manual description"));
 }
+
+/// Regression #112: a link stored with a discovery source id must be synced
+/// through the provider that backs it, not rejected and not sent to Google
+/// Books.
+#[test]
+fn resolve_link_provider_name_canonicalizes_discovery_sources() {
+    assert_eq!(
+        super::resolve_link_provider_name("senscritique_bd").as_deref(),
+        Some("senscritique")
+    );
+    assert_eq!(
+        super::resolve_link_provider_name("sc_best_manga").as_deref(),
+        Some("senscritique")
+    );
+    assert_eq!(
+        super::resolve_link_provider_name("anilist").as_deref(),
+        Some("anilist")
+    );
+}
+
+/// A link whose provider is not a metadata provider (e.g. a Prowlarr download)
+/// keeps the historic Google Books fallback instead of erroring out.
+#[test]
+fn resolve_link_provider_name_falls_back_to_google_books() {
+    assert_eq!(
+        super::resolve_link_provider_name("prowlarr").as_deref(),
+        Some("google_books")
+    );
+    assert_eq!(
+        super::resolve_link_provider_name("").as_deref(),
+        Some("google_books")
+    );
+}
