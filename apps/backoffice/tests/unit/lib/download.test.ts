@@ -4,6 +4,7 @@ import {
   fetchSharedFile,
   filenameFromContentDisposition,
   isIosStandalone,
+  isTelegramDownloadRetryable,
   showsDownloadProgress,
 } from "@/lib/download";
 
@@ -57,6 +58,19 @@ describe("showsDownloadProgress", () => {
     expect(showsDownloadProgress("importing", 0.6)).toBe(false);
     expect(showsDownloadProgress("error", 1)).toBe(false);
     expect(showsDownloadProgress("imported", 1)).toBe(false);
+  });
+});
+
+describe("isTelegramDownloadRetryable", () => {
+  it("allows retrying failed and imported downloads", () => {
+    expect(isTelegramDownloadRetryable("failed")).toBe(true);
+    expect(isTelegramDownloadRetryable("imported")).toBe(true);
+  });
+
+  it("does not allow retrying active, available or dismissed downloads", () => {
+    for (const status of ["queued", "downloading", "available", "dismissed", "unknown"]) {
+      expect(isTelegramDownloadRetryable(status)).toBe(false);
+    }
   });
 });
 

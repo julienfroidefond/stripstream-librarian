@@ -76,8 +76,9 @@ Dans la fenêtre de recherche :
 |------------------------|--------|
 | Disponible | Télécharger + Ignorer |
 | En attente | Icône horloge |
-| Téléchargement | Barre de progression |
+| Téléchargement | Icône spinner |
 | Importé | ↺ pour re-télécharger |
+| Erreur | ↺ pour relancer |
 | Ignoré | Aucune (ligne grisée) |
 
 Les résultats restent affichés après action et leur statut se met à jour sans fermer la fenêtre.

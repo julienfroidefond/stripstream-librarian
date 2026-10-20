@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { Icon, Modal, toast } from "./ui";
 import { useTranslation } from "@/lib/i18n/context";
+import { isTelegramDownloadRetryable } from "@/lib/download";
 import { stripLeadingArticle } from "../../lib/volumeRanges";
 import type { TelegramSearchResultDto } from "../../lib/api";
 import type { TranslationKey } from "../../lib/i18n/fr";
@@ -303,7 +304,7 @@ export function TelegramSearchModal({ seriesName, missingBooks, ownedVolumes, in
                               )}
                               {book.status === "queued" && <Icon name="clock" size="sm" className="text-muted-foreground" />}
                               {book.status === "downloading" && <Icon name="spinner" size="sm" className="animate-spin text-primary" />}
-                              {book.status === "imported" && (
+                              {isTelegramDownloadRetryable(book.status) && (
                                 <button
                                   type="button"
                                   onClick={() => handleDownload(book.id)}
