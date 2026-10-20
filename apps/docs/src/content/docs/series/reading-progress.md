@@ -60,6 +60,8 @@ La page **Progression** (menu principal) affiche une vue transversale par utilis
 - statuts par série (uniquement les séries commencées ou terminées), affichables en **liste** ou en **grille de couvertures** via le bouton en haut à droite de la section (le choix est mémorisé dans le navigateur)
 - vue dépliable par série : en cliquant une série (ligne ou couverture), les tomes s'affichent avec couverture et état de lecture
 
+Ces données sont rendues côté serveur : le contenu est présent dès le premier affichage, et un squelette de chargement accompagne la navigation vers la page.
+
 Cette vue est en lecture seule : elle sert à inspecter rapidement la progression de tous les utilisateurs depuis l'administration.
 
 En mode admin, la page d'une série affiche également, en lecture seule, la progression de chaque lecteur (`lus / total`, avec les tomes en cours) ainsi que ses notes éventuelles. Les statuts de lecture propres à un utilisateur (badges « non lu / en cours / lu », filtres de statut) sont masqués tant qu'aucun lecteur n'est sélectionné.
