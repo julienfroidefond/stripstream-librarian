@@ -1,5 +1,10 @@
-use super::*;
+use std::time::Duration;
+
 use sqlx::Row;
+use wiremock::matchers::{method, path, query_param};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
+use super::*;
 
 #[test]
 fn legacy_release_without_qualification_requires_review() {
@@ -978,5 +983,72 @@ async fn detection_includes_series_without_books(pool: sqlx::PgPool) {
     assert!(
         !names.contains(&"unclassified".to_string()),
         "no orphan books → no unclassified entry"
+    );
+}
+
+// ── Prowlarr search fallback ────────────────────────────────────────────────
+
+#[tokio::test]
+async fn search_prowlarr_for_series_falls_back_without_categories() {
+    let server = MockServer::start().await;
+
+    // Cold Prowlarr: filtered search returns nothing because the indexer
+    // capabilities are not loaded yet.
+    Mock::given(method("GET"))
+        .and(path("/api/v1/search"))
+        .and(query_param("categories", "7030"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+        .mount(&server)
+        .await;
+
+    let body = serde_json::json!([{
+        "guid": "guid-fallback",
+        "title": "Naruto T05 [FR]",
+        "size": 100,
+        "downloadUrl": "https://example.com/download/1",
+        "indexer": "TestIndexer",
+        "seeders": 3,
+        "leechers": 1,
+        "categories": [{"id": 7030, "name": "Comics"}]
+    }]);
+    Mock::given(method("GET"))
+        .and(path("/api/v1/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .mount(&server)
+        .await;
+
+    let client = build_http_client_with_agent(Duration::from_secs(10)).unwrap();
+    let (matched, raw_count) =
+        search_prowlarr_for_series(&client, &server.uri(), "test-key", &[7030], "Naruto", &[5])
+            .await
+            .expect("search must succeed via the category-less fallback");
+
+    assert_eq!(raw_count, 1);
+    assert_eq!(matched.len(), 1);
+    assert_eq!(matched[0].title, "Naruto T05 [FR]");
+    assert_eq!(matched[0].matched_missing_volumes, vec![5]);
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(
+        requests.len(),
+        2,
+        "detection must retry without categories when the filtered search is empty"
+    );
+    assert!(
+        requests[0]
+            .url
+            .query()
+            .unwrap_or_default()
+            .contains("categories=7030"),
+        "first attempt must use the configured categories: {}",
+        requests[0].url
+    );
+    assert!(
+        !requests[1]
+            .url
+            .query()
+            .unwrap_or_default()
+            .contains("categories="),
+        "detection fallback must be unfiltered: {}",
+        requests[1].url
     );
 }

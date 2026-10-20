@@ -65,6 +65,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
   const [results, setResults] = useState<ProwlarrRelease[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
 
   // Download client state
   const [isQbConfigured, setIsQbConfigured] = useState(initialQbConfigured ?? false);
@@ -110,6 +111,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
     if (!searchQuery.trim()) return;
     setIsSearching(true);
     setError(null);
+    setWarning(null);
     setResults([]);
     try {
       const missing_volumes = missingBooks?.map((b) => ({
@@ -129,6 +131,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
         const searchResp = data as ProwlarrSearchResponse;
         setResults(searchResp.results);
         setQuery(searchResp.query);
+        setWarning(searchResp.warning ?? null);
       }
     } catch {
       setError(t("prowlarr.searchError"));
@@ -141,6 +144,7 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
     setIsOpen(true);
     setResults([]);
     setError(null);
+    setWarning(null);
     setQuery("");
     setSearchInput(defaultQuery);
     // Auto-search the series on open
@@ -223,6 +227,13 @@ export function ProwlarrSearchModal({ seriesName, libraryId, missingBooks, initi
               {error && (
                 <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
                   {error}
+                </div>
+              )}
+
+              {/* Prowlarr warning (e.g. indexers not synced yet) */}
+              {warning && !error && !isSearching && (
+                <div className="p-3 rounded-lg bg-warning/10 text-warning text-sm">
+                  {warning === "indexers_not_synced" ? t("prowlarr.indexersNotSynced") : warning}
                 </div>
               )}
 

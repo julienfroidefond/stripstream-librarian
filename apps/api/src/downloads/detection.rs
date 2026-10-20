@@ -1133,33 +1133,19 @@ async fn search_prowlarr_for_series(
 ) -> Result<(Vec<AvailableReleaseDto>, usize), String> {
     let query = format!("\"{}\"", series_name);
 
-    let mut params: Vec<(&str, String)> = vec![("query", query), ("type", "search".to_string())];
-    for cat in categories {
-        params.push(("categories", cat.to_string()));
+    let outcome = prowlarr::fetch_releases(client, url, api_key, &query, categories, None).await?;
+
+    if outcome.used_category_fallback {
+        tracing::info!(
+            "[DOWNLOAD_DETECTION] series '{series_name}': category-less Prowlarr fallback returned {} results",
+            outcome.releases.len()
+        );
     }
 
-    let resp = client
-        .get(format!("{url}/api/v1/search"))
-        .query(&params)
-        .header("X-Api-Key", api_key)
-        .send()
-        .await
-        .map_err(|e| format!("Prowlarr request failed: {e}"))?;
+    let raw_count = outcome.releases.len();
 
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("Prowlarr returned {status}: {text}"));
-    }
-
-    let raw_releases: Vec<prowlarr::ProwlarrRawRelease> = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Prowlarr response: {e}"))?;
-
-    let raw_count = raw_releases.len();
-
-    let matched: Vec<AvailableReleaseDto> = raw_releases
+    let matched: Vec<AvailableReleaseDto> = outcome
+        .releases
         .into_iter()
         .filter_map(|r| {
             if let Some(matched) = match_release_title(&r.title, series_name, missing_volumes) {
