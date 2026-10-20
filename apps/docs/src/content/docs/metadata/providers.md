@@ -18,7 +18,7 @@ Stripstream peut enrichir vos séries en allant chercher des informations sur 7 
 | **SensCritique** | BD et manga en français | Distingue les éditions d'une même série |
 
 :::caution
-Le provider **Bédéthèque** (`bedetheque.com`) a été retiré : le site est désormais protégé par un challenge Cloudflare qui empêche le scraping. Les bibliothèques configurées dessus basculent automatiquement vers **BDTheque**, et les liens de métadonnées restants sont supprimés par la migration `0114`.
+Le provider **Bédéthèque** (`bedetheque.com`) a été retiré : le site est désormais protégé par un challenge Cloudflare qui empêche le scraping. Les bibliothèques configurées dessus basculent automatiquement vers **BDTheque**, et les liens de métadonnées restants sont supprimés par la migration `0114`. **BDTheque** n'est pas concerné : sa recherche passe par l'endpoint d'autocomplétion AJAX du site, hors du challenge.
 :::
 
 ## Choisir le bon provider
@@ -41,7 +41,7 @@ Lors de la synchronisation, Stripstream applique les valeurs du provider princip
 
 [BDTheque](https://www.bdtheque.com) couvre les séries de BD franco-belge.
 
-- Recherche par titre, puis enrichissement des 8 meilleurs résultats avec le détail complet de la série.
+- Recherche via l'endpoint d'autocomplétion AJAX du site (`/ajax/search/series/`, 5 résultats max), puis enrichissement des 8 meilleurs résultats avec le détail complet de la série. Le chemin `/recherche` est protégé par un challenge Cloudflare : il n'est jamais appelé.
 - Métadonnées : scénariste(s), dessinateur(s), éditeur, année de début, statut, nombre de tomes, couverture et description.
 - Note communauté : note de série sur 5 (`aggregateRating` schema.org exposé en JSON-LD).
 - Les noms d'auteurs sont normalisés au format `Prénom Nom` (la source renvoie `Nom (Prénom)`).

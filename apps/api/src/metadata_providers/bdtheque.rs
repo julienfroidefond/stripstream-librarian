@@ -1,9 +1,13 @@
 use scraper::{Html, Selector};
+use serde::Deserialize;
 
 use super::scraping::{self, absolute, text};
 use super::{BookCandidate, MetadataProvider, ProviderConfig, SeriesCandidate};
 
 const BASE_URL: &str = "https://www.bdtheque.com";
+
+/// Directory where BDTheque stores series covers.
+const COVER_DIR: &str = "/repupload/T/";
 
 pub struct BdthequeProvider;
 
@@ -38,50 +42,80 @@ impl MetadataProvider for BdthequeProvider {
     }
 }
 
-/// The default search layout shows covers only: the anchor wraps an image and
-/// has no text. Fall back to the image alt / anchor title in that case.
-fn result_title(a: scraper::ElementRef<'_>) -> String {
-    let direct = text(a);
-    if !direct.is_empty() {
-        return direct;
-    }
-    if let Some(alt) = a
-        .select(&Selector::parse("img").unwrap())
-        .next()
-        .and_then(|img| img.value().attr("alt"))
-    {
-        let cleaned = alt
-            .trim_start_matches("Couverture de la série ")
-            .trim_start_matches("Couverture de l'album ")
-            .trim();
-        if !cleaned.is_empty() {
-            return cleaned.to_string();
-        }
-    }
-    if let Some(title) = a.value().attr("title") {
-        let cleaned = title
-            .trim_start_matches("Accéder à la série BD ")
-            .trim_start_matches("Accéder à la série ")
-            .trim();
-        if !cleaned.is_empty() {
-            return cleaned.to_string();
-        }
-    }
-    String::new()
+/// One entry of the site's typeahead response.
+#[derive(Debug, Deserialize)]
+struct SearchHit {
+    id: String,
+    #[serde(default)]
+    nom: String,
+    #[serde(default)]
+    couv: Option<String>,
 }
 
-/// Cover view lazy-loads the real image through `data-echo`.
-fn result_cover(a: scraper::ElementRef<'_>) -> Option<String> {
-    let img = a.select(&Selector::parse("img").unwrap()).next()?;
-    let src = img
-        .value()
-        .attr("data-echo")
-        .or_else(|| img.value().attr("data-src"))
-        .or_else(|| img.value().attr("src"))?;
-    if src.contains("placeholder") {
+/// Build the typeahead URL. The query is a path segment (not a query string),
+/// which is why it is pushed through `path_segments_mut` so it gets percent-encoded.
+fn search_url(base: &str, query: &str) -> Result<String, String> {
+    let mut url =
+        reqwest::Url::parse(base).map_err(|e| format!("invalid BDTheque base URL: {e}"))?;
+    let query = query.replace('/', " ");
+    let query = query.split_whitespace().collect::<Vec<_>>().join(" ");
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| "invalid BDTheque base URL".to_string())?;
+        segments.pop_if_empty();
+        segments.extend(["ajax", "search", "series", query.as_str()]);
+    }
+    Ok(url.to_string())
+}
+
+/// Parse the typeahead payload. The site answers `null` (not `[]`) when nothing matches.
+fn parse_search_hits(body: &str) -> Result<Vec<SearchHit>, String> {
+    let hits = serde_json::from_str::<Option<Vec<SearchHit>>>(body)
+        .map_err(|e| format!("invalid BDTheque search response: {e}"))?;
+    Ok(hits.unwrap_or_default())
+}
+
+fn confidence_for(title: &str, query: &str) -> f32 {
+    if title.eq_ignore_ascii_case(query) {
+        1.0
+    } else if title.to_lowercase().contains(&query.to_lowercase()) {
+        0.7
+    } else {
+        0.3
+    }
+}
+
+fn candidate_from_hit(hit: SearchHit, base: &str, query: &str) -> Option<SeriesCandidate> {
+    let id = hit.id.trim();
+    let title = hit.nom.trim();
+    if id.is_empty() || title.is_empty() {
         return None;
     }
-    Some(src.to_string())
+    let cover_url = hit
+        .couv
+        .as_deref()
+        .map(str::trim)
+        .filter(|couv| !couv.is_empty())
+        .map(|couv| absolute(base, &format!("{COVER_DIR}{couv}")));
+    let external_url = absolute(base, &format!("/series/{id}"));
+    let metadata_json = match &cover_url {
+        Some(cover) => serde_json::json!({"provider": "bdtheque", "cover_url": cover}),
+        None => serde_json::json!({"provider": "bdtheque"}),
+    };
+    Some(SeriesCandidate {
+        external_id: id.to_string(),
+        title: title.to_string(),
+        authors: vec![],
+        description: None,
+        publishers: vec![],
+        start_year: None,
+        total_volumes: None,
+        cover_url,
+        external_url: Some(external_url),
+        confidence: confidence_for(title, query),
+        metadata_json,
+    })
 }
 
 /// BDTheque lists authors as "Nom (Prénom)"; normalise to "Prénom Nom".
@@ -109,87 +143,42 @@ fn series_id(path: &str) -> Option<String> {
     }
 }
 
-fn series_external_id(href: &str) -> Option<String> {
-    let url = reqwest::Url::parse(href).ok()?;
-    let path = url.path().trim_matches('/');
-    path.strip_prefix("series/").map(str::to_string)
-}
-
 async fn search_series_impl(query: &str, base: &str) -> Result<Vec<SeriesCandidate>, String> {
-    let c = scraping::client(20, "BDTheque")?;
-    let url = format!("{base}/recherche/series/");
-    let html = c
-        .post(&url)
-        .form(&[("search", query)])
-        .send()
-        .await
-        .map_err(|e| format!("BDTheque search failed: {e}"))?;
-    if !html.status().is_success() {
-        return Err(format!("BDTheque returned {}", html.status()));
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
     }
-    let body = html
-        .text()
-        .await
-        .map_err(|e| format!("failed to read BDTheque search: {e}"))?;
-    let mut results = {
-        let doc = Html::parse_document(&body);
-        let selector = Selector::parse("a[href*='/series/']").map_err(|e| e.to_string())?;
-        let mut seen = std::collections::HashSet::new();
-        let mut results = Vec::new();
-        for a in doc.select(&selector) {
-            let href = match a.value().attr("href") {
-                Some(v) => v,
-                None => continue,
-            };
-            let href_absolute = absolute(base, href);
-            let Some(id) = series_external_id(&href_absolute) else {
-                continue;
-            };
-            let title = result_title(a);
-            if title.is_empty() || !seen.insert(id.clone()) {
-                continue;
-            }
-            let confidence = if title.eq_ignore_ascii_case(query) {
-                1.0
-            } else if title.to_lowercase().contains(&query.to_lowercase()) {
-                0.7
-            } else {
-                0.3
-            };
-            let cover_url = result_cover(a).map(|v| absolute(base, &v));
-            let metadata_json = match &cover_url {
-                Some(cover) => serde_json::json!({"provider": "bdtheque", "cover_url": cover}),
-                None => serde_json::json!({"provider": "bdtheque"}),
-            };
-            results.push(SeriesCandidate {
-                external_id: id.clone(),
-                title,
-                authors: vec![],
-                description: None,
-                publishers: vec![],
-                start_year: None,
-                total_volumes: None,
-                cover_url,
-                external_url: Some(absolute(base, href)),
-                confidence,
-                metadata_json,
-            });
+
+    let c = scraping::client(20, "BDTheque")?;
+    // `/recherche/series/` is behind a Cloudflare managed challenge (403 "Just a
+    // moment..."): use the JSON typeahead endpoint the site itself calls instead.
+    let url = search_url(base, query)?;
+    let body = scraping::get_html(&c, &url, "BDTheque").await?;
+
+    let mut seen = std::collections::HashSet::new();
+    let mut results = Vec::new();
+    for hit in parse_search_hits(&body)? {
+        let Some(candidate) = candidate_from_hit(hit, base, query) else {
+            continue;
+        };
+        if seen.insert(candidate.external_id.clone()) {
+            results.push(candidate);
         }
-        results.sort_by(|a, b| {
-            b.confidence
-                .partial_cmp(&a.confidence)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        results.truncate(20);
-        results
-    }; // document dropped before the enrichment awaits below
+    }
+    results.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    results.truncate(20);
+
     enrich_series_details(base, &mut results).await;
     Ok(results)
 }
 
-/// The search layout only exposes a title and a cover. Fetch the series page
-/// for the best candidates so that authors, publisher, year, status and volume
-/// count are available when the series is added.
+/// The typeahead only exposes a title and a cover. Fetch the series page for the
+/// best candidates so that authors, publisher, year, status and volume count are
+/// available when the series is added.
 async fn enrich_series_details(base: &str, candidates: &mut [SeriesCandidate]) {
     const MAX_ENRICHED: usize = 8;
     let fetches = candidates.iter().take(MAX_ENRICHED).map(|candidate| {
