@@ -8,6 +8,7 @@ import {
   refreshSeriesByIdAction,
 } from "../actions/cache";
 import { useTranslation } from "@/lib/i18n/context";
+import { RefreshIcon } from "./RefreshIcon";
 import { Button } from "./ui/Button";
 
 type Target = "books" | "series" | "series-detail" | "book-detail";
@@ -37,6 +38,8 @@ export function RefreshButton({ target, seriesId, className = "", children }: Pr
     return <>{children(onClick, pending)}</>;
   }
 
+  const label = pending ? t("common.refreshing") : t("common.refresh");
+
   return (
     <Button
       type="button"
@@ -45,23 +48,11 @@ export function RefreshButton({ target, seriesId, className = "", children }: Pr
       onClick={onClick}
       disabled={pending}
       className={className}
-      title={t("common.refresh")}
+      title={label}
+      aria-label={label}
     >
-      <svg
-        className={`w-4 h-4 sm:mr-1.5 ${pending ? "animate-spin" : ""}`}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-        <path d="M21 3v5h-5" />
-        <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-        <path d="M3 21v-5h5" />
-      </svg>
-      <span className="hidden sm:inline">{pending ? t("common.refreshing") : t("common.refresh")}</span>
+      <RefreshIcon spinning={pending} className="sm:mr-1.5" />
+      <span className="hidden sm:inline">{label}</span>
     </Button>
   );
 }

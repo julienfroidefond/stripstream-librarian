@@ -105,6 +105,7 @@ export function SeriesActionsToolbar(props: Props) {
         currentStatus={props.editStatus}
         currentLockedFields={props.editLockedFields}
       />
+      <RefreshButton target="series-detail" seriesId={props.seriesId} />
       <ActionsMenu label={t("common.more")}>
         <ActionsMenuSection label={t("actionsMenu.metadata")}>
           <MetadataSearchModal

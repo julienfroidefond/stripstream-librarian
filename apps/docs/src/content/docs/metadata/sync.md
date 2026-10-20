@@ -39,7 +39,7 @@ Après synchronisation, vous pouvez modifier manuellement n'importe quel champ. 
 
 ### 4 — Rafraîchir
 
-Le bouton **Refresh** re-télécharge les données du provider et met à jour les champs non verrouillés. Utile quand un nouveau tome est sorti et que le nombre total de volumes doit être actualisé.
+Le bouton **Refresh**, directement visible dans l'en-tête de la page série (et également présent dans le menu **Plus**), re-télécharge les données du provider et met à jour les champs non verrouillés. Utile quand un nouveau tome est sorti et que le nombre total de volumes doit être actualisé.
 
 ---
 
