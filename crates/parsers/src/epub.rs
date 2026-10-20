@@ -141,7 +141,11 @@ pub fn build_epub_image_index(path: &Path) -> Result<Vec<String>> {
     if images.is_empty() {
         for i in 0..archive.len() {
             if let Ok(entry) = archive.by_index(i) {
-                let name = entry.name().to_string();
+                // Undecodable name: not an image we can address, skip it.
+                let Ok(name) = entry.name() else {
+                    continue;
+                };
+                let name = name.into_owned();
                 if is_image_name(&name.to_ascii_lowercase()) && seen.insert(name.clone()) {
                     images.push(name);
                 }

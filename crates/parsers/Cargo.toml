@@ -12,7 +12,7 @@ natord.workspace = true
 pdfium-render.workspace = true
 regex = "1"
 unrar.workspace = true
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 flate2 = "1"
 tracing.workspace = true
 

@@ -118,7 +118,7 @@ dependencies = [
  "uuid",
  "webp",
  "wiremock",
- "zip",
+ "zip 9.0.2",
 ]
 
 [[package]]
@@ -1601,7 +1601,7 @@ dependencies = [
  "uuid",
  "walkdir",
  "webp",
- "zip",
+ "zip 9.0.2",
 ]
 
 [[package]]
@@ -2293,7 +2293,7 @@ dependencies = [
  "tempfile",
  "tracing",
  "unrar",
- "zip",
+ "zip 9.0.2",
 ]
 
 [[package]]
@@ -3823,7 +3823,7 @@ dependencies = [
  "serde_json",
  "url",
  "utoipa",
- "zip",
+ "zip 8.6.0",
 ]
 
 [[package]]
@@ -4384,6 +4384,21 @@ dependencies = [
  "flate2",
  "indexmap",
  "memchr",
+ "typed-path",
+ "zopfli",
+]
+
+[[package]]
+name = "zip"
+version = "9.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e2fc56a6707efb066c40aead2409ebb1224e6dde24a074e9fbc78ced500507b"
+dependencies = [
+ "crc32fast",
+ "flate2",
+ "indexmap",
+ "memchr",
+ "nix",
  "typed-path",
  "zopfli",
 ]

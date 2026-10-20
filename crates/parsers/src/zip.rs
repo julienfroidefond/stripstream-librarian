@@ -51,10 +51,14 @@ pub fn analyze_cbz(path: &Path, allow_fallback: bool) -> Result<(i32, Vec<u8>)> 
         }
     };
 
+    // `file_names()` yields `Result<Cow<str>, ZipError>` since zip 9. An entry
+    // whose name cannot be decoded is skipped rather than failing the whole
+    // analysis: one broken entry must not hide a readable archive.
     let mut image_names: Vec<String> = archive
         .file_names()
+        .filter_map(|name| name.ok())
         .filter(|name| is_image_name(&name.to_ascii_lowercase()))
-        .map(|name| name.to_string())
+        .map(|name| name.into_owned())
         .collect::<Vec<_>>();
     image_names.sort_by(|a, b| natord::compare(a, b));
 
@@ -218,8 +222,12 @@ pub fn parse_cbz_page_count(path: &Path) -> Result<i32> {
             let mut count: i32 = 0;
             for i in 0..archive.len() {
                 let entry = archive.by_index(i).context("cannot read cbz entry")?;
-                let name = entry.name().to_ascii_lowercase();
-                if is_image_name(&name) {
+                // An entry whose name cannot be decoded is skipped: it cannot be
+                // classified as an image, and must not abort the whole count.
+                let Ok(name) = entry.name() else {
+                    continue;
+                };
+                if is_image_name(&name.to_ascii_lowercase()) {
                     count += 1;
                 }
             }
@@ -263,9 +271,13 @@ pub fn list_cbz_images(path: &Path) -> Result<Vec<String>> {
             Ok(e) => e,
             Err(_) => continue,
         };
-        let lower = entry.name().to_ascii_lowercase();
-        if is_image_name(&lower) {
-            names.push(entry.name().to_string());
+        // Same tolerance as `by_index`: an undecodable name is skipped.
+        let Ok(name) = entry.name() else {
+            continue;
+        };
+        let name = name.into_owned();
+        if is_image_name(&name.to_ascii_lowercase()) {
+            names.push(name);
         }
     }
     names.sort_by(|a, b| natord::compare(a, b));
@@ -281,7 +293,15 @@ pub fn list_cbz_images_streaming(path: &Path) -> Result<Vec<String>> {
     loop {
         match zip::read::read_zipfile_from_stream(&mut reader) {
             Ok(Some(mut entry)) => {
-                let name = entry.name().to_string();
+                let name = match entry.name() {
+                    Ok(name) => name.into_owned(),
+                    // Undecodable name: skip this entry but still drain its data
+                    // so the stream stays aligned on the next local header.
+                    Err(_) => {
+                        std::io::copy(&mut entry, &mut std::io::sink())?;
+                        continue;
+                    }
+                };
                 if is_image_name(&name.to_ascii_lowercase()) {
                     names.push(name);
                 }
@@ -325,7 +345,7 @@ pub fn extract_cbz_by_name_streaming(path: &Path, image_name: &str) -> Result<Ve
     loop {
         match zip::read::read_zipfile_from_stream(&mut reader) {
             Ok(Some(mut entry)) => {
-                if entry.name() == image_name {
+                if entry.name().is_ok_and(|name| name == image_name) {
                     let mut buf = Vec::new();
                     entry.read_to_end(&mut buf)?;
                     return Ok(buf);
@@ -371,9 +391,13 @@ pub fn get_cbz_image_index(
             Ok(e) => e,
             Err(_) => continue,
         };
-        let name = entry.name().to_ascii_lowercase();
-        if is_image_name(&name) {
-            image_names.push(entry.name().to_string());
+        // Same tolerance as `by_index`: an undecodable name is skipped.
+        let Ok(name) = entry.name() else {
+            continue;
+        };
+        let name = name.into_owned();
+        if is_image_name(&name.to_ascii_lowercase()) {
+            image_names.push(name);
         }
     }
     image_names.sort_by(|a, b| natord::compare(a, b));
@@ -444,4 +468,88 @@ pub fn extract_cbz_page_raw(path: &Path, page_number: u32) -> Result<Vec<u8>> {
     })?;
 
     raw_zip_read_entry(path, entry)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    /// Minimal valid JPEG (SOI/EOI only): `is_image_name` only looks at the
+    /// extension and none of these paths decode the bytes.
+    const JPEG: &[u8] = &[0xFF, 0xD8, 0xFF, 0xD9];
+
+    fn write_cbz(path: &Path, names: &[&str]) {
+        let file = std::fs::File::create(path).expect("create cbz");
+        let mut zip = zip::ZipWriter::new(file);
+        let opts: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        for name in names {
+            zip.start_file(*name, opts).expect("start entry");
+            zip.write_all(JPEG).expect("write entry");
+        }
+        zip.finish().expect("finish archive");
+    }
+
+    /// Replace every occurrence of `from` by `to` in the raw archive bytes.
+    ///
+    /// `ZipWriter::start_file` only accepts `&str`, so a non-UTF-8 entry name
+    /// cannot be written directly: patch a same-length byte sequence in both
+    /// the local file header and the central directory instead.
+    fn patch_entry_name(path: &Path, from: &[u8], to: &[u8]) {
+        assert_eq!(from.len(), to.len(), "patch must preserve byte length");
+        let mut bytes = std::fs::read(path).expect("read cbz");
+        let mut patched = 0;
+        let mut offset = 0;
+        while offset + from.len() <= bytes.len() {
+            if &bytes[offset..offset + from.len()] == from {
+                bytes[offset..offset + to.len()].copy_from_slice(to);
+                patched += 1;
+                offset += from.len();
+            } else {
+                offset += 1;
+            }
+        }
+        assert_eq!(
+            patched, 2,
+            "entry name must appear in the local header and the central directory"
+        );
+        std::fs::write(path, bytes).expect("write patched cbz");
+    }
+
+    /// zip 9 decodes names that are not valid UTF-8 through CP437 — a total
+    /// mapping — so `ZipFile::name()` cannot fail in practice and the `Err`
+    /// arms kept in the listing helpers are defensive. What this test pins
+    /// down is the new `Result<Cow<str>, ZipError>` return type on the
+    /// non-UTF-8 path, for every reader used by the extraction pipeline.
+    #[test]
+    fn cbz_handles_non_utf8_entry_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("book.cbz");
+        write_cbz(&path, &["01.jpg", "02.jpg"]);
+        // 0x82 is 'é' in CP437: the patched name is valid CP437 but not UTF-8.
+        patch_entry_name(&path, b"02.jpg", b"\x822.jpg");
+
+        assert_eq!(
+            list_cbz_images(&path).unwrap(),
+            vec!["01.jpg".to_string(), "é2.jpg".to_string()]
+        );
+        assert_eq!(parse_cbz_page_count(&path).unwrap(), 2);
+
+        let (count, first_page) = analyze_cbz(&path, false).unwrap();
+        assert_eq!(count, 2);
+        assert_eq!(first_page, JPEG);
+
+        let file = std::fs::File::open(&path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        assert_eq!(
+            get_cbz_image_index(&path, &mut archive),
+            vec!["01.jpg".to_string(), "é2.jpg".to_string()]
+        );
+
+        assert_eq!(
+            list_cbz_images_streaming(&path).unwrap(),
+            vec!["01.jpg".to_string(), "é2.jpg".to_string()]
+        );
+    }
 }

@@ -330,6 +330,7 @@ pub fn convert_cbr_to_cbz(cbr_path: &Path) -> Result<PathBuf> {
             .filter(|&i| {
                 archive
                     .name_for_index(i)
+                    .and_then(Result::ok)
                     .map(|n| is_image_name(&n.to_ascii_lowercase()))
                     .unwrap_or(false)
             })
