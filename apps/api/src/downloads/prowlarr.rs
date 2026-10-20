@@ -76,7 +76,15 @@ pub struct ProwlarrCategory {
 pub struct ProwlarrSearchResponse {
     pub results: Vec<ProwlarrRelease>,
     pub query: String,
+    /// Machine-readable warning. `indexers_not_synced` means Prowlarr returned
+    /// no result on any attempt: its indexers may still be syncing (typical
+    /// right after a restart).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
 }
+
+/// Warning code returned when Prowlarr answered every search attempt with `[]`.
+pub(crate) const WARNING_INDEXERS_NOT_SYNCED: &str = "indexers_not_synced";
 
 #[derive(Serialize, ToSchema)]
 pub struct ProwlarrTestResponse {
@@ -186,6 +194,166 @@ fn match_missing_volumes(
 
 // ─── Inner (testable) functions ──────────────────────────────────────────────
 
+/// Result of a Prowlarr search, including whether the category-less fallback
+/// had to be used.
+pub(crate) struct ProwlarrSearchOutcome {
+    pub releases: Vec<ProwlarrRawRelease>,
+    /// True when the configured category filter returned nothing and the
+    /// releases (if any) come from an unfiltered search.
+    pub used_category_fallback: bool,
+    /// True when the unfiltered fallback returned releases before local
+    /// category filtering. Lets callers distinguish "Prowlarr is empty" from
+    /// "releases exist but none match the configured categories".
+    pub fallback_saw_results: bool,
+}
+
+/// Single `/api/v1/search` request with an optional category filter.
+async fn request_releases(
+    client: &reqwest::Client,
+    base_url: &str,
+    api_key: &str,
+    query: &str,
+    categories: &[i32],
+) -> Result<Vec<ProwlarrRawRelease>, String> {
+    let mut params: Vec<(&str, String)> =
+        vec![("query", query.to_string()), ("type", "search".to_string())];
+    for cat in categories {
+        params.push(("categories", cat.to_string()));
+    }
+
+    let resp = client
+        .get(format!("{base_url}/api/v1/search"))
+        .query(&params)
+        .header("X-Api-Key", api_key)
+        .send()
+        .await
+        .map_err(|e| format!("Prowlarr request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Prowlarr returned {status}: {text}"));
+    }
+
+    let raw_text = resp
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read Prowlarr response: {e}"))?;
+
+    serde_json::from_str(&raw_text).map_err(|e| {
+        let preview: String = raw_text.chars().take(500).collect();
+        tracing::error!("Failed to parse Prowlarr response: {e}");
+        tracing::error!("Raw response (first 500 chars): {preview}");
+        format!("Failed to parse Prowlarr response: {e}")
+    })
+}
+
+/// Check a release against the configured Newznab categories.
+///
+/// Releases without categories are kept, matching Prowlarr's own post-filter
+/// (it cannot know their category either). A standard parent category such as
+/// `7000` matches its `70xx` children, as Prowlarr expands parents when
+/// filtering.
+fn release_matches_categories(release: &ProwlarrRawRelease, categories: &[i32]) -> bool {
+    if categories.is_empty() {
+        return true;
+    }
+    let Some(release_categories) = release
+        .categories
+        .as_deref()
+        .filter(|categories| !categories.is_empty())
+    else {
+        return true;
+    };
+
+    release_categories
+        .iter()
+        .any(|release_category| category_matches(release_category.id, categories))
+}
+
+fn category_matches(release_category: i32, configured: &[i32]) -> bool {
+    configured.iter().any(|&category| {
+        release_category == category
+            || ((1000..10000).contains(&category)
+                && category % 1000 == 0
+                && (1000..10000).contains(&release_category)
+                && release_category / 1000 == category / 1000)
+    })
+}
+
+/// Search Prowlarr for a query, falling back to an unfiltered search when the
+/// category filter yields nothing.
+///
+/// On a cold Prowlarr (just restarted), indexer capabilities may not be loaded
+/// yet: Prowlarr then drops every indexer whose categories are unknown and
+/// returns `200 []` for a category-filtered search. Sonarr/Radarr avoid this by
+/// going through the per-indexer Torznab proxy; we retry without `categories`
+/// so the first search after a Prowlarr restart returns the same results as its
+/// UI instead of requiring a manual warm-up search.
+///
+/// `retry_delay` controls the extra attempt after an empty unfiltered search;
+/// background detection passes `None` to avoid sleeping on every series that
+/// genuinely has no release.
+pub(crate) async fn fetch_releases(
+    client: &reqwest::Client,
+    base_url: &str,
+    api_key: &str,
+    query: &str,
+    categories: &[i32],
+    retry_delay: Option<std::time::Duration>,
+) -> Result<ProwlarrSearchOutcome, String> {
+    let filtered = request_releases(client, base_url, api_key, query, categories).await?;
+    if !filtered.is_empty() || categories.is_empty() {
+        return Ok(ProwlarrSearchOutcome {
+            releases: filtered,
+            used_category_fallback: false,
+            fallback_saw_results: false,
+        });
+    }
+
+    tracing::warn!(
+        "[PROWLARR] Empty results for query '{query}' with categories {categories:?}; retrying without the category filter (indexer capabilities may not be synced yet)"
+    );
+    let unfiltered = request_releases(client, base_url, api_key, query, &[]).await?;
+    let fallback_saw_results = !unfiltered.is_empty();
+    let unfiltered: Vec<_> = unfiltered
+        .into_iter()
+        .filter(|release| release_matches_categories(release, categories))
+        .collect();
+    if !unfiltered.is_empty() {
+        tracing::info!(
+            "[PROWLARR] Category-less fallback returned {} results for query '{query}'",
+            unfiltered.len()
+        );
+        return Ok(ProwlarrSearchOutcome {
+            releases: unfiltered,
+            used_category_fallback: true,
+            fallback_saw_results,
+        });
+    }
+
+    let Some(delay) = retry_delay else {
+        return Ok(ProwlarrSearchOutcome {
+            releases: Vec::new(),
+            used_category_fallback: true,
+            fallback_saw_results,
+        });
+    };
+
+    // Prowlarr sometimes answers [] transiently while indexers are syncing.
+    tokio::time::sleep(delay).await;
+    let retried = request_releases(client, base_url, api_key, query, &[]).await?;
+    let fallback_saw_results = fallback_saw_results || !retried.is_empty();
+    Ok(ProwlarrSearchOutcome {
+        releases: retried
+            .into_iter()
+            .filter(|release| release_matches_categories(release, categories))
+            .collect(),
+        used_category_fallback: true,
+        fallback_saw_results,
+    })
+}
+
 /// Perform a Prowlarr search request against the given base URL.
 /// Extracted so it can be called directly in tests (with a wiremock server URL)
 /// without needing a DB connection.
@@ -200,65 +368,36 @@ async fn do_prowlarr_search(
     let client = build_http_client_with_agent(std::time::Duration::from_secs(60))
         .map_err(|e| ApiError::internal(format!("failed to build HTTP client: {e}")))?;
 
-    let mut params: Vec<(&str, String)> =
-        vec![("query", query.to_string()), ("type", "search".to_string())];
-    for cat in categories {
-        params.push(("categories", cat.to_string()));
-    }
-
-    // Retry up to 2 times on empty results (Prowlarr sometimes returns [] transiently)
-    let mut raw_releases: Vec<ProwlarrRawRelease> = Vec::new();
-    for attempt in 0..=1 {
-        let resp = client
-            .get(format!("{base_url}/api/v1/search"))
-            .query(&params)
-            .header("X-Api-Key", api_key)
-            .send()
-            .await
-            .map_err(|e| ApiError::internal(format!("Prowlarr request failed: {e}")))?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
-            return Err(ApiError::internal(format!(
-                "Prowlarr returned {status}: {text}"
-            )));
-        }
-
-        let raw_text = resp
-            .text()
-            .await
-            .map_err(|e| ApiError::internal(format!("Failed to read Prowlarr response: {e}")))?;
-
-        raw_releases = serde_json::from_str(&raw_text).map_err(|e| {
-            tracing::error!("Failed to parse Prowlarr response: {e}");
-            tracing::error!(
-                "Raw response (first 500 chars): {}",
-                &raw_text[..raw_text.len().min(500)]
-            );
-            ApiError::internal(format!("Failed to parse Prowlarr response: {e}"))
-        })?;
-
-        if !raw_releases.is_empty() || attempt > 0 {
-            break;
-        }
-        tracing::warn!(
-            "[PROWLARR] Empty results for query '{}', retrying in 2s...",
-            query
-        );
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    }
+    let outcome = fetch_releases(
+        &client,
+        base_url,
+        api_key,
+        query,
+        categories,
+        Some(std::time::Duration::from_secs(2)),
+    )
+    .await
+    .map_err(ApiError::internal)?;
 
     tracing::info!(
-        "[PROWLARR] Search '{}' returned {} results",
+        "[PROWLARR] Search '{}' returned {} results{}",
         query,
-        raw_releases.len()
+        outcome.releases.len(),
+        if outcome.used_category_fallback {
+            " (category-less fallback)"
+        } else {
+            ""
+        }
     );
 
+    let warning = (outcome.releases.is_empty() && !outcome.fallback_saw_results)
+        .then(|| WARNING_INDEXERS_NOT_SYNCED.to_string());
+
     let results = if let Some(missing) = missing_volumes {
-        match_missing_volumes(raw_releases, series_name, missing)
+        match_missing_volumes(outcome.releases, series_name, missing)
     } else {
-        raw_releases
+        outcome
+            .releases
             .into_iter()
             .map(|r| {
                 let all_volumes = extract_volumes(&r.title);
@@ -286,6 +425,7 @@ async fn do_prowlarr_search(
     Ok(ProwlarrSearchResponse {
         results,
         query: query.to_string(),
+        warning,
     })
 }
 

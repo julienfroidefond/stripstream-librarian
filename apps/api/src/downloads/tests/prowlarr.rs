@@ -241,9 +241,23 @@ fn is_integral_with_grave_accent_e() {
     assert!(is_integral_release("Série Intègrale")); // è instead of é
 }
 
+#[test]
+fn category_matches_exact_child_and_standard_parent() {
+    // Exact configured category.
+    assert!(category_matches(7030, &[7030]));
+    // Standard parent matches its children.
+    assert!(category_matches(7030, &[7000]));
+    assert!(category_matches(4030, &[4000]));
+    // A child category does not match its siblings or its parent.
+    assert!(!category_matches(7020, &[7030]));
+    assert!(!category_matches(7000, &[7030]));
+    // Custom categories are matched exactly only.
+    assert!(!category_matches(100001, &[100000]));
+}
+
 // ── Wiremock integration tests ──────────────────────────────────────────
 
-use wiremock::matchers::{header, method, path};
+use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn make_raw_release(guid: &str, title: &str, size: i64) -> serde_json::Value {
@@ -291,6 +305,8 @@ async fn wiremock_search_returns_releases_with_correct_parsing() {
 
     assert_eq!(result.results.len(), 2);
     assert_eq!(result.query, "One Piece");
+    assert!(result.warning.is_none());
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 
     let r0 = &result.results[0];
     assert_eq!(r0.guid, "guid-1");
@@ -392,6 +408,265 @@ async fn wiremock_search_empty_results() {
 
     assert!(result.results.is_empty());
     assert_eq!(result.query, "Nonexistent Series");
+    assert_eq!(
+        result.warning.as_deref(),
+        Some(WARNING_INDEXERS_NOT_SYNCED),
+        "an empty search must not be reported as a silent success"
+    );
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        3,
+        "filtered attempt, immediate fallback, then the delayed retry"
+    );
+}
+
+#[tokio::test]
+async fn wiremock_search_falls_back_without_categories_when_filtered_is_empty() {
+    let server = MockServer::start().await;
+
+    // Cold Prowlarr: the category-filtered search returns nothing because the
+    // indexer capabilities are not loaded yet.
+    Mock::given(method("GET"))
+        .and(path("/api/v1/search"))
+        .and(query_param("categories", "7030"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+        .mount(&server)
+        .await;
+
+    let body = serde_json::json!([make_raw_release(
+        "guid-fallback",
+        "One Piece T05 [FR]",
+        500_000_000
+    )]);
+    Mock::given(method("GET"))
+        .and(path("/api/v1/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .mount(&server)
+        .await;
+
+    let result = do_prowlarr_search(
+        &server.uri(),
+        "test-key",
+        "One Piece",
+        "One Piece",
+        &[7030],
+        None,
+    )
+    .await
+    .expect("search should succeed");
+
+    assert_eq!(result.results.len(), 1);
+    assert_eq!(result.results[0].guid, "guid-fallback");
+    assert!(
+        result.warning.is_none(),
+        "the fallback found releases, no warning is needed"
+    );
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(
+        requests.len(),
+        2,
+        "filtered attempt then unfiltered fallback"
+    );
+    assert!(
+        requests[0]
+            .url
+            .query()
+            .unwrap_or_default()
+            .contains("categories=7030"),
+        "first attempt must use the configured categories: {}",
+        requests[0].url
+    );
+    assert!(
+        !requests[1]
+            .url
+            .query()
+            .unwrap_or_default()
+            .contains("categories="),
+        "fallback must be unfiltered: {}",
+        requests[1].url
+    );
+}
+
+#[tokio::test]
+async fn wiremock_search_fallback_keeps_only_configured_categories() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/v1/search"))
+        .and(query_param("categories", "7030"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+        .mount(&server)
+        .await;
+
+    let body = serde_json::json!([
+        make_raw_release("guid-comic", "One Piece T01 [FR]", 100),
+        {
+            "guid": "guid-audio",
+            "title": "One Piece T02 [FR]",
+            "size": 200,
+            "categories": [{"id": 3030, "name": "Audio/Audiobook"}]
+        },
+        {
+            "guid": "guid-books-parent",
+            "title": "One Piece T03 [FR]",
+            "size": 300,
+            "categories": [{"id": 7000, "name": "Books"}]
+        },
+        {
+            "guid": "guid-uncategorized",
+            "title": "One Piece T04 [FR]",
+            "size": 400,
+            "categories": null
+        }
+    ]);
+    Mock::given(method("GET"))
+        .and(path("/api/v1/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .mount(&server)
+        .await;
+
+    let result = do_prowlarr_search(
+        &server.uri(),
+        "test-key",
+        "One Piece",
+        "One Piece",
+        &[7030],
+        None,
+    )
+    .await
+    .expect("search should succeed");
+
+    let guids: Vec<&str> = result
+        .results
+        .iter()
+        .map(|release| release.guid.as_str())
+        .collect();
+    assert_eq!(
+        guids,
+        vec!["guid-comic", "guid-uncategorized"],
+        "the fallback must keep the configured category and uncategorized releases only"
+    );
+}
+
+#[tokio::test]
+async fn wiremock_search_does_not_warn_when_fallback_results_are_other_categories() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/v1/search"))
+        .and(query_param("categories", "7030"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+        .mount(&server)
+        .await;
+
+    let body = serde_json::json!([{
+        "guid": "guid-audio",
+        "title": "One Piece T02 [FR]",
+        "size": 200,
+        "categories": [{"id": 3030, "name": "Audio/Audiobook"}]
+    }]);
+    Mock::given(method("GET"))
+        .and(path("/api/v1/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .mount(&server)
+        .await;
+
+    let result = do_prowlarr_search(
+        &server.uri(),
+        "test-key",
+        "One Piece",
+        "One Piece",
+        &[7030],
+        None,
+    )
+    .await
+    .expect("search should succeed");
+
+    assert!(result.results.is_empty());
+    assert!(
+        result.warning.is_none(),
+        "out-of-category releases are a normal empty result, not a sync problem"
+    );
+}
+
+#[tokio::test]
+async fn wiremock_search_retries_after_delay_when_fallback_is_empty() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/v1/search"))
+        .and(query_param("categories", "7030"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+        .mount(&server)
+        .await;
+
+    // First unfiltered attempt is empty; the delayed retry succeeds.
+    Mock::given(method("GET"))
+        .and(path("/api/v1/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+
+    let body = serde_json::json!([make_raw_release("guid-retried", "One Piece T05 [FR]", 500)]);
+    Mock::given(method("GET"))
+        .and(path("/api/v1/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .mount(&server)
+        .await;
+
+    let result = do_prowlarr_search(
+        &server.uri(),
+        "test-key",
+        "One Piece",
+        "One Piece",
+        &[7030],
+        None,
+    )
+    .await
+    .expect("search should succeed");
+
+    assert_eq!(result.results.len(), 1);
+    assert_eq!(result.results[0].guid, "guid-retried");
+    assert!(result.warning.is_none());
+    assert_eq!(server.received_requests().await.unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn wiremock_search_keeps_filtered_results_when_present() {
+    let server = MockServer::start().await;
+
+    let body = serde_json::json!([make_raw_release(
+        "guid-filtered",
+        "One Piece T05 [FR]",
+        500_000_000
+    )]);
+    Mock::given(method("GET"))
+        .and(path("/api/v1/search"))
+        .and(query_param("categories", "7030"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+        .mount(&server)
+        .await;
+
+    let result = do_prowlarr_search(
+        &server.uri(),
+        "test-key",
+        "One Piece",
+        "One Piece",
+        &[7030],
+        None,
+    )
+    .await
+    .expect("search should succeed");
+
+    assert_eq!(result.results.len(), 1);
+    assert_eq!(result.results[0].guid, "guid-filtered");
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        1,
+        "a non-empty filtered search must not trigger the fallback"
+    );
 }
 
 #[tokio::test]
@@ -457,6 +732,11 @@ async fn wiremock_search_http_500_error() {
         err.message.contains("500") || err.message.contains("Internal Server Error"),
         "error should mention 500, got: {}",
         err.message
+    );
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        1,
+        "an HTTP error must not trigger the category-less fallback"
     );
 }
 

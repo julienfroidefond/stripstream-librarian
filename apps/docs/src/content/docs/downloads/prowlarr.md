@@ -71,6 +71,8 @@ Quand le client termine, Stripstream importe les fichiers dans la bibliothèque.
 Après l'import, un scan + refresh des métadonnées est déclenché automatiquement.
 
 :::note[Détails techniques]
+La recherche (manuelle comme détection) interroge `GET /api/v1/search` avec les catégories configurées. Si la réponse est vide, elle réessaie sans `categories` — cas d'un Prowlarr fraîchement redémarré dont les capacités d'indexeurs ne sont pas encore chargées — puis filtre localement les releases sur les catégories configurées. La recherche manuelle refait une dernière tentative après 2 secondes ; la détection s'arrête après le repli immédiat.
+
 La détection repose sur un lien metadata approuvé et des volumes externes non associés à un livre local. Une série couverte par `volume_type = 'integral'` est considérée complète.
 
 Le padding de `{volume_padded}` utilise `series.total_volumes` si disponible, sinon les volumes détectés dans le téléchargement.

@@ -111,6 +111,8 @@ export type ProwlarrRelease = {
 export type ProwlarrSearchResponse = {
   results: ProwlarrRelease[];
   query: string;
+  /** Machine-readable hint, e.g. `indexers_not_synced` when Prowlarr returns no result at all. */
+  warning?: string;
 };
 
 export type ProwlarrTestResponse = {

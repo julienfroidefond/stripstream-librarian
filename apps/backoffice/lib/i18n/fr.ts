@@ -935,6 +935,7 @@ const fr = {
   "prowlarr.searchVolume": "Rechercher",
   "prowlarr.searching": "Recherche en cours...",
   "prowlarr.noResults": "Aucun résultat trouvé",
+  "prowlarr.indexersNotSynced": "Les indexeurs Prowlarr ne sont peut-être pas encore synchronisés — réessayez dans quelques secondes.",
   "prowlarr.resultCount": "{{count}} résultat{{plural}}",
   "prowlarr.missingVolumes": "Volumes manquants",
   "prowlarr.columnTitle": "Titre",

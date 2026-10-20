@@ -26,6 +26,10 @@ Sur la page d'une série, le bouton **Prowlarr** lance une recherche ciblée. Le
 
 Lorsqu'un titre ou un numéro de tome est ambigu, Stripstream demande une confirmation avant l'envoi au client de téléchargement. Vérifiez alors la release proposée avant de confirmer ; ce contrôle évite qu'une série ou un tome homonyme soit téléchargé par erreur.
 
+:::note[Recherche à froid]
+Après un redémarrage de Prowlarr, ses indexeurs peuvent ne pas avoir fini de synchroniser leurs catégories : une recherche filtrée par catégories renvoie alors `[]`. Stripstream relance automatiquement la recherche sans filtre côté Prowlarr, puis ne conserve que les releases des catégories configurées (ou sans catégorie). Une dernière tentative est faite après 2 secondes si le résultat reste vide. Si Prowlarr ne renvoie toujours rien, la modale affiche un avertissement invitant à réessayer dans quelques secondes. La détection automatique utilise le même mécanisme, sans la temporisation.
+:::
+
 ---
 
 ## Détection automatique

@@ -937,6 +937,7 @@ const en: Record<TranslationKey, string> = {
   "prowlarr.searchVolume": "Search",
   "prowlarr.searching": "Searching...",
   "prowlarr.noResults": "No results found",
+  "prowlarr.indexersNotSynced": "Prowlarr indexers may still be syncing — retry in a few seconds.",
   "prowlarr.resultCount": "{{count}} result{{plural}}",
   "prowlarr.missingVolumes": "Missing volumes",
   "prowlarr.columnTitle": "Title",
