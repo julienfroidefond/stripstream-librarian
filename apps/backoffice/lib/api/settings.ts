@@ -12,6 +12,8 @@ export type Settings = {
     model: string;
     max_tags: number;
     prompt?: string;
+    reading_lists_enabled?: boolean;
+    reading_list_prompt?: string;
   };
   image_processing: {
     format: string;

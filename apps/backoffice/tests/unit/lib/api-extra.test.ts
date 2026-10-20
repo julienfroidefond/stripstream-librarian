@@ -69,6 +69,7 @@ import {
   startTelegramAuth,
   startTelegramSync,
   startTelegramSyncIncremental,
+  suggestReadingLists,
   syncTelegramSources,
   updateLibraryMetadataProvider,
   updateReadingList,
@@ -409,6 +410,15 @@ describe("reading lists", () => {
       method: "PUT",
     });
     expect(lastCall().body).toEqual({ series_ids: ["a", "b"] });
+  });
+
+  it("requests AI suggestions", async () => {
+    await suggestReadingLists();
+    expect(lastCall()).toMatchObject({ url: "/reading-lists/ai-suggest", method: "POST" });
+    expect(lastCall().body).toEqual({});
+
+    await suggestReadingLists(80);
+    expect(lastCall().body).toEqual({ limit: 80 });
   });
 });
 

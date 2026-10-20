@@ -1,3 +1,4 @@
+mod ai;
 mod ai_tagging;
 mod api_middleware;
 mod authors;
@@ -586,6 +587,10 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/genres/{name}",
             axum::routing::patch(genres::rename_genre).delete(genres::delete_genre),
+        )
+        .route(
+            "/reading-lists/ai-suggest",
+            axum::routing::post(reading_lists::suggest_reading_lists),
         )
         .route(
             "/reading-lists",

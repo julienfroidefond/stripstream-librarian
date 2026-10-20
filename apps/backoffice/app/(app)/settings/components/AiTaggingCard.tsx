@@ -5,7 +5,8 @@ import { SettingsCard, SettingsRow, FormInput, Icon } from "@/app/components/ui"
 import { useTranslation } from "@/lib/i18n/context";
 
 const DEFAULT_PROMPT = "Suggest up to {{max_tags}} relevant genres for each comic or manga series. Usually return only 1 to 3 genres; do not fill the limit when fewer genres fit.\n\nYou MUST choose tags only from this existing genre list, preserving the exact spelling and casing: {{genres}}. Never create or paraphrase a genre.\n\nUse the supplied metadata to disambiguate the series. For a recognizable, well-known title, you may use reliable general knowledge even when its metadata is sparse. Do not make uncertain associations: omit a series if you cannot identify it with confidence. Do not select a format, medium, age category, or generic label merely because the series is a comic (for example 'BD' or 'Books/Comics'). Select those labels only if they are genuinely relevant genres for the series. Return only JSON in the form {\"suggestions\":[{\"series_id\":\"uuid\",\"tags\":[\"existing genre\"]}]}.\n\nSeries: {{series}}";
-type AiTagging = { enabled?: boolean; base_url?: string; api_key?: string; model?: string; max_tags?: number; prompt?: string };
+const DEFAULT_LISTS_PROMPT = "You are a librarian organizing a comics and manga collection. Suggest reading lists that group series sharing a strong, meaningful association (same universe, same author, same genre and audience, complementary themes, or a coherent reading order).\n\nAnalyse the existing lists: {{lists}}\n\nAnalyse these series, which are not part of any list yet: {{series}}\n\nReturn at most {{max_lists}} new lists. Only group series when the association is obvious and useful; never group unrelated series just to fill a list. A new list must contain at least 2 series.\n\nAlso propose additions of available series to existing lists when they clearly belong there. Never propose a series that is already in a list.\n\nEvery new list needs a short, specific name and a real description that explains what the series have in common (1 to 2 sentences). Write both in the same language as the existing list names when possible, otherwise in French. Add a short reason for every proposal.\n\nReturn only JSON in the form {\"additions\":[{\"list_id\":\"uuid\",\"reason\":\"...\",\"series_ids\":[\"uuid\"]}],\"new_lists\":[{\"name\":\"...\",\"description\":\"...\",\"reason\":\"...\",\"series_ids\":[\"uuid\",\"uuid\"]}]}. Use only the series ids supplied above.";
+type AiTagging = { enabled?: boolean; base_url?: string; api_key?: string; model?: string; max_tags?: number; prompt?: string; reading_lists_enabled?: boolean; reading_list_prompt?: string };
 
 export function AiTaggingCard({ initialData, handleUpdateSetting }: { initialData: AiTagging | null; handleUpdateSetting: (key: string, value: unknown) => Promise<void> }) {
   const { t } = useTranslation();
@@ -16,6 +17,8 @@ export function AiTaggingCard({ initialData, handleUpdateSetting }: { initialDat
     model: initialData?.model ?? "openrouter/free",
     max_tags: initialData?.max_tags ?? 5,
     prompt: initialData?.prompt ?? DEFAULT_PROMPT,
+    reading_lists_enabled: initialData?.reading_lists_enabled ?? false,
+    reading_list_prompt: initialData?.reading_list_prompt ?? DEFAULT_LISTS_PROMPT,
   });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -26,6 +29,7 @@ export function AiTaggingCard({ initialData, handleUpdateSetting }: { initialDat
   };
 
   const restoreDefaultPrompt = () => save({ ...data, prompt: DEFAULT_PROMPT });
+  const restoreDefaultListsPrompt = () => save({ ...data, reading_list_prompt: DEFAULT_LISTS_PROMPT });
 
   const testConnection = async () => {
     setTesting(true);
@@ -46,49 +50,77 @@ export function AiTaggingCard({ initialData, handleUpdateSetting }: { initialDat
   };
 
   return (
-    <div className="grid grid-cols-1 gap-5 xl:grid-cols-2 xl:items-start">
-      <SettingsCard icon="bot" title={t("settings.aiConfiguration")} description={t("settings.aiTaggingDesc")}>
-        <label className="flex items-center gap-3 text-sm font-medium">
-          <input type="checkbox" checked={data.enabled} onChange={e => save({ ...data, enabled: e.target.checked })} />
-          {t("settings.aiGenreTagging")}
-        </label>
-        <SettingsRow label={t("settings.aiBaseUrl")} htmlFor="ai-base-url">
-          <FormInput id="ai-base-url" value={data.base_url} onChange={e => setData({ ...data, base_url: e.target.value })} onBlur={() => save(data)} placeholder="https://openrouter.ai/api/v1" />
-        </SettingsRow>
-        <SettingsRow label={t("settings.aiApiKey")} htmlFor="ai-api-key">
-          <FormInput id="ai-api-key" type="password" value={data.api_key} onChange={e => setData({ ...data, api_key: e.target.value })} onBlur={() => save(data)} placeholder="sk-or-v1-..." autoComplete="off" />
-        </SettingsRow>
-        <SettingsRow label={t("settings.aiModel")} htmlFor="ai-model">
-          <FormInput id="ai-model" value={data.model} onChange={e => setData({ ...data, model: e.target.value })} onBlur={() => save(data)} placeholder="openrouter/free" />
-        </SettingsRow>
-        <SettingsRow label={t("settings.aiMaxTags")} htmlFor="ai-max-tags">
-          <FormInput id="ai-max-tags" type="number" min={1} max={10} value={data.max_tags} onChange={e => setData({ ...data, max_tags: Math.min(10, Math.max(1, parseInt(e.target.value) || 5)) })} onBlur={() => save(data)} className="w-24" />
-        </SettingsRow>
-        <div className="flex flex-wrap items-center gap-3 pt-2">
-          <button type="button" onClick={testConnection} disabled={testing} className="rounded-xl bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50">
-            {testing ? t("settings.aiTesting") : t("settings.aiTest")}
-          </button>
-          {testResult && <p className={`text-sm ${testResult.ok ? "text-success" : "text-destructive"}`}>{testResult.message}</p>}
-        </div>
-      </SettingsCard>
-  
-      <SettingsCard icon="document" title={t("settings.aiPrompt")} description={t("settings.aiPromptHelp")}>
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2 xl:items-start">
+        <SettingsCard icon="bot" title={t("settings.aiConfiguration")} description={t("settings.aiTaggingDesc")}>
+          <label className="flex items-center gap-3 text-sm font-medium">
+            <input type="checkbox" checked={data.enabled} onChange={e => save({ ...data, enabled: e.target.checked })} />
+            {t("settings.aiGenreTagging")}
+          </label>
+          <label className="flex items-center gap-3 text-sm font-medium">
+            <input type="checkbox" checked={data.reading_lists_enabled} onChange={e => save({ ...data, reading_lists_enabled: e.target.checked })} />
+            {t("settings.aiReadingListsEnabled")}
+          </label>
+          <SettingsRow label={t("settings.aiBaseUrl")} htmlFor="ai-base-url">
+            <FormInput id="ai-base-url" value={data.base_url} onChange={e => setData({ ...data, base_url: e.target.value })} onBlur={() => save(data)} placeholder="https://openrouter.ai/api/v1" />
+          </SettingsRow>
+          <SettingsRow label={t("settings.aiApiKey")} htmlFor="ai-api-key">
+            <FormInput id="ai-api-key" type="password" value={data.api_key} onChange={e => setData({ ...data, api_key: e.target.value })} onBlur={() => save(data)} placeholder="sk-or-v1-..." autoComplete="off" />
+          </SettingsRow>
+          <SettingsRow label={t("settings.aiModel")} htmlFor="ai-model">
+            <FormInput id="ai-model" value={data.model} onChange={e => setData({ ...data, model: e.target.value })} onBlur={() => save(data)} placeholder="openrouter/free" />
+          </SettingsRow>
+          <SettingsRow label={t("settings.aiMaxTags")} htmlFor="ai-max-tags">
+            <FormInput id="ai-max-tags" type="number" min={1} max={10} value={data.max_tags} onChange={e => setData({ ...data, max_tags: Math.min(10, Math.max(1, parseInt(e.target.value) || 5)) })} onBlur={() => save(data)} className="w-24" />
+          </SettingsRow>
+          <div className="flex flex-wrap items-center gap-3 pt-2">
+            <button type="button" onClick={testConnection} disabled={testing} className="rounded-xl bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50">
+              {testing ? t("settings.aiTesting") : t("settings.aiTest")}
+            </button>
+            {testResult && <p className={`text-sm ${testResult.ok ? "text-success" : "text-destructive"}`}>{testResult.message}</p>}
+          </div>
+        </SettingsCard>
+
+        <SettingsCard icon="document" title={t("settings.aiPrompt")} description={t("settings.aiPromptHelp")}>
+          <textarea
+            id="ai-prompt"
+            value={data.prompt}
+            onChange={e => setData({ ...data, prompt: e.target.value })}
+            onBlur={() => save(data)}
+            rows={14}
+            className="w-full px-3.5 py-3 font-mono text-sm leading-6 text-foreground"
+          />
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={restoreDefaultPrompt}
+              disabled={data.prompt === DEFAULT_PROMPT}
+              className="text-xs font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {t("settings.aiRestoreDefaultPrompt")}
+            </button>
+          </div>
+        </SettingsCard>
+      </div>
+
+      <SettingsCard icon="document" title={t("settings.aiReadingListsTitle")} description={t("settings.aiReadingListsHelp")}>
         <textarea
-          id="ai-prompt"
-          value={data.prompt}
-          onChange={e => setData({ ...data, prompt: e.target.value })}
+          id="ai-reading-lists-prompt"
+          value={data.reading_list_prompt}
+          onChange={e => setData({ ...data, reading_list_prompt: e.target.value })}
           onBlur={() => save(data)}
-          rows={14}
+          aria-label={t("settings.aiReadingListsTitle")}
+          rows={12}
           className="w-full px-3.5 py-3 font-mono text-sm leading-6 text-foreground"
         />
         <div className="flex justify-end">
           <button
             type="button"
-            onClick={restoreDefaultPrompt}
-            disabled={data.prompt === DEFAULT_PROMPT}
+            onClick={restoreDefaultListsPrompt}
+            disabled={data.reading_list_prompt === DEFAULT_LISTS_PROMPT}
             className="text-xs font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {t("settings.aiRestoreDefaultPrompt")}
+            {t("settings.aiRestoreDefaultListsPrompt")}
           </button>
         </div>
       </SettingsCard>

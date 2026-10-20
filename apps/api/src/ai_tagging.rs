@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::Row;
 use stripstream_core::http::build_http_client;
-use stripstream_core::settings::load_setting;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -106,36 +105,13 @@ pub async fn suggest_tags(
         ));
     }
 
-    let setting = load_setting::<Value>(&state.pool, "ai_tagging")
-        .await?
-        .unwrap_or_else(|| serde_json::json!({}));
-    if !setting
-        .get("enabled")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
-        return Err(ApiError::unprocessable_entity("AI tagging is disabled"));
-    }
-    let api_key = setting
-        .get("api_key")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .trim();
-    if api_key.is_empty() {
-        return Err(ApiError::unprocessable_entity(
-            "AI tagging is not configured",
-        ));
-    }
-
-    let base_url = setting
-        .get("base_url")
-        .and_then(Value::as_str)
-        .unwrap_or("https://openrouter.ai/api/v1")
-        .trim_end_matches('/');
-    let model = setting
-        .get("model")
-        .and_then(Value::as_str)
-        .unwrap_or("openrouter/free");
+    let setting = crate::ai::load_settings(&state.pool).await?;
+    let config = crate::ai::provider_config(
+        &setting,
+        "enabled",
+        "AI tagging is disabled",
+        "AI tagging is not configured",
+    )?;
     let max_tags = setting
         .get("max_tags")
         .and_then(Value::as_u64)
@@ -195,48 +171,12 @@ pub async fn suggest_tags(
             &serde_json::to_string(&input).map_err(|e| ApiError::internal(e.to_string()))?,
         );
 
-    let client = build_http_client(std::time::Duration::from_secs(45))?;
-    let response = client
-        .post(format!("{base_url}/chat/completions"))
-        .bearer_auth(api_key)
-        .header("Content-Type", "application/json")
-        .header("HTTP-Referer", "https://stripstream.app")
-        .json(&serde_json::json!({
-            "model": model,
-            "temperature": 0,
-            "response_format": { "type": "json_object" },
-            "messages": [
-                { "role": "system", "content": "You classify series genres. Follow the requested JSON schema exactly." },
-                { "role": "user", "content": prompt }
-            ]
-        }))
-        .send()
-        .await?;
-    let status = response.status();
-    let payload: Value = response
-        .json()
-        .await
-        .map_err(|e| ApiError::internal(format!("invalid AI response: {e}")))?;
-    if !status.is_success() {
-        let message = payload
-            .get("error")
-            .and_then(|e| e.get("message"))
-            .and_then(Value::as_str)
-            .unwrap_or("AI provider request failed");
-        return Err(ApiError::bad_request(message));
-    }
-    let content = payload
-        .pointer("/choices/0/message/content")
-        .and_then(Value::as_str)
-        .ok_or_else(|| ApiError::internal("AI provider returned no content"))?;
-    let json_text = content
-        .trim()
-        .trim_start_matches("```json")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim();
-    let parsed: Value = serde_json::from_str(json_text)
-        .map_err(|e| ApiError::internal(format!("AI returned invalid JSON: {e}")))?;
+    let parsed = crate::ai::complete_json(
+        &config,
+        "You classify series genres. Follow the requested JSON schema exactly.",
+        &prompt,
+    )
+    .await?;
     let by_id = parsed
         .get("suggestions")
         .and_then(Value::as_array)

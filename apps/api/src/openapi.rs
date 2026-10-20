@@ -291,6 +291,7 @@ pub struct ClientApiDoc;
         crate::reading_lists::add_series,
         crate::reading_lists::remove_series,
         crate::reading_lists::reorder_series,
+        crate::reading_lists::ai::suggest_reading_lists,
     ),
     components(
         schemas(
@@ -306,6 +307,11 @@ pub struct ClientApiDoc;
             crate::reading_lists::UpdateReadingListRequest,
             crate::reading_lists::AddSeriesRequest,
             crate::reading_lists::ReorderSeriesRequest,
+            crate::reading_lists::ai::SuggestReadingListsRequest,
+            crate::reading_lists::ai::AiReadingListSuggestions,
+            crate::reading_lists::ai::AiListAdditionSuggestion,
+            crate::reading_lists::ai::AiListCreationSuggestion,
+            crate::reading_lists::ai::AiSuggestedSeries,
             // Books
             crate::books::ListBooksQuery,
             crate::books::BookItem,

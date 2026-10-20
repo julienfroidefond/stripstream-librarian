@@ -5,7 +5,8 @@ import { useTranslation } from "@/lib/i18n/context";
 import type { ReadingListDto } from "@/lib/api";
 import { Modal } from "@/app/components/ui/Modal";
 import { ReadingListCard } from "@/app/components/ReadingListCard";
-import { Button, Card } from "@/app/components/ui";
+import { Button, Card, Icon } from "@/app/components/ui";
+import { AiReadingListsModal } from "./AiReadingListsModal";
 
 type Props = {
   initialLists: ReadingListDto[];
@@ -17,6 +18,7 @@ export function ReadingListsClient({ initialLists, hasActiveUser }: Props) {
   const { t } = useTranslation();
   const [lists, setLists] = useState<ReadingListDto[]>(initialLists);
   const [showCreate, setShowCreate] = useState(false);
+  const [showAi, setShowAi] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createDescription, setCreateDescription] = useState("");
   const [saving, setSaving] = useState(false);
@@ -57,25 +59,47 @@ export function ReadingListsClient({ initialLists, hasActiveUser }: Props) {
     }
   }
 
+  async function refreshLists() {
+    try {
+      const res = await fetch("/api/reading-lists");
+      if (!res.ok) return;
+      const data: ReadingListDto[] = await res.json();
+      setLists([...data].sort((a, b) => a.name.localeCompare(b.name)));
+    } catch {
+      // keep the current list on a transient error
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
           <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
           </svg>
           {t("readingLists.title")}
         </h1>
-        <Button
-          type="button"
-          onClick={() => setShowCreate(true)}
-          className="shrink-0 gap-2"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          {t("readingLists.create")}
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setShowAi(true)}
+            className="gap-2"
+          >
+            <Icon name="bot" size="sm" />
+            {t("readingLists.aiSuggest")}
+          </Button>
+          <Button
+            type="button"
+            onClick={() => setShowCreate(true)}
+            className="gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            {t("readingLists.create")}
+          </Button>
+        </div>
       </div>
 
       {lists.length === 0 ? (
@@ -171,6 +195,12 @@ export function ReadingListsClient({ initialLists, hasActiveUser }: Props) {
           </div>
         </div>
       </Modal>
+
+      <AiReadingListsModal
+        isOpen={showAi}
+        onClose={() => setShowAi(false)}
+        onApplied={refreshLists}
+      />
     </div>
   );
 }
