@@ -6,6 +6,7 @@ import {
   SeriesUserReading,
 } from "@/app/components/SeriesUserActivity";
 import type { SeriesUserActivityDto } from "@/lib/api";
+import { ratedActivity, readingActivity } from "@/lib/userActivity";
 
 function makeActivity(
   overrides: Partial<SeriesUserActivityDto> = {}
@@ -23,14 +24,14 @@ function makeActivity(
 }
 
 describe("SeriesUserRatings", () => {
-  it("renders every reader's rating and skips unrated readers", () => {
+  it("renders every rated reader", () => {
     render(
       <SeriesUserRatings
-        items={[
+        items={ratedActivity([
           makeActivity({ user_id: "u1", username: "Alice", rating: 8 }),
           makeActivity({ user_id: "u2", username: "Bob", rating: null }),
           makeActivity({ user_id: "u3", username: "Carol", rating: 7 }),
-        ]}
+        ])}
       />
     );
 
@@ -42,9 +43,9 @@ describe("SeriesUserRatings", () => {
     expect(screen.getByText("3.5")).toBeInTheDocument();
   });
 
-  it("renders nothing when no reader rated the series", () => {
+  it("renders nothing when there are no rating entries", () => {
     const { container } = render(
-      <SeriesUserRatings items={[makeActivity({ rating: null })]} />
+      <SeriesUserRatings items={ratedActivity([makeActivity({ rating: null })])} />
     );
 
     expect(container).toBeEmptyDOMElement();
@@ -55,10 +56,10 @@ describe("SeriesUserReading", () => {
   it("renders read, in-progress and total counts per reader", () => {
     render(
       <SeriesUserReading
-        items={[
+        items={readingActivity([
           makeActivity({ user_id: "u1", username: "Alice", books_read: 2, books_reading: 1, books_total: 8 }),
           makeActivity({ user_id: "u2", username: "Bob", books_read: 0, books_reading: 0 }),
-        ]}
+        ])}
       />
     );
 
@@ -70,10 +71,12 @@ describe("SeriesUserReading", () => {
     expect(screen.queryByText("Bob")).toBeNull();
   });
 
-  it("renders nothing when no reader started the series", () => {
+  it("renders nothing when there are no reading entries", () => {
     const { container } = render(
       <SeriesUserReading
-        items={[makeActivity({ books_read: 0, books_reading: 0 })]}
+        items={readingActivity([
+          makeActivity({ books_read: 0, books_reading: 0 }),
+        ])}
       />
     );
 

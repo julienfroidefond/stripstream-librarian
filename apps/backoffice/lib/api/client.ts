@@ -2,6 +2,8 @@
  * Enveloppe HTTP bas niveau vers l'API Rust (`apiFetch`, `config`).
  */
 
+import { getActiveUser } from "../activeUser";
+
 export function config() {
   const baseUrl = process.env.API_BASE_URL || "http://api:7080";
   const token = process.env.API_BOOTSTRAP_TOKEN;
@@ -24,10 +26,8 @@ export async function apiFetch<T>(
 
   // Impersonation : injecte X-As-User si un user est sélectionné dans le backoffice
   try {
-    const { cookies } = await import("next/headers");
-    const cookieStore = await cookies();
-    const asUserId = cookieStore.get("as_user_id")?.value;
-    if (asUserId) headers.set("X-As-User", asUserId);
+    const { userId } = await getActiveUser();
+    if (userId) headers.set("X-As-User", userId);
   } catch {
     // Hors contexte Next.js (tests, etc.)
   }

@@ -8,6 +8,7 @@ import { ProviderIcon, providerLabel } from "@/app/components/ProviderIcon";
 import { SeriesActionsToolbar } from "@/app/components/SeriesActionsToolbar";
 import { SeriesRatingControl } from "@/app/components/SeriesRatingControl";
 import { SeriesUserRatings, SeriesUserReading } from "@/app/components/SeriesUserActivity";
+import { progressLabel } from "@/app/components/SeriesGrid";
 import { OffsetPagination } from "@/app/components/ui";
 import { SafeHtml } from "@/app/components/SafeHtml";
 import { Icon } from "@/app/components/ui/Icon";
@@ -15,6 +16,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getServerTranslations } from "@/lib/i18n/server";
+import { getActiveUser } from "@/lib/activeUser";
+import { ratedActivity, readingActivity } from "@/lib/userActivity";
 import { parseViewMode, VIEW_MODE_COOKIE } from "@/lib/viewMode";
 
 export const dynamic = "force-dynamic";
@@ -28,9 +31,9 @@ export default async function SeriesDetailPage({
 }) {
   const { seriesId } = await params;
   const { t } = await getServerTranslations();
+  const { userId, hasActiveUser } = await getActiveUser();
+  const activeUserId = userId ?? "admin";
   const cookieStore = await cookies();
-  const activeUserId = cookieStore.get("as_user_id")?.value ?? "admin";
-  const hasActiveUser = activeUserId !== "admin";
   const viewMode = parseViewMode(cookieStore.get(VIEW_MODE_COOKIE)?.value);
   const searchParamsAwaited = await searchParams;
   const page = typeof searchParamsAwaited.page === "string" ? parseInt(searchParamsAwaited.page) : 1;
@@ -85,9 +88,9 @@ export default async function SeriesDetailPage({
       : fetchSeriesUserActivity(seriesId).catch(() => [] as SeriesUserActivityDto[]),
   ]);
 
-  const hasUserReading = seriesUserActivity.some(
-    (activity) => activity.books_read > 0 || activity.books_reading > 0
-  );
+  const ratingEntries = ratedActivity(seriesUserActivity);
+  const readingEntries = readingActivity(seriesUserActivity);
+  const hasUserReading = readingEntries.length > 0;
 
   const hiddenProviders: string[] = [];
   if (!metadataProviders?.comicvine?.api_key) hiddenProviders.push("comicvine");
@@ -238,7 +241,7 @@ export default async function SeriesDetailPage({
                 hasAniListLink={!!readingStatusLink}
               />
             ) : (
-              <SeriesUserRatings items={seriesUserActivity} />
+              <SeriesUserRatings items={ratingEntries} />
             )}
 
             {/* Provider score badges */}
@@ -310,7 +313,7 @@ export default async function SeriesDetailPage({
               <>
                 <span className="w-px h-4 bg-border" />
                 <span className="text-muted-foreground">
-                  {t("series.readCount", { read: String(booksReadCount), total: String(booksPage.total), plural: booksPage.total !== 1 ? "s" : "" })}
+                  {progressLabel({ book_count: booksPage.total, books_read_count: booksReadCount }, true, t)}
                 </span>
 
                 {/* Reading progress bar */}
@@ -326,7 +329,7 @@ export default async function SeriesDetailPage({
             ) : hasUserReading ? (
               <>
                 <span className="w-px h-4 bg-border" />
-                <SeriesUserReading items={seriesUserActivity} />
+                <SeriesUserReading items={readingEntries} />
               </>
             ) : null}
 

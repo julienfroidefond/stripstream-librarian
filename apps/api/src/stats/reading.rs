@@ -5,7 +5,9 @@ use axum::{
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{error::ApiError, state::AppState};
+use crate::{
+    error::ApiError, reading::series_progress::SERIES_PROGRESS_AGGREGATES, state::AppState,
+};
 
 use super::types::*;
 
@@ -23,7 +25,7 @@ use super::types::*;
 pub async fn get_reading_overview(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<UserReadingOverview>>, ApiError> {
-    let rows = sqlx::query(
+    let sql = format!(
         r#"
         WITH series_counts AS (
             SELECT
@@ -54,10 +56,7 @@ pub async fn get_reading_overview(
         user_series AS (
             SELECT
                 brp.user_id,
-                COALESCE(b.series_id, '00000000-0000-0000-0000-000000000000'::uuid) AS series_key,
-                COUNT(*) FILTER (WHERE brp.status = 'read') AS books_read,
-                COUNT(*) FILTER (WHERE brp.status = 'reading') AS books_reading,
-                MAX(brp.last_read_at) AS last_read_at
+                COALESCE(b.series_id, '00000000-0000-0000-0000-000000000000'::uuid) AS series_key,{SERIES_PROGRESS_AGGREGATES}
             FROM book_reading_progress brp
             JOIN books b ON b.id = brp.book_id
             GROUP BY brp.user_id, series_key
@@ -133,10 +132,13 @@ pub async fn get_reading_overview(
         LEFT JOIN series s ON s.id = b.series_id
         GROUP BY u.id, u.username
         ORDER BY MAX(brp.last_read_at) DESC NULLS LAST, u.username ASC
-        "#,
-    )
-    .fetch_all(&state.pool)
-    .await?;
+        "#
+    );
+
+    // Only compile-time fragments are interpolated, never user input.
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql))
+        .fetch_all(&state.pool)
+        .await?;
 
     let overview = rows
         .into_iter()

@@ -2,6 +2,7 @@ import { fetchAllSeries, fetchLibraries, fetchSeriesStatuses, fetchReadingLists,
 import { cookies } from "next/headers";
 import { ReadingListCard } from "@/app/components/ReadingListCard";
 import { getServerTranslations } from "@/lib/i18n/server";
+import { getActiveUser } from "@/lib/activeUser";
 import { paramString, paramStringOr, paramInt, paramBool } from "@/lib/searchParams";
 import { SeriesGrid, SeriesList } from "@/app/components/SeriesGrid";
 import { ViewModeToggle } from "@/app/components/ViewModeToggle";
@@ -27,8 +28,8 @@ export default async function SeriesPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { t } = await getServerTranslations();
+  const { hasActiveUser } = await getActiveUser();
   const cookieStore = await cookies();
-  const hasActiveUser = !!cookieStore.get("as_user_id")?.value;
   const viewMode = parseViewMode(cookieStore.get(VIEW_MODE_COOKIE)?.value);
   const sp = await searchParams;
   const libraryId = paramString(sp, "library");

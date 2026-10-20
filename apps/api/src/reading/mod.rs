@@ -1,4 +1,5 @@
 pub mod progress;
+pub(crate) mod series_progress;
 pub mod status_match;
 pub mod status_pull;
 pub mod status_push;
