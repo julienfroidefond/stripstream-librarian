@@ -1,3 +1,4 @@
+import { getReadingOverview } from "@/lib/api";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { Icon } from "@/app/components/ui";
 import { ReadingOverview } from "@/app/components/ReadingOverview";
@@ -6,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ProgressPage() {
   const { t } = await getServerTranslations();
+  const overview = await getReadingOverview();
 
   return (
     <>
@@ -16,7 +18,7 @@ export default async function ProgressPage() {
         </h1>
       </div>
 
-      <ReadingOverview />
+      <ReadingOverview initialData={overview} />
     </>
   );
 }

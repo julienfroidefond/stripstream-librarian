@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Card, Icon, type IconName } from "@/app/components/ui";
@@ -61,19 +61,46 @@ function readStoredSeriesView(): SeriesView {
   return "list";
 }
 
-function useSeriesView(): [SeriesView, (view: SeriesView) => void] {
-  const [view, setView] = useState<SeriesView>(readStoredSeriesView);
+function createSeriesViewStore() {
+  const listeners = new Set<() => void>();
+  let pending: SeriesView | null = null;
 
-  const updateView = (next: SeriesView) => {
-    setView(next);
-    try {
-      window.localStorage.setItem(SERIES_VIEW_KEY, next);
-    } catch {
-      // ignore write failures
-    }
+  return {
+    subscribe(onChange: () => void) {
+      listeners.add(onChange);
+      const onStorage = (event: StorageEvent) => {
+        if (event.key !== SERIES_VIEW_KEY && event.key !== null) return;
+        pending = null;
+        onChange();
+      };
+      window.addEventListener("storage", onStorage);
+      return () => {
+        listeners.delete(onChange);
+        window.removeEventListener("storage", onStorage);
+      };
+    },
+    getSnapshot(): SeriesView {
+      return pending ?? readStoredSeriesView();
+    },
+    set(next: SeriesView) {
+      pending = next;
+      try {
+        window.localStorage.setItem(SERIES_VIEW_KEY, next);
+      } catch {
+        // keep the in-memory value so the toggle still works
+      }
+      for (const listener of listeners) listener();
+    },
   };
+}
 
-  return [view, updateView];
+function useSeriesView(): [SeriesView, (view: SeriesView) => void] {
+  const [store] = useState(createSeriesViewStore);
+  // The server snapshot stays "list" so the RSC markup hydrates unchanged;
+  // the persisted choice is applied right after hydration.
+  const view = useSyncExternalStore(store.subscribe, store.getSnapshot, () => "list" as const);
+
+  return [view, store.set];
 }
 
 /** Segmented control to switch the series statuses section between list and grid. */
@@ -266,8 +293,10 @@ function SeriesBooksGrid({
   failed: boolean;
   booksTotal: number;
 }) {
+  const { t } = useTranslation();
+
   if (failed) {
-    return <p className="text-xs text-destructive pt-1 pb-4">Erreur de chargement</p>;
+    return <p className="text-xs text-destructive pt-1 pb-4">{t("settings.readingOverview.loadError")}</p>;
   }
 
   return (
@@ -444,14 +473,14 @@ function UserOverview({ user }: { user: UserReadingOverviewDto }) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+      <div data-reveal className="grid grid-cols-3 gap-2 sm:gap-3 stagger-children">
         <StatTile value={user.books_read} label={t("settings.readingOverview.booksRead")} accent="text-success" />
         <StatTile value={user.books_reading} label={t("settings.readingOverview.booksReading")} accent="text-warning" />
         <StatTile value={user.series_in_progress} label={t("settings.readingOverview.seriesInProgress")} accent="text-primary" />
       </div>
 
       {user.currently_reading.length > 0 && (
-        <section>
+        <section data-reveal>
           <SectionTitle count={user.currently_reading.length}>{t("settings.readingOverview.currentlyReading")}</SectionTitle>
           <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-2 snap-x scrollbar-thin stagger-deal">
             {user.currently_reading.map((book) => (
@@ -462,7 +491,7 @@ function UserOverview({ user }: { user: UserReadingOverviewDto }) {
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <section className="min-w-0">
+        <section data-reveal className="min-w-0">
           <SectionTitle
             count={seriesProgress.length}
             action={<SeriesViewToggle view={seriesView} onChange={setSeriesView} />}
@@ -473,7 +502,7 @@ function UserOverview({ user }: { user: UserReadingOverviewDto }) {
         </section>
 
         {recentlyRead.length > 0 && (
-          <section className="min-w-0">
+          <section data-reveal className="min-w-0">
             <SectionTitle>{t("settings.readingOverview.recentlyRead")}</SectionTitle>
             <div className="space-y-0.5">
               {recentlyRead.map((book) => (
@@ -537,31 +566,10 @@ function UserPicker({
   );
 }
 
-export function ReadingOverview() {
+export function ReadingOverview({ initialData }: { initialData: UserReadingOverviewDto[] }) {
   const { t } = useTranslation();
-  const [overview, setOverview] = useState<UserReadingOverviewDto[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch("/api/reading-overview")
-      .then((r) => r.json())
-      .then((data) => setOverview(data))
-      .catch(() => setError("Erreur de chargement"));
-  }, []);
-
-  if (error) {
-    return <p className="text-destructive text-sm">{error}</p>;
-  }
-
-  if (!overview) {
-    return (
-      <div className="flex items-center gap-2 text-muted-foreground text-sm">
-        <Icon name="spinner" size="sm" className="animate-spin" />
-        Chargement…
-      </div>
-    );
-  }
+  const overview = initialData;
 
   if (overview.length === 0) {
     return (

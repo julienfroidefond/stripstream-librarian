@@ -789,6 +789,7 @@ const en: Record<TranslationKey, string> = {
   "settings.readingOverview.noActivity": "No reading activity",
   "settings.readingOverview.page": "p.",
   "settings.readingOverview.noSeries": "No series found.",
+  "settings.readingOverview.loadError": "Failed to load.",
   "settings.readingOverview.showAll": "Show all {{count}} series",
   "settings.readingOverview.showLess": "Show less",
   "settings.readingOverview.viewList": "List view",

@@ -787,6 +787,7 @@ const fr = {
   "settings.readingOverview.noActivity": "Aucune activité de lecture",
   "settings.readingOverview.page": "p.",
   "settings.readingOverview.noSeries": "Aucune série trouvée.",
+  "settings.readingOverview.loadError": "Erreur de chargement.",
   "settings.readingOverview.showAll": "Afficher les {{count}} séries",
   "settings.readingOverview.showLess": "Afficher moins",
   "settings.readingOverview.viewList": "Vue liste",
