@@ -74,40 +74,62 @@ describe("isTelegramDownloadRetryable", () => {
   });
 });
 
+/**
+ * Stub `fetch` with a response whose `blob()` returns a `Blob` from the test
+ * realm.
+ *
+ * Building a real `Response` would wrap an undici Blob (Node's realm) in the
+ * jsdom `File` constructor used by `fetchSharedFile`. Both implementations do
+ * not always accept each other's instances, which made this test fail on some
+ * Node/jsdom versions for reasons unrelated to the code under test.
+ */
+function stubDownloadResponse(
+  body: BlobPart,
+  { status = 200, headers = {} }: { status?: number; headers?: Record<string, string> } = {}
+) {
+  const responseHeaders = new Headers(headers);
+  const blob = new Blob([body], { type: responseHeaders.get("content-type") ?? "" });
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: status >= 200 && status < 300,
+    status,
+    headers: responseHeaders,
+    blob: () => Promise.resolve(blob),
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
 describe("fetchSharedFile", () => {
   it("returns a File built from the response", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response("bytes", {
-        status: 200,
-        headers: {
-          "content-type": "application/vnd.comicbook+zip",
-          "content-disposition": 'attachment; filename="GON T06.cbz"',
-        },
-      })
-    );
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = stubDownloadResponse("bytes", {
+      headers: {
+        "content-type": "application/vnd.comicbook+zip",
+        "content-disposition": 'attachment; filename="GON T06.cbz"',
+      },
+    });
 
     const file = await fetchSharedFile("/api/books/b1/file");
 
     expect(fetchMock).toHaveBeenCalledWith("/api/books/b1/file");
+    expect(file).toBeInstanceOf(File);
     expect(file.name).toBe("GON T06.cbz");
     expect(file.type).toBe("application/vnd.comicbook+zip");
+    expect(file.size).toBe(5);
     expect(await file.text()).toBe("bytes");
   });
 
   it("falls back to a default name without a disposition header", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response(new Uint8Array([1]), { status: 200 }))
-    );
+    stubDownloadResponse(new Uint8Array([1]));
 
     const file = await fetchSharedFile("/api/books/b1/file");
 
     expect(file.name).toBe("book");
+    expect(file.type).toBe("application/octet-stream");
+    expect(file.size).toBe(1);
   });
 
   it("throws on a failed response", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("nope", { status: 404 })));
+    stubDownloadResponse("nope", { status: 404 });
 
     await expect(fetchSharedFile("/api/books/b1/file")).rejects.toThrow("download failed (404)");
   });
