@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiFetch } from "@/lib/api";
 import { withRoute } from "@/lib/api-handler";
+import { revalidateReadingLists } from "@/lib/readingListsCache";
 
 type Params = Promise<{ id: string }>;
 
@@ -17,11 +18,13 @@ export const PATCH = withRoute(async (request: NextRequest, { params }: { params
     method: "PATCH",
     body: JSON.stringify(body),
   });
+  revalidateReadingLists();
   return NextResponse.json(data);
 }, { fallback: "Failed" });
 
 export const DELETE = withRoute(async (_request: NextRequest, { params }: { params: Params }) => {
   const { id } = await params;
   await apiFetch(`/reading-lists/${id}`, { method: "DELETE" });
+  revalidateReadingLists();
   return new NextResponse(null, { status: 204 });
 }, { fallback: "Failed" });

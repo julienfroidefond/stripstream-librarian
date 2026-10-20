@@ -365,6 +365,7 @@ describe("reading lists", () => {
     const call = lastCall();
     expect(call.url).toBe("/reading-lists");
     expect((call.init.next as { revalidate: number }).revalidate).toBe(30);
+    expect((call.init.next as { tags: string[] }).tags).toContain("reading-lists");
 
     await fetchSeriesReadingLists("series-1");
     const seriesCall = lastCall();
