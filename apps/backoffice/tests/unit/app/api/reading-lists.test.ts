@@ -19,6 +19,7 @@ import { POST as addSeries } from "@/app/api/reading-lists/[id]/series/route";
 import { DELETE as removeSeries } from "@/app/api/reading-lists/[id]/series/[seriesId]/route";
 import { PUT as reorder } from "@/app/api/reading-lists/[id]/series/reorder/route";
 import { GET as memberships } from "@/app/api/reading-lists/memberships/route";
+import { POST as suggestLists } from "@/app/api/reading-lists/ai-suggest/route";
 
 const mockApi = vi.mocked(apiFetch);
 
@@ -80,6 +81,35 @@ describe("/api/reading-lists", () => {
   it("GET memberships", async () => {
     mockApi.mockResolvedValue({});
     expect((await memberships()).status).toBe(200);
+  });
+
+  it("POST ai-suggest forwards the request and returns the proposals", async () => {
+    mockApi.mockResolvedValue({ additions: [], new_lists: [] });
+    const res = await suggestLists(
+      jsonRequest("/api/reading-lists/ai-suggest", { method: "POST", body: { limit: 80 } })
+    );
+    expect(mockApi).toHaveBeenCalledWith(
+      "/reading-lists/ai-suggest",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ limit: 80 }) })
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ additions: [], new_lists: [] });
+  });
+
+  it("POST ai-suggest returns 500 on error", async () => {
+    mockApi.mockRejectedValue(new Error("AI disabled"));
+    expect(
+      (await suggestLists(jsonRequest("/api/reading-lists/ai-suggest", { method: "POST", body: {} }))).status
+    ).toBe(500);
+  });
+
+  it("POST ai-suggest forwards a 422 from the API", async () => {
+    mockApi.mockRejectedValue(
+      new Error('API /reading-lists/ai-suggest failed (422): {"error":"AI disabled"}')
+    );
+    expect(
+      (await suggestLists(jsonRequest("/api/reading-lists/ai-suggest", { method: "POST", body: {} }))).status
+    ).toBe(422);
   });
 
   it("PATCH returns 500 on error", async () => {

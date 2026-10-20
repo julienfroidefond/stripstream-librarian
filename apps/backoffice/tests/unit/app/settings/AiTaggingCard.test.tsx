@@ -15,18 +15,31 @@ describe("AiTaggingCard", () => {
   it("renders defaults and saves the enabled flag", async () => {
     const handleUpdateSetting = vi.fn().mockResolvedValue(undefined);
     render(<AiTaggingCard initialData={null} handleUpdateSetting={handleUpdateSetting} />);
-    expect(screen.getByRole("checkbox")).not.toBeChecked();
-    await userEvent.click(screen.getByRole("checkbox"));
+    const genreToggle = screen.getByRole("checkbox", { name: "settings.aiGenreTagging" });
+    const listsToggle = screen.getByRole("checkbox", { name: "settings.aiReadingListsEnabled" });
+    expect(genreToggle).not.toBeChecked();
+    expect(listsToggle).not.toBeChecked();
+    await userEvent.click(genreToggle);
     expect(handleUpdateSetting).toHaveBeenCalledWith(
       "ai_tagging",
       expect.objectContaining({ enabled: true, model: "openrouter/free", max_tags: 5 }),
     );
   });
 
+  it("saves the reading list flag independently", async () => {
+    const handleUpdateSetting = vi.fn().mockResolvedValue(undefined);
+    render(<AiTaggingCard initialData={null} handleUpdateSetting={handleUpdateSetting} />);
+    await userEvent.click(screen.getByRole("checkbox", { name: "settings.aiReadingListsEnabled" }));
+    expect(handleUpdateSetting).toHaveBeenCalledWith(
+      "ai_tagging",
+      expect.objectContaining({ reading_lists_enabled: true, enabled: false }),
+    );
+  });
+
   it("uses provided initial data", () => {
     render(
       <AiTaggingCard
-        initialData={{ enabled: true, base_url: "http://x", api_key: "k", model: "m", max_tags: 9, prompt: "p" }}
+        initialData={{ enabled: true, base_url: "http://x", api_key: "k", model: "m", max_tags: 9, prompt: "p", reading_list_prompt: "lists" }}
         handleUpdateSetting={vi.fn()}
       />,
     );
@@ -34,6 +47,7 @@ describe("AiTaggingCard", () => {
     expect(screen.getByDisplayValue("m")).toBeInTheDocument();
     expect(screen.getByDisplayValue("9")).toBeInTheDocument();
     expect(screen.getByDisplayValue("p")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("lists")).toBeInTheDocument();
   });
 
   it("saves edited fields on blur", async () => {
@@ -95,6 +109,31 @@ describe("AiTaggingCard", () => {
     expect(handleUpdateSetting).toHaveBeenCalledWith(
       "ai_tagging",
       expect.objectContaining({ prompt: expect.stringContaining("Suggest up to") }),
+    );
+  });
+
+  it("saves and restores the reading list prompt", async () => {
+    const handleUpdateSetting = vi.fn().mockResolvedValue(undefined);
+    render(
+      <AiTaggingCard
+        initialData={{ reading_list_prompt: "custom lists" }}
+        handleUpdateSetting={handleUpdateSetting}
+      />
+    );
+    const prompt = screen.getByDisplayValue("custom lists");
+    fireEvent.change(prompt, { target: { value: "new lists prompt" } });
+    fireEvent.blur(prompt);
+    expect(handleUpdateSetting).toHaveBeenLastCalledWith(
+      "ai_tagging",
+      expect.objectContaining({ reading_list_prompt: "new lists prompt" }),
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "settings.aiRestoreDefaultListsPrompt" })
+    );
+    expect(handleUpdateSetting).toHaveBeenLastCalledWith(
+      "ai_tagging",
+      expect.objectContaining({ reading_list_prompt: expect.stringContaining("{{series}}") }),
     );
   });
 

@@ -8,6 +8,10 @@ use uuid::Uuid;
 
 use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
+pub(crate) mod ai;
+
+pub use ai::suggest_reading_lists;
+
 // ---------------------------------------------------------------------------
 // DTOs
 // ---------------------------------------------------------------------------

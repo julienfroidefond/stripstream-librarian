@@ -44,6 +44,34 @@ export type SeriesMembershipDto = {
   list_id: string;
 };
 
+export type AiSuggestedSeries = {
+  id: string;
+  name: string;
+  cover_url: string | null;
+  first_book_id: string | null;
+  first_book_updated_at: string | null;
+  library_name: string;
+};
+
+export type AiListAdditionSuggestion = {
+  list_id: string;
+  list_name: string;
+  reason: string;
+  series: AiSuggestedSeries[];
+};
+
+export type AiListCreationSuggestion = {
+  name: string;
+  description: string;
+  reason: string;
+  series: AiSuggestedSeries[];
+};
+
+export type AiReadingListSuggestions = {
+  additions: AiListAdditionSuggestion[];
+  new_lists: AiListCreationSuggestion[];
+};
+
 export async function fetchReadingLists(): Promise<ReadingListDto[]> {
   return apiFetch<ReadingListDto[]>("/reading-lists", {
     next: { revalidate: 30 },
@@ -112,5 +140,12 @@ export async function reorderReadingListSeries(
   await apiFetch(`/reading-lists/${listId}/series/reorder`, {
     method: "PUT",
     body: JSON.stringify({ series_ids: seriesIds }),
+  });
+}
+
+export async function suggestReadingLists(limit?: number): Promise<AiReadingListSuggestions> {
+  return apiFetch<AiReadingListSuggestions>("/reading-lists/ai-suggest", {
+    method: "POST",
+    body: JSON.stringify(limit == null ? {} : { limit }),
   });
 }

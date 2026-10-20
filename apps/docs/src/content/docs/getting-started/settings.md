@@ -19,7 +19,7 @@ sont aussi lisibles et modifiables via l'API (`GET` / `POST /settings/{clé}`, r
 | **Images & cache** | Rendu des pages, cache disque/mémoire, réglages des miniatures |
 | **Outils de téléchargement** | Prowlarr, qBittorrent, AllDebrid, moteur DDL, fournisseurs directs, Telegram Monitor |
 | **Métadonnées** | Fournisseurs de métadonnées (clés API) et correspondance de statuts |
-| **IAG** | Endpoint, modèle et prompt de l'IA de suggestion de genres |
+| **IAG** | Endpoint, modèle et prompts de l'IA (genres et listes de lecture) |
 | **Statut de lecture** | Synchronisation AniList et import Komga |
 | **Notifications** | Bot Telegram et événements notifiés |
 | **Jetons** | Utilisateurs lecteurs et tokens d'API |
@@ -89,8 +89,11 @@ Voir aussi la [vue d'ensemble des téléchargements](/downloads/overview/).
 
 ## IAG
 
-Configuration de l'IA de suggestion de genres : endpoint OpenAI-compatible, clé API, modèle,
-nombre maximum de tags et prompt. Voir [Genres](/series/genres/).
+Configuration de l'IA de suggestion de genres et de listes de lecture : endpoint OpenAI-compatible,
+clé API, modèle, nombre maximum de tags et prompts. Deux interrupteurs indépendants activent la
+proposition de genres et la proposition de listes de lecture ; les deux fonctionnalités partagent
+l'endpoint, la clé et le modèle. Voir [Genres](/series/genres/) et
+[Listes de lecture](/series/reading-lists/).
 
 ## Statut de lecture
 

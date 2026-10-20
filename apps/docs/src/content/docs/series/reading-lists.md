@@ -34,6 +34,19 @@ Sur la page d'une série, la section **Listes de lecture** indique les listes do
 
 ---
 
+## Propositions par IAG
+
+Depuis la page **Listes**, le bouton **Proposer avec l'IAG** analyse les séries qui ne figurent encore dans aucune liste, ainsi que vos listes existantes. L'IA peut alors proposer :
+
+- des **ajouts** de séries à une liste existante, avec une justification ;
+- de **nouvelles listes** regroupant au moins deux séries qui partagent une association pertinente (univers, auteur, genre, thème ou ordre de lecture).
+
+Les nouvelles listes sont proposées avec un **nom** et une **description** obligatoires, modifiables directement dans la fenêtre de révision ; il faut conserver au moins deux séries sélectionnées pour pouvoir les créer. Chaque série peut être décochée individuellement ; aucune modification n'est enregistrée avant la validation explicite de vos choix.
+
+La fonctionnalité nécessite une configuration IAG valide dans **Paramètres → IAG** et son activation propre, indépendante de la proposition de genres. Le même endpoint, la même clé API et le même modèle sont réutilisés. Voir [Paramètres](/getting-started/settings/).
+
+---
+
 ## Réordonner les séries
 
 Dans la page détail d'une liste, chaque série dispose de boutons **↑ / ↓** (visibles au survol) pour la déplacer dans la liste. L'ordre est sauvegardé immédiatement.
@@ -83,6 +96,7 @@ Voir [Séries liées & Recommandations](/series/related/) pour le détail.
 | `POST` | `/reading-lists/{id}/series` | Ajouter une série |
 | `DELETE` | `/reading-lists/{id}/series/{series_id}` | Retirer une série |
 | `PUT` | `/reading-lists/{id}/series/reorder` | Réordonner (liste complète d'IDs) |
+| `POST` | `/reading-lists/ai-suggest` | Proposer des ajouts et de nouvelles listes (aucune écriture) |
 
 **Score dans les recommandations** : les séries dans une même liste obtiennent un bonus ×5, supérieur au bonus auteur (×3) ou genre (×2).
 :::
