@@ -8,7 +8,7 @@
 #   - api      → /usr/local/bin/api + sqlx-cli
 #   - indexer  → /usr/local/bin/indexer
 
-FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm@sha256:2ee6e8edf0b91b5a7295071299596601710bccb243bd9735e0b9abf6e114582b AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm@sha256:93aa3e146e39f2841bb9e271ab7a3b771e518721d930771c4384e1820d4fc9f8 AS chef
 WORKDIR /app
 
 # ─── Planner: compute dependency recipe ──────────────────────────────────────
