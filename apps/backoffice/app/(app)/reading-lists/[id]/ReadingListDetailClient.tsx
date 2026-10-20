@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useTranslation } from "@/lib/i18n/context";
 import type { ReadingListDetailDto, ReadingListSeriesDto, SeriesDto } from "@/lib/api";
 import { getBookCoverUrl } from "@/lib/api";
@@ -14,6 +15,7 @@ type Props = {
 
 export function ReadingListDetailClient({ list: initialList }: Props) {
   const { t } = useTranslation();
+  const router = useRouter();
   const [list, setList] = useState<ReadingListDetailDto>(initialList);
   const [items, setItems] = useState<ReadingListSeriesDto[]>(initialList.items);
   const [saving, setSaving] = useState(false);
@@ -43,6 +45,7 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
       const updated = await res.json();
       setList((prev) => ({ ...prev, ...updated }));
       setEditMode(false);
+      router.refresh();
     } finally {
       setSaving(false);
     }
@@ -65,11 +68,12 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
 
   async function handleAdd(series: SeriesDto) {
     try {
-      await fetch(`/api/reading-lists/${list.id}/series`, {
+      const res = await fetch(`/api/reading-lists/${list.id}/series`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ series_id: series.series_id }),
       });
+      if (!res.ok) return;
       const newItem: ReadingListSeriesDto = {
         id: series.series_id,
         name: series.name,
@@ -85,6 +89,7 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
       };
       setItems((prev) => [...prev, newItem]);
       alreadyInList.add(series.series_id);
+      router.refresh();
     } catch {
       // silently fail
     }
@@ -92,8 +97,10 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
 
   async function handleRemove(seriesId: string) {
     try {
-      await fetch(`/api/reading-lists/${list.id}/series/${seriesId}`, { method: "DELETE" });
+      const res = await fetch(`/api/reading-lists/${list.id}/series/${seriesId}`, { method: "DELETE" });
+      if (!res.ok) return;
       setItems((prev) => prev.filter((i) => i.id !== seriesId));
+      router.refresh();
     } catch {
       // silently fail
     }
@@ -106,11 +113,16 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
     [newItems[index], newItems[swapIndex]] = [newItems[swapIndex], newItems[index]];
     setItems(newItems);
     try {
-      await fetch(`/api/reading-lists/${list.id}/series/reorder`, {
+      const res = await fetch(`/api/reading-lists/${list.id}/series/reorder`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ series_ids: newItems.map((i) => i.id) }),
       });
+      if (!res.ok) {
+        setItems(items);
+        return;
+      }
+      router.refresh();
     } catch {
       setItems(items);
     }

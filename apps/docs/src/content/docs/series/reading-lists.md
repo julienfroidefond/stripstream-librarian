@@ -45,6 +45,8 @@ Les nouvelles listes sont proposées avec un **nom** et une **description** obli
 
 La fonctionnalité nécessite une configuration IAG valide dans **Paramètres → IAG** et son activation propre, indépendante de la proposition de genres. Le même endpoint, la même clé API et le même modèle sont réutilisés. Voir [Paramètres](/getting-started/settings/).
 
+Après validation, le cache des listes de lecture est invalidé : les nouvelles listes et les séries ajoutées apparaissent immédiatement sur les pages **Listes** et **Séries**, y compris en vue groupée par liste.
+
 ---
 
 ## Réordonner les séries

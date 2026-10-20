@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useTranslation } from "@/lib/i18n/context";
 import type { ReadingListDto } from "@/lib/api";
 import { Modal } from "@/app/components/ui/Modal";
@@ -16,6 +17,7 @@ type Props = {
 
 export function ReadingListsClient({ initialLists, hasActiveUser }: Props) {
   const { t } = useTranslation();
+  const router = useRouter();
   const [lists, setLists] = useState<ReadingListDto[]>(initialLists);
   const [showCreate, setShowCreate] = useState(false);
   const [showAi, setShowAi] = useState(false);
@@ -39,6 +41,7 @@ export function ReadingListsClient({ initialLists, hasActiveUser }: Props) {
       setShowCreate(false);
       setCreateName("");
       setCreateDescription("");
+      router.refresh();
     } catch {
       // silently fail
     } finally {
@@ -52,8 +55,10 @@ export function ReadingListsClient({ initialLists, hasActiveUser }: Props) {
     if (!confirm(t("readingLists.deleteConfirm"))) return;
     setDeletingId(id);
     try {
-      await fetch(`/api/reading-lists/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/reading-lists/${id}`, { method: "DELETE" });
+      if (!res.ok) return;
       setLists((prev) => prev.filter((l) => l.id !== id));
+      router.refresh();
     } finally {
       setDeletingId(null);
     }
@@ -65,6 +70,7 @@ export function ReadingListsClient({ initialLists, hasActiveUser }: Props) {
       if (!res.ok) return;
       const data: ReadingListDto[] = await res.json();
       setLists([...data].sort((a, b) => a.name.localeCompare(b.name)));
+      router.refresh();
     } catch {
       // keep the current list on a transient error
     }

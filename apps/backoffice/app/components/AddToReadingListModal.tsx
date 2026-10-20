@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Modal } from "./ui/Modal";
 import { useTranslation } from "@/lib/i18n/context";
 import type { ReadingListDto } from "@/lib/api";
@@ -14,6 +15,7 @@ interface Props {
 
 export function AddToReadingListModal({ seriesId, children }: Props) {
   const { t } = useTranslation();
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [lists, setLists] = useState<ReadingListDto[]>([]);
   const [loading, setLoading] = useState(false);
@@ -39,6 +41,7 @@ export function AddToReadingListModal({ seriesId, children }: Props) {
       });
       if (res.ok || res.status === 400) {
         setAdded((prev) => new Set([...prev, listId]));
+        if (res.ok) router.refresh();
       }
     } finally {
       setAdding(null);
