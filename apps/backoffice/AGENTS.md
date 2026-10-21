@@ -126,6 +126,11 @@ npm run test:e2e:ui      # mode UI Playwright
 - **API_BASE_URL** : en prod, configuré via env. En dev local, l'API doit tourner sur `http://localhost:7080`.
 - **React 19 + Next.js 16** : utiliser les nouvelles APIs (actions serveur, `use()` hook) si disponibles.
 - **Pas de gestion d'état global** : fetch direct depuis les Server Components ou `useState`/`useEffect` dans les Client Components.
+- **Cache & images** : `staleTimes.dynamic = 30` ; les fetch API utilisent
+  `{ next: { revalidate: N } }` (15 s pour les listes, 30-60 s pour les données stables). Les
+  images utilisent `unoptimized: true` — servir des WebP pré-optimisés depuis `public/`.
+- **Next.js 16 en production (standalone)** : `router.replace()` ne fonctionne pas. Utiliser
+  `window.history.replaceState()` + `router.refresh()` (voir `LiveSearchForm.tsx`).
 
 <!-- BEGIN:nextjs-agent-rules -->
 

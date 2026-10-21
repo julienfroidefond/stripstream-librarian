@@ -53,6 +53,10 @@ jobs:
     timeout-minutes: 90
     permissions:
       id-token: write
+      # Swatinem/rust-cache needs `actions: write` to SAVE its cache; without it
+      # the cache is restored read-only ("cache save skipped") and every run
+      # recompiles the whole workspace before the agent can validate anything.
+      actions: write
     services:
       postgres:
         image: postgres:18-alpine
@@ -85,6 +89,10 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
+          # Both jobs run on `main`; dropping the job-id suffix lets the
+          # `comment` job restore the cache saved by the `issue` job (and vice
+          # versa) instead of recompiling from scratch.
+          add-job-id-key: false
 
       # Same runner as ci.yml, so the agent validates with the exact command CI uses.
       - name: Install nextest
@@ -129,12 +137,19 @@ jobs:
               rows with status = 'unread'), and the error path. Name them in the PR body.
 
             ## Validation (must pass before opening the PR)
-            - `cargo fmt --all -- --check`
-            - `cargo clippy --workspace --all-targets -- -D warnings`
-            - `cargo nextest run --workspace` (PostgreSQL and libpdfium are installed; if
+            - This filters which suites you RUN, never what you write: tests stay mandatory
+              for every code change (AGENTS.md §1), including new Rust tests for Rust
+              changes. Mirror `ci.yml` and `ci-web.yml`, which are filtered by paths: only
+              run the suite of the surfaces you actually changed.
+            - If you touched Rust (`apps/api`, `apps/indexer`, `crates`, `Cargo.toml`,
+              `Cargo.lock`, `infra/migrations`): `cargo fmt --all -- --check`,
+              `cargo clippy --workspace --all-targets -- -D warnings`,
+              `cargo nextest run --workspace` (PostgreSQL and libpdfium are installed; if
               database tests cannot connect, report it instead of rewriting the tests).
-            - If you touched a web app: `npm ci && npx next typegen && npx tsc --noEmit
-              && npm run lint && npm run test:unit` in that app directory.
+            - If you touched a web app (`apps/backoffice`, `apps/docs`): `npm ci &&
+              npx next typegen && npx tsc --noEmit && npm run lint && npm run test:unit`
+              in that app directory.
+            - Docs-only change: no build required.
             - If a test fails for reasons unrelated to your change, name it and show that
               it also fails on the base commit.
 
@@ -176,6 +191,8 @@ jobs:
     timeout-minutes: 60
     permissions:
       id-token: write
+      # Same as the `issue` job: required for the cargo cache to be saved.
+      actions: write
     services:
       postgres:
         image: postgres:18-alpine
@@ -208,6 +225,15 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
+          # Both jobs run on `main`; dropping the job-id suffix lets the
+          # `comment` job restore the cache saved by the `issue` job (and vice
+          # versa) instead of recompiling from scratch.
+          add-job-id-key: false
+
+      # Same runner and validation commands as the `issue` job: `/oc` follows
+      # the same prompt guidance, so nextest must be available here too.
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
 
       - name: Install libpdfium
         run: |
