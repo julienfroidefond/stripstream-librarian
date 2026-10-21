@@ -95,6 +95,7 @@ const en: Record<TranslationKey, string> = {
   "common.delete": "Delete",
   "common.edit": "Edit",
   "common.search": "Search",
+  "common.filters": "Filters",
   "common.clear": "Clear",
   "common.view": "View",
   "common.all": "All",

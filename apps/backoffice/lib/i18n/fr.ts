@@ -93,6 +93,7 @@ const fr = {
   "common.delete": "Supprimer",
   "common.edit": "Modifier",
   "common.search": "Rechercher",
+  "common.filters": "Filtres",
   "common.clear": "Effacer",
   "common.view": "Voir",
   "common.all": "Tous",

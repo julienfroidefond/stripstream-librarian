@@ -191,37 +191,34 @@ export default async function SeriesPage({
       </nav>
 
       {!isGroupedByList && !isRecommendationsView && (
-      <Card className="mb-6">
-        <CardContent className="pt-6">
-          <LiveSearchForm
-            basePath="/series"
-            initialValues={{
-              q: searchQuery,
-              library: libraryId || "",
-              status: readingStatus || "",
-              series_status: seriesStatus || "",
-              has_missing: hasMissing ? "true" : "",
-              books_filter: booksFilter || "",
-              volume_type: volumeTypeFilter || "",
-              metadata_provider: metadataProvider || "",
-              sort: sort || "",
-              ...(hasActiveUser ? { rated_only: ratedOnly || "" } : {}),
-            }}
-            fields={[
-              { name: "q", type: "text", label: t("common.search"), placeholder: t("series.searchPlaceholder") },
-              { name: "library", type: "select", label: t("books.library"), options: libraryOptions },
-              ...(hasActiveUser ? [{ name: "status", type: "select" as const, label: t("series.reading"), options: statusOptions }] : []),
-              { name: "series_status", type: "select", label: t("editSeries.status"), options: seriesStatusOptions },
-              { name: "has_missing", type: "select", label: t("series.missing"), options: missingOptions },
-              { name: "books_filter", type: "select", label: t("series.wishlist"), options: wishlistOptions },
-              { name: "volume_type", type: "select", label: t("series.volumeType"), options: volumeTypeOptions },
-              { name: "metadata_provider", type: "select", label: t("series.metadata"), options: metadataOptions },
-              { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },
-              ...(hasActiveUser ? [{ name: "rated_only", type: "select" as const, label: t("series.myRatings"), options: [{ value: "", label: t("common.all") }, { value: "true", label: t("series.ratedOnly") }, { value: "unrated", label: t("series.unratedOnly") }] }] : []),
-            ]}
-          />
-        </CardContent>
-      </Card>
+        <LiveSearchForm
+          className="mb-6"
+          basePath="/series"
+          initialValues={{
+            q: searchQuery,
+            library: libraryId || "",
+            status: readingStatus || "",
+            series_status: seriesStatus || "",
+            has_missing: hasMissing ? "true" : "",
+            books_filter: booksFilter || "",
+            volume_type: volumeTypeFilter || "",
+            metadata_provider: metadataProvider || "",
+            sort: sort || "",
+            ...(hasActiveUser ? { rated_only: ratedOnly || "" } : {}),
+          }}
+          fields={[
+            { name: "q", type: "text", label: t("common.search"), placeholder: t("series.searchPlaceholder") },
+            { name: "library", type: "select", label: t("books.library"), options: libraryOptions },
+            ...(hasActiveUser ? [{ name: "status", type: "select" as const, label: t("series.reading"), options: statusOptions }] : []),
+            { name: "series_status", type: "select", label: t("editSeries.status"), options: seriesStatusOptions },
+            { name: "has_missing", type: "select", label: t("series.missing"), options: missingOptions },
+            { name: "books_filter", type: "select", label: t("series.wishlist"), options: wishlistOptions },
+            { name: "volume_type", type: "select", label: t("series.volumeType"), options: volumeTypeOptions },
+            { name: "metadata_provider", type: "select", label: t("series.metadata"), options: metadataOptions },
+            { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },
+            ...(hasActiveUser ? [{ name: "rated_only", type: "select" as const, label: t("series.myRatings"), options: [{ value: "", label: t("common.all") }, { value: "true", label: t("series.ratedOnly") }, { value: "unrated", label: t("series.unratedOnly") }] }] : []),
+          ]}
+        />
       )}
 
       {isGroupedByList ? (

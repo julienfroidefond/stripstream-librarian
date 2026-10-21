@@ -3,7 +3,7 @@ import { BooksGrid, BooksList, EmptyState } from "@/app/components/BookCard";
 import { ViewModeToggle } from "@/app/components/ViewModeToggle";
 import { LiveSearchForm } from "@/app/components/LiveSearchForm";
 import { RefreshButton } from "@/app/components/RefreshButton";
-import { Card, CardContent, OffsetPagination } from "@/app/components/ui";
+import { OffsetPagination } from "@/app/components/ui";
 import { JacketGrid } from "@/app/components/motion/JacketGrid";
 import { cookies } from "next/headers";
 import Link from "next/link";
@@ -110,29 +110,26 @@ export default async function BooksPage({
         <RefreshButton target="books" />
       </div>
 
-      <Card className="mb-6">
-        <CardContent className="pt-6">
-          <LiveSearchForm
-            basePath="/books"
-            initialValues={{
-              q: searchQuery,
-              library: libraryId || "",
-              status: readingStatus || "",
-              format: format || "",
-              metadata: metadataProvider || "",
-              sort: sort || "",
-            }}
-            fields={[
-              { name: "q", type: "text", label: t("common.search"), placeholder: t("books.searchPlaceholder") },
-              { name: "library", type: "select", label: t("books.library"), options: libraryOptions },
-              ...(hasActiveUser ? [{ name: "status", type: "select" as const, label: t("books.status"), options: statusOptions }] : []),
-              { name: "format", type: "select", label: t("books.format"), options: formatOptions },
-              { name: "metadata", type: "select", label: t("series.metadata"), options: metadataOptions },
-              { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },
-            ]}
-          />
-        </CardContent>
-      </Card>
+      <LiveSearchForm
+        className="mb-6"
+        basePath="/books"
+        initialValues={{
+          q: searchQuery,
+          library: libraryId || "",
+          status: readingStatus || "",
+          format: format || "",
+          metadata: metadataProvider || "",
+          sort: sort || "",
+        }}
+        fields={[
+          { name: "q", type: "text", label: t("common.search"), placeholder: t("books.searchPlaceholder") },
+          { name: "library", type: "select", label: t("books.library"), options: libraryOptions },
+          ...(hasActiveUser ? [{ name: "status", type: "select" as const, label: t("books.status"), options: statusOptions }] : []),
+          { name: "format", type: "select", label: t("books.format"), options: formatOptions },
+          { name: "metadata", type: "select", label: t("series.metadata"), options: metadataOptions },
+          { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },
+        ]}
+      />
 
       {/* Résultats */}
       <div className="mb-4 flex items-center justify-between gap-3">
