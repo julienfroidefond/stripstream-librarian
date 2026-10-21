@@ -106,6 +106,13 @@ pub struct ReorderSeriesRequest {
     pub series_ids: Vec<Uuid>,
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct MoveSeriesRequest {
+    /// Destination reading list.
+    #[schema(value_type = String)]
+    pub to_list_id: Uuid,
+}
+
 // ---------------------------------------------------------------------------
 // Position invariants
 // ---------------------------------------------------------------------------
@@ -478,6 +485,96 @@ pub async fn reorder_series(
     .bind(id)
     .execute(&mut *tx)
     .await?;
+
+    tx.commit().await?;
+
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+/// Move a series from one reading list to another, atomically.
+///
+/// Deletes the source item, appends it to the destination and compacts both
+/// lists in a single transaction, so a series is never left in two lists or in
+/// none.
+#[utoipa::path(
+    post,
+    path = "/reading-lists/{id}/series/{series_id}/move",
+    tag = "reading-lists",
+    params(
+        ("id" = String, Path, description = "Source reading list UUID"),
+        ("series_id" = String, Path, description = "Series UUID"),
+    ),
+    request_body = MoveSeriesRequest,
+    responses(
+        (status = 204, description = "Moved"),
+        (status = 400, description = "Invalid move"),
+        (status = 404, description = "List or series not found"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn move_series(
+    State(state): State<AppState>,
+    Path((id, series_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<MoveSeriesRequest>,
+) -> Result<axum::http::StatusCode, ApiError> {
+    if id == body.to_list_id {
+        return Err(ApiError::bad_request(
+            "cannot move a series to the list it already belongs to",
+        ));
+    }
+
+    let mut tx = state.pool.begin().await?;
+
+    // Lock both lists in a deterministic order to avoid deadlocks between two
+    // concurrent moves in opposite directions.
+    let mut list_ids = vec![id, body.to_list_id];
+    list_ids.sort_unstable();
+    let found: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM reading_lists WHERE id = ANY($1)")
+        .bind(&list_ids)
+        .fetch_one(&mut *tx)
+        .await?;
+    if found != 2 {
+        return Err(ApiError::not_found("reading list not found"));
+    }
+    sqlx::query("SELECT id FROM reading_lists WHERE id = ANY($1) ORDER BY id FOR UPDATE")
+        .bind(&list_ids)
+        .execute(&mut *tx)
+        .await?;
+
+    let current_list: Option<Uuid> = sqlx::query_scalar(
+        "SELECT list_id FROM reading_list_items WHERE list_id = $1 AND series_id = $2 FOR UPDATE",
+    )
+    .bind(id)
+    .bind(series_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if current_list.is_none() {
+        return Err(ApiError::not_found("series not found in reading list"));
+    }
+
+    let already_in_target: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM reading_list_items WHERE list_id = $1 AND series_id = $2)",
+    )
+    .bind(body.to_list_id)
+    .bind(series_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if already_in_target {
+        return Err(ApiError::bad_request(
+            "series is already in the destination reading list",
+        ));
+    }
+
+    sqlx::query("DELETE FROM reading_list_items WHERE list_id = $1 AND series_id = $2")
+        .bind(id)
+        .bind(series_id)
+        .execute(&mut *tx)
+        .await?;
+
+    compact_positions(&mut tx, id).await?;
+    compact_positions(&mut tx, body.to_list_id).await?;
+    append_series(&mut tx, body.to_list_id, series_id).await?;
 
     tx.commit().await?;
 

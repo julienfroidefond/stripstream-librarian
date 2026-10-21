@@ -19,7 +19,7 @@ import {
   DELETE as deleteList,
 } from "@/app/api/reading-lists/[id]/route";
 import { POST as addSeries } from "@/app/api/reading-lists/[id]/series/route";
-import { DELETE as removeSeries } from "@/app/api/reading-lists/[id]/series/[seriesId]/route";
+import { DELETE as removeSeries, POST as moveSeries } from "@/app/api/reading-lists/[id]/series/[seriesId]/route";
 import { PUT as reorder } from "@/app/api/reading-lists/[id]/series/reorder/route";
 import { GET as memberships } from "@/app/api/reading-lists/memberships/route";
 import { POST as suggestLists } from "@/app/api/reading-lists/ai-suggest/route";
@@ -94,6 +94,58 @@ describe("/api/reading-lists", () => {
     expect(mockApi).toHaveBeenCalledWith("/reading-lists/1/series/s1", { method: "DELETE" });
     expect(res.status).toBe(204);
     expect(revalidateTag).toHaveBeenCalledWith("reading-lists", { expire: 0 });
+  });
+
+  it("POST move returns 204 and invalidates the list cache", async () => {
+    mockApi.mockResolvedValue(undefined);
+    const res = await moveSeries(
+      jsonRequest("/api/reading-lists/1/series/s1/move", {
+        method: "POST",
+        body: { to_list_id: "2" },
+      }),
+      routeCtx({ id: "1", seriesId: "s1" })
+    );
+    expect(mockApi).toHaveBeenCalledWith("/reading-lists/1/series/s1/move", {
+      method: "POST",
+      body: JSON.stringify({ to_list_id: "2" }),
+    });
+    expect(res.status).toBe(204);
+    expect(revalidateTag).toHaveBeenCalledWith("reading-lists", { expire: 0 });
+  });
+
+  it("POST move returns 500 on error without invalidating the cache", async () => {
+    mockApi.mockRejectedValue(new Error("bad"));
+    const res = await moveSeries(
+      jsonRequest("/api/reading-lists/1/series/s1/move", {
+        method: "POST",
+        body: { to_list_id: "2" },
+      }),
+      routeCtx({ id: "1", seriesId: "s1" })
+    );
+    expect(res.status).toBe(500);
+    expect(revalidateTag).not.toHaveBeenCalled();
+  });
+
+  it("POST ai-suggest returns moves alongside the other proposals", async () => {
+    const payload = {
+      additions: [],
+      moves: [
+        {
+          from_list_id: "1",
+          from_list_name: "Favourites",
+          to_list_id: "2",
+          to_list_name: "Space operas",
+          reason: "wrong list",
+          series: [],
+        },
+      ],
+      new_lists: [],
+    };
+    mockApi.mockResolvedValue(payload);
+    const res = await suggestLists(
+      jsonRequest("/api/reading-lists/ai-suggest", { method: "POST", body: {} })
+    );
+    expect(await res.json()).toEqual(payload);
   });
 
   it("PUT reorder returns 204 and invalidates the list cache", async () => {

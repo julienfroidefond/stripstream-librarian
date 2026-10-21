@@ -19,9 +19,10 @@ use uuid::Uuid;
 use crate::error::ApiError;
 use crate::state::AppState;
 
-const DEFAULT_LISTS_PROMPT: &str = "You are a librarian organizing a comics and manga collection. Suggest reading lists that group series sharing a strong, meaningful association (same universe, same author, same genre and audience, complementary themes, or a coherent reading order).\n\nAnalyse the existing lists: {{lists}}\n\nAnalyse these series, which are not part of any list yet: {{series}}\n\nReturn at most {{max_lists}} new lists. Only group series when the association is obvious and useful; never group unrelated series just to fill a list. A new list must contain at least 2 series.\n\nAlso propose additions of available series to existing lists when they clearly belong there. Never propose a series that is already in a list.\n\nEvery new list needs a short, specific name and a real description that explains what the series have in common (1 to 2 sentences). Write both in the same language as the existing list names when possible, otherwise in French. Add a short reason for every proposal.\n\nReturn only JSON in the form {\"additions\":[{\"list_id\":\"uuid\",\"reason\":\"...\",\"series_ids\":[\"uuid\"]}],\"new_lists\":[{\"name\":\"...\",\"description\":\"...\",\"reason\":\"...\",\"series_ids\":[\"uuid\",\"uuid\"]}]}. Use only the series ids supplied above.";
+const DEFAULT_LISTS_PROMPT: &str = "You are a librarian organizing a comics and manga collection. Suggest reading lists that group series sharing a strong, meaningful association (same universe, same author, same genre and audience, complementary themes, or a coherent reading order).\n\nAnalyse the existing lists: {{lists}}\n\nAnalyse these series: {{series}}\n\nSome series already belong to a list: they carry a non-null current_list_id (and current_list). Only propose an already-listed series as a move to another existing list, and only when its current list is clearly wrong for it. Never propose an already-listed series as an addition or in a new list.\n\nReturn at most {{max_lists}} new lists. Only group series when the association is obvious and useful; never group unrelated series just to fill a list. A new list must contain at least 2 series.\n\nAlso propose additions of series that are not in any list (current_list_id is null) to existing lists when they clearly belong there.\n\nEvery new list needs a short, specific name and a real description that explains what the series have in common (1 to 2 sentences). Write both in the same language as the existing list names when possible, otherwise in French. Add a short reason for every proposal.\n\nReturn only JSON in the form {\"additions\":[{\"list_id\":\"uuid\",\"reason\":\"...\",\"series_ids\":[\"uuid\"]}],\"moves\":[{\"from_list_id\":\"uuid\",\"to_list_id\":\"uuid\",\"reason\":\"...\",\"series_ids\":[\"uuid\"]}],\"new_lists\":[{\"name\":\"...\",\"description\":\"...\",\"reason\":\"...\",\"series_ids\":[\"uuid\",\"uuid\"]}]}. Use only the series ids supplied above.";
 
 const MAX_ADDITIONS: usize = 15;
+const MAX_MOVES: usize = 10;
 const MAX_CREATIONS: usize = 8;
 const MAX_SERIES_PER_SUGGESTION: usize = 30;
 const MAX_LIST_SERIES_IN_PROMPT: usize = 40;
@@ -30,6 +31,8 @@ const MAX_LIST_DESCRIPTION_IN_PROMPT: usize = 300;
 const PROMPT_MAX_NEW_LISTS: usize = 5;
 const DEFAULT_CANDIDATE_LIMIT: i64 = 120;
 const MAX_CANDIDATE_LIMIT: i64 = 250;
+/// Cap on series already in a list that are offered to the model for moves.
+const MAX_MOVE_CANDIDATES: i64 = 120;
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SuggestReadingListsRequest {
@@ -48,6 +51,10 @@ pub struct AiSuggestedSeries {
     #[schema(value_type = Option<String>)]
     pub first_book_updated_at: Option<chrono::DateTime<chrono::Utc>>,
     pub library_name: String,
+    /// Reading list the series currently belongs to (`None` when unlisted).
+    #[schema(value_type = Option<String>)]
+    pub current_list_id: Option<Uuid>,
+    pub current_list_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -55,6 +62,18 @@ pub struct AiListAdditionSuggestion {
     #[schema(value_type = String)]
     pub list_id: Uuid,
     pub list_name: String,
+    pub reason: String,
+    pub series: Vec<AiSuggestedSeries>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AiListMoveSuggestion {
+    #[schema(value_type = String)]
+    pub from_list_id: Uuid,
+    pub from_list_name: String,
+    #[schema(value_type = String)]
+    pub to_list_id: Uuid,
+    pub to_list_name: String,
     pub reason: String,
     pub series: Vec<AiSuggestedSeries>,
 }
@@ -70,6 +89,7 @@ pub struct AiListCreationSuggestion {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AiReadingListSuggestions {
     pub additions: Vec<AiListAdditionSuggestion>,
+    pub moves: Vec<AiListMoveSuggestion>,
     pub new_lists: Vec<AiListCreationSuggestion>,
 }
 
@@ -91,8 +111,19 @@ struct ExistingList {
     series_names: Vec<String>,
 }
 
+/// Series offered to the model, split between the two kinds of proposals.
+struct CandidateWindow {
+    /// Series that belong to no list: candidates for additions and new lists.
+    unlisted: Vec<CandidateSeries>,
+    /// Series that already belong to a list: candidates for moves only.
+    listed: Vec<CandidateSeries>,
+}
+
 struct SuggestionContext {
     candidates: HashMap<Uuid, AiSuggestedSeries>,
+    /// Series already in a list → list id, as stored in the database. Used to
+    /// validate moves instead of trusting the model payload.
+    memberships: HashMap<Uuid, Uuid>,
     list_names: HashMap<Uuid, String>,
     /// Every existing list name, not only the capped ones sent to the model, so
     /// the model cannot create a duplicate of an older list.
@@ -129,25 +160,42 @@ pub async fn suggest_reading_lists(
         .unwrap_or(DEFAULT_CANDIDATE_LIMIT)
         .clamp(20, MAX_CANDIDATE_LIMIT);
 
-    let candidates = fetch_candidates(&state, limit).await?;
-    if candidates.is_empty() {
+    let window = fetch_candidates(&state, limit).await?;
+    let list_names = fetch_all_list_names(&state).await?;
+    // Moves need a destination list, so a single-list library has nothing to
+    // offer once every series is already listed.
+    let can_move = !window.listed.is_empty() && list_names.len() >= 2;
+    if window.unlisted.is_empty() && !can_move {
         return Ok(Json(AiReadingListSuggestions {
             additions: Vec::new(),
+            moves: Vec::new(),
             new_lists: Vec::new(),
         }));
     }
 
     let existing_lists = fetch_existing_lists(&state).await?;
-    let existing_names = fetch_all_list_names(&state).await?;
+    let existing_names = list_names
+        .values()
+        .map(|name| name.trim().to_lowercase())
+        .collect();
+    let candidates: Vec<&CandidateSeries> =
+        window.unlisted.iter().chain(window.listed.iter()).collect();
     let context = SuggestionContext {
         candidates: candidates
             .iter()
             .map(|candidate| (candidate.series.id, candidate.series.clone()))
             .collect(),
-        list_names: existing_lists
+        memberships: window
+            .listed
             .iter()
-            .map(|list| (list.id, list.name.clone()))
+            .filter_map(|candidate| {
+                candidate
+                    .series
+                    .current_list_id
+                    .map(|list_id| (candidate.series.id, list_id))
+            })
             .collect(),
+        list_names,
         existing_names,
     };
 
@@ -186,6 +234,8 @@ pub async fn suggest_reading_lists(
                 "total_volumes": candidate.total_volumes,
                 "status": candidate.status,
                 "library": candidate.series.library_name,
+                "current_list_id": candidate.series.current_list_id,
+                "current_list": candidate.series.current_list_name,
             })
         })
         .collect();
@@ -218,7 +268,18 @@ pub async fn suggest_reading_lists(
     Ok(Json(parse_suggestions(&parsed, &context)))
 }
 
-async fn fetch_candidates(state: &AppState, limit: i64) -> Result<Vec<CandidateSeries>, ApiError> {
+async fn fetch_candidates(state: &AppState, limit: i64) -> Result<CandidateWindow, ApiError> {
+    Ok(CandidateWindow {
+        unlisted: fetch_unlisted_candidates(state, limit).await?,
+        listed: fetch_listed_candidates(state, MAX_MOVE_CANDIDATES).await?,
+    })
+}
+
+/// Series that belong to no list, ordered so the window is stable across calls.
+async fn fetch_unlisted_candidates(
+    state: &AppState,
+    limit: i64,
+) -> Result<Vec<CandidateSeries>, ApiError> {
     let rows = sqlx::query(
         r#"
         SELECT
@@ -234,7 +295,9 @@ async fn fetch_candidates(state: &AppState, limit: i64) -> Result<Vec<CandidateS
             s.status,
             l.name AS library_name,
             fb.id AS first_book_id,
-            fb.updated_at AS first_book_updated_at
+            fb.updated_at AS first_book_updated_at,
+            NULL::uuid AS current_list_id,
+            NULL::text AS current_list_name
         FROM series s
         JOIN libraries l ON l.id = s.library_id
         LEFT JOIN LATERAL (
@@ -247,7 +310,7 @@ async fn fetch_candidates(state: &AppState, limit: i64) -> Result<Vec<CandidateS
         WHERE NOT EXISTS (
             SELECT 1 FROM reading_list_items rli WHERE rli.series_id = s.id
         )
-        ORDER BY COALESCE(array_to_string(s.genres, ', '), ''), s.name
+        ORDER BY COALESCE(array_to_string(s.genres, ', '), ''), s.name, s.id
         LIMIT $1
         "#,
     )
@@ -255,32 +318,89 @@ async fn fetch_candidates(state: &AppState, limit: i64) -> Result<Vec<CandidateS
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(rows
-        .into_iter()
-        .map(|row| CandidateSeries {
-            series: AiSuggestedSeries {
-                id: row.get("id"),
-                name: row.get("name"),
-                cover_url: row.get("cover_url"),
-                first_book_id: row.get("first_book_id"),
-                first_book_updated_at: row.get("first_book_updated_at"),
-                library_name: row.get("library_name"),
-            },
-            description: row.get("description"),
-            genres: row
-                .get::<Option<Vec<String>>, _>("genres")
-                .unwrap_or_default(),
-            authors: row
-                .get::<Option<Vec<String>>, _>("authors")
-                .unwrap_or_default(),
-            publishers: row
-                .get::<Option<Vec<String>>, _>("publishers")
-                .unwrap_or_default(),
-            start_year: row.get("start_year"),
-            total_volumes: row.get("total_volumes"),
-            status: row.get("status"),
-        })
-        .collect())
+    Ok(rows.iter().map(candidate_from_row).collect())
+}
+
+/// Series that already belong to a list, with the list they are in.
+///
+/// They are only offered for moves: the model must never add them to another
+/// list without removing them from the current one.
+async fn fetch_listed_candidates(
+    state: &AppState,
+    limit: i64,
+) -> Result<Vec<CandidateSeries>, ApiError> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            s.id,
+            s.name,
+            s.description,
+            s.cover_url,
+            s.genres,
+            s.authors,
+            s.publishers,
+            s.start_year,
+            s.total_volumes,
+            s.status,
+            l.name AS library_name,
+            fb.id AS first_book_id,
+            fb.updated_at AS first_book_updated_at,
+            membership.list_id AS current_list_id,
+            membership.list_name AS current_list_name
+        FROM series s
+        JOIN libraries l ON l.id = s.library_id
+        JOIN LATERAL (
+            SELECT rli.list_id, rl.name AS list_name
+            FROM reading_list_items rli
+            JOIN reading_lists rl ON rl.id = rli.list_id
+            WHERE rli.series_id = s.id
+            ORDER BY rl.updated_at DESC, rl.id
+            LIMIT 1
+        ) membership ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT b.id, b.updated_at
+            FROM books b
+            WHERE b.series_id = s.id
+            ORDER BY CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END, b.volume NULLS LAST
+            LIMIT 1
+        ) fb ON TRUE
+        ORDER BY membership.list_name, s.name, s.id
+        LIMIT $1
+        "#,
+    )
+    .bind(limit)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(rows.iter().map(candidate_from_row).collect())
+}
+
+fn candidate_from_row(row: &sqlx::postgres::PgRow) -> CandidateSeries {
+    CandidateSeries {
+        series: AiSuggestedSeries {
+            id: row.get("id"),
+            name: row.get("name"),
+            cover_url: row.get("cover_url"),
+            first_book_id: row.get("first_book_id"),
+            first_book_updated_at: row.get("first_book_updated_at"),
+            library_name: row.get("library_name"),
+            current_list_id: row.get("current_list_id"),
+            current_list_name: row.get("current_list_name"),
+        },
+        description: row.get("description"),
+        genres: row
+            .get::<Option<Vec<String>>, _>("genres")
+            .unwrap_or_default(),
+        authors: row
+            .get::<Option<Vec<String>>, _>("authors")
+            .unwrap_or_default(),
+        publishers: row
+            .get::<Option<Vec<String>>, _>("publishers")
+            .unwrap_or_default(),
+        start_year: row.get("start_year"),
+        total_volumes: row.get("total_volumes"),
+        status: row.get("status"),
+    }
 }
 
 async fn fetch_existing_lists(state: &AppState) -> Result<Vec<ExistingList>, ApiError> {
@@ -319,17 +439,15 @@ async fn fetch_existing_lists(state: &AppState) -> Result<Vec<ExistingList>, Api
         .collect())
 }
 
-/// All reading-list names, used to reject a proposal that would recreate an
-/// existing list even when that list is outside the prompt cap.
-async fn fetch_all_list_names(state: &AppState) -> Result<HashSet<String>, ApiError> {
-    let names: Vec<String> = sqlx::query_scalar("SELECT name FROM reading_lists")
+/// All reading-list names, keyed by id, used to validate and name moves and to
+/// reject a proposal that would recreate an existing list even when that list is
+/// outside the prompt cap.
+async fn fetch_all_list_names(state: &AppState) -> Result<HashMap<Uuid, String>, ApiError> {
+    let rows: Vec<(Uuid, String)> = sqlx::query_as("SELECT id, name FROM reading_lists")
         .fetch_all(&state.pool)
         .await?;
 
-    Ok(names
-        .into_iter()
-        .map(|name| name.trim().to_lowercase())
-        .collect())
+    Ok(rows.into_iter().collect())
 }
 
 /// Validate the model payload against the data we actually sent it.
@@ -376,6 +494,49 @@ fn parse_suggestions(payload: &Value, context: &SuggestionContext) -> AiReadingL
         });
     }
 
+    let mut moves = Vec::new();
+    let move_items = payload
+        .get("moves")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    for item in move_items.iter().take(MAX_MOVES) {
+        let (Some(from_list_id), Some(to_list_id)) = (
+            uuid_field(item, "from_list_id"),
+            uuid_field(item, "to_list_id"),
+        ) else {
+            continue;
+        };
+        if from_list_id == to_list_id {
+            continue;
+        }
+        let (Some(from_list_name), Some(to_list_name)) = (
+            context.list_names.get(&from_list_id),
+            context.list_names.get(&to_list_id),
+        ) else {
+            continue;
+        };
+        let reason = truncate_chars(&text_field(item, "reason"), 300);
+        if reason.is_empty() {
+            continue;
+        }
+
+        let series = take_movable_series(item, context, from_list_id, &used_series);
+        if series.is_empty() {
+            continue;
+        }
+        used_series.extend(series.iter().map(|s| s.id));
+
+        moves.push(AiListMoveSuggestion {
+            from_list_id,
+            from_list_name: from_list_name.clone(),
+            to_list_id,
+            to_list_name: to_list_name.clone(),
+            reason,
+            series,
+        });
+    }
+
     let mut new_lists = Vec::new();
     let creation_items = payload
         .get("new_lists")
@@ -411,16 +572,58 @@ fn parse_suggestions(payload: &Value, context: &SuggestionContext) -> AiReadingL
 
     AiReadingListSuggestions {
         additions,
+        moves,
         new_lists,
     }
 }
 
+/// Unlisted series from a proposal, ignoring anything already used elsewhere.
 fn take_available_series(
     item: &Value,
     context: &SuggestionContext,
     used: &HashSet<Uuid>,
 ) -> Vec<AiSuggestedSeries> {
+    take_series(item, used, |id| {
+        context
+            .candidates
+            .get(&id)
+            .filter(|series| series.current_list_id.is_none())
+    })
+}
+
+/// Series of a move: they must actually belong to the source list according to
+/// the database, never to whatever the model claimed.
+fn take_movable_series(
+    item: &Value,
+    context: &SuggestionContext,
+    from_list_id: Uuid,
+    used: &HashSet<Uuid>,
+) -> Vec<AiSuggestedSeries> {
+    take_series(item, used, |id| {
+        context
+            .memberships
+            .get(&id)
+            .filter(|list_id| **list_id == from_list_id)
+            .and_then(|_| context.candidates.get(&id))
+    })
+}
+
+fn take_series<'a>(
+    item: &Value,
+    used: &HashSet<Uuid>,
+    resolve: impl Fn(Uuid) -> Option<&'a AiSuggestedSeries>,
+) -> Vec<AiSuggestedSeries> {
     let mut seen = HashSet::new();
+    series_ids(item)
+        .filter(|id| !used.contains(id))
+        .filter_map(resolve)
+        .filter(|series| seen.insert(series.id))
+        .take(MAX_SERIES_PER_SUGGESTION)
+        .cloned()
+        .collect()
+}
+
+fn series_ids(item: &Value) -> impl Iterator<Item = Uuid> + '_ {
     item.get("series_ids")
         .and_then(Value::as_array)
         .map(Vec::as_slice)
@@ -428,12 +631,10 @@ fn take_available_series(
         .iter()
         .filter_map(Value::as_str)
         .filter_map(|id| id.parse::<Uuid>().ok())
-        .filter(|id| !used.contains(id))
-        .filter_map(|id| context.candidates.get(&id))
-        .filter(|series| seen.insert(series.id))
-        .take(MAX_SERIES_PER_SUGGESTION)
-        .cloned()
-        .collect()
+}
+
+fn uuid_field(value: &Value, key: &str) -> Option<Uuid> {
+    value.get(key).and_then(Value::as_str)?.parse().ok()
 }
 
 fn text_field(value: &Value, key: &str) -> String {

@@ -93,6 +93,8 @@ fn suggested(id: Uuid, name: &str) -> AiSuggestedSeries {
         first_book_id: None,
         first_book_updated_at: None,
         library_name: "main".to_string(),
+        current_list_id: None,
+        current_list_name: None,
     }
 }
 
@@ -102,6 +104,7 @@ fn context(series: &[(Uuid, &str)], lists: &[(Uuid, &str)]) -> SuggestionContext
             .iter()
             .map(|(id, name)| (*id, suggested(*id, name)))
             .collect::<HashMap<_, _>>(),
+        memberships: HashMap::new(),
         list_names: lists
             .iter()
             .map(|(id, name)| (*id, name.to_string()))
@@ -111,6 +114,24 @@ fn context(series: &[(Uuid, &str)], lists: &[(Uuid, &str)]) -> SuggestionContext
             .map(|(_, name)| name.trim().to_lowercase())
             .collect(),
     }
+}
+
+/// Context where `series_ids` belong to the list `list_id`, mirroring what
+/// `fetch_listed_candidates` returns.
+fn context_with_memberships(
+    series: &[(Uuid, &str)],
+    lists: &[(Uuid, &str)],
+    memberships: &[(Uuid, Uuid)],
+) -> SuggestionContext {
+    let mut context = context(series, lists);
+    for (series_id, list_id) in memberships {
+        context.memberships.insert(*series_id, *list_id);
+        if let Some(series) = context.candidates.get_mut(series_id) {
+            series.current_list_id = Some(*list_id);
+            series.current_list_name = context.list_names.get(list_id).cloned();
+        }
+    }
+    context
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +178,7 @@ async fn suggestions_not_configured_when_api_key_blank(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn suggestions_are_empty_when_every_series_is_already_listed(pool: PgPool) {
+async fn suggestions_are_empty_when_nothing_can_be_suggested(pool: PgPool) {
     let state = test_state(pool.clone());
     set_ai_setting(
         &pool,
@@ -172,6 +193,8 @@ async fn suggestions_are_empty_when_every_series_is_already_listed(pool: PgPool)
 
     let library = create_library(&pool, "main").await;
     let series = create_series(&pool, library, "Already listed").await;
+    // Every series is listed and there is only one list: no addition and no
+    // move is possible, so the model must not be called.
     create_list(&pool, "Favourites", &[series]).await;
 
     let Json(suggestions) = suggest_reading_lists(State(state), suggestions_body(None))
@@ -179,6 +202,7 @@ async fn suggestions_are_empty_when_every_series_is_already_listed(pool: PgPool)
         .unwrap();
 
     assert!(suggestions.additions.is_empty());
+    assert!(suggestions.moves.is_empty());
     assert!(suggestions.new_lists.is_empty());
 }
 
@@ -187,17 +211,26 @@ async fn suggestions_are_empty_when_every_series_is_already_listed(pool: PgPool)
 // ---------------------------------------------------------------------------
 
 #[sqlx::test(migrations = "../../infra/migrations")]
-async fn candidates_exclude_series_that_belong_to_a_list(pool: PgPool) {
+async fn candidates_exclude_series_that_belong_to_a_list_from_the_unlisted_window(pool: PgPool) {
     let state = test_state(pool.clone());
     let library = create_library(&pool, "main").await;
     let free = create_series(&pool, library, "Free").await;
     let listed = create_series(&pool, library, "Listed").await;
-    create_list(&pool, "Favourites", &[listed]).await;
+    let list_id = create_list(&pool, "Favourites", &[listed]).await;
 
-    let candidates = fetch_candidates(&state, 50).await.unwrap();
+    let window = fetch_candidates(&state, 50).await.unwrap();
 
-    let ids: Vec<Uuid> = candidates.iter().map(|c| c.series.id).collect();
-    assert_eq!(ids, vec![free]);
+    let unlisted: Vec<Uuid> = window.unlisted.iter().map(|c| c.series.id).collect();
+    assert_eq!(unlisted, vec![free]);
+
+    // Listed series stay available for moves, carrying their current list.
+    assert_eq!(window.listed.len(), 1);
+    assert_eq!(window.listed[0].series.id, listed);
+    assert_eq!(window.listed[0].series.current_list_id, Some(list_id));
+    assert_eq!(
+        window.listed[0].series.current_list_name.as_deref(),
+        Some("Favourites")
+    );
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -208,9 +241,29 @@ async fn candidates_are_capped_by_the_requested_limit(pool: PgPool) {
         create_series(&pool, library, &format!("Series {index}")).await;
     }
 
-    let candidates = fetch_candidates(&state, 3).await.unwrap();
+    let window = fetch_candidates(&state, 3).await.unwrap();
 
-    assert_eq!(candidates.len(), 3);
+    assert_eq!(window.unlisted.len(), 3);
+    assert!(window.listed.is_empty());
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn listed_candidates_are_capped_for_the_prompt(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series_ids: Vec<Uuid> = {
+        let mut ids = Vec::new();
+        for index in 0..(MAX_MOVE_CANDIDATES + 3) {
+            ids.push(create_series(&pool, library, &format!("Series {index}")).await);
+        }
+        ids
+    };
+    create_list(&pool, "All", &series_ids).await;
+
+    let window = fetch_candidates(&state, 50).await.unwrap();
+
+    assert_eq!(window.unlisted.len(), 0);
+    assert_eq!(window.listed.len(), MAX_MOVE_CANDIDATES as usize);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -225,6 +278,7 @@ async fn existing_lists_are_capped_for_the_prompt(pool: PgPool) {
 
     assert_eq!(lists.len(), MAX_LISTS_IN_PROMPT as usize);
     assert_eq!(names.len(), (MAX_LISTS_IN_PROMPT + 5) as usize);
+    assert!(names.values().any(|name| name == "List 0"));
 }
 
 // ---------------------------------------------------------------------------
@@ -417,6 +471,117 @@ fn parse_never_reuses_a_series_across_suggestions() {
     assert_eq!(parsed.additions.len(), 1);
     // s1 is already used by the addition, leaving only one series: the new list is dropped.
     assert!(parsed.new_lists.is_empty());
+}
+
+#[test]
+fn parse_keeps_a_valid_move_with_the_real_list_names() {
+    let s1 = Uuid::new_v4();
+    let s2 = Uuid::new_v4();
+    let from = Uuid::new_v4();
+    let to = Uuid::new_v4();
+    let ctx = context_with_memberships(
+        &[(s1, "One"), (s2, "Two")],
+        &[(from, "Favourites"), (to, "Space operas")],
+        &[(s1, from)],
+    );
+    let payload = json!({
+        "moves": [
+            {
+                "from_list_id": from,
+                "to_list_id": to,
+                "reason": " space opera ",
+                "series_ids": [s1, s1, Uuid::new_v4()],
+            },
+        ],
+    });
+
+    let parsed = parse_suggestions(&payload, &ctx);
+
+    assert_eq!(parsed.moves.len(), 1);
+    let proposal = &parsed.moves[0];
+    assert_eq!(proposal.from_list_id, from);
+    assert_eq!(proposal.from_list_name, "Favourites");
+    assert_eq!(proposal.to_list_id, to);
+    assert_eq!(proposal.to_list_name, "Space operas");
+    assert_eq!(proposal.reason, "space opera");
+    assert_eq!(
+        proposal.series.iter().map(|s| s.id).collect::<Vec<_>>(),
+        vec![s1]
+    );
+}
+
+#[test]
+fn parse_rejects_moves_contradicting_the_database_membership() {
+    let s1 = Uuid::new_v4();
+    let from = Uuid::new_v4();
+    let to = Uuid::new_v4();
+    // s1 actually belongs to `to`, not to `from`.
+    let ctx = context_with_memberships(
+        &[(s1, "One")],
+        &[(from, "Favourites"), (to, "Space operas")],
+        &[(s1, to)],
+    );
+    let payload = json!({
+        "moves": [
+            { "from_list_id": from, "to_list_id": to, "reason": "r", "series_ids": [s1] },
+        ],
+    });
+
+    let parsed = parse_suggestions(&payload, &ctx);
+
+    assert!(parsed.moves.is_empty());
+}
+
+#[test]
+fn parse_rejects_self_moves_and_unknown_lists() {
+    let s1 = Uuid::new_v4();
+    let s2 = Uuid::new_v4();
+    let from = Uuid::new_v4();
+    let other = Uuid::new_v4();
+    let ctx = context_with_memberships(
+        &[(s1, "One"), (s2, "Two")],
+        &[(from, "Favourites"), (other, "Space operas")],
+        &[(s1, from), (s2, from)],
+    );
+    let payload = json!({
+        "moves": [
+            { "from_list_id": from, "to_list_id": from, "reason": "r", "series_ids": [s1] },
+            {
+                "from_list_id": from,
+                "to_list_id": Uuid::new_v4(),
+                "reason": "r",
+                "series_ids": [s2],
+            },
+        ],
+    });
+
+    let parsed = parse_suggestions(&payload, &ctx);
+
+    assert!(parsed.moves.is_empty());
+}
+
+#[test]
+fn parse_never_moves_the_same_series_twice() {
+    let s1 = Uuid::new_v4();
+    let from = Uuid::new_v4();
+    let to_a = Uuid::new_v4();
+    let to_b = Uuid::new_v4();
+    let ctx = context_with_memberships(
+        &[(s1, "One")],
+        &[(from, "Favourites"), (to_a, "A"), (to_b, "B")],
+        &[(s1, from)],
+    );
+    let payload = json!({
+        "moves": [
+            { "from_list_id": from, "to_list_id": to_a, "reason": "r", "series_ids": [s1] },
+            { "from_list_id": from, "to_list_id": to_b, "reason": "r", "series_ids": [s1] },
+        ],
+    });
+
+    let parsed = parse_suggestions(&payload, &ctx);
+
+    assert_eq!(parsed.moves.len(), 1);
+    assert_eq!(parsed.moves[0].to_list_id, to_a);
 }
 
 #[test]

@@ -54,11 +54,23 @@ export type AiSuggestedSeries = {
   first_book_id: string | null;
   first_book_updated_at: string | null;
   library_name: string;
+  /** Reading list the series currently belongs to (`null` when unlisted). */
+  current_list_id: string | null;
+  current_list_name: string | null;
 };
 
 export type AiListAdditionSuggestion = {
   list_id: string;
   list_name: string;
+  reason: string;
+  series: AiSuggestedSeries[];
+};
+
+export type AiListMoveSuggestion = {
+  from_list_id: string;
+  from_list_name: string;
+  to_list_id: string;
+  to_list_name: string;
   reason: string;
   series: AiSuggestedSeries[];
 };
@@ -72,6 +84,7 @@ export type AiListCreationSuggestion = {
 
 export type AiReadingListSuggestions = {
   additions: AiListAdditionSuggestion[];
+  moves: AiListMoveSuggestion[];
   new_lists: AiListCreationSuggestion[];
 };
 
@@ -134,6 +147,17 @@ export async function removeSeriesFromReadingList(
   seriesId: string
 ): Promise<void> {
   await apiFetch(`/reading-lists/${listId}/series/${seriesId}`, { method: "DELETE" });
+}
+
+export async function moveSeriesToReadingList(
+  fromListId: string,
+  seriesId: string,
+  toListId: string
+): Promise<void> {
+  await apiFetch(`/reading-lists/${fromListId}/series/${seriesId}/move`, {
+    method: "POST",
+    body: JSON.stringify({ to_list_id: toListId }),
+  });
 }
 
 export async function reorderReadingListSeries(

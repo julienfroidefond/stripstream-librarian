@@ -36,12 +36,15 @@ Sur la page d'une série, la section **Listes de lecture** indique les listes do
 
 ## Propositions par IAG
 
-Depuis la page **Listes**, le bouton **Proposer avec l'IAG** analyse les séries qui ne figurent encore dans aucune liste, ainsi que vos listes existantes. L'IA peut alors proposer :
+Depuis la page **Listes**, le bouton **Proposer avec l'IAG** analyse les séries qui ne figurent encore dans aucune liste, les séries déjà classées, ainsi que vos listes existantes. L'IA peut alors proposer :
 
-- des **ajouts** de séries à une liste existante, avec une justification ;
+- des **ajouts** de séries non classées à une liste existante, avec une justification ;
+- des **déplacements** d'une série d'une liste vers une autre, lorsqu'elle est clairement mal classée ;
 - de **nouvelles listes** regroupant au moins deux séries qui partagent une association pertinente (univers, auteur, genre, thème ou ordre de lecture).
 
-Les nouvelles listes sont proposées avec un **nom** et une **description** obligatoires, modifiables directement dans la fenêtre de révision ; il faut conserver au moins deux séries sélectionnées pour pouvoir les créer. Chaque série peut être décochée individuellement ; aucune modification n'est enregistrée avant la validation explicite de vos choix.
+Les propositions sont validées côté serveur : une série déjà classée ne peut pas être proposée en ajout ou dans une nouvelle liste, et un déplacement n'est accepté que si la série appartient réellement à la liste d'origine indiquée. Les nouvelles listes sont proposées avec un **nom** et une **description** obligatoires, modifiables directement dans la fenêtre de révision ; il faut conserver au moins deux séries sélectionnées pour pouvoir les créer. Chaque série peut être décochée individuellement ; aucune modification n'est enregistrée avant la validation explicite de vos choix.
+
+Un déplacement est appliqué **atomiquement** : la série quitte la liste d'origine et rejoint la fin de la liste de destination dans la même transaction, et les positions des deux listes sont renumérotées. Une série n'est donc jamais absente des deux listes ni présente dans les deux.
 
 La fonctionnalité nécessite une configuration IAG valide dans **Paramètres → IAG** et son activation propre, indépendante de la proposition de genres. Le même endpoint, la même clé API et le même modèle sont réutilisés. Voir [Paramètres](/getting-started/settings/).
 
@@ -53,7 +56,7 @@ Après validation, le cache des listes de lecture est invalidé : les nouvelles 
 
 Dans la page détail d'une liste, chaque série dispose de boutons **↑ / ↓** (visibles au survol) pour la déplacer dans la liste. L'ordre est sauvegardé immédiatement.
 
-L'ordre est toujours **dense** : après un ajout ou un retrait, les positions sont renumérotées de `0` à `n-1` sans trou ni doublon (contrainte unique en base). L'endpoint de réordonnancement attend **toutes** les séries de la liste : un payload partiel ou contenant des doublons est rejeté en `400`, ce qui évite les collisions d'ordre.
+L'ordre est toujours **dense** : après un ajout, un retrait ou un déplacement entre listes, les positions sont renumérotées de `0` à `n-1` sans trou ni doublon (contrainte unique en base). L'endpoint de réordonnancement attend **toutes** les séries de la liste : un payload partiel ou contenant des doublons est rejeté en `400`, ce qui évite les collisions d'ordre.
 
 Les séries dont **tous les volumes réguliers ont été lus** sont automatiquement repoussées en bas de liste, quel que soit leur position manuelle.
 
@@ -99,8 +102,9 @@ Voir [Séries liées & Recommandations](/series/related/) pour le détail.
 | `DELETE` | `/reading-lists/{id}` | Supprimer une liste |
 | `POST` | `/reading-lists/{id}/series` | Ajouter une série |
 | `DELETE` | `/reading-lists/{id}/series/{series_id}` | Retirer une série |
+| `POST` | `/reading-lists/{id}/series/{series_id}/move` | Déplacer une série vers une autre liste (`to_list_id`) |
 | `PUT` | `/reading-lists/{id}/series/reorder` | Réordonner (liste complète d'IDs) |
-| `POST` | `/reading-lists/ai-suggest` | Proposer des ajouts et de nouvelles listes (aucune écriture) |
+| `POST` | `/reading-lists/ai-suggest` | Proposer ajouts, déplacements et nouvelles listes (aucune écriture) |
 
 **Score dans les recommandations** : les séries dans une même liste obtiennent un bonus ×5, supérieur au bonus auteur (×3) ou genre (×2).
 :::

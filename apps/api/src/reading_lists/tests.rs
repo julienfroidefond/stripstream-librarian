@@ -561,6 +561,145 @@ async fn reorder_series_rejects_duplicate_ids(pool: PgPool) {
 }
 
 // ---------------------------------------------------------------------------
+// moves
+// ---------------------------------------------------------------------------
+
+async fn move_to(
+    state: &AppState,
+    from_list_id: Uuid,
+    series_id: Uuid,
+    to_list_id: Uuid,
+) -> Result<StatusCode, ApiError> {
+    move_series(
+        State(state.clone()),
+        Path((from_list_id, series_id)),
+        Json(MoveSeriesRequest { to_list_id }),
+    )
+    .await
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn move_series_compacts_both_lists(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "move").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let b = create_series(&pool, library_id, "B", &[]).await;
+    let c = create_series(&pool, library_id, "C", &[]).await;
+    let x = create_series(&pool, library_id, "X", &[]).await;
+    let source = create_list(&state, "Source").await;
+    let destination = create_list(&state, "Destination").await;
+    for series_id in [a, b, c] {
+        add(&state, source, series_id).await.unwrap();
+    }
+    add(&state, destination, x).await.unwrap();
+
+    let status = move_to(&state, source, b, destination).await.unwrap();
+
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(positions_of(&pool, source).await, vec![0, 1]);
+    assert_eq!(position_of(&pool, source, a).await, Some(0));
+    assert_eq!(position_of(&pool, source, c).await, Some(1));
+    assert_eq!(position_of(&pool, source, b).await, None);
+
+    assert_eq!(positions_of(&pool, destination).await, vec![0, 1]);
+    assert_eq!(position_of(&pool, destination, x).await, Some(0));
+    assert_eq!(position_of(&pool, destination, b).await, Some(1));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn move_series_rejects_a_self_move(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "move-self").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let list_id = create_list(&state, "Only").await;
+    add(&state, list_id, a).await.unwrap();
+
+    let err = move_to(&state, list_id, a, list_id).await.unwrap_err();
+
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+    assert_eq!(position_of(&pool, list_id, a).await, Some(0));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn move_series_rejects_an_unknown_destination_list(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "move-unknown-list").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let list_id = create_list(&state, "Source").await;
+    add(&state, list_id, a).await.unwrap();
+
+    let err = move_to(&state, list_id, a, Uuid::new_v4())
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.status, StatusCode::NOT_FOUND);
+    assert_eq!(position_of(&pool, list_id, a).await, Some(0));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn move_series_rejects_a_series_absent_from_the_source_list(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "move-absent").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let b = create_series(&pool, library_id, "B", &[]).await;
+    let source = create_list(&state, "Source").await;
+    let destination = create_list(&state, "Destination").await;
+    add(&state, source, a).await.unwrap();
+    add(&state, destination, b).await.unwrap();
+
+    let err = move_to(&state, source, b, destination).await.unwrap_err();
+
+    assert_eq!(err.status, StatusCode::NOT_FOUND);
+    assert_eq!(position_of(&pool, destination, b).await, Some(0));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn move_series_rejects_a_series_already_in_the_destination(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "move-duplicate").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let source = create_list(&state, "Source").await;
+    let destination = create_list(&state, "Destination").await;
+    add(&state, source, a).await.unwrap();
+    add(&state, destination, a).await.unwrap();
+
+    let err = move_to(&state, source, a, destination).await.unwrap_err();
+
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+    // The series is left untouched in both lists.
+    assert_eq!(position_of(&pool, source, a).await, Some(0));
+    assert_eq!(position_of(&pool, destination, a).await, Some(0));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn move_series_stays_consistent_when_racing_an_addition(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "move-race").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let b = create_series(&pool, library_id, "B", &[]).await;
+    let concurrent = create_series(&pool, library_id, "Concurrent", &[]).await;
+    let source = create_list(&state, "Source").await;
+    let destination = create_list(&state, "Destination").await;
+    add(&state, source, a).await.unwrap();
+    add(&state, source, b).await.unwrap();
+
+    let (moved, added) = tokio::join!(
+        move_to(&state, source, a, destination),
+        add(&state, destination, concurrent),
+    );
+    moved.unwrap();
+    added.unwrap();
+
+    assert_eq!(positions_of(&pool, source).await, vec![0]);
+    assert_eq!(positions_of(&pool, destination).await, vec![0, 1]);
+    assert_eq!(item_count(&pool, source).await, 1);
+    assert_eq!(item_count(&pool, destination).await, 2);
+    assert_eq!(position_of(&pool, source, b).await, Some(0));
+    assert!(position_of(&pool, destination, a).await.is_some());
+    assert!(position_of(&pool, destination, concurrent).await.is_some());
+}
+
+// ---------------------------------------------------------------------------
 // memberships + list
 // ---------------------------------------------------------------------------
 
