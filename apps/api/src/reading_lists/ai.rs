@@ -31,6 +31,9 @@ const MAX_LIST_DESCRIPTION_IN_PROMPT: usize = 300;
 const PROMPT_MAX_NEW_LISTS: usize = 5;
 const DEFAULT_CANDIDATE_LIMIT: i64 = 120;
 const MAX_CANDIDATE_LIMIT: i64 = 250;
+/// Cap on the offset so a crafted request cannot make PostgreSQL walk the whole
+/// library to skip rows.
+const MAX_CANDIDATE_OFFSET: i64 = 10_000;
 /// Cap on series already in a list that are offered to the model for moves.
 const MAX_MOVE_CANDIDATES: i64 = 120;
 
@@ -38,6 +41,11 @@ const MAX_MOVE_CANDIDATES: i64 = 120;
 pub struct SuggestReadingListsRequest {
     /// Maximum number of unassigned series sent to the model (clamped to 20-250, default 120).
     pub limit: Option<i64>,
+    /// Number of series to skip in the deterministic candidate window (default 0).
+    ///
+    /// Combined with `limit`, this lets the caller walk the whole library in
+    /// several calls instead of always seeing the same head of the window.
+    pub offset: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -159,8 +167,9 @@ pub async fn suggest_reading_lists(
         .limit
         .unwrap_or(DEFAULT_CANDIDATE_LIMIT)
         .clamp(20, MAX_CANDIDATE_LIMIT);
+    let offset = body.offset.unwrap_or(0).clamp(0, MAX_CANDIDATE_OFFSET);
 
-    let window = fetch_candidates(&state, limit).await?;
+    let window = fetch_candidates(&state, limit, offset).await?;
     let list_names = fetch_all_list_names(&state).await?;
     // Moves need a destination list, so a single-list library has nothing to
     // offer once every series is already listed.
@@ -268,53 +277,93 @@ pub async fn suggest_reading_lists(
     Ok(Json(parse_suggestions(&parsed, &context)))
 }
 
-async fn fetch_candidates(state: &AppState, limit: i64) -> Result<CandidateWindow, ApiError> {
+async fn fetch_candidates(
+    state: &AppState,
+    limit: i64,
+    offset: i64,
+) -> Result<CandidateWindow, ApiError> {
     Ok(CandidateWindow {
-        unlisted: fetch_unlisted_candidates(state, limit).await?,
-        listed: fetch_listed_candidates(state, MAX_MOVE_CANDIDATES).await?,
+        unlisted: fetch_unlisted_candidates(state, limit, offset).await?,
+        listed: fetch_listed_candidates(state, MAX_MOVE_CANDIDATES, offset).await?,
     })
 }
 
-/// Series that belong to no list, ordered so the window is stable across calls.
+/// Series that belong to no list, sampled deterministically and fairly.
+///
+/// Candidates are bucketed by `(library, first genre)` and read round-robin:
+/// every bucket contributes its first series before any bucket contributes its
+/// second one. A large homogeneous bucket (often one genre in one library) can
+/// therefore not crowd out the rest of the library, and the same request always
+/// returns the same window.
 async fn fetch_unlisted_candidates(
     state: &AppState,
     limit: i64,
+    offset: i64,
 ) -> Result<Vec<CandidateSeries>, ApiError> {
     let rows = sqlx::query(
         r#"
+        WITH unlisted AS (
+            SELECT
+                s.id,
+                s.name,
+                s.description,
+                s.cover_url,
+                s.genres,
+                s.authors,
+                s.publishers,
+                s.start_year,
+                s.total_volumes,
+                s.status,
+                s.library_id,
+                l.name AS library_name,
+                fb.id AS first_book_id,
+                fb.updated_at AS first_book_updated_at,
+                COALESCE(s.genres[1], '') AS genre_bucket
+            FROM series s
+            JOIN libraries l ON l.id = s.library_id
+            LEFT JOIN LATERAL (
+                SELECT b.id, b.updated_at
+                FROM books b
+                WHERE b.series_id = s.id
+                ORDER BY CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END, b.volume NULLS LAST
+                LIMIT 1
+            ) fb ON TRUE
+            WHERE NOT EXISTS (
+                SELECT 1 FROM reading_list_items rli WHERE rli.series_id = s.id
+            )
+        ),
+        ranked AS (
+            SELECT
+                *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY library_id, genre_bucket
+                    ORDER BY name, id
+                ) AS bucket_rank
+            FROM unlisted
+        )
         SELECT
-            s.id,
-            s.name,
-            s.description,
-            s.cover_url,
-            s.genres,
-            s.authors,
-            s.publishers,
-            s.start_year,
-            s.total_volumes,
-            s.status,
-            l.name AS library_name,
-            fb.id AS first_book_id,
-            fb.updated_at AS first_book_updated_at,
+            id,
+            name,
+            description,
+            cover_url,
+            genres,
+            authors,
+            publishers,
+            start_year,
+            total_volumes,
+            status,
+            library_name,
+            first_book_id,
+            first_book_updated_at,
             NULL::uuid AS current_list_id,
             NULL::text AS current_list_name
-        FROM series s
-        JOIN libraries l ON l.id = s.library_id
-        LEFT JOIN LATERAL (
-            SELECT b.id, b.updated_at
-            FROM books b
-            WHERE b.series_id = s.id
-            ORDER BY CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END, b.volume NULLS LAST
-            LIMIT 1
-        ) fb ON TRUE
-        WHERE NOT EXISTS (
-            SELECT 1 FROM reading_list_items rli WHERE rli.series_id = s.id
-        )
-        ORDER BY COALESCE(array_to_string(s.genres, ', '), ''), s.name, s.id
-        LIMIT $1
+        FROM ranked
+        ORDER BY bucket_rank, library_id, genre_bucket, name, id
+        LIMIT $1 OFFSET $2
         "#,
     )
     .bind(limit)
+    .bind(offset)
     .fetch_all(&state.pool)
     .await?;
 
@@ -324,51 +373,82 @@ async fn fetch_unlisted_candidates(
 /// Series that already belong to a list, with the list they are in.
 ///
 /// They are only offered for moves: the model must never add them to another
-/// list without removing them from the current one.
+/// list without removing them from the current one. They are read round-robin
+/// per list so a single large list cannot fill the whole move window.
 async fn fetch_listed_candidates(
     state: &AppState,
     limit: i64,
+    offset: i64,
 ) -> Result<Vec<CandidateSeries>, ApiError> {
     let rows = sqlx::query(
         r#"
+        WITH listed AS (
+            SELECT
+                s.id,
+                s.name,
+                s.description,
+                s.cover_url,
+                s.genres,
+                s.authors,
+                s.publishers,
+                s.start_year,
+                s.total_volumes,
+                s.status,
+                l.name AS library_name,
+                fb.id AS first_book_id,
+                fb.updated_at AS first_book_updated_at,
+                membership.list_id AS current_list_id,
+                membership.list_name AS current_list_name
+            FROM series s
+            JOIN libraries l ON l.id = s.library_id
+            JOIN LATERAL (
+                SELECT rli.list_id, rl.name AS list_name
+                FROM reading_list_items rli
+                JOIN reading_lists rl ON rl.id = rli.list_id
+                WHERE rli.series_id = s.id
+                ORDER BY rl.updated_at DESC, rl.id
+                LIMIT 1
+            ) membership ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT b.id, b.updated_at
+                FROM books b
+                WHERE b.series_id = s.id
+                ORDER BY CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END, b.volume NULLS LAST
+                LIMIT 1
+            ) fb ON TRUE
+        ),
+        ranked AS (
+            SELECT
+                *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY current_list_id
+                    ORDER BY name, id
+                ) AS bucket_rank
+            FROM listed
+        )
         SELECT
-            s.id,
-            s.name,
-            s.description,
-            s.cover_url,
-            s.genres,
-            s.authors,
-            s.publishers,
-            s.start_year,
-            s.total_volumes,
-            s.status,
-            l.name AS library_name,
-            fb.id AS first_book_id,
-            fb.updated_at AS first_book_updated_at,
-            membership.list_id AS current_list_id,
-            membership.list_name AS current_list_name
-        FROM series s
-        JOIN libraries l ON l.id = s.library_id
-        JOIN LATERAL (
-            SELECT rli.list_id, rl.name AS list_name
-            FROM reading_list_items rli
-            JOIN reading_lists rl ON rl.id = rli.list_id
-            WHERE rli.series_id = s.id
-            ORDER BY rl.updated_at DESC, rl.id
-            LIMIT 1
-        ) membership ON TRUE
-        LEFT JOIN LATERAL (
-            SELECT b.id, b.updated_at
-            FROM books b
-            WHERE b.series_id = s.id
-            ORDER BY CASE WHEN b.volume_type = 'regular' THEN 0 ELSE 1 END, b.volume NULLS LAST
-            LIMIT 1
-        ) fb ON TRUE
-        ORDER BY membership.list_name, s.name, s.id
-        LIMIT $1
+            id,
+            name,
+            description,
+            cover_url,
+            genres,
+            authors,
+            publishers,
+            start_year,
+            total_volumes,
+            status,
+            library_name,
+            first_book_id,
+            first_book_updated_at,
+            current_list_id,
+            current_list_name
+        FROM ranked
+        ORDER BY bucket_rank, current_list_name, current_list_id, name, id
+        LIMIT $1 OFFSET $2
         "#,
     )
     .bind(limit)
+    .bind(offset)
     .fetch_all(&state.pool)
     .await?;
 

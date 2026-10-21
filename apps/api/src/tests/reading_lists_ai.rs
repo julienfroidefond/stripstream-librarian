@@ -16,7 +16,10 @@ use crate::error::ApiError;
 use crate::state::test_state;
 
 fn suggestions_body(limit: Option<i64>) -> Json<SuggestReadingListsRequest> {
-    Json(SuggestReadingListsRequest { limit })
+    Json(SuggestReadingListsRequest {
+        limit,
+        offset: None,
+    })
 }
 
 fn expect_err<T>(result: Result<T, ApiError>) -> ApiError {
@@ -96,6 +99,23 @@ fn suggested(id: Uuid, name: &str) -> AiSuggestedSeries {
         current_list_id: None,
         current_list_name: None,
     }
+}
+
+async fn create_series_in_genre(pool: &PgPool, library_id: Uuid, name: &str, genre: &str) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO series (id, library_id, name, genres) \
+         VALUES (gen_random_uuid(), $1, $2, ARRAY[$3]) RETURNING id",
+    )
+    .bind(library_id)
+    .bind(name)
+    .bind(genre)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+fn candidate_ids(window: &CandidateWindow) -> Vec<Uuid> {
+    window.unlisted.iter().map(|c| c.series.id).collect()
 }
 
 fn context(series: &[(Uuid, &str)], lists: &[(Uuid, &str)]) -> SuggestionContext {
@@ -218,7 +238,7 @@ async fn candidates_exclude_series_that_belong_to_a_list_from_the_unlisted_windo
     let listed = create_series(&pool, library, "Listed").await;
     let list_id = create_list(&pool, "Favourites", &[listed]).await;
 
-    let window = fetch_candidates(&state, 50).await.unwrap();
+    let window = fetch_candidates(&state, 50, 0).await.unwrap();
 
     let unlisted: Vec<Uuid> = window.unlisted.iter().map(|c| c.series.id).collect();
     assert_eq!(unlisted, vec![free]);
@@ -241,10 +261,104 @@ async fn candidates_are_capped_by_the_requested_limit(pool: PgPool) {
         create_series(&pool, library, &format!("Series {index}")).await;
     }
 
-    let window = fetch_candidates(&state, 3).await.unwrap();
+    let window = fetch_candidates(&state, 3, 0).await.unwrap();
 
     assert_eq!(window.unlisted.len(), 3);
     assert!(window.listed.is_empty());
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn unlisted_candidates_cover_every_genre_bucket_before_repeating(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    for index in 0..5 {
+        create_series_in_genre(&pool, library, &format!("H{index}"), "Horror").await;
+        create_series_in_genre(&pool, library, &format!("C{index}"), "Comedy").await;
+    }
+
+    let window = fetch_candidates(&state, 4, 0).await.unwrap();
+
+    // Round-robin: the first series of each genre bucket, then the second one,
+    // instead of four Horror series because they sort first.
+    let names: Vec<String> = window
+        .unlisted
+        .iter()
+        .map(|candidate| candidate.series.name.clone())
+        .collect();
+    assert_eq!(names, vec!["C0", "H0", "C1", "H1"]);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn unlisted_candidates_are_balanced_across_libraries(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let crowded = create_library(&pool, "crowded").await;
+    let small = create_library(&pool, "small").await;
+    for index in 0..5 {
+        create_series_in_genre(&pool, crowded, &format!("Crowded {index}"), "Drama").await;
+    }
+    let only = create_series_in_genre(&pool, small, "Only", "Drama").await;
+
+    let window = fetch_candidates(&state, 2, 0).await.unwrap();
+    let ids = candidate_ids(&window);
+
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(&only));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn unlisted_candidates_are_stable_and_paginate(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    for index in 0..6 {
+        create_series_in_genre(&pool, library, &format!("A{index}"), "Action").await;
+        create_series_in_genre(&pool, library, &format!("B{index}"), "Biography").await;
+    }
+
+    let first = fetch_candidates(&state, 3, 0).await.unwrap();
+    let repeated = fetch_candidates(&state, 3, 0).await.unwrap();
+    let second = fetch_candidates(&state, 3, 3).await.unwrap();
+
+    assert_eq!(candidate_ids(&first), candidate_ids(&repeated));
+    assert_eq!(candidate_ids(&first).len(), 3);
+    // The offset walks the same deterministic order without overlapping.
+    for id in candidate_ids(&first) {
+        assert!(!candidate_ids(&second).contains(&id));
+    }
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn listed_candidates_are_round_robin_per_list(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let left: Vec<Uuid> = {
+        let mut ids = Vec::new();
+        for index in 0..3 {
+            ids.push(create_series(&pool, library, &format!("Left {index}")).await);
+        }
+        ids
+    };
+    let right: Vec<Uuid> = {
+        let mut ids = Vec::new();
+        for index in 0..3 {
+            ids.push(create_series(&pool, library, &format!("Right {index}")).await);
+        }
+        ids
+    };
+    create_list(&pool, "A Left", &left).await;
+    create_list(&pool, "B Right", &right).await;
+
+    let window = fetch_candidates(&state, 50, 0).await.unwrap();
+    let list_ids: Vec<Uuid> = window
+        .listed
+        .iter()
+        .take(4)
+        .map(|candidate| candidate.series.current_list_id.unwrap())
+        .collect();
+
+    // Both lists contribute before either contributes its second series.
+    assert_ne!(list_ids[0], list_ids[1]);
+    assert_eq!(list_ids[0], list_ids[2]);
+    assert_eq!(list_ids[1], list_ids[3]);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -260,7 +374,7 @@ async fn listed_candidates_are_capped_for_the_prompt(pool: PgPool) {
     };
     create_list(&pool, "All", &series_ids).await;
 
-    let window = fetch_candidates(&state, 50).await.unwrap();
+    let window = fetch_candidates(&state, 50, 0).await.unwrap();
 
     assert_eq!(window.unlisted.len(), 0);
     assert_eq!(window.listed.len(), MAX_MOVE_CANDIDATES as usize);

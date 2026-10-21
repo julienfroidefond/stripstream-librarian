@@ -46,6 +46,8 @@ Les propositions sont validées côté serveur : une série déjà classée ne p
 
 Un déplacement est appliqué **atomiquement** : la série quitte la liste d'origine et rejoint la fin de la liste de destination dans la même transaction, et les positions des deux listes sont renumérotées. Une série n'est donc jamais absente des deux listes ni présente dans les deux.
 
+Les séries candidates sont échantillonnées de façon **déterministe et équilibrée** : les séries sans liste sont lues en alternance entre les groupes `(bibliothèque, premier genre)` et les séries déjà classées en alternance entre les listes. Une liste ou un genre très représenté ne peut donc pas monopoliser la fenêtre envoyée au modèle. Les paramètres `limit` (20 à 250, défaut 120) et `offset` permettent de parcourir la bibliothèque en plusieurs appels successifs.
+
 La fonctionnalité nécessite une configuration IAG valide dans **Paramètres → IAG** et son activation propre, indépendante de la proposition de genres. Le même endpoint, la même clé API et le même modèle sont réutilisés. Voir [Paramètres](/getting-started/settings/).
 
 Après validation, le cache des listes de lecture est invalidé : les nouvelles listes et les séries ajoutées apparaissent immédiatement sur les pages **Listes** et **Séries**, y compris en vue groupée par liste.
