@@ -3,28 +3,59 @@ name: CI
 # Rust quality gate: formatting, lints and the full test suite (including the
 # `#[sqlx::test]` database tests, backed by the PostgreSQL service below).
 #
-# Single job on purpose: its name — `Rust (fmt · clippy · test)` — is the
-# required status check on the protected branch, so it must stay stable.
+# Three jobs run in parallel:
+#   - `lint`  — rustfmt + clippy
+#   - `test`  — nextest, sharded over a matrix (`--partition`)
+#   - `gate`  — no work, only aggregates the results
+#
+# Only `gate` is the required status check on the protected branch, and its name
+# — `Rust (fmt · clippy · test)` — must stay stable. Keeping the aggregation in a
+# separate job is what allows splitting the real work (a required check that is
+# a matrix job is awkward to report, and the check name must not change).
 #
 # Tests run through cargo-nextest instead of `cargo test`: it executes each test
 # in its own process and schedules them across all cores, which is markedly
-# faster on this suite (~400 `#[sqlx::test]` cases). nextest does not run
-# doctests; this workspace has none.
+# faster on this suite (~1370 tests, of which ~585 `#[sqlx::test]` cases).
+# nextest does not run doctests; this workspace has none.
 #
 # It only triggers when Rust sources, the workspace manifests or the DB
 # migrations change — a docs-only or backoffice-only PR does not spin up
 # the (expensive, several-minute) Rust job.
 #
-# Pull requests only: the merge to `main` deliberately does NOT re-run this
-# workflow (it used to duplicate the PR run on a fresh commit). The corollary is
-# that `Rust (fmt · clippy · test)` MUST be configured as a required status
-# check on the protected branch, otherwise a PR could be merged without ever
-# being validated. Direct pushes to `main` bypass this gate entirely — use
-# `workflow_dispatch` below or a PR in that case.
+# Pull requests validate; the merge to `main` does NOT re-run the tests (it used
+# to duplicate the PR run on a fresh commit). It does, however, run the same jobs
+# in "cache warm-up" mode: everything compiles (`fmt`, `clippy`, `nextest
+# --no-run`) but no test is executed.
+#
+# That warm-up run is what makes the PR job fast. `Swatinem/rust-cache` only
+# *saves* on the default branch by default, and caches are branch-scoped, so with
+# a PR-only trigger the repo never had a single cache entry: every PR compiled
+# ~450 crates from scratch twice (clippy, then the test profile). ~6 minutes of
+# pure compilation per run, gone.
+#
+# The corollary is that `Rust (fmt · clippy · test)` MUST be configured as a
+# required status check on the protected branch, otherwise a PR could be merged
+# without ever being validated. Direct pushes to `main` bypass this gate
+# entirely — use `workflow_dispatch` below or a PR in that case.
 
 on:
   pull_request:
     paths:
+      - ".github/workflows/ci.yml"
+      - "apps/api/**"
+      - "apps/indexer/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "infra/migrations/**"
+      - "rust-toolchain*"
+  # Cache warm-up only, see the note above: `Swatinem/rust-cache` saves on the
+  # default branch and PRs restore from it. Without this trigger the repo has no
+  # cache entry at all and every PR pays a full from-scratch build.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ci.yml"
       - "apps/api/**"
       - "apps/indexer/**"
       - "crates/**"
@@ -47,9 +78,48 @@ env:
   DATABASE_URL: postgres://stripstream:stripstream@localhost:5432/stripstream
 
 jobs:
-  rust:
-    name: Rust (fmt · clippy · test)
+  lint:
+    name: fmt · clippy
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # Separate cache from the `test` job: the two produce different artifacts
+      # (clippy metadata vs. codegen), so they cannot share one entry.
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: lint
+          cache-on-failure: true
+          cache-all-crates: true
+          # Default is `github.ref == 'refs/heads/main'`, i.e. only the push
+          # trigger above writes the cache that PRs restore. Stated explicitly
+          # so it does not look like a missing `save-if: true`.
+          save-if: github.ref == 'refs/heads/main'
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    # Sharded over 2 runners. A static matrix on purpose: an expression here
+    # (`job-total` shrunk to 1 on push) would be the single most fragile line of
+    # the gate. On push both shards simply build (`--no-run`), which is parallel
+    # and therefore free in wall-clock terms.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     services:
       postgres:
         image: postgres:18-alpine
@@ -59,31 +129,49 @@ jobs:
           POSTGRES_DB: stripstream
         ports:
           - 5432:5432
+        # `#[sqlx::test]` creates a throwaway database per test and replays all
+        # ~130 migrations on it (one transaction each), then drops it: 585 tests
+        # x ~150 fsyncs is by far the dominant cost of the suite. The server is
+        # tuned for throughput in the step below (the `options` field of a
+        # service container cannot take `-c ...`: it is spliced into
+        # `docker create` *before* the image name, so the flags are parsed as
+        # docker flags and the container never starts).
         options: >-
           --health-cmd "pg_isready -U stripstream"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+          --shm-size 1gb
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      # Trades crash durability for speed on a database that lives for the
+      # duration of the job. Measured on the migration replay (the dominant cost
+      # of a `#[sqlx::test]`): 0.55s -> 0.21s per database, i.e. within 10% of a
+      # full `fsync=off` postmaster. Both settings are PGC_SIGHUP/PGC_USERSET, so
+      # a reload is enough — no container restart needed.
+      - name: Tune Postgres (throwaway database)
+        run: |
+          docker exec "${{ job.services.postgres.id }}" psql -U stripstream -d postgres \
+            -c "ALTER SYSTEM SET synchronous_commit = off" \
+            -c "ALTER SYSTEM SET full_page_writes = off" \
+            -c "SELECT pg_reload_conf()"
 
       # `#[sqlx::test]` creates a throwaway database per test, which needs the
       # CREATEDB privilege. POSTGRES_USER is a superuser, so it already has it.
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          # Persist the cache even when a test fails, so a red run does not
-          # throw away the (expensive) compilation for the next attempt.
+          shared-key: test
           cache-on-failure: true
           # Also cache crates that are not direct workspace dependencies: the
           # test binaries pull in a lot of transitive dev-dependency code.
           cache-all-crates: true
+          save-if: github.ref == 'refs/heads/main'
 
       # pdfium-render binds libpdfium at runtime. The parser tests skip PDF
       # cases when the library is missing, so install it to actually exercise
@@ -95,12 +183,6 @@ jobs:
           sudo cp /tmp/lib/libpdfium.so /usr/local/lib/
           sudo ldconfig
 
-      - name: Format
-        run: cargo fmt --all -- --check
-
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
       # nextest runs each test in its own process and schedules them across all
       # cores far better than `cargo test`. It does not run doctests, and this
       # workspace has none.
@@ -108,4 +190,34 @@ jobs:
         uses: taiki-e/install-action@nextest
 
       - name: Test
-        run: cargo nextest run --workspace
+        if: github.event_name != 'push'
+        run: >-
+          cargo nextest run --workspace
+          --partition count:${{ matrix.shard }}/${{ strategy.job-total }}
+
+      # Push to `main` does not re-validate (the PR run just did): it only
+      # pre-builds the test binaries so the cache restored by future PRs already
+      # contains them.
+      - name: Build test binaries (cache warm-up)
+        if: github.event_name == 'push'
+        run: cargo nextest run --workspace --no-run
+
+  # Aggregator: carries the name of the required status check. Cheap (~10s) but
+  # it is the only job branch protection needs to care about.
+  gate:
+    name: Rust (fmt · clippy · test)
+    if: always()
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate results
+        env:
+          LINT: ${{ needs.lint.result }}
+          TEST: ${{ needs.test.result }}
+        run: |
+          echo "fmt · clippy : $LINT"
+          echo "test          : $TEST"
+          if [ "$LINT" != "success" ] || [ "$TEST" != "success" ]; then
+            echo "::error::one or more required jobs did not succeed"
+            exit 1
+          fi
