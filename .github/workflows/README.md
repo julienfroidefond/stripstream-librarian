@@ -84,15 +84,17 @@ Do **not** set `DOCKER_CONFIG` in the runner env: it hides the `compose` CLI plu
 
 ## Cargo cache
 
-`Swatinem/rust-cache@v2` only **saves** on the default branch, and cache entries are
-branch-scoped: with a PR-only trigger the repo had no cache at all, and every PR recompiled
-~450 crates twice (clippy, then the test profile).
+`Swatinem/rust-cache@v2` saves by default (`save-if: true`), but cache entries are
+branch-scoped: what a **pull request** saves lands under `refs/pull/<n>/merge` and is only
+restorable by that same PR. A PR restores from its own ref *and from its base branch*, so
+without a cache on `main` every PR recompiles ~450 crates twice (clippy, then the test profile).
 
 `ci.yml` therefore also runs on `push: main`, in *warm-up* mode: `fmt`, `clippy` and
 `nextest --no-run` execute (so the cache is populated), but no test is run. That run is what
-every subsequent PR restores. `save-if: github.ref == 'refs/heads/main'` is spelled out
-explicitly in both jobs so it does not look like a missing `save-if: true`. The two jobs use
-distinct `shared-key:` values (`lint`, `test`) because they produce different artifacts.
+every subsequent PR restores. Both jobs restrict saving with
+`save-if: ${{ github.ref == 'refs/heads/main' }}` — note the `${{ }}`: the action compares the
+raw input string to `"true"`, so an unwrapped expression silently disables saving. The two jobs
+use distinct `shared-key:` values (`lint`, `test`) because they produce different artifacts.
 
 `Swatinem/rust-cache@v2` also needs the `actions: write` permission to **save** its cache; with a
 restricted `permissions:` block the cache is restored read-only and every run recompiles the
