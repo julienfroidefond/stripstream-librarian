@@ -164,6 +164,31 @@ l'agent touche ce module.
 diff **fichier par fichier** (`git diff origin/main -- <path>`), au lieu de charger le diff complet
 d'un coup. Aucun critère de revue n'est retiré.
 
+### 4.4 Validation alignée sur les filtres de la CI
+
+Le prompt imposait `fmt` + `clippy --workspace` + `nextest --workspace` **à chaque** issue, alors
+que `ci.yml` est filtré par chemins (`apps/api`, `apps/indexer`, `crates`, `Cargo.*`,
+`infra/migrations`, `rust-toolchain*`) et que `ci-web.yml` ne s'occupe que des apps web. Une issue
+purement backoffice validait donc du Rust qu'elle n'avait pas modifié — et que la PR ne fera pas
+valider non plus. Le bloc « Validation » est maintenant conditionné par surface :
+
+| Surfaces touchées | Commandes |
+|---|---|
+| Rust | `cargo fmt --check`, `cargo clippy --workspace --all-targets`, `cargo nextest run --workspace` |
+| `apps/backoffice`, `apps/docs` | `npm ci`, `next typegen`, `tsc --noEmit`, `lint`, `test:unit` |
+| docs uniquement | aucune build |
+
+Gain : ~2-4 min par issue front-only avec un cache chaud, jusqu'à ~11 min à froid. La protection de
+branche est inchangée : une PR front-only ne déclenchait déjà pas `ci.yml`. Le setup du job
+(toolchain Rust, nextest, libpdfium, Postgres) reste inconditionnel — 20-40 s, non rentable à
+conditionner.
+
+Ce filtrage porte sur **l'exécution** des suites, pas sur l'écriture des tests : la règle
+« any code change MUST ship with tests » (AGENTS.md §1) et la consigne « add tests for the nominal
+path, the empty/no-op path, … » du prompt restent en vigueur. Une modification Rust écrit et exécute
+ses tests Rust ; une modification front écrit et exécute ses tests Vitest, sans relancer une suite
+Rust qui ne couvre aucun changement.
+
 ---
 
 ## 5. Vérifications exécutées

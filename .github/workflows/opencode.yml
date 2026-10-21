@@ -137,12 +137,19 @@ jobs:
               rows with status = 'unread'), and the error path. Name them in the PR body.
 
             ## Validation (must pass before opening the PR)
-            - `cargo fmt --all -- --check`
-            - `cargo clippy --workspace --all-targets -- -D warnings`
-            - `cargo nextest run --workspace` (PostgreSQL and libpdfium are installed; if
+            - This filters which suites you RUN, never what you write: tests stay mandatory
+              for every code change (AGENTS.md §1), including new Rust tests for Rust
+              changes. Mirror `ci.yml` and `ci-web.yml`, which are filtered by paths: only
+              run the suite of the surfaces you actually changed.
+            - If you touched Rust (`apps/api`, `apps/indexer`, `crates`, `Cargo.toml`,
+              `Cargo.lock`, `infra/migrations`): `cargo fmt --all -- --check`,
+              `cargo clippy --workspace --all-targets -- -D warnings`,
+              `cargo nextest run --workspace` (PostgreSQL and libpdfium are installed; if
               database tests cannot connect, report it instead of rewriting the tests).
-            - If you touched a web app: `npm ci && npx next typegen && npx tsc --noEmit
-              && npm run lint && npm run test:unit` in that app directory.
+            - If you touched a web app (`apps/backoffice`, `apps/docs`): `npm ci &&
+              npx next typegen && npx tsc --noEmit && npm run lint && npm run test:unit`
+              in that app directory.
+            - Docs-only change: no build required.
             - If a test fails for reasons unrelated to your change, name it and show that
               it also fails on the base commit.
 
