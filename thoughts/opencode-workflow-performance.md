@@ -248,18 +248,19 @@ Mesure du prompt (méthode §2, deux tours pour neutraliser l'effet de cache) :
 3. **Timeout du job `comment`** : 60 min, alors que des runs ont été annulés à 60 min
    (39443375938) et qu'un run `issue` a duré 56 min. Passer à 90 min supprime les annulations
    stériles, au prix de runs plus longs en cas de blocage.
-4. **Périmètre de validation** : `clippy --workspace` + `nextest --workspace` à chaque run, même
-   pour une modification de `apps/backoffice`. Restreindre aux paquets touchés (`-p api`,
-   `-p indexer`, `-p parsers`) réduirait encore de plusieurs minutes, mais allège la garantie
-   « ce que la CI fera ».
-5. **Préchauffage planifié du cache** : un job nocturne sur `main` (`cargo clippy` +
+4. **Préchauffage planifié du cache** : un job nocturne sur `main` (`cargo clippy` +
    `cargo nextest --no-run`) garderait la clé de restauration chaude même après une PR qui change
    `Cargo.lock` (sinon premier run = clippy à froid).
-6. **Sous-agent `reviewer`** : 68 des 148 pas et 25,7 min. Le garder (qualité) ou le fusionner dans
+5. **Sous-agent `reviewer`** : 68 des 148 pas et 25,7 min. Le garder (qualité) ou le fusionner dans
    la session principale est un arbitrage, pas une optimisation technique.
-7. **`package.json` racine** : 4 `devDependencies` Tailwind sans `name`, sans script, non
+6. **`package.json` racine** : 4 `devDependencies` Tailwind sans `name`, sans script, non
    référencées par les apps (le backoffice a les siennes). Le supprimer retirerait aussi une entrée
    npm de Dependabot — impact sur la politique de dépendances, donc non fait ici.
+7. **Filtres de chemins de la CI** : `apps/api/**` matche aussi `apps/api/AGENTS.md`, donc une PR
+   documentaire dans ces dossiers déclenche les suites complètes. Mesuré sur la PR #152
+   (`.md` + `.yml` uniquement) : **Rust 9 min 30 s** + **backoffice 1 min 48 s**. Restreindre aux
+   extensions (`apps/api/**/*.rs`, `apps/backoffice/**/*.{ts,tsx}`) ou ajouter un `paths-ignore`
+   sur `**/*.md` est un choix de gate, pas une optimisation interne.
 8. **Hors repo** (configuration globale, non modifiable ici) : le MCP `semble` est lancé via `uvx`
    (démarrage à froid sur un runner neuf), et la CLI opencode des runs CI était en **1.19.3** alors
    que la locale est en **2.0.20** ; aligner/pinner la version est probablement le meilleur rapport
