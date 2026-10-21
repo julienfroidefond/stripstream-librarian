@@ -61,11 +61,12 @@ struct SearchResponse {
     #[serde(default)]
     bests: Vec<SearchHit>,
 }
-async fn search_series_impl(query: &str, base: &str) -> Result<Vec<SeriesCandidate>, String> {
-    let c = scraping::client(20, "BDphile")?;
-    // BDphile's HTML search page errors out for anonymous clients. The
-    // canonical search is the JSON autocomplete endpoint, which requires the
-    // XHR marker to answer with JSON instead of a PHP notice.
+/// Fetch the JSON autocomplete payload for `query`.
+async fn fetch_search(
+    c: &reqwest::Client,
+    base: &str,
+    query: &str,
+) -> Result<SearchResponse, String> {
     let mut url =
         reqwest::Url::parse(&format!("{base}/search/ajax/")).map_err(|e| e.to_string())?;
     url.query_pairs_mut().append_pair("q", query);
@@ -79,11 +80,18 @@ async fn search_series_impl(query: &str, base: &str) -> Result<Vec<SeriesCandida
     if !response.status().is_success() {
         return Err(format!("BDphile returned {}", response.status()));
     }
-    let payload: SearchResponse = response
+    response
         .json()
         .await
-        .map_err(|e| format!("failed to decode BDphile search: {e}"))?;
+        .map_err(|e| format!("failed to decode BDphile search: {e}"))
+}
 
+/// Parse a search payload into scored, deduplicated candidates.
+fn candidates_from_payload(
+    payload: SearchResponse,
+    query: &str,
+    max_confidence: f32,
+) -> Vec<SeriesCandidate> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for hit in payload.bests.into_iter().chain(payload.series) {
@@ -97,16 +105,9 @@ async fn search_series_impl(query: &str, base: &str) -> Result<Vec<SeriesCandida
         if title.is_empty() {
             continue;
         }
-        let confidence = if title.eq_ignore_ascii_case(query) {
-            1.0
-        } else if title.to_lowercase().contains(&query.to_lowercase()) {
-            0.7
-        } else {
-            0.3
-        };
         out.push(SeriesCandidate {
             external_id: id,
-            title,
+            title: title.clone(),
             authors: vec![],
             description: None,
             publishers: vec![],
@@ -114,7 +115,7 @@ async fn search_series_impl(query: &str, base: &str) -> Result<Vec<SeriesCandida
             total_volumes: None,
             cover_url: None,
             external_url: Some(hit.url.clone()),
-            confidence,
+            confidence: scraping::confidence_for(&title, query, max_confidence),
             metadata_json: serde_json::json!({"provider": "bdphile"}),
         });
     }
@@ -124,6 +125,29 @@ async fn search_series_impl(query: &str, base: &str) -> Result<Vec<SeriesCandida
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     out.truncate(20);
+    out
+}
+
+async fn search_series_impl(query: &str, base: &str) -> Result<Vec<SeriesCandidate>, String> {
+    if query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let c = scraping::shared_client(20, "BDphile")?;
+    // BDphile's HTML search page errors out for anonymous clients. The
+    // canonical search is the JSON autocomplete endpoint, which requires the
+    // XHR marker to answer with JSON instead of a PHP notice.
+    //
+    // Like BDTheque it only answers when every query word exists in a title, so
+    // retry the local name with the article moved or the subtitle dropped.
+    let mut out = Vec::new();
+    for variant in scraping::query_variants(query) {
+        let payload = fetch_search(&c, base, &variant.query).await?;
+        out = candidates_from_payload(payload, &variant.query, variant.max_confidence);
+        if !out.is_empty() {
+            break;
+        }
+    }
     enrich_series_details(base, &mut out).await;
     Ok(out)
 }
@@ -131,14 +155,11 @@ async fn search_series_impl(query: &str, base: &str) -> Result<Vec<SeriesCandida
 /// BDphile's search endpoint returns no artwork or series fields, so fetch the
 /// series page for the best candidates to fill them in (cover included).
 async fn enrich_series_details(base: &str, candidates: &mut [SeriesCandidate]) {
-    const MAX_ENRICHED: usize = 8;
-    let fetches = candidates.iter().take(MAX_ENRICHED).map(|candidate| {
-        let external_id = candidate.external_id.clone();
-        let base = base.to_string();
-        async move { get_series_impl(&external_id, &base).await.ok() }
-    });
-    let details = futures::future::join_all(fetches).await;
-    for (candidate, detail) in candidates.iter_mut().take(MAX_ENRICHED).zip(details) {
+    let details = scraping::fetch_candidate_details(base, candidates, |external_id, base| {
+        Box::pin(async move { get_series_impl(&external_id, &base).await.ok() })
+    })
+    .await;
+    for (candidate, detail) in candidates.iter_mut().zip(details) {
         let Some(detail) = detail else { continue };
         candidate.title = detail.title;
         candidate.authors = detail.authors;
@@ -296,7 +317,7 @@ fn parse_album_ratings(doc: &Html) -> Option<(f64, i64)> {
 }
 
 async fn get_series_impl(external_id: &str, base: &str) -> Result<SeriesCandidate, String> {
-    let c = scraping::client(20, "BDphile")?;
+    let c = scraping::shared_client(20, "BDphile")?;
     let path = external_id.trim_start_matches('/');
     let url = format!("{base}/series/{path}");
     let body = scraping::get_html(&c, &url, "BDphile").await?;
@@ -382,7 +403,7 @@ async fn get_series_books_impl(
     external_id: &str,
     base: &str,
 ) -> Result<Vec<BookCandidate>, String> {
-    let c = scraping::client(20, "BDphile")?;
+    let c = scraping::shared_client(20, "BDphile")?;
     let path = external_id.trim_start_matches('/');
     let url = format!("{base}/series/{path}");
     let body = scraping::get_html(&c, &url, "BDphile").await?;

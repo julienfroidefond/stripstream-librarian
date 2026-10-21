@@ -57,6 +57,24 @@ Lors de la synchronisation, Stripstream applique les valeurs du provider princip
 - Seuls les crédits **scénario** et **dessin** sont conservés côté auteurs.
 - `external_id` : slug de la série (ex. `bd/124-asterix`).
 
+### Robustesse des requêtes
+
+Les deux sites scrapeés répondent parfois par des erreurs passagères (surtout des `500` en rafale pendant un batch). Stripstream les absorbe au lieu de marquer la série en échec :
+
+- cinq tentatives par requête, avec un backoff exponentiel de 500 ms à 5 s (environ 10 s de tolérance) ; un `429` ou un `Retry-After` est respecté (plafonné à 10 s) ;
+- une seule connexion HTTP réutilisée par provider (keep-alive) ;
+- l'enrichissement des candidats est limité à **deux requêtes simultanées** pour ne pas déclencher la limitation de débit du site. Un détail indisponible n'échoue jamais la recherche : le candidat conserve les champs renvoyés par la recherche.
+
+### Noms de séries locaux
+
+Les deux endpoints d'autocomplétion ne répondent que si **chaque mot** de la requête existe dans un titre du site. Un nom local comme `Cités obscures (Les)` ou `Troy - L'Expédition d'Alunys` ne renvoie donc rien. Stripstream retente alors la recherche avec, dans l'ordre :
+
+1. le nom tel quel ;
+2. l'article déplacé en tête — `Cités obscures (Les)` → `Les Cités obscures`, `Légendaires (Les) - origines` → `Les Légendaires - origines` ; le nom reste fidèle, un match exact peut donc auto-apparier la série ;
+3. le sous-titre retiré — `Spawn - La Malédiction de Spawn` → `Spawn`. Comme `X - Saga` peut désigner une véritable sous-série, ces résultats sont **plafonnés à 70 % de confiance** : ils apparaissent comme candidats à valider, jamais comme auto-match.
+
+La première réponse non vide l'emporte ; un nom déjà reconnu ne coûte donc aucune requête supplémentaire.
+
 ### Matching par ISBN / EAN
 
 BDTheque et BDphile exposent l'ISBN (BDTheque) ou l'EAN (BDphile) des albums. Ce matching est **additif** : il rattache un tome local au bon album par ISBN/EAN, mais ne remplace jamais un match provider existant.
