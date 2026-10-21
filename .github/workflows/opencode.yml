@@ -53,6 +53,10 @@ jobs:
     timeout-minutes: 90
     permissions:
       id-token: write
+      # Swatinem/rust-cache needs `actions: write` to SAVE its cache; without it
+      # the cache is restored read-only ("cache save skipped") and every run
+      # recompiles the whole workspace before the agent can validate anything.
+      actions: write
     services:
       postgres:
         image: postgres:18-alpine
@@ -85,6 +89,10 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
+          # Both jobs run on `main`; dropping the job-id suffix lets the
+          # `comment` job restore the cache saved by the `issue` job (and vice
+          # versa) instead of recompiling from scratch.
+          add-job-id-key: false
 
       # Same runner as ci.yml, so the agent validates with the exact command CI uses.
       - name: Install nextest
@@ -176,6 +184,8 @@ jobs:
     timeout-minutes: 60
     permissions:
       id-token: write
+      # Same as the `issue` job: required for the cargo cache to be saved.
+      actions: write
     services:
       postgres:
         image: postgres:18-alpine
@@ -208,6 +218,15 @@ jobs:
         with:
           cache-on-failure: true
           cache-all-crates: true
+          # Both jobs run on `main`; dropping the job-id suffix lets the
+          # `comment` job restore the cache saved by the `issue` job (and vice
+          # versa) instead of recompiling from scratch.
+          add-job-id-key: false
+
+      # Same runner and validation commands as the `issue` job: `/oc` follows
+      # the same prompt guidance, so nextest must be available here too.
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
 
       - name: Install libpdfium
         run: |

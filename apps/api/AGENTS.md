@@ -83,3 +83,13 @@ Chargé au démarrage dans `state.rs::load_concurrent_renders`.
 - **Métriques** : `/metrics` expose `requests_total`, `page_cache_hits`, `page_cache_misses` (atomics dans `AppState.metrics`).
 - **Thumbnails** : l'API ne génère rien — elle crée uniquement les jobs en DB ; la génération est faite par l'indexer (phase 2).
 - **Swagger** : accessible sur `/swagger-ui`, spec JSON sur `/openapi.json`.
+- **Torrent import, mode replace** : quand `replace_existing = true`, ne PAS filtrer par
+  `expected_volumes` — importer tous les fichiers du torrent.
+- **Compteurs d'import** : `ImportedFile.already_existed`
+  (`downloads/torrent_import.rs`) distingue les fichiers réellement copiés de ceux déjà sur
+  disque. Les compteurs et les notifications n'incluent que les vrais nouveaux fichiers.
+- **Détection de torrent en double** : quand un torrent existant est trouvé par hash de magnet,
+  vérifier que son `content_path` existe sur disque avant de lancer l'import. Les anciens
+  répertoires `sl-*` sont nettoyés après l'import.
+- **Livres manquants** : `external_book_metadata` peut contenir plusieurs éditions pour un même
+  `volume_number`. Les requêtes d'affichage utilisent `DISTINCT ON (volume_number)`.

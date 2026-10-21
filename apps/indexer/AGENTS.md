@@ -138,5 +138,9 @@ utils::unmap_libraries_path(&local_path) // filesystem local → DB
   boucle principale. Le scheduler vérifie 7 familles de jobs toutes les 60 s.
 - **spawn_blocking** : l'ouverture d'archive (`analyze_book`) et la génération de thumbnail sont des
   opérations bloquantes — toujours les wrapper dans `tokio::task::spawn_blocking`.
+- **Propagation de `volume_type`** : sur les dossiers skippés (mtime inchangé) comme sur les
+  fichiers dont le fingerprint n'a pas changé, le scanner re-compare et réécrit
+  `books.volume_type`. Un simple rescan suffit donc à corriger des livres mal classés
+  HS/oneshot/integral.
 - **Aucun outil externe** : la conversion CBR→CBZ et l'extraction passent par le crate `unrar` et
   `pdfium-render`, jamais par un binaire système.
