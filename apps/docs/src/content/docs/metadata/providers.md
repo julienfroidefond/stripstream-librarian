@@ -23,7 +23,7 @@ Le provider **Bédéthèque** (`bedetheque.com`) a été retiré : le site est d
 
 ## Choisir le bon provider
 
-Chaque bibliothèque peut avoir son propre provider principal et un provider de secours. Configurez-les dans les paramètres de la bibliothèque (icône ⚙️ → section **Métadonnées**). Ce réglage détermine la source interrogée par défaut lors d'une recherche.
+Chaque bibliothèque peut avoir son propre provider principal et un provider de secours. Configurez-les dans les paramètres de la bibliothèque (icône ⚙️ → section **Métadonnées**). Ce réglage détermine la source interrogée par défaut lors d'une recherche. Le batch de métadonnées évalue les deux providers séparément : une série peut donc recevoir un lien principal **et** un lien de secours dans le même job.
 
 :::tip
 Si votre bibliothèque contient des mangas, utilisez **AniList** en priorité et **SensCritique** en secours. Pour la BD franco-belge, utilisez **BDTheque** en priorité, avec **BDphile** en secours.
