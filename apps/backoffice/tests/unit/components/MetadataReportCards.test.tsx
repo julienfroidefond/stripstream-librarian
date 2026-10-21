@@ -58,6 +58,7 @@ describe("MetadataBatchResultsCard", () => {
       best_candidate_json: { title: "Berserk" },
       link_id: "l1",
       error_message: null,
+      secondary: null,
     },
     {
       id: "r2",
@@ -70,6 +71,7 @@ describe("MetadataBatchResultsCard", () => {
       best_candidate_json: null,
       link_id: null,
       error_message: "boom",
+      secondary: null,
     },
   ];
 

@@ -12,10 +12,11 @@ Les tâches de métadonnées enrichissent vos séries avec des informations issu
 Recherche et lie automatiquement toutes les séries d'une bibliothèque qui n'ont pas encore de métadonnées approuvées. C'est l'outil idéal pour enrichir une nouvelle bibliothèque en une seule opération.
 
 **Ce qui se passe** :
-- Chaque série sans lien approuvé est recherchée sur le provider configuré
-- Si le résultat est évident (confiance maximale), il est approuvé automatiquement
-- Sinon, la série est listée dans le rapport pour traitement manuel
-- Si le provider principal ne trouve rien, le provider de secours est essayé
+- Les liens existants sont évalués **provider par provider** : un lien principal déjà approuvé n'empêche pas de chercher le provider de secours, et inversement
+- Chaque provider configuré (principal puis secours) est recherché séparément pour chaque série
+- Si le résultat est évident (confiance maximale), il est approuvé automatiquement — pour le principal comme pour le secours
+- Sinon, la série est listée dans le rapport pour traitement manuel : un résultat incertain ne crée jamais de lien
+- Une série peut ainsi recevoir un lien principal et un lien de secours dans le même job ; le principal reste prioritaire à la synchronisation
 
 **Rapport de résultat** :
 
@@ -25,16 +26,18 @@ Recherche et lie automatiquement toutes les séries d'une bibliothèque qui n'on
 | **Confiance trop basse** | Trouvé, mais incertain — à valider manuellement |
 | **Trop de résultats** | Plusieurs candidats, sélection manuelle requise |
 | **Aucun résultat** | Aucun résultat sur le provider |
-| **Déjà lié** | Métadonnées déjà approuvées, ignoré |
+| **Déjà lié** | Le provider principal a déjà un lien approuvé et le secondaire n'a rien apporté de certain (ou chaque provider configuré a déjà un lien) |
 | **Erreur** | Échec technique |
+
+Dans le backoffice, chaque ligne du rapport indique le provider qui a matché, avec la mention **« (secours) »** quand le match vient du provider secondaire. Le résultat du secondaire est également affiché lorsqu'il a été évalué en plus du principal (par exemple un candidat incertain à valider, ou un second lien auto-matché).
 
 ---
 
 ## Re-match — Changer de provider en masse
 
-Variante du batch qui ignore les liens existants et re-matche toutes les séries avec le provider actuellement configuré. Utile pour migrer une bibliothèque d'un provider à un autre sans passer manuellement sur chaque série.
+Variante du batch qui re-matche avec le provider principal les séries qui n'y sont pas encore liées, y compris celles qui ont des liens d'autres providers. Utile pour migrer une bibliothèque d'un provider à un autre sans passer manuellement sur chaque série. Le provider secondaire configuré est évalué dans le même job.
 
-Le re-match ne supprime les anciens liens qu'après avoir trouvé un nouveau match avec succès — vos données ne sont jamais perdues si le nouveau matching échoue.
+Le re-match ne supprime les anciens liens qu'après avoir trouvé un nouveau match avec succès — vos données ne sont jamais perdues si le nouveau matching échoue. Le lien du provider de secours configuré est conservé, puisque le même job peut aussi l'auto-matcher.
 
 ---
 
@@ -52,12 +55,16 @@ Les champs verrouillés manuellement ne sont jamais modifiés par un refresh.
 **Batch** (`metadata_batch`) :
 - Ignore les séries nommées `"unclassified"` et celles dont la bibliothèque a `metadata_provider = 'none'`
 - Résolution du provider : bibliothèque → paramètre global → fallback `google_books`
+- Vérification des liens **par provider** (série + provider), jamais « au moins un lien » pour la série
+- Provider secondaire auto-matché dans le même job, avec la même règle de prudence (confiance maximale uniquement)
+- Un événement par série ; le résultat du provider secondaire est imbriqué dans `detail.secondary`
 - Circuit breaker SensCritique sur HTTP 429 (annule les requêtes SensCritique restantes, pas les autres providers)
-- Délai de 1s entre chaque appel provider
+- Délai de 1s entre chaque série
 - `API : POST /metadata/batch { "library_id": "uuid" }`
 
 **Re-match** (`metadata_batch_rematch`) :
-- Skip uniquement si déjà lié au provider **cible** (pas aux autres)
+- Chaque provider est évalué séparément : seul un provider déjà lié est ignoré, pas la série entière
+- Après un match réussi, les liens des providers non configurés sont supprimés ; principal et secondaire sont conservés, et le lien restant devient le provider de référence si l'ancien principal disparaît
 - `API : POST /metadata/batch { "library_id": "uuid", "force_rematch": true }`
 
 **Refresh** (`metadata_refresh`) :

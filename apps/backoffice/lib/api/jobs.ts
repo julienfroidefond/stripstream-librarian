@@ -88,6 +88,17 @@ export type MetadataBatchReportDto = {
   errors: number;
 };
 
+export type MetadataProviderOutcomeDto = {
+  status: string;
+  provider: string;
+  fallback_used: boolean;
+  candidates_count: number;
+  best_confidence: number | null;
+  best_candidate_json: Record<string, unknown> | null;
+  link_id: string | null;
+  error_message: string | null;
+};
+
 export type MetadataBatchResultDto = {
   id: string;
   series_id?: string;
@@ -100,6 +111,7 @@ export type MetadataBatchResultDto = {
   best_candidate_json: Record<string, unknown> | null;
   link_id: string | null;
   error_message: string | null;
+  secondary: MetadataProviderOutcomeDto | null;
 };
 
 export async function startMetadataBatch(libraryId?: string, forceRematch = false) {

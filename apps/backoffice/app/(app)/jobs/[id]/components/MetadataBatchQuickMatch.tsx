@@ -33,6 +33,39 @@ export function MetadataBatchQuickMatch({
   const [linking, setLinking] = useState<string | null>(null);
   const [linked, setLinked] = useState<Set<string>>(new Set());
 
+  function resultStatusLabel(status: string) {
+    switch (status) {
+      case "auto_matched":
+        return t("jobDetail.autoMatched");
+      case "already_linked":
+        return t("jobDetail.alreadyLinked");
+      case "no_results":
+        return t("jobDetail.noResults");
+      case "low_confidence":
+        return t("jobDetail.lowConfidence");
+      case "too_many_results":
+        return t("jobDetail.tooManyResults");
+      case "error":
+        return t("common.error");
+      default:
+        return status;
+    }
+  }
+
+  function resultBadgeClass(status: string) {
+    return `text-3xs px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap shrink-0 ${
+      status === "auto_matched"
+        ? "bg-success/20 text-success"
+        : status === "already_linked"
+          ? "bg-primary/20 text-primary"
+          : status === "low_confidence" || status === "too_many_results"
+            ? "bg-warning/15 text-warning"
+            : status === "error"
+              ? "bg-destructive/20 text-destructive"
+              : "bg-muted text-muted-foreground"
+    }`;
+  }
+
   const actionable = results.filter(
     (r) =>
       (r.status === "low_confidence" || r.status === "too_many_results") &&
@@ -226,18 +259,27 @@ export function MetadataBatchQuickMatch({
                 ) : (
                   <span className="text-foreground truncate">{r.series_name}</span>
                 )}
-                <span className={`ml-auto text-3xs px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap shrink-0 ${
-                  r.status === "auto_matched" ? "bg-success/20 text-success" :
-                  r.status === "already_linked" ? "bg-primary/20 text-primary" :
-                  r.status === "error" ? "bg-destructive/20 text-destructive" :
-                  "bg-muted text-muted-foreground"
-                }`}>
-                  {r.status === "auto_matched" ? t("jobDetail.autoMatched") :
-                   r.status === "already_linked" ? t("jobDetail.alreadyLinked") :
-                   r.status === "no_results" ? t("jobDetail.noResults") :
-                   r.status === "error" ? t("common.error") :
-                   r.status}
-                </span>
+                <div className="ml-auto flex items-center gap-2 shrink-0">
+                  {r.provider_used && r.status === "auto_matched" && (
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap">
+                      <ProviderIcon provider={r.provider_used} size={12} />
+                      {providerLabel(r.provider_used)}
+                      {r.fallback_used && <span className="text-3xs">{t("metadata.fallbackUsed")}</span>}
+                    </span>
+                  )}
+                  {r.secondary && (
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap">
+                      <ProviderIcon provider={r.secondary.provider} size={12} />
+                      {providerLabel(r.secondary.provider)}
+                      <span className={resultBadgeClass(r.secondary.status)}>
+                        {resultStatusLabel(r.secondary.status)}
+                      </span>
+                    </span>
+                  )}
+                  <span className={resultBadgeClass(r.status)}>
+                    {resultStatusLabel(r.status)}
+                  </span>
+                </div>
               </div>
             ))}
           </div>

@@ -9,6 +9,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
+use crate::metadata_providers;
 use crate::metadata_providers::senscritique::RATE_LIMITED_ERROR;
 use crate::{
     error::ApiError,
@@ -52,6 +53,26 @@ pub struct MetadataBatchResultDto {
     pub series_name: String,
     pub status: String,
     pub provider_used: Option<String>,
+    pub fallback_used: bool,
+    pub candidates_count: i32,
+    pub best_confidence: Option<f32>,
+    pub best_candidate_json: Option<serde_json::Value>,
+    #[schema(value_type = Option<String>)]
+    pub link_id: Option<Uuid>,
+    pub error_message: Option<String>,
+    /// Outcome of the secondary provider when it was evaluated, even if the
+    /// primary outcome is the one reported for the series (#150).
+    pub secondary: Option<MetadataProviderOutcomeDto>,
+}
+
+/// Outcome of one metadata provider for a batch result.
+///
+/// Mirrors the `detail` payload persisted in the job event so the backoffice
+/// can show which provider matched and how the other one fared.
+#[derive(Serialize, ToSchema)]
+pub struct MetadataProviderOutcomeDto {
+    pub status: String,
+    pub provider: String,
     pub fallback_used: bool,
     pub candidates_count: i32,
     pub best_confidence: Option<f32>,
@@ -430,6 +451,10 @@ pub async fn get_batch_results(
                 .and_then(|v| v.as_str())
                 .and_then(|s| s.parse::<Uuid>().ok());
             let error_message: Option<String> = row.get("message");
+            let secondary = detail
+                .as_ref()
+                .and_then(|d| d.get("secondary"))
+                .and_then(provider_outcome_from_detail);
 
             MetadataBatchResultDto {
                 id: row.get("id"),
@@ -445,11 +470,52 @@ pub async fn get_batch_results(
                 best_candidate_json,
                 link_id,
                 error_message,
+                secondary,
             }
         })
         .collect();
 
     Ok(Json(results))
+}
+
+/// Parse a provider outcome nested in an event `detail` payload.
+pub(super) fn provider_outcome_from_detail(
+    detail: &serde_json::Value,
+) -> Option<MetadataProviderOutcomeDto> {
+    let obj = detail.as_object()?;
+    // `status` is what distinguishes a provider outcome from the small
+    // `already_linked` payload (which only carries the linked flags).
+    let status = obj.get("status")?.as_str()?;
+
+    Some(MetadataProviderOutcomeDto {
+        status: status.to_string(),
+        provider: obj
+            .get("provider")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        fallback_used: obj
+            .get("fallback_used")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        candidates_count: obj
+            .get("candidates_count")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32,
+        best_confidence: obj
+            .get("confidence")
+            .and_then(|v| v.as_f64())
+            .map(|f| f as f32),
+        best_candidate_json: obj.get("best_candidate").cloned(),
+        link_id: obj
+            .get("link_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<Uuid>().ok()),
+        error_message: obj
+            .get("message")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -486,18 +552,36 @@ pub(crate) async fn process_metadata_batch(
     .map_err(|e| e.to_string())?;
 
     let primary_provider_name: Option<String> = lib_row.get("metadata_provider");
-    let fallback_provider_name: Option<String> = lib_row.get("fallback_metadata_provider");
+    let secondary_provider_name: Option<String> = lib_row.get("fallback_metadata_provider");
 
-    // Resolve primary provider: library -> global setting -> google_books
-    let primary_name =
-        super::config::resolve_provider_name(pool, primary_provider_name.as_deref()).await;
-    let fallback_name = fallback_provider_name
+    // Resolve primary provider: library -> global setting -> google_books.
+    // Canonicalize it (discovery aliases -> real provider) so the per-provider
+    // link check below compares the same name that `search_and_evaluate` uses.
+    let primary_name = metadata_providers::canonical_provider_name(
+        &super::config::resolve_provider_name(pool, primary_provider_name.as_deref()).await,
+    )
+    .to_string();
+    let secondary_name = secondary_provider_name
         .as_deref()
-        .filter(|s| !s.is_empty() && *s != primary_name)
-        .map(|s| s.to_string());
+        .filter(|s| !s.is_empty())
+        .map(metadata_providers::canonical_provider_name)
+        .map(str::to_string)
+        .filter(|s| *s != primary_name)
+        .and_then(|name| match metadata_providers::resolve_provider(&name) {
+            Ok(_) => Some(name),
+            Err(unknown) => {
+                // Now that the secondary is queried for every eligible series,
+                // an unknown name would turn the whole job red one series at a
+                // time. Warn once and run without it instead.
+                warn!(
+                    "[METADATA_BATCH] job={job_id} ignoring unknown secondary provider '{unknown}'"
+                );
+                None
+            }
+        });
 
     info!(
-        "[METADATA_BATCH] job={job_id} library={library_id} primary={primary_name} fallback={fallback_name:?}"
+        "[METADATA_BATCH] job={job_id} library={library_id} primary={primary_name} secondary={secondary_name:?}"
     );
 
     // Get all distinct series names for this library, least recently updated first
@@ -524,24 +608,12 @@ pub(crate) async fn process_metadata_batch(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Get series that already have an approved link -- map name -> provider
-    let linked_rows = sqlx::query(
-        "SELECT s.name, eml.provider FROM external_metadata_links eml JOIN series s ON s.id = eml.series_id WHERE eml.library_id = $1 AND eml.status = 'approved'",
-    )
-    .bind(library_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let already_linked: std::collections::HashMap<String, String> = linked_rows
-        .into_iter()
-        .map(|row| {
-            (
-                row.get::<String, _>("name"),
-                row.get::<String, _>("provider"),
-            )
-        })
-        .collect();
+    // Approved links grouped per series and provider: each provider is
+    // evaluated on its own, so a secondary link never prevents matching the
+    // primary (and vice versa, #150).
+    let approved_links = load_approved_links(pool, library_id)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let mut processed = 0i32;
     let mut sc_rate_limited = false;
@@ -577,346 +649,100 @@ pub(crate) async fn process_metadata_batch(
             continue;
         }
 
-        // Skip already linked:
-        // - Normal mode: skip any linked series
-        // - Rematch mode: skip only if already linked to the TARGET provider (no point re-matching)
-        let linked_provider = already_linked.get(series_name.as_str());
-        let should_skip = if force_rematch {
-            linked_provider.map(|p| p == &primary_name).unwrap_or(false)
-        } else {
-            linked_provider.is_some()
-        };
-        if should_skip {
-            processed += 1;
-            update_progress(pool, job_id, processed, total, series_name).await;
-            insert_event(
-                pool,
-                job_id,
-                "metadata_already_linked",
-                "info",
-                Some("series"),
-                Some(series_name),
-                None,
-                None,
-            )
-            .await;
-            continue;
-        }
+        // Each configured provider is evaluated independently: a series may
+        // already have the primary link but still miss the secondary one, and
+        // vice versa. Previously any approved link skipped the whole series,
+        // which prevented secondaries from ever being auto-matched (#150).
+        let primary_linked = has_approved_link(&approved_links, series_name, &primary_name);
+        let secondary_linked = secondary_name
+            .as_deref()
+            .is_some_and(|p| has_approved_link(&approved_links, series_name, p));
 
-        // Circuit breaker: skip if SensCritique was rate-limited earlier in this job
+        // Circuit breaker: skip only the SensCritique lookup, not the whole
+        // series, so the other provider can still be matched.
         let primary_is_sc = primary_name == "senscritique";
-        let fallback_is_sc = fallback_name.as_deref() == Some("senscritique");
-        if sc_rate_limited && (primary_is_sc || fallback_is_sc) {
-            warn!("[METADATA_BATCH] job={job_id} skipping '{series_name}' (SensCritique rate-limited)");
-            insert_event(
-                pool,
-                job_id,
-                "metadata_error",
-                "error",
-                Some("series"),
-                Some(series_name),
-                Some("Skipped: SensCritique rate-limited earlier in this job"),
-                None,
-            )
-            .await;
-            processed += 1;
-            update_progress(pool, job_id, processed, total, series_name).await;
-            continue;
-        }
+        let secondary_is_sc = secondary_name.as_deref() == Some("senscritique");
+        let primary_skipped_sc = !primary_linked && sc_rate_limited && primary_is_sc;
+        let secondary_skipped_sc = !secondary_linked && sc_rate_limited && secondary_is_sc;
 
-        // Search with primary provider
-        let (
-            result_status,
-            provider_used,
-            fallback_used,
-            candidates_count,
-            best_confidence,
-            best_candidate,
-            link_id,
-            error_msg,
-        ) = match search_and_evaluate(pool, library_id, series_name, &primary_name, true).await {
-            SearchOutcome::AutoMatch(candidate) => {
-                // Create link + approve + sync
-                match auto_apply(pool, library_id, series_name, &primary_name, &candidate).await {
-                    Ok(lid) => (
-                        "auto_matched",
-                        Some(primary_name.clone()),
-                        false,
-                        1,
-                        Some(candidate.confidence),
-                        Some(serde_json::json!({
-                            "title": candidate.title,
-                            "external_id": candidate.external_id,
-                        })),
-                        Some(lid),
-                        None,
-                    ),
-                    Err(e) => (
-                        "error",
-                        Some(primary_name.clone()),
-                        false,
-                        1,
-                        Some(candidate.confidence),
-                        None,
-                        None,
-                        Some(format!("Auto-apply failed: {e}")),
-                    ),
-                }
-            }
-            SearchOutcome::NoResults => {
-                // Try fallback
-                if let Some(ref fb_name) = fallback_name {
-                    match search_and_evaluate(pool, library_id, series_name, fb_name, true).await {
-                        SearchOutcome::AutoMatch(candidate) => {
-                            match auto_apply(pool, library_id, series_name, fb_name, &candidate)
-                                .await
-                            {
-                                Ok(lid) => (
-                                    "auto_matched",
-                                    Some(fb_name.clone()),
-                                    true,
-                                    1,
-                                    Some(candidate.confidence),
-                                    Some(serde_json::json!({
-                                        "title": candidate.title,
-                                        "external_id": candidate.external_id,
-                                    })),
-                                    Some(lid),
-                                    None,
-                                ),
-                                Err(e) => (
-                                    "error",
-                                    Some(fb_name.clone()),
-                                    true,
-                                    1,
-                                    Some(candidate.confidence),
-                                    None,
-                                    None,
-                                    Some(format!("Auto-apply failed: {e}")),
-                                ),
-                            }
-                        }
-                        SearchOutcome::NoResults => (
-                            "no_results",
-                            Some(fb_name.clone()),
-                            true,
-                            0,
-                            None,
-                            None,
-                            None,
-                            Some("No results from primary or fallback provider".to_string()),
-                        ),
-                        SearchOutcome::TooManyResults(count, best) => (
-                            "too_many_results",
-                            Some(fb_name.clone()),
-                            true,
-                            count,
-                            best.as_ref().map(|c| c.confidence),
-                            best.map(|c| {
-                                serde_json::json!({
-                                    "title": c.title,
-                                    "external_id": c.external_id,
-                                    "external_url": c.external_url,
-                                    "authors": c.authors,
-                                    "description": c.description,
-                                    "cover_url": c.cover_url,
-                                    "total_volumes": c.total_volumes,
-                                    "start_year": c.start_year,
-                                    "confidence": c.confidence,
-                                })
-                            }),
-                            None,
-                            Some(format!("{count} results, manual review needed")),
-                        ),
-                        SearchOutcome::LowConfidence(candidate) => (
-                            "low_confidence",
-                            Some(fb_name.clone()),
-                            true,
-                            1,
-                            Some(candidate.confidence),
-                            Some(serde_json::json!({
-                                "title": candidate.title,
-                                "external_id": candidate.external_id,
-                                "external_url": candidate.external_url,
-                                "authors": candidate.authors,
-                                "description": candidate.description,
-                                "cover_url": candidate.cover_url,
-                                "total_volumes": candidate.total_volumes,
-                                "start_year": candidate.start_year,
-                                "confidence": candidate.confidence,
-                            })),
-                            None,
-                            Some(format!(
-                                "Best confidence: {:.0}%",
-                                candidate.confidence * 100.0
-                            )),
-                        ),
-                        SearchOutcome::Error(e) => (
-                            "error",
-                            Some(fb_name.clone()),
-                            true,
-                            0,
-                            None,
-                            None,
-                            None,
-                            Some(e),
-                        ),
-                    }
-                } else {
-                    (
-                        "no_results",
-                        Some(primary_name.clone()),
-                        false,
-                        0,
-                        None,
-                        None,
-                        None,
-                        Some("No results found".to_string()),
-                    )
-                }
-            }
-            SearchOutcome::TooManyResults(count, best) => (
-                "too_many_results",
-                Some(primary_name.clone()),
-                false,
-                count,
-                best.as_ref().map(|c| c.confidence),
-                best.map(|c| {
-                    serde_json::json!({
-                        "title": c.title,
-                        "external_id": c.external_id,
-                        "external_url": c.external_url,
-                        "authors": c.authors,
-                        "description": c.description,
-                        "cover_url": c.cover_url,
-                        "total_volumes": c.total_volumes,
-                        "start_year": c.start_year,
-                        "confidence": c.confidence,
-                    })
-                }),
-                None,
-                Some(format!("{count} results, manual review needed")),
-            ),
-            SearchOutcome::LowConfidence(candidate) => (
-                "low_confidence",
-                Some(primary_name.clone()),
-                false,
-                1,
-                Some(candidate.confidence),
-                Some(serde_json::json!({
-                    "title": candidate.title,
-                    "external_id": candidate.external_id,
-                    "external_url": candidate.external_url,
-                    "authors": candidate.authors,
-                    "description": candidate.description,
-                    "cover_url": candidate.cover_url,
-                    "total_volumes": candidate.total_volumes,
-                    "start_year": candidate.start_year,
-                    "confidence": candidate.confidence,
-                })),
-                None,
-                Some(format!(
-                    "Best confidence: {:.0}%",
-                    candidate.confidence * 100.0
-                )),
-            ),
-            SearchOutcome::Error(e) => (
-                "error",
-                Some(primary_name.clone()),
-                false,
-                0,
-                None,
-                None,
-                None,
-                Some(e),
-            ),
+        let primary_outcome = if primary_linked || primary_skipped_sc {
+            None
+        } else {
+            Some(evaluate_provider(pool, library_id, series_name, &primary_name, false).await)
         };
 
-        // Insert event tracking (replaces insert_result -- events are the single source of truth)
-        match result_status {
-            "auto_matched" => {
+        let secondary_outcome = match secondary_name.as_deref() {
+            Some(provider) if !secondary_linked && !(sc_rate_limited && secondary_is_sc) => {
+                Some(evaluate_provider(pool, library_id, series_name, provider, true).await)
+            }
+            _ => None,
+        };
+
+        // Detect SensCritique 429 on either provider and trip the job circuit
+        // breaker for the remaining series.
+        for outcome in primary_outcome.iter().chain(secondary_outcome.iter()) {
+            if outcome.status == "error"
+                && outcome
+                    .message
+                    .as_deref()
+                    .is_some_and(|e| e.contains(RATE_LIMITED_ERROR))
+            {
+                sc_rate_limited = true;
+                warn!(
+                    "[METADATA_BATCH] job={job_id} SensCritique rate-limited on '{series_name}', skipping remaining SC lookups"
+                );
+            }
+        }
+
+        // A confident primary wins; otherwise a confident secondary (fallback)
+        // becomes the reported match. A series that already has its primary
+        // link must not be downgraded just because the secondary found
+        // nothing, and a rate-limited lookup only fails a series with no link.
+        let selected = select_series_outcome(
+            primary_linked,
+            secondary_linked,
+            primary_skipped_sc || secondary_skipped_sc,
+            primary_outcome.as_ref(),
+            secondary_outcome.as_ref(),
+        );
+
+        let (main, main_is_secondary) = match selected {
+            SeriesOutcome::Reported {
+                main,
+                from_secondary,
+            } => (main, from_secondary),
+            SeriesOutcome::AlreadyLinked => {
+                let mut detail = serde_json::json!({
+                    "primary_linked": primary_linked,
+                    "secondary_linked": secondary_linked,
+                });
+                if let Some(secondary) = &secondary_outcome {
+                    detail["secondary"] = secondary.detail();
+                }
+                if secondary_skipped_sc {
+                    detail["secondary_skipped"] = serde_json::json!("rate_limited");
+                }
+                processed += 1;
+                update_progress(pool, job_id, processed, total, series_name).await;
                 insert_event(
                     pool,
                     job_id,
-                    "metadata_matched",
+                    "metadata_already_linked",
                     "info",
                     Some("series"),
                     Some(series_name),
                     None,
-                    Some(serde_json::json!({
-                        "provider": provider_used,
-                        "fallback_used": fallback_used,
-                        "candidates_count": candidates_count,
-                        "confidence": best_confidence,
-                        "best_candidate": best_candidate,
-                        "link_id": link_id.map(|id| id.to_string()),
-                    })),
+                    Some(detail),
                 )
                 .await;
+                continue;
             }
-            "no_results" => {
-                insert_event(
-                    pool,
-                    job_id,
-                    "metadata_no_results",
-                    "info",
-                    Some("series"),
-                    Some(series_name),
-                    error_msg.as_deref(),
-                    Some(serde_json::json!({
-                        "provider": provider_used,
-                        "fallback_used": fallback_used,
-                        "candidates_count": candidates_count,
-                    })),
-                )
-                .await;
-            }
-            "low_confidence" => {
-                insert_event(
-                    pool,
-                    job_id,
-                    "metadata_low_confidence",
-                    "warning",
-                    Some("series"),
-                    Some(series_name),
-                    error_msg.as_deref(),
-                    Some(serde_json::json!({
-                        "provider": provider_used,
-                        "fallback_used": fallback_used,
-                        "candidates_count": candidates_count,
-                        "confidence": best_confidence,
-                        "best_candidate": best_candidate,
-                    })),
-                )
-                .await;
-            }
-            "too_many_results" => {
-                insert_event(
-                    pool,
-                    job_id,
-                    "metadata_too_many",
-                    "warning",
-                    Some("series"),
-                    Some(series_name),
-                    error_msg.as_deref(),
-                    Some(serde_json::json!({
-                        "provider": provider_used,
-                        "fallback_used": fallback_used,
-                        "candidates_count": candidates_count,
-                        "confidence": best_confidence,
-                        "best_candidate": best_candidate,
-                    })),
-                )
-                .await;
-            }
-            "error" => {
-                // Detect SensCritique 429 and trip the circuit breaker for this job
-                if let Some(ref e) = error_msg {
-                    if e.contains(RATE_LIMITED_ERROR) {
-                        sc_rate_limited = true;
-                        warn!("[METADATA_BATCH] job={job_id} SensCritique rate-limited on '{series_name}', skipping remaining SC lookups");
-                    }
-                }
+            SeriesOutcome::RateLimited => {
+                processed += 1;
+                update_progress(pool, job_id, processed, total, series_name).await;
+                warn!(
+                    "[METADATA_BATCH] job={job_id} skipping '{series_name}' (SensCritique rate-limited)"
+                );
                 insert_event(
                     pool,
                     job_id,
@@ -924,29 +750,70 @@ pub(crate) async fn process_metadata_batch(
                     "error",
                     Some("series"),
                     Some(series_name),
-                    error_msg.as_deref(),
-                    Some(serde_json::json!({
-                        "provider": provider_used,
-                        "fallback_used": fallback_used,
-                        "candidates_count": candidates_count,
-                    })),
+                    Some("Skipped: SensCritique rate-limited earlier in this job"),
+                    None,
                 )
                 .await;
+                continue;
             }
-            _ => {}
+        };
+
+        // The per-provider outcome doubles as the event payload; the outcome
+        // that was not selected is attached as a nested object so both
+        // providers stay visible (e.g. a primary error under a secondary match).
+        let mut detail = main.detail();
+        if main_is_secondary {
+            if let Some(primary) = &primary_outcome {
+                detail["primary"] = primary.detail();
+            }
+        } else if let Some(secondary) = &secondary_outcome {
+            detail["secondary"] = secondary.detail();
         }
 
-        // In rematch mode, if we created a new link, delete old links from other providers
-        if force_rematch && result_status == "auto_matched" {
-            if let Some(new_link_id) = link_id {
-                let _ = sqlx::query(
-                    "DELETE FROM external_metadata_links WHERE library_id = $1 AND id != $2 AND series_id = (\
-                     SELECT series_id FROM external_metadata_links WHERE id = $2)",
-                )
-                .bind(library_id)
-                .bind(new_link_id)
-                .execute(pool)
-                .await;
+        let event_type = match main.status {
+            "auto_matched" => "metadata_matched",
+            "no_results" => "metadata_no_results",
+            "low_confidence" => "metadata_low_confidence",
+            "too_many_results" => "metadata_too_many",
+            _ => "error",
+        };
+        let level = match event_type {
+            "metadata_low_confidence" | "metadata_too_many" => "warning",
+            "error" => "error",
+            _ => "info",
+        };
+        insert_event(
+            pool,
+            job_id,
+            event_type,
+            level,
+            Some("series"),
+            Some(series_name),
+            main.message.as_deref(),
+            Some(detail),
+        )
+        .await;
+
+        // In rematch mode, drop links from providers that are neither the
+        // primary nor the configured secondary. Keeping the secondary is
+        // required now that a single job can match both (#150).
+        let rematched = primary_outcome
+            .as_ref()
+            .is_some_and(|o| o.is_auto_matched())
+            || secondary_outcome
+                .as_ref()
+                .is_some_and(|o| o.is_auto_matched());
+        if force_rematch && rematched {
+            let mut keep_providers = vec![primary_name.clone()];
+            if let Some(secondary) = &secondary_name {
+                keep_providers.push(secondary.clone());
+            }
+            if let Err(e) =
+                cleanup_rematch_links(pool, library_id, series_name, &keep_providers).await
+            {
+                warn!(
+                    "[METADATA_BATCH] job={job_id} rematch cleanup failed for '{series_name}': {e}"
+                );
             }
         }
 
@@ -1036,7 +903,10 @@ pub(crate) async fn process_metadata_batch(
     Ok(())
 }
 
-use super::batch_sync::{auto_apply, search_and_evaluate, SearchOutcome};
+use super::batch_sync::{
+    cleanup_rematch_links, evaluate_provider, has_approved_link, load_approved_links,
+    select_series_outcome, SeriesOutcome,
+};
 
 // Helpers moved to crate::job_helpers and super::config
 
