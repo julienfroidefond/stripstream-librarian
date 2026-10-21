@@ -171,6 +171,64 @@ async fn invalid_search_payload_is_an_error() {
 }
 
 #[tokio::test]
+async fn search_retries_with_the_article_moved_to_the_front() {
+    let server = MockServer::start().await;
+    // The typeahead only answers when every word exists in a title, so the
+    // verbatim local name returns nothing.
+    Mock::given(method("GET"))
+        .and(path_regex(
+            r"/ajax/search/series/Cit%C3%A9s%20obscures%20%28Les%29",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string("null"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path_regex(
+            r"/ajax/search/series/Les%20Cit%C3%A9s%20obscures",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"[{"id":"1200/les-cites-obscures","nom":"Les Cités obscures","couv":null}]"#,
+        ))
+        .mount(&server)
+        .await;
+
+    let results = search_series_impl("Cités obscures (Les)", &server.uri())
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].external_id, "1200/les-cites-obscures");
+    // Moving the article is a faithful rewrite: an exact title match may still
+    // auto-match.
+    assert_eq!(results[0].confidence, 1.0);
+}
+
+#[tokio::test]
+async fn search_drops_the_subtitle_but_caps_confidence() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"/ajax/search/series/Spawn%20-%20.*"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("null"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"/ajax/search/series/Spawn$"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(r#"[{"id":"900/spawn","nom":"Spawn","couv":null}]"#),
+        )
+        .mount(&server)
+        .await;
+
+    let results = search_series_impl("Spawn - La Malédiction de Spawn", &server.uri())
+        .await
+        .unwrap();
+    assert_eq!(results[0].title, "Spawn");
+    // A stripped subtitle may hide a sub-series (`X - Saga` vs `X`), so the hit
+    // stays a review candidate instead of auto-matching.
+    assert!(results[0].confidence < 1.0);
+}
+
+#[tokio::test]
 async fn blank_query_skips_the_http_call() {
     // Port 9 is unreachable: any request would fail, so an empty result proves
     // the query was short-circuited.
@@ -227,7 +285,7 @@ fn parse_search_hits_skips_entries_without_id_or_title() {
     .unwrap();
     let candidates: Vec<_> = hits
         .into_iter()
-        .filter_map(|hit| candidate_from_hit(hit, "https://example.com", "valide"))
+        .filter_map(|hit| candidate_from_hit(hit, "https://example.com", "valide", 1.0))
         .collect();
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].title, "Valide");

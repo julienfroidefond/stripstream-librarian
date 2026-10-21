@@ -1,5 +1,5 @@
 use super::*;
-use wiremock::matchers::{method, path_regex};
+use wiremock::matchers::{method, path_regex, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
@@ -126,6 +126,35 @@ async fn album_fetch_error_is_propagated() {
         result.is_err(),
         "a failing album fetch must surface the error, not produce an empty book"
     );
+}
+
+#[tokio::test]
+async fn search_retries_with_the_article_moved_to_the_front() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"/search/ajax"))
+        .and(query_param("q", "Cités obscures (Les)"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"bests":[],"series":[]}"#))
+        .mount(&server)
+        .await;
+    let hit_body = format!(
+        r#"{{"bests":[{{"url":"{uri}/series/bd/1-les-cites-obscures","text":"Les Cités obscures (fr)"}}],"series":[]}}"#,
+        uri = server.uri()
+    );
+    Mock::given(method("GET"))
+        .and(path_regex(r"/search/ajax"))
+        .and(query_param("q", "Les Cités obscures"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(hit_body))
+        .mount(&server)
+        .await;
+
+    let results = search_series_impl("Cités obscures (Les)", &server.uri())
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].external_id, "bd/1-les-cites-obscures");
+    assert_eq!(results[0].title, "Les Cités obscures");
+    assert_eq!(results[0].confidence, 1.0);
 }
 
 #[test]

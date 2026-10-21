@@ -93,17 +93,12 @@ fn parse_search_hits(body: &str) -> Result<Vec<SearchHit>, String> {
     Ok(hits.unwrap_or_default())
 }
 
-fn confidence_for(title: &str, query: &str) -> f32 {
-    if title.eq_ignore_ascii_case(query) {
-        1.0
-    } else if title.to_lowercase().contains(&query.to_lowercase()) {
-        0.7
-    } else {
-        0.3
-    }
-}
-
-fn candidate_from_hit(hit: SearchHit, base: &str, query: &str) -> Option<SeriesCandidate> {
+fn candidate_from_hit(
+    hit: SearchHit,
+    base: &str,
+    query: &str,
+    max_confidence: f32,
+) -> Option<SeriesCandidate> {
     let id = hit.id.trim();
     let title = hit.nom.trim();
     if id.is_empty() || title.is_empty() {
@@ -130,7 +125,7 @@ fn candidate_from_hit(hit: SearchHit, base: &str, query: &str) -> Option<SeriesC
         total_volumes: None,
         cover_url,
         external_url: Some(external_url),
-        confidence: confidence_for(title, query),
+        confidence: scraping::confidence_for(title, query, max_confidence),
         metadata_json,
     })
 }
@@ -160,22 +155,17 @@ fn series_id(path: &str) -> Option<String> {
     }
 }
 
-async fn search_series_impl(query: &str, base: &str) -> Result<Vec<SeriesCandidate>, String> {
-    let query = query.trim();
-    if query.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let c = scraping::client(20, "BDTheque")?;
-    // `/recherche/series/` is behind a Cloudflare managed challenge (403 "Just a
-    // moment..."): use the JSON typeahead endpoint the site itself calls instead.
-    let url = search_url(base, query)?;
-    let body = scraping::get_html(&c, &url, "BDTheque").await?;
-
+/// Parse a typeahead payload into scored, deduplicated candidates.
+fn candidates_from_body(
+    body: &str,
+    base: &str,
+    query: &str,
+    max_confidence: f32,
+) -> Result<Vec<SeriesCandidate>, String> {
     let mut seen = std::collections::HashSet::new();
     let mut results = Vec::new();
-    for hit in parse_search_hits(&body)? {
-        let Some(candidate) = candidate_from_hit(hit, base, query) else {
+    for hit in parse_search_hits(body)? {
+        let Some(candidate) = candidate_from_hit(hit, base, query, max_confidence) else {
             continue;
         };
         if seen.insert(candidate.external_id.clone()) {
@@ -188,6 +178,31 @@ async fn search_series_impl(query: &str, base: &str) -> Result<Vec<SeriesCandida
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     results.truncate(20);
+    Ok(results)
+}
+
+async fn search_series_impl(query: &str, base: &str) -> Result<Vec<SeriesCandidate>, String> {
+    if query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let c = scraping::shared_client(20, "BDTheque")?;
+    // `/recherche/series/` is behind a Cloudflare managed challenge (403 "Just a
+    // moment..."): use the JSON typeahead endpoint the site itself calls instead.
+    //
+    // The endpoint only answers when every query word exists in a title, so a
+    // local name such as `Cités obscures (Les)` returns nothing. Retry with the
+    // normalised variants (article moved to the front, then without the
+    // subtitle) and keep the first non-empty answer.
+    let mut results = Vec::new();
+    for variant in scraping::query_variants(query) {
+        let url = search_url(base, &variant.query)?;
+        let body = scraping::get_html(&c, &url, "BDTheque").await?;
+        results = candidates_from_body(&body, base, &variant.query, variant.max_confidence)?;
+        if !results.is_empty() {
+            break;
+        }
+    }
 
     enrich_series_details(base, &mut results).await;
     Ok(results)
@@ -197,14 +212,11 @@ async fn search_series_impl(query: &str, base: &str) -> Result<Vec<SeriesCandida
 /// best candidates so that authors, publisher, year, status and volume count are
 /// available when the series is added.
 async fn enrich_series_details(base: &str, candidates: &mut [SeriesCandidate]) {
-    const MAX_ENRICHED: usize = 8;
-    let fetches = candidates.iter().take(MAX_ENRICHED).map(|candidate| {
-        let external_id = candidate.external_id.clone();
-        let base = base.to_string();
-        async move { get_series_impl(&external_id, &base).await.ok() }
-    });
-    let details = futures::future::join_all(fetches).await;
-    for (candidate, detail) in candidates.iter_mut().take(MAX_ENRICHED).zip(details) {
+    let details = scraping::fetch_candidate_details(base, candidates, |external_id, base| {
+        Box::pin(async move { get_series_impl(&external_id, &base).await.ok() })
+    })
+    .await;
+    for (candidate, detail) in candidates.iter_mut().zip(details) {
         let Some(detail) = detail else { continue };
         candidate.authors = detail.authors;
         candidate.description = detail.description;
@@ -265,7 +277,7 @@ fn parse_aggregate_rating(doc: &Html) -> Option<(f64, i64, f64)> {
 }
 
 async fn get_series_impl(external_id: &str, base: &str) -> Result<SeriesCandidate, String> {
-    let c = scraping::client(20, "BDTheque")?;
+    let c = scraping::shared_client(20, "BDTheque")?;
     let path = external_id.trim_start_matches('/');
     let url = format!("{base}/series/{path}");
     let body = scraping::get_html(&c, &url, "BDTheque").await?;
@@ -371,7 +383,7 @@ async fn get_series_books_impl(
     external_id: &str,
     base: &str,
 ) -> Result<Vec<BookCandidate>, String> {
-    let c = scraping::client(20, "BDTheque")?;
+    let c = scraping::shared_client(20, "BDTheque")?;
     let id = series_id(external_id).ok_or("invalid BDTheque series ID")?;
     let mut books = Vec::new();
     let mut page = 0u32;
