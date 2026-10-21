@@ -52,21 +52,38 @@ struct SearchHit {
     couv: Option<String>,
 }
 
+/// Percent-encode `value` as a single URL path segment.
+///
+/// `reqwest::Url`'s path-segment encoder keeps RFC 3986 sub-delimiters (`'`,
+/// `!`, `(`, `)`, `&`, `+`, ...) literal, but BDTheque's Express router answers
+/// `400 Bad Request` for them. Encode everything outside the unreserved set,
+/// which the site accepts (`%27`, `%21`, `%28`, `%29`, `%26`, `%2B`).
+fn encode_path_segment(value: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            encoded.push(byte as char);
+        } else {
+            encoded.push('%');
+            encoded.push(HEX[(byte >> 4) as usize] as char);
+            encoded.push(HEX[(byte & 0x0F) as usize] as char);
+        }
+    }
+    encoded
+}
+
 /// Build the typeahead URL. The query is a path segment (not a query string),
-/// which is why it is pushed through `path_segments_mut` so it gets percent-encoded.
+/// and must be fully percent-encoded (see [`encode_path_segment`]).
 fn search_url(base: &str, query: &str) -> Result<String, String> {
-    let mut url =
-        reqwest::Url::parse(base).map_err(|e| format!("invalid BDTheque base URL: {e}"))?;
+    let base = reqwest::Url::parse(base).map_err(|e| format!("invalid BDTheque base URL: {e}"))?;
     let query = query.replace('/', " ");
     let query = query.split_whitespace().collect::<Vec<_>>().join(" ");
-    {
-        let mut segments = url
-            .path_segments_mut()
-            .map_err(|_| "invalid BDTheque base URL".to_string())?;
-        segments.pop_if_empty();
-        segments.extend(["ajax", "search", "series", query.as_str()]);
-    }
-    Ok(url.to_string())
+    Ok(format!(
+        "{}/ajax/search/series/{}",
+        base.as_str().trim_end_matches('/'),
+        encode_path_segment(&query)
+    ))
 }
 
 /// Parse the typeahead payload. The site answers `null` (not `[]`) when nothing matches.
