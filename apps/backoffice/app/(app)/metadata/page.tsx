@@ -143,19 +143,16 @@ export default async function MetadataPage({
         ))}
       </div>
 
-      <Card className="mb-6">
-        <CardContent className="pt-6">
-          <LiveSearchForm
-            basePath="/metadata"
-            hiddenValues={{ tab }}
-            initialValues={{ q: searchQuery, library: libraryId || "" }}
-            fields={[
-              { name: "q", type: "text", label: t("common.search"), placeholder: t("metadata.gapsSearchPlaceholder") },
-              { name: "library", type: "select", label: t("books.library"), options: libraryOptions },
-            ]}
-          />
-        </CardContent>
-      </Card>
+      <LiveSearchForm
+        className="mb-6"
+        basePath="/metadata"
+        hiddenValues={{ tab }}
+        initialValues={{ q: searchQuery, library: libraryId || "" }}
+        fields={[
+          { name: "q", type: "text", label: t("common.search"), placeholder: t("metadata.gapsSearchPlaceholder") },
+          { name: "library", type: "select", label: t("books.library"), options: libraryOptions },
+        ]}
+      />
 
       {summaryFailed && (
         <Card className="mb-4 border-error/40">

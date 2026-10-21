@@ -2,7 +2,7 @@ import { fetchAuthors, AuthorsPageDto } from "@/lib/api";
 import { getServerTranslations } from "@/lib/i18n/server";
 import { paramString, paramStringOr, paramInt } from "@/lib/searchParams";
 import { LiveSearchForm } from "@/app/components/LiveSearchForm";
-import { Card, CardContent, OffsetPagination } from "@/app/components/ui";
+import { OffsetPagination } from "@/app/components/ui";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -45,21 +45,18 @@ export default async function AuthorsPage({
         </h1>
       </div>
 
-      <Card className="mb-6">
-        <CardContent className="pt-6">
-          <LiveSearchForm
-            basePath="/authors"
-            initialValues={{
-              q: searchQuery,
-              sort: sort || "",
-            }}
-            fields={[
-              { name: "q", type: "text", label: t("common.search"), placeholder: t("authors.searchPlaceholder") },
-              { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },
-            ]}
-          />
-        </CardContent>
-      </Card>
+      <LiveSearchForm
+        className="mb-6"
+        basePath="/authors"
+        initialValues={{
+          q: searchQuery,
+          sort: sort || "",
+        }}
+        fields={[
+          { name: "q", type: "text", label: t("common.search"), placeholder: t("authors.searchPlaceholder") },
+          { name: "sort", type: "select", label: t("books.sort"), options: sortOptions },
+        ]}
+      />
 
       {/* Results count */}
       <p className="text-sm text-muted-foreground mb-4">
