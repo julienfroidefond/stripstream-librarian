@@ -7,9 +7,9 @@ Les tâches de métadonnées enrichissent vos séries avec des informations issu
 
 ---
 
-## Métadonnées en lot — Liaison automatique
+## Auto-match — Séries non liées
 
-Recherche et lie automatiquement toutes les séries d'une bibliothèque qui n'ont pas encore de métadonnées approuvées. C'est l'outil idéal pour enrichir une nouvelle bibliothèque en une seule opération.
+Recherche et lie automatiquement les séries d'une bibliothèque qui n'ont pas encore de métadonnées approuvées. C'est l'outil idéal pour enrichir une nouvelle bibliothèque en une seule opération.
 
 **Ce qui se passe** :
 - Les liens existants sont évalués **provider par provider** : un lien principal déjà approuvé n'empêche pas de chercher le provider de secours, et inversement
@@ -35,7 +35,7 @@ Dans le backoffice, chaque ligne du rapport indique le provider qui a matché, a
 
 ## Re-match — Changer de provider en masse
 
-Variante du batch qui re-matche avec le provider principal les séries qui n'y sont pas encore liées, y compris celles qui ont des liens d'autres providers. Utile pour migrer une bibliothèque d'un provider à un autre sans passer manuellement sur chaque série. Le provider secondaire configuré est évalué dans le même job.
+Variante de l'auto-match qui re-matche avec le provider principal les séries qui n'y sont pas encore liées, y compris celles qui ont des liens d'autres providers. Utile pour migrer une bibliothèque d'un provider à un autre sans passer manuellement sur chaque série. Le provider secondaire configuré est évalué dans le même job.
 
 Le re-match ne supprime les anciens liens qu'après avoir trouvé un nouveau match avec succès — vos données ne sont jamais perdues si le nouveau matching échoue. Le lien du provider de secours configuré est conservé, puisque le même job peut aussi l'auto-matcher.
 
@@ -52,7 +52,7 @@ Le **Refresh complet** force la mise à jour de toutes les séries liées, y com
 Les champs verrouillés manuellement ne sont jamais modifiés par un refresh.
 
 :::note[Détails techniques]
-**Batch** (`metadata_batch`) :
+**Auto-match** (`metadata_batch`) :
 - Ignore les séries nommées `"unclassified"` et celles dont la bibliothèque a `metadata_provider = 'none'`
 - Résolution du provider : bibliothèque → paramètre global → fallback `google_books`
 - Vérification des liens **par provider** (série + provider), jamais « au moins un lien » pour la série
