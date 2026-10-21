@@ -193,6 +193,33 @@ fn search_url_encodes_query_as_a_path_segment() {
 }
 
 #[test]
+fn search_url_encodes_sub_delimiters_rejected_by_bdtheque() {
+    // BDTheque's Express router returns 400 when these stay literal, which made
+    // every series with an apostrophe, exclamation mark, parenthesis, `&` or
+    // `+` fail during metadata batches.
+    assert_eq!(
+        search_url("https://www.bdtheque.com", "Hell's Paradise").unwrap(),
+        "https://www.bdtheque.com/ajax/search/series/Hell%27s%20Paradise"
+    );
+    assert_eq!(
+        search_url("https://www.bdtheque.com", "Smile!").unwrap(),
+        "https://www.bdtheque.com/ajax/search/series/Smile%21"
+    );
+    assert_eq!(
+        search_url("https://www.bdtheque.com", "Cités Obscures (Les)").unwrap(),
+        "https://www.bdtheque.com/ajax/search/series/Cit%C3%A9s%20Obscures%20%28Les%29"
+    );
+    assert_eq!(
+        search_url("https://www.bdtheque.com", "Rose & Crow").unwrap(),
+        "https://www.bdtheque.com/ajax/search/series/Rose%20%26%20Crow"
+    );
+    assert_eq!(
+        search_url("https://www.bdtheque.com", "C++").unwrap(),
+        "https://www.bdtheque.com/ajax/search/series/C%2B%2B"
+    );
+}
+
+#[test]
 fn parse_search_hits_skips_entries_without_id_or_title() {
     let hits = parse_search_hits(
         r#"[{"id":"","nom":"Sans id","couv":null},{"id":"1/x","nom":"","couv":null},{"id":"1/x","nom":"Valide","couv":"T_1.JPG"}]"#,
