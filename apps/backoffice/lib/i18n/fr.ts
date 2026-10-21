@@ -465,6 +465,7 @@ const fr = {
   "jobRow.telegramMatched": "{{count}} séries matchées",
   "jobRow.telegramSourcesScanned": "{{count}} sources analysées",
   "jobRow.errors": "{{count}} erreurs",
+  "jobRow.lowConfidence": "{{count}} à confiance faible",
   "jobRow.view": "Voir",
   "jobRow.replay": "Rejouer",
 

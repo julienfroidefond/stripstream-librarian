@@ -46,7 +46,7 @@ export function JobSummaryBanner({
           <span className="font-semibold">{t("jobDetail.completedIn", { duration: formatDuration(job.started_at, job.finished_at) })}</span>
           {isMetadataBatch && batchReport && (
             <span className="ml-2 text-success/80">
-              — {batchReport.auto_matched} {t("jobDetail.autoMatched").toLowerCase()}, {batchReport.already_linked} {t("jobDetail.alreadyLinked").toLowerCase()}, {batchReport.no_results} {t("jobDetail.noResults").toLowerCase()}, {batchReport.errors} {t("jobDetail.errors").toLowerCase()}
+              — {batchReport.auto_matched} {t("jobDetail.autoMatched").toLowerCase()}, {batchReport.already_linked} {t("jobDetail.alreadyLinked").toLowerCase()}, {batchReport.no_results} {t("jobDetail.noResults").toLowerCase()}, {batchReport.too_many_results} {t("jobDetail.tooManyResults").toLowerCase()}, {batchReport.low_confidence} {t("jobDetail.lowConfidence").toLowerCase()}, {batchReport.errors} {t("jobDetail.errors").toLowerCase()}
             </span>
           )}
           {isMetadataRefresh && refreshReport && (
