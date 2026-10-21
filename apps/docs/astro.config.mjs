@@ -62,7 +62,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Providers', slug: 'metadata/providers' },
 						{ label: 'Synchronisation', slug: 'metadata/sync' },
-						{ label: 'Batch & Refresh', slug: 'metadata/batch-refresh' },
+						{ label: 'Auto-match & Refresh', slug: 'metadata/batch-refresh' },
 						{ label: 'Lacunes de métadonnées', slug: 'metadata/gaps' },
 					],
 				},

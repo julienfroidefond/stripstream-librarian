@@ -147,6 +147,17 @@ describe("Tooltip", () => {
     expect(screen.getByText("trigger")).toBeInTheDocument();
     expect(screen.getByText("More info")).toBeInTheDocument();
   });
+
+  it("renders an optional description and supports edge alignment", () => {
+    const { container } = render(
+      <Tooltip label="More info" description="A precise explanation" align="end">
+        trigger
+      </Tooltip>
+    );
+
+    expect(screen.getByText("A precise explanation")).toBeInTheDocument();
+    expect(container.querySelector("span.absolute")).toHaveClass("right-0");
+  });
 });
 
 describe("Icon", () => {

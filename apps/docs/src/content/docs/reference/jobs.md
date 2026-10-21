@@ -30,7 +30,7 @@ Depuis la page **Tâches**, sélectionnez une bibliothèque (ou Toutes) puis cli
 
 | Libellé dans l'interface | Description |
 |--------------------------|-------------|
-| **Métadonnées en lot** | Recherche et lie automatiquement les séries sans métadonnées approuvées |
+| **Auto-match séries non liées** | Recherche et lie automatiquement les séries sans métadonnées approuvées |
 | **Re-match métadonnées** | Supprime les liens existants et re-matche avec le provider actuel |
 | **Rafraîchir métadonnées** | Met à jour les séries liées (en cours de publication uniquement) |
 | **Rafraîchir toutes les métadonnées** | Met à jour toutes les séries liées, y compris terminées |

@@ -45,13 +45,13 @@ Le bouton **Refresh**, directement visible dans l'en-tête de la page série (et
 
 ## Matching en masse
 
-Plutôt que de matcher série par série, utilisez le job **Batch metadata** depuis la page Tâches :
+Plutôt que de matcher série par série, utilisez le job **Auto-match séries non liées** depuis la page Tâches :
 
 - Traite toutes les séries sans lien approuvé
 - Valide automatiquement les matchs avec un score de confiance maximum
 - Les autres résultats sont listés dans le rapport du job pour traitement manuel
 
-Voir [Batch & Refresh](/metadata/batch-refresh/) pour le détail.
+Voir [Auto-match & Refresh](/metadata/batch-refresh/) pour le détail.
 
 ---
 
@@ -93,7 +93,7 @@ Seuls les tomes réguliers et les intégrales participent à ce matching.
 
 Le score (0.0 → 1.0) mesure la probabilité que le résultat trouvé corresponde bien à votre série. Il combine la similarité de nom avec un bonus si le nombre de tomes correspond.
 
-Seul un score de **1.0** déclenche la validation automatique dans le job batch. En dessous, le match vous est soumis pour validation manuelle.
+Seul un score de **1.0** déclenche la validation automatique dans le job d'auto-match. En dessous, le match vous est soumis pour validation manuelle.
 
 :::note[Détails techniques]
 **Règles de mise à jour par champ** :

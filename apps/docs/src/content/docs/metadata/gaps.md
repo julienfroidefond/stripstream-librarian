@@ -41,7 +41,7 @@ Chaque ligne du tableau renvoie vers la série ou le livre concerné. Depuis la 
 
 - **Lancer une recherche de métadonnées** et approuver un match (voir [Providers de métadonnées](/metadata/providers))
 - **Éditer manuellement** les champs et les verrouiller (voir [Métadonnées des livres](/books/metadata))
-- **Lancer un batch** pour lier automatiquement les séries non liées (voir [Batch & Refresh](/metadata/batch-refresh))
+- **Lancer un auto-match** pour lier automatiquement les séries non liées (voir [Auto-match & Refresh](/metadata/batch-refresh))
 
 :::note[Détails techniques]
 **Endpoint** : `GET /metadata/gaps/summary` (scope `read`), avec un paramètre optionnel `library_id`. Il renvoie 16 compteurs agrégés (8 pour les séries, 8 pour les livres).

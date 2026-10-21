@@ -1,11 +1,11 @@
 ---
-title: Batch & Refresh
-description: Traitement en masse et rafraîchissement des métadonnées
+title: Auto-match & Refresh
+description: Liaison automatique des séries non liées et rafraîchissement des métadonnées
 ---
 
-## Batch — Liaison automatique en lot
+## Auto-match — Séries non liées
 
-Le job **Batch metadata** recherche et lie automatiquement les séries d'une bibliothèque qui n'ont pas encore de lien approuvé pour chaque provider configuré (principal et secondaire). C'est le moyen le plus rapide d'enrichir une nouvelle bibliothèque.
+Le job **Auto-match séries non liées** recherche et lie automatiquement les séries d'une bibliothèque qui n'ont pas encore de lien approuvé pour chaque provider configuré (principal et secondaire). C'est le moyen le plus rapide d'enrichir une nouvelle bibliothèque.
 
 ### Résultats possibles pour chaque série
 
@@ -45,7 +45,7 @@ Le job **Refresh complet** force la mise à jour de toutes les séries liées, y
 - Le refresh est **non-destructif** : il n'efface pas vos données, il ajoute ou met à jour seulement si le provider a de nouvelles informations
 
 :::note[Détails techniques]
-**Batch** : job `metadata_batch`. Séries triées par `updated_at ASC` (les moins récentes en premier). SensCritique : mode détaillé via `groupProducts`. Auto-match uniquement si confidence == 1.0, pour le provider principal comme pour le secondaire. Liens vérifiés par couple série + provider. Circuit breaker SensCritique sur HTTP 429 (seules les requêtes SensCritique sont sautées). Délai de 1s entre chaque série.
+**Auto-match** : job `metadata_batch`. Séries triées par `updated_at ASC` (les moins récentes en premier). SensCritique : mode détaillé via `groupProducts`. Auto-match uniquement si confidence == 1.0, pour le provider principal comme pour le secondaire. Liens vérifiés par couple série + provider. Circuit breaker SensCritique sur HTTP 429 (seules les requêtes SensCritique sont sautées). Délai de 1s entre chaque série.
 
 **Re-match** : job `metadata_batch_rematch`. Chaque provider est évalué séparément : seul un provider déjà lié est ignoré, pas la série entière. Après un match réussi, les liens des providers non configurés sont supprimés ; le principal et le secondaire configurés sont conservés.
 
@@ -56,7 +56,7 @@ Le job **Refresh complet** force la mise à jour de toutes les séries liées, y
 API :
 ```
 POST /metadata/batch
-{ "library_id": "uuid" }           // batch normal
+{ "library_id": "uuid" }           // auto-match
 { "library_id": "uuid", "force_rematch": true }  // re-match
 
 POST /metadata/refresh

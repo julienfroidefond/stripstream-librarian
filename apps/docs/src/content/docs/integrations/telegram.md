@@ -25,7 +25,7 @@ Vous pouvez activer ou désactiver chaque type de notification individuellement 
 | **Scans** | Scan terminé, scan en erreur, scan annulé |
 | **Miniatures** | Génération terminée, en erreur, annulée |
 | **Conversion CBR→CBZ** | Conversion terminée, en erreur, annulée |
-| **Métadonnées** | Métadonnées approuvées, batch terminé, refresh terminé |
+| **Métadonnées** | Métadonnées approuvées, auto-match terminé, refresh terminé |
 | **Lecture** | Pull AniList terminé, pull en erreur, push AniList terminé, push en erreur |
 | **Téléchargements** | Synchronisation incrémentale du Telegram Monitor terminée |
 
