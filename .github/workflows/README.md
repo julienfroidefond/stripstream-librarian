@@ -7,14 +7,48 @@ this page: it is not needed to write code, only to understand a pipeline failure
 
 | Workflow | Trigger | Role |
 |----------|---------|------|
-| `ci.yml` | pull requests touching `apps/api/**`, `apps/indexer/**`, `crates/**` | `cargo fmt` / `clippy` / `cargo nextest`, PostgreSQL service, `Rust (fmt · clippy · test)` check |
+| `ci.yml` | pull requests touching Rust paths, push to `main` (cache warm-up only) | `cargo fmt` / `clippy` / `cargo nextest`, PostgreSQL service, `Rust (fmt · clippy · test)` check |
 | `ci-web.yml` | pull requests touching the web apps | backoffice and docs validation |
 | `deploy.yml` | push to `main` | change detection, image build/push, version bump and deploy |
 | `opencode.yml` | `ai` label, `/oc` mentions | OpenCode agent |
 
-`ci.yml` runs on **pull requests only**: the merge to `main` is deliberately not re-validated,
-so `Rust (fmt · clippy · test)` MUST stay a required status check on the protected branch.
-Direct pushes to `main` bypass the gate — use a PR or `workflow_dispatch` in that case.
+The merge to `main` is deliberately **not re-validated**, so `Rust (fmt · clippy · test)` MUST
+stay a required status check on the protected branch. Direct pushes to `main` bypass the gate —
+use a PR or `workflow_dispatch` in that case.
+
+## Rust gate (`ci.yml`)
+
+Three jobs, all racing each other:
+
+| Job | What it does |
+|-----|--------------|
+| `lint` | `cargo fmt --check` + `clippy --all-targets -D warnings` |
+| `test` | `cargo nextest`, sharded over a 2-entry matrix (`--partition count:<shard>/<job-total>`) |
+| `gate` | nothing (~2 s), only aggregates the two above |
+
+Only `gate` matters to branch protection: its name is the check name
+(`Rust (fmt · clippy · test)`), so the real work can be split into as many jobs as we want
+without ever touching the ruleset. Keep that name stable.
+
+Times measured on this repo (1371 tests, 585 of them `#[sqlx::test]`): 11m52 for the old
+single-job setup, 6m32 cold (no cache) and **4m31 warm** with this one.
+
+Two non-obvious settings, both worth ~6 min:
+
+- **PostgreSQL tuning.** `#[sqlx::test]` creates a throwaway database per test and replays all
+  ~130 migrations on it, one transaction each: 585 tests × ~150 fsyncs is ~88 % of the suite.
+  The job sets `synchronous_commit=off` and `full_page_writes=off` (migration replay
+  0.55 s → 0.21 s per database). This **cannot** be done through the service container's
+  `options:` field: it is spliced into `docker create` *before* the image name, so `-c fsync=off`
+  is parsed as a docker flag and the container never starts. Hence the
+  `ALTER SYSTEM ... / pg_reload_conf()` step going through
+  `docker exec "${{ job.services.postgres.id }}"`. Both settings are reload-safe, so no restart.
+- **Parallelism.** `lint` and `test` are separate jobs, and `nextest` is sharded. Partitioning is
+  by *test count*, not duration, so the busiest shard varies between ~135 s and ~210 s.
+
+`paths:` also lists `.github/workflows/ci.yml`, so a workflow edit is itself validated. Note that
+GitHub evaluates `paths` against the **default branch** version of the file: a PR that only
+touches `ci.yml` will run nothing until this filter exists on `main`.
 
 ## Images
 
@@ -50,7 +84,17 @@ Do **not** set `DOCKER_CONFIG` in the runner env: it hides the `compose` CLI plu
 
 ## Cargo cache
 
-`Swatinem/rust-cache@v2` needs the `actions: write` permission to **save** its cache; with a
+`Swatinem/rust-cache@v2` only **saves** on the default branch, and cache entries are
+branch-scoped: with a PR-only trigger the repo had no cache at all, and every PR recompiled
+~450 crates twice (clippy, then the test profile).
+
+`ci.yml` therefore also runs on `push: main`, in *warm-up* mode: `fmt`, `clippy` and
+`nextest --no-run` execute (so the cache is populated), but no test is run. That run is what
+every subsequent PR restores. `save-if: github.ref == 'refs/heads/main'` is spelled out
+explicitly in both jobs so it does not look like a missing `save-if: true`. The two jobs use
+distinct `shared-key:` values (`lint`, `test`) because they produce different artifacts.
+
+`Swatinem/rust-cache@v2` also needs the `actions: write` permission to **save** its cache; with a
 restricted `permissions:` block the cache is restored read-only and every run recompiles the
 workspace (~7-8 min of `clippy`, plus the test build). `opencode.yml` therefore declares
 `actions: write`; keep it when editing the job. The `issue` and `comment` jobs disable the
