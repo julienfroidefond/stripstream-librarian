@@ -211,6 +211,54 @@ pub(super) fn select_main_outcome<'a>(
     main.map(|main| (main, main_is_secondary))
 }
 
+/// What the batch job should report for one series.
+pub(super) enum SeriesOutcome<'a> {
+    /// The series already has an approved link and nothing new was matched.
+    AlreadyLinked,
+    /// A provider lookup was skipped because SensCritique rate-limited the job.
+    RateLimited,
+    /// Report this provider outcome for the series.
+    Reported {
+        main: &'a ProviderOutcome,
+        from_secondary: bool,
+    },
+}
+
+/// Decide what to report for a series, taking existing links into account.
+///
+/// A series whose primary is already linked must not be downgraded to
+/// `no_results` / `low_confidence` just because the secondary found nothing:
+/// only a confident secondary changes what is reported. Conversely, a skipped
+/// SensCritique lookup is only an error when the series has no link at all.
+pub(super) fn select_series_outcome<'a>(
+    primary_linked: bool,
+    secondary_linked: bool,
+    provider_skipped_rate_limited: bool,
+    primary: Option<&'a ProviderOutcome>,
+    secondary: Option<&'a ProviderOutcome>,
+) -> SeriesOutcome<'a> {
+    let secondary_matched = secondary.is_some_and(ProviderOutcome::is_auto_matched);
+
+    if !(primary_linked && !secondary_matched) {
+        if let Some((main, from_secondary)) = select_main_outcome(primary, secondary) {
+            return SeriesOutcome::Reported {
+                main,
+                from_secondary,
+            };
+        }
+    }
+
+    if primary_linked || secondary_linked {
+        SeriesOutcome::AlreadyLinked
+    } else if provider_skipped_rate_limited {
+        SeriesOutcome::RateLimited
+    } else {
+        // Neither provider produced an outcome and nothing is linked: nothing
+        // to report, the series was already handled.
+        SeriesOutcome::AlreadyLinked
+    }
+}
+
 /// Candidate payload persisted in job events (used by the quick-match UI).
 fn candidate_detail(
     candidate: &metadata_providers::SeriesCandidate,
@@ -399,24 +447,39 @@ pub(super) async fn auto_apply(
 ///
 /// The configured providers are kept on purpose: now that one job can match
 /// both the primary and the secondary, deleting the freshly created secondary
-/// link would undo half of the job (#150).
+/// link would undo half of the job (#150). Removing the old primary would also
+/// leave the series without a reference provider, so the oldest remaining
+/// approved link is promoted afterwards.
 pub(super) async fn cleanup_rematch_links(
     pool: &PgPool,
     library_id: Uuid,
     series_name: &str,
     keep_providers: &[String],
 ) -> Result<u64, sqlx::Error> {
+    let series_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM series WHERE library_id = $1 AND name = $2")
+            .bind(library_id)
+            .bind(series_name)
+            .fetch_optional(pool)
+            .await?;
+
+    let Some(series_id) = series_id else {
+        return Ok(0);
+    };
+
     let result = sqlx::query(
         "DELETE FROM external_metadata_links \
-         WHERE library_id = $1 \
-           AND series_id = (SELECT id FROM series WHERE library_id = $1 AND name = $2) \
-           AND provider <> ALL($3)",
+         WHERE library_id = $1 AND series_id = $2 AND provider <> ALL($3)",
     )
     .bind(library_id)
-    .bind(series_name)
+    .bind(series_id)
     .bind(keep_providers)
     .execute(pool)
     .await?;
+
+    if result.rows_affected() > 0 {
+        shared_sync::promote_oldest_approved(pool, series_id).await?;
+    }
 
     Ok(result.rows_affected())
 }

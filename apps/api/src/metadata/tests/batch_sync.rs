@@ -134,6 +134,80 @@ fn secondary_is_selected_when_primary_is_already_linked() {
     assert!(from_secondary);
 }
 
+#[test]
+fn linked_primary_with_uncertain_secondary_stays_already_linked() {
+    let no_results = outcome("no_results", "bdphile");
+    assert!(matches!(
+        select_series_outcome(true, false, false, None, Some(&no_results)),
+        SeriesOutcome::AlreadyLinked
+    ));
+
+    let low_confidence = outcome("low_confidence", "bdphile");
+    assert!(
+        matches!(
+            select_series_outcome(true, false, false, None, Some(&low_confidence)),
+            SeriesOutcome::AlreadyLinked
+        ),
+        "a linked series must not be downgraded by an uncertain secondary"
+    );
+}
+
+#[test]
+fn linked_primary_with_confident_secondary_is_reported() {
+    let secondary = outcome("auto_matched", "bdphile");
+
+    match select_series_outcome(true, false, false, None, Some(&secondary)) {
+        SeriesOutcome::Reported {
+            main,
+            from_secondary,
+        } => {
+            assert_eq!(main.provider, "bdphile");
+            assert!(from_secondary);
+        }
+        _ => panic!("a confident secondary must still be auto-matched"),
+    }
+}
+
+#[test]
+fn both_providers_linked_is_already_linked() {
+    assert!(matches!(
+        select_series_outcome(true, true, false, None, None),
+        SeriesOutcome::AlreadyLinked
+    ));
+}
+
+#[test]
+fn rate_limited_is_only_an_error_without_any_link() {
+    assert!(matches!(
+        select_series_outcome(false, false, true, None, None),
+        SeriesOutcome::RateLimited
+    ));
+    assert!(
+        matches!(
+            select_series_outcome(true, false, true, None, None),
+            SeriesOutcome::AlreadyLinked
+        ),
+        "a series already linked to its primary must not turn red when SC is rate-limited"
+    );
+}
+
+#[test]
+fn primary_error_with_confident_secondary_reports_secondary() {
+    let primary = outcome("error", "bedetheque");
+    let secondary = outcome("auto_matched", "bdphile");
+
+    match select_series_outcome(false, false, false, Some(&primary), Some(&secondary)) {
+        SeriesOutcome::Reported {
+            main,
+            from_secondary,
+        } => {
+            assert_eq!(main.provider, "bdphile");
+            assert!(from_secondary);
+        }
+        _ => panic!("a confident secondary must be reported when the primary fails"),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Per-provider link tracking (#150)
 // ---------------------------------------------------------------------------
@@ -288,4 +362,41 @@ async fn rematch_cleanup_keeps_primary_and_secondary_links(pool: sqlx::PgPool) {
     .await
     .unwrap();
     assert_eq!(primary, "bedetheque", "the primary link is untouched");
+}
+
+/// When the old primary is no longer configured, the freshly matched link must
+/// become the reference provider instead of leaving the series without one.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn rematch_cleanup_promotes_the_remaining_link(pool: sqlx::PgPool) {
+    let lib_id = create_lib(&pool, "promote_after_cleanup").await;
+    let series_id = create_series(&pool, lib_id, "Naruto").await;
+
+    sqlx::query(
+        "INSERT INTO external_metadata_links \
+             (library_id, series_id, provider, external_id, status, confidence, is_primary) \
+         VALUES ($1, $2, 'bedetheque', 'bd_1', 'approved', 1.0, true), \
+                ($1, $2, 'senscritique', 'sc_1', 'approved', 1.0, false)",
+    )
+    .bind(lib_id)
+    .bind(series_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let keep_providers = vec!["senscritique".to_string()];
+    let deleted = cleanup_rematch_links(&pool, lib_id, "Naruto", &keep_providers)
+        .await
+        .unwrap();
+    assert_eq!(deleted, 1, "the old primary link is dropped");
+
+    let (provider, is_primary): (String, bool) = sqlx::query_as(
+        "SELECT provider, is_primary FROM external_metadata_links WHERE series_id = $1",
+    )
+    .bind(series_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(provider, "senscritique");
+    assert!(is_primary, "the remaining link must become primary");
 }

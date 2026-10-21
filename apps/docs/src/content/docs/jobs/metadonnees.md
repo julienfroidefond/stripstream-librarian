@@ -33,7 +33,7 @@ Recherche et lie automatiquement toutes les séries d'une bibliothèque qui n'on
 
 ## Re-match — Changer de provider en masse
 
-Variante du batch qui re-matche les séries avec le provider principal actuellement configuré, même lorsqu'elles ont déjà des liens d'autres providers. Utile pour migrer une bibliothèque d'un provider à un autre sans passer manuellement sur chaque série.
+Variante du batch qui re-matche avec le provider principal les séries qui n'y sont pas encore liées, y compris celles qui ont des liens d'autres providers. Utile pour migrer une bibliothèque d'un provider à un autre sans passer manuellement sur chaque série. Le provider secondaire configuré est évalué dans le même job.
 
 Le re-match ne supprime les anciens liens qu'après avoir trouvé un nouveau match avec succès — vos données ne sont jamais perdues si le nouveau matching échoue. Le lien du provider de secours configuré est conservé, puisque le même job peut aussi l'auto-matcher.
 
@@ -62,7 +62,7 @@ Les champs verrouillés manuellement ne sont jamais modifiés par un refresh.
 
 **Re-match** (`metadata_batch_rematch`) :
 - Chaque provider est évalué séparément : seul un provider déjà lié est ignoré, pas la série entière
-- Après un match réussi, les liens des providers non configurés sont supprimés ; principal et secondaire sont conservés
+- Après un match réussi, les liens des providers non configurés sont supprimés ; principal et secondaire sont conservés, et le lien restant devient le provider de référence si l'ancien principal disparaît
 - `API : POST /metadata/batch { "library_id": "uuid", "force_rematch": true }`
 
 **Refresh** (`metadata_refresh`) :

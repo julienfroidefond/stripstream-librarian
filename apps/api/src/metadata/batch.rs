@@ -501,7 +501,19 @@ pub(crate) async fn process_metadata_batch(
         .filter(|s| !s.is_empty())
         .map(metadata_providers::canonical_provider_name)
         .map(str::to_string)
-        .filter(|s| *s != primary_name);
+        .filter(|s| *s != primary_name)
+        .and_then(|name| match metadata_providers::resolve_provider(&name) {
+            Ok(_) => Some(name),
+            Err(unknown) => {
+                // Now that the secondary is queried for every eligible series,
+                // an unknown name would turn the whole job red one series at a
+                // time. Warn once and run without it instead.
+                warn!(
+                    "[METADATA_BATCH] job={job_id} ignoring unknown secondary provider '{unknown}'"
+                );
+                None
+            }
+        });
 
     info!(
         "[METADATA_BATCH] job={job_id} library={library_id} primary={primary_name} secondary={secondary_name:?}"
@@ -618,16 +630,51 @@ pub(crate) async fn process_metadata_batch(
         }
 
         // A confident primary wins; otherwise a confident secondary (fallback)
-        // becomes the reported match. When the primary is already linked, the
-        // secondary is evaluated on its own and reported for the series.
-        let main = select_main_outcome(primary_outcome.as_ref(), secondary_outcome.as_ref());
+        // becomes the reported match. A series that already has its primary
+        // link must not be downgraded just because the secondary found
+        // nothing, and a rate-limited lookup only fails a series with no link.
+        let selected = select_series_outcome(
+            primary_linked,
+            secondary_linked,
+            primary_skipped_sc || secondary_skipped_sc,
+            primary_outcome.as_ref(),
+            secondary_outcome.as_ref(),
+        );
 
-        let Some((main, main_is_secondary)) = main else {
-            // Nothing to evaluate: every configured provider already has an
-            // approved link, or a rate-limited SensCritique lookup was skipped.
-            processed += 1;
-            update_progress(pool, job_id, processed, total, series_name).await;
-            if primary_skipped_sc || secondary_skipped_sc {
+        let (main, main_is_secondary) = match selected {
+            SeriesOutcome::Reported {
+                main,
+                from_secondary,
+            } => (main, from_secondary),
+            SeriesOutcome::AlreadyLinked => {
+                let mut detail = serde_json::json!({
+                    "primary_linked": primary_linked,
+                    "secondary_linked": secondary_linked,
+                });
+                if let Some(secondary) = &secondary_outcome {
+                    detail["secondary"] = secondary.detail();
+                }
+                if secondary_skipped_sc {
+                    detail["secondary_skipped"] = serde_json::json!("rate_limited");
+                }
+                processed += 1;
+                update_progress(pool, job_id, processed, total, series_name).await;
+                insert_event(
+                    pool,
+                    job_id,
+                    "metadata_already_linked",
+                    "info",
+                    Some("series"),
+                    Some(series_name),
+                    None,
+                    Some(detail),
+                )
+                .await;
+                continue;
+            }
+            SeriesOutcome::RateLimited => {
+                processed += 1;
+                update_progress(pool, job_id, processed, total, series_name).await;
                 warn!(
                     "[METADATA_BATCH] job={job_id} skipping '{series_name}' (SensCritique rate-limited)"
                 );
@@ -642,29 +689,20 @@ pub(crate) async fn process_metadata_batch(
                     None,
                 )
                 .await;
-            } else {
-                insert_event(
-                    pool,
-                    job_id,
-                    "metadata_already_linked",
-                    "info",
-                    Some("series"),
-                    Some(series_name),
-                    None,
-                    None,
-                )
-                .await;
+                continue;
             }
-            continue;
         };
 
-        // The per-provider outcome doubles as the event payload; the secondary
-        // result is attached as a nested object so both providers stay visible.
+        // The per-provider outcome doubles as the event payload; the outcome
+        // that was not selected is attached as a nested object so both
+        // providers stay visible (e.g. a primary error under a secondary match).
         let mut detail = main.detail();
-        if !main_is_secondary {
-            if let Some(secondary) = &secondary_outcome {
-                detail["secondary"] = secondary.detail();
+        if main_is_secondary {
+            if let Some(primary) = &primary_outcome {
+                detail["primary"] = primary.detail();
             }
+        } else if let Some(secondary) = &secondary_outcome {
+            detail["secondary"] = secondary.detail();
         }
 
         let event_type = match main.status {
@@ -705,7 +743,13 @@ pub(crate) async fn process_metadata_batch(
             if let Some(secondary) = &secondary_name {
                 keep_providers.push(secondary.clone());
             }
-            let _ = cleanup_rematch_links(pool, library_id, series_name, &keep_providers).await;
+            if let Err(e) =
+                cleanup_rematch_links(pool, library_id, series_name, &keep_providers).await
+            {
+                warn!(
+                    "[METADATA_BATCH] job={job_id} rematch cleanup failed for '{series_name}': {e}"
+                );
+            }
         }
 
         processed += 1;
@@ -796,7 +840,7 @@ pub(crate) async fn process_metadata_batch(
 
 use super::batch_sync::{
     cleanup_rematch_links, evaluate_provider, has_approved_link, load_approved_links,
-    select_main_outcome,
+    select_series_outcome, SeriesOutcome,
 };
 
 // Helpers moved to crate::job_helpers and super::config
