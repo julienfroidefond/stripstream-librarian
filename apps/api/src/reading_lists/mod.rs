@@ -70,6 +70,11 @@ pub struct ReadingListSeriesDto {
     pub book_count: i64,
     /// Number of books marked as read by the requesting user.
     pub books_read_count: i64,
+    /// True when the series has no book at all.
+    ///
+    /// Such entries are kept (never removed automatically) so the library owner
+    /// can spot and clean them up from the UI.
+    pub is_empty: bool,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -694,20 +699,24 @@ async fn fetch_list_items(
 
     Ok(rows
         .into_iter()
-        .map(|r| ReadingListSeriesDto {
-            id: r.get("series_id"),
-            name: r.get("series_name"),
-            cover_url: r.get("cover_url"),
-            first_book_id: r.get("first_book_id"),
-            first_book_updated_at: r.get("first_book_updated_at"),
-            provider: r.get("provider"),
-            external_id: r.get("external_id"),
-            external_url: r.get("external_url"),
-            library_id: r.get("library_id"),
-            library_name: r.get("library_name"),
-            position: r.get("position"),
-            book_count: r.get("book_count"),
-            books_read_count: r.get("books_read_count"),
+        .map(|r| {
+            let book_count: i64 = r.get("book_count");
+            ReadingListSeriesDto {
+                id: r.get("series_id"),
+                name: r.get("series_name"),
+                cover_url: r.get("cover_url"),
+                first_book_id: r.get("first_book_id"),
+                first_book_updated_at: r.get("first_book_updated_at"),
+                provider: r.get("provider"),
+                external_id: r.get("external_id"),
+                external_url: r.get("external_url"),
+                library_id: r.get("library_id"),
+                library_name: r.get("library_name"),
+                position: r.get("position"),
+                book_count,
+                books_read_count: r.get("books_read_count"),
+                is_empty: book_count == 0,
+            }
         })
         .collect())
 }

@@ -64,6 +64,31 @@ async fn create_series(pool: &PgPool, library_id: Uuid, name: &str) -> Uuid {
     .unwrap()
 }
 
+async fn link_external(
+    pool: &PgPool,
+    library_id: Uuid,
+    series_id: Uuid,
+    provider: &str,
+    external_id: &str,
+    status: &str,
+) {
+    sqlx::query(
+        "INSERT INTO external_metadata_links \
+             (library_id, series_id, provider, external_id, status, approved_at, is_primary) \
+         VALUES ($1, $2, $3, $4, $5, \
+             CASE WHEN $5 = 'approved' THEN NOW() ELSE NULL END, \
+             $5 = 'approved')",
+    )
+    .bind(library_id)
+    .bind(series_id)
+    .bind(provider)
+    .bind(external_id)
+    .bind(status)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
 async fn create_list(pool: &PgPool, name: &str, series_ids: &[Uuid]) -> Uuid {
     let list_id: Uuid = sqlx::query_scalar(
         "INSERT INTO reading_lists (id, name) VALUES (gen_random_uuid(), $1) RETURNING id",
@@ -133,7 +158,41 @@ fn context(series: &[(Uuid, &str)], lists: &[(Uuid, &str)]) -> SuggestionContext
             .iter()
             .map(|(_, name)| name.trim().to_lowercase())
             .collect(),
+        candidate_externals: HashMap::new(),
+        list_externals: HashMap::new(),
     }
+}
+
+/// Attach an external pair to a candidate, as the database would.
+fn with_candidate_external(
+    mut context: SuggestionContext,
+    series_id: Uuid,
+    provider: &str,
+    external_id: &str,
+) -> SuggestionContext {
+    context
+        .candidate_externals
+        .insert(series_id, ExternalRef::new(provider, external_id).unwrap());
+    context
+}
+
+/// Attach the same external pair to a candidate and to a series already in a
+/// list, so a universe claim can be grounded on both sides.
+fn ground_context(
+    mut context: SuggestionContext,
+    series_id: Uuid,
+    list_id: Uuid,
+    provider: &str,
+    external_id: &str,
+) -> SuggestionContext {
+    let external = ExternalRef::new(provider, external_id).unwrap();
+    context
+        .list_externals
+        .entry(list_id)
+        .or_default()
+        .insert(external.key());
+    context.candidate_externals.insert(series_id, external);
+    context
 }
 
 /// Context where `series_ids` belong to the list `list_id`, mirroring what
@@ -251,6 +310,77 @@ async fn candidates_exclude_series_that_belong_to_a_list_from_the_unlisted_windo
         window.listed[0].series.current_list_name.as_deref(),
         Some("Favourites")
     );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn candidates_keep_series_without_books(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let empty = create_series(&pool, library, "No book yet").await;
+
+    let window = fetch_candidates(&state, 50, 0).await.unwrap();
+
+    // A series may legitimately exist before its first book is imported: it
+    // stays eligible for reading lists and AI suggestions.
+    assert_eq!(candidate_ids(&window), vec![empty]);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn candidates_carry_only_their_approved_external_identity(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let linked = create_series(&pool, library, "Linked").await;
+    link_external(&pool, library, linked, "comicvine", "4000-1", "approved").await;
+    let pending = create_series(&pool, library, "Pending").await;
+    link_external(&pool, library, pending, "comicvine", "4000-2", "pending").await;
+
+    let window = fetch_candidates(&state, 50, 0).await.unwrap();
+
+    let linked_candidate = window
+        .unlisted
+        .iter()
+        .find(|candidate| candidate.series.id == linked)
+        .unwrap();
+    assert_eq!(
+        linked_candidate.external,
+        Some(ExternalRef {
+            provider: "comicvine".to_string(),
+            external_id: "4000-1".to_string(),
+        })
+    );
+    let pending_candidate = window
+        .unlisted
+        .iter()
+        .find(|candidate| candidate.series.id == pending)
+        .unwrap();
+    assert_eq!(pending_candidate.external, None);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn existing_lists_expose_the_external_identity_of_their_series(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let linked = create_series(&pool, library, "Linked").await;
+    link_external(&pool, library, linked, "anilist", "42", "approved").await;
+    let list_id = create_list(&pool, "Favourites", &[linked]).await;
+
+    let lists = fetch_existing_lists(&state).await.unwrap();
+    let externals = fetch_list_externals(&state).await.unwrap();
+
+    assert_eq!(lists.len(), 1);
+    assert_eq!(lists[0].series.len(), 1);
+    assert_eq!(lists[0].series[0].name, "Linked");
+    assert_eq!(
+        lists[0].series[0]
+            .external
+            .as_ref()
+            .map(ExternalRef::key)
+            .as_deref(),
+        Some("anilist:42")
+    );
+    assert!(externals
+        .get(&list_id)
+        .is_some_and(|keys| keys.contains("anilist:42")));
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -412,7 +542,7 @@ fn parse_keeps_valid_additions_and_new_lists_once() {
     );
     let payload = json!({
         "additions": [
-            { "list_id": list_id, "reason": " same universe ", "series_ids": [s1, s1, Uuid::new_v4()] },
+            { "list_id": list_id, "reason": " same theme ", "series_ids": [s1, s1, Uuid::new_v4()] },
             { "list_id": Uuid::new_v4(), "reason": "unknown list", "series_ids": [s2] },
         ],
         "new_lists": [
@@ -436,7 +566,7 @@ fn parse_keeps_valid_additions_and_new_lists_once() {
     assert_eq!(parsed.additions.len(), 1);
     assert_eq!(parsed.additions[0].list_id, list_id);
     assert_eq!(parsed.additions[0].list_name, "Favourites");
-    assert_eq!(parsed.additions[0].reason, "same universe");
+    assert_eq!(parsed.additions[0].reason, "same theme");
     assert_eq!(
         parsed.additions[0]
             .series
@@ -585,6 +715,100 @@ fn parse_never_reuses_a_series_across_suggestions() {
     assert_eq!(parsed.additions.len(), 1);
     // s1 is already used by the addition, leaving only one series: the new list is dropped.
     assert!(parsed.new_lists.is_empty());
+}
+
+#[test]
+fn parse_drops_universe_claims_without_a_shared_external_identity() {
+    let s1 = Uuid::new_v4();
+    let s2 = Uuid::new_v4();
+    let list_id = Uuid::new_v4();
+    let ctx = context(&[(s1, "One"), (s2, "Two")], &[(list_id, "Favourites")]);
+    let payload = json!({
+        "additions": [
+            { "list_id": list_id, "reason": "même univers que la liste", "series_ids": [s1] },
+        ],
+        "new_lists": [
+            {
+                "name": "Duo",
+                "description": "Same universe and continuity.",
+                "reason": "same world",
+                "series_ids": [s1, s2],
+            },
+        ],
+    });
+
+    let parsed = parse_suggestions(&payload, &ctx);
+
+    // No shared external pair was supplied: the app must not relay a universe claim.
+    assert!(parsed.additions.is_empty());
+    assert!(parsed.new_lists.is_empty());
+}
+
+#[test]
+fn parse_keeps_a_universe_claim_backed_by_a_shared_external_identity() {
+    let s1 = Uuid::new_v4();
+    let s2 = Uuid::new_v4();
+    let ctx = context(&[(s1, "One"), (s2, "Two")], &[]);
+    let ctx = with_candidate_external(
+        with_candidate_external(ctx, s1, "comicvine", "4000-42"),
+        s2,
+        "ComicVine",
+        "4000-42",
+    );
+    let payload = json!({
+        "new_lists": [
+            {
+                "name": "Duo",
+                "description": "Same universe.",
+                "reason": "shared provider identity",
+                "series_ids": [s1, s2],
+            },
+        ],
+    });
+
+    let parsed = parse_suggestions(&payload, &ctx);
+
+    assert_eq!(parsed.new_lists.len(), 1);
+}
+
+#[test]
+fn parse_keeps_an_addition_grounded_by_the_destination_list() {
+    let s1 = Uuid::new_v4();
+    let list_id = Uuid::new_v4();
+    let ctx = context(&[(s1, "One")], &[(list_id, "Favourites")]);
+    let ctx = ground_context(ctx, s1, list_id, "bdtheque", "1234");
+    let payload = json!({
+        "additions": [
+            { "list_id": list_id, "reason": "same universe", "series_ids": [s1] },
+        ],
+    });
+
+    let parsed = parse_suggestions(&payload, &ctx);
+
+    assert_eq!(parsed.additions.len(), 1);
+}
+
+#[test]
+fn parse_drops_a_move_universe_claim_not_grounded_on_the_destination() {
+    let s1 = Uuid::new_v4();
+    let from = Uuid::new_v4();
+    let to = Uuid::new_v4();
+    let ctx = context_with_memberships(
+        &[(s1, "One")],
+        &[(from, "Favourites"), (to, "Space operas")],
+        &[(s1, from)],
+    );
+    // The series is linked, but to an identity absent from the destination list.
+    let ctx = with_candidate_external(ctx, s1, "comicvine", "999");
+    let payload = json!({
+        "moves": [
+            { "from_list_id": from, "to_list_id": to, "reason": "same universe", "series_ids": [s1] },
+        ],
+    });
+
+    let parsed = parse_suggestions(&payload, &ctx);
+
+    assert!(parsed.moves.is_empty());
 }
 
 #[test]

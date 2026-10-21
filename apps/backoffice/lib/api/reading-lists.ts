@@ -31,6 +31,10 @@ export type ReadingListSeriesDto = {
   library_id: string;
   library_name: string;
   position: number;
+  book_count: number;
+  books_read_count: number;
+  /** True when the series has no book at all. */
+  is_empty: boolean;
 };
 
 export type ReadingListDetailDto = {

@@ -48,6 +48,10 @@ Un déplacement est appliqué **atomiquement** : la série quitte la liste d'ori
 
 Les séries candidates sont échantillonnées de façon **déterministe et équilibrée** : les séries sans liste sont lues en alternance entre les groupes `(bibliothèque, premier genre)` et les séries déjà classées en alternance entre les listes. Une liste ou un genre très représenté ne peut donc pas monopoliser la fenêtre envoyée au modèle. Les paramètres `limit` (20 à 250, défaut 120) et `offset` permettent de parcourir la bibliothèque en plusieurs appels successifs.
 
+Les propositions sont **ancrées dans les données fournies** : le modèle ne reçoit que les champs réellement disponibles (nom, description, genres, auteurs, éditeurs, année de début, nombre de tomes, statut, bibliothèque, identité externe) et doit s'y tenir. Il ne peut affirmer que deux séries partagent un univers, une continuité ou une franchise que si elles portent exactement le même couple `external_provider` / `external_id`. Une proposition contenant une telle affirmation sans ce signal partagé est écartée côté serveur avant l'affichage.
+
+Une série **sans aucun livre** reste éligible aux listes et aux propositions IAG (elle peut précéder l'import de son premier tome). Dans le détail d'une liste, ces entrées sont signalées par le champ `is_empty` et un badge « Sans livre » ; elles ne sont jamais supprimées automatiquement.
+
 La fonctionnalité nécessite une configuration IAG valide dans **Paramètres → IAG** et son activation propre, indépendante de la proposition de genres. Le même endpoint, la même clé API et le même modèle sont réutilisés. Voir [Paramètres](/getting-started/settings/).
 
 Après validation, le cache des listes de lecture est invalidé : les nouvelles listes et les séries ajoutées apparaissent immédiatement sur les pages **Listes** et **Séries**, y compris en vue groupée par liste.
@@ -107,6 +111,8 @@ Voir [Séries liées & Recommandations](/series/related/) pour le détail.
 | `POST` | `/reading-lists/{id}/series/{series_id}/move` | Déplacer une série vers une autre liste (`to_list_id`) |
 | `PUT` | `/reading-lists/{id}/series/reorder` | Réordonner (liste complète d'IDs) |
 | `POST` | `/reading-lists/ai-suggest` | Proposer ajouts, déplacements et nouvelles listes (aucune écriture) |
+
+Chaque entrée de `GET /reading-lists/{id}` expose `book_count`, `books_read_count` et `is_empty` (série sans aucun livre, conservée dans la liste).
 
 **Score dans les recommandations** : les séries dans une même liste obtiennent un bonus ×5, supérieur au bonus auteur (×3) ou genre (×2).
 :::

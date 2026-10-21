@@ -866,6 +866,27 @@ async fn get_reading_list_returns_items_in_position_order(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_reading_list_flags_series_without_books(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "detail-empty").await;
+    let with_book = create_series(&pool, library_id, "With book", &[]).await;
+    create_book(&pool, library_id, with_book, "Vol 1").await;
+    let empty = create_series(&pool, library_id, "Empty", &[]).await;
+    let list_id = create_list(&state, "Mixed").await;
+    add(&state, list_id, with_book).await.unwrap();
+    add(&state, list_id, empty).await.unwrap();
+
+    let Json(detail) = get_reading_list(State(state), None, Path(list_id))
+        .await
+        .unwrap();
+
+    let flags: Vec<(Uuid, bool)> = detail.items.iter().map(|i| (i.id, i.is_empty)).collect();
+    assert_eq!(flags, vec![(with_book, false), (empty, true)]);
+    // Empty entries are flagged, never removed automatically.
+    assert_eq!(item_count(&pool, list_id).await, 2);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
 async fn get_reading_list_filters_restricted_genres(pool: PgPool) {
     let state = test_state(pool.clone());
     let library_id = create_library(&pool, "detail-genres").await;
