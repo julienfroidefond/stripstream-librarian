@@ -134,6 +134,29 @@ describe("JobRow", () => {
     expect(screen.getByTitle("boom")).toBeInTheDocument();
   });
 
+  it("shows metadata batch errors and low-confidence counters", () => {
+    renderRow({
+      type: "metadata_batch",
+      status: "success",
+      stats_json: {
+        scanned_files: 0,
+        indexed_files: 0,
+        removed_files: 0,
+        auto_matched: 2,
+        no_results: 1,
+        low_confidence: 3,
+        too_many_results: 4,
+        already_linked: 5,
+        errors: 6,
+      },
+      total_files: 12,
+    });
+
+    expect(screen.getByText('jobRow.metadataProcessed:{"count":12}')).toBeInTheDocument();
+    expect(screen.getByText('jobRow.lowConfidence:{"count":3}')).toBeInTheDocument();
+    expect(screen.getByText('jobRow.errors:{"count":6}')).toBeInTheDocument();
+  });
+
   it("shows scanned count only when nothing else is present", () => {
     renderRow({
       type: "some_type",

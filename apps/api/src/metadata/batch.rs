@@ -82,6 +82,67 @@ pub struct MetadataProviderOutcomeDto {
     pub error_message: Option<String>,
 }
 
+/// Per-outcome counters derived from the job events.
+///
+/// Persisted in `stats_json` when the batch completes so the jobs list can
+/// display them without replaying the event history, and reused by the report
+/// endpoint to keep both surfaces consistent.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct BatchEventCounts {
+    auto_matched: i64,
+    no_results: i64,
+    low_confidence: i64,
+    too_many_results: i64,
+    already_linked: i64,
+    errors: i64,
+}
+
+impl BatchEventCounts {
+    fn record(&mut self, event_type: &str, count: i64) {
+        match event_type {
+            "metadata_matched" => self.auto_matched = count,
+            "metadata_no_results" => self.no_results = count,
+            "metadata_low_confidence" => self.low_confidence = count,
+            "metadata_too_many" => self.too_many_results = count,
+            "metadata_already_linked" => self.already_linked = count,
+            "error" => self.errors = count,
+            _ => {}
+        }
+    }
+
+    fn from_pairs<I>(pairs: I) -> Self
+    where
+        I: IntoIterator<Item = (String, i64)>,
+    {
+        let mut counts = Self::default();
+        for (event_type, count) in pairs {
+            counts.record(&event_type, count);
+        }
+        counts
+    }
+
+    fn from_rows(rows: &[sqlx::postgres::PgRow]) -> Self {
+        Self::from_pairs(
+            rows.iter()
+                .map(|row| (row.get("event_type"), row.get("cnt"))),
+        )
+    }
+
+    /// Job `stats_json` payload consumed by the jobs list.
+    fn stats_json(&self, total: i32, processed: i32) -> serde_json::Value {
+        serde_json::json!({
+            "total_series": total,
+            "processed": processed,
+            "auto_matched": self.auto_matched,
+            "no_results": self.no_results,
+            "low_confidence": self.low_confidence,
+            "too_many_results": self.too_many_results,
+            "already_linked": self.already_linked,
+            "errors": self.errors,
+        })
+    }
+}
+
 #[derive(Deserialize)]
 pub struct BatchResultsQuery {
     pub status: Option<String>,
@@ -267,7 +328,7 @@ pub async fn get_batch_report(
     AxumPath(job_id): AxumPath<Uuid>,
 ) -> Result<Json<MetadataBatchReportDto>, ApiError> {
     let job = sqlx::query(
-        "SELECT status, total_files, processed_files FROM index_jobs WHERE id = $1 AND type = 'metadata_batch'",
+        "SELECT status, total_files, processed_files FROM index_jobs WHERE id = $1 AND type IN ('metadata_batch', 'metadata_batch_rematch')",
     )
     .bind(job_id)
     .fetch_optional(&state.pool)
@@ -290,39 +351,19 @@ pub async fn get_batch_report(
     .bind(job_id)
     .fetch_all(&state.pool)
     .await?;
-
-    let mut auto_matched: i64 = 0;
-    let mut no_results: i64 = 0;
-    let mut too_many_results: i64 = 0;
-    let mut low_confidence: i64 = 0;
-    let mut already_linked: i64 = 0;
-    let mut errors: i64 = 0;
-
-    for row in &counts {
-        let event_type: String = row.get("event_type");
-        let cnt: i64 = row.get("cnt");
-        match event_type.as_str() {
-            "metadata_matched" => auto_matched = cnt,
-            "metadata_no_results" => no_results = cnt,
-            "metadata_too_many" => too_many_results = cnt,
-            "metadata_low_confidence" => low_confidence = cnt,
-            "metadata_already_linked" => already_linked = cnt,
-            "error" => errors = cnt,
-            _ => {}
-        }
-    }
+    let counts = BatchEventCounts::from_rows(&counts);
 
     Ok(Json(MetadataBatchReportDto {
         job_id,
         status: job_status,
         total_series: total_series.unwrap_or(0) as i64,
         processed: processed.unwrap_or(0) as i64,
-        auto_matched,
-        no_results,
-        too_many_results,
-        low_confidence,
-        already_linked,
-        errors,
+        auto_matched: counts.auto_matched,
+        no_results: counts.no_results,
+        too_many_results: counts.too_many_results,
+        low_confidence: counts.low_confidence,
+        already_linked: counts.already_linked,
+        errors: counts.errors,
     }))
 }
 
@@ -824,19 +865,8 @@ pub(crate) async fn process_metadata_batch(
         tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
     }
 
-    // Build stats summary
-    let stats = serde_json::json!({
-        "total_series": total,
-        "processed": processed,
-    });
-
-    complete_job(pool, job_id, stats)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    info!("[METADATA_BATCH] job={job_id} completed: {processed}/{total} series processed");
-
-    // Count per-outcome stats from events for the notification
+    // Count per-outcome stats from events: persisted for the jobs list and
+    // reused for the completion notification.
     let event_counts = sqlx::query(
         "SELECT event_type, COUNT(*) as cnt FROM index_job_events WHERE job_id = $1 GROUP BY event_type",
     )
@@ -844,26 +874,16 @@ pub(crate) async fn process_metadata_batch(
     .fetch_all(pool)
     .await
     .unwrap_or_default();
+    let counts = BatchEventCounts::from_rows(&event_counts);
 
-    let mut n_auto_matched = 0i64;
-    let mut n_no_results = 0i64;
-    let mut n_low_confidence = 0i64;
-    let mut n_too_many = 0i64;
-    let mut n_already_linked = 0i64;
-    let mut n_errors = 0i64;
-    for row in &event_counts {
-        let s: String = row.get("event_type");
-        let c: i64 = row.get("cnt");
-        match s.as_str() {
-            "metadata_matched" => n_auto_matched = c,
-            "metadata_no_results" => n_no_results = c,
-            "metadata_low_confidence" => n_low_confidence = c,
-            "metadata_too_many" => n_too_many = c,
-            "metadata_already_linked" => n_already_linked = c,
-            "error" => n_errors = c,
-            _ => {}
-        }
-    }
+    // Build stats summary
+    let stats = counts.stats_json(total, processed);
+
+    complete_job(pool, job_id, stats)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    info!("[METADATA_BATCH] job={job_id} completed: {processed}/{total} series processed");
 
     let library_name: Option<String> =
         sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
@@ -890,12 +910,12 @@ pub(crate) async fn process_metadata_batch(
             library_name,
             total_series: total,
             processed,
-            auto_matched: n_auto_matched,
-            no_results: n_no_results,
-            low_confidence: n_low_confidence,
-            too_many: n_too_many,
-            already_linked: n_already_linked,
-            errors: n_errors,
+            auto_matched: counts.auto_matched,
+            no_results: counts.no_results,
+            low_confidence: counts.low_confidence,
+            too_many: counts.too_many_results,
+            already_linked: counts.already_linked,
+            errors: counts.errors,
             new_matches,
         },
     );

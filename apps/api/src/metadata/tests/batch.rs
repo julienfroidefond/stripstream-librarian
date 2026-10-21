@@ -1,6 +1,7 @@
 use sqlx::Row;
 use uuid::Uuid;
 
+use super::{get_batch_report, BatchEventCounts};
 use crate::metadata::batch_sync::{cleanup_rematch_links, has_approved_link, load_approved_links};
 
 async fn create_lib(pool: &sqlx::PgPool, name: &str) -> Uuid {
@@ -612,40 +613,113 @@ async fn report_counts_from_events(pool: sqlx::PgPool) {
     .fetch_all(&pool)
     .await
     .unwrap();
+    let counts = BatchEventCounts::from_rows(&counts);
 
-    let mut auto_matched: i64 = 0;
-    let mut no_results: i64 = 0;
-    let mut too_many_results: i64 = 0;
-    let mut low_confidence: i64 = 0;
-    let mut already_linked: i64 = 0;
-    let mut errors: i64 = 0;
-
-    for row in &counts {
-        let event_type: String = row.get("event_type");
-        let cnt: i64 = row.get("cnt");
-        match event_type.as_str() {
-            "metadata_matched" => auto_matched = cnt,
-            "metadata_no_results" => no_results = cnt,
-            "metadata_too_many" => too_many_results = cnt,
-            "metadata_low_confidence" => low_confidence = cnt,
-            "metadata_already_linked" => already_linked = cnt,
-            "error" => errors = cnt,
-            _ => {}
-        }
-    }
-
-    assert_eq!(auto_matched, 2, "metadata_matched -> auto_matched");
-    assert_eq!(no_results, 1, "metadata_no_results -> no_results");
-    assert_eq!(too_many_results, 1, "metadata_too_many -> too_many_results");
+    assert_eq!(counts.auto_matched, 2, "metadata_matched -> auto_matched");
+    assert_eq!(counts.no_results, 1, "metadata_no_results -> no_results");
     assert_eq!(
-        low_confidence, 1,
+        counts.too_many_results, 1,
+        "metadata_too_many -> too_many_results"
+    );
+    assert_eq!(
+        counts.low_confidence, 1,
         "metadata_low_confidence -> low_confidence"
     );
     assert_eq!(
-        already_linked, 2,
+        counts.already_linked, 2,
         "metadata_already_linked -> already_linked"
     );
-    assert_eq!(errors, 1, "error -> errors");
+    assert_eq!(counts.errors, 1, "error -> errors");
+}
+
+/// Regression: the report (and therefore the job page counters) must also work
+/// for `metadata_batch_rematch` jobs.
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn report_endpoint_includes_rematch_jobs(pool: sqlx::PgPool) {
+    use axum::extract::{Path as AxumPath, State};
+
+    let lib_id = create_lib(&pool, "report_rematch").await;
+    let job_id = create_job(&pool, lib_id, "metadata_batch_rematch").await;
+    sqlx::query("UPDATE index_jobs SET total_files = 5, processed_files = 4 WHERE id = $1")
+        .bind(job_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    crate::job_helpers::insert_event(
+        &pool,
+        job_id,
+        "metadata_low_confidence",
+        "warning",
+        Some("series"),
+        Some("S1"),
+        Some("Best: 40%"),
+        None,
+    )
+    .await;
+    crate::job_helpers::insert_event(
+        &pool,
+        job_id,
+        "error",
+        "error",
+        Some("series"),
+        Some("S2"),
+        Some("provider timeout"),
+        None,
+    )
+    .await;
+
+    let report = get_batch_report(
+        State(crate::state::test_state(pool.clone())),
+        AxumPath(job_id),
+    )
+    .await
+    .expect("rematch jobs must expose a report")
+    .0;
+
+    assert_eq!(report.status, "running");
+    assert_eq!(report.total_series, 5);
+    assert_eq!(report.processed, 4);
+    assert_eq!(report.low_confidence, 1);
+    assert_eq!(report.errors, 1);
+}
+
+/// The counters persisted in `stats_json` must cover the outcomes the jobs list
+/// displays, including errors and low-confidence matches.
+#[test]
+fn stats_json_carries_all_outcome_counters() {
+    let counts = BatchEventCounts::from_pairs([
+        ("metadata_matched".to_string(), 2),
+        ("metadata_no_results".to_string(), 1),
+        ("metadata_low_confidence".to_string(), 3),
+        ("metadata_too_many".to_string(), 4),
+        ("metadata_already_linked".to_string(), 5),
+        ("error".to_string(), 6),
+        ("metadata_unknown".to_string(), 99),
+    ]);
+
+    assert_eq!(
+        counts,
+        BatchEventCounts {
+            auto_matched: 2,
+            no_results: 1,
+            low_confidence: 3,
+            too_many_results: 4,
+            already_linked: 5,
+            errors: 6,
+        },
+        "unknown event types must be ignored"
+    );
+
+    let stats = counts.stats_json(10, 9);
+    assert_eq!(stats["total_series"], 10);
+    assert_eq!(stats["processed"], 9);
+    assert_eq!(stats["auto_matched"], 2);
+    assert_eq!(stats["no_results"], 1);
+    assert_eq!(stats["low_confidence"], 3);
+    assert_eq!(stats["too_many_results"], 4);
+    assert_eq!(stats["already_linked"], 5);
+    assert_eq!(stats["errors"], 6);
 }
 
 // -----------------------------------------------------------------------

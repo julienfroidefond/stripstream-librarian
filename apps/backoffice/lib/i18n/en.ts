@@ -467,6 +467,7 @@ const en: Record<TranslationKey, string> = {
   "jobRow.telegramMatched": "{{count}} series matched",
   "jobRow.telegramSourcesScanned": "{{count}} sources scanned",
   "jobRow.errors": "{{count}} errors",
+  "jobRow.lowConfidence": "{{count}} low confidence",
   "jobRow.view": "View",
   "jobRow.replay": "Replay",
 

@@ -31,6 +31,11 @@ interface JobRowProps {
       series_searched?: number;
       sources_scanned?: number;
       matched_series?: Array<unknown>;
+      auto_matched?: number;
+      no_results?: number;
+      low_confidence?: number;
+      too_many_results?: number;
+      already_linked?: number;
     } | null;
     progress_percent: number | null;
     processed_files: number | null;
@@ -66,6 +71,7 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
   const indexed = job.stats_json?.indexed_files ?? 0;
   const removed = job.stats_json?.removed_files ?? 0;
   const errors = job.stats_json?.errors ?? 0;
+  const lowConfidence = job.stats_json?.low_confidence ?? 0;
 
   const isPhase2 = isPhase2Status(job.status);
   const isThumbnailPhase = job.status === "generating_thumbnails";
@@ -280,6 +286,15 @@ export function JobRow({ job, libraryName, highlighted, onCancel, onReplay, form
                     <span className="inline-flex items-center gap-1 text-info">
                       <Icon name="series" size="sm" />
                       {job.stats_json!.sources_scanned}
+                    </span>
+                  </Tooltip>
+                )}
+                {/* Metadata batch: low-confidence matches */}
+                {isMetadataBatch && lowConfidence > 0 && (
+                  <Tooltip label={t("jobRow.lowConfidence", { count: lowConfidence })}>
+                    <span className="inline-flex items-center gap-1 text-warning">
+                      <Icon name="info" size="sm" />
+                      {lowConfidence}
                     </span>
                   </Tooltip>
                 )}
