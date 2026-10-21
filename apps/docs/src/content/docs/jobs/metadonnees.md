@@ -26,8 +26,10 @@ Recherche et lie automatiquement toutes les séries d'une bibliothèque qui n'on
 | **Confiance trop basse** | Trouvé, mais incertain — à valider manuellement |
 | **Trop de résultats** | Plusieurs candidats, sélection manuelle requise |
 | **Aucun résultat** | Aucun résultat sur le provider |
-| **Déjà lié** | Chaque provider configuré a déjà un lien approuvé, ignoré |
+| **Déjà lié** | Le provider principal a déjà un lien approuvé et le secondaire n'a rien apporté de certain (ou chaque provider configuré a déjà un lien) |
 | **Erreur** | Échec technique |
+
+Dans le backoffice, chaque ligne du rapport indique le provider qui a matché, avec la mention **« (secours) »** quand le match vient du provider secondaire. Le résultat du secondaire est également affiché lorsqu'il a été évalué en plus du principal (par exemple un candidat incertain à valider, ou un second lien auto-matché).
 
 ---
 

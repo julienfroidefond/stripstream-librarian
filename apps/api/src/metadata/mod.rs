@@ -29,7 +29,7 @@ pub use gaps::{get_gap_summary, GapSummary};
 pub(crate) use batch::process_metadata_batch;
 pub use batch::{
     get_batch_report, get_batch_results, start_batch, MetadataBatchReportDto, MetadataBatchRequest,
-    MetadataBatchResultDto,
+    MetadataBatchResultDto, MetadataProviderOutcomeDto,
 };
 
 // Re-export refresh (used by main.rs routes, openapi.rs paths/schemas, job_poller.rs, torrent_import.rs)

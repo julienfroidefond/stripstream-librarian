@@ -170,7 +170,8 @@ impl ProviderOutcome {
         self.status == "auto_matched"
     }
 
-    /// Event `detail` payload for this provider (same shape as before #150).
+    /// Event `detail` payload for this provider (same shape as before #150,
+    /// plus `message` so a nested secondary outcome keeps its explanation).
     pub(super) fn detail(&self) -> serde_json::Value {
         serde_json::json!({
             "status": self.status,
@@ -180,6 +181,7 @@ impl ProviderOutcome {
             "confidence": self.best_confidence,
             "best_candidate": self.best_candidate,
             "link_id": self.link_id.map(|id| id.to_string()),
+            "message": self.message,
         })
     }
 }

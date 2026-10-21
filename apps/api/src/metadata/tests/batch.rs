@@ -754,6 +754,41 @@ async fn results_mapped_from_event_detail(pool: sqlx::PgPool) {
         returned_series_id.is_some(),
         "series_id should be resolved via LEFT JOIN"
     );
+
+    // A nested secondary outcome is exposed even when the primary is reported.
+    let secondary_detail = serde_json::json!({
+        "status": "low_confidence",
+        "provider": "bdphile",
+        "fallback_used": true,
+        "candidates_count": 1,
+        "confidence": 0.42,
+        "best_candidate": { "title": "Other Series", "external_id": "ext_42" },
+        "link_id": null,
+        "message": "Best confidence: 42%",
+    });
+    let secondary = crate::metadata::batch::provider_outcome_from_detail(&secondary_detail)
+        .expect("secondary outcome should be parsed");
+    assert_eq!(secondary.status, "low_confidence");
+    assert_eq!(secondary.provider, "bdphile");
+    assert!(secondary.fallback_used);
+    assert_eq!(secondary.candidates_count, 1);
+    assert!((secondary.best_confidence.unwrap() - 0.42).abs() < 0.01);
+    assert_eq!(
+        secondary.best_candidate_json.as_ref().unwrap()["external_id"],
+        "ext_42"
+    );
+    assert!(secondary.link_id.is_none());
+    assert_eq!(
+        secondary.error_message.as_deref(),
+        Some("Best confidence: 42%")
+    );
+
+    // An `already_linked` payload without a provider outcome has no secondary.
+    let linked_only = serde_json::json!({
+        "primary_linked": true,
+        "secondary_linked": false,
+    });
+    assert!(crate::metadata::batch::provider_outcome_from_detail(&linked_only).is_none());
 }
 
 // boost_confidence_by_book_count tests moved to super::config::tests

@@ -60,6 +60,26 @@ pub struct MetadataBatchResultDto {
     #[schema(value_type = Option<String>)]
     pub link_id: Option<Uuid>,
     pub error_message: Option<String>,
+    /// Outcome of the secondary provider when it was evaluated, even if the
+    /// primary outcome is the one reported for the series (#150).
+    pub secondary: Option<MetadataProviderOutcomeDto>,
+}
+
+/// Outcome of one metadata provider for a batch result.
+///
+/// Mirrors the `detail` payload persisted in the job event so the backoffice
+/// can show which provider matched and how the other one fared.
+#[derive(Serialize, ToSchema)]
+pub struct MetadataProviderOutcomeDto {
+    pub status: String,
+    pub provider: String,
+    pub fallback_used: bool,
+    pub candidates_count: i32,
+    pub best_confidence: Option<f32>,
+    pub best_candidate_json: Option<serde_json::Value>,
+    #[schema(value_type = Option<String>)]
+    pub link_id: Option<Uuid>,
+    pub error_message: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -431,6 +451,10 @@ pub async fn get_batch_results(
                 .and_then(|v| v.as_str())
                 .and_then(|s| s.parse::<Uuid>().ok());
             let error_message: Option<String> = row.get("message");
+            let secondary = detail
+                .as_ref()
+                .and_then(|d| d.get("secondary"))
+                .and_then(provider_outcome_from_detail);
 
             MetadataBatchResultDto {
                 id: row.get("id"),
@@ -446,11 +470,52 @@ pub async fn get_batch_results(
                 best_candidate_json,
                 link_id,
                 error_message,
+                secondary,
             }
         })
         .collect();
 
     Ok(Json(results))
+}
+
+/// Parse a provider outcome nested in an event `detail` payload.
+pub(super) fn provider_outcome_from_detail(
+    detail: &serde_json::Value,
+) -> Option<MetadataProviderOutcomeDto> {
+    let obj = detail.as_object()?;
+    // `status` is what distinguishes a provider outcome from the small
+    // `already_linked` payload (which only carries the linked flags).
+    let status = obj.get("status")?.as_str()?;
+
+    Some(MetadataProviderOutcomeDto {
+        status: status.to_string(),
+        provider: obj
+            .get("provider")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        fallback_used: obj
+            .get("fallback_used")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        candidates_count: obj
+            .get("candidates_count")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32,
+        best_confidence: obj
+            .get("confidence")
+            .and_then(|v| v.as_f64())
+            .map(|f| f as f32),
+        best_candidate_json: obj.get("best_candidate").cloned(),
+        link_id: obj
+            .get("link_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<Uuid>().ok()),
+        error_message: obj
+            .get("message")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+    })
 }
 
 // ---------------------------------------------------------------------------
