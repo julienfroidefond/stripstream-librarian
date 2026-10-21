@@ -98,10 +98,13 @@ jobs:
           shared-key: lint
           cache-on-failure: true
           cache-all-crates: true
-          # Default is `github.ref == 'refs/heads/main'`, i.e. only the push
-          # trigger above writes the cache that PRs restore. Stated explicitly
-          # so it does not look like a missing `save-if: true`.
-          save-if: github.ref == 'refs/heads/main'
+          # `save-if` MUST be wrapped in `${{ }}`: the action compares the raw
+          # input string to "true" and silently skips saving otherwise (the
+          # literal `github.ref == ...` never matches). Restricting to `main`
+          # keeps the cache bounded to one entry per job: entries saved from a PR
+          # land under `refs/pull/<n>/merge` and are never restorable by another
+          # PR, so they are pure waste.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Format
         run: cargo fmt --all -- --check
@@ -171,7 +174,7 @@ jobs:
           # Also cache crates that are not direct workspace dependencies: the
           # test binaries pull in a lot of transitive dev-dependency code.
           cache-all-crates: true
-          save-if: github.ref == 'refs/heads/main'
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # pdfium-render binds libpdfium at runtime. The parser tests skip PDF
       # cases when the library is missing, so install it to actually exercise
