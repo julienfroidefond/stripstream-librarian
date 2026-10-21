@@ -5,14 +5,14 @@ description: Référence de l'API REST
 
 ## Documentation interactive
 
-L'API expose deux interfaces Swagger UI accessibles depuis votre navigateur :
+L'API expose une interface Swagger UI unique, avec deux spécifications OpenAPI sélectionnables dans un menu déroulant :
 
-| Interface | URL | Accès |
-|-----------|-----|-------|
-| **Client API** | `/swagger-ui` | Endpoints de lecture (lecture seule) |
-| **Admin API** | `/admin/swagger-ui` | Tous les endpoints |
+| Spécification | URL du JSON | Accès |
+|---------------|-------------|-------|
+| **Client API** | `/openapi.json` | Endpoints de lecture (lecture seule) |
+| **Admin API** | `/admin/openapi.json` | Tous les endpoints |
 
-Un menu déroulant permet de basculer entre les deux spécifications.
+L'interface est servie sur `/swagger-ui` (et `/docs` y redirige). Il n'existe pas d'URL `/admin/swagger-ui` : choisissez la spécification Admin dans le sélecteur en haut de la page.
 
 ## Endpoints publics (sans authentification)
 
@@ -54,8 +54,10 @@ Passez le token dans le header `Authorization` :
 
 ```bash
 curl -H "Authorization: Bearer stl_abc_votre_token_complet" \
-  http://localhost:7080/api/series
+  http://localhost:7080/series
 ```
+
+Les routes de l'API sont servies **à la racine** (`/series`, `/books`, `/libraries`…), sans préfixe `/api`. Le préfixe `/api` présent dans certaines URLs du backoffice est interne au Next.js et n'existe pas sur le service Rust.
 
 :::note[Détails techniques]
 **Bootstrap token** : token admin initial via la variable d'environnement `API_BOOTSTRAP_TOKEN`. Utilisé uniquement pour créer les premiers tokens API depuis l'interface.

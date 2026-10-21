@@ -122,7 +122,7 @@ Toutes les données proviennent de deux endpoints réservés aux tokens `admin` 
 | `GET /diagnostics` | payload agrégé affiché au chargement de la page |
 | `GET /diagnostics/probe` | sonde explicite : intégrations externes + existence des fichiers |
 
-Ils sont documentés dans l'OpenAPI administrateur (`/admin/openapi.json`, UI `/admin/swagger-ui`)
+Ils sont documentés dans l'OpenAPI administrateur (`/admin/openapi.json`, à sélectionner dans le menu déroulant de `/swagger-ui`)
 sous le tag `diagnostics`. Les payloads ne contiennent aucune donnée sensible (pas de chaîne de
 connexion, de jeton ni de secret) : uniquement des versions, tailles, compteurs et répertoires de
 cache.

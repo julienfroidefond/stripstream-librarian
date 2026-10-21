@@ -68,8 +68,10 @@ Dans **Paramètres → onglet Jetons** → section **Tokens API** :
 
 ```bash
 curl -H "Authorization: Bearer stl_abc_votre_token_complet" \
-  http://localhost:7080/api/series
+  http://localhost:7080/series
 ```
+
+L'API Rust est servie à la racine : pas de préfixe `/api` (voir [API](/reference/api/)).
 
 ### Révoquer vs supprimer
 

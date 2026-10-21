@@ -102,7 +102,7 @@ Sur la page **Séries**, plusieurs filtres sont disponibles :
 
 ## Nettoyage automatique
 
-Les séries qui n'ont plus aucun livre après un scan sont automatiquement supprimées — sauf si elles ont des métadonnées approuvées ou des volumes disponibles au téléchargement (c'est-à-dire les séries de votre wishlist).
+Les séries qui n'ont plus aucun livre après un scan sont automatiquement supprimées — sauf si elles ont un lien de métadonnées (approuvé ou non) ou des volumes disponibles au téléchargement (c'est-à-dire les séries de votre wishlist).
 
 :::note[Détails techniques]
 **Champs de métadonnées** : `description`, `publishers`, `start_year`, `status` (`ongoing`, `ended`, `completed`, `on_hold`, `hiatus`), `total_volumes`, `authors`, `genres`, `cover_url`.

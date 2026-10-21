@@ -17,7 +17,7 @@ Depuis la page **Tâches**, sélectionnez une bibliothèque (ou Toutes) puis cli
 |--------------------------|-------------|
 | **Mise à jour** | Scan incrémental — ne revisite que les dossiers modifiés depuis le dernier scan |
 | **Rescan complet** | Visite tous les dossiers sans cache — conserve toutes les données |
-| **Reconstruction complète** ⚠️ | Supprime tout en base puis rescanne — métadonnées et statuts de lecture perdus |
+| **Reconstruction complète** ⚠️ | Supprime les livres et leurs fichiers de la bibliothèque puis rescanne — métadonnées de livres et progression de lecture perdues, séries et liens metadata conservés |
 
 ### Miniatures
 
@@ -31,7 +31,7 @@ Depuis la page **Tâches**, sélectionnez une bibliothèque (ou Toutes) puis cli
 | Libellé dans l'interface | Description |
 |--------------------------|-------------|
 | **Auto-match séries non liées** | Recherche et lie automatiquement les séries sans métadonnées approuvées |
-| **Re-match métadonnées** | Supprime les liens existants et re-matche avec le provider actuel |
+| **Re-match métadonnées** | Re-matche avec le provider actuel ; les liens existants ne sont remplacés que si un nouveau match est trouvé |
 | **Rafraîchir métadonnées** | Met à jour les séries liées (en cours de publication uniquement) |
 | **Rafraîchir toutes les métadonnées** | Met à jour toutes les séries liées, y compris terminées |
 

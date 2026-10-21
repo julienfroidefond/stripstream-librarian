@@ -81,7 +81,7 @@ Stripstream distingue quatre types de volumes :
 | **One-shot** | Livre autonome (fichier dans un dossier `Oneshots` à la racine) |
 
 :::important
-Les volumes **réguliers** participent au comptage des tomes et à la détection des volumes manquants. Les hors-séries et oneshots sont traités à part. Une **intégrale** marque la série comme complète pour le calcul des manquants.
+Les volumes **réguliers** et les **intégrales numérotées** participent au comptage des tomes et à la détection des volumes manquants. Les hors-séries et oneshots sont traités à part. Une **intégrale sans numéro de tome** marque la série comme complète pour le calcul des manquants ; une intégrale numérotée ne couvre que son tome.
 :::
 
 ### Dossier Oneshots
