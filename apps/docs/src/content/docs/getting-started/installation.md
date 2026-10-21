@@ -105,14 +105,7 @@ Ouvrez le backoffice sur **http://localhost:7082** et connectez-vous avec les id
 Voir [Scan & Indexation](/libraries/scanning/) pour comprendre le pipeline d'indexation, et [Synchronisation des métadonnées](/metadata/sync/) pour le workflow de matching.
 
 :::note[Détails techniques — prérequis système]
-4 outils sont requis pour le traitement des archives. Les images Docker officielles les embarquent déjà — vous n'avez rien à installer si vous utilisez Docker.
+Aucun outil système externe n'est requis pour traiter les archives : les CBR sont lus **in-process** via le crate `unrar`, et les PDF sont comptés et rendus via **pdfium** (`libpdfium`).
 
-| Outil | Usage | Paquet |
-|-------|-------|--------|
-| `unrar` | Listing des CBR | `unrar` |
-| `unar` | Extraction des CBR | `unar` / `theunarchiver` |
-| `pdfinfo` | Comptage de pages PDF | `poppler-utils` |
-| `pdftoppm` | Rendu de pages PDF | `poppler-utils` |
-
-`unrar` et `unar` sont deux outils différents issus de paquets distincts. Les deux sont nécessaires.
+En Docker, l'image API embarque déjà `libpdfium` (téléchargée depuis `pdfium-binaries`) — vous n'avez rien à installer. En installation manuelle, `libpdfium` doit être présente sur le chemin des bibliothèques système.
 :::

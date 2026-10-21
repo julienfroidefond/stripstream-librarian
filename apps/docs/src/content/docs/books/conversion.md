@@ -18,9 +18,9 @@ Ce que vous devez savoir :
 - En cas d'échec, le fichier CBR original reste intact
 
 :::note[Détails techniques]
-La conversion nécessite les outils `unrar` (listing) et `unar` (extraction) installés dans l'environnement. Ce sont deux outils distincts issus de paquets différents — les deux sont requis.
+La conversion est entièrement **in-process** : les images du CBR sont extraites en mémoire via le crate `unrar`. Aucun binaire externe (`unrar`, `unar`…) n'est requis.
 
-Pipeline : copie dans un dossier temporaire → extraction des images via `unar` → repackage en ZIP avec extension `.cbz` → remplacement du fichier sur le disque → mise à jour du chemin et du format en base de données.
+Pipeline : ouverture du CBR → extraction des images en mémoire → écriture du `.cbz` (fichier temporaire puis renommage) → mise à jour du chemin et du format en base → suppression du CBR original (best-effort, un échec de suppression ne fait pas échouer le job).
 
 La conversion est un job de type `cbr_to_cbz`, non-exclusif, exécuté par l'Indexer.
 :::

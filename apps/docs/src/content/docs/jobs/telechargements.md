@@ -62,14 +62,14 @@ Pour gérer la blacklist : page Téléchargements → icône œil à côté du t
 - `API : POST /download-detection/start { "library_id": "uuid" }`
 
 **Polling RSS** (`prowlarr_rss`) :
-- Global (`library_id = NULL`), non-exclusif
+- Global par défaut (`library_id = NULL`), non-exclusif — une seule récupération RSS couvre toutes les bibliothèques
 - Fetch via `/api/v1/indexer` puis `/api/v1/search?query=&indexerIds=X&limit=100` en parallèle
 - Normalisation des titres : points, underscores, tirets, apostrophes → espaces, accents supprimés
 - Snapshot RSS (max 200 releases) stocké dans `stats_json.rss_releases`, purgé → 5 derniers jobs `success`
 - Notification Telegram uniquement si `new_releases > 0`
 - Résultats : `downloads_found`, `downloads_not_found`
 - Champs rapport : `total_series`, `found`, `new_releases`, `rss_releases_fetched`, `rss_indexer_stats`
-- `API : POST /prowlarr-rss/start { "library_id": "uuid" }`
+- `API : POST /prowlarr-rss/start` — corps `{}` pour un job global, ou `{ "library_id": "uuid" }` pour restreindre le matching à une bibliothèque
 
 **Blacklist** : stockée dans `release_blacklist` (titre + indexer + nom de série). Filtrée avant matching. Ne supprime pas les `available_downloads` existants — nettoyage au prochain run.
 

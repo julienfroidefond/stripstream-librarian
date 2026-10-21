@@ -23,11 +23,11 @@ Vous pouvez activer ou désactiver chaque type de notification individuellement 
 | Catégorie | Événements disponibles |
 |-----------|----------------------|
 | **Scans** | Scan terminé, scan en erreur, scan annulé |
-| **Miniatures** | Génération terminée, en erreur, annulée |
-| **Conversion CBR→CBZ** | Conversion terminée, en erreur, annulée |
-| **Métadonnées** | Métadonnées approuvées, auto-match terminé, refresh terminé |
-| **Lecture** | Pull AniList terminé, pull en erreur, push AniList terminé, push en erreur |
-| **Téléchargements** | Synchronisation incrémentale du Telegram Monitor terminée |
+| **Miniatures** | Génération terminée, en erreur |
+| **Conversion CBR→CBZ** | Conversion terminée, en erreur |
+| **Métadonnées** | Métadonnées approuvées, auto-match terminé, auto-match en erreur, refresh terminé, refresh en erreur |
+| **Lecture** | Liaison AniList terminée, liaison en erreur, push AniList terminé, push en erreur |
+| **Téléchargements** | Détection de téléchargements terminée, détection en erreur |
 
 ## Contenu des notifications
 
@@ -56,5 +56,5 @@ Les notifications avec image utilisent l'API Telegram `sendPhoto` (upload multip
 
 Les notifications sont envoyées en mode fire-and-forget : un échec d'envoi ne bloque jamais l'opération principale qui l'a déclenchée.
 
-Codes d'événements internes : `scan_completed`, `scan_failed`, `scan_cancelled`, `thumbnail_completed`, `thumbnail_failed`, `thumbnail_cancelled`, `conversion_completed`, `conversion_failed`, `conversion_cancelled`, `metadata_approved`, `metadata_batch_completed`, `metadata_refresh_completed`, `reading_status_match_completed`, `reading_status_match_failed`, `reading_status_push_completed`, `reading_status_push_failed`.
+Codes d'événements internes : `scan_completed`, `scan_failed`, `scan_cancelled`, `thumbnail_completed`, `thumbnail_failed`, `conversion_completed`, `conversion_failed`, `metadata_approved`, `metadata_batch_completed`, `metadata_batch_failed`, `metadata_refresh_completed`, `metadata_refresh_failed`, `reading_status_match_completed`, `reading_status_match_failed`, `reading_status_push_completed`, `reading_status_push_failed`, `download_detection_completed`, `download_detection_failed`.
 :::

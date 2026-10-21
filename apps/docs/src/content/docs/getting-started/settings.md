@@ -117,12 +117,12 @@ Séries supprimées du disque mais conservées avec leur historique de lecture ;
 ---
 
 :::note[Détails techniques]
-**Lecture / écriture** : `GET /settings/{clé}` et `POST /settings/{clé}` couvrent les clés
-génériques (`image_processing`, `cache`, `limits`, `thumbnail`, `ai_tagging`…). Les intégrations
-ont leurs endpoints dédiés (`/settings/prowlarr`, `/settings/qbittorrent`, `/settings/alldebrid`,
-`/settings/torrent_import`, `/settings/telegram`, `/settings/anilist`, `/settings/komga`,
-`/settings/metadata_providers`, `/settings/status-mappings`, `/settings/download_client`,
-`/settings/downloads_enabled`, `/settings/rename_format`…).
+**Lecture / écriture** : `GET /settings/{clé}` et `POST /settings/{clé}` sont des routes
+génériques — chaque clé est un réglage nommé (`image_processing`, `cache`, `limits`, `thumbnail`,
+`ai_tagging`, mais aussi `prowlarr`, `qbittorrent`, `alldebrid`, `torrent_import`, `telegram`,
+`anilist`, `komga`, `metadata_providers`, `status-mappings`, `download_client`,
+`downloads_enabled`, `rename_format`…).
+Il n'existe pas de handler distinct par intégration.
 
 **Validation** : `POST /settings/{key}` rejette les valeurs invalides (`400 Bad Request`) — voir
 [API](/reference/api/#authentification) pour les règles sur `limits` et `cache`.

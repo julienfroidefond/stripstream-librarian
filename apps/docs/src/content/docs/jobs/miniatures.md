@@ -38,9 +38,9 @@ Les deux tâches de miniatures sont **exclusives** — elles ne coexistent pas a
 
 `thumbnail_rebuild` : status `generating_thumbnails` (pas de phase discovery). Ne traite que les livres sans miniature (`thumbnail_path IS NULL`).
 
-`thumbnail_regenerate` : supprime les fichiers WebP existants pour la bibliothèque, puis recrée chaque miniature.
+`thumbnail_regenerate` : supprime les fichiers de miniature existants pour la bibliothèque (toutes extensions : webp, jpg, png, raw), puis recrée chaque miniature.
 
-`cbr_to_cbz` : non-exclusif. Nécessite `book_id` sur le job. Pipeline : copie CBR → extraction `unar` → repackage ZIP `.cbz` → mise à jour `book_files` en DB. CBR original conservé en cas d'échec.
+`cbr_to_cbz` : non-exclusif. Nécessite `book_id` sur le job. Pipeline : extraction du CBR en mémoire via le crate `unrar` → écriture du `.cbz` → mise à jour `book_files` en DB → suppression du CBR original (best-effort). Aucun binaire externe requis ; en cas d'échec, le CBR original reste intact.
 
 **Événement de job** : `event_type = 'error'` (niveau `error`) pour les échecs d'ouverture d'archive ou de conversion.
 

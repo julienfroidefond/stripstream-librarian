@@ -88,8 +88,8 @@ Le rapport final de chaque tâche est consultable après son exécution, avec le
 | Priorité | Types |
 |----------|-------|
 | 1 | `full_rebuild` |
-| 2 | `rebuild`, `rescan`, `scan` |
-| 3 | `thumbnail_rebuild`, `thumbnail_regenerate`, `cbr_to_cbz` |
+| 2 | `rebuild`, `scan` |
+| 3 | `rescan`, `thumbnail_rebuild`, `thumbnail_regenerate`, `cbr_to_cbz` |
 
 Les jobs API (`metadata_*`, `reading_status_*`, `download_detection`, `prowlarr_rss`, `ddl_search`, `telegram_sync`, `telegram_sync_incremental`) sont traités en FIFO.
 

@@ -77,7 +77,7 @@ Les statuts retournés par les providers (`ongoing`, `ended`, `completed`…) ne
 Accès : **Paramètres → onglet Métadonnées → carte Correspondance de statuts**.
 
 :::note[Détails techniques]
-**SensCritique** : utilise l'API GraphQL `apollo.senscritique.com`. Recherche via `searchAutocomplete` avec déduplication par franchise. Mode détaillé via `groupProducts` pour distinguer les éditions. Format `external_id` : `franchise:{id}:edition:{base64(name)}`, rétrocompatible avec `franchise:{id}`. Rate limiting : retry avec backoff exponentiel sur HTTP 429 (1s, 2s, 4s, 3 retries). Statut inféré depuis la dernière date de sortie : < 18 mois → `ongoing`, ≥ 18 mois → `ended`.
+**SensCritique** : utilise l'API GraphQL `apollo.senscritique.com`. Recherche via `searchAutocomplete` avec déduplication par franchise. Mode détaillé via `groupProducts` pour distinguer les éditions. Format `external_id` : `franchise:{id}:edition:{base64(name)}`, rétrocompatible avec `franchise:{id}`. Rate limiting : un HTTP 429 n'est **pas** retenté — l'erreur est remontée immédiatement pour que l'appelant coupe le circuit ; les autres statuts non-2xx sont retentés avec backoff exponentiel (1s, 2s, 4s, 3 retries). Statut inféré depuis la dernière date de sortie : < 18 mois → `ongoing`, ≥ 18 mois → `ended`.
 
 Pour une édition SensCritique, les métadonnées de série sont celles du tome au numéro le plus bas. Les auteurs regroupent les champs `authors` et `pencillers` de ce tome ; la même règle est appliquée au matching initial et aux refresh.
 
