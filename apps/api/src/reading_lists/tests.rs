@@ -128,6 +128,16 @@ async fn item_count(pool: &PgPool, list_id: Uuid) -> i64 {
         .unwrap()
 }
 
+async fn positions_of(pool: &PgPool, list_id: Uuid) -> Vec<i32> {
+    sqlx::query_scalar(
+        "SELECT position FROM reading_list_items WHERE list_id = $1 ORDER BY position",
+    )
+    .bind(list_id)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
 // ---------------------------------------------------------------------------
 // create / update / delete
 // ---------------------------------------------------------------------------
@@ -353,6 +363,80 @@ async fn remove_series_deletes_item(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
+async fn remove_series_compacts_remaining_positions(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "remove-gap").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let b = create_series(&pool, library_id, "B", &[]).await;
+    let c = create_series(&pool, library_id, "C", &[]).await;
+    let list_id = create_list(&state, "Remove gap").await;
+    for series_id in [a, b, c] {
+        add(&state, list_id, series_id).await.unwrap();
+    }
+
+    remove_series(State(state), Path((list_id, b)))
+        .await
+        .unwrap();
+
+    assert_eq!(positions_of(&pool, list_id).await, vec![0, 1]);
+    assert_eq!(position_of(&pool, list_id, a).await, Some(0));
+    assert_eq!(position_of(&pool, list_id, c).await, Some(1));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn add_series_after_a_gap_keeps_positions_dense(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "add-gap").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let b = create_series(&pool, library_id, "B", &[]).await;
+    let c = create_series(&pool, library_id, "C", &[]).await;
+    let appended = create_series(&pool, library_id, "Appended", &[]).await;
+    let list_id = create_list(&state, "Add gap").await;
+    for series_id in [a, b, c] {
+        add(&state, list_id, series_id).await.unwrap();
+    }
+
+    // Simulate a legacy list with a hole at position 1 (b) left by old code.
+    sqlx::query("DELETE FROM reading_list_items WHERE list_id = $1 AND series_id = $2")
+        .bind(list_id)
+        .bind(b)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(positions_of(&pool, list_id).await, vec![0, 2]);
+
+    add(&state, list_id, appended).await.unwrap();
+
+    assert_eq!(positions_of(&pool, list_id).await, vec![0, 1, 2]);
+    assert_eq!(position_of(&pool, list_id, c).await, Some(1));
+    assert_eq!(position_of(&pool, list_id, appended).await, Some(2));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn database_rejects_duplicate_positions(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "duplicate-position").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let b = create_series(&pool, library_id, "B", &[]).await;
+    let list_id = create_list(&state, "Duplicate position").await;
+    add(&state, list_id, a).await.unwrap();
+
+    let result = sqlx::query(
+        "INSERT INTO reading_list_items (list_id, series_id, position) VALUES ($1, $2, 0)",
+    )
+    .bind(list_id)
+    .bind(b)
+    .execute(&pool)
+    .await;
+
+    assert!(
+        result.is_err(),
+        "duplicate (list_id, position) must be rejected"
+    );
+    assert_eq!(item_count(&pool, list_id).await, 1);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
 async fn reorder_series_returns_not_found_when_list_missing(pool: PgPool) {
     let state = test_state(pool);
 
@@ -412,6 +496,60 @@ async fn reorder_series_rejects_unknown_ids(pool: PgPool) {
         Path(list_id),
         Json(ReorderSeriesRequest {
             series_ids: vec![a, Uuid::new_v4(), b],
+        }),
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+    assert_eq!(position_of(&pool, list_id, a).await, Some(0));
+    assert_eq!(position_of(&pool, list_id, b).await, Some(1));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn reorder_series_rejects_partial_payload(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "reorder-partial").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let b = create_series(&pool, library_id, "B", &[]).await;
+    let c = create_series(&pool, library_id, "C", &[]).await;
+    let list_id = create_list(&state, "Reorder partial").await;
+    for series_id in [a, b, c] {
+        add(&state, list_id, series_id).await.unwrap();
+    }
+
+    let err = reorder_series(
+        State(state),
+        Path(list_id),
+        Json(ReorderSeriesRequest {
+            series_ids: vec![c, a],
+        }),
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+    // Nothing was moved: omitted series keep their positions, no collisions.
+    assert_eq!(position_of(&pool, list_id, a).await, Some(0));
+    assert_eq!(position_of(&pool, list_id, b).await, Some(1));
+    assert_eq!(position_of(&pool, list_id, c).await, Some(2));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn reorder_series_rejects_duplicate_ids(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "reorder-duplicates").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let b = create_series(&pool, library_id, "B", &[]).await;
+    let list_id = create_list(&state, "Reorder duplicates").await;
+    add(&state, list_id, a).await.unwrap();
+    add(&state, list_id, b).await.unwrap();
+
+    let err = reorder_series(
+        State(state),
+        Path(list_id),
+        Json(ReorderSeriesRequest {
+            series_ids: vec![a, a],
         }),
     )
     .await

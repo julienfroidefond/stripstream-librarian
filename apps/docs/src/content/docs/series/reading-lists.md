@@ -53,6 +53,8 @@ Après validation, le cache des listes de lecture est invalidé : les nouvelles 
 
 Dans la page détail d'une liste, chaque série dispose de boutons **↑ / ↓** (visibles au survol) pour la déplacer dans la liste. L'ordre est sauvegardé immédiatement.
 
+L'ordre est toujours **dense** : après un ajout ou un retrait, les positions sont renumérotées de `0` à `n-1` sans trou ni doublon (contrainte unique en base). L'endpoint de réordonnancement attend **toutes** les séries de la liste : un payload partiel ou contenant des doublons est rejeté en `400`, ce qui évite les collisions d'ordre.
+
 Les séries dont **tous les volumes réguliers ont été lus** sont automatiquement repoussées en bas de liste, quel que soit leur position manuelle.
 
 ---

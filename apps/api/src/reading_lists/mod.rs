@@ -1,8 +1,10 @@
+use std::collections::HashSet;
+
 use axum::extract::{Extension, Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
+use sqlx::{Postgres, Row, Transaction};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -102,6 +104,87 @@ pub struct AddSeriesRequest {
 pub struct ReorderSeriesRequest {
     #[schema(value_type = Vec<String>)]
     pub series_ids: Vec<Uuid>,
+}
+
+// ---------------------------------------------------------------------------
+// Position invariants
+// ---------------------------------------------------------------------------
+//
+// Every list must keep positions as a dense 0..n-1 sequence without duplicates.
+// The database enforces the "no duplicate" half with a DEFERRABLE unique
+// constraint (migration 0131); these helpers keep the "dense" half.
+//
+// All mutations lock the reading_lists row first, which serialises concurrent
+// adds/removes/moves on the same list (a bare MAX(position)+1 would race).
+
+/// Lock the reading list row for the rest of the transaction.
+///
+/// Returns `false` when the list does not exist.
+async fn lock_list(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> Result<bool, sqlx::Error> {
+    let found: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM reading_lists WHERE id = $1 FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut **tx)
+            .await?;
+
+    Ok(found.is_some())
+}
+
+/// Rewrite the list positions as a dense 0..n-1 sequence.
+///
+/// The unique constraint is `DEFERRABLE INITIALLY DEFERRED`, so the transient
+/// duplicates produced while swapping positions are only checked at COMMIT.
+async fn compact_positions(
+    tx: &mut Transaction<'_, Postgres>,
+    list_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        WITH ranked AS (
+            SELECT
+                id,
+                (ROW_NUMBER() OVER (ORDER BY position, created_at, id) - 1)::int AS new_position
+            FROM reading_list_items
+            WHERE list_id = $1
+        )
+        UPDATE reading_list_items AS rli
+        SET position = ranked.new_position
+        FROM ranked
+        WHERE rli.id = ranked.id
+          AND rli.position IS DISTINCT FROM ranked.new_position
+        "#,
+    )
+    .bind(list_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+/// Append a series at the end of a (already locked and compacted) list.
+async fn append_series(
+    tx: &mut Transaction<'_, Postgres>,
+    list_id: Uuid,
+    series_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let next_position: i32 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(position) + 1, 0)::int FROM reading_list_items WHERE list_id = $1",
+    )
+    .bind(list_id)
+    .fetch_one(&mut **tx)
+    .await?;
+
+    let result = sqlx::query(
+        "INSERT INTO reading_list_items (list_id, series_id, position) VALUES ($1, $2, $3) \
+         ON CONFLICT (list_id, series_id) DO NOTHING",
+    )
+    .bind(list_id)
+    .bind(series_id)
+    .bind(next_position)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -260,36 +343,20 @@ pub async fn add_series(
     Path(id): Path<Uuid>,
     Json(body): Json<AddSeriesRequest>,
 ) -> Result<axum::http::StatusCode, ApiError> {
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM reading_lists WHERE id = $1)")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
+    let mut tx = state.pool.begin().await?;
 
-    if !exists {
+    if !lock_list(&mut tx, id).await? {
         return Err(ApiError::not_found("reading list not found"));
     }
 
-    let max_pos: Option<i32> =
-        sqlx::query_scalar("SELECT MAX(position) FROM reading_list_items WHERE list_id = $1")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
+    // Heal any legacy gap before appending so the list stays dense.
+    compact_positions(&mut tx, id).await?;
 
-    let next_pos = max_pos.map(|p| p + 1).unwrap_or(0);
-
-    let result = sqlx::query(
-        "INSERT INTO reading_list_items (list_id, series_id, position) VALUES ($1, $2, $3) ON CONFLICT (list_id, series_id) DO NOTHING",
-    )
-    .bind(id)
-    .bind(body.series_id)
-    .bind(next_pos)
-    .execute(&state.pool)
-    .await?;
-
-    if result.rows_affected() == 0 {
+    if !append_series(&mut tx, id, body.series_id).await? {
         return Err(ApiError::bad_request("series already in reading list"));
     }
+
+    tx.commit().await?;
 
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
@@ -314,16 +381,26 @@ pub async fn remove_series(
     State(state): State<AppState>,
     Path((id, series_id)): Path<(Uuid, Uuid)>,
 ) -> Result<axum::http::StatusCode, ApiError> {
+    let mut tx = state.pool.begin().await?;
+
+    // Serialise with concurrent adds/removes before compacting.
+    if !lock_list(&mut tx, id).await? {
+        return Err(ApiError::not_found("series not found in reading list"));
+    }
+
     let result =
         sqlx::query("DELETE FROM reading_list_items WHERE list_id = $1 AND series_id = $2")
             .bind(id)
             .bind(series_id)
-            .execute(&state.pool)
+            .execute(&mut *tx)
             .await?;
 
     if result.rows_affected() == 0 {
         return Err(ApiError::not_found("series not found in reading list"));
     }
+
+    compact_positions(&mut tx, id).await?;
+    tx.commit().await?;
 
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
@@ -348,17 +425,11 @@ pub async fn reorder_series(
     Path(id): Path<Uuid>,
     Json(body): Json<ReorderSeriesRequest>,
 ) -> Result<axum::http::StatusCode, ApiError> {
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM reading_lists WHERE id = $1)")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
+    let mut tx = state.pool.begin().await?;
 
-    if !exists {
+    if !lock_list(&mut tx, id).await? {
         return Err(ApiError::not_found("reading list not found"));
     }
-
-    let mut tx = state.pool.begin().await?;
 
     let known: Vec<Uuid> =
         sqlx::query_scalar("SELECT series_id FROM reading_list_items WHERE list_id = $1")
@@ -366,6 +437,19 @@ pub async fn reorder_series(
             .fetch_all(&mut *tx)
             .await?;
 
+    // The payload must be a permutation of the current items: a partial payload
+    // would leave omitted items on their old positions and create collisions.
+    let unique: HashSet<Uuid> = body.series_ids.iter().copied().collect();
+    if unique.len() != body.series_ids.len() {
+        return Err(ApiError::bad_request(
+            "series_ids must not contain duplicates",
+        ));
+    }
+    if body.series_ids.len() != known.len() {
+        return Err(ApiError::bad_request(
+            "series_ids must contain every series of the reading list",
+        ));
+    }
     if let Some(unknown) = body
         .series_ids
         .iter()
