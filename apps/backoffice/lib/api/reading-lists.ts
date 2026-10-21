@@ -14,6 +14,8 @@ export type ReadingListDto = {
   series_count: number;
   book_count: number;
   books_read_count: number;
+  /** True when the list holds fewer than two series (never auto-deleted). */
+  is_incomplete: boolean;
   preview_covers: string[];
   created_at: string;
   updated_at: string;

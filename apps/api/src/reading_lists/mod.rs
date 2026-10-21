@@ -29,6 +29,11 @@ pub struct ReadingListDto {
     pub book_count: i64,
     /// Books marked as read by the requesting user.
     pub books_read_count: i64,
+    /// True when the list holds fewer than two series.
+    ///
+    /// Such a list is still valid and is never deleted automatically: it is only
+    /// flagged so the UI can invite the owner to add another series.
+    pub is_incomplete: bool,
     pub preview_covers: Vec<String>,
     #[schema(value_type = String)]
     pub created_at: DateTime<Utc>,
@@ -243,6 +248,7 @@ pub async fn create_reading_list(
         series_count: 0,
         book_count: 0,
         books_read_count: 0,
+        is_incomplete: true,
         preview_covers: vec![],
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
@@ -300,6 +306,7 @@ pub async fn update_reading_list(
         series_count,
         book_count: 0,
         books_read_count: 0,
+        is_incomplete: series_count < 2,
         preview_covers: vec![],
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
@@ -620,13 +627,15 @@ async fn fetch_list_dto(pool: &sqlx::PgPool, id: Uuid) -> Result<ReadingListDto,
     .await?
     .ok_or_else(|| ApiError::not_found("reading list not found"))?;
 
+    let series_count: i64 = row.get("series_count");
     Ok(ReadingListDto {
         id: row.get("id"),
         name: row.get("name"),
         description: row.get("description"),
-        series_count: row.get("series_count"),
+        series_count,
         book_count: 0,
         books_read_count: 0,
+        is_incomplete: series_count < 2,
         preview_covers: row.get::<Vec<String>, _>("preview_covers"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
@@ -841,16 +850,20 @@ pub async fn list_reading_lists(
 
     let items = rows
         .into_iter()
-        .map(|r| ReadingListDto {
-            id: r.get("id"),
-            name: r.get("name"),
-            description: r.get("description"),
-            series_count: r.get("series_count"),
-            book_count: r.get("book_count"),
-            books_read_count: r.get("books_read_count"),
-            preview_covers: r.get::<Vec<String>, _>("preview_covers"),
-            created_at: r.get("created_at"),
-            updated_at: r.get("updated_at"),
+        .map(|r| {
+            let series_count: i64 = r.get("series_count");
+            ReadingListDto {
+                id: r.get("id"),
+                name: r.get("name"),
+                description: r.get("description"),
+                series_count,
+                book_count: r.get("book_count"),
+                books_read_count: r.get("books_read_count"),
+                is_incomplete: series_count < 2,
+                preview_covers: r.get::<Vec<String>, _>("preview_covers"),
+                created_at: r.get("created_at"),
+                updated_at: r.get("updated_at"),
+            }
         })
         .collect();
 

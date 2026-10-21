@@ -759,6 +759,44 @@ async fn list_reading_lists_orders_by_name_and_counts_series(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_reading_lists_flags_lists_with_fewer_than_two_series(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "list-incomplete").await;
+    let first = create_series(&pool, library_id, "First", &[]).await;
+    let second = create_series(&pool, library_id, "Second", &[]).await;
+    create_list(&state, "Empty").await;
+    let single = create_list(&state, "Single").await;
+    add(&state, single, first).await.unwrap();
+    let pair = create_list(&state, "Pair").await;
+    add(&state, pair, first).await.unwrap();
+    add(&state, pair, second).await.unwrap();
+
+    let Json(lists) = list_reading_lists(
+        State(state),
+        None,
+        Query(ListReadingListsQuery { series_id: None }),
+    )
+    .await
+    .unwrap();
+
+    let flags: Vec<(&str, bool)> = lists
+        .iter()
+        .map(|list| (list.name.as_str(), list.is_incomplete))
+        .collect();
+    assert_eq!(
+        flags,
+        vec![("Empty", true), ("Pair", false), ("Single", true)]
+    );
+
+    // Flagging is informational: no list is deleted, even when empty.
+    let list_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM reading_lists")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(list_count, 3);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
 async fn list_reading_lists_filters_by_series_membership(pool: PgPool) {
     let state = test_state(pool.clone());
     let library_id = create_library(&pool, "list-filter").await;

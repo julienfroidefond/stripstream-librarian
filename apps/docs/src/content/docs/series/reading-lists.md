@@ -16,6 +16,8 @@ Depuis la page **Listes** (menu de navigation), cliquez sur **Créer une liste**
 
 La liste apparaît immédiatement dans la grille des listes.
 
+Une liste peut rester **vide ou ne contenir qu'une seule série** : c'est autorisé (une liste peut être préparée à l'avance). Ces listes sont simplement signalées par le champ `is_incomplete` et un badge « Incomplète » dans la grille, sans jamais être supprimées automatiquement.
+
 ---
 
 ## Ajouter des séries
@@ -112,7 +114,7 @@ Voir [Séries liées & Recommandations](/series/related/) pour le détail.
 | `PUT` | `/reading-lists/{id}/series/reorder` | Réordonner (liste complète d'IDs) |
 | `POST` | `/reading-lists/ai-suggest` | Proposer ajouts, déplacements et nouvelles listes (aucune écriture) |
 
-Chaque entrée de `GET /reading-lists/{id}` expose `book_count`, `books_read_count` et `is_empty` (série sans aucun livre, conservée dans la liste).
+Chaque entrée de `GET /reading-lists/{id}` expose `book_count`, `books_read_count` et `is_empty` (série sans aucun livre, conservée dans la liste). `GET /reading-lists` expose `is_incomplete` pour les listes de moins de deux séries.
 
 **Score dans les recommandations** : les séries dans une même liste obtiennent un bonus ×5, supérieur au bonus auteur (×3) ou genre (×2).
 :::

@@ -1511,6 +1511,7 @@ const en: Record<TranslationKey, string> = {
   "readingLists.backToList": "Back to lists",
   "readingLists.noSeries": "No series in this list.",
   "readingLists.emptySeries": "No books",
+  "readingLists.incomplete": "Incomplete",
   "readingLists.addSeries": "Add a series",
   "readingLists.searchSeries": "Search for a series...",
   "readingLists.removeSeries": "Remove from list",

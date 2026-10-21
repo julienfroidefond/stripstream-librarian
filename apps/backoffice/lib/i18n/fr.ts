@@ -1509,6 +1509,7 @@ const fr = {
   "readingLists.backToList": "Retour aux listes",
   "readingLists.noSeries": "Aucune série dans cette liste.",
   "readingLists.emptySeries": "Sans livre",
+  "readingLists.incomplete": "Incomplète",
   "readingLists.addSeries": "Ajouter une série",
   "readingLists.searchSeries": "Rechercher une série...",
   "readingLists.removeSeries": "Retirer de la liste",
