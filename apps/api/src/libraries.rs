@@ -223,6 +223,14 @@ pub async fn delete_library(
 }
 
 fn canonicalize_library_root(root_path: &str) -> Result<PathBuf, ApiError> {
+    // Reject parent-directory traversal explicitly: an absolute path containing
+    // `..` can still point outside the mounted libraries volume.
+    if root_path.contains("..") {
+        return Err(ApiError::bad_request(
+            "root_path must not contain parent directory references",
+        ));
+    }
+
     let path = Path::new(root_path);
     if !path.is_absolute() {
         return Err(ApiError::bad_request("root_path must be absolute"));

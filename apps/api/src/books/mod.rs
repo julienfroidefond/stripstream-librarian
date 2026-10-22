@@ -773,8 +773,19 @@ async fn write_thumbnail_file(
         .map_err(|e| ApiError::internal(format!("cannot create thumbnail directory: {e}")))?;
 
     let extension = thumbnail_extension(content_type);
-    let thumbnail_path = directory_path.join(format!("{book_id}.{extension}"));
-    let temporary_path = directory_path.join(format!(".{book_id}-{}.tmp", Uuid::new_v4()));
+    let file_name = format!("{book_id}.{extension}");
+    let temporary_file_name = format!(".{book_id}-{}.tmp", Uuid::new_v4());
+    // Defense in depth: the names are derived from a UUID and can never contain
+    // traversal sequences, but keep the check explicit so future changes to the
+    // naming scheme cannot escape `directory_path`.
+    if file_name.contains("..") {
+        return Err(ApiError::internal("invalid thumbnail file name"));
+    }
+    if temporary_file_name.contains("..") {
+        return Err(ApiError::internal("invalid thumbnail temporary file name"));
+    }
+    let thumbnail_path = directory_path.join(file_name);
+    let temporary_path = directory_path.join(temporary_file_name);
     tokio::fs::write(&temporary_path, data)
         .await
         .map_err(|e| ApiError::internal(format!("cannot write thumbnail: {e}")))?;

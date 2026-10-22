@@ -1,3 +1,5 @@
+use std::net::{IpAddr, SocketAddr};
+
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 use stripstream_core::http::{build_http_client, USER_AGENT};
@@ -546,9 +548,89 @@ pub(crate) enum ResolvedTorrent {
     TorrentFile(Vec<u8>),
 }
 
+/// Whether `ip` is an acceptable target for a user-supplied torrent URL.
+///
+/// Torrent links legitimately point at self-hosted indexers and Prowlarr
+/// proxies on the LAN, so private ranges are allowed. Loopback, link-local
+/// (including the `169.254.169.254` cloud metadata endpoint), unspecified,
+/// broadcast and multicast addresses are rejected: they cannot host a real
+/// torrent source and are classic SSRF targets.
+fn is_allowed_torrent_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            let octets = v4.octets();
+            !(v4.is_loopback()
+                || v4.is_link_local()
+                || v4.is_broadcast()
+                || v4.is_documentation()
+                || v4.is_unspecified()
+                || v4.is_multicast()
+                || octets[0] == 0)
+        }
+        IpAddr::V6(v6) => {
+            !(v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_unicast_link_local()
+                || v6.is_multicast()
+                || v6
+                    .to_ipv4_mapped()
+                    .is_some_and(|v4| !is_allowed_torrent_ip(IpAddr::V4(v4))))
+        }
+    }
+}
+
+/// Validate a torrent URL before fetching it.
+///
+/// Only HTTP(S) is accepted, and the host — literal or resolved through DNS —
+/// must not be a loopback, link-local or metadata address. Redirect targets are
+/// validated the same way by [`resolve_torrent_url`].
+async fn ensure_safe_remote_url(url: &reqwest::Url) -> Result<(), String> {
+    match url.scheme() {
+        "http" | "https" => {}
+        scheme => return Err(format!("unsupported URL scheme: {scheme}")),
+    }
+
+    let host = url
+        .host_str()
+        .ok_or_else(|| "URL has no host".to_string())?;
+    // `host_str` keeps the brackets around IPv6 literals.
+    let check_host = host.trim_start_matches('[').trim_end_matches(']');
+    let host_lower = check_host.to_ascii_lowercase();
+    if host_lower == "localhost"
+        || host_lower.ends_with(".localhost")
+        || host_lower.ends_with(".internal")
+    {
+        return Err(format!("refusing to fetch internal host: {host}"));
+    }
+
+    if let Ok(ip) = check_host.parse::<IpAddr>() {
+        return if is_allowed_torrent_ip(ip) {
+            Ok(())
+        } else {
+            Err(format!("refusing to fetch non-routable address: {host}"))
+        };
+    }
+
+    let port = url.port_or_known_default().unwrap_or(443);
+    let addrs: Vec<SocketAddr> = tokio::net::lookup_host((check_host, port))
+        .await
+        .map_err(|e| format!("cannot resolve {host}: {e}"))?
+        .collect();
+    if addrs.is_empty() {
+        return Err(format!("cannot resolve {host}"));
+    }
+    if addrs.iter().any(|addr| !is_allowed_torrent_ip(addr.ip())) {
+        return Err(format!("refusing to fetch non-routable address for {host}"));
+    }
+    Ok(())
+}
+
 /// Resolve a torrent URL: if it's already a magnet link, return as-is.
 /// Otherwise follow HTTP redirects. If the final URL is a magnet, return it.
 /// If the response is a .torrent file, return the bytes.
+///
+/// Both the initial URL and every redirect target are checked by
+/// [`ensure_safe_remote_url`] to prevent server-side request forgery.
 pub(crate) async fn resolve_torrent_url(url: &str) -> Result<ResolvedTorrent, String> {
     // Already a magnet link — nothing to resolve
     if url.starts_with("magnet:") {
@@ -563,10 +645,13 @@ pub(crate) async fn resolve_torrent_url(url: &str) -> Result<ResolvedTorrent, St
         .build()
         .map_err(|e| format!("failed to build redirect client: {e}"))?;
 
-    let mut current_url = url.to_string();
+    let mut current_url =
+        reqwest::Url::parse(url).map_err(|e| format!("invalid torrent URL: {e}"))?;
+    ensure_safe_remote_url(&current_url).await?;
+
     for _ in 0..10 {
         let resp = no_redirect_client
-            .get(&current_url)
+            .get(current_url.clone())
             .send()
             .await
             .map_err(|e| format!("HTTP request failed for {current_url}: {e}"))?;
@@ -579,8 +664,12 @@ pub(crate) async fn resolve_torrent_url(url: &str) -> Result<ResolvedTorrent, St
                     tracing::info!("[QBITTORRENT] URL redirected to magnet link");
                     return Ok(ResolvedTorrent::Magnet(location));
                 }
-                tracing::debug!("[QBITTORRENT] Following redirect: {status} -> {location}");
-                current_url = location;
+                let next_url = current_url
+                    .join(&location)
+                    .map_err(|e| format!("invalid redirect URL: {e}"))?;
+                ensure_safe_remote_url(&next_url).await?;
+                tracing::debug!("[QBITTORRENT] Following redirect: {status} -> {next_url}");
+                current_url = next_url;
                 continue;
             }
             return Err(format!("redirect {status} without Location header"));

@@ -374,7 +374,7 @@ async fn wiremock_get_series_books_ongoing_no_volumes() {
 
 #[tokio::test]
 async fn wiremock_get_series_books_invalid_id() {
-    let result = get_series_books_impl_url("not_a_number", "http://unused").await;
+    let result = get_series_books_impl_url("not_a_number", "https://unused").await;
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("invalid AniList ID"));
 }

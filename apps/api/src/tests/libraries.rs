@@ -145,6 +145,31 @@ async fn create_library_rejects_relative_root_path(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
+async fn create_library_rejects_parent_directory_reference(pool: PgPool) {
+    let dir = tempfile::tempdir().unwrap();
+    let state = test_state(pool);
+    let root_path = format!("{}/../escape", dir.path().to_string_lossy());
+
+    let err = expect_err(
+        create_library(
+            State(state),
+            Json(CreateLibraryRequest {
+                name: "Traversal".to_string(),
+                root_path,
+            }),
+        )
+        .await,
+    );
+
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+    assert!(
+        err.message.contains("parent directory"),
+        "message: {}",
+        err.message
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
 async fn create_library_rejects_missing_root_path(pool: PgPool) {
     let dir = tempfile::tempdir().unwrap();
     let state = test_state(pool);

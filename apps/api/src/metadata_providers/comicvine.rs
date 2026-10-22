@@ -1,7 +1,7 @@
 use stripstream_core::http::build_http_client_with_agent;
 
 use super::{
-    compute_confidence, strip_html, urlencoded, BookCandidate, MetadataProvider, ProviderConfig,
+    compute_confidence, strip_html, BookCandidate, MetadataProvider, ProviderConfig,
     SeriesCandidate,
 };
 
@@ -60,15 +60,19 @@ async fn search_series_impl(
 
     let client = build_client()?;
 
-    let url = format!(
-        "{}/api/search/?api_key={}&format=json&resources=volume&query={}&limit=20",
-        base_url,
-        api_key,
-        urlencoded(query)
-    );
+    // Keep the API key out of the URL string itself: it is appended as a query
+    // parameter by reqwest, which also takes care of percent-encoding.
+    let url = format!("{base_url}/api/search/");
 
     let resp = client
         .get(&url)
+        .query(&[
+            ("api_key", api_key),
+            ("format", "json"),
+            ("resources", "volume"),
+            ("query", query),
+            ("limit", "20"),
+        ])
         .send()
         .await
         .map_err(|e| format!("ComicVine request failed: {e}"))?;
@@ -165,9 +169,10 @@ async fn get_series_impl(
         .filter(|key| !key.is_empty())
         .ok_or_else(|| "ComicVine requires an API key".to_string())?;
     let client = build_client()?;
-    let url = format!("{base_url}/api/volume/4050-{external_id}/?api_key={api_key}&format=json");
+    let url = format!("{base_url}/api/volume/4050-{external_id}/");
     let response = client
         .get(&url)
+        .query(&[("api_key", api_key), ("format", "json")])
         .send()
         .await
         .map_err(|e| format!("ComicVine request failed: {e}"))?;
@@ -247,15 +252,22 @@ async fn get_series_books_impl(
 
     let client = build_client()?;
 
-    let url = format!(
-        "{}/api/issues/?api_key={}&format=json&filter=volume:{}&sort=issue_number:asc&limit=100&field_list=id,name,issue_number,description,image,cover_date,site_detail_url,person_credits",
-        base_url,
-        api_key,
-        external_id
-    );
+    let url = format!("{base_url}/api/issues/");
+    let filter = format!("volume:{external_id}");
 
     let resp = client
         .get(&url)
+        .query(&[
+            ("api_key", api_key),
+            ("format", "json"),
+            ("filter", filter.as_str()),
+            ("sort", "issue_number:asc"),
+            ("limit", "100"),
+            (
+                "field_list",
+                "id,name,issue_number,description,image,cover_date,site_detail_url,person_credits",
+            ),
+        ])
         .send()
         .await
         .map_err(|e| format!("ComicVine request failed: {e}"))?;
