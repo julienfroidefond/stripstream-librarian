@@ -112,8 +112,27 @@ jobs:
                 gh pr review --approve "$PR_URL" \
                   --body "CI verte (Rust, Backoffice, Docs) : merge automatique." \
                   || echo "already approved, continuing"
-                gh pr merge --squash --delete-branch "$PR_URL"
-                exit 0
+
+                # GitHub recomputes mergeability asynchronously: right after the
+                # approval the PR still reports BLOCKED for ~20s, and
+                # `gh pr merge` pre-checks that value.
+                for _ in $(seq 1 20); do
+                  merge_state=$(gh pr view "$PR_URL" --json mergeStateStatus -q .mergeStateStatus)
+                  if [ "$merge_state" != "BLOCKED" ] && [ "$merge_state" != "UNKNOWN" ]; then
+                    break
+                  fi
+                  sleep 6
+                done
+
+                for attempt in 1 2 3; do
+                  if gh pr merge --squash --delete-branch "$PR_URL"; then
+                    exit 0
+                  fi
+                  echo "merge attempt ${attempt} failed, retrying in 15s"
+                  sleep 15
+                done
+                echo "::error::could not merge the pull request"
+                exit 1
                 ;;
               failed)
                 echo "::error::a required check failed, not merging"
