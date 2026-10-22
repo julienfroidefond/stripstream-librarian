@@ -23,7 +23,7 @@ chrono = { version = "0.4", features = ["serde"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 jpeg-decoder = "0.3"
 libc = "0.2"
-lru = "0.18"
+lru = "0.19"
 rayon = "1.12"
 reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "form", "query", "rustls", "webpki-roots"] }
 rand = "0.10"
