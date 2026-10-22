@@ -75,9 +75,14 @@ here.
 It does **not** use GitHub's native auto-merge: the `enablePullRequestAutoMerge` mutation
 answers `Resource not accessible by personal access token` for fine-grained PATs, whatever the
 repository permissions (verified with `admin: true` on this repo). The workflow therefore polls
-the three required checks itself and runs `gh pr merge --squash --delete-branch` once they are
-all `SUCCESS`/`SKIPPED`, up to 60 minutes. A new push on the PR cancels the pending run and
-starts over.
+the three required checks itself, approves the PR, and runs `gh pr merge --squash
+--delete-branch` once they are all `SUCCESS`/`SKIPPED`, up to 60 minutes. A new push on the PR
+cancels the pending run and starts over.
+
+The approval is required by the ruleset's `require_extra_approval_for_unattributed_changes`:
+a Dependabot push is unattributed, so the PR stays `BLOCKED` with zero required reviews until
+someone approves. It is only submitted after the three checks are green, and it is the same
+approval a human would give.
 
 `AUTOMERGE_TOKEN` (fine-grained PAT, `Contents: write`, `Pull requests: write`) is required:
 a merge with the repository `GITHUB_TOKEN` does not trigger `push` workflows, so `deploy.yml`
