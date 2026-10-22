@@ -177,6 +177,18 @@ jobs:
             exit 0
           fi
 
+          # `main` may already carry a version this run knows nothing about: on a
+          # re-run the checkout is the original (pre-bump) commit, and a
+          # concurrent run may have pushed its own bump. Release the version that
+          # `main` actually has instead of bumping again.
+          main_version=$(git show origin/main:Cargo.toml 2>/dev/null | sed -n 's/^version = "\(.*\)"/\1/p' | head -1 || true)
+          if [ -n "$main_version" ] && [ "$main_version" != "$current" ]; then
+            echo "main is already bumped ($current → $main_version) — reusing, no new bump"
+            echo "VERSION=$main_version" >> "$GITHUB_ENV"
+            echo "version=$main_version" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           IFS='.' read -r major minor patch <<< "$current"
           case "$bump" in
             major) new="$((major + 1)).0.0" ;;
@@ -184,15 +196,16 @@ jobs:
             *)     new="$major.$minor.$((patch + 1))" ;;
           esac
 
-          # Re-runs of a workflow check out the original (pre-bump) commit, so
-          # recompute the same `new`. If it was already released, don't bump or
-          # commit again — just build under that version.
-          if git ls-remote --exit-code --tags origin "v$new" >/dev/null 2>&1; then
-            echo "Version $new is already tagged — skipping bump"
-            echo "VERSION=$new" >> "$GITHUB_ENV"
-            echo "version=$new" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          # A tag can exist without its commit ever reaching `main` (a run whose
+          # main push failed but whose tag push succeeded — that is how v3.32.52
+          # froze the version counter on 2026-10-20). Tags are immutable, so
+          # never reuse such a version: move to the next patch instead.
+          IFS='.' read -r new_major new_minor new_patch <<< "$new"
+          while git ls-remote --exit-code --tags origin "v$new" >/dev/null 2>&1; do
+            echo "::warning::v$new is tagged but absent from main — trying the next patch"
+            new_patch=$((new_patch + 1))
+            new="$new_major.$new_minor.$new_patch"
+          done
 
           echo "Version: $current → $new ($bump)"
 
@@ -215,10 +228,12 @@ jobs:
 
           # Pushed over SSH via the bypass deploy key; the resulting push event
           # is skipped by the job-level `chore: bump version to` guard.
-          git push origin HEAD:main \
-            || echo "::warning::could not push the version bump to main (branch protection?)"
-          git push origin "v$new" \
-            || echo "::warning::could not push tag v$new"
+          #
+          # The tag must never exist without its commit on `main`: push the
+          # commit first and abort if that fails. The former `|| echo warning`
+          # is exactly how the orphan v3.32.52 tag froze the version counter.
+          git push origin HEAD:main
+          git push origin "v$new"
 
           echo "VERSION=$new" >> "$GITHUB_ENV"
           echo "version=$new" >> "$GITHUB_OUTPUT"

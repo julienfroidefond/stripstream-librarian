@@ -109,7 +109,13 @@ input), commits `chore: bump version to X`, tags `vX`, and pushes both to `main`
 building the images under the new version. The push uses a write **deploy key** that is a
 bypass actor on the "Protect main" ruleset (which otherwise requires a pull request); the job
 skips commits whose message starts with `chore: bump version to`, which prevents the push from
-retriggering itself forever. `scripts/docker-push.sh` still exists for local builds, but its
+retriggering itself forever.
+
+Two guards keep the counter honest: the bump is keyed on the version `main` actually carries,
+so a re-run reuses it instead of bumping twice; and a tag that already exists without its
+commit on `main` is skipped (the version moves to the next patch), because tags are immutable.
+The commit is pushed **before** the tag and a failed push now fails the job — a warning there
+is how an orphan `v3.32.52` tag froze the counter for two days (2026-10-20). `scripts/docker-push.sh` still exists for local builds, but its
 interactive version bump is redundant with the workflow.
 
 ## Deploy runner: keychain and compose (gotcha)
