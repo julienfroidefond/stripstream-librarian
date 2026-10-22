@@ -39,16 +39,13 @@ name: CI
 # entirely — use `workflow_dispatch` below or a PR in that case.
 
 on:
+  # Every pull request, deliberately without a `paths` filter: the `gate` job
+  # below is the required status check on the protected branch, and a workflow
+  # that does not trigger at all leaves that check "Expected" — which would
+  # block every docs-only or backoffice-only PR forever. The path filter lives
+  # in the `changes` job instead; a job skipped by `if:` still reports a
+  # successful required check.
   pull_request:
-    paths:
-      - ".github/workflows/ci.yml"
-      - "apps/api/**"
-      - "apps/indexer/**"
-      - "crates/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "infra/migrations/**"
-      - "rust-toolchain*"
   # Cache warm-up only, see the note above: `Swatinem/rust-cache` saves on the
   # default branch and PRs restore from it. Without this trigger the repo has no
   # cache entry at all and every PR pays a full from-scratch build.
@@ -71,6 +68,13 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  # `dorny/paths-filter` lists the PR's changed files through the API.
+  pull-requests: read
+  # `Swatinem/rust-cache` needs it to SAVE the cache (restore-only otherwise).
+  actions: write
+
 env:
   CARGO_TERM_COLOR: always
   # Matches the service container below (host port, not the 6432 used by the
@@ -78,8 +82,40 @@ env:
   DATABASE_URL: postgres://stripstream:stripstream@localhost:5432/stripstream
 
 jobs:
+  # Path filter, evaluated inside the workflow so the required `gate` check
+  # always reports (see the `on:` note). Mirrors the paths that used to be on
+  # the `pull_request` trigger.
+  changes:
+    name: Detect Rust changes
+    runs-on: ubuntu-latest
+    outputs:
+      # On `push` the workflow is already path-filtered, so Rust always changed.
+      rust: ${{ github.event_name == 'push' && 'true' || steps.filter.outputs.rust }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Filter paths
+        id: filter
+        # Unnecessary on `push` (see the output above) and it would need the
+        # full history to diff against the previous commit.
+        if: github.event_name != 'push'
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            rust:
+              - ".github/workflows/ci.yml"
+              - "apps/api/**"
+              - "apps/indexer/**"
+              - "crates/**"
+              - "Cargo.toml"
+              - "Cargo.lock"
+              - "infra/migrations/**"
+              - "rust-toolchain*"
+
   lint:
     name: fmt · clippy
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -115,6 +151,8 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     # Sharded over 2 runners. A static matrix on purpose: an expression here
     # (`job-total` shrunk to 1 on push) would be the single most fragile line of
     # the gate. On push both shards simply build (`--no-run`), which is parallel
@@ -210,17 +248,30 @@ jobs:
   gate:
     name: Rust (fmt · clippy · test)
     if: always()
-    needs: [lint, test]
+    needs: [changes, lint, test]
     runs-on: ubuntu-latest
     steps:
       - name: Aggregate results
         env:
+          CHANGES: ${{ needs.changes.result }}
+          RUST: ${{ needs.changes.outputs.rust }}
           LINT: ${{ needs.lint.result }}
           TEST: ${{ needs.test.result }}
         run: |
-          echo "fmt · clippy : $LINT"
+          echo "rust changes  : $RUST ($CHANGES)"
+          echo "fmt · clippy  : $LINT"
           echo "test          : $TEST"
-          if [ "$LINT" != "success" ] || [ "$TEST" != "success" ]; then
+          # A failure in the path filter must never be mistaken for "no Rust
+          # change" — that would silently skip the whole gate.
+          if [ "$CHANGES" != "success" ]; then
+            echo "::error::the path filter job did not succeed"
+            exit 1
+          fi
+          # `lint` and `test` are skipped when the PR touches no Rust file; a
+          # skipped job still satisfies a required check, so only a real
+          # failure (or a cancellation) may fail the gate.
+          if [ "$RUST" = "true" ] \
+            && { [ "$LINT" != "success" ] || [ "$TEST" != "success" ]; }; then
             echo "::error::one or more required jobs did not succeed"
             exit 1
           fi
