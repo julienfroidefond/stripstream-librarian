@@ -163,6 +163,87 @@ describe("AiReadingListsModal", () => {
     expect(seriesCalls).toHaveLength(2);
   });
 
+  it("moves a selected series to the destination list", async () => {
+    const onApplied = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/reading-lists/ai-suggest") {
+        return Promise.resolve(
+          jsonResponse({
+            additions: [],
+            moves: [
+              {
+                from_list_id: "list-1",
+                from_list_name: "Favourites",
+                to_list_id: "list-2",
+                to_list_name: "Space Operas",
+                reason: "Wrong list",
+                series: [{ ...seriesOne, current_list_id: "list-1", current_list_name: "Favourites" }],
+              },
+            ],
+            new_lists: [],
+          })
+        );
+      }
+      if (url === "/api/reading-lists/list-1/series/series-1/move" && init?.method === "POST") {
+        return Promise.resolve(jsonResponse(null));
+      }
+      return Promise.resolve(jsonResponse({}, false));
+    });
+
+    render(<AiReadingListsModal isOpen onClose={onClose} onApplied={onApplied} />);
+
+    expect(await screen.findByText("readingLists.aiMoves")).toBeInTheDocument();
+    expect(screen.getByText("Wrong list")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /readingLists\.aiApply/ }));
+
+    await waitFor(() => expect(onApplied).toHaveBeenCalled());
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/reading-lists/list-1/series/series-1/move",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ to_list_id: "list-2" }),
+      })
+    );
+  });
+
+  it("does not move a series that was deselected", async () => {
+    const onApplied = vi.fn();
+    fetchMock.mockImplementation((url: string) => {
+      if (url === "/api/reading-lists/ai-suggest") {
+        return Promise.resolve(
+          jsonResponse({
+            additions: [],
+            moves: [
+              {
+                from_list_id: "list-1",
+                from_list_name: "Favourites",
+                to_list_id: "list-2",
+                to_list_name: "Space Operas",
+                reason: "Wrong list",
+                series: [seriesOne],
+              },
+            ],
+            new_lists: [],
+          })
+        );
+      }
+      return Promise.resolve(jsonResponse(null));
+    });
+
+    render(<AiReadingListsModal isOpen onClose={vi.fn()} onApplied={onApplied} />);
+    await screen.findByText("readingLists.aiMoves");
+
+    await userEvent.click(screen.getByRole("checkbox", { name: /First Series/ }));
+
+    expect(screen.getByRole("button", { name: /readingLists\.aiApply/ })).toBeDisabled();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/reading-lists/list-1/series/series-1/move",
+      expect.anything()
+    );
+  });
+
   it("shows the empty state when nothing is proposed", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ additions: [], new_lists: [] }));
 

@@ -16,6 +16,8 @@ Depuis la page **Listes** (menu de navigation), cliquez sur **Créer une liste**
 
 La liste apparaît immédiatement dans la grille des listes.
 
+Une liste peut rester **vide ou ne contenir qu'une seule série** : c'est autorisé (une liste peut être préparée à l'avance). Ces listes sont simplement signalées par le champ `is_incomplete` et un badge « Incomplète » dans la grille, sans jamais être supprimées automatiquement.
+
 ---
 
 ## Ajouter des séries
@@ -36,12 +38,21 @@ Sur la page d'une série, la section **Listes de lecture** indique les listes do
 
 ## Propositions par IAG
 
-Depuis la page **Listes**, le bouton **Proposer avec l'IAG** analyse les séries qui ne figurent encore dans aucune liste, ainsi que vos listes existantes. L'IA peut alors proposer :
+Depuis la page **Listes**, le bouton **Proposer avec l'IAG** analyse les séries qui ne figurent encore dans aucune liste, les séries déjà classées, ainsi que vos listes existantes. L'IA peut alors proposer :
 
-- des **ajouts** de séries à une liste existante, avec une justification ;
+- des **ajouts** de séries non classées à une liste existante, avec une justification ;
+- des **déplacements** d'une série d'une liste vers une autre, lorsqu'elle est clairement mal classée ;
 - de **nouvelles listes** regroupant au moins deux séries qui partagent une association pertinente (univers, auteur, genre, thème ou ordre de lecture).
 
-Les nouvelles listes sont proposées avec un **nom** et une **description** obligatoires, modifiables directement dans la fenêtre de révision ; il faut conserver au moins deux séries sélectionnées pour pouvoir les créer. Chaque série peut être décochée individuellement ; aucune modification n'est enregistrée avant la validation explicite de vos choix.
+Les propositions sont validées côté serveur : une série déjà classée ne peut pas être proposée en ajout ou dans une nouvelle liste, et un déplacement n'est accepté que si la série appartient réellement à la liste d'origine indiquée. Les nouvelles listes sont proposées avec un **nom** et une **description** obligatoires, modifiables directement dans la fenêtre de révision ; il faut conserver au moins deux séries sélectionnées pour pouvoir les créer. Chaque série peut être décochée individuellement ; aucune modification n'est enregistrée avant la validation explicite de vos choix.
+
+Un déplacement est appliqué **atomiquement** : la série quitte la liste d'origine et rejoint la fin de la liste de destination dans la même transaction, et les positions des deux listes sont renumérotées. Une série n'est donc jamais absente des deux listes ni présente dans les deux.
+
+Les séries candidates sont échantillonnées de façon **déterministe et équilibrée** : les séries sans liste sont lues en alternance entre les groupes `(bibliothèque, premier genre)` et les séries déjà classées en alternance entre les listes. Une liste ou un genre très représenté ne peut donc pas monopoliser la fenêtre envoyée au modèle. Les paramètres `limit` (20 à 250, défaut 120) et `offset` permettent de parcourir la bibliothèque en plusieurs appels successifs.
+
+Les propositions sont **ancrées dans les données fournies** : le modèle ne reçoit que les champs réellement disponibles (nom, description, genres, auteurs, éditeurs, année de début, nombre de tomes, statut, bibliothèque, identité externe) et doit s'y tenir. Il ne peut affirmer que deux séries partagent un univers, une continuité ou une franchise que si elles portent exactement le même couple `external_provider` / `external_id`. Une proposition contenant une telle affirmation sans ce signal partagé est écartée côté serveur avant l'affichage.
+
+Une série **sans aucun livre** reste éligible aux listes et aux propositions IAG (elle peut précéder l'import de son premier tome). Dans le détail d'une liste, ces entrées sont signalées par le champ `is_empty` et un badge « Sans livre » ; elles ne sont jamais supprimées automatiquement.
 
 La fonctionnalité nécessite une configuration IAG valide dans **Paramètres → IAG** et son activation propre, indépendante de la proposition de genres. Le même endpoint, la même clé API et le même modèle sont réutilisés. Voir [Paramètres](/getting-started/settings/).
 
@@ -52,6 +63,8 @@ Après validation, le cache des listes de lecture est invalidé : les nouvelles 
 ## Réordonner les séries
 
 Dans la page détail d'une liste, chaque série dispose de boutons **↑ / ↓** (visibles au survol) pour la déplacer dans la liste. L'ordre est sauvegardé immédiatement.
+
+L'ordre est toujours **dense** : après un ajout, un retrait ou un déplacement entre listes, les positions sont renumérotées de `0` à `n-1` sans trou ni doublon (contrainte unique en base). L'endpoint de réordonnancement attend **toutes** les séries de la liste : un payload partiel ou contenant des doublons est rejeté en `400`, ce qui évite les collisions d'ordre.
 
 Les séries dont **tous les volumes réguliers ont été lus** sont automatiquement repoussées en bas de liste, quel que soit leur position manuelle.
 
@@ -97,8 +110,11 @@ Voir [Séries liées & Recommandations](/series/related/) pour le détail.
 | `DELETE` | `/reading-lists/{id}` | Supprimer une liste |
 | `POST` | `/reading-lists/{id}/series` | Ajouter une série |
 | `DELETE` | `/reading-lists/{id}/series/{series_id}` | Retirer une série |
+| `POST` | `/reading-lists/{id}/series/{series_id}/move` | Déplacer une série vers une autre liste (`to_list_id`) |
 | `PUT` | `/reading-lists/{id}/series/reorder` | Réordonner (liste complète d'IDs) |
-| `POST` | `/reading-lists/ai-suggest` | Proposer des ajouts et de nouvelles listes (aucune écriture) |
+| `POST` | `/reading-lists/ai-suggest` | Proposer ajouts, déplacements et nouvelles listes (aucune écriture) |
+
+Chaque entrée de `GET /reading-lists/{id}` expose `book_count`, `books_read_count` et `is_empty` (série sans aucun livre, conservée dans la liste). `GET /reading-lists` expose `is_incomplete` pour les listes de moins de deux séries.
 
 **Score dans les recommandations** : les séries dans une même liste obtiennent un bonus ×5, supérieur au bonus auteur (×3) ou genre (×2).
 :::

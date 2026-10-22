@@ -2,20 +2,22 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import type { ReadingListDto } from "@/lib/api";
 import { ReadingListCover } from "./ReadingListCover";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui";
+import { Badge, Card, CardContent, CardHeader, CardTitle } from "./ui";
 
 type ReadingListCardProps = {
   list: ReadingListDto;
   seriesCountLabel: string;
   booksLabel: string;
   readLabel: string;
+  /** Label of the badge shown when the list holds fewer than two series. */
+  incompleteLabel?: string;
   /** Reading progress is user-scoped; hide it when no reader is selected. */
   hasActiveUser: boolean;
   action?: ReactNode;
 };
 
 /** Shared reading-list card for the Lists page and the Series list view. */
-export function ReadingListCard({ list, seriesCountLabel, booksLabel, readLabel, hasActiveUser, action }: ReadingListCardProps) {
+export function ReadingListCard({ list, seriesCountLabel, booksLabel, readLabel, incompleteLabel, hasActiveUser, action }: ReadingListCardProps) {
   const href = `/reading-lists/${list.id}` as any;
   const progress = list.book_count > 0 ? Math.round((list.books_read_count / list.book_count) * 100) : 0;
 
@@ -30,6 +32,9 @@ export function ReadingListCard({ list, seriesCountLabel, booksLabel, readLabel,
             <Link href={href} className="block hover:text-primary transition-colors">
               <CardTitle className="truncate text-lg"><span title={list.name}>{list.name}</span></CardTitle>
             </Link>
+            {list.is_incomplete && incompleteLabel && (
+              <Badge variant="warning" className="mt-2">{incompleteLabel}</Badge>
+            )}
             {list.description && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{list.description}</p>}
           </div>
           {action}

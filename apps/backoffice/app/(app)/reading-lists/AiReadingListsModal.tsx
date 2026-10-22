@@ -5,6 +5,7 @@ import { useTranslation } from "@/lib/i18n/context";
 import type {
   AiListAdditionSuggestion,
   AiListCreationSuggestion,
+  AiListMoveSuggestion,
   AiReadingListSuggestions,
   AiSuggestedSeries,
 } from "@/lib/api";
@@ -25,6 +26,7 @@ type Status = "loading" | "ready" | "error";
 type ListDraft = { name: string; description: string };
 
 const addKey = (listId: string, seriesId: string) => `add:${listId}:${seriesId}`;
+const moveKey = (fromListId: string, seriesId: string) => `move:${fromListId}:${seriesId}`;
 const createKey = (index: number, seriesId: string) => `new:${index}:${seriesId}`;
 
 function seriesCover(series: AiSuggestedSeries): string | null {
@@ -99,6 +101,7 @@ export function AiReadingListsModal({ isOpen, onClose, onApplied }: Props) {
   }, [isOpen, load]);
 
   const additions = useMemo(() => suggestions?.additions ?? [], [suggestions]);
+  const moves = useMemo(() => suggestions?.moves ?? [], [suggestions]);
   const newLists = useMemo(() => suggestions?.new_lists ?? [], [suggestions]);
 
   const toggleKey = (key: string) => {
@@ -131,6 +134,14 @@ export function AiReadingListsModal({ isOpen, onClose, onApplied }: Props) {
     const selectedAdditionGroups = additions.filter((addition) =>
       addition.series.some((series) => !excluded.has(addKey(addition.list_id, series.id)))
     );
+    const moveSeries = moves.flatMap((move) =>
+      move.series
+        .filter((series) => !excluded.has(moveKey(move.from_list_id, series.id)))
+        .map((series) => ({ move, series }))
+    );
+    const selectedMoveGroups = moves.filter((move) =>
+      move.series.some((series) => !excluded.has(moveKey(move.from_list_id, series.id)))
+    );
     const creations = newLists
       .map((list, index) => ({
         list,
@@ -149,12 +160,15 @@ export function AiReadingListsModal({ isOpen, onClose, onApplied }: Props) {
 
     return {
       additionSeries,
+      moveSeries,
       creations,
       seriesCount:
-        additionSeries.length + creations.reduce((total, creation) => total + creation.series.length, 0),
-      actionCount: selectedAdditionGroups.length + creations.length,
+        additionSeries.length +
+        moveSeries.length +
+        creations.reduce((total, creation) => total + creation.series.length, 0),
+      actionCount: selectedAdditionGroups.length + selectedMoveGroups.length + creations.length,
     };
-  }, [additions, newLists, excluded, drafts]);
+  }, [additions, moves, newLists, excluded, drafts]);
 
   const updateDraft = (index: number, patch: Partial<ListDraft>) => {
     setDrafts((previous) => ({
@@ -176,6 +190,23 @@ export function AiReadingListsModal({ isOpen, onClose, onApplied }: Props) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ series_id: series.id }),
         });
+        if (response.ok) applied += 1;
+        else failures += 1;
+      } catch {
+        failures += 1;
+      }
+    }
+
+    for (const { move, series } of selection.moveSeries) {
+      try {
+        const response = await fetch(
+          `/api/reading-lists/${move.from_list_id}/series/${series.id}/move`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ to_list_id: move.to_list_id }),
+          }
+        );
         if (response.ok) applied += 1;
         else failures += 1;
       } catch {
@@ -231,7 +262,8 @@ export function AiReadingListsModal({ isOpen, onClose, onApplied }: Props) {
     }
   };
 
-  const empty = status === "ready" && additions.length === 0 && newLists.length === 0;
+  const empty =
+    status === "ready" && additions.length === 0 && moves.length === 0 && newLists.length === 0;
 
   return (
     <Modal
@@ -312,6 +344,23 @@ export function AiReadingListsModal({ isOpen, onClose, onApplied }: Props) {
           </section>
         )}
 
+        {status === "ready" && moves.length > 0 && (
+          <section className="space-y-3">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("readingLists.aiMoves")}
+            </h4>
+            {moves.map((move, index) => (
+              <MoveCard
+                key={`${move.from_list_id}-${move.to_list_id}-${index}`}
+                move={move}
+                excluded={excluded}
+                onToggle={toggleKey}
+                onToggleGroup={toggleGroup}
+              />
+            ))}
+          </section>
+        )}
+
         {status === "ready" && newLists.length > 0 && (
           <section className="space-y-3">
             <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -380,6 +429,63 @@ function AdditionCard({
             series={series}
             selected={!excluded.has(addKey(addition.list_id, series.id))}
             onToggle={() => onToggle(addKey(addition.list_id, series.id))}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MoveCard({
+  move,
+  excluded,
+  onToggle,
+  onToggleGroup,
+}: {
+  move: AiListMoveSuggestion;
+  excluded: Set<string>;
+  onToggle: (key: string) => void;
+  onToggleGroup: (keys: string[]) => void;
+}) {
+  const { t } = useTranslation();
+  const keys = move.series.map((series) => moveKey(move.from_list_id, series.id));
+  const allSelected = keys.length > 0 && keys.every((key) => !excluded.has(key));
+  const selectedCount = keys.filter((key) => !excluded.has(key)).length;
+
+  return (
+    <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+      <div className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          className="mt-1 h-4 w-4 shrink-0 accent-primary"
+          checked={allSelected}
+          onChange={() => onToggleGroup(keys)}
+          aria-label={`${move.from_list_name} → ${move.to_list_name}`}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <p className="font-semibold text-foreground">
+              {t("readingLists.aiMoveTitle", {
+                from: move.from_list_name,
+                to: move.to_list_name,
+              })}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {selectedCount}/{move.series.length}
+            </p>
+          </div>
+          {move.reason && (
+            <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{move.reason}</p>
+          )}
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {move.series.map((series) => (
+          <SeriesOption
+            key={series.id}
+            series={series}
+            selected={!excluded.has(moveKey(move.from_list_id, series.id))}
+            onToggle={() => onToggle(moveKey(move.from_list_id, series.id))}
           />
         ))}
       </div>

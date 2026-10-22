@@ -128,6 +128,16 @@ async fn item_count(pool: &PgPool, list_id: Uuid) -> i64 {
         .unwrap()
 }
 
+async fn positions_of(pool: &PgPool, list_id: Uuid) -> Vec<i32> {
+    sqlx::query_scalar(
+        "SELECT position FROM reading_list_items WHERE list_id = $1 ORDER BY position",
+    )
+    .bind(list_id)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
 // ---------------------------------------------------------------------------
 // create / update / delete
 // ---------------------------------------------------------------------------
@@ -353,6 +363,80 @@ async fn remove_series_deletes_item(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
+async fn remove_series_compacts_remaining_positions(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "remove-gap").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let b = create_series(&pool, library_id, "B", &[]).await;
+    let c = create_series(&pool, library_id, "C", &[]).await;
+    let list_id = create_list(&state, "Remove gap").await;
+    for series_id in [a, b, c] {
+        add(&state, list_id, series_id).await.unwrap();
+    }
+
+    remove_series(State(state), Path((list_id, b)))
+        .await
+        .unwrap();
+
+    assert_eq!(positions_of(&pool, list_id).await, vec![0, 1]);
+    assert_eq!(position_of(&pool, list_id, a).await, Some(0));
+    assert_eq!(position_of(&pool, list_id, c).await, Some(1));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn add_series_after_a_gap_keeps_positions_dense(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "add-gap").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let b = create_series(&pool, library_id, "B", &[]).await;
+    let c = create_series(&pool, library_id, "C", &[]).await;
+    let appended = create_series(&pool, library_id, "Appended", &[]).await;
+    let list_id = create_list(&state, "Add gap").await;
+    for series_id in [a, b, c] {
+        add(&state, list_id, series_id).await.unwrap();
+    }
+
+    // Simulate a legacy list with a hole at position 1 (b) left by old code.
+    sqlx::query("DELETE FROM reading_list_items WHERE list_id = $1 AND series_id = $2")
+        .bind(list_id)
+        .bind(b)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(positions_of(&pool, list_id).await, vec![0, 2]);
+
+    add(&state, list_id, appended).await.unwrap();
+
+    assert_eq!(positions_of(&pool, list_id).await, vec![0, 1, 2]);
+    assert_eq!(position_of(&pool, list_id, c).await, Some(1));
+    assert_eq!(position_of(&pool, list_id, appended).await, Some(2));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn database_rejects_duplicate_positions(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "duplicate-position").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let b = create_series(&pool, library_id, "B", &[]).await;
+    let list_id = create_list(&state, "Duplicate position").await;
+    add(&state, list_id, a).await.unwrap();
+
+    let result = sqlx::query(
+        "INSERT INTO reading_list_items (list_id, series_id, position) VALUES ($1, $2, 0)",
+    )
+    .bind(list_id)
+    .bind(b)
+    .execute(&pool)
+    .await;
+
+    assert!(
+        result.is_err(),
+        "duplicate (list_id, position) must be rejected"
+    );
+    assert_eq!(item_count(&pool, list_id).await, 1);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
 async fn reorder_series_returns_not_found_when_list_missing(pool: PgPool) {
     let state = test_state(pool);
 
@@ -422,6 +506,199 @@ async fn reorder_series_rejects_unknown_ids(pool: PgPool) {
     assert_eq!(position_of(&pool, list_id, b).await, Some(1));
 }
 
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn reorder_series_rejects_partial_payload(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "reorder-partial").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let b = create_series(&pool, library_id, "B", &[]).await;
+    let c = create_series(&pool, library_id, "C", &[]).await;
+    let list_id = create_list(&state, "Reorder partial").await;
+    for series_id in [a, b, c] {
+        add(&state, list_id, series_id).await.unwrap();
+    }
+
+    let err = reorder_series(
+        State(state),
+        Path(list_id),
+        Json(ReorderSeriesRequest {
+            series_ids: vec![c, a],
+        }),
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+    // Nothing was moved: omitted series keep their positions, no collisions.
+    assert_eq!(position_of(&pool, list_id, a).await, Some(0));
+    assert_eq!(position_of(&pool, list_id, b).await, Some(1));
+    assert_eq!(position_of(&pool, list_id, c).await, Some(2));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn reorder_series_rejects_duplicate_ids(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "reorder-duplicates").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let b = create_series(&pool, library_id, "B", &[]).await;
+    let list_id = create_list(&state, "Reorder duplicates").await;
+    add(&state, list_id, a).await.unwrap();
+    add(&state, list_id, b).await.unwrap();
+
+    let err = reorder_series(
+        State(state),
+        Path(list_id),
+        Json(ReorderSeriesRequest {
+            series_ids: vec![a, a],
+        }),
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+    assert_eq!(position_of(&pool, list_id, a).await, Some(0));
+    assert_eq!(position_of(&pool, list_id, b).await, Some(1));
+}
+
+// ---------------------------------------------------------------------------
+// moves
+// ---------------------------------------------------------------------------
+
+async fn move_to(
+    state: &AppState,
+    from_list_id: Uuid,
+    series_id: Uuid,
+    to_list_id: Uuid,
+) -> Result<StatusCode, ApiError> {
+    move_series(
+        State(state.clone()),
+        Path((from_list_id, series_id)),
+        Json(MoveSeriesRequest { to_list_id }),
+    )
+    .await
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn move_series_compacts_both_lists(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "move").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let b = create_series(&pool, library_id, "B", &[]).await;
+    let c = create_series(&pool, library_id, "C", &[]).await;
+    let x = create_series(&pool, library_id, "X", &[]).await;
+    let source = create_list(&state, "Source").await;
+    let destination = create_list(&state, "Destination").await;
+    for series_id in [a, b, c] {
+        add(&state, source, series_id).await.unwrap();
+    }
+    add(&state, destination, x).await.unwrap();
+
+    let status = move_to(&state, source, b, destination).await.unwrap();
+
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(positions_of(&pool, source).await, vec![0, 1]);
+    assert_eq!(position_of(&pool, source, a).await, Some(0));
+    assert_eq!(position_of(&pool, source, c).await, Some(1));
+    assert_eq!(position_of(&pool, source, b).await, None);
+
+    assert_eq!(positions_of(&pool, destination).await, vec![0, 1]);
+    assert_eq!(position_of(&pool, destination, x).await, Some(0));
+    assert_eq!(position_of(&pool, destination, b).await, Some(1));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn move_series_rejects_a_self_move(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "move-self").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let list_id = create_list(&state, "Only").await;
+    add(&state, list_id, a).await.unwrap();
+
+    let err = move_to(&state, list_id, a, list_id).await.unwrap_err();
+
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+    assert_eq!(position_of(&pool, list_id, a).await, Some(0));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn move_series_rejects_an_unknown_destination_list(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "move-unknown-list").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let list_id = create_list(&state, "Source").await;
+    add(&state, list_id, a).await.unwrap();
+
+    let err = move_to(&state, list_id, a, Uuid::new_v4())
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.status, StatusCode::NOT_FOUND);
+    assert_eq!(position_of(&pool, list_id, a).await, Some(0));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn move_series_rejects_a_series_absent_from_the_source_list(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "move-absent").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let b = create_series(&pool, library_id, "B", &[]).await;
+    let source = create_list(&state, "Source").await;
+    let destination = create_list(&state, "Destination").await;
+    add(&state, source, a).await.unwrap();
+    add(&state, destination, b).await.unwrap();
+
+    let err = move_to(&state, source, b, destination).await.unwrap_err();
+
+    assert_eq!(err.status, StatusCode::NOT_FOUND);
+    assert_eq!(position_of(&pool, destination, b).await, Some(0));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn move_series_rejects_a_series_already_in_the_destination(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "move-duplicate").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let source = create_list(&state, "Source").await;
+    let destination = create_list(&state, "Destination").await;
+    add(&state, source, a).await.unwrap();
+    add(&state, destination, a).await.unwrap();
+
+    let err = move_to(&state, source, a, destination).await.unwrap_err();
+
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+    // The series is left untouched in both lists.
+    assert_eq!(position_of(&pool, source, a).await, Some(0));
+    assert_eq!(position_of(&pool, destination, a).await, Some(0));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn move_series_stays_consistent_when_racing_an_addition(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "move-race").await;
+    let a = create_series(&pool, library_id, "A", &[]).await;
+    let b = create_series(&pool, library_id, "B", &[]).await;
+    let concurrent = create_series(&pool, library_id, "Concurrent", &[]).await;
+    let source = create_list(&state, "Source").await;
+    let destination = create_list(&state, "Destination").await;
+    add(&state, source, a).await.unwrap();
+    add(&state, source, b).await.unwrap();
+
+    let (moved, added) = tokio::join!(
+        move_to(&state, source, a, destination),
+        add(&state, destination, concurrent),
+    );
+    moved.unwrap();
+    added.unwrap();
+
+    assert_eq!(positions_of(&pool, source).await, vec![0]);
+    assert_eq!(positions_of(&pool, destination).await, vec![0, 1]);
+    assert_eq!(item_count(&pool, source).await, 1);
+    assert_eq!(item_count(&pool, destination).await, 2);
+    assert_eq!(position_of(&pool, source, b).await, Some(0));
+    assert!(position_of(&pool, destination, a).await.is_some());
+    assert!(position_of(&pool, destination, concurrent).await.is_some());
+}
+
 // ---------------------------------------------------------------------------
 // memberships + list
 // ---------------------------------------------------------------------------
@@ -479,6 +756,44 @@ async fn list_reading_lists_orders_by_name_and_counts_series(pool: PgPool) {
     assert_eq!(names, vec!["Alpha", "Zeta"]);
     assert_eq!(lists[0].series_count, 2);
     assert_eq!(lists[1].series_count, 0);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn list_reading_lists_flags_lists_with_fewer_than_two_series(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "list-incomplete").await;
+    let first = create_series(&pool, library_id, "First", &[]).await;
+    let second = create_series(&pool, library_id, "Second", &[]).await;
+    create_list(&state, "Empty").await;
+    let single = create_list(&state, "Single").await;
+    add(&state, single, first).await.unwrap();
+    let pair = create_list(&state, "Pair").await;
+    add(&state, pair, first).await.unwrap();
+    add(&state, pair, second).await.unwrap();
+
+    let Json(lists) = list_reading_lists(
+        State(state),
+        None,
+        Query(ListReadingListsQuery { series_id: None }),
+    )
+    .await
+    .unwrap();
+
+    let flags: Vec<(&str, bool)> = lists
+        .iter()
+        .map(|list| (list.name.as_str(), list.is_incomplete))
+        .collect();
+    assert_eq!(
+        flags,
+        vec![("Empty", true), ("Pair", false), ("Single", true)]
+    );
+
+    // Flagging is informational: no list is deleted, even when empty.
+    let list_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM reading_lists")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(list_count, 3);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -586,6 +901,27 @@ async fn get_reading_list_returns_items_in_position_order(pool: PgPool) {
     assert_eq!(ids, vec![first, second]);
     assert_eq!(positions, vec![0, 1]);
     assert_eq!(detail.id, list_id);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_reading_list_flags_series_without_books(pool: PgPool) {
+    let state = test_state(pool.clone());
+    let library_id = create_library(&pool, "detail-empty").await;
+    let with_book = create_series(&pool, library_id, "With book", &[]).await;
+    create_book(&pool, library_id, with_book, "Vol 1").await;
+    let empty = create_series(&pool, library_id, "Empty", &[]).await;
+    let list_id = create_list(&state, "Mixed").await;
+    add(&state, list_id, with_book).await.unwrap();
+    add(&state, list_id, empty).await.unwrap();
+
+    let Json(detail) = get_reading_list(State(state), None, Path(list_id))
+        .await
+        .unwrap();
+
+    let flags: Vec<(Uuid, bool)> = detail.items.iter().map(|i| (i.id, i.is_empty)).collect();
+    assert_eq!(flags, vec![(with_book, false), (empty, true)]);
+    // Empty entries are flagged, never removed automatically.
+    assert_eq!(item_count(&pool, list_id).await, 2);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]

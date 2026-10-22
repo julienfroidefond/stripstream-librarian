@@ -127,6 +127,7 @@ export function ReadingListsClient({ initialLists, hasActiveUser }: Props) {
               seriesCountLabel={t("readingLists.seriesCount", { count: list.series_count, plural: list.series_count !== 1 ? "s" : "" })}
               booksLabel={t("dashboard.books")}
               readLabel={t("status.read")}
+              incompleteLabel={t("readingLists.incomplete")}
               hasActiveUser={hasActiveUser}
               action={(
                 <Button

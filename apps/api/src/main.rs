@@ -610,6 +610,10 @@ async fn main() -> anyhow::Result<()> {
             delete(reading_lists::remove_series),
         )
         .route(
+            "/reading-lists/{id}/series/{series_id}/move",
+            axum::routing::post(reading_lists::move_series),
+        )
+        .route(
             "/reading-lists/{id}/series/reorder",
             axum::routing::put(reading_lists::reorder_series),
         )

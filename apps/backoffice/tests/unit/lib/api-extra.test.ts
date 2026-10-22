@@ -53,6 +53,7 @@ import {
   listTelegramBooks,
   listTelegramSources,
   rejectMetadataMatch,
+  moveSeriesToReadingList,
   removeSeriesFromReadingList,
   reorderReadingListSeries,
   saveTelegramMonitorSettings,
@@ -404,6 +405,13 @@ describe("reading lists", () => {
       url: "/reading-lists/list-1/series/series-1",
       method: "DELETE",
     });
+
+    await moveSeriesToReadingList("list-1", "series-1", "list-2");
+    expect(lastCall()).toMatchObject({
+      url: "/reading-lists/list-1/series/series-1/move",
+      method: "POST",
+    });
+    expect(lastCall().body).toEqual({ to_list_id: "list-2" });
 
     await reorderReadingListSeries("list-1", ["a", "b"]);
     expect(lastCall()).toMatchObject({

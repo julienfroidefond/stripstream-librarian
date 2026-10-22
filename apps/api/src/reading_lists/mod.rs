@@ -1,8 +1,10 @@
+use std::collections::HashSet;
+
 use axum::extract::{Extension, Path, Query, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
+use sqlx::{Postgres, Row, Transaction};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -27,6 +29,11 @@ pub struct ReadingListDto {
     pub book_count: i64,
     /// Books marked as read by the requesting user.
     pub books_read_count: i64,
+    /// True when the list holds fewer than two series.
+    ///
+    /// Such a list is still valid and is never deleted automatically: it is only
+    /// flagged so the UI can invite the owner to add another series.
+    pub is_incomplete: bool,
     pub preview_covers: Vec<String>,
     #[schema(value_type = String)]
     pub created_at: DateTime<Utc>,
@@ -68,6 +75,11 @@ pub struct ReadingListSeriesDto {
     pub book_count: i64,
     /// Number of books marked as read by the requesting user.
     pub books_read_count: i64,
+    /// True when the series has no book at all.
+    ///
+    /// Such entries are kept (never removed automatically) so the library owner
+    /// can spot and clean them up from the UI.
+    pub is_empty: bool,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -102,6 +114,94 @@ pub struct AddSeriesRequest {
 pub struct ReorderSeriesRequest {
     #[schema(value_type = Vec<String>)]
     pub series_ids: Vec<Uuid>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct MoveSeriesRequest {
+    /// Destination reading list.
+    #[schema(value_type = String)]
+    pub to_list_id: Uuid,
+}
+
+// ---------------------------------------------------------------------------
+// Position invariants
+// ---------------------------------------------------------------------------
+//
+// Every list must keep positions as a dense 0..n-1 sequence without duplicates.
+// The database enforces the "no duplicate" half with a DEFERRABLE unique
+// constraint (migration 0131); these helpers keep the "dense" half.
+//
+// All mutations lock the reading_lists row first, which serialises concurrent
+// adds/removes/moves on the same list (a bare MAX(position)+1 would race).
+
+/// Lock the reading list row for the rest of the transaction.
+///
+/// Returns `false` when the list does not exist.
+async fn lock_list(tx: &mut Transaction<'_, Postgres>, id: Uuid) -> Result<bool, sqlx::Error> {
+    let found: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM reading_lists WHERE id = $1 FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut **tx)
+            .await?;
+
+    Ok(found.is_some())
+}
+
+/// Rewrite the list positions as a dense 0..n-1 sequence.
+///
+/// The unique constraint is `DEFERRABLE INITIALLY DEFERRED`, so the transient
+/// duplicates produced while swapping positions are only checked at COMMIT.
+async fn compact_positions(
+    tx: &mut Transaction<'_, Postgres>,
+    list_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        WITH ranked AS (
+            SELECT
+                id,
+                (ROW_NUMBER() OVER (ORDER BY position, created_at, id) - 1)::int AS new_position
+            FROM reading_list_items
+            WHERE list_id = $1
+        )
+        UPDATE reading_list_items AS rli
+        SET position = ranked.new_position
+        FROM ranked
+        WHERE rli.id = ranked.id
+          AND rli.position IS DISTINCT FROM ranked.new_position
+        "#,
+    )
+    .bind(list_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+/// Append a series at the end of a (already locked and compacted) list.
+async fn append_series(
+    tx: &mut Transaction<'_, Postgres>,
+    list_id: Uuid,
+    series_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let next_position: i32 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(position) + 1, 0)::int FROM reading_list_items WHERE list_id = $1",
+    )
+    .bind(list_id)
+    .fetch_one(&mut **tx)
+    .await?;
+
+    let result = sqlx::query(
+        "INSERT INTO reading_list_items (list_id, series_id, position) VALUES ($1, $2, $3) \
+         ON CONFLICT (list_id, series_id) DO NOTHING",
+    )
+    .bind(list_id)
+    .bind(series_id)
+    .bind(next_position)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +248,7 @@ pub async fn create_reading_list(
         series_count: 0,
         book_count: 0,
         books_read_count: 0,
+        is_incomplete: true,
         preview_covers: vec![],
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
@@ -205,6 +306,7 @@ pub async fn update_reading_list(
         series_count,
         book_count: 0,
         books_read_count: 0,
+        is_incomplete: series_count < 2,
         preview_covers: vec![],
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
@@ -260,36 +362,20 @@ pub async fn add_series(
     Path(id): Path<Uuid>,
     Json(body): Json<AddSeriesRequest>,
 ) -> Result<axum::http::StatusCode, ApiError> {
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM reading_lists WHERE id = $1)")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
+    let mut tx = state.pool.begin().await?;
 
-    if !exists {
+    if !lock_list(&mut tx, id).await? {
         return Err(ApiError::not_found("reading list not found"));
     }
 
-    let max_pos: Option<i32> =
-        sqlx::query_scalar("SELECT MAX(position) FROM reading_list_items WHERE list_id = $1")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
+    // Heal any legacy gap before appending so the list stays dense.
+    compact_positions(&mut tx, id).await?;
 
-    let next_pos = max_pos.map(|p| p + 1).unwrap_or(0);
-
-    let result = sqlx::query(
-        "INSERT INTO reading_list_items (list_id, series_id, position) VALUES ($1, $2, $3) ON CONFLICT (list_id, series_id) DO NOTHING",
-    )
-    .bind(id)
-    .bind(body.series_id)
-    .bind(next_pos)
-    .execute(&state.pool)
-    .await?;
-
-    if result.rows_affected() == 0 {
+    if !append_series(&mut tx, id, body.series_id).await? {
         return Err(ApiError::bad_request("series already in reading list"));
     }
+
+    tx.commit().await?;
 
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
@@ -314,16 +400,26 @@ pub async fn remove_series(
     State(state): State<AppState>,
     Path((id, series_id)): Path<(Uuid, Uuid)>,
 ) -> Result<axum::http::StatusCode, ApiError> {
+    let mut tx = state.pool.begin().await?;
+
+    // Serialise with concurrent adds/removes before compacting.
+    if !lock_list(&mut tx, id).await? {
+        return Err(ApiError::not_found("series not found in reading list"));
+    }
+
     let result =
         sqlx::query("DELETE FROM reading_list_items WHERE list_id = $1 AND series_id = $2")
             .bind(id)
             .bind(series_id)
-            .execute(&state.pool)
+            .execute(&mut *tx)
             .await?;
 
     if result.rows_affected() == 0 {
         return Err(ApiError::not_found("series not found in reading list"));
     }
+
+    compact_positions(&mut tx, id).await?;
+    tx.commit().await?;
 
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
@@ -348,17 +444,11 @@ pub async fn reorder_series(
     Path(id): Path<Uuid>,
     Json(body): Json<ReorderSeriesRequest>,
 ) -> Result<axum::http::StatusCode, ApiError> {
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM reading_lists WHERE id = $1)")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
+    let mut tx = state.pool.begin().await?;
 
-    if !exists {
+    if !lock_list(&mut tx, id).await? {
         return Err(ApiError::not_found("reading list not found"));
     }
-
-    let mut tx = state.pool.begin().await?;
 
     let known: Vec<Uuid> =
         sqlx::query_scalar("SELECT series_id FROM reading_list_items WHERE list_id = $1")
@@ -366,6 +456,19 @@ pub async fn reorder_series(
             .fetch_all(&mut *tx)
             .await?;
 
+    // The payload must be a permutation of the current items: a partial payload
+    // would leave omitted items on their old positions and create collisions.
+    let unique: HashSet<Uuid> = body.series_ids.iter().copied().collect();
+    if unique.len() != body.series_ids.len() {
+        return Err(ApiError::bad_request(
+            "series_ids must not contain duplicates",
+        ));
+    }
+    if body.series_ids.len() != known.len() {
+        return Err(ApiError::bad_request(
+            "series_ids must contain every series of the reading list",
+        ));
+    }
     if let Some(unknown) = body
         .series_ids
         .iter()
@@ -394,6 +497,96 @@ pub async fn reorder_series(
     .bind(id)
     .execute(&mut *tx)
     .await?;
+
+    tx.commit().await?;
+
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+/// Move a series from one reading list to another, atomically.
+///
+/// Deletes the source item, appends it to the destination and compacts both
+/// lists in a single transaction, so a series is never left in two lists or in
+/// none.
+#[utoipa::path(
+    post,
+    path = "/reading-lists/{id}/series/{series_id}/move",
+    tag = "reading-lists",
+    params(
+        ("id" = String, Path, description = "Source reading list UUID"),
+        ("series_id" = String, Path, description = "Series UUID"),
+    ),
+    request_body = MoveSeriesRequest,
+    responses(
+        (status = 204, description = "Moved"),
+        (status = 400, description = "Invalid move"),
+        (status = 404, description = "List or series not found"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("Bearer" = []))
+)]
+pub async fn move_series(
+    State(state): State<AppState>,
+    Path((id, series_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<MoveSeriesRequest>,
+) -> Result<axum::http::StatusCode, ApiError> {
+    if id == body.to_list_id {
+        return Err(ApiError::bad_request(
+            "cannot move a series to the list it already belongs to",
+        ));
+    }
+
+    let mut tx = state.pool.begin().await?;
+
+    // Lock both lists in a deterministic order to avoid deadlocks between two
+    // concurrent moves in opposite directions.
+    let mut list_ids = vec![id, body.to_list_id];
+    list_ids.sort_unstable();
+    let found: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM reading_lists WHERE id = ANY($1)")
+        .bind(&list_ids)
+        .fetch_one(&mut *tx)
+        .await?;
+    if found != 2 {
+        return Err(ApiError::not_found("reading list not found"));
+    }
+    sqlx::query("SELECT id FROM reading_lists WHERE id = ANY($1) ORDER BY id FOR UPDATE")
+        .bind(&list_ids)
+        .execute(&mut *tx)
+        .await?;
+
+    let current_list: Option<Uuid> = sqlx::query_scalar(
+        "SELECT list_id FROM reading_list_items WHERE list_id = $1 AND series_id = $2 FOR UPDATE",
+    )
+    .bind(id)
+    .bind(series_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if current_list.is_none() {
+        return Err(ApiError::not_found("series not found in reading list"));
+    }
+
+    let already_in_target: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM reading_list_items WHERE list_id = $1 AND series_id = $2)",
+    )
+    .bind(body.to_list_id)
+    .bind(series_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if already_in_target {
+        return Err(ApiError::bad_request(
+            "series is already in the destination reading list",
+        ));
+    }
+
+    sqlx::query("DELETE FROM reading_list_items WHERE list_id = $1 AND series_id = $2")
+        .bind(id)
+        .bind(series_id)
+        .execute(&mut *tx)
+        .await?;
+
+    compact_positions(&mut tx, id).await?;
+    compact_positions(&mut tx, body.to_list_id).await?;
+    append_series(&mut tx, body.to_list_id, series_id).await?;
 
     tx.commit().await?;
 
@@ -434,13 +627,15 @@ async fn fetch_list_dto(pool: &sqlx::PgPool, id: Uuid) -> Result<ReadingListDto,
     .await?
     .ok_or_else(|| ApiError::not_found("reading list not found"))?;
 
+    let series_count: i64 = row.get("series_count");
     Ok(ReadingListDto {
         id: row.get("id"),
         name: row.get("name"),
         description: row.get("description"),
-        series_count: row.get("series_count"),
+        series_count,
         book_count: 0,
         books_read_count: 0,
+        is_incomplete: series_count < 2,
         preview_covers: row.get::<Vec<String>, _>("preview_covers"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
@@ -513,20 +708,24 @@ async fn fetch_list_items(
 
     Ok(rows
         .into_iter()
-        .map(|r| ReadingListSeriesDto {
-            id: r.get("series_id"),
-            name: r.get("series_name"),
-            cover_url: r.get("cover_url"),
-            first_book_id: r.get("first_book_id"),
-            first_book_updated_at: r.get("first_book_updated_at"),
-            provider: r.get("provider"),
-            external_id: r.get("external_id"),
-            external_url: r.get("external_url"),
-            library_id: r.get("library_id"),
-            library_name: r.get("library_name"),
-            position: r.get("position"),
-            book_count: r.get("book_count"),
-            books_read_count: r.get("books_read_count"),
+        .map(|r| {
+            let book_count: i64 = r.get("book_count");
+            ReadingListSeriesDto {
+                id: r.get("series_id"),
+                name: r.get("series_name"),
+                cover_url: r.get("cover_url"),
+                first_book_id: r.get("first_book_id"),
+                first_book_updated_at: r.get("first_book_updated_at"),
+                provider: r.get("provider"),
+                external_id: r.get("external_id"),
+                external_url: r.get("external_url"),
+                library_id: r.get("library_id"),
+                library_name: r.get("library_name"),
+                position: r.get("position"),
+                book_count,
+                books_read_count: r.get("books_read_count"),
+                is_empty: book_count == 0,
+            }
         })
         .collect())
 }
@@ -651,16 +850,20 @@ pub async fn list_reading_lists(
 
     let items = rows
         .into_iter()
-        .map(|r| ReadingListDto {
-            id: r.get("id"),
-            name: r.get("name"),
-            description: r.get("description"),
-            series_count: r.get("series_count"),
-            book_count: r.get("book_count"),
-            books_read_count: r.get("books_read_count"),
-            preview_covers: r.get::<Vec<String>, _>("preview_covers"),
-            created_at: r.get("created_at"),
-            updated_at: r.get("updated_at"),
+        .map(|r| {
+            let series_count: i64 = r.get("series_count");
+            ReadingListDto {
+                id: r.get("id"),
+                name: r.get("name"),
+                description: r.get("description"),
+                series_count,
+                book_count: r.get("book_count"),
+                books_read_count: r.get("books_read_count"),
+                is_incomplete: series_count < 2,
+                preview_covers: r.get::<Vec<String>, _>("preview_covers"),
+                created_at: r.get("created_at"),
+                updated_at: r.get("updated_at"),
+            }
         })
         .collect();
 

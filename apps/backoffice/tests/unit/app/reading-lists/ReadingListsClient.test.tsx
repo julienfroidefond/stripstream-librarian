@@ -38,6 +38,7 @@ const createdList = {
   series_count: 1,
   book_count: 1,
   books_read_count: 0,
+  is_incomplete: true,
   preview_covers: [],
   created_at: "2026-10-20T00:00:00Z",
   updated_at: "2026-10-20T00:00:00Z",

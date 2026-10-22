@@ -12,6 +12,7 @@ function makeList(overrides: Partial<ReadingListDto> = {}): ReadingListDto {
     series_count: 1,
     book_count: 3,
     books_read_count: 1,
+    is_incomplete: false,
     preview_covers: [],
     created_at: "2024-01-01T00:00:00.000Z",
     updated_at: "2024-01-01T00:00:00.000Z",
@@ -26,6 +27,7 @@ function renderCard(overrides: Partial<React.ComponentProps<typeof ReadingListCa
       seriesCountLabel="series"
       booksLabel="books"
       readLabel="read"
+      incompleteLabel="incomplete"
       hasActiveUser
       {...overrides}
     />
@@ -46,5 +48,17 @@ describe("ReadingListCard", () => {
     expect(screen.queryByText("read")).not.toBeInTheDocument();
     expect(screen.queryByText("1 / 3 · 33%")).not.toBeInTheDocument();
     expect(screen.getByText("books")).toBeInTheDocument();
+  });
+
+  it("flags an incomplete list", () => {
+    renderCard({ list: makeList({ series_count: 1, is_incomplete: true }) });
+
+    expect(screen.getByText("incomplete")).toBeInTheDocument();
+  });
+
+  it("does not flag a list with at least two series", () => {
+    renderCard({ list: makeList({ series_count: 2, is_incomplete: false }) });
+
+    expect(screen.queryByText("incomplete")).not.toBeInTheDocument();
   });
 });

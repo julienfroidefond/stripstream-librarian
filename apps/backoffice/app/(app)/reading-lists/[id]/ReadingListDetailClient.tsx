@@ -86,6 +86,9 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
         library_id: series.library_id,
         library_name: "",
         position: items.length,
+        book_count: series.book_count,
+        books_read_count: series.books_read_count,
+        is_empty: series.book_count === 0,
       };
       setItems((prev) => [...prev, newItem]);
       alreadyInList.add(series.series_id);
@@ -263,6 +266,11 @@ export function ReadingListDetailClient({ list: initialList }: Props) {
                     <ProviderIcon provider={item.provider} size={12} />
                     <span className="text-xs text-muted-foreground/50">{item.provider}</span>
                   </div>
+                )}
+                {item.is_empty && (
+                  <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                    {t("readingLists.emptySeries")}
+                  </span>
                 )}
               </Link>
 
