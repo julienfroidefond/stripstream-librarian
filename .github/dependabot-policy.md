@@ -45,8 +45,10 @@ Deux prérequis, sans lesquels l'automatisation ne protège rien :
 Le workflow n'utilise pas l'auto-merge natif de GitHub : la mutation
 `enablePullRequestAutoMerge` répond « Resource not accessible by personal access token » pour un
 PAT fine-grained, quelles que soient ses permissions sur le repo (vérifié avec `admin: true`).
-Il attend donc lui-même les trois checks requis puis lance `gh pr merge --squash
---delete-branch` — jusqu'à 60 minutes, et un nouveau push sur la PR relance l'attente.
+Il attend donc lui-même les trois checks requis, approuve la PR — le ruleset exige une
+approbation supplémentaire pour un push non attribué, et Dependabot en est un — puis lance
+`gh pr merge --squash --delete-branch`, jusqu'à 60 minutes. Un nouveau push sur la PR relance
+l'attente.
 
 Le merge est un squash attribué au propriétaire du PAT, exactement comme un merge manuel, ce
 qui déclenche `deploy.yml` normalement.
