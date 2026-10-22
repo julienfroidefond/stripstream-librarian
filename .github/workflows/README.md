@@ -7,14 +7,24 @@ this page: it is not needed to write code, only to understand a pipeline failure
 
 | Workflow | Trigger | Role |
 |----------|---------|------|
-| `ci.yml` | pull requests touching Rust paths, push to `main` (cache warm-up only) | `cargo fmt` / `clippy` / `cargo nextest`, PostgreSQL service, `Rust (fmt · clippy · test)` check |
-| `ci-web.yml` | pull requests touching the web apps | backoffice and docs validation |
+| `ci.yml` | every pull request, push to `main` (cache warm-up only) | `cargo fmt` / `clippy` / `cargo nextest`, PostgreSQL service, `Rust (fmt · clippy · test)` check |
+| `ci-web.yml` | every pull request | backoffice and docs validation |
+| `dependabot-automerge.yml` | Dependabot pull requests | enables native auto-merge for patch/minor bumps |
 | `deploy.yml` | push to `main` | change detection, image build/push, version bump and deploy |
 | `opencode.yml` | `ai` label, `/oc` mentions | OpenCode agent |
 
-The merge to `main` is deliberately **not re-validated**, so `Rust (fmt · clippy · test)` MUST
-stay a required status check on the protected branch. Direct pushes to `main` bypass the gate —
-use a PR or `workflow_dispatch` in that case.
+The merge to `main` is deliberately **not re-validated**, so the PR checks must stay
+**required** on the protected branch: `Rust (fmt · clippy · test)`, `Backoffice (tsc · lint ·
+tests)` and `Docs (build)`. Direct pushes to `main` bypass the gate — use a PR or
+`workflow_dispatch` in that case.
+
+Required checks are the reason `ci.yml` and `ci-web.yml` **trigger on every PR** instead of
+using `on.pull_request.paths`: a workflow filtered out at the trigger level never reports, so
+its required check stays "Expected" and the PR can never merge (a docs-only PR would hang
+forever on the Rust check). The path filter therefore lives inside each workflow
+(`dorny/paths-filter` in a `changes` job); GitHub counts a job skipped by `if:` as a
+successful required check. The `gate` job in `ci.yml` mirrors that rule: it fails on any real
+failure and accepts `skipped` when no Rust file changed.
 
 ## Rust gate (`ci.yml`)
 
@@ -46,9 +56,26 @@ Two non-obvious settings, both worth ~6 min:
 - **Parallelism.** `lint` and `test` are separate jobs, and `nextest` is sharded. Partitioning is
   by *test count*, not duration, so the busiest shard varies between ~135 s and ~210 s.
 
-`paths:` also lists `.github/workflows/ci.yml`, so a workflow edit is itself validated. Note that
-GitHub evaluates `paths` against the **default branch** version of the file: a PR that only
-touches `ci.yml` will run nothing until this filter exists on `main`.
+The `rust` filter of the `changes` job also lists `.github/workflows/ci.yml`, so a workflow
+edit is itself validated. (This used to be an `on.pull_request.paths` entry; note that GitHub
+evaluates that filter against the **default branch** version of the file, so a PR touching
+only `ci.yml` ran nothing until the filter existed on `main` — another reason it now lives in
+the job.)
+
+## Dependabot auto-merge
+
+`dependabot-automerge.yml` runs on `pull_request_target` (the workflow comes from `main`, so
+it also applies to branches created before this file existed), restricted to
+`dependabot[bot]`. It reads `dependabot/fetch-metadata`'s `updated-dependencies-json` and calls
+`gh pr merge --auto --squash` only when **every** bumped dependency is a patch, or a minor on a
+post-1.0 package. `0.x → 0.y` counts as major (breaking per Cargo/npm convention), so it stays
+manual — same for real majors. No PR code is checked out, so `pull_request_target` carries no
+injection surface here.
+
+`AUTOMERGE_TOKEN` (fine-grained PAT, `Contents: write`, `Pull requests: write`) is required:
+a merge with the repository `GITHUB_TOKEN` does not trigger `push` workflows, so `deploy.yml`
+— version bump, image build, deployment — would silently not run. The PAT attributes the
+merge to its owner, like a human merge.
 
 ## Images
 

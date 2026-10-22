@@ -1,0 +1,83 @@
+name: Dependabot auto-merge
+
+# Enables GitHub's native auto-merge on Dependabot pull requests that match the
+# update policy (.github/dependabot-policy.md): patch and minor bumps only, and
+# never a `0.x -> 0.y` bump (breaking by Cargo/npm convention, treated as a
+# major). Majors always stay open for manual review.
+#
+# Auto-merge only merges once the required status checks of the "Protect main"
+# ruleset are green — `gh pr merge --auto` on a PR whose checks are not required
+# would merge immediately, before CI has run.
+#
+# Why `pull_request_target` and not `pull_request`:
+#   - it runs the workflow from the BASE branch, so the file does not have to
+#     exist in the Dependabot branch, and the token is writable;
+#   - no code from the PR is checked out and the job is restricted to
+#     `dependabot[bot]`, so there is no untrusted-input surface here.
+#
+# Why a PAT (`AUTOMERGE_TOKEN`) instead of `GITHUB_TOKEN`: a merge performed
+# with the repository token does not trigger `push` workflows, so `deploy.yml`
+# (version bump, image build, deploy) would never run and `main` would move
+# ahead without being deployed. With the PAT the merge is attributed to its
+# owner, exactly like a human merge.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+# One evaluation per PR; a new push supersedes the previous one.
+concurrency:
+  group: dependabot-automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  auto-merge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ github.token }}
+
+      # One decision for the whole PR: Dependabot groups several bumps into a
+      # single PR, so every bumped dependency must qualify.
+      - name: Check the update policy
+        id: policy
+        env:
+          DEPENDENCIES: ${{ steps.meta.outputs.updated-dependencies-json }}
+        run: |
+          set -euo pipefail
+          eligible=$(jq -r '
+            all(.[];
+              if .updateType == "version-update:semver-patch" then true
+              elif .updateType == "version-update:semver-minor" then
+                (.previousVersion // "") as $v
+                | ($v != "") and (($v | test("^0\\.")) | not)
+              else false
+              end)
+          ' <<<"$DEPENDENCIES")
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+
+      - name: Enable auto-merge
+        if: steps.policy.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::the AUTOMERGE_TOKEN secret is missing. Create a fine-grained PAT (Contents: write, Pull requests: write) and add it as a repository secret, otherwise a merge would not trigger deploy.yml."
+            exit 1
+          fi
+          gh pr merge --auto --squash "$PR_URL"
+
+      - name: Report decision
+        if: steps.policy.outputs.eligible != 'true'
+        run: |
+          echo "::notice::not auto-merged: major or 0.x minor bump, manual review required"
