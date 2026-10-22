@@ -82,7 +82,9 @@ cancels the pending run and starts over.
 The approval is required by the ruleset's `require_extra_approval_for_unattributed_changes`:
 a Dependabot push is unattributed, so the PR stays `BLOCKED` with zero required reviews until
 someone approves. It is only submitted after the three checks are green, and it is the same
-approval a human would give.
+approval a human would give. GitHub then recomputes mergeability asynchronously (the PR keeps
+reporting `BLOCKED` for ~20 s), so the workflow waits for that state to clear before merging,
+and retries the merge a few times.
 
 `AUTOMERGE_TOKEN` (fine-grained PAT, `Contents: write`, `Pull requests: write`) is required:
 a merge with the repository `GITHUB_TOKEN` does not trigger `push` workflows, so `deploy.yml`
