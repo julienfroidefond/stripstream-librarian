@@ -66,11 +66,18 @@ the job.)
 
 `dependabot-automerge.yml` runs on `pull_request_target` (the workflow comes from `main`, so
 it also applies to branches created before this file existed), restricted to
-`dependabot[bot]`. It reads `dependabot/fetch-metadata`'s `updated-dependencies-json` and calls
-`gh pr merge --auto --squash` only when **every** bumped dependency is a patch, or a minor on a
-post-1.0 package. `0.x → 0.y` counts as major (breaking per Cargo/npm convention), so it stays
-manual — same for real majors. No PR code is checked out, so `pull_request_target` carries no
-injection surface here.
+`dependabot[bot]`. It reads `dependabot/fetch-metadata`'s `updated-dependencies-json` and only
+merges when **every** bumped dependency is a patch, or a minor on a post-1.0 package.
+`0.x → 0.y` counts as major (breaking per Cargo/npm convention), so it stays manual — same for
+real majors. No PR code is checked out, so `pull_request_target` carries no injection surface
+here.
+
+It does **not** use GitHub's native auto-merge: the `enablePullRequestAutoMerge` mutation
+answers `Resource not accessible by personal access token` for fine-grained PATs, whatever the
+repository permissions (verified with `admin: true` on this repo). The workflow therefore polls
+the three required checks itself and runs `gh pr merge --squash --delete-branch` once they are
+all `SUCCESS`/`SKIPPED`, up to 60 minutes. A new push on the PR cancels the pending run and
+starts over.
 
 `AUTOMERGE_TOKEN` (fine-grained PAT, `Contents: write`, `Pull requests: write`) is required:
 a merge with the repository `GITHUB_TOKEN` does not trigger `push` workflows, so `deploy.yml`

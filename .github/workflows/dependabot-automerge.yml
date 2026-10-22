@@ -1,19 +1,21 @@
 name: Dependabot auto-merge
 
-# Enables GitHub's native auto-merge on Dependabot pull requests that match the
-# update policy (.github/dependabot-policy.md): patch and minor bumps only, and
-# never a `0.x -> 0.y` bump (breaking by Cargo/npm convention, treated as a
-# major). Majors always stay open for manual review.
+# Merges Dependabot pull requests that match the update policy
+# (.github/dependabot-policy.md): patch and minor bumps only, and never a
+# `0.x -> 0.y` bump (breaking by Cargo/npm convention, treated as a major).
+# Majors always stay open for manual review.
 #
-# Auto-merge only merges once the required status checks of the "Protect main"
-# ruleset are green — `gh pr merge --auto` on a PR whose checks are not required
-# would merge immediately, before CI has run.
+# Why not GitHub's native auto-merge (`gh pr merge --auto`)? The underlying
+# GraphQL mutation `enablePullRequestAutoMerge` answers "Resource not
+# accessible by personal access token" for fine-grained PATs, even with
+# Contents/Pull requests write on the repository (verified on this repo). The
+# workflow therefore does the waiting itself: it polls the three required
+# checks of the "Protect main" ruleset and merges once they are all green.
 #
-# Why `pull_request_target` and not `pull_request`:
-#   - it runs the workflow from the BASE branch, so the file does not have to
-#     exist in the Dependabot branch, and the token is writable;
-#   - no code from the PR is checked out and the job is restricted to
-#     `dependabot[bot]`, so there is no untrusted-input surface here.
+# Why `pull_request_target` and not `pull_request`: it runs the workflow from
+# the BASE branch, so the file does not have to exist in the Dependabot branch,
+# the token is writable, and above all no code from the PR is checked out or
+# executed. The job is restricted to `dependabot[bot]`.
 #
 # Why a PAT (`AUTOMERGE_TOKEN`) instead of `GITHUB_TOKEN`: a merge performed
 # with the repository token does not trigger `push` workflows, so `deploy.yml`
@@ -27,7 +29,7 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
+  pull-requests: read
 
 # One evaluation per PR; a new push supersedes the previous one.
 concurrency:
@@ -38,15 +40,20 @@ jobs:
   auto-merge:
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
+    # The poll loop below gives up after 60 minutes; keep some margin.
+    timeout-minutes: 70
     steps:
       - name: Fetch Dependabot metadata
         id: meta
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@v3
         with:
           github-token: ${{ github.token }}
 
       # One decision for the whole PR: Dependabot groups several bumps into a
-      # single PR, so every bumped dependency must qualify.
+      # single PR, so every bumped dependency must qualify. `prevVersion` is
+      # empty for grouped PRs, hence the `dependencyGroup` fallback: groups are
+      # configured as minor+patch only, with pre-1.0 dependencies excluded from
+      # them (see `.github/dependabot.yml`).
       - name: Check the update policy
         id: policy
         env:
@@ -55,16 +62,16 @@ jobs:
           set -euo pipefail
           eligible=$(jq -r '
             all(.[];
-              if .updateType == "version-update:semver-patch" then true
+              if .updateType == "version-update:semver-major" then false
+              elif .updateType == "version-update:semver-patch" then true
+              elif ((.prevVersion // "") | test("^0\\.")) then false
               elif .updateType == "version-update:semver-minor" then
-                (.previousVersion // "") as $v
-                | ($v != "") and (($v | test("^0\\.")) | not)
-              else false
-              end)
+                ((.prevVersion // "") != "") or ((.dependencyGroup // "") != "")
+              else false end)
           ' <<<"$DEPENDENCIES")
           echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
 
-      - name: Enable auto-merge
+      - name: Merge once the required checks are green
         if: steps.policy.outputs.eligible == 'true'
         env:
           GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}
@@ -75,7 +82,41 @@ jobs:
             echo "::error::the AUTOMERGE_TOKEN secret is missing. Create a fine-grained PAT (Contents: write, Pull requests: write) and add it as a repository secret, otherwise a merge would not trigger deploy.yml."
             exit 1
           fi
-          gh pr merge --auto --squash "$PR_URL"
+
+          # Required checks of the "Protect main" ruleset (.github/workflows/README.md).
+          required='["Rust (fmt · clippy · test)","Backoffice (tsc · lint · tests)","Docs (build)"]'
+
+          for attempt in $(seq 1 120); do
+            rollup=$(gh pr view "$PR_URL" --json statusCheckRollup)
+            verdict=$(jq -r --argjson required "$required" '
+              [ $required[] as $name
+                | ([.statusCheckRollup[] | select(.name == $name)] | last) as $check
+                | if $check == null then "pending"
+                  elif (["SUCCESS", "SKIPPED", "NEUTRAL"] | index($check.conclusion // "")) then "ok"
+                  elif (["FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"] | index($check.conclusion // "")) then "failed"
+                  else "pending" end
+              ] as $states
+              | if ($states | index("failed")) then "failed"
+                elif ($states | all(. == "ok")) then "ready"
+                else "pending" end
+            ' <<<"$rollup")
+
+            echo "attempt ${attempt}: ${verdict} (${required})"
+            case "$verdict" in
+              ready)
+                gh pr merge --squash --delete-branch "$PR_URL"
+                exit 0
+                ;;
+              failed)
+                echo "::error::a required check failed, not merging"
+                exit 1
+                ;;
+            esac
+            sleep 30
+          done
+
+          echo "::error::required checks still not green after 60 minutes, giving up"
+          exit 1
 
       - name: Report decision
         if: steps.policy.outputs.eligible != 'true'
