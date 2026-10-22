@@ -26,12 +26,12 @@ une passe manuelle.
 
 ## Auto-merge
 
-`.github/workflows/dependabot-automerge.yml` active l'auto-merge GitHub sur les PR Dependabot
-qui respectent la politique ci-dessus : patchs et mineurs uniquement, **jamais** un
+`.github/workflows/dependabot-automerge.yml` merge automatiquement les PR Dependabot qui
+respectent la politique ci-dessus : patchs et mineurs uniquement, **jamais** un
 `0.x → 0.y` (cassant par convention Cargo/npm, donc traité comme un majeur). Un majeur reste
-ouvert pour revue manuelle, comme n'importe quelle PR : le workflow ne l'active pas.
+ouvert pour revue manuelle, comme n'importe quelle PR : le workflow ne le touche pas.
 
-Deux prérequis, sans lesquels l'auto-merge ne protège rien :
+Deux prérequis, sans lesquels l'automatisation ne protège rien :
 
 - les checks `Rust (fmt · clippy · test)`, `Backoffice (tsc · lint · tests)` et `Docs (build)`
   sont **requis** sur la branche protégée. `ci.yml` et `ci-web.yml` se déclenchent donc sur
@@ -42,5 +42,11 @@ Deux prérequis, sans lesquels l'auto-merge ne protège rien :
   est indispensable : un merge effectué avec le `GITHUB_TOKEN` ne déclenche pas `deploy.yml`,
   donc `main` avancerait sans bump de version ni déploiement.
 
-Le merge est un squash. Il est attribué au propriétaire du PAT, exactement comme un merge
-manuel, ce qui déclenche `deploy.yml` normalement.
+Le workflow n'utilise pas l'auto-merge natif de GitHub : la mutation
+`enablePullRequestAutoMerge` répond « Resource not accessible by personal access token » pour un
+PAT fine-grained, quelles que soient ses permissions sur le repo (vérifié avec `admin: true`).
+Il attend donc lui-même les trois checks requis puis lance `gh pr merge --squash
+--delete-branch` — jusqu'à 60 minutes, et un nouveau push sur la PR relance l'attente.
+
+Le merge est un squash attribué au propriétaire du PAT, exactement comme un merge manuel, ce
+qui déclenche `deploy.yml` normalement.
