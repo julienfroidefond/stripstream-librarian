@@ -1,5 +1,5 @@
 use super::*;
-use wiremock::matchers::{method, path_regex};
+use wiremock::matchers::{method, path_regex, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn test_config() -> ProviderConfig {
@@ -44,6 +44,8 @@ async fn search_series_parses_candidates() {
 
     Mock::given(method("GET"))
         .and(path_regex("/api/search/"))
+        .and(query_param("api_key", "test_key"))
+        .and(query_param("resources", "volume"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&body))
         .mount(&mock_server)
         .await;
@@ -138,7 +140,7 @@ async fn search_series_requires_api_key() {
         ..Default::default()
     };
 
-    let result = search_series_impl("Blacksad", &config, "http://unused").await;
+    let result = search_series_impl("Blacksad", &config, "https://unused").await;
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("API key"));
 }
@@ -151,7 +153,7 @@ async fn search_series_rejects_empty_api_key() {
         ..Default::default()
     };
 
-    let result = search_series_impl("Blacksad", &config, "http://unused").await;
+    let result = search_series_impl("Blacksad", &config, "https://unused").await;
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("API key"));
 }
@@ -276,7 +278,7 @@ async fn get_series_books_requires_api_key() {
         ..Default::default()
     };
 
-    let result = get_series_books_impl("12345", &config, "http://unused").await;
+    let result = get_series_books_impl("12345", &config, "https://unused").await;
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("API key"));
 }
