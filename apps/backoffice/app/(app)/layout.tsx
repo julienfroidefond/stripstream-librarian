@@ -104,7 +104,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
             href="/"
             className="flex items-center gap-3 hover:opacity-80 transition-opacity duration-200 shrink-0"
           >
-            <Image src="/logo.webp" alt="StripStream" width={32} height={32} className="rounded-lg" />
+            <Image src="/logo.webp" alt="StripStream" width={32} height={32} className="rounded-lg dark:hidden" />
+            <Image src="/logo-dark.webp" alt="StripStream" width={32} height={32} className="rounded-lg hidden dark:block" />
             <div className="flex items-baseline gap-2">
               <span className="text-lg font-bold tracking-tight text-foreground">StripStream</span>
               <span className="text-sm text-muted-foreground font-medium hidden xl:inline">
