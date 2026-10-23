@@ -43,12 +43,20 @@ function LoginForm() {
   return (
     <div className="relative min-h-screen flex flex-col items-center justify-center px-4 py-16 overflow-hidden">
 
-      {/* Background logo */}
+      {/* Background logo, one variant per theme */}
       <Image
         src="/logo.webp"
         alt=""
         fill
-        className="object-cover opacity-20"
+        className="object-cover opacity-20 dark:hidden"
+        priority
+        aria-hidden
+      />
+      <Image
+        src="/logo-dark.webp"
+        alt=""
+        fill
+        className="object-cover opacity-20 hidden dark:block"
         priority
         aria-hidden
       />

@@ -1,12 +1,21 @@
 import sharp from "sharp";
+import { writeFile } from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SOURCE = path.join(__dirname, "public/logostrip3.png");
-const ICONS_DIR = path.join(__dirname, "public/icons");
-const SPLASH_DIR = path.join(__dirname, "public/splash");
-const BG_COLOR = { r: 15, g: 23, b: 42, alpha: 1 }; // #0f172a
+const PUBLIC_DIR = path.join(__dirname, "public");
+// One logo per use: the light one for app icons, the dark one for splash
+// screens, the monochrome one for favicons (the only one legible that small).
+const SOURCE = path.join(PUBLIC_DIR, "logo.webp");
+const SPLASH_SOURCE = path.join(PUBLIC_DIR, "logo-dark.webp");
+const FAVICON_SOURCE = path.join(PUBLIC_DIR, "logo-mono.webp");
+const ICONS_DIR = path.join(PUBLIC_DIR, "icons");
+const SPLASH_DIR = path.join(PUBLIC_DIR, "splash");
+// Paper background of the light logo, used to pad the maskable icon.
+const PAPER_COLOR = { r: 250, g: 246, b: 241, alpha: 1 }; // #faf6f1
+// Background of the dark logo, so it blends into the splash screen.
+const SPLASH_COLOR = { r: 12, g: 10, b: 8, alpha: 1 }; // #0c0a08
 
 // --- Icons ---
 const iconSizes = [72, 96, 128, 144, 152, 180, 192, 384, 512];
@@ -35,6 +44,21 @@ const splashScreens = [
   { name: "splash-ipad", w: 1536, h: 2048 },
 ];
 
+// An .ico file holding a single PNG image (supported by every modern browser).
+function pngToIco(png, size) {
+  const header = Buffer.alloc(22);
+  header.writeUInt16LE(0, 0); // reserved
+  header.writeUInt16LE(1, 2); // type: icon
+  header.writeUInt16LE(1, 4); // image count
+  header.writeUInt8(size, 6);
+  header.writeUInt8(size, 7);
+  header.writeUInt16LE(1, 10); // color planes
+  header.writeUInt16LE(32, 12); // bits per pixel
+  header.writeUInt32LE(png.length, 14);
+  header.writeUInt32LE(22, 18); // image offset
+  return Buffer.concat([header, png]);
+}
+
 async function generateIcons() {
   console.log("Generating icons...");
   const source = sharp(SOURCE);
@@ -42,18 +66,18 @@ async function generateIcons() {
   for (const size of iconSizes) {
     await source
       .clone()
-      .resize(size, size, { fit: "contain", background: BG_COLOR })
+      .resize(size, size)
       .png()
       .toFile(path.join(ICONS_DIR, `icon-${size}.png`));
     console.log(`  icon-${size}.png`);
   }
 
-  // Maskable icon: 512x512 with 20% padding (safe zone)
+  // Maskable icon: 512x512 with the logo shrunk into the 80% safe zone
   const maskableSize = 512;
   const logoSize = Math.round(maskableSize * 0.7);
-  const logoBuf = await sharp(SOURCE).resize(logoSize, logoSize, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
+  const logoBuf = await sharp(SOURCE).resize(logoSize, logoSize).png().toBuffer();
   await sharp({
-    create: { width: maskableSize, height: maskableSize, channels: 4, background: BG_COLOR },
+    create: { width: maskableSize, height: maskableSize, channels: 4, background: PAPER_COLOR },
   })
     .composite([{ input: logoBuf, gravity: "centre" }])
     .png()
@@ -64,115 +88,36 @@ async function generateIcons() {
   for (const { size, name } of appleIconSizes) {
     await source
       .clone()
-      .resize(size, size, { fit: "contain", background: BG_COLOR })
+      .resize(size, size)
       .png()
       .toFile(path.join(ICONS_DIR, name));
     console.log(`  ${name}`);
   }
+  await source.clone().resize(180, 180).png().toFile(path.join(PUBLIC_DIR, "apple-touch-icon.png"));
+  console.log("  ../apple-touch-icon.png");
 
-  // Favicon (32x32)
-  await source
-    .clone()
-    .resize(32, 32, { fit: "contain", background: BG_COLOR })
-    .png()
-    .toFile(path.join(ICONS_DIR, "favicon.png"));
+  // Favicons (32x32)
+  const favicon = await sharp(FAVICON_SOURCE).resize(32, 32).png().toBuffer();
+  await writeFile(path.join(ICONS_DIR, "favicon.png"), favicon);
   console.log("  favicon.png");
-}
-
-// Create a radial gradient background SVG matching the logo's cyan/magenta palette
-function makeGradientSvg(w, h) {
-  // Radial gradient: center glow with cyan and magenta hints on dark base
-  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
-  <defs>
-    <radialGradient id="bg" cx="50%" cy="50%" r="70%" fx="50%" fy="50%">
-      <stop offset="0%" stop-color="#1a2744"/>
-      <stop offset="40%" stop-color="#132035"/>
-      <stop offset="100%" stop-color="#0a101e"/>
-    </radialGradient>
-    <radialGradient id="glow-cyan" cx="30%" cy="35%" r="50%">
-      <stop offset="0%" stop-color="#00e5cc" stop-opacity="0.15"/>
-      <stop offset="100%" stop-color="#00e5cc" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="glow-magenta" cx="70%" cy="65%" r="50%">
-      <stop offset="0%" stop-color="#e0447a" stop-opacity="0.12"/>
-      <stop offset="100%" stop-color="#e0447a" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
-  <rect width="${w}" height="${h}" fill="url(#bg)"/>
-  <rect width="${w}" height="${h}" fill="url(#glow-cyan)"/>
-  <rect width="${w}" height="${h}" fill="url(#glow-magenta)"/>
-</svg>`);
-}
-
-// Crop the logo into a circle
-async function makeCircleLogo(size) {
-  const logoResized = await sharp(SOURCE)
-    .resize(size, size, { fit: "cover" })
-    .png()
-    .toBuffer();
-
-  const circleMask = Buffer.from(
-    `<svg width="${size}" height="${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" fill="white"/></svg>`
-  );
-
-  // Circle mask with built-in opacity (0.7 = 70% opaque)
-  const circleMaskAlpha = Buffer.from(
-    `<svg width="${size}" height="${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" fill="white" opacity="0.7"/></svg>`
-  );
-
-  return sharp(logoResized)
-    .composite([{ input: circleMaskAlpha, blend: "dest-in" }])
-    .png()
-    .toBuffer();
-}
-
-// Create a subtle soft glow behind the circular logo
-function makeGlowSvg(logoSize) {
-  const glowSize = Math.round(logoSize * 1.6);
-  const cx = glowSize / 2;
-  return {
-    svg: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${glowSize}" height="${glowSize}">
-  <defs>
-    <radialGradient id="g" cx="50%" cy="50%" r="50%">
-      <stop offset="40%" stop-color="#00e5cc" stop-opacity="0.20"/>
-      <stop offset="70%" stop-color="#0f172a" stop-opacity="0.04"/>
-      <stop offset="100%" stop-color="#0f172a" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
-  <circle cx="${cx}" cy="${cx}" r="${cx}" fill="url(#g)"/>
-</svg>`),
-    size: glowSize,
-  };
+  await writeFile(path.join(PUBLIC_DIR, "favicon.ico"), pngToIco(favicon, 32));
+  console.log("  ../favicon.ico");
 }
 
 async function generateSplash(name, w, h) {
-  const shortDim = Math.min(w, h);
-  const logoSize = Math.round(shortDim * 0.35);
-  const circleLogoBuf = await makeCircleLogo(logoSize);
-  const { svg: glowSvg, size: glowSize } = makeGlowSvg(logoSize);
-  const glowBuf = await sharp(glowSvg).png().toBuffer();
+  const logoSize = Math.round(Math.min(w, h) * 0.4);
+  const logoBuf = await sharp(SPLASH_SOURCE).resize(logoSize, logoSize).png().toBuffer();
 
-  // Portrait
-  const bgPortrait = makeGradientSvg(w, h);
-  await sharp(bgPortrait)
-    .composite([
-      { input: glowBuf, gravity: "centre" },
-      { input: circleLogoBuf, gravity: "centre" },
-    ])
-    .png()
-    .toFile(path.join(SPLASH_DIR, `${name}-${w}x${h}.png`));
-  console.log(`  ${name}-${w}x${h}.png`);
-
-  // Landscape
-  const bgLandscape = makeGradientSvg(h, w);
-  await sharp(bgLandscape)
-    .composite([
-      { input: glowBuf, gravity: "centre" },
-      { input: circleLogoBuf, gravity: "centre" },
-    ])
-    .png()
-    .toFile(path.join(SPLASH_DIR, `${name}-ls-${h}x${w}.png`));
-  console.log(`  ${name}-ls-${h}x${w}.png`);
+  for (const [width, height, file] of [
+    [w, h, `${name}-${w}x${h}.png`],
+    [h, w, `${name}-ls-${h}x${w}.png`],
+  ]) {
+    await sharp({ create: { width, height, channels: 4, background: SPLASH_COLOR } })
+      .composite([{ input: logoBuf, gravity: "centre" }])
+      .png()
+      .toFile(path.join(SPLASH_DIR, file));
+    console.log(`  ${file}`);
+  }
 }
 
 async function generateSplashScreens() {
