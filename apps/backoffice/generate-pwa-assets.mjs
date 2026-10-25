@@ -5,17 +5,17 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
-// One logo per use: the light one for app icons, the dark one for splash
-// screens, the monochrome one for favicons (the only one legible that small).
-const SOURCE = path.join(PUBLIC_DIR, "logo.webp");
+// One logo per use: the dark one ("black") for app icons and splash screens —
+// it reads better on a home screen than the paper one — and the monochrome one
+// for favicons (the only one legible that small).
+const SOURCE = path.join(PUBLIC_DIR, "logo-dark.webp");
 const SPLASH_SOURCE = path.join(PUBLIC_DIR, "logo-dark.webp");
 const FAVICON_SOURCE = path.join(PUBLIC_DIR, "logo-mono.webp");
 const ICONS_DIR = path.join(PUBLIC_DIR, "icons");
 const SPLASH_DIR = path.join(PUBLIC_DIR, "splash");
-// Paper background of the light logo, used to pad the maskable icon.
-const PAPER_COLOR = { r: 250, g: 246, b: 241, alpha: 1 }; // #faf6f1
-// Background of the dark logo, so it blends into the splash screen.
-const SPLASH_COLOR = { r: 12, g: 10, b: 8, alpha: 1 }; // #0c0a08
+// Background of the dark logo (sampled from its top-left pixel), so the
+// maskable icon and the splash screens blend seamlessly with it.
+const DARK_BG_COLOR = { r: 12, g: 10, b: 8, alpha: 1 }; // #0c0a08
 
 // --- Icons ---
 const iconSizes = [72, 96, 128, 144, 152, 180, 192, 384, 512];
@@ -77,7 +77,7 @@ async function generateIcons() {
   const logoSize = Math.round(maskableSize * 0.7);
   const logoBuf = await sharp(SOURCE).resize(logoSize, logoSize).png().toBuffer();
   await sharp({
-    create: { width: maskableSize, height: maskableSize, channels: 4, background: PAPER_COLOR },
+    create: { width: maskableSize, height: maskableSize, channels: 4, background: DARK_BG_COLOR },
   })
     .composite([{ input: logoBuf, gravity: "centre" }])
     .png()
@@ -112,7 +112,7 @@ async function generateSplash(name, w, h) {
     [w, h, `${name}-${w}x${h}.png`],
     [h, w, `${name}-ls-${h}x${w}.png`],
   ]) {
-    await sharp({ create: { width, height, channels: 4, background: SPLASH_COLOR } })
+    await sharp({ create: { width, height, channels: 4, background: DARK_BG_COLOR } })
       .composite([{ input: logoBuf, gravity: "centre" }])
       .png()
       .toFile(path.join(SPLASH_DIR, file));
