@@ -43,9 +43,11 @@ function LoginForm() {
   return (
     <div className="relative min-h-screen flex flex-col items-center justify-center px-4 py-16 overflow-hidden">
 
-      {/* Background logo, one variant per theme */}
+      {/* Background logo, one variant per theme. The cut-out marks carry no
+          baked-in background field, so the page keeps its own background
+          instead of being tinted by the artwork's square. */}
       <Image
-        src="/logo.webp"
+        src="/logo-mark-light.png"
         alt=""
         fill
         className="object-cover opacity-20 dark:hidden"
@@ -53,7 +55,7 @@ function LoginForm() {
         aria-hidden
       />
       <Image
-        src="/logo-dark.webp"
+        src="/logo-mark-dark.png"
         alt=""
         fill
         className="object-cover opacity-20 hidden dark:block"

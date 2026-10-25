@@ -27,8 +27,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  // Fond sombre du logo, aligné sur `theme_color` du manifeste PWA.
-  themeColor: "#0c0a08",
+  // `--color-background` du thème sombre, aligné sur `theme_color` du manifeste
+  // PWA : la barre du navigateur, l'écran de démarrage et la page sont la même
+  // couleur.
+  themeColor: "#100f0e",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",

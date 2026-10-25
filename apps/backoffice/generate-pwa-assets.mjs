@@ -5,17 +5,19 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, "public");
-// One logo per use: the dark one ("black") for app icons and splash screens —
-// it reads better on a home screen than the paper one — and the monochrome one
-// for favicons (the only one legible that small).
-const SOURCE = path.join(PUBLIC_DIR, "logo-dark.webp");
-const SPLASH_SOURCE = path.join(PUBLIC_DIR, "logo-dark.webp");
+// One logo per use: the dark mark for app icons and splash screens — it reads
+// better on a home screen than the paper one — and the monochrome one for
+// favicons (the only one legible that small). The marks are the cut-out
+// artwork: with no baked-in background field, icons and splash screens can take
+// the app background instead of the colour frozen into the old square.
+const SOURCE = path.join(PUBLIC_DIR, "logo-mark-dark.png");
+const SPLASH_SOURCE = path.join(PUBLIC_DIR, "logo-mark-dark.png");
 const FAVICON_SOURCE = path.join(PUBLIC_DIR, "logo-mono.webp");
 const ICONS_DIR = path.join(PUBLIC_DIR, "icons");
 const SPLASH_DIR = path.join(PUBLIC_DIR, "splash");
-// Background of the dark logo (sampled from its top-left pixel), so the
-// maskable icon and the splash screens blend seamlessly with it.
-const DARK_BG_COLOR = { r: 12, g: 10, b: 8, alpha: 1 }; // #0c0a08
+// `--color-background` of the dark theme (hsl(30 7% 6%)), the colour of the
+// room: maskable icon and splash screens blend into it without a visible square.
+const THEME_BG_COLOR = { r: 16, g: 15, b: 14, alpha: 1 }; // #100f0e
 
 // --- Icons ---
 const iconSizes = [72, 96, 128, 144, 152, 180, 192, 384, 512];
@@ -57,6 +59,7 @@ async function generateIcons() {
     await source
       .clone()
       .resize(size, size)
+      .flatten({ background: THEME_BG_COLOR }) // iOS rejects transparency
       .png()
       .toFile(path.join(ICONS_DIR, `icon-${size}.png`));
     console.log(`  icon-${size}.png`);
@@ -67,7 +70,7 @@ async function generateIcons() {
   const logoSize = Math.round(maskableSize * 0.7);
   const logoBuf = await sharp(SOURCE).resize(logoSize, logoSize).png().toBuffer();
   await sharp({
-    create: { width: maskableSize, height: maskableSize, channels: 4, background: DARK_BG_COLOR },
+    create: { width: maskableSize, height: maskableSize, channels: 4, background: THEME_BG_COLOR },
   })
     .composite([{ input: logoBuf, gravity: "centre" }])
     .png()
@@ -79,11 +82,17 @@ async function generateIcons() {
     await source
       .clone()
       .resize(size, size)
+      .flatten({ background: THEME_BG_COLOR }) // iOS rejects transparency
       .png()
       .toFile(path.join(ICONS_DIR, name));
     console.log(`  ${name}`);
   }
-  await source.clone().resize(180, 180).png().toFile(path.join(PUBLIC_DIR, "apple-touch-icon.png"));
+  await source
+    .clone()
+    .resize(180, 180)
+    .flatten({ background: THEME_BG_COLOR })
+    .png()
+    .toFile(path.join(PUBLIC_DIR, "apple-touch-icon.png"));
   console.log("  ../apple-touch-icon.png");
 
   // Favicons (32x32)
@@ -110,7 +119,7 @@ async function generateSplash(screen) {
 
   for (const orientation of ["portrait", "landscape"]) {
     const { width, height, file } = splashAsset(screen, orientation);
-    await sharp({ create: { width, height, channels: 4, background: DARK_BG_COLOR } })
+    await sharp({ create: { width, height, channels: 4, background: THEME_BG_COLOR } })
       .composite([{ input: logoBuf, gravity: "centre" }])
       .png()
       .toFile(path.join(SPLASH_DIR, file));
