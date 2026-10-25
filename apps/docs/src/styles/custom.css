@@ -1,32 +1,50 @@
 /* Stripstream Librarian — Custom theme
-   Colors from the logo: cyan (#00e5cc) and magenta (#e0447a) on dark blue (#0f172a) */
+   Couleurs alignées sur la charte du reader (StripStream) : papier chaud, encre
+   chaude, un seul accent teal (celui du logo). Les anciennes valeurs (cyan
+   #00e5cc, magenta #e0447a, bleu nuit #0f172a) dataient de la charte
+   précédente. */
 
 :root {
-	--sl-color-accent-low: #0d3d3a;
-	--sl-color-accent: #00e5cc;
-	--sl-color-accent-high: #b3fff5;
-	--sl-color-white: #e8edf4;
-	--sl-color-gray-1: #c2c9d6;
-	--sl-color-gray-2: #8e99a4;
-	--sl-color-gray-3: #586270;
-	--sl-color-gray-4: #333d4b;
-	--sl-color-gray-5: #1e2633;
-	--sl-color-gray-6: #151c28;
-	--sl-color-black: #0f172a;
+	--sl-color-accent-low: #14343a;
+	--sl-color-accent: #47cfe1;
+	--sl-color-accent-high: #c2f2f8;
+	--sl-color-white: #f4f3f0;
+	--sl-color-gray-1: #d8d1c8;
+	--sl-color-gray-2: #a49a90;
+	--sl-color-gray-3: #6b6159;
+	--sl-color-gray-4: #3a332e;
+	--sl-color-gray-5: #272320;
+	--sl-color-gray-6: #1a1816;
+	--sl-color-black: #12100e;
+
+	/* Starlight colore les encarts et les badges d'icônes avec ces teintes
+	   (elles-mêmes déclinées en -low / -high dans les deux thèmes). On les
+	   ramène sur l'échelle du reader : ambre du logo, vert, bleu acier, rouge
+	   franc et prune chaude à la place du violet froid. */
+	--sl-hue-orange: 32;
+	--sl-hue-green: 152;
+	--sl-hue-blue: 212;
+	--sl-hue-red: 4;
+	--sl-hue-purple: 320;
+
+	/* En sombre, Starlight utilise accent-high (teinte pâle) pour le texte des
+	   liens : on préfère le teal vif du reader, lisible sur l'encre chaude. */
+	--sl-color-text-accent: var(--sl-color-accent);
+	--sl-color-backdrop-overlay: hsla(30, 10%, 6%, 0.7);
 }
 
 :root[data-theme='light'] {
-	--sl-color-accent-low: #d9faf6;
-	--sl-color-accent: #0aa897;
-	--sl-color-accent-high: #064d45;
-	--sl-color-white: #151c28;
-	--sl-color-gray-1: #333d4b;
-	--sl-color-gray-2: #586270;
-	--sl-color-gray-3: #8e99a4;
-	--sl-color-gray-4: #c2c9d6;
-	--sl-color-gray-5: #e8edf4;
-	--sl-color-gray-6: #f4f7fb;
-	--sl-color-black: #ffffff;
+	--sl-color-accent-low: #d7ebeb;
+	--sl-color-accent: #117288;
+	--sl-color-accent-high: #0a515f;
+	--sl-color-white: #1f1b19;
+	--sl-color-gray-1: #423b35;
+	--sl-color-gray-2: #6f655d;
+	--sl-color-gray-3: #94897e;
+	--sl-color-gray-4: #c3b9ae;
+	--sl-color-gray-5: #ddd6cc;
+	--sl-color-gray-6: #efe9e1;
+	--sl-color-black: #f7f4ef;
 }
 
 /* Logo sizing in header */
@@ -34,17 +52,27 @@
 	height: 2rem;
 }
 
-/* Subtle magenta accent on hover for sidebar links */
+/* Accent teal on hover for sidebar links — l'ambre du logo reste réservé aux
+   mises en avant, pas aux éléments de navigation. */
 nav.sidebar a:hover {
-	color: #e0447a;
+	color: var(--sl-color-accent);
+}
+
+/* Entrée courante de la sidebar : surface teintée + texte accent, comme dans le
+   reader (profondeur tonale) plutôt qu'un aplat accent plein écran. */
+nav.sidebar [aria-current='page'],
+nav.sidebar [aria-current='page']:hover,
+nav.sidebar [aria-current='page']:focus {
+	background-color: var(--sl-color-accent-low);
+	color: var(--sl-color-text-accent);
 }
 
 /* ─── Splash / Hero page enhancements ─────────────────────────────── */
 
-/* Hero image glow effect */
+/* Hero image glow effect — mêmes teintes que le logo : teal et ambre. */
 [data-has-hero] .hero > img {
-	filter: drop-shadow(0 0 3rem rgba(0, 229, 204, 0.25))
-		drop-shadow(0 0 6rem rgba(224, 68, 122, 0.15));
+	filter: drop-shadow(0 0 3rem rgba(71, 207, 225, 0.2))
+		drop-shadow(0 0 6rem rgba(239, 170, 67, 0.1));
 	border-radius: 50%;
 	animation: hero-float 6s ease-in-out infinite;
 }
@@ -67,8 +95,8 @@ nav.sidebar a:hover {
 	background: linear-gradient(
 		90deg,
 		transparent 0%,
-		rgba(0, 229, 204, 0.3) 30%,
-		rgba(224, 68, 122, 0.3) 70%,
+		rgba(71, 207, 225, 0.3) 30%,
+		rgba(239, 170, 67, 0.3) 70%,
 		transparent 100%
 	);
 	margin: 3rem 0;
@@ -82,13 +110,18 @@ nav.sidebar a:hover {
 }
 
 /* Card icon color */
+/* Starlight alterne cinq teintes de badge par carte (ambre, prune, vert…) via
+   des styles scopés. Sur une charte à accent unique, on les ramène sur le teal
+   — le `!important` est nécessaire pour passer devant ces styles scopés. */
 .card .icon {
+	border-color: color-mix(in oklab, var(--sl-color-accent) 32%, transparent) !important;
+	background-color: color-mix(in oklab, var(--sl-color-accent) 12%, transparent) !important;
 	color: var(--sl-color-accent);
 }
 
 /* Link cards subtle border glow on hover */
 .sl-link-card:hover {
-	border-color: rgba(0, 229, 204, 0.4);
+	border-color: color-mix(in oklab, var(--sl-color-accent) 40%, transparent);
 }
 
 /* Tabs accent color */

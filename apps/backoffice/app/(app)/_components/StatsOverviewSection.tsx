@@ -4,6 +4,7 @@ import { RcDonutChart } from "@/app/components/DashboardCharts";
 import { CurrentlyReadingList, RecentlyReadList } from "@/app/components/ReadingUserFilter";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 import { formatBytes, formatNumber } from "@/lib/format";
+import { CHART_COLORS, CHART_PALETTE } from "@/lib/chart-colors";
 import { StatCard } from "./StatCard";
 
 function HorizontalBar({ label, value, max, subLabel, color = "var(--color-primary)" }: { label: string; value: number; max: number; subLabel?: string; color?: string }) {
@@ -34,12 +35,6 @@ export async function StatsOverviewSection({ t, locale }: Props) {
 
   const { overview, reading_status, by_format, by_language, metadata, currently_reading, recently_read } = data;
 
-  const readingColors = ["hsl(220 13% 70%)", "hsl(45 93% 47%)", "hsl(142 60% 45%)"];
-  const formatColors = [
-    "hsl(198 78% 37%)", "hsl(142 60% 45%)", "hsl(45 93% 47%)",
-    "hsl(2 72% 48%)", "hsl(280 60% 50%)", "hsl(32 80% 50%)",
-    "hsl(170 60% 45%)", "hsl(220 60% 50%)",
-  ];
   const noDataLabel = t("common.noData");
 
   return (
@@ -90,9 +85,9 @@ export async function StatsOverviewSection({ t, locale }: Props) {
               <RcDonutChart
                 noDataLabel={noDataLabel}
                 data={[
-                  { name: t("status.unread"), value: reading_status.unread, color: readingColors[0] },
-                  { name: t("status.reading"), value: reading_status.reading, color: readingColors[1] },
-                  { name: t("status.read"), value: reading_status.read, color: readingColors[2] },
+                  { name: t("status.unread"), value: reading_status.unread, color: CHART_COLORS.neutral },
+                  { name: t("status.reading"), value: reading_status.reading, color: CHART_COLORS.amber },
+                  { name: t("status.read"), value: reading_status.read, color: CHART_COLORS.green },
                 ]}
               />
             ) : (
@@ -133,7 +128,7 @@ export async function StatsOverviewSection({ t, locale }: Props) {
               data={by_format.slice(0, 6).map((f, i) => ({
                 name: (f.format || t("dashboard.unknown")).toUpperCase(),
                 value: f.count,
-                color: formatColors[i % formatColors.length],
+                color: CHART_PALETTE[i % CHART_PALETTE.length],
               }))}
             />
           </CardContent>
@@ -145,8 +140,8 @@ export async function StatsOverviewSection({ t, locale }: Props) {
             <RcDonutChart
               noDataLabel={noDataLabel}
               data={[
-                { name: t("dashboard.seriesLinked"), value: metadata.series_linked, color: "hsl(142 60% 45%)" },
-                { name: t("dashboard.seriesUnlinked"), value: metadata.series_unlinked, color: "hsl(220 13% 70%)" },
+                { name: t("dashboard.seriesLinked"), value: metadata.series_linked, color: CHART_COLORS.green },
+                { name: t("dashboard.seriesUnlinked"), value: metadata.series_unlinked, color: CHART_COLORS.neutral },
               ]}
             />
           </CardContent>
@@ -163,7 +158,7 @@ export async function StatsOverviewSection({ t, locale }: Props) {
               data={metadata.by_provider.map((p, i) => ({
                 name: p.provider.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
                 value: p.count,
-                color: formatColors[i % formatColors.length],
+                color: CHART_PALETTE[i % CHART_PALETTE.length],
               }))}
             />
           </CardContent>
@@ -178,14 +173,14 @@ export async function StatsOverviewSection({ t, locale }: Props) {
                 value={metadata.books_with_summary}
                 max={overview.total_books}
                 subLabel={overview.total_books > 0 ? `${Math.round((metadata.books_with_summary / overview.total_books) * 100)}%` : "0%"}
-                color="hsl(198 78% 37%)"
+                color={CHART_COLORS.teal}
               />
               <HorizontalBar
                 label={t("dashboard.withIsbn")}
                 value={metadata.books_with_isbn}
                 max={overview.total_books}
                 subLabel={overview.total_books > 0 ? `${Math.round((metadata.books_with_isbn / overview.total_books) * 100)}%` : "0%"}
-                color="hsl(280 60% 50%)"
+                color={CHART_COLORS.plum}
               />
             </div>
           </CardContent>

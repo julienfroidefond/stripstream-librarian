@@ -119,11 +119,13 @@ export function CircularProgress({
   const circumference = radius * 2 * Math.PI;
   const offset = circumference - (percent / 100) * circumference;
   
-  // Determine color based on percentage
-  let color = "hsl(var(--color-primary))";
-  if (percent === 100) color = "hsl(var(--color-success))";
-  else if (percent < 25) color = "hsl(var(--color-destructive))";
-  else if (percent < 50) color = "hsl(var(--color-warning))";
+  // Determine color based on percentage.
+  // `--color-*` contient déjà une couleur complète (`hsl(...)`) : l'envelopper
+  // dans `hsl()` produisait une valeur invalide, donc un anneau transparent.
+  let color = "var(--color-primary)";
+  if (percent === 100) color = "var(--color-success)";
+  else if (percent < 25) color = "var(--color-destructive)";
+  else if (percent < 50) color = "var(--color-warning)";
   
   return (
     <div className={`relative inline-flex items-center justify-center ${className}`} style={{ width: size, height: size }}>

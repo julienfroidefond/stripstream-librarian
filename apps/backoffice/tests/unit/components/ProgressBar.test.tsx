@@ -70,11 +70,15 @@ describe("CircularProgress", () => {
     expect(circles[1]).toHaveAttribute("stroke-dashoffset");
   });
 
-  it("uses the success color at 100%", () => {
-    const { container } = render(<CircularProgress value={100} />);
-    expect(container.querySelectorAll("circle")[1]).toHaveAttribute(
-      "stroke",
-      "hsl(var(--color-success))"
-    );
+  // `--color-*` contient déjà une couleur complète : l'envelopper dans `hsl()`
+  // donnait une valeur invalide (anneau transparent).
+  it.each([
+    [100, "var(--color-success)"],
+    [10, "var(--color-destructive)"],
+    [40, "var(--color-warning)"],
+    [80, "var(--color-primary)"],
+  ])("uses the matching color at %i%%", (value, expected) => {
+    const { container } = render(<CircularProgress value={value} />);
+    expect(container.querySelectorAll("circle")[1]).toHaveAttribute("stroke", expected);
   });
 });

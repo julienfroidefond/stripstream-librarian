@@ -66,7 +66,6 @@ export async function StatsBreakdownSection({ t, locale }: Props) {
                 value: s.book_count,
                 subLabel: t("dashboard.readCount", { read: s.read_count, total: s.book_count }),
               }))}
-              color="hsl(142 60% 45%)"
             />
           </CardContent>
         </Card>

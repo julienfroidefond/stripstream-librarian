@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui";
 import { RcAreaChart, RcMultiLineChart } from "@/app/components/DashboardCharts";
+import { CHART_COLORS, CHART_PALETTE } from "@/lib/chart-colors";
 import type {
   StatsResponse,
   MonthlyReading,
@@ -162,10 +163,6 @@ export function TimeSeriesCharts({
     setPeriod(p);
   }
 
-  const userColors = [
-    "hsl(142 60% 45%)", "hsl(198 78% 37%)", "hsl(45 93% 47%)",
-    "hsl(2 72% 48%)", "hsl(280 60% 50%)", "hsl(32 80% 50%)",
-  ];
   const dataKey = metric === "pages" ? "pages_read" : "books_read";
 
   const periodLabels = { day: labels.periodDay, week: labels.periodWeek, month: labels.periodMonth };
@@ -192,7 +189,7 @@ export function TimeSeriesCharts({
                 <RcAreaChart
                   noDataLabel={labels.noData}
                   data={data.reading_over_time.map((m) => ({ label: formatChartLabel(m.month, period, locale), value: m[dataKey] }))}
-                  color="hsl(142 60% 45%)"
+                  color={CHART_COLORS.green}
                 />
               );
             }
@@ -206,7 +203,7 @@ export function TimeSeriesCharts({
             const lines = usernames.map((u, i) => ({
               key: u,
               label: u,
-              color: userColors[i % userColors.length],
+              color: CHART_PALETTE[i % CHART_PALETTE.length],
             }));
             return <RcMultiLineChart data={chartData} lines={lines} noDataLabel={labels.noData} />;
           })()}
@@ -223,7 +220,7 @@ export function TimeSeriesCharts({
           <RcAreaChart
             noDataLabel={labels.noData}
             data={data.additions_over_time.map((m) => ({ label: formatChartLabel(m.month, period, locale), value: m.books_added }))}
-            color="hsl(198 78% 37%)"
+            color={CHART_COLORS.teal}
           />
         </CardContent>
       </Card>
@@ -248,13 +245,13 @@ export function TimeSeriesCharts({
               conversion: j.conversion,
             }))}
             lines={[
-              { key: "scan", label: labels.jobScan, color: "hsl(198 78% 37%)" },
-              { key: "rebuild", label: labels.jobRebuild, color: "hsl(142 60% 45%)" },
-              { key: "thumbnail", label: labels.jobThumbnail, color: "hsl(45 93% 47%)" },
-              { key: "metadata", label: labels.jobMetadata, color: "hsl(280 60% 50%)" },
-              { key: "downloads", label: labels.jobDownloads, color: "hsl(340 65% 50%)" },
-              { key: "reading", label: labels.jobReading, color: "hsl(170 60% 45%)" },
-              { key: "conversion", label: labels.jobConversion, color: "hsl(25 80% 50%)" },
+              { key: "scan", label: labels.jobScan, color: CHART_COLORS.teal },
+              { key: "rebuild", label: labels.jobRebuild, color: CHART_COLORS.green },
+              { key: "thumbnail", label: labels.jobThumbnail, color: CHART_COLORS.amber },
+              { key: "metadata", label: labels.jobMetadata, color: CHART_COLORS.plum },
+              { key: "downloads", label: labels.jobDownloads, color: CHART_COLORS.rose },
+              { key: "reading", label: labels.jobReading, color: CHART_COLORS.blue },
+              { key: "conversion", label: labels.jobConversion, color: CHART_COLORS.copper },
             ]}
           />
         </CardContent>
