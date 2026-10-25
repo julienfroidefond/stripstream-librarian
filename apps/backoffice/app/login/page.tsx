@@ -153,7 +153,7 @@ function LoginForm() {
                 disabled:pointer-events-none disabled:opacity-50
                 active:scale-[0.98]
               "
-              style={{ boxShadow: "0 4px 16px -4px hsl(198 78% 37% / 0.5)" }}
+              style={{ boxShadow: "0 4px 16px -4px color-mix(in oklab, var(--color-primary) 35%, transparent)" }}
             >
               {loading ? (
                 <>

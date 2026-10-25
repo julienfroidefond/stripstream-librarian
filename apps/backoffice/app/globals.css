@@ -5,59 +5,76 @@
    override below is required for `dark:` utilities to follow the app theme. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Palette alignée sur celle du reader (StripStream — « salle de projection ») :
+   papier chaud en clair, encre chaude en sombre, un seul accent teal. Les
+   anciennes valeurs (gris-bleu, cyan #00e5cc, magenta) dataient de la charte
+   précédente et juraient avec les nouveaux logos. Les noms de tokens sont
+   inchangés : seules les valeurs suivent la charte. */
 @theme {
-  /* Core Colors - Light Theme */
-  --color-background: hsl(36 33% 97%);
-  --color-foreground: hsl(222 33% 15%);
+  /* Core Colors - Light Theme (papier chaud) */
+  --color-background: hsl(40 24% 96%);
+  --color-foreground: hsl(25 12% 11%);
   
   /* Card & Surfaces */
-  --color-card: hsl(0 0% 100%);
-  --color-card-foreground: hsl(222 33% 15%);
-  --color-popover: hsl(0 0% 100%);
-  --color-popover-foreground: hsl(222 33% 15%);
+  --color-card: hsl(40 30% 99%);
+  --color-card-foreground: hsl(25 12% 11%);
+  --color-popover: hsl(40 32% 99%);
+  --color-popover-foreground: hsl(25 12% 11%);
   
-  /* Primary - Cyan/Teal */
-  --color-primary: hsl(198 78% 37%);
-  --color-primary-foreground: hsl(210 40% 98%);
-  --color-primary-soft: hsl(198 52% 90%);
+  /* Primary - teal de la charte, assombri pour rester lisible sur papier */
+  --color-primary: hsl(191 78% 30%);
+  --color-primary-foreground: hsl(40 40% 98%);
+  --color-primary-soft: hsl(189 34% 90%);
   
   /* Secondary - Warm Gray */
-  --color-secondary: hsl(36 30% 92%);
-  --color-secondary-foreground: hsl(222 33% 15%);
+  --color-secondary: hsl(38 18% 91%);
+  --color-secondary-foreground: hsl(25 12% 14%);
   
   /* Muted */
-  --color-muted: hsl(36 24% 90%);
-  --color-muted-foreground: hsl(220 13% 40%);
+  --color-muted: hsl(38 18% 91%);
+  --color-muted-foreground: hsl(28 9% 40%);
   
   /* Accent */
-  --color-accent: hsl(198 52% 90%);
-  --color-accent-foreground: hsl(222 33% 15%);
+  --color-accent: hsl(189 34% 90%);
+  --color-accent-foreground: hsl(191 60% 20%);
   
   /* Destructive - Red */
-  --color-destructive: hsl(2 72% 48%);
-  --color-destructive-foreground: hsl(210 40% 98%);
+  --color-destructive: hsl(4 68% 46%);
+  --color-destructive-foreground: hsl(40 40% 98%);
   
   /* Borders */
-  --color-border: hsl(32 18% 84%);
-  --color-input: hsl(32 18% 84%);
-  --color-ring: hsl(198 78% 37%);
+  --color-border: hsl(32 12% 85%);
+  --color-input: hsl(32 12% 85%);
+  --color-ring: hsl(191 78% 34%);
   
-  /* Status Colors */
-  --color-success: hsl(142 60% 45%);
-  --color-success-soft: hsl(142 60% 90%);
-  --color-success-foreground: hsl(210 40% 98%);
-  --color-warning: hsl(45 93% 47%);
-  --color-warning-soft: hsl(45 93% 90%);
-  --color-warning-foreground: hsl(222 33% 15%);
-  --color-error: hsl(2 72% 48%);
-  --color-error-soft: hsl(2 72% 90%);
-  --color-error-foreground: hsl(210 40% 98%);
-  --color-info: hsl(217 91% 45%);
-  --color-info-soft: hsl(214 95% 93%);
-  --color-info-foreground: hsl(210 40% 98%);
-  --color-highlight: hsl(263 70% 50%);
-  --color-highlight-soft: hsl(263 70% 95%);
-  --color-highlight-foreground: hsl(210 40% 98%);
+  /* Status Colors — teintes de la charte (vert, ambre du logo, rouge, bleu) */
+  --color-success: hsl(152 62% 32%);
+  --color-success-soft: hsl(152 34% 90%);
+  --color-success-foreground: hsl(40 40% 98%);
+  --color-warning: hsl(32 84% 42%);
+  --color-warning-soft: hsl(36 80% 90%);
+  --color-warning-foreground: hsl(25 12% 11%);
+  --color-error: hsl(4 68% 46%);
+  --color-error-soft: hsl(4 56% 92%);
+  --color-error-foreground: hsl(40 40% 98%);
+  --color-info: hsl(212 60% 40%);
+  --color-info-soft: hsl(212 45% 92%);
+  --color-info-foreground: hsl(40 40% 98%);
+  --color-highlight: hsl(340 54% 46%);
+  --color-highlight-soft: hsl(340 45% 94%);
+  --color-highlight-foreground: hsl(40 40% 98%);
+
+  /* Séries de graphiques — mêmes teintes que le reader (chart-1..5) plus
+     trois extensions. Elles vivent en variables CSS pour que les SVG des
+     graphiques se repeignent au changement de thème. */
+  --color-chart-1: hsl(191 78% 30%);
+  --color-chart-2: hsl(32 84% 44%);
+  --color-chart-3: hsl(28 9% 46%);
+  --color-chart-4: hsl(152 48% 34%);
+  --color-chart-5: hsl(340 54% 46%);
+  --color-chart-6: hsl(212 60% 40%);
+  --color-chart-7: hsl(280 40% 42%);
+  --color-chart-8: hsl(25 70% 44%);
   
   /* Typography — system UI stack. No web font is loaded (see DESIGN_AUDIT.md);
      `Avenir Next` first on macOS, then the platform UI fonts. */
@@ -76,11 +93,11 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   
-  /* Shadows */
-  --shadow-soft: 0 1px 2px 0 rgb(23 32 46 / 0.06);
-  --shadow-card: 0 12px 30px -12px rgb(23 32 46 / 0.22);
-  --shadow-elevation-1: 0 1px 2px 0 rgb(23 32 46 / 0.06);
-  --shadow-elevation-2: 0 8px 24px -8px rgb(23 32 46 / 0.18);
+  /* Shadows — teintées encre chaude, pas en bleu */
+  --shadow-soft: 0 1px 2px 0 rgb(38 30 22 / 0.07);
+  --shadow-card: 0 12px 30px -12px rgb(38 30 22 / 0.22);
+  --shadow-elevation-1: 0 1px 2px 0 rgb(38 30 22 / 0.07);
+  --shadow-elevation-2: 0 8px 24px -8px rgb(38 30 22 / 0.18);
   
   /* Animation Timing */
   --duration-fast: 120ms;
@@ -89,46 +106,55 @@
   --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-/* Dark Theme */
+/* Dark Theme — encre chaude, jamais #000 */
 .dark {
-  --color-background: hsl(222 35% 10%);
-  --color-foreground: hsl(38 20% 92%);
-  --color-card: hsl(221 31% 13%);
-  --color-card-foreground: hsl(38 20% 92%);
-  --color-popover: hsl(221 31% 13%);
-  --color-popover-foreground: hsl(38 20% 92%);
-  --color-primary: hsl(194 76% 62%);
-  --color-primary-foreground: hsl(222 35% 10%);
-  --color-primary-soft: hsl(210 34% 24%);
-  --color-secondary: hsl(221 22% 20%);
-  --color-secondary-foreground: hsl(38 20% 92%);
-  --color-muted: hsl(220 17% 24%);
-  --color-muted-foreground: hsl(218 17% 72%);
-  --color-accent: hsl(210 34% 24%);
-  --color-accent-foreground: hsl(38 20% 92%);
-  --color-destructive: hsl(2 80% 65%);
-  --color-destructive-foreground: hsl(210 40% 98%);
-  --color-border: hsl(219 18% 25%);
-  --color-input: hsl(219 18% 25%);
-  --color-ring: hsl(194 76% 62%);
-  --color-success: hsl(142 70% 55%);
-  --color-success-soft: hsl(142 30% 20%);
-  --color-success-foreground: hsl(222 35% 10%);
-  --color-warning: hsl(45 90% 55%);
-  --color-warning-soft: hsl(45 30% 20%);
-  --color-error: hsl(2 80% 65%);
-  --color-error-soft: hsl(2 30% 20%);
-  --color-error-foreground: hsl(222 35% 10%);
-  --color-info: hsl(213 94% 68%);
-  --color-info-soft: hsl(217 40% 24%);
-  --color-info-foreground: hsl(222 35% 10%);
-  --color-highlight: hsl(258 90% 76%);
-  --color-highlight-soft: hsl(263 40% 26%);
-  --color-highlight-foreground: hsl(222 35% 10%);
-  --shadow-soft: 0 1px 2px 0 rgb(2 8 18 / 0.35);
-  --shadow-card: 0 12px 30px -12px rgb(2 8 18 / 0.55);
-  --shadow-elevation-1: 0 1px 2px 0 rgb(2 8 18 / 0.35);
-  --shadow-elevation-2: 0 12px 30px -12px rgb(2 8 18 / 0.55);
+  --color-background: hsl(30 7% 6%);
+  --color-foreground: hsl(40 14% 95%);
+  --color-card: hsl(30 6% 9%);
+  --color-card-foreground: hsl(40 14% 95%);
+  --color-popover: hsl(30 7% 10%);
+  --color-popover-foreground: hsl(40 14% 95%);
+  --color-primary: hsl(187 72% 58%);
+  --color-primary-foreground: hsl(30 10% 8%);
+  --color-primary-soft: hsl(187 22% 18%);
+  --color-secondary: hsl(30 5% 14%);
+  --color-secondary-foreground: hsl(40 14% 95%);
+  --color-muted: hsl(30 5% 15%);
+  --color-muted-foreground: hsl(35 9% 66%);
+  --color-accent: hsl(187 22% 18%);
+  --color-accent-foreground: hsl(187 62% 84%);
+  --color-destructive: hsl(4 70% 58%);
+  --color-destructive-foreground: hsl(30 10% 8%);
+  --color-border: hsl(30 6% 17%);
+  --color-input: hsl(30 6% 17%);
+  --color-ring: hsl(187 72% 58%);
+  --color-success: hsl(152 46% 55%);
+  --color-success-soft: hsl(152 24% 16%);
+  --color-success-foreground: hsl(30 10% 8%);
+  --color-warning: hsl(36 84% 60%);
+  --color-warning-soft: hsl(32 36% 18%);
+  --color-warning-foreground: hsl(30 10% 8%);
+  --color-error: hsl(4 70% 58%);
+  --color-error-soft: hsl(4 32% 18%);
+  --color-error-foreground: hsl(30 10% 8%);
+  --color-info: hsl(210 60% 66%);
+  --color-info-soft: hsl(210 30% 18%);
+  --color-info-foreground: hsl(30 10% 8%);
+  --color-highlight: hsl(340 62% 64%);
+  --color-highlight-soft: hsl(340 32% 20%);
+  --color-highlight-foreground: hsl(30 10% 8%);
+  --color-chart-1: hsl(187 72% 58%);
+  --color-chart-2: hsl(36 84% 60%);
+  --color-chart-3: hsl(35 9% 62%);
+  --color-chart-4: hsl(152 46% 55%);
+  --color-chart-5: hsl(340 62% 64%);
+  --color-chart-6: hsl(210 60% 66%);
+  --color-chart-7: hsl(280 45% 70%);
+  --color-chart-8: hsl(25 80% 58%);
+  --shadow-soft: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-card: 0 12px 30px -12px rgb(0 0 0 / 0.6);
+  --shadow-elevation-1: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-elevation-2: 0 12px 30px -12px rgb(0 0 0 / 0.6);
 }
 
 /* Base Styles */

@@ -8,6 +8,8 @@ import {
   Legend,
 } from "recharts";
 
+import { CHART_COLORS } from "@/lib/chart-colors";
+
 // ---------------------------------------------------------------------------
 // Donut
 // ---------------------------------------------------------------------------
@@ -64,7 +66,7 @@ export function RcDonutChart({
 
 export function RcBarChart({
   data,
-  color = "hsl(198 78% 37%)",
+  color = CHART_COLORS.teal,
   noDataLabel,
 }: {
   data: { label: string; value: number }[];
@@ -94,7 +96,7 @@ export function RcBarChart({
 
 export function RcAreaChart({
   data,
-  color = "hsl(142 60% 45%)",
+  color = CHART_COLORS.green,
   noDataLabel,
 }: {
   data: { label: string; value: number }[];
@@ -150,9 +152,9 @@ export function RcStackedBar({
           wrapperStyle={{ fontSize: 11 }}
           formatter={(value: string) => <span className="text-muted-foreground">{value}</span>}
         />
-        <Bar dataKey="read" stackId="a" fill="hsl(142 60% 45%)" name={labels.read} radius={[0, 0, 0, 0]} />
-        <Bar dataKey="reading" stackId="a" fill="hsl(45 93% 47%)" name={labels.reading} />
-        <Bar dataKey="unread" stackId="a" fill="hsl(220 13% 70%)" name={labels.unread} radius={[0, 4, 4, 0]} />
+        <Bar dataKey="read" stackId="a" fill={CHART_COLORS.green} name={labels.read} radius={[0, 0, 0, 0]} />
+        <Bar dataKey="reading" stackId="a" fill={CHART_COLORS.amber} name={labels.reading} />
+        <Bar dataKey="unread" stackId="a" fill={CHART_COLORS.neutral} name={labels.unread} radius={[0, 4, 4, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -164,7 +166,7 @@ export function RcStackedBar({
 
 export function RcHorizontalBar({
   data,
-  color = "hsl(142 60% 45%)",
+  color = CHART_COLORS.green,
   noDataLabel,
 }: {
   data: { name: string; value: number; subLabel: string }[];
