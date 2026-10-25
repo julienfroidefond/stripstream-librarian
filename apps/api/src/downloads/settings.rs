@@ -30,6 +30,14 @@ pub const DEFAULT_HTTP_CONNECTIONS: usize = 4;
 /// Upper bound on direct-download connections.
 pub const MAX_HTTP_CONNECTIONS: usize = 16;
 
+/// Block size for a direct (HTTP) ranged download.
+///
+/// See [`DownloadSettings::http_ranged_config`]: HTTP pays one request per block,
+/// and too many requests on the same URL get the client rate-limited (fourtoutici
+/// answers `403` to everything once that happens). 4 MiB keeps a 150 MB file at
+/// ~40 requests while remaining a size ordinary download scripts stream in one go.
+pub const HTTP_DDL_CHUNK_SIZE: i64 = 4 * 1024 * 1024;
+
 /// Highest accepted value for any per-queue download concurrency.
 pub const MAX_DOWNLOAD_CONCURRENCY: usize = 16;
 
@@ -194,6 +202,23 @@ impl DownloadSettings {
             ..RangedConfig::default()
         }
     }
+
+    /// Ranged tuning for direct (HTTP) downloads.
+    ///
+    /// The engine defaults are tuned for Telegram, where a block is one MTProto
+    /// request carrying its own 4 KiB alignment. A DDL provider instead pays one
+    /// HTTP request per block, and some hosts start answering `403` once a single
+    /// URL has been requested a few dozen times in a row — a 150 MB file needs
+    /// ~300 blocks at the 512 KiB default. Large blocks cut the request count by
+    /// 8×, and a single worker per connection keeps concurrency to the configured
+    /// connection count instead of doubling it.
+    pub fn http_ranged_config(&self) -> RangedConfig {
+        RangedConfig {
+            chunk_size: HTTP_DDL_CHUNK_SIZE,
+            workers_per_fetcher: 1,
+            ..self.ranged_config()
+        }
+    }
 }
 
 fn usize_field(
@@ -353,6 +378,27 @@ mod tests {
         // The remaining knobs stay at the engine defaults.
         assert_eq!(config.chunk_size, 512 * 1024);
         assert_eq!(config.workers_per_fetcher, 2);
+    }
+
+    #[test]
+    fn http_downloads_use_larger_blocks_and_one_worker_per_connection() {
+        let settings = DownloadSettings::from_limits(Some(&json!({
+            "download_max_attempts": 9,
+            "download_stall_timeout_seconds": 30,
+        })));
+
+        let http = settings.http_ranged_config();
+        assert_eq!(http.chunk_size, HTTP_DDL_CHUNK_SIZE);
+        assert_eq!(http.workers_per_fetcher, 1);
+        // Shared knobs still apply to the HTTP path.
+        assert_eq!(http.max_attempts, 9);
+        assert_eq!(http.stall_timeout, Duration::from_secs(30));
+
+        // Telegram keeps the small blocks its 4 KiB alignment requires.
+        assert_eq!(
+            settings.ranged_config().chunk_size,
+            RangedConfig::default().chunk_size
+        );
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]

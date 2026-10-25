@@ -485,7 +485,7 @@ async fn download_ranged_to_file(
         sink.clone(),
         total_size,
         reporter,
-        settings.ranged_config(),
+        settings.http_ranged_config(),
     )
     .await;
     // Close the file before anything renames it.
@@ -493,6 +493,24 @@ async fn download_ranged_to_file(
 
     result.map_err(|e| anyhow::anyhow!("{e}"))?;
     Ok(total_size)
+}
+
+/// Error message for a non-success response on the streaming path.
+///
+/// A `403`/`429` from a DDL host is a client ban (too many requests on the same
+/// URL), not a missing file: saying so avoids a pointless "was the file deleted?"
+/// hunt, since retrying later works.
+fn stream_failure_message(status: reqwest::StatusCode) -> String {
+    if matches!(
+        status,
+        reqwest::StatusCode::FORBIDDEN | reqwest::StatusCode::TOO_MANY_REQUESTS
+    ) {
+        return format!(
+            "DDL provider refused the request (HTTP {status}): the host is rate-limiting \
+             this client, retry the download later"
+        );
+    }
+    format!("DDL provider returned HTTP {status}")
 }
 
 /// Single-connection fallback for servers that ignore `Range` or hide the size.
@@ -509,7 +527,7 @@ async fn stream_to_file(
         .await
         .map_err(|e| anyhow::anyhow!("{}", describe_http_failure(&e)))?;
     if !response.status().is_success() {
-        anyhow::bail!("DDL provider returned HTTP {}", response.status());
+        anyhow::bail!("{}", stream_failure_message(response.status()));
     }
 
     let mut file = tokio::fs::File::create(tmp_path).await?;
@@ -686,6 +704,23 @@ mod tests {
             match_name: normalize_for_match(original),
             size: None,
         }
+    }
+
+    #[test]
+    fn stream_failure_explains_a_rate_limit() {
+        // A 403 on a DDL host means "not now, from you": the file is fine, the
+        // client was banned for requesting the same URL too often.
+        let forbidden = stream_failure_message(reqwest::StatusCode::FORBIDDEN);
+        assert!(forbidden.contains("403"), "got: {forbidden}");
+        assert!(forbidden.contains("rate-limiting"), "got: {forbidden}");
+        assert!(forbidden.contains("retry"), "got: {forbidden}");
+
+        let too_many = stream_failure_message(reqwest::StatusCode::TOO_MANY_REQUESTS);
+        assert!(too_many.contains("rate-limiting"), "got: {too_many}");
+
+        // Anything else keeps the plain status, with no invented advice.
+        let not_found = stream_failure_message(reqwest::StatusCode::NOT_FOUND);
+        assert_eq!(not_found, "DDL provider returned HTTP 404 Not Found");
     }
 
     #[test]
