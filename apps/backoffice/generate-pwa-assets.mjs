@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { writeFile } from "fs/promises";
+import { readFile, readdir, unlink, writeFile } from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -27,22 +27,12 @@ const appleIconSizes = [
 ];
 
 // --- Splash screens ---
-const splashScreens = [
-  { name: "splash-iphone-15-pro-max", w: 1290, h: 2796 },
-  { name: "splash-iphone-15-pro", w: 1179, h: 2556 },
-  { name: "splash-iphone-14-plus", w: 1284, h: 2778 },
-  { name: "splash-iphone-14", w: 1170, h: 2532 },
-  { name: "splash-iphone-x", w: 1125, h: 2436 },
-  { name: "splash-iphone-xs-max", w: 1242, h: 2688 },
-  { name: "splash-iphone-xr", w: 828, h: 1792 },
-  { name: "splash-iphone-8-plus", w: 1242, h: 2208 },
-  { name: "splash-iphone-8", w: 750, h: 1334 },
-  { name: "splash-iphone-se", w: 640, h: 1136 },
-  { name: "splash-ipad-pro-12", w: 2048, h: 2732 },
-  { name: "splash-ipad-pro-11", w: 1668, h: 2388 },
-  { name: "splash-ipad-10", w: 1668, h: 2224 },
-  { name: "splash-ipad", w: 1536, h: 2048 },
-];
+// Device specs live in lib/pwa-splash-screens.json, shared with the layout.
+const SPLASH_SCREENS_FILE = new URL("./lib/pwa-splash-screens.json", import.meta.url);
+
+async function loadSplashScreens() {
+  return JSON.parse(await readFile(SPLASH_SCREENS_FILE, "utf8"));
+}
 
 // An .ico file holding a single PNG image (supported by every modern browser).
 function pngToIco(png, size) {
@@ -104,14 +94,22 @@ async function generateIcons() {
   console.log("  ../favicon.ico");
 }
 
-async function generateSplash(name, w, h) {
-  const logoSize = Math.round(Math.min(w, h) * 0.4);
+function splashAsset(screen, orientation) {
+  const portraitWidth = screen.width * screen.scale;
+  const portraitHeight = screen.height * screen.scale;
+  const isPortrait = orientation === "portrait";
+  const width = isPortrait ? portraitWidth : portraitHeight;
+  const height = isPortrait ? portraitHeight : portraitWidth;
+  const suffix = isPortrait ? "" : "-ls";
+  return { width, height, file: `${screen.name}${suffix}-${width}x${height}.png` };
+}
+
+async function generateSplash(screen) {
+  const logoSize = Math.round(Math.min(screen.width, screen.height) * screen.scale * 0.4);
   const logoBuf = await sharp(SPLASH_SOURCE).resize(logoSize, logoSize).png().toBuffer();
 
-  for (const [width, height, file] of [
-    [w, h, `${name}-${w}x${h}.png`],
-    [h, w, `${name}-ls-${h}x${w}.png`],
-  ]) {
+  for (const orientation of ["portrait", "landscape"]) {
+    const { width, height, file } = splashAsset(screen, orientation);
     await sharp({ create: { width, height, channels: 4, background: DARK_BG_COLOR } })
       .composite([{ input: logoBuf, gravity: "centre" }])
       .png()
@@ -122,8 +120,20 @@ async function generateSplash(name, w, h) {
 
 async function generateSplashScreens() {
   console.log("Generating splash screens...");
-  for (const { name, w, h } of splashScreens) {
-    await generateSplash(name, w, h);
+  const screens = await loadSplashScreens();
+  const expected = new Set(
+    screens.flatMap((screen) => ["portrait", "landscape"].map((o) => splashAsset(screen, o).file))
+  );
+
+  for (const screen of screens) {
+    await generateSplash(screen);
+  }
+
+  for (const file of await readdir(SPLASH_DIR)) {
+    if (file.endsWith(".png") && !expected.has(file)) {
+      await unlink(path.join(SPLASH_DIR, file));
+      console.log(`  removed stale ${file}`);
+    }
   }
 }
 
