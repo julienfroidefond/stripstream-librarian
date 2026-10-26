@@ -9,7 +9,7 @@ this page: it is not needed to write code, only to understand a pipeline failure
 |----------|---------|------|
 | `ci.yml` | every pull request, push to `main` (cache warm-up only) | `cargo fmt` / `clippy` / `cargo nextest`, PostgreSQL service, `Rust (fmt · clippy · test)` check |
 | `ci-web.yml` | every pull request | backoffice and docs validation |
-| `dependabot-automerge.yml` | Dependabot pull requests | enables native auto-merge for patch/minor bumps |
+| `dependabot-automerge.yml` | Dependabot pull requests | merges patch/minor and digest-only image bumps (see below) |
 | `deploy.yml` | push to `main` | change detection, image build/push, version bump and deploy |
 | `opencode.yml` | `ai` label, `/oc` mentions | OpenCode agent |
 
@@ -69,8 +69,19 @@ it also applies to branches created before this file existed), restricted to
 `dependabot[bot]`. It reads `dependabot/fetch-metadata`'s `updated-dependencies-json` and only
 merges when **every** bumped dependency is a patch, or a minor on a post-1.0 package.
 `0.x → 0.y` counts as major (breaking per Cargo/npm convention), so it stays manual — same for
-real majors. No PR code is checked out, so `pull_request_target` carries no injection surface
-here.
+real majors.
+
+Image digest bumps are the one exception: for a non-semver tag
+(`lukemathwalker/cargo-chef:latest-rust-1-bookworm@sha256:…`) Dependabot reports **no**
+`updateType`, so those PRs used to fall in the "unknown" bucket and never auto-merged. They
+are eligible when the PR diff proves it is only a digest move: every changed line is an
+`image@sha256:` reference and the same `repo:tag` sits on both sides. A tag change
+(`…-bookworm` → `…-trixie`) moves the ref and stays manual.
+
+The decision itself is `.github/scripts/dependabot-eligibility.jq`, fed by the workflow and
+covered by `.github/scripts/dependabot-eligibility.test.sh` (the `Dependabot policy` job of
+`ci.yml`, not a required check). The workflow checks out **the base commit** to read it, never
+the PR: no PR code is executed, so `pull_request_target` carries no injection surface here.
 
 It does **not** use GitHub's native auto-merge: the `enablePullRequestAutoMerge` mutation
 answers `Resource not accessible by personal access token` for fine-grained PATs, whatever the

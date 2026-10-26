@@ -1,9 +1,15 @@
 name: Dependabot auto-merge
 
 # Merges Dependabot pull requests that match the update policy
-# (.github/dependabot-policy.md): patch and minor bumps only, and never a
-# `0.x -> 0.y` bump (breaking by Cargo/npm convention, treated as a major).
-# Majors always stay open for manual review.
+# (.github/dependabot-policy.md): patch and minor bumps only, never a
+# `0.x -> 0.y` bump (breaking by Cargo/npm convention, treated as a major), and
+# digest-only image bumps (Dependabot reports no `updateType` for a non-semver
+# tag, so those PRs used to stay manual forever). Majors always stay open for
+# manual review.
+#
+# The decision itself lives in `.github/scripts/dependabot-eligibility.jq`,
+# tested by `.github/scripts/dependabot-eligibility.test.sh` in `ci.yml`: a
+# wrong jq filter would either stall every bump or merge a breaking one.
 #
 # Why not GitHub's native auto-merge (`gh pr merge --auto`)? The underlying
 # GraphQL mutation `enablePullRequestAutoMerge` answers "Resource not
@@ -15,7 +21,8 @@ name: Dependabot auto-merge
 # Why `pull_request_target` and not `pull_request`: it runs the workflow from
 # the BASE branch, so the file does not have to exist in the Dependabot branch,
 # the token is writable, and above all no code from the PR is checked out or
-# executed. The job is restricted to `dependabot[bot]`.
+# executed. The checkout below is explicitly pinned to the base commit for that
+# reason. The job is restricted to `dependabot[bot]`.
 #
 # Why a PAT (`AUTOMERGE_TOKEN`) instead of `GITHUB_TOKEN`: a merge performed
 # with the repository token does not trigger `push` workflows, so `deploy.yml`
@@ -50,26 +57,44 @@ jobs:
           github-token: ${{ github.token }}
 
       # One decision for the whole PR: Dependabot groups several bumps into a
-      # single PR, so every bumped dependency must qualify. `prevVersion` is
-      # empty for grouped PRs, hence the `dependencyGroup` fallback: groups are
-      # configured as minor+patch only, with pre-1.0 dependencies excluded from
-      # them (see `.github/dependabot.yml`).
+      # single PR, so every bumped dependency must qualify. The rules and their
+      # rationale live in the jq program (major, `0.x -> 0.y`, grouped bumps,
+      # image digests); this step only feeds it and exposes the verdict.
+      - name: Checkout the base branch
+        uses: actions/checkout@v7
+        with:
+          # The decision script is read from the base branch, never from the PR
+          # (see the `pull_request_target` note above).
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
       - name: Check the update policy
         id: policy
         env:
           DEPENDENCIES: ${{ steps.meta.outputs.updated-dependencies-json }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          eligible=$(jq -r '
-            all(.[];
-              if .updateType == "version-update:semver-major" then false
-              elif .updateType == "version-update:semver-patch" then true
-              elif ((.prevVersion // "") | test("^0\\.")) then false
-              elif .updateType == "version-update:semver-minor" then
-                ((.prevVersion // "") != "") or ((.dependencyGroup // "") != "")
-              else false end)
-          ' <<<"$DEPENDENCIES")
-          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+
+          # A digest bump is only recognised from the diff, so the file list is
+          # fetched for the docker ecosystems only (`updateType` is empty there).
+          files='[]'
+          if jq -e '
+            any(.[];
+              ((.updateType // "") == "")
+              and ((.packageEcosystem // "") | startswith("docker")))
+          ' <<<"$DEPENDENCIES" >/dev/null; then
+            files=$(gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate)
+          fi
+
+          decision=$(jq -n --argjson deps "$DEPENDENCIES" --argjson files "$files" \
+            -f .github/scripts/dependabot-eligibility.jq)
+          echo "decision: $decision"
+
+          echo "eligible=$(jq -r .eligible <<<"$decision")" >> "$GITHUB_OUTPUT"
+          echo "reason=$(jq -r .reason <<<"$decision")" >> "$GITHUB_OUTPUT"
 
       - name: Merge once the required checks are green
         if: steps.policy.outputs.eligible == 'true'
@@ -148,4 +173,4 @@ jobs:
       - name: Report decision
         if: steps.policy.outputs.eligible != 'true'
         run: |
-          echo "::notice::not auto-merged: major or 0.x minor bump, manual review required"
+          echo "::notice::not auto-merged: ${{ steps.policy.outputs.reason }}"
