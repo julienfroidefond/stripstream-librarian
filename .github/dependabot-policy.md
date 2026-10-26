@@ -14,6 +14,12 @@ Dependabot (`.github/dependabot.yml`). Politique, alignée sur l'ancienne config
 - **`grammers-client` / `grammers-session`** : exclus (`ignore`), migration différée ;
 - **autres non-majeurs** : groupés par écosystème (`rust-non-major`, `backoffice-non-major`,
   …) ;
+- **digests d'images** (`FROM image:tag@sha256:…`, tags non semver du type
+  `latest-rust-1-bookworm`) : Dependabot ne renseigne alors **aucun** `updateType`, si bien que
+  ces PR tombaient dans la catégorie « inconnu » et restaient ouvertes pour toujours. Elles
+  sont éligibles à l'auto-merge **si le diff ne bouge que le digest** : uniquement des lignes
+  `image@sha256:` et le même `repo:tag` des deux côtés. Un changement de tag sous un tag
+  flottant (`latest-rust-1-bookworm` → `latest-rust-1-trixie`) reste manuel ;
 - écosystèmes surveillés : `cargo`, `npm` (backoffice, docs), `github-actions`,
   `docker` (les 3 Dockerfiles), `docker-compose` (`postgres`). Le `package.json` de la racine
   a été supprimé : il n'était consommé par aucun workflow ni Dockerfile (postcss/tailwind y
@@ -28,8 +34,13 @@ une passe manuelle.
 
 `.github/workflows/dependabot-automerge.yml` merge automatiquement les PR Dependabot qui
 respectent la politique ci-dessus : patchs et mineurs uniquement, **jamais** un
-`0.x → 0.y` (cassant par convention Cargo/npm, donc traité comme un majeur). Un majeur reste
-ouvert pour revue manuelle, comme n'importe quelle PR : le workflow ne le touche pas.
+`0.x → 0.y` (cassant par convention Cargo/npm, donc traité comme un majeur), et les bumps de
+digest d'image quand le diff ne change que le digest. Un majeur reste ouvert pour revue
+manuelle, comme n'importe quelle PR : le workflow ne le touche pas.
+
+La décision vit dans `.github/scripts/dependabot-eligibility.jq`, testé par
+`.github/scripts/dependabot-eligibility.test.sh` (job `Dependabot policy` de `ci.yml`) : un
+filtre jq faux soit bloquerait tous les bumps, soit mergerait un cassant.
 
 Deux prérequis, sans lesquels l'automatisation ne protège rien :
 

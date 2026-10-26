@@ -112,6 +112,19 @@ jobs:
               - "infra/migrations/**"
               - "rust-toolchain*"
 
+  # Decision logic of the Dependabot auto-merge workflow
+  # (`.github/scripts/dependabot-eligibility.jq`): a few seconds of jq fixtures.
+  # Not a required check, but a wrong verdict would either stall every
+  # dependency bump or merge a breaking one, so it is tested like code.
+  dependabot-policy:
+    name: Dependabot policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Test the eligibility rules
+        run: .github/scripts/dependabot-eligibility.test.sh
+
   lint:
     name: fmt · clippy
     needs: changes
