@@ -30,7 +30,7 @@ export const viewport: Viewport = {
   // `--color-background` du thème sombre, aligné sur `theme_color` du manifeste
   // PWA : la barre du navigateur, l'écran de démarrage et la page sont la même
   // couleur.
-  themeColor: "#100f0e",
+  themeColor: "#14161a",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
