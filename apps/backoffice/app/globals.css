@@ -106,46 +106,47 @@
   --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-/* Dark Theme — encre chaude, jamais #000 */
+/* Dark Theme — graphite froid (~#14161A), jamais #000. Aligné sur la rampe
+   du reader : même fond, mêmes surfaces, même texte. */
 .dark {
-  --color-background: hsl(30 7% 6%);
-  --color-foreground: hsl(40 14% 95%);
-  --color-card: hsl(30 6% 9%);
-  --color-card-foreground: hsl(40 14% 95%);
-  --color-popover: hsl(30 7% 10%);
-  --color-popover-foreground: hsl(40 14% 95%);
+  --color-background: hsl(220 13% 9%);
+  --color-foreground: hsl(220 10% 94%);
+  --color-card: hsl(220 11% 11%);
+  --color-card-foreground: hsl(220 10% 94%);
+  --color-popover: hsl(220 11% 12%);
+  --color-popover-foreground: hsl(220 10% 94%);
   --color-primary: hsl(187 72% 58%);
-  --color-primary-foreground: hsl(30 10% 8%);
-  --color-primary-soft: hsl(187 22% 18%);
-  --color-secondary: hsl(30 5% 14%);
-  --color-secondary-foreground: hsl(40 14% 95%);
-  --color-muted: hsl(30 5% 15%);
-  --color-muted-foreground: hsl(35 9% 66%);
-  --color-accent: hsl(187 22% 18%);
+  --color-primary-foreground: hsl(220 14% 8%);
+  --color-primary-soft: hsl(200 16% 18%);
+  --color-secondary: hsl(220 9% 16%);
+  --color-secondary-foreground: hsl(220 10% 94%);
+  --color-muted: hsl(220 9% 16%);
+  --color-muted-foreground: hsl(220 7% 66%);
+  --color-accent: hsl(200 16% 18%);
   --color-accent-foreground: hsl(187 62% 84%);
   --color-destructive: hsl(4 70% 58%);
-  --color-destructive-foreground: hsl(30 10% 8%);
-  --color-border: hsl(30 6% 17%);
-  --color-input: hsl(30 6% 17%);
+  --color-destructive-foreground: hsl(220 10% 8%);
+  --color-border: hsl(220 9% 19%);
+  --color-input: hsl(220 9% 19%);
   --color-ring: hsl(187 72% 58%);
   --color-success: hsl(152 46% 55%);
   --color-success-soft: hsl(152 24% 16%);
-  --color-success-foreground: hsl(30 10% 8%);
+  --color-success-foreground: hsl(220 10% 8%);
   --color-warning: hsl(36 84% 60%);
   --color-warning-soft: hsl(32 36% 18%);
-  --color-warning-foreground: hsl(30 10% 8%);
+  --color-warning-foreground: hsl(220 10% 8%);
   --color-error: hsl(4 70% 58%);
   --color-error-soft: hsl(4 32% 18%);
-  --color-error-foreground: hsl(30 10% 8%);
+  --color-error-foreground: hsl(220 10% 8%);
   --color-info: hsl(210 60% 66%);
   --color-info-soft: hsl(210 30% 18%);
-  --color-info-foreground: hsl(30 10% 8%);
+  --color-info-foreground: hsl(220 10% 8%);
   --color-highlight: hsl(340 62% 64%);
   --color-highlight-soft: hsl(340 32% 20%);
-  --color-highlight-foreground: hsl(30 10% 8%);
+  --color-highlight-foreground: hsl(220 10% 8%);
   --color-chart-1: hsl(187 72% 58%);
   --color-chart-2: hsl(36 84% 60%);
-  --color-chart-3: hsl(35 9% 62%);
+  --color-chart-3: hsl(220 8% 62%);
   --color-chart-4: hsl(152 46% 55%);
   --color-chart-5: hsl(340 62% 64%);
   --color-chart-6: hsl(210 60% 66%);

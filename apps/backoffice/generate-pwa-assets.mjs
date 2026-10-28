@@ -15,9 +15,9 @@ const SPLASH_SOURCE = path.join(PUBLIC_DIR, "logo-mark-dark.png");
 const FAVICON_SOURCE = path.join(PUBLIC_DIR, "logo-mono.webp");
 const ICONS_DIR = path.join(PUBLIC_DIR, "icons");
 const SPLASH_DIR = path.join(PUBLIC_DIR, "splash");
-// `--color-background` of the dark theme (hsl(30 7% 6%)), the colour of the
+// `--color-background` of the dark theme (hsl(220 13% 9%)), the colour of the
 // room: maskable icon and splash screens blend into it without a visible square.
-const THEME_BG_COLOR = { r: 16, g: 15, b: 14, alpha: 1 }; // #100f0e
+const THEME_BG_COLOR = { r: 20, g: 22, b: 26, alpha: 1 }; // #14161a
 
 // --- Icons ---
 const iconSizes = [72, 96, 128, 144, 152, 180, 192, 384, 512];
