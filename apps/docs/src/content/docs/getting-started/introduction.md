@@ -16,6 +16,12 @@ description: Présentation de Stripstream Librarian
 - **Suivre votre progression de lecture** : marquez vos livres tome par tome, synchronisez avec AniList
 - **Interface web complète** : dashboard, recherche, gestion des séries, des genres, des listes de lecture
 
+:::caution[Usage responsable]
+Stripstream n'héberge ni ne fournit aucune œuvre : vous êtes responsable des fichiers indexés et des
+téléchargements déclenchés. Consultez l'[avertissement légal](/getting-started/legal/) avant
+d'exposer une instance sur Internet.
+:::
+
 ## Premiers pas
 
 1. [Installez Stripstream](/getting-started/installation/) avec Docker en quelques minutes

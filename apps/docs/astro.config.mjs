@@ -24,6 +24,7 @@ export default defineConfig({
 						{ label: 'Dashboard', slug: 'getting-started/dashboard' },
 						{ label: 'Diagnostic / Santé', slug: 'getting-started/diagnostics' },
 						{ label: 'Paramètres', slug: 'getting-started/settings' },
+						{ label: 'Avertissement légal', slug: 'getting-started/legal' },
 					],
 				},
 				{
