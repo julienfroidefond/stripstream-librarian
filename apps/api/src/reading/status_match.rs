@@ -9,7 +9,9 @@ use uuid::Uuid;
 use crate::jobs::helpers::{
     insert_entity_event as insert_event, is_job_cancelled, update_progress,
 };
-use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
+use crate::jobs::lifecycle::{
+    classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
+};
 use crate::{error::ApiError, integrations::anilist, state::AppState};
 
 // ---------------------------------------------------------------------------
@@ -609,9 +611,10 @@ pub(crate) async fn process_reading_status_match(
         "errors": count_errors,
     });
 
-    complete_job(pool, job_id, stats.clone())
-        .await
-        .map_err(|e| e.to_string())?;
+    // `processed` series were attempted; only the ones that errored are failed
+    // units. `no_results`/`ambiguous` are normal outcomes.
+    let (status, error_summary) =
+        finish_reading_status_job(pool, job_id, processed, total, count_errors, stats).await?;
 
     info!(
         "[READING_STATUS_MATCH] job={job_id} completed: {}/{} series, linked={count_linked}, ambiguous={count_ambiguous}, no_results={count_no_results}, errors={count_errors}",
@@ -626,19 +629,33 @@ pub(crate) async fn process_reading_status_match(
             .ok()
             .flatten();
 
-    notifications::notify(
-        pool.clone(),
-        notifications::NotificationEvent::ReadingStatusMatchCompleted {
-            library_name,
-            total_series: total,
-            linked: count_linked as i32,
-            already_linked: count_already_linked,
-            no_results: count_no_results,
-            ambiguous: count_ambiguous,
-            errors: count_errors,
-            linked_series_names,
-        },
-    );
+    match status {
+        JobStatus::Failed => {
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::ReadingStatusMatchFailed {
+                    library_name,
+                    error: error_summary
+                        .unwrap_or_else(|| format!("{count_errors}/{processed} series en erreur")),
+                },
+            );
+        }
+        JobStatus::Partial | JobStatus::Success => {
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::ReadingStatusMatchCompleted {
+                    library_name,
+                    total_series: total,
+                    linked: count_linked as i32,
+                    already_linked: count_already_linked,
+                    no_results: count_no_results,
+                    ambiguous: count_ambiguous,
+                    errors: count_errors,
+                    linked_series_names,
+                },
+            );
+        }
+    }
 
     Ok(())
 }
@@ -798,6 +815,27 @@ async fn build_match_stats(pool: &PgPool, job_id: Uuid) -> serde_json::Value {
         "ambiguous": ambiguous,
         "errors": errors,
     })
+}
+
+/// Classify and close a reading-status job. Extracted so the partial/success
+/// boundary is covered by a DB test without calling AniList.
+async fn finish_reading_status_job(
+    pool: &PgPool,
+    job_id: Uuid,
+    processed: i32,
+    total: i32,
+    errors: i64,
+    stats: serde_json::Value,
+) -> Result<(JobStatus, Option<String>), String> {
+    let status = classify_job(processed.max(0) as usize, errors.max(0) as usize);
+    let error_summary = (status != JobStatus::Success)
+        .then(|| format!("{errors}/{processed} series en erreur (sur {total} au total)"));
+
+    finish_job(pool, job_id, status, stats, error_summary.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok((status, error_summary))
 }
 
 #[cfg(test)]

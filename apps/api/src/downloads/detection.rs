@@ -15,7 +15,9 @@ use super::{blacklist, missing, prowlarr, store};
 use crate::jobs::helpers::{
     insert_entity_event as insert_event, is_job_cancelled, update_progress,
 };
-use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
+use crate::jobs::lifecycle::{
+    classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
+};
 use crate::{error::ApiError, state::AppState};
 
 // ---------------------------------------------------------------------------
@@ -1059,9 +1061,10 @@ pub(crate) async fn process_download_detection(
         "errors": count_errors,
     });
 
-    complete_job(pool, job_id, stats.clone())
-        .await
-        .map_err(|e| e.to_string())?;
+    // A series that errored is a failed unit; a series that legitimately found
+    // nothing is not. `total` is the number of series scanned this run.
+    let (status, error_summary) =
+        finish_detection_job(pool, job_id, total, count_errors, stats).await?;
 
     info!(
         "[DOWNLOAD_DETECTION] job={job_id} completed: {total} series, found={count_found}, new_releases={new_releases}, not_found={count_not_found}, no_missing={count_no_missing}, no_metadata={count_no_metadata}, errors={count_errors}"
@@ -1101,20 +1104,48 @@ pub(crate) async fn process_download_detection(
     })
     .collect();
 
-    notifications::notify(
-        pool.clone(),
-        notifications::NotificationEvent::DownloadDetectionCompleted {
-            library_name,
-            total_series: total,
-            found: count_found,
-            new_releases,
-            not_found: count_not_found,
-            no_missing: count_no_missing,
-            no_metadata: count_no_metadata,
-            errors: count_errors,
-            new_items,
-        },
-    );
+    match status {
+        JobStatus::Failed => {
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::DownloadDetectionFailed {
+                    library_name,
+                    error: error_summary
+                        .unwrap_or_else(|| format!("{count_errors}/{total} series en erreur")),
+                },
+            );
+        }
+        JobStatus::Partial => {
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::DownloadDetectionPartial {
+                    library_name,
+                    job_type: "download_detection".to_string(),
+                    failed_indexers: Vec::new(),
+                    errors: count_errors,
+                    found: count_found,
+                    new_releases,
+                    new_items,
+                },
+            );
+        }
+        JobStatus::Success => {
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::DownloadDetectionCompleted {
+                    library_name,
+                    total_series: total,
+                    found: count_found,
+                    new_releases,
+                    not_found: count_not_found,
+                    no_missing: count_no_missing,
+                    no_metadata: count_no_metadata,
+                    errors: count_errors,
+                    new_items,
+                },
+            );
+        }
+    }
 
     Ok((total, count_found))
 }
@@ -1175,6 +1206,26 @@ async fn search_prowlarr_for_series(
         .collect();
 
     Ok((matched, raw_count))
+}
+
+/// Classify and close a download-detection job. Extracted so the partial/success
+/// boundary is covered by a DB test without querying Prowlarr.
+async fn finish_detection_job(
+    pool: &PgPool,
+    job_id: Uuid,
+    total: i32,
+    errors: i64,
+    stats: serde_json::Value,
+) -> Result<(JobStatus, Option<String>), String> {
+    let status = classify_job(total.max(0) as usize, errors.max(0) as usize);
+    let error_summary =
+        (status != JobStatus::Success).then(|| format!("{errors}/{total} series en erreur"));
+
+    finish_job(pool, job_id, status, stats, error_summary.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok((status, error_summary))
 }
 
 #[cfg(test)]

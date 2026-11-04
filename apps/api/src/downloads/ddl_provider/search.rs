@@ -28,7 +28,7 @@ use crate::downloads::detection::AvailableReleaseDto;
 use crate::downloads::missing;
 use crate::downloads::store;
 use crate::jobs::helpers::{insert_event, is_job_cancelled, update_progress};
-use crate::jobs::lifecycle::complete_job;
+use crate::jobs::lifecycle::{finish_job, JobStatus};
 
 use super::service;
 use super::types::DdlProviderSearchResultDto;
@@ -46,9 +46,10 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
 
     if providers.is_empty() {
         info!("[DDL_SEARCH] No enabled provider, job {job_id} is a no-op");
-        return complete_job(
+        return finish_job(
             pool,
             job_id,
+            JobStatus::Success,
             json!({
                 "series": 0,
                 "series_with_results": 0,
@@ -61,6 +62,7 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
                 "files_no_volume_match": 0,
                 "files_blacklisted": 0,
             }),
+            None,
         )
         .await
         .map_err(|e| e.to_string());
@@ -92,6 +94,11 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
     let mut matched_series = 0i64;
     let mut matched_files = 0i64;
     let mut errors = 0i64;
+    // Number of provider calls actually attempted. A run that finds nothing is a
+    // normal outcome and must stay `success`; only attempted-but-failed calls
+    // drive the terminal status.
+    let mut attempted = 0i64;
+    let mut failed_providers: Vec<String> = Vec::new();
     // Per-stage funnel counters: they show *why* a series yields nothing, which
     // the aggregate `series_with_results` cannot tell apart.
     let mut series_without_missing_volumes = 0i64;
@@ -138,6 +145,7 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
 
         for (provider, base_url) in &providers {
             let meta = provider.meta();
+            attempted += 1;
             let files = match provider
                 .search(base_url, &target.series_name, PER_SERIES_LIMIT)
                 .await
@@ -149,6 +157,7 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
                         meta.id, target.series_name
                     );
                     errors += 1;
+                    failed_providers.push(meta.id.to_string());
                     continue;
                 }
             };
@@ -235,15 +244,24 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
     // now matches nothing) are dropped, like the detection cleanup does.
     let _ = store::delete_empty(pool, None).await;
 
-    complete_job(
+    let status = ddl_search_status(attempted, errors);
+    failed_providers.sort();
+    failed_providers.dedup();
+    let error_summary = (status != JobStatus::Success)
+        .then(|| format!("{errors}/{attempted} provider search(es) failed"));
+
+    finish_job(
         pool,
         job_id,
+        status,
         json!({
             "series": processed,
             "series_with_results": matched_series,
             "files": matched_files,
             "providers": providers.len(),
+            "attempted": attempted,
             "errors": errors,
+            "failed_providers": failed_providers,
             "series_without_missing_volumes": series_without_missing_volumes,
             "series_with_missing_volumes": series_with_missing_volumes,
             "files_owned": files_owned,
@@ -251,9 +269,40 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
             "files_no_volume_match": files_no_volume_match,
             "files_blacklisted": files_blacklisted,
         }),
+        error_summary.as_deref(),
     )
     .await
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+
+    match status {
+        JobStatus::Failed => {
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::DownloadDetectionFailed {
+                    library_name: None,
+                    error: error_summary
+                        .unwrap_or_else(|| "all provider searches failed".to_string()),
+                },
+            );
+        }
+        JobStatus::Partial => {
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::DownloadDetectionPartial {
+                    library_name: None,
+                    job_type: "ddl_search".to_string(),
+                    failed_indexers: failed_providers,
+                    errors,
+                    found: matched_series,
+                    new_releases: matched_files,
+                    new_items: Vec::new(),
+                },
+            );
+        }
+        JobStatus::Success => {}
+    }
+
+    Ok(())
 }
 
 /// Remove the DDL-sourced releases (those carrying a `provider`) from a series'
@@ -276,6 +325,16 @@ async fn strip_ddl_releases(pool: &PgPool, series_id: Uuid) -> Result<(), String
     .await
     .map(|_| ())
     .map_err(|e| e.to_string())
+}
+
+/// Map a DDL run to its terminal status.
+///
+/// Classification is based on provider calls actually attempted, never on the
+/// number of matched files: finding nothing is a normal outcome. Production
+/// case 2026-11-02 (81 attempted calls, 81 errors, 0 files) is a hard failure;
+/// 9 attempted calls with 1 error is partial even when no file matched.
+fn ddl_search_status(attempted: i64, errors: i64) -> JobStatus {
+    crate::jobs::lifecycle::classify_job(attempted.max(0) as usize, errors.max(0) as usize)
 }
 
 /// Map a ranked DDL search result to the shared release shape written to
@@ -338,6 +397,26 @@ mod tests {
         assert_eq!(release.provider.as_deref(), Some("fourtoutici"));
         assert_eq!(release.external_id.as_deref(), Some("file-42"));
         assert_eq!(release.matched_missing_volumes, vec![3]);
+    }
+
+    #[test]
+    fn ddl_search_without_errors_is_success() {
+        assert_eq!(ddl_search_status(9, 0), JobStatus::Success);
+        // Nothing attempted (no series to search) is a clean no-op.
+        assert_eq!(ddl_search_status(0, 0), JobStatus::Success);
+    }
+
+    #[test]
+    fn ddl_search_with_one_failure_over_nine_attempts_is_partial() {
+        // A run that found nothing is still a normal outcome: the single failed
+        // provider call is what makes it partial, not the absence of files.
+        assert_eq!(ddl_search_status(9, 1), JobStatus::Partial);
+    }
+
+    #[test]
+    fn ddl_search_with_every_attempt_failing_is_failed() {
+        // Production case 2026-11-02: 81 attempted calls, 81 errors, 0 file.
+        assert_eq!(ddl_search_status(81, 81), JobStatus::Failed);
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]

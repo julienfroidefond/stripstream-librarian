@@ -28,9 +28,16 @@ Une tâche passe par les états suivants :
 
 ```
 En attente → En cours → Terminée
+                     → Partielle
                      → Échouée
                      → Annulée
 ```
+
+Le statut **Partielle** indique qu'une tâche a produit des résultats mais que certaines unités ont échoué
+(indexeur Prowlarr en erreur, série non rafraîchie, source Telegram illisible…). Il est terminal : la tâche ne
+reprendra pas, le détail des erreurs reste visible dans le rapport. Elle est **Échouée** lorsque toutes les
+unités tentées ont échoué. Le statut compare les unités **tentées** aux **erreurs** ; il ne dépend jamais du
+nombre de résultats trouvés (détail : [Référence des tâches](../reference/jobs/#classement-automatique-tentatives-vs-erreurs)).
 
 Vous pouvez annuler une tâche en attente ou en cours depuis la page Tâches.
 

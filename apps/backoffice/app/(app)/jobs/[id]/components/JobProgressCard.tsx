@@ -1,6 +1,6 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, ReportStatGrid, ProgressBar } from "@/app/components/ui";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
-import { isCompletedJobStatus, isFailedJobStatus, isPhase2Status, isRunningJobStatus } from "@/lib/jobStatus";
+import { isCompletedJobStatus, isFailedJobStatus, isPartialJobStatus, isPhase2Status, isRunningJobStatus } from "@/lib/jobStatus";
 
 interface JobProgressCardProps {
   job: {
@@ -24,10 +24,11 @@ interface JobProgressCardProps {
 
 export function JobProgressCard({ job, isThumbnailOnly, progressTitle, progressDescription, t }: JobProgressCardProps) {
   const isCompleted = isCompletedJobStatus(job.status);
+  const isPartial = isPartialJobStatus(job.status);
   const isPhase2 = isPhase2Status(job.status);
 
   const showProgressCard =
-    (isCompleted || isFailedJobStatus(job.status) || isRunningJobStatus(job.status)) &&
+    (isCompleted || isPartial || isFailedJobStatus(job.status) || isRunningJobStatus(job.status)) &&
     (job.total_files != null || !!job.current_file);
 
   if (!showProgressCard) return null;
@@ -54,7 +55,7 @@ export function JobProgressCard({ job, isThumbnailOnly, progressTitle, progressD
                 {
                   value: Math.max(0, job.total_files - (job.processed_files ?? 0)),
                   label: t("jobDetail.remaining"),
-                  variant: isCompleted ? "default" : "warning",
+                  variant: isCompleted || isPartial ? "default" : "warning",
                 },
               ]}
             />

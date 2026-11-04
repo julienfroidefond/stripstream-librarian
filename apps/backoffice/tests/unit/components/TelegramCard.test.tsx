@@ -82,7 +82,9 @@ describe("TelegramCard", () => {
   it("updates a single event flag and saves the whole event map", () => {
     const { handleUpdateSetting, container } = renderCard();
     const boxes = checkboxes(container);
-    expect(boxes).toHaveLength(19);
+    // 1 master switch + 19 event toggles, including the dedicated partial event.
+    expect(boxes).toHaveLength(20);
+    expect(screen.getByText("settings.eventPartial")).toBeInTheDocument();
 
     fireEvent.click(boxes[1]);
 

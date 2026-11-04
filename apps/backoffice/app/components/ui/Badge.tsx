@@ -67,6 +67,7 @@ const statusVariants: Record<string, BadgeVariant> = {
   generating_thumbnails: "in-progress",
   success: "completed",
   completed: "completed",
+  partial: "warning",
   failed: "error",
   cancelled: "muted",
   pending: "warning",
@@ -85,6 +86,7 @@ export function StatusBadge({ status, className = "" }: StatusBadgeProps) {
   const statusLabels: Record<string, string> = {
     extracting_pages: t("statusBadge.extracting_pages"),
     generating_thumbnails: t("statusBadge.generating_thumbnails"),
+    partial: t("statusBadge.partial"),
   };
   const label = statusLabels[key] ?? status;
   return <Badge variant={variant} className={className}>{label}</Badge>;

@@ -4,6 +4,11 @@ import type { TranslateFunction } from "@/lib/i18n/dictionaries";
 interface SourceResult {
   username: string;
   new_books: number;
+  messages_scanned?: number;
+  /** Source-health failure: the channel could not be resolved or read. */
+  error?: string;
+  /** Per-message DB insert failures; does not affect the job status. */
+  persistence_errors?: number;
 }
 
 interface RecentBook {
@@ -23,6 +28,8 @@ interface TelegramIncrementalResultsCardProps {
 
 export function TelegramIncrementalResultsCard({ new_books, sources_scanned, sources, recent_books, t }: TelegramIncrementalResultsCardProps) {
   const activeSources = sources.filter(s => s.new_books > 0);
+  const failedSources = sources.filter(s => s.error);
+  const persistenceErrors = sources.reduce((sum, s) => sum + (s.persistence_errors ?? 0), 0);
 
   return (
     <Card className="lg:col-span-2">
@@ -52,6 +59,28 @@ export function TelegramIncrementalResultsCard({ new_books, sources_scanned, sou
           ]}
         />
 
+        {/* Partial run: name the sources that could not be read and any write errors */}
+        {(failedSources.length > 0 || persistenceErrors > 0) && (
+          <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning space-y-1">
+            {failedSources.length > 0 && (
+              <p>
+                {t("jobDetail.telegramIncrementalPartial").replace(
+                  "{{count}}",
+                  String(failedSources.length)
+                )}
+              </p>
+            )}
+            {persistenceErrors > 0 && (
+              <p>
+                {t("jobDetail.telegramIncrementalPersistenceErrors").replace(
+                  "{{count}}",
+                  String(persistenceErrors)
+                )}
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Per-source breakdown */}
         {sources.length > 0 && (
           <div>
@@ -61,11 +90,21 @@ export function TelegramIncrementalResultsCard({ new_books, sources_scanned, sou
             <div className="space-y-1">
               {sources.map(s => (
                 <div key={s.username} className="flex items-center justify-between py-1.5 border-b border-border/30 last:border-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
                     <svg className="w-3.5 h-3.5 text-muted-foreground shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                     </svg>
-                    <span className="text-sm font-mono text-foreground">@{s.username}</span>
+                    <div className="min-w-0">
+                      <span className="text-sm font-mono text-foreground">@{s.username}</span>
+                      {s.error && (
+                        <p className="text-xs text-destructive truncate" title={s.error}>{s.error}</p>
+                      )}
+                      {(s.persistence_errors ?? 0) > 0 && (
+                        <p className="text-xs text-warning">
+                          {t("jobDetail.telegramIncrementalPersistenceErrors").replace("{{count}}", String(s.persistence_errors))}
+                        </p>
+                      )}
+                    </div>
                   </div>
                   <span className={`text-sm font-medium tabular-nums ${s.new_books > 0 ? "text-success" : "text-muted-foreground"}`}>
                     {s.new_books > 0 ? `+${s.new_books}` : "—"}

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  TERMINAL_JOB_STATUSES,
   isActiveJobStatus,
   isCancelledJobStatus,
   isCompletedJobStatus,
   isFailedJobStatus,
+  isPartialJobStatus,
   isPhase2Status,
   isRunningJobStatus,
   isTerminalJobStatus,
@@ -16,6 +18,7 @@ const ALL_STATUSES = [
   "extracting_pages",
   "generating_thumbnails",
   "success",
+  "partial",
   "failed",
   "cancelled",
 ];
@@ -58,17 +61,51 @@ describe("isActiveJobStatus", () => {
   });
 });
 
+describe("TERMINAL_JOB_STATUSES", () => {
+  it("is the single source of truth for the four terminal statuses", () => {
+    expect([...TERMINAL_JOB_STATUSES]).toEqual([
+      "success",
+      "partial",
+      "failed",
+      "cancelled",
+    ]);
+  });
+
+  it("matches the terminal predicates exactly", () => {
+    for (const status of ALL_STATUSES) {
+      const expected =
+        isCompletedJobStatus(status) ||
+        isPartialJobStatus(status) ||
+        isFailedJobStatus(status) ||
+        isCancelledJobStatus(status);
+      expect((TERMINAL_JOB_STATUSES as readonly string[]).includes(status)).toBe(
+        expected
+      );
+    }
+  });
+});
+
 describe("terminal predicates", () => {
   it("classifies each terminal status exactly once", () => {
     expect(isCompletedJobStatus("success")).toBe(true);
+    expect(isPartialJobStatus("partial")).toBe(true);
     expect(isFailedJobStatus("failed")).toBe(true);
     expect(isCancelledJobStatus("cancelled")).toBe(true);
   });
 
-  it("isTerminalJobStatus is the union of the three", () => {
+  it("does not confuse partial with the other terminal statuses", () => {
+    expect(isCompletedJobStatus("partial")).toBe(false);
+    expect(isFailedJobStatus("partial")).toBe(false);
+    expect(isCancelledJobStatus("partial")).toBe(false);
+  });
+
+  it("isTerminalJobStatus is the union of the four", () => {
     for (const status of ALL_STATUSES) {
       const expected =
-        isCompletedJobStatus(status) || isFailedJobStatus(status) || isCancelledJobStatus(status);
+        isCompletedJobStatus(status) ||
+        isPartialJobStatus(status) ||
+        isFailedJobStatus(status) ||
+        isCancelledJobStatus(status);
       expect(isTerminalJobStatus(status)).toBe(expected);
     }
   });

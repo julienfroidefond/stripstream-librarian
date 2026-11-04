@@ -127,3 +127,51 @@ fn notification_change_marks_missing_old_value() {
 
     assert_eq!(format_notification_change(&change), "start_year: ∅ → 2026");
 }
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn finish_refresh_job_classifies_partial_and_empty_runs(pool: sqlx::PgPool) {
+    let partial_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO index_jobs (id, type, status, started_at) VALUES ($1, 'metadata_refresh', 'running', NOW())",
+    )
+    .bind(partial_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (status, summary) =
+        super::finish_refresh_job(&pool, partial_id, 2, 1, serde_json::json!({"errors": 1}))
+            .await
+            .unwrap();
+
+    assert_eq!(status, JobStatus::Partial);
+    assert!(summary.unwrap_or_default().contains("1/2"));
+    let stored: String = sqlx::query_scalar("SELECT status FROM index_jobs WHERE id = $1")
+        .bind(partial_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, "partial");
+
+    let empty_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO index_jobs (id, type, status, started_at) VALUES ($1, 'metadata_refresh', 'running', NOW())",
+    )
+    .bind(empty_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (status, summary) = super::finish_refresh_job(&pool, empty_id, 0, 0, serde_json::json!({}))
+        .await
+        .unwrap();
+
+    assert_eq!(status, JobStatus::Success);
+    assert!(summary.is_none());
+    let stored: String = sqlx::query_scalar("SELECT status FROM index_jobs WHERE id = $1")
+        .bind(empty_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, "success");
+}

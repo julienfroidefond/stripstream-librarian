@@ -2,7 +2,9 @@ use serde_json::json;
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
+use crate::jobs::lifecycle::{
+    classify_job, complete_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
+};
 
 async fn create_library(pool: &sqlx::PgPool, name: &str) -> Uuid {
     let id = Uuid::new_v4();
@@ -43,6 +45,31 @@ async fn job_row(pool: &sqlx::PgPool, job_id: Uuid) -> sqlx::postgres::PgRow {
     .fetch_one(pool)
     .await
     .unwrap()
+}
+
+// -- classify_job ----------------------------------------------------------
+
+#[test]
+fn classify_job_without_errors_is_success() {
+    assert_eq!(classify_job(10, 0), JobStatus::Success);
+    assert_eq!(classify_job(0, 0), JobStatus::Success);
+}
+
+#[test]
+fn classify_job_with_some_errors_is_partial() {
+    assert_eq!(classify_job(9, 1), JobStatus::Partial);
+    assert_eq!(classify_job(4, 3), JobStatus::Partial);
+}
+
+#[test]
+fn classify_job_when_every_attempt_failed_is_failed() {
+    assert_eq!(classify_job(9, 9), JobStatus::Failed);
+    assert_eq!(classify_job(3, 4), JobStatus::Failed);
+}
+
+#[test]
+fn classify_job_with_errors_and_nothing_attempted_is_failed() {
+    assert_eq!(classify_job(0, 1), JobStatus::Failed);
 }
 
 // -- job_in_flight ---------------------------------------------------------
@@ -198,4 +225,102 @@ async fn complete_job_sets_success_and_progress(pool: sqlx::PgPool) {
     assert!(row
         .get::<Option<chrono::DateTime<chrono::Utc>>, _>("finished_at")
         .is_some());
+}
+
+// -- finish_job ------------------------------------------------------------
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn finish_job_partial_stores_summary_and_completes_progress(pool: sqlx::PgPool) {
+    let job = insert_job(&pool, None, "prowlarr_rss", "running").await;
+
+    finish_job(
+        &pool,
+        job,
+        JobStatus::Partial,
+        json!({ "errors": 4 }),
+        Some("4/6 indexer(s) en erreur"),
+    )
+    .await
+    .unwrap();
+
+    let row = job_row(&pool, job).await;
+    assert_eq!(row.get::<String, _>("status"), "partial");
+    assert_eq!(row.get::<i32, _>("progress_percent"), 100);
+    assert_eq!(
+        row.get::<Option<String>, _>("error_opt").as_deref(),
+        Some("4/6 indexer(s) en erreur")
+    );
+    assert_eq!(
+        row.get::<serde_json::Value, _>("stats_json"),
+        json!({ "errors": 4 })
+    );
+    assert!(row
+        .get::<Option<chrono::DateTime<chrono::Utc>>, _>("finished_at")
+        .is_some());
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn finish_job_failed_keeps_current_progress(pool: sqlx::PgPool) {
+    let job = insert_job(&pool, None, "ddl_search", "running").await;
+    sqlx::query("UPDATE index_jobs SET progress_percent = 42 WHERE id = $1")
+        .bind(job)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    finish_job(
+        &pool,
+        job,
+        JobStatus::Failed,
+        json!({ "errors": 81, "files": 0 }),
+        Some("81 provider search(es) failed"),
+    )
+    .await
+    .unwrap();
+
+    let row = job_row(&pool, job).await;
+    assert_eq!(row.get::<String, _>("status"), "failed");
+    assert_eq!(row.get::<i32, _>("progress_percent"), 42);
+    assert_eq!(
+        row.get::<Option<String>, _>("error_opt").as_deref(),
+        Some("81 provider search(es) failed")
+    );
+}
+
+// -- status constraint -----------------------------------------------------
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn status_check_accepts_partial(pool: sqlx::PgPool) {
+    // The migration must widen `index_jobs_status_check` so the new terminal
+    // status is a legal value, not just a Rust enum variant.
+    let job = insert_job(&pool, None, "prowlarr_rss", "partial").await;
+    assert_eq!(
+        job_row(&pool, job).await.get::<String, _>("status"),
+        "partial"
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn status_check_still_rejects_unknown_statuses(pool: sqlx::PgPool) {
+    // `partial` is the only value added by the migration: near-misses and
+    // case variants must still be rejected so the column stays a closed set.
+    for status in ["partially_done", "partial_success", "Partial", "done"] {
+        let attempted =
+            sqlx::query("INSERT INTO index_jobs (id, type, status) VALUES ($1, 'scan', $2)")
+                .bind(Uuid::new_v4())
+                .bind(status)
+                .execute(&pool)
+                .await;
+        assert!(
+            attempted.is_err(),
+            "status {status:?} should be rejected by index_jobs_status_check"
+        );
+    }
+
+    // ...while `partial` itself is accepted (see `status_check_accepts_partial`).
+    let accepted = insert_job(&pool, None, "scan", "partial").await;
+    assert_eq!(
+        job_row(&pool, accepted).await.get::<String, _>("status"),
+        "partial"
+    );
 }

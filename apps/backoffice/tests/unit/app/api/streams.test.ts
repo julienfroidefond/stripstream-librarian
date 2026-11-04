@@ -119,6 +119,15 @@ describe("GET /api/jobs/[id]/stream", () => {
     );
   });
 
+  it("also closes on a partial status", async () => {
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({ status: "partial" })));
+    const res = await jobStream(request(), { params: Promise.resolve({ id: "j1" }) } as never);
+    const reader = res.body!.getReader();
+    expect(await readChunk(reader)).toBe("");
+    expect(await readChunk(reader)).toBe('data: {"status":"partial"}\n\n');
+    expect(await readChunk(reader)).toBeNull();
+  });
+
   it("keeps polling while the job runs then stops on abort", async () => {
     vi.useFakeTimers();
     fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({ status: "running" })));

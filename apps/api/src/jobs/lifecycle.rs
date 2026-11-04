@@ -2,12 +2,45 @@
 //!
 //! Every background job (metadata sync, downloads, reading-status, ...) follows the
 //! same shape: check whether a job of the same `type` is already in flight, then
-//! mark it `failed` or `success` when it finishes. These helpers factor out the
-//! corresponding SQL so the semantics stay identical across modules.
+//! mark it `failed`, `partial` or `success` when it finishes. These helpers factor
+//! out the corresponding SQL so the semantics stay identical across modules.
 
 use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
+
+/// Terminal status written when a job finishes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobStatus {
+    Success,
+    Partial,
+    Failed,
+}
+
+impl JobStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            JobStatus::Success => "success",
+            JobStatus::Partial => "partial",
+            JobStatus::Failed => "failed",
+        }
+    }
+}
+
+/// Map the outcome of a job to its terminal status.
+///
+/// * no failure -> `success`
+/// * some failures, but some units succeeded -> `partial`
+/// * every attempted unit failed (or failures with nothing attempted) -> `failed`
+pub fn classify_job(attempted: usize, errors: usize) -> JobStatus {
+    if errors == 0 {
+        JobStatus::Success
+    } else if errors >= attempted {
+        JobStatus::Failed
+    } else {
+        JobStatus::Partial
+    }
+}
 
 /// How the `library_id` column is filtered when looking up an in-flight job.
 #[derive(Debug, Clone, Copy)]
@@ -78,17 +111,37 @@ pub async fn fail_job(
     .map(|_| ())
 }
 
-/// Mark a job as `success` and store its final `stats_json` payload.
-pub async fn complete_job(pool: &PgPool, job_id: Uuid, stats: Value) -> Result<(), sqlx::Error> {
+/// Finish a job with an explicit terminal status.
+///
+/// `error` is stored as-is (use `None` for a clean run) and `progress_percent`
+/// is set to 100 except for `failed`, which keeps whatever progress the job had
+/// reached. Callers pass a human-readable summary for `partial` runs so the UI
+/// can explain what went wrong without parsing `stats_json`.
+pub async fn finish_job(
+    pool: &PgPool,
+    job_id: Uuid,
+    status: JobStatus,
+    stats: Value,
+    error: Option<&str>,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE index_jobs \
-         SET status = 'success', finished_at = NOW(), \
-             stats_json = $2, progress_percent = 100 \
+         SET status = $2, finished_at = NOW(), \
+             stats_json = $3, error_opt = $4, \
+             progress_percent = CASE WHEN $2 = 'failed' \
+                                      THEN progress_percent ELSE 100 END \
          WHERE id = $1",
     )
     .bind(job_id)
+    .bind(status.as_str())
     .bind(stats)
+    .bind(error)
     .execute(pool)
     .await
     .map(|_| ())
+}
+
+/// Mark a job as `success` and store its final `stats_json` payload.
+pub async fn complete_job(pool: &PgPool, job_id: Uuid, stats: Value) -> Result<(), sqlx::Error> {
+    finish_job(pool, job_id, JobStatus::Success, stats, None).await
 }

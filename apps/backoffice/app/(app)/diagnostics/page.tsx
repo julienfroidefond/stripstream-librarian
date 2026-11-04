@@ -343,6 +343,8 @@ export default async function DiagnosticsPage() {
             <InfoRow label={t("diagnostics.jobsPending")} value={formatNumber(report.jobs.pending, locale)} />
             <InfoRow label={t("diagnostics.jobsRunning")} value={formatNumber(report.jobs.running, locale)} />
             <InfoRow label={t("diagnostics.jobsFailed24h")} value={formatNumber(report.jobs.failed_last_24h, locale)} />
+            <InfoRow label={t("diagnostics.jobsPartial24h")} value={formatNumber(report.jobs.partial_last_24h, locale)} />
+            <InfoRow label={t("diagnostics.jobsErrors24h")} value={formatNumber(report.jobs.errors_total, locale)} />
             <InfoRow
               label={t("diagnostics.stalePending")}
               value={
@@ -375,6 +377,8 @@ export default async function DiagnosticsPage() {
                       <th className="py-2 pr-4 text-right font-medium">{t("diagnostics.jobsPending")}</th>
                       <th className="py-2 pr-4 text-right font-medium">{t("diagnostics.jobsRunning")}</th>
                       <th className="py-2 pr-4 text-right font-medium">{t("diagnostics.jobsFailed24h")}</th>
+                      <th className="py-2 pr-4 text-right font-medium">{t("diagnostics.jobsPartial24h")}</th>
+                      <th className="py-2 pr-4 text-right font-medium">{t("diagnostics.jobsErrors24h")}</th>
                       <th className="py-2 font-medium">{t("diagnostics.lastFinished")}</th>
                     </tr>
                   </thead>
@@ -382,11 +386,13 @@ export default async function DiagnosticsPage() {
                     {report.jobs.by_type.map((job) => (
                       <tr key={job.job_type} className="border-b border-border/50 last:border-0">
                         <td className="py-2 pr-4">
-                          <Badge variant={job.failed_last_24h > 0 ? "error" : "default"}>{job.job_type}</Badge>
+                          <Badge variant={job.failed_last_24h > 0 ? "error" : job.partial_last_24h > 0 ? "warning" : "default"}>{job.job_type}</Badge>
                         </td>
                         <td className="py-2 pr-4 text-right">{formatNumber(job.pending, locale)}</td>
                         <td className="py-2 pr-4 text-right">{formatNumber(job.running, locale)}</td>
                         <td className="py-2 pr-4 text-right">{formatNumber(job.failed_last_24h, locale)}</td>
+                        <td className="py-2 pr-4 text-right">{formatNumber(job.partial_last_24h, locale)}</td>
+                        <td className="py-2 pr-4 text-right">{formatNumber(job.errors_total, locale)}</td>
                         <td className="py-2 text-xs text-muted-foreground">
                           {job.last_finished_at ? formatDateTime(job.last_finished_at, locale) : t("diagnostics.never")}
                         </td>

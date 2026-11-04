@@ -152,6 +152,13 @@ pub struct JobDiagnostics {
     pub pending: i64,
     pub running: i64,
     pub failed_last_24h: i64,
+    /// Jobs that finished `partial` (some items failed, some succeeded) in the
+    /// last 24 hours. Additive to `failed_last_24h`.
+    pub partial_last_24h: i64,
+    /// Number of individual errors reported by jobs that finished in the last
+    /// 24 hours (DDL/refresh `errors`, Telegram `sources_failed`, Prowlarr
+    /// indexers in error).
+    pub errors_total: i64,
     /// Jobs pending for more than 30 minutes: the scheduler's `NOT EXISTS`
     /// guard treats them as in-flight and plans nothing new, so a stuck job
     /// silently freezes the library.
@@ -169,6 +176,10 @@ pub struct JobTypeDiagnostics {
     pub pending: i64,
     pub running: i64,
     pub failed_last_24h: i64,
+    /// Partial jobs of this type in the last 24 hours.
+    pub partial_last_24h: i64,
+    /// Individual errors reported by this type in the last 24 hours.
+    pub errors_total: i64,
     pub last_finished_at: Option<DateTime<Utc>>,
 }
 

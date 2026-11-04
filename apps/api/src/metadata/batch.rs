@@ -8,7 +8,9 @@ use tracing::{info, warn};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
+use crate::jobs::lifecycle::{
+    classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
+};
 use crate::metadata_providers;
 use crate::metadata_providers::senscritique::RATE_LIMITED_ERROR;
 use crate::{
@@ -879,9 +881,10 @@ pub(crate) async fn process_metadata_batch(
     // Build stats summary
     let stats = counts.stats_json(total, processed);
 
-    complete_job(pool, job_id, stats)
-        .await
-        .map_err(|e| e.to_string())?;
+    // `processed` series were attempted; only the ones with an `error` event are
+    // failed units. `no_results`/`low_confidence`/... are valid outcomes.
+    let (status, error_summary) =
+        finish_batch_job(pool, job_id, processed, counts.errors, stats).await?;
 
     info!("[METADATA_BATCH] job={job_id} completed: {processed}/{total} series processed");
 
@@ -904,23 +907,54 @@ pub(crate) async fn process_metadata_batch(
     .filter_map(|r| r.try_get::<Option<String>, _>("entity_name").ok().flatten())
     .collect();
 
-    notifications::notify(
-        pool.clone(),
-        notifications::NotificationEvent::MetadataBatchCompleted {
-            library_name,
-            total_series: total,
-            processed,
-            auto_matched: counts.auto_matched,
-            no_results: counts.no_results,
-            low_confidence: counts.low_confidence,
-            too_many: counts.too_many_results,
-            already_linked: counts.already_linked,
-            errors: counts.errors,
-            new_matches,
-        },
-    );
+    if status == JobStatus::Failed {
+        notifications::notify(
+            pool.clone(),
+            notifications::NotificationEvent::MetadataBatchFailed {
+                library_name,
+                error: error_summary
+                    .unwrap_or_else(|| format!("{}/{} series en erreur", counts.errors, processed)),
+            },
+        );
+    } else {
+        notifications::notify(
+            pool.clone(),
+            notifications::NotificationEvent::MetadataBatchCompleted {
+                library_name,
+                total_series: total,
+                processed,
+                auto_matched: counts.auto_matched,
+                no_results: counts.no_results,
+                low_confidence: counts.low_confidence,
+                too_many: counts.too_many_results,
+                already_linked: counts.already_linked,
+                errors: counts.errors,
+                new_matches,
+            },
+        );
+    }
 
     Ok(())
+}
+
+/// Classify and close a metadata batch job. Extracted so the partial/success
+/// boundary is covered by a DB test without running real provider searches.
+async fn finish_batch_job(
+    pool: &PgPool,
+    job_id: Uuid,
+    processed: i32,
+    errors: i64,
+    stats: serde_json::Value,
+) -> Result<(JobStatus, Option<String>), String> {
+    let status = classify_job(processed.max(0) as usize, errors.max(0) as usize);
+    let error_summary = (status != JobStatus::Success)
+        .then(|| format!("{}/{} series en erreur", errors, processed));
+
+    finish_job(pool, job_id, status, stats, error_summary.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok((status, error_summary))
 }
 
 use super::batch_sync::{

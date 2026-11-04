@@ -506,6 +506,7 @@ const fr = {
   "jobProgress.connectionLost": "Connexion perdue",
   "jobProgress.error": "Erreur : {{message}}",
   "jobProgress.done": "Terminé",
+  "jobProgress.partial": "Terminé partiellement",
   "jobProgress.currentFile": "En cours : {{file}}",
   "jobProgress.pages": "pages",
   "jobProgress.thumbnails": "miniatures",
@@ -521,6 +522,8 @@ const fr = {
   "jobDetail.completedIn": "Terminé en {{duration}}",
   "jobDetail.failedAfter": "après {{duration}}",
   "jobDetail.jobFailed": "Tâche échouée",
+  "jobDetail.jobPartial": "Tâche partiellement échouée",
+  "jobDetail.partial": "Partiel",
   "jobDetail.cancelled": "Annulé",
   "jobDetail.overview": "Aperçu",
   "jobDetail.timeline": "Chronologie",
@@ -690,10 +693,13 @@ const fr = {
   "jobDetail.telegramIncrementalPerSource": "Détail par channel",
   "jobDetail.telegramIncrementalRecentBooks": "Fichiers trouvés ({{count}})",
   "jobDetail.telegramIncrementalNone": "Aucun nouveau fichier depuis la dernière synchro",
+  "jobDetail.telegramIncrementalPartial": "Synchro partielle — {{count}} source(s) illisible(s)",
+  "jobDetail.telegramIncrementalPersistenceErrors": "{{count}} erreur(s) d'écriture",
 
   // Status badges
   "statusBadge.extracting_pages": "Extraction des pages",
   "statusBadge.generating_thumbnails": "Miniatures",
+  "statusBadge.partial": "Partiel",
 
   // Jobs indicator
   "jobsIndicator.viewAll": "Voir toutes les tâches",
@@ -1065,6 +1071,7 @@ const fr = {
   "settings.eventCategoryConversion": "Conversion CBR → CBZ",
   "settings.eventCategoryMetadata": "Métadonnées",
   "settings.eventCompleted": "Terminé",
+  "settings.eventPartial": "Partiellement terminé",
   "settings.eventFailed": "Échoué",
   "settings.eventCancelled": "Annulé",
   "settings.eventLinked": "Liée",
@@ -1755,6 +1762,8 @@ const fr = {
   "diagnostics.jobsPending": "En attente",
   "diagnostics.jobsRunning": "En cours",
   "diagnostics.jobsFailed24h": "Échecs sur 24 h",
+  "diagnostics.jobsPartial24h": "Partiels sur 24 h",
+  "diagnostics.jobsErrors24h": "Erreurs sur 24 h",
   "diagnostics.recentFailures": "Échecs récents",
   "diagnostics.noFailures": "Aucun échec récent.",
   "diagnostics.books": "Livres",

@@ -31,6 +31,35 @@ function renderBanner(report: MetadataBatchReportDto) {
   );
 }
 
+function renderJob(
+  jobType: string,
+  status: string,
+  stats: Record<string, unknown> | null,
+  error: string | null = null
+) {
+  return render(
+    <JobSummaryBanner
+      job={{
+        type: jobType,
+        status,
+        started_at: "2024-01-01T10:00:00Z",
+        finished_at: "2024-01-01T10:05:00Z",
+        error_opt: error,
+        stats_json: stats,
+        total_files: 6,
+        processed_files: 6,
+      }}
+      batchReport={null}
+      refreshReport={null}
+      readingStatusReport={null}
+      readingStatusPushReport={null}
+      downloadDetectionReport={null}
+      t={t}
+      formatDuration={() => "5min"}
+    />
+  );
+}
+
 describe("JobSummaryBanner", () => {
   it("shows every metadata batch outcome, including low confidence and errors", () => {
     const { container } = renderBanner({
@@ -53,6 +82,47 @@ describe("JobSummaryBanner", () => {
     expect(text).toContain("1 jobdetail.toomanyresults");
     expect(text).toContain("3 jobdetail.lowconfidence");
     expect(text).toContain("6 jobdetail.errors");
+  });
+
+  it("folds RSS indexer failures into the partial banner", () => {
+    const { container } = renderJob(
+      "prowlarr_rss",
+      "partial",
+      {
+        rss_indexer_stats: [
+          { name: "Indexer-A" },
+          { name: "Indexer-B", error: "timeout" },
+        ],
+      },
+      "1/2 indexer(s) en erreur"
+    );
+
+    const text = container.textContent ?? "";
+    expect(text).toContain("jobDetail.jobPartial");
+    expect(text).toContain("1 jobdetail.errors");
+    expect(text).toContain("Indexer-B");
+    // Healthy indexers are not reported as failures.
+    expect(text).not.toContain("Indexer-A");
+    expect(text).toContain("1/2 indexer(s) en erreur");
+  });
+
+  it("counts telegram source failures in the partial banner", () => {
+    const { container } = renderJob("telegram_sync_incremental", "partial", {
+      sources_failed: 2,
+    });
+
+    const text = container.textContent ?? "";
+    expect(text).toContain("jobDetail.jobPartial");
+    expect(text).toContain("2 jobdetail.errors");
+  });
+
+  it("uses the dedicated errors counter when the stats provide one", () => {
+    const { container } = renderJob("download_detection", "partial", {
+      errors: 3,
+      sources_failed: 1,
+    });
+
+    expect(container.textContent).toContain("3 jobdetail.errors");
   });
 
   it("renders no metadata counters when the report is unavailable", () => {

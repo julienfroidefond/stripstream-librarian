@@ -9,7 +9,9 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::job_helpers::{is_job_cancelled, update_progress};
-use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
+use crate::jobs::lifecycle::{
+    classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
+};
 use crate::metadata_providers::senscritique::RATE_LIMITED_ERROR;
 use crate::{error::ApiError, state::AppState};
 
@@ -703,11 +705,9 @@ async fn process_metadata_refresh_inner(
         "changes": changes_only,
     });
 
-    complete_job(pool, job_id, stats)
-        .await
-        .map_err(|e| e.to_string())?;
+    let (status, error_summary) = finish_refresh_job(pool, job_id, total, errors, stats).await?;
 
-    info!("[METADATA_REFRESH] job={job_id} completed: {refreshed} updated, {unchanged} unchanged, {errors} errors");
+    info!("[METADATA_REFRESH] job={job_id} completed: {refreshed} updated, {unchanged} unchanged, {errors} errors ({status:?})");
 
     let library_name: Option<String> =
         sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
@@ -759,25 +759,58 @@ async fn process_metadata_refresh_inner(
         }
     }
 
-    notifications::notify(
-        pool.clone(),
-        notifications::NotificationEvent::MetadataRefreshCompleted {
-            library_name,
-            refreshed,
-            unchanged,
-            errors,
-            series_fields_updated: series_fields_count,
-            books_fields_updated: books_fields_count,
-            details: detail_lines,
-            error_details: error_lines,
-        },
-    );
+    // One notification per run: a fully failed refresh reports the failure,
+    // otherwise the completion event carries the error counts and details.
+    if status == JobStatus::Failed {
+        notifications::notify(
+            pool.clone(),
+            notifications::NotificationEvent::MetadataRefreshFailed {
+                library_name,
+                error: error_summary
+                    .unwrap_or_else(|| format!("{errors}/{total} series en erreur")),
+            },
+        );
+    } else {
+        notifications::notify(
+            pool.clone(),
+            notifications::NotificationEvent::MetadataRefreshCompleted {
+                library_name,
+                refreshed,
+                unchanged,
+                errors,
+                series_fields_updated: series_fields_count,
+                books_fields_updated: books_fields_count,
+                details: detail_lines,
+                error_details: error_lines,
+            },
+        );
+    }
 
     Ok(())
 }
 
 // refresh_link, diff helpers, sync_series_with_diff, sync_book_with_diff, rematch_unlinked_books
 // are now in super::refresh_sync
+
+/// Classify and close a metadata refresh job. Extracted so the partial/success
+/// boundary is covered by a DB test without hitting a provider.
+async fn finish_refresh_job(
+    pool: &PgPool,
+    job_id: Uuid,
+    total: i32,
+    errors: i32,
+    stats: serde_json::Value,
+) -> Result<(JobStatus, Option<String>), String> {
+    let status = classify_job(total.max(0) as usize, errors.max(0) as usize);
+    let error_summary =
+        (status != JobStatus::Success).then(|| format!("{errors}/{total} series en erreur"));
+
+    finish_job(pool, job_id, status, stats, error_summary.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok((status, error_summary))
+}
 
 #[cfg(test)]
 #[path = "tests/refresh.rs"]

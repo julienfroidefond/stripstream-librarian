@@ -19,7 +19,7 @@ import { TelegramIncrementalResultsCard } from "./components/TelegramIncremental
 import { JobErrorsCard } from "./components/JobErrorsCard";
 import { JobEventsCard, type JobEvent } from "./components/JobEventsCard";
 import { formatDuration, formatRate } from "@/lib/format";
-import { isCancelledJobStatus, isCompletedJobStatus, isFailedJobStatus, isPhase2Status, isTerminalJobStatus } from "@/lib/jobStatus";
+import { isCancelledJobStatus, isCompletedJobStatus, isFailedJobStatus, isPartialJobStatus, isPhase2Status, isTerminalJobStatus } from "@/lib/jobStatus";
 
 interface JobDetailPageProps {
   params: Promise<{ id: string }>;
@@ -47,6 +47,10 @@ interface JobDetails {
     removed_files?: number;
     errors?: number;
     warnings?: number;
+    /// DDL search: provider calls attempted vs failed, for the partial banner.
+    attempted?: number;
+    failed_providers?: string[];
+    rss_indexer_stats?: Array<{ id?: number; name?: string; count?: number; deduped?: number; error?: string }>;
     rss_releases?: Array<{ title: string; indexer?: string | null; size: number; seeders?: number | null; leechers?: number | null; publish_date?: string | null; categories?: string[] | null }>;
     synced?: number;
     new_books?: number;
@@ -54,7 +58,9 @@ interface JobDetails {
     all_series?: Array<{ series_name: string; book_count: number; extracted_names?: string[] }>;
     matched_series?: Array<{ telegram_name: string; series_id: string; series_name: string; book_count: number }>;
     sources_scanned?: number;
-    sources?: Array<{ username: string; new_books: number }>;
+    sources_failed?: number;
+    persistence_errors?: number;
+    sources?: Array<{ username: string; new_books: number; messages_scanned?: number; error?: string; persistence_errors?: number }>;
     recent_books?: Array<{ filename: string; series_name: string | null; volume_number: number | null; channel: string }>;
   } | null;
   error_opt: string | null;
@@ -182,6 +188,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     : 0;
 
   const isCompleted = isCompletedJobStatus(job.status);
+  const isPartial = isPartialJobStatus(job.status);
   const isFailed = isFailedJobStatus(job.status);
   const isCancelled = isCancelledJobStatus(job.status);
   const isTerminal = isTerminalJobStatus(job.status);
@@ -282,7 +289,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
         )}
 
         {/* Thumbnail statistics */}
-        {isThumbnailOnly && isCompleted && job.total_files != null && (
+        {isThumbnailOnly && (isCompleted || isPartial) && job.total_files != null && (
           <ThumbnailStatsCard job={job} t={t} formatDuration={formatDuration} formatSpeed={formatRate} durationMs={durationMs} />
         )}
 

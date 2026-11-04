@@ -78,6 +78,8 @@ export type DiagnosticsJobType = {
   pending: number;
   running: number;
   failed_last_24h: number;
+  partial_last_24h: number;
+  errors_total: number;
   last_finished_at: string | null;
 };
 
@@ -86,6 +88,10 @@ export type DiagnosticsJobs = {
   pending: number;
   running: number;
   failed_last_24h: number;
+  /** Jobs that finished `partial` in the last 24 hours. */
+  partial_last_24h: number;
+  /** Individual errors reported by jobs finished in the last 24 hours. */
+  errors_total: number;
   /** Pending for more than 30 minutes: they block the scheduler. */
   stale_pending: number;
   oldest_pending_seconds: number | null;

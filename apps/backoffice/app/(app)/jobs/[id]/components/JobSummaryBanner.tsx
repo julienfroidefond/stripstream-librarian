@@ -1,6 +1,6 @@
 import type { MetadataBatchReportDto, MetadataRefreshReportDto, ReadingStatusMatchReportDto, ReadingStatusPushReportDto, DownloadDetectionReportDto } from "@/lib/api";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
-import { isCancelledJobStatus, isCompletedJobStatus, isFailedJobStatus } from "@/lib/jobStatus";
+import { isCancelledJobStatus, isCompletedJobStatus, isFailedJobStatus, isPartialJobStatus } from "@/lib/jobStatus";
 
 interface JobSummaryBannerProps {
   job: {
@@ -26,6 +26,7 @@ export function JobSummaryBanner({
   job, batchReport, refreshReport, readingStatusReport, readingStatusPushReport, downloadDetectionReport, t, formatDuration,
 }: JobSummaryBannerProps) {
   const isCompleted = isCompletedJobStatus(job.status);
+  const isPartial = isPartialJobStatus(job.status);
   const isFailed = isFailedJobStatus(job.status);
   const isCancelled = isCancelledJobStatus(job.status);
   const isMetadataBatch = job.type === "metadata_batch" || job.type === "metadata_batch_rematch";
@@ -95,6 +96,47 @@ export function JobSummaryBanner({
             <span className="ml-2 text-success/80">
               — {job.processed_files ?? job.total_files} {t("jobDetail.generated").toLowerCase()}
             </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (isPartial) {
+    const s = job.stats_json as {
+      errors?: number;
+      sources_failed?: number;
+      failed_providers?: string[];
+      rss_indexer_stats?: Array<{ name?: string; error?: string }>;
+    } | null;
+    // RSS stats carry per-indexer errors rather than a top-level `errors`
+    // counter; fold them into the error tally so the banner matches the job.
+    const rssFailures = (s?.rss_indexer_stats ?? []).filter(indexer => indexer.error);
+    const errors = s?.errors ?? (s?.sources_failed ?? 0) + rssFailures.length;
+    const failedProviders = [
+      ...(s?.failed_providers ?? []),
+      ...rssFailures
+        .map(indexer => indexer.name)
+        .filter((name): name is string => Boolean(name)),
+    ];
+    return (
+      <div className="mb-6 p-4 rounded-xl bg-warning/10 border border-warning/30 flex items-start gap-3">
+        <svg className="w-5 h-5 text-warning mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+        </svg>
+        <div className="text-sm text-warning">
+          <span className="font-semibold">{t("jobDetail.jobPartial")}</span>
+          {job.started_at && (
+            <span className="ml-2 text-warning/80">{t("jobDetail.failedAfter", { duration: formatDuration(job.started_at, job.finished_at) })}</span>
+          )}
+          {errors > 0 && (
+            <span className="ml-2 text-warning/80">— {errors} {t("jobDetail.errors").toLowerCase()}</span>
+          )}
+          {job.error_opt && (
+            <p className="mt-1 text-warning/70 font-mono text-xs break-all">{job.error_opt}</p>
+          )}
+          {failedProviders.length > 0 && (
+            <p className="mt-1 text-warning/70 text-xs break-all">{failedProviders.join(", ")}</p>
           )}
         </div>
       </div>
