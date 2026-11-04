@@ -1,4 +1,4 @@
-import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch, ReadingStatus, TelegramMonitorStatus, hasEnabledDdlProvider } from "@/lib/api";
+import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch, fetchSeriesOwnedVolumes, ReadingStatus, TelegramMonitorStatus, hasEnabledDdlProvider } from "@/lib/api";
 import { getActiveUser } from "@/lib/activeUser";
 import { BookPreview } from "@/app/components/BookPreview";
 import { BookActionsToolbar } from "@/app/components/BookActionsToolbar";
@@ -32,17 +32,24 @@ export default async function BookDetailPage({
 }) {
   const { id } = await params;
   const { hasActiveUser } = await getActiveUser();
-  const [book, libraries, telegramStatus, ddlProviderEnabled] = await Promise.all([
-    fetchBook(id),
-    fetchLibraries().catch(() => [] as { id: string; name: string }[]),
-    apiFetch<TelegramMonitorStatus>("/telegram-monitor/status", { next: { revalidate: 60 } }).catch(() => null),
-    hasEnabledDdlProvider(),
-  ]);
-  const telegramEnabled = !!(telegramStatus?.configured && telegramStatus?.authorized);
-
+  const book = await fetchBook(id);
   if (!book) {
     notFound();
   }
+
+  // Owned volumes drive the Telegram highlight, so fetch them alongside the
+  // rest of the page data. Without a series they stay `undefined` (highlight
+  // nothing) — an empty list would be read as "owns no volume" and highlight
+  // every search result.
+  const [libraries, telegramStatus, ddlProviderEnabled, ownedVolumes] = await Promise.all([
+    fetchLibraries().catch(() => [] as { id: string; name: string }[]),
+    apiFetch<TelegramMonitorStatus>("/telegram-monitor/status", { next: { revalidate: 60 } }).catch(() => null),
+    hasEnabledDdlProvider(),
+    book.series_id
+      ? fetchSeriesOwnedVolumes(book.series_id).catch(() => undefined)
+      : Promise.resolve(undefined),
+  ]);
+  const telegramEnabled = !!(telegramStatus?.configured && telegramStatus?.authorized);
 
   const { t, locale } = await getServerTranslations();
 
@@ -165,7 +172,7 @@ export default async function BookDetailPage({
           )}
 
           {/* Action buttons toolbar */}
-          <BookActionsToolbar book={book} hasActiveUser={hasActiveUser} telegramEnabled={telegramEnabled} ddlProviderEnabled={ddlProviderEnabled} />
+          <BookActionsToolbar book={book} hasActiveUser={hasActiveUser} telegramEnabled={telegramEnabled} ddlProviderEnabled={ddlProviderEnabled} ownedVolumes={ownedVolumes ?? undefined} />
         </div>
       </div>
 

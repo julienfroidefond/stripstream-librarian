@@ -145,6 +145,24 @@ export async function fetchSeriesById(seriesId: string): Promise<SeriesDto> {
   });
 }
 
+export type SeriesVolumesDto = {
+  owned_volumes: number[];
+  has_unnumbered_integral: boolean;
+};
+
+/**
+ * Volume numbers owned across the whole series (not just the current page).
+ *
+ * Returns `null` when the series owns an unnumbered integral: the series is
+ * complete, so nothing should be highlighted.
+ */
+export async function fetchSeriesOwnedVolumes(seriesId: string): Promise<number[] | null> {
+  const dto = await apiFetch<SeriesVolumesDto>(`/series/${seriesId}/volumes`, {
+    next: { revalidate: 15, tags: ["series", `series:${seriesId}`] },
+  });
+  return dto.has_unnumbered_integral ? null : dto.owned_volumes;
+}
+
 export async function fetchRelatedSeries(seriesId: string, limit = 10): Promise<RelatedSeriesDto[]> {
   return apiFetch<RelatedSeriesDto[]>(`/series/${seriesId}/related?limit=${limit}`, {
     next: { revalidate: 60, tags: ["series", `series:${seriesId}`] },

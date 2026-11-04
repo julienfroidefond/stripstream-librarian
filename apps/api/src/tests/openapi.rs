@@ -91,6 +91,26 @@ fn client_openapi_exposes_no_download_client_routes() {
     );
 }
 
+/// The owned-volume lookup drives an admin highlight: it must be documented in
+/// the admin spec only, never on the read-scoped Client API.
+#[test]
+fn series_owned_volumes_route_is_admin_only() {
+    let admin = serde_json::to_value(AdminApiDoc::openapi()).unwrap();
+    assert!(
+        admin["paths"]["/series/{series_id}/volumes"]["get"].is_object(),
+        "admin OpenAPI must expose GET /series/{{series_id}}/volumes"
+    );
+
+    let client = serde_json::to_value(ClientApiDoc::openapi()).unwrap();
+    let paths = client["paths"]
+        .as_object()
+        .expect("paths must be an object");
+    assert!(
+        !paths.contains_key("/series/{series_id}/volumes"),
+        "the read-scoped Client API must not expose /series/{{series_id}}/volumes"
+    );
+}
+
 #[test]
 fn admin_openapi_exposes_the_alldebrid_routes() {
     let spec = serde_json::to_value(AdminApiDoc::openapi()).unwrap();

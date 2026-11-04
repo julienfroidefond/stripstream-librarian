@@ -427,6 +427,10 @@ async fn main() -> anyhow::Result<()> {
             "/admin/series/{series_id}/activity",
             get(series::get_series_user_activity),
         )
+        .route(
+            "/series/{series_id}/volumes",
+            get(series::get_series_owned_volumes),
+        )
         .route("/admin/reading-overview", get(stats::get_reading_overview))
         .route(
             "/admin/reading-overview/{user_id}/series-books",

@@ -1,4 +1,4 @@
-import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, fetchDownloadsEnabled, fetchSeriesReadingLists, fetchSeriesRatings, fetchSeriesUserActivity, hasEnabledDdlProvider, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto, ReadingListDto, TelegramMonitorStatus, SeriesRatingsDto, SeriesUserActivityDto } from "@/lib/api";
+import { fetchLibraries, fetchBooks, fetchSeriesMetadata, fetchSeriesById, fetchSeriesOwnedVolumes, fetchRelatedSeries, getBookCoverUrl, getMetadataLink, getMissingBooks, getReadingStatusLink, apiFetch, fetchDownloadsEnabled, fetchSeriesReadingLists, fetchSeriesRatings, fetchSeriesUserActivity, hasEnabledDdlProvider, BookDto, SeriesMetadataDto, ExternalMetadataLinkDto, MissingBooksDto, AnilistSeriesLinkDto, ReadingListDto, TelegramMonitorStatus, SeriesRatingsDto, SeriesUserActivityDto } from "@/lib/api";
 import { cookies } from "next/headers";
 import { BooksGrid, BooksList, EmptyState } from "@/app/components/BookCard";
 import { SeriesRelatedCarousel } from "@/app/components/SeriesRelatedCarousel";
@@ -73,7 +73,7 @@ export default async function SeriesDetailPage({
 
   // Fetch books, related series and ratings in parallel. In admin mode (no
   // reader selected) the per-series activity replaces the single-user view.
-  const [booksPage, relatedSeries, seriesReadingLists, seriesRatings, seriesUserActivity] = await Promise.all([
+  const [booksPage, relatedSeries, seriesReadingLists, seriesRatings, seriesUserActivity, ownedVolumes] = await Promise.all([
     fetchBooks(libraryId, seriesId, page, limit).catch(() => ({
       items: [] as BookDto[],
       total: 0,
@@ -86,6 +86,7 @@ export default async function SeriesDetailPage({
     hasActiveUser
       ? Promise.resolve([] as SeriesUserActivityDto[])
       : fetchSeriesUserActivity(seriesId).catch(() => [] as SeriesUserActivityDto[]),
+    fetchSeriesOwnedVolumes(seriesId).catch(() => undefined),
   ]);
 
   const ratingEntries = ratedActivity(seriesUserActivity);
@@ -116,7 +117,6 @@ export default async function SeriesDetailPage({
 
   const totalPages = Math.ceil(booksPage.total / limit);
   const booksReadCount = booksPage.items.filter((b) => b.reading_status === "read").length;
-  const ownedVolumes = booksPage.items.filter(b => b.volume != null && b.volume_type === "regular").map(b => b.volume as number);
   const displayName = seriesName === "unclassified" ? t("books.unclassified") : seriesName;
 
   // Use first_book_id from series DTO (already prioritizes regular volumes over HS),
@@ -377,7 +377,7 @@ export default async function SeriesDetailPage({
             alldebridConfigured={alldebridConfigured}
             telegramEnabled={telegramEnabled}
             ddlProviderEnabled={ddlProviderEnabled}
-            ownedVolumes={ownedVolumes}
+            ownedVolumes={ownedVolumes ?? undefined}
             renameFormat={typeof renameFormat === "string" ? renameFormat : null}
             renameFormatHs={typeof renameFormatHs === "string" ? renameFormatHs : null}
             renameFormatInt={typeof renameFormatInt === "string" ? renameFormatInt : null}
