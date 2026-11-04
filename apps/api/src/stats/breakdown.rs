@@ -34,12 +34,13 @@ pub async fn get_stats_breakdown(
                 l.name AS library_name,
                 COUNT(b.id) AS book_count,
                 COALESCE(SUM(bf.size_bytes), 0)::BIGINT AS size_bytes,
-                COUNT(*) FILTER (WHERE brp.status = 'read') AS read_count,
-                COUNT(*) FILTER (WHERE brp.status = 'reading') AS reading_count,
-                COUNT(*) FILTER (WHERE COALESCE(brp.status, 'unread') = 'unread') AS unread_count
+                COUNT(b.id) FILTER (WHERE brp.status = 'read') AS read_count,
+                COUNT(b.id) FILTER (WHERE brp.status = 'reading') AS reading_count,
+                COUNT(b.id) FILTER (WHERE COALESCE(brp.status, 'unread') = 'unread') AS unread_count
             FROM libraries l
             LEFT JOIN books b ON b.library_id = l.id
-            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ($1::uuid IS NULL OR brp.user_id = $1)
+            LEFT JOIN book_reading_progress brp
+              ON brp.book_id = b.id AND $1::uuid IS NOT NULL AND brp.user_id = $1
             LEFT JOIN LATERAL (
                 SELECT size_bytes FROM book_files WHERE book_id = b.id ORDER BY updated_at DESC LIMIT 1
             ) bf ON TRUE
@@ -58,7 +59,8 @@ pub async fn get_stats_breakdown(
                 COALESCE(SUM(b.page_count), 0)::BIGINT AS total_pages
             FROM books b
             JOIN series s ON s.id = b.series_id
-            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ($1::uuid IS NULL OR brp.user_id = $1)
+            LEFT JOIN book_reading_progress brp
+              ON brp.book_id = b.id AND $1::uuid IS NOT NULL AND brp.user_id = $1
             WHERE b.series_id IS NOT NULL
             GROUP BY s.name
             ORDER BY book_count DESC
