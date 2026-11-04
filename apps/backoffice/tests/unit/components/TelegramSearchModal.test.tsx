@@ -62,6 +62,26 @@ function renderAndOpen() {
 }
 
 describe("TelegramSearchModal", () => {
+  it("does not highlight an owned volume even without any other context", async () => {
+    mockSearch([
+      result({ id: "owned-book", filename: "owned.cbz", volume_number: 2 }),
+      result({ id: "missing-book", filename: "missing.cbz", volume_number: 1 }),
+    ]);
+
+    render(
+      <TelegramSearchModal seriesName="Series" initialEnabled ownedVolumes={[2]}>
+        {(open) => <button onClick={open}>open</button>}
+      </TelegramSearchModal>
+    );
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const ownedRow = (await screen.findByText("owned.cbz")).closest("tr") as HTMLElement;
+    const missingRow = screen.getByText("missing.cbz").closest("tr") as HTMLElement;
+
+    expect(ownedRow.className).not.toContain("bg-success/10");
+    expect(missingRow.className).toContain("bg-success/10");
+  });
+
   it.each(["failed", "imported"])(
     "retries a %s result through the download endpoint",
     async (status) => {

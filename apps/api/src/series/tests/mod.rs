@@ -6,6 +6,7 @@ mod orphans;
 mod ratings;
 mod recommendations;
 mod related;
+mod volumes;
 
 use super::helpers::get_or_create_series;
 use super::update::UpdateSeriesResponse;

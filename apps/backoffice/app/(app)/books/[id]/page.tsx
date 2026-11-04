@@ -1,4 +1,4 @@
-import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch, ReadingStatus, TelegramMonitorStatus, hasEnabledDdlProvider } from "@/lib/api";
+import { fetchLibraries, getBookCoverUrl, BookDto, apiFetch, fetchSeriesOwnedVolumes, ReadingStatus, TelegramMonitorStatus, hasEnabledDdlProvider } from "@/lib/api";
 import { getActiveUser } from "@/lib/activeUser";
 import { BookPreview } from "@/app/components/BookPreview";
 import { BookActionsToolbar } from "@/app/components/BookActionsToolbar";
@@ -43,6 +43,10 @@ export default async function BookDetailPage({
   if (!book) {
     notFound();
   }
+
+  const ownedVolumes = book.series_id
+    ? await fetchSeriesOwnedVolumes(book.series_id).catch(() => null)
+    : null;
 
   const { t, locale } = await getServerTranslations();
 
@@ -165,7 +169,7 @@ export default async function BookDetailPage({
           )}
 
           {/* Action buttons toolbar */}
-          <BookActionsToolbar book={book} hasActiveUser={hasActiveUser} telegramEnabled={telegramEnabled} ddlProviderEnabled={ddlProviderEnabled} />
+          <BookActionsToolbar book={book} hasActiveUser={hasActiveUser} telegramEnabled={telegramEnabled} ddlProviderEnabled={ddlProviderEnabled} ownedVolumes={ownedVolumes ?? undefined} />
         </div>
       </div>
 

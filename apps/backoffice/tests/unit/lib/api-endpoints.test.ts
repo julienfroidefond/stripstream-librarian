@@ -19,6 +19,7 @@ import {
   fetchLibraries,
   fetchRelatedSeries,
   fetchSeriesById,
+  fetchSeriesOwnedVolumes,
   fetchSeriesUserActivity,
   fetchStats,
   listFolders,
@@ -254,6 +255,15 @@ describe("series", () => {
   it("fetches a series detail", async () => {
     await fetchSeriesById("ser-1");
     expect(lastCall().url).toBe("http://api:7080/series/ser-1/details");
+  });
+
+  it("fetches every owned regular volume of a series", async () => {
+    fetchMock.mockResolvedValueOnce(makeResponse({ owned_volumes: [1, 3, 7] }));
+
+    await expect(fetchSeriesOwnedVolumes("ser-1")).resolves.toEqual([1, 3, 7]);
+
+    expect(lastCall().url).toBe("http://api:7080/series/ser-1/volumes");
+    expect(lastCall().method).toBe("GET");
   });
 
   it("limits related series", async () => {

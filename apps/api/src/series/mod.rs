@@ -13,6 +13,7 @@ pub mod related;
 #[cfg(test)]
 mod tests;
 pub mod update;
+pub mod volumes;
 
 pub use activity::*;
 pub use archive::*;
@@ -27,6 +28,7 @@ pub use ratings::*;
 pub use recommendations::*;
 pub use related::*;
 pub use update::*;
+pub use volumes::*;
 
 use axum::{
     extract::{Path, State},

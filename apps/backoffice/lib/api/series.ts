@@ -145,6 +145,18 @@ export async function fetchSeriesById(seriesId: string): Promise<SeriesDto> {
   });
 }
 
+export type SeriesVolumesDto = {
+  owned_volumes: number[];
+};
+
+/** Regular volume numbers owned for the whole series (not just the current page). */
+export async function fetchSeriesOwnedVolumes(seriesId: string): Promise<number[]> {
+  const dto = await apiFetch<SeriesVolumesDto>(`/series/${seriesId}/volumes`, {
+    next: { revalidate: 15, tags: ["series", `series:${seriesId}`] },
+  });
+  return dto.owned_volumes;
+}
+
 export async function fetchRelatedSeries(seriesId: string, limit = 10): Promise<RelatedSeriesDto[]> {
   return apiFetch<RelatedSeriesDto[]>(`/series/${seriesId}/related?limit=${limit}`, {
     next: { revalidate: 60, tags: ["series", `series:${seriesId}`] },

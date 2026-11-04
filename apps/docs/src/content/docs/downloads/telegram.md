@@ -70,6 +70,7 @@ Sur la fiche d'une série → *Actions* → **Rechercher sur Telegram** : recher
 Dans la fenêtre de recherche :
 - Champ de recherche pré-rempli avec le nom de la série (modifiable)
 - Badges tomes manquants — raccourcis pour chercher un tome précis
+- Résultats surlignés en vert quand le tome n'est pas encore possédé ; la comparaison porte sur **toute la série**, pas seulement sur les livres de la page affichée
 - Résultats avec statut et actions par ligne
 
 | Statut dans la fenêtre | Action |

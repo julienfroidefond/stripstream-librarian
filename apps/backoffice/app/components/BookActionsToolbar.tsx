@@ -28,7 +28,7 @@ const DdlProviderSearchModal = nextDynamic(
   () => import("./DdlProviderSearchModal").then(m => m.DdlProviderSearchModal)
 );
 
-export function BookActionsToolbar({ book, hasActiveUser = true, telegramEnabled = false, ddlProviderEnabled = false }: { book: BookDto; hasActiveUser?: boolean; telegramEnabled?: boolean; ddlProviderEnabled?: boolean }) {
+export function BookActionsToolbar({ book, hasActiveUser = true, telegramEnabled = false, ddlProviderEnabled = false, ownedVolumes }: { book: BookDto; hasActiveUser?: boolean; telegramEnabled?: boolean; ddlProviderEnabled?: boolean; ownedVolumes?: number[] }) {
   const { t } = useTranslation();
 
   // Prowlarr search context for this book
@@ -66,7 +66,7 @@ export function BookActionsToolbar({ book, hasActiveUser = true, telegramEnabled
             <TelegramSearchModal
               seriesName={searchSeries}
               missingBooks={null}
-              ownedVolumes={book.volume != null ? [book.volume] : undefined}
+              ownedVolumes={ownedVolumes}
               initialEnabled={telegramEnabled}
               initialQuery={initialQuery}
             >
