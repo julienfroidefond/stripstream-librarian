@@ -19,6 +19,7 @@ import { POST as createSeries } from "@/app/api/series/create/route";
 import { POST as markRead } from "@/app/api/series/mark-read/route";
 import { GET as listArchived } from "@/app/api/series/archived/route";
 import { GET as getArchived } from "@/app/api/series/archived/[id]/route";
+import { GET as listOrphans, DELETE as deleteOrphans } from "@/app/api/series/orphans/route";
 import { PATCH as patchSeries, DELETE as deleteSeries } from "@/app/api/series/[seriesId]/route";
 import { GET as getSeriesMetadata } from "@/app/api/series/[seriesId]/metadata/route";
 import { POST as mergeSeries } from "@/app/api/series/[seriesId]/merge/route";
@@ -107,6 +108,53 @@ describe("/api/series", () => {
     const res = await getArchived(jsonRequest("/api/series/archived/1"), routeCtx({ id: "1" }));
     expect(mockApi).toHaveBeenCalledWith("/admin/series/archived/1");
     expect(res.status).toBe(200);
+  });
+
+  it("GET orphans passthrough", async () => {
+    mockApi.mockResolvedValue({ items: [], total: 0, page: 1, limit: 50 });
+    const res = await listOrphans();
+    expect(mockApi).toHaveBeenCalledWith("/admin/series/orphans");
+    expect(await res.json()).toEqual({ items: [], total: 0, page: 1, limit: 50 });
+  });
+
+  it("GET orphans returns 500 on error", async () => {
+    mockApi.mockRejectedValue(new Error("boom"));
+    const res = await listOrphans();
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "boom" });
+  });
+
+  it("DELETE orphans forwards the explicit ids", async () => {
+    mockApi.mockResolvedValue({ deleted: true });
+    const res = await deleteOrphans(
+      jsonRequest("/api/series/orphans", { method: "DELETE", body: { ids: ["a", "b"] } })
+    );
+
+    expect(mockApi).toHaveBeenCalledTimes(2);
+    expect(mockApi).toHaveBeenNthCalledWith(1, "/series/a", { method: "DELETE" });
+    expect(mockApi).toHaveBeenNthCalledWith(2, "/series/b", { method: "DELETE" });
+    expect(await res.json()).toEqual({ deleted: 2 });
+  });
+
+  it("DELETE orphans walks every page when no ids are given", async () => {
+    mockApi
+      .mockResolvedValueOnce({ items: [{ id: "a" }, { id: "b" }], total: 2, page: 1, limit: 200 })
+      .mockResolvedValue({ deleted: true });
+
+    const res = await deleteOrphans(jsonRequest("/api/series/orphans", { method: "DELETE" }));
+
+    expect(mockApi).toHaveBeenNthCalledWith(1, "/admin/series/orphans?page=1&limit=200");
+    expect(mockApi).toHaveBeenNthCalledWith(2, "/series/a", { method: "DELETE" });
+    expect(mockApi).toHaveBeenNthCalledWith(3, "/series/b", { method: "DELETE" });
+    expect(await res.json()).toEqual({ deleted: 2 });
+  });
+
+  it("DELETE orphans returns 500 on error", async () => {
+    mockApi.mockRejectedValue(new Error("nope"));
+    const res = await deleteOrphans(
+      jsonRequest("/api/series/orphans", { method: "DELETE", body: { ids: ["a"] } })
+    );
+    expect(res.status).toBe(500);
   });
 
   it("PATCH series forwards body", async () => {

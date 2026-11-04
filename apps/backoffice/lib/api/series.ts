@@ -263,6 +263,32 @@ export async function deleteSeries(seriesId: string) {
   });
 }
 
+export type OrphanSeriesItemDto = {
+  id: string;
+  name: string;
+  library_id: string;
+  library_name: string | null;
+  metadata_provider: string | null;
+  external_url: string | null;
+  created_at: string;
+  age_days: number;
+  has_available_download: boolean;
+  books_count: number;
+};
+
+export type OrphanSeriesPageDto = {
+  items: OrphanSeriesItemDto[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+export async function listOrphanSeries(page = 1, limit = 50): Promise<OrphanSeriesPageDto> {
+  return apiFetch<OrphanSeriesPageDto>(
+    `/admin/series/orphans?page=${page}&limit=${limit}`,
+  );
+}
+
 export async function mergeSeries(targetId: string, sourceId: string) {
   return apiFetch<{ books_moved: number; metadata_moved: number; downloads_moved: number }>(
     `/series/${targetId}/merge`,

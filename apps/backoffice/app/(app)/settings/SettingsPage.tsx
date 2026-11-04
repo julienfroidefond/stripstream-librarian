@@ -19,6 +19,7 @@ import { KomgaSyncCard } from "./components/KomgaSyncCard";
 import { AnilistTab } from "./components/AnilistTab";
 import { RenameFormatCard } from "./components/RenameFormatCard";
 import { ArchivesTab } from "./components/ArchivesTab";
+import { OrphansTab } from "./components/OrphansTab";
 import { TelegramMonitorCard } from "./components/TelegramMonitorCard";
 import { DdlProvidersCard } from "./components/DdlProvidersCard";
 import { DdlEngineCard, type DdlEngineLimits } from "./components/DdlEngineCard";
@@ -78,7 +79,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
     isClientConfigured("alldebrid", initialAlldebrid)
   );
 
-  const VALID_TABS = ["general", "media", "downloadTools", "metadata", "ai", "readingStatus", "notifications", "tokens", "archives"] as const;
+  const VALID_TABS = ["general", "media", "downloadTools", "metadata", "ai", "readingStatus", "notifications", "tokens", "archives", "orphans"] as const;
   type TabId = typeof VALID_TABS[number];
 
   function resolveTab(tab: string | null | undefined): TabId {
@@ -181,6 +182,7 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
     { id: "notifications", label: t("settings.notifications"), icon: "bell" },
     { id: "tokens", label: t("nav.tokens"), icon: "tokens" },
     { id: "archives", label: t("settings.archives"), icon: "books" },
+    { id: "orphans", label: t("settings.orphans"), icon: "books" },
   ];
 
   return (
@@ -686,6 +688,12 @@ export default function SettingsPage({ initialSettings, initialCacheStats, initi
       {activeTab === "archives" && (
         <SettingsSections layout="stack">
           <ArchivesTab />
+        </SettingsSections>
+      )}
+
+      {activeTab === "orphans" && (
+        <SettingsSections layout="stack">
+          <OrphansTab />
         </SettingsSections>
       )}
 
