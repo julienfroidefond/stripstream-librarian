@@ -58,6 +58,7 @@ export default defineConfig({
 						{ label: 'Volumes manquants', slug: 'series/missing-volumes' },
 						{ label: 'Progression de lecture', slug: 'series/reading-progress' },
 						{ label: 'Archives', slug: 'series/archives' },
+						{ label: 'Séries orphelines', slug: 'series/orphans' },
 					],
 				},
 				{

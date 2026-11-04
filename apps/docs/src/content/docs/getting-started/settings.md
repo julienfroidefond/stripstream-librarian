@@ -24,6 +24,7 @@ sont aussi lisibles et modifiables via l'API (`GET` / `POST /settings/{clé}`, r
 | **Notifications** | Bot Telegram et événements notifiés |
 | **Jetons** | Utilisateurs lecteurs et tokens d'API |
 | **Archives** | Séries supprimées du disque conservées avec leur historique |
+| **Séries orphelines** | Séries sans aucun livre, à nettoyer |
 
 ---
 
@@ -113,6 +114,11 @@ Utilisateurs lecteurs et tokens d'API ; voir [Utilisateurs & Tokens](/reference/
 
 Séries supprimées du disque mais conservées avec leur historique de lecture ; voir
 [Archives](/series/archives/).
+
+## Séries orphelines
+
+Séries restées sans aucun livre, souvent des restes de découverte ; suppression unitaire ou en
+masse, avec archivage préalable. Voir [Séries orphelines](/series/orphans/).
 
 ---
 

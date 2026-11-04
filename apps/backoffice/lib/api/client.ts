@@ -3,6 +3,7 @@
  */
 
 import { getActiveUser } from "../activeUser";
+import { ApiError } from "./errors";
 
 export function config() {
   const baseUrl = process.env.API_BASE_URL || "http://api:7080";
@@ -42,7 +43,7 @@ export async function apiFetch<T>(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`API ${path} failed (${res.status}): ${text}`);
+    throw new ApiError(res.status, `API ${path} failed (${res.status}): ${text}`);
   }
 
   if (res.status === 204) {

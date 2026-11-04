@@ -168,7 +168,9 @@ async fn archive_series_row_preserves_anilist_link(pool: sqlx::PgPool) {
     .await
     .unwrap();
 
-    archive_series_row(&pool, series_id).await.unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+    archive_series_row(&mut conn, series_id).await.unwrap();
+    drop(conn);
 
     let row = sqlx::query(
         "SELECT anilist_id, anilist_title, anilist_url FROM archived_series WHERE id = $1",

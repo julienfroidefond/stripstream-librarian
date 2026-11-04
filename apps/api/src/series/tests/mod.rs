@@ -2,6 +2,7 @@ mod cleanup;
 mod create;
 mod list;
 mod merge;
+mod orphans;
 mod ratings;
 mod recommendations;
 mod related;

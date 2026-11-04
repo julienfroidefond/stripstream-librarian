@@ -263,6 +263,37 @@ export async function deleteSeries(seriesId: string) {
   });
 }
 
+export type OrphanSeriesItemDto = {
+  id: string;
+  name: string;
+  library_id: string;
+  library_name: string | null;
+  metadata_provider: string | null;
+  external_url: string | null;
+  created_at: string;
+  age_days: number;
+  /** A wishlist release was detected for this series (not an in-progress download). */
+  has_wishlist_release: boolean;
+  /** A torrent download for this series is still downloading or importing. */
+  has_active_download: boolean;
+};
+
+export type OrphanSeriesPageDto = {
+  items: OrphanSeriesItemDto[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+export type OrphanDeleteResultDto = {
+  /** Series actually deleted. */
+  deleted: number;
+  /** Series that were already gone (`404`), treated as deleted. */
+  skipped: number;
+  /** Ids whose deletion failed for another reason. */
+  failed: string[];
+};
+
 export async function mergeSeries(targetId: string, sourceId: string) {
   return apiFetch<{ books_moved: number; metadata_moved: number; downloads_moved: number }>(
     `/series/${targetId}/merge`,
