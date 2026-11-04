@@ -455,3 +455,83 @@ async fn process_rss_poll_reports_when_nothing_matches(pool: sqlx::PgPool) {
         .unwrap();
     assert_eq!(stored, 0);
 }
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn process_rss_poll_is_partial_when_some_indexers_fail(pool: sqlx::PgPool) {
+    let server = MockServer::start().await;
+    let lib = create_library(&pool, "rss_partial").await;
+    seed_series_with_missing_volume(&pool, lib, "Astérix", 1).await;
+
+    configure_prowlarr(&pool, &server.uri()).await;
+    mount_indexers(
+        &server,
+        serde_json::json!([{ "id": 1, "name": "Good" }, { "id": 2, "name": "Bad" }]),
+    )
+    .await;
+    mount_search(
+        &server,
+        1,
+        serde_json::json!([release("match", "Astérix T01 [CBZ]")]),
+    )
+    .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/search"))
+        .and(query_param("indexerIds", "2"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("nope"))
+        .mount(&server)
+        .await;
+
+    let job_id = create_job(&pool, None).await;
+    process_rss_poll(&pool, job_id, None).await.unwrap();
+
+    let row = sqlx::query("SELECT status, error_opt, stats_json FROM index_jobs WHERE id = $1")
+        .bind(job_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(row.get::<String, _>("status"), "partial");
+    let stats: serde_json::Value = row.get("stats_json");
+    let indexer_stats = stats["rss_indexer_stats"].as_array().unwrap();
+    assert_eq!(indexer_stats.len(), 2);
+    assert!(
+        indexer_stats
+            .iter()
+            .any(|s| s["name"] == "Bad" && s.get("error").is_some()),
+        "the failing indexer must stay visible in stats_json"
+    );
+    let error_opt: Option<String> = row.get("error_opt");
+    assert!(
+        error_opt.unwrap_or_default().contains("1/2"),
+        "summary should name the failure ratio"
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn process_rss_poll_is_failed_when_every_indexer_fails(pool: sqlx::PgPool) {
+    let server = MockServer::start().await;
+    let lib = create_library(&pool, "rss_failed").await;
+    seed_series_with_missing_volume(&pool, lib, "Astérix", 1).await;
+
+    configure_prowlarr(&pool, &server.uri()).await;
+    mount_indexers(&server, serde_json::json!([{ "id": 1, "name": "Bad" }])).await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/search"))
+        .and(query_param("indexerIds", "1"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("nope"))
+        .mount(&server)
+        .await;
+
+    let job_id = create_job(&pool, None).await;
+    process_rss_poll(&pool, job_id, None).await.unwrap();
+
+    let row = sqlx::query("SELECT status, error_opt FROM index_jobs WHERE id = $1")
+        .bind(job_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(row.get::<String, _>("status"), "failed");
+    assert!(row
+        .get::<Option<String>, _>("error_opt")
+        .unwrap_or_default()
+        .contains("1/1"));
+}

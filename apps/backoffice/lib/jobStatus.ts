@@ -18,10 +18,19 @@ export function isFailedJobStatus(status: string): boolean {
   return status === "failed";
 }
 
+export function isPartialJobStatus(status: string): boolean {
+  return status === "partial";
+}
+
 export function isCancelledJobStatus(status: string): boolean {
   return status === "cancelled";
 }
 
 export function isTerminalJobStatus(status: string): boolean {
-  return isCompletedJobStatus(status) || isFailedJobStatus(status) || isCancelledJobStatus(status);
+  return (
+    isCompletedJobStatus(status) ||
+    isPartialJobStatus(status) ||
+    isFailedJobStatus(status) ||
+    isCancelledJobStatus(status)
+  );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { isTerminalJobStatus } from "@/lib/jobStatus";
 
 interface JobDetailLiveProps {
   jobId: string;
@@ -26,7 +27,7 @@ export function JobDetailLive({ jobId, isTerminal }: JobDetailLiveProps) {
         const data = JSON.parse(event.data);
         router.refresh();
 
-        if (data.status === "success" || data.status === "failed" || data.status === "cancelled") {
+        if (isTerminalJobStatus(data.status)) {
           eventSource.close();
         }
       } catch {

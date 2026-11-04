@@ -9,7 +9,9 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::job_helpers::{is_job_cancelled, update_progress};
-use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
+use crate::jobs::lifecycle::{
+    classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
+};
 use crate::metadata_providers::senscritique::RATE_LIMITED_ERROR;
 use crate::{error::ApiError, state::AppState};
 
@@ -703,11 +705,15 @@ async fn process_metadata_refresh_inner(
         "changes": changes_only,
     });
 
-    complete_job(pool, job_id, stats)
+    let status = classify_job(total as usize, errors as usize);
+    let error_summary =
+        (status != JobStatus::Success).then(|| format!("{errors}/{total} series en erreur"));
+
+    finish_job(pool, job_id, status, stats, error_summary.as_deref())
         .await
         .map_err(|e| e.to_string())?;
 
-    info!("[METADATA_REFRESH] job={job_id} completed: {refreshed} updated, {unchanged} unchanged, {errors} errors");
+    info!("[METADATA_REFRESH] job={job_id} completed: {refreshed} updated, {unchanged} unchanged, {errors} errors ({status:?})");
 
     let library_name: Option<String> =
         sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")

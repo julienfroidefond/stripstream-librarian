@@ -5,12 +5,35 @@ use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::jobs::helpers::update_progress;
-use crate::jobs::lifecycle::{complete_job, job_in_flight, JobScope};
+use crate::jobs::lifecycle::{
+    classify_job, complete_job, finish_job, job_in_flight, JobScope, JobStatus,
+};
 use crate::state::AppState;
 
 use super::auth::{load_tg_settings, save_session_to_db};
 use super::channels::{do_sync, insert_document_message};
 use super::flood;
+
+/// Per-source outcome of an incremental Telegram sync.
+///
+/// `messages_scanned` is recorded even when nothing new is found, so the caller
+/// can tell "no new book" (healthy idle channel) from "no message read at all"
+/// (stuck scraper).
+#[derive(Debug, Clone)]
+pub struct IncrementalSourceResult {
+    pub username: String,
+    pub new_books: usize,
+    pub messages_scanned: usize,
+    pub error: Option<String>,
+}
+
+impl IncrementalSourceResult {
+    /// A source is suspicious when it errored or could not read a single
+    /// message during the run.
+    fn is_problem(&self) -> bool {
+        self.error.is_some() || self.messages_scanned == 0
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Manual job trigger: enqueue a pending telegram_sync job
@@ -254,7 +277,7 @@ pub async fn process_telegram_sync_incremental(
 
     let started_at = chrono::Utc::now();
 
-    let (new_books, sources_scanned, per_source) = do_incremental_sync(
+    let per_source = do_incremental_sync(
         pool.clone(),
         api_id as i32,
         api_hash,
@@ -265,7 +288,28 @@ pub async fn process_telegram_sync_incremental(
     .await
     .map_err(|e| format!("{e:?}"))?;
 
-    info!("[TG_SYNC_INC] Job {job_id} complete: {new_books} new books across {sources_scanned} sources");
+    let attempted = per_source.len();
+    let new_books: usize = per_source.iter().map(|source| source.new_books).sum();
+    let sources_scanned = per_source
+        .iter()
+        .filter(|source| source.messages_scanned > 0)
+        .count();
+    let problem_sources: Vec<&IncrementalSourceResult> = per_source
+        .iter()
+        .filter(|source| source.is_problem())
+        .collect();
+    let status = classify_job(attempted, problem_sources.len());
+    let error_summary = (status != JobStatus::Success).then(|| {
+        format!(
+            "{}/{} source(s) en erreur ou sans message lu",
+            problem_sources.len(),
+            attempted
+        )
+    });
+
+    info!(
+        "[TG_SYNC_INC] Job {job_id} complete: {new_books} new books across {sources_scanned} sources ({status:?})"
+    );
 
     // Fetch the books actually added during this run (by creation timestamp)
     let recent_rows = sqlx::query(
@@ -330,18 +374,31 @@ pub async fn process_telegram_sync_incremental(
 
     let sources_json: Vec<serde_json::Value> = per_source
         .iter()
-        .map(|(username, count)| serde_json::json!({ "username": username, "new_books": count }))
+        .map(|source| {
+            let mut value = serde_json::json!({
+                "username": source.username,
+                "new_books": source.new_books,
+                "messages_scanned": source.messages_scanned,
+            });
+            if let Some(error) = &source.error {
+                value["error"] = serde_json::json!(error);
+            }
+            value
+        })
         .collect();
 
-    complete_job(
+    finish_job(
         pool,
         job_id,
+        status,
         serde_json::json!({
             "new_books": new_books,
             "sources_scanned": sources_scanned,
+            "sources_failed": problem_sources.len(),
             "sources": sources_json,
             "recent_books": recent_books,
         }),
+        error_summary.as_deref(),
     )
     .await
     .map_err(|e| e.to_string())?;
@@ -366,7 +423,7 @@ pub async fn do_incremental_sync(
     session_bytes: Vec<u8>,
     sources: Vec<(Uuid, String, Option<Uuid>)>,
     job_id: Uuid,
-) -> Result<(usize, usize, Vec<(String, usize)>), ApiError> {
+) -> Result<Vec<IncrementalSourceResult>, ApiError> {
     use grammers_client::{Client, Config};
     use grammers_session::Session;
 
@@ -384,9 +441,7 @@ pub async fn do_incremental_sync(
     .await
     .map_err(|e| ApiError::internal(format!("Connect: {e}")))?;
 
-    let mut total_new = 0usize;
-    let mut sources_scanned = 0usize;
-    let mut per_source: Vec<(String, usize)> = Vec::new();
+    let mut per_source: Vec<IncrementalSourceResult> = Vec::new();
     let total = sources.len() as i32;
 
     for (idx, (source_id, username, library_id)) in sources.iter().enumerate() {
@@ -407,21 +462,38 @@ pub async fn do_incremental_sync(
             Ok(Some(c)) => c,
             Ok(None) => {
                 error!("[TG_SYNC_INC] Channel @{username} not found");
+                per_source.push(IncrementalSourceResult {
+                    username: username.clone(),
+                    new_books: 0,
+                    messages_scanned: 0,
+                    error: Some(format!("Channel @{username} not found")),
+                });
                 continue;
             }
             Err(e) => {
                 error!("[TG_SYNC_INC] Resolve @{username}: {e}");
+                per_source.push(IncrementalSourceResult {
+                    username: username.clone(),
+                    new_books: 0,
+                    messages_scanned: 0,
+                    error: Some(format!("Resolve @{username}: {e}")),
+                });
                 continue;
             }
         };
 
         let mut new_books = 0usize;
+        let mut messages_scanned = 0usize;
+        let mut source_error: Option<String> = None;
         let mut iter = client.iter_messages(&chat);
 
         loop {
             match flood::next_on_flood!(iter) {
                 Ok(Some(message)) => {
                     let msg_id = message.id() as i64;
+                    // Count the boundary message too: a channel that only has
+                    // already-known messages is healthy, not "0 message read".
+                    messages_scanned += 1;
                     if let Some(max_id) = max_known {
                         if msg_id <= max_id {
                             break;
@@ -438,21 +510,26 @@ pub async fn do_incremental_sync(
                     .await
                     {
                         error!("[TG_SYNC_INC] Insert @{username} msg {msg_id}: {e}");
+                        source_error = Some(format!("Insert @{username} msg {msg_id}: {e}"));
                     }
                 }
                 Ok(None) => break,
                 Err(e) => {
                     error!("[TG_SYNC_INC] iter @{username}: {e}");
+                    source_error = Some(format!("Iterate @{username}: {e}"));
                     break;
                 }
             }
         }
 
-        total_new += new_books;
-        sources_scanned += 1;
-        per_source.push((username.clone(), new_books));
+        per_source.push(IncrementalSourceResult {
+            username: username.clone(),
+            new_books,
+            messages_scanned,
+            error: source_error,
+        });
         info!(
-            "[TG_SYNC_INC] @{username}: {new_books} new books (since msg id {})",
+            "[TG_SYNC_INC] @{username}: {new_books} new books, {messages_scanned} messages scanned (since msg id {})",
             max_known.unwrap_or(0)
         );
     }
@@ -460,5 +537,5 @@ pub async fn do_incremental_sync(
     let updated_bytes = client.session().save();
     save_session_to_db(&pool, updated_bytes).await?;
 
-    Ok((total_new, sources_scanned, per_source))
+    Ok(per_source)
 }

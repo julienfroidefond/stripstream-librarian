@@ -9,7 +9,9 @@ use stripstream_core::http::build_http_client_with_agent;
 
 use super::{blacklist, detection::AvailableReleaseDto, missing, prowlarr, store};
 use crate::jobs::helpers::insert_entity_event as insert_event;
-use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
+use crate::jobs::lifecycle::{
+    classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
+};
 use crate::{error::ApiError, state::AppState};
 
 // ---------------------------------------------------------------------------
@@ -144,10 +146,12 @@ pub(crate) async fn process_rss_poll(
             .map_err(|e| e.to_string())?;
 
     if targets.is_empty() {
-        complete_job(
+        finish_job(
             pool,
             job_id,
+            JobStatus::Success,
             serde_json::json!({"message": "No series with missing volumes"}),
+            None,
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -350,7 +354,27 @@ pub(crate) async fn process_rss_poll(
         "rss_releases": snapshot,
     });
 
-    complete_job(pool, job_id, stats.clone())
+    // A job is only a real success when every indexer answered. Keep the
+    // per-indexer detail in `rss_indexer_stats` so the UI can name the KO ones.
+    let failed_indexers: Vec<String> = indexer_stats
+        .iter()
+        .filter(|stat| stat.get("error").is_some())
+        .filter_map(|stat| {
+            stat.get("name")
+                .and_then(|name| name.as_str())
+                .map(str::to_string)
+        })
+        .collect();
+    let status = classify_job(indexer_stats.len(), failed_indexers.len());
+    let error_summary = (status != JobStatus::Success).then(|| {
+        format!(
+            "{}/{} indexer(s) en erreur",
+            failed_indexers.len(),
+            indexer_stats.len()
+        )
+    });
+
+    finish_job(pool, job_id, status, stats, error_summary.as_deref())
         .await
         .map_err(|e| e.to_string())?;
 
@@ -375,76 +399,137 @@ pub(crate) async fn process_rss_poll(
         "[RSS_POLL] job={job_id} completed: {total} series, found={count_found}, new_releases={new_releases}"
     );
 
-    if new_releases > 0 {
-        let new_items: Vec<(String, String)> = if let Some(lid) = library_id {
-            sqlx::query(
-                r#"
-                SELECT DISTINCT s.name AS series_name, rel->>'title' AS release_title
-                FROM available_downloads ad
-                CROSS JOIN jsonb_array_elements(ad.available_releases) AS rel
-                JOIN series s ON s.id = ad.series_id
-                WHERE ad.library_id = $1
-                  AND (rel->>'detected_at')::timestamptz >= $2
-                ORDER BY s.name
-                LIMIT 10
-                "#,
-            )
+    let library_name: Option<String> = if let Some(lid) = library_id {
+        sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
             .bind(lid)
-            .bind(job_started_at)
-            .fetch_all(pool)
+            .fetch_optional(pool)
             .await
-            .unwrap_or_default()
-            .into_iter()
-            .map(|r| {
-                (
-                    r.get::<String, _>("series_name"),
-                    r.get::<String, _>("release_title"),
-                )
-            })
-            .collect()
-        } else {
-            sqlx::query(
-                r#"
-                SELECT DISTINCT s.name AS series_name, rel->>'title' AS release_title
-                FROM available_downloads ad
-                CROSS JOIN jsonb_array_elements(ad.available_releases) AS rel
-                JOIN series s ON s.id = ad.series_id
-                WHERE (rel->>'detected_at')::timestamptz >= $1
-                ORDER BY s.name
-                LIMIT 10
-                "#,
-            )
-            .bind(job_started_at)
-            .fetch_all(pool)
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .map(|r| {
-                (
-                    r.get::<String, _>("series_name"),
-                    r.get::<String, _>("release_title"),
-                )
-            })
-            .collect()
-        };
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
 
-        notifications::notify(
-            pool.clone(),
-            notifications::NotificationEvent::DownloadDetectionCompleted {
-                library_name: None,
-                total_series: total,
-                found: count_found,
+    match status {
+        JobStatus::Failed => {
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::DownloadDetectionFailed {
+                    library_name,
+                    error: error_summary.unwrap_or_else(|| "all indexers failed".to_string()),
+                },
+            );
+        }
+        JobStatus::Partial => {
+            let errors = failed_indexers.len() as i64;
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::DownloadDetectionPartial {
+                    library_name,
+                    job_type: "prowlarr_rss".to_string(),
+                    failed_indexers,
+                    errors,
+                },
+            );
+        }
+        JobStatus::Success => {
+            notify_new_releases(
+                pool,
+                library_id,
+                job_started_at,
+                total,
+                count_found,
                 new_releases,
-                not_found: count_not_found,
-                no_missing: 0,
-                no_metadata: 0,
-                errors: 0,
-                new_items,
-            },
-        );
+                count_not_found,
+            )
+            .await;
+        }
     }
 
     Ok(())
+}
+
+/// Send the "download detection completed" notification when the run found new
+/// releases (unchanged behaviour: silent when nothing new was detected).
+async fn notify_new_releases(
+    pool: &PgPool,
+    library_id: Option<Uuid>,
+    job_started_at: chrono::DateTime<chrono::Utc>,
+    total: i32,
+    count_found: i64,
+    new_releases: i64,
+    count_not_found: i64,
+) {
+    if new_releases <= 0 {
+        return;
+    }
+
+    let new_items: Vec<(String, String)> = if let Some(lid) = library_id {
+        sqlx::query(
+            r#"
+            SELECT DISTINCT s.name AS series_name, rel->>'title' AS release_title
+            FROM available_downloads ad
+            CROSS JOIN jsonb_array_elements(ad.available_releases) AS rel
+            JOIN series s ON s.id = ad.series_id
+            WHERE ad.library_id = $1
+              AND (rel->>'detected_at')::timestamptz >= $2
+            ORDER BY s.name
+            LIMIT 10
+            "#,
+        )
+        .bind(lid)
+        .bind(job_started_at)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|r| {
+            (
+                r.get::<String, _>("series_name"),
+                r.get::<String, _>("release_title"),
+            )
+        })
+        .collect()
+    } else {
+        sqlx::query(
+            r#"
+            SELECT DISTINCT s.name AS series_name, rel->>'title' AS release_title
+            FROM available_downloads ad
+            CROSS JOIN jsonb_array_elements(ad.available_releases) AS rel
+            JOIN series s ON s.id = ad.series_id
+            WHERE (rel->>'detected_at')::timestamptz >= $1
+            ORDER BY s.name
+            LIMIT 10
+            "#,
+        )
+        .bind(job_started_at)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|r| {
+            (
+                r.get::<String, _>("series_name"),
+                r.get::<String, _>("release_title"),
+            )
+        })
+        .collect()
+    };
+
+    notifications::notify(
+        pool.clone(),
+        notifications::NotificationEvent::DownloadDetectionCompleted {
+            library_name: None,
+            total_series: total,
+            found: count_found,
+            new_releases,
+            not_found: count_not_found,
+            no_missing: 0,
+            no_metadata: 0,
+            errors: 0,
+            new_items,
+        },
+    );
 }
 
 // ---------------------------------------------------------------------------

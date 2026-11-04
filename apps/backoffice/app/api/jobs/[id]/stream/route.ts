@@ -44,7 +44,12 @@ export async function GET(
               }
 
               // Stop polling if job is complete
-              if (data.status === "success" || data.status === "failed" || data.status === "cancelled") {
+              if (
+                data.status === "success" ||
+                data.status === "partial" ||
+                data.status === "failed" ||
+                data.status === "cancelled"
+              ) {
                 isActive = false;
                 try {
                   controller.close();

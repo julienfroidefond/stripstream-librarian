@@ -28,7 +28,7 @@ use crate::downloads::detection::AvailableReleaseDto;
 use crate::downloads::missing;
 use crate::downloads::store;
 use crate::jobs::helpers::{insert_event, is_job_cancelled, update_progress};
-use crate::jobs::lifecycle::complete_job;
+use crate::jobs::lifecycle::{finish_job, JobStatus};
 
 use super::service;
 use super::types::DdlProviderSearchResultDto;
@@ -46,9 +46,10 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
 
     if providers.is_empty() {
         info!("[DDL_SEARCH] No enabled provider, job {job_id} is a no-op");
-        return complete_job(
+        return finish_job(
             pool,
             job_id,
+            JobStatus::Success,
             json!({
                 "series": 0,
                 "series_with_results": 0,
@@ -61,6 +62,7 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
                 "files_no_volume_match": 0,
                 "files_blacklisted": 0,
             }),
+            None,
         )
         .await
         .map_err(|e| e.to_string());
@@ -92,6 +94,7 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
     let mut matched_series = 0i64;
     let mut matched_files = 0i64;
     let mut errors = 0i64;
+    let mut failed_providers: Vec<String> = Vec::new();
     // Per-stage funnel counters: they show *why* a series yields nothing, which
     // the aggregate `series_with_results` cannot tell apart.
     let mut series_without_missing_volumes = 0i64;
@@ -149,6 +152,7 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
                         meta.id, target.series_name
                     );
                     errors += 1;
+                    failed_providers.push(meta.id.to_string());
                     continue;
                 }
             };
@@ -235,15 +239,23 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
     // now matches nothing) are dropped, like the detection cleanup does.
     let _ = store::delete_empty(pool, None).await;
 
-    complete_job(
+    let status = ddl_search_status(errors, matched_files);
+    failed_providers.sort();
+    failed_providers.dedup();
+    let error_summary =
+        (status != JobStatus::Success).then(|| format!("{errors} provider search(es) failed"));
+
+    finish_job(
         pool,
         job_id,
+        status,
         json!({
             "series": processed,
             "series_with_results": matched_series,
             "files": matched_files,
             "providers": providers.len(),
             "errors": errors,
+            "failed_providers": failed_providers,
             "series_without_missing_volumes": series_without_missing_volumes,
             "series_with_missing_volumes": series_with_missing_volumes,
             "files_owned": files_owned,
@@ -251,9 +263,37 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
             "files_no_volume_match": files_no_volume_match,
             "files_blacklisted": files_blacklisted,
         }),
+        error_summary.as_deref(),
     )
     .await
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+
+    match status {
+        JobStatus::Failed => {
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::DownloadDetectionFailed {
+                    library_name: None,
+                    error: error_summary
+                        .unwrap_or_else(|| "all provider searches failed".to_string()),
+                },
+            );
+        }
+        JobStatus::Partial => {
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::DownloadDetectionPartial {
+                    library_name: None,
+                    job_type: "ddl_search".to_string(),
+                    failed_indexers: failed_providers,
+                    errors,
+                },
+            );
+        }
+        JobStatus::Success => {}
+    }
+
+    Ok(())
 }
 
 /// Remove the DDL-sourced releases (those carrying a `provider`) from a series'
@@ -280,6 +320,21 @@ async fn strip_ddl_releases(pool: &PgPool, series_id: Uuid) -> Result<(), String
 
 /// Map a ranked DDL search result to the shared release shape written to
 /// `available_downloads`.
+/// Map a DDL run to its terminal status.
+///
+/// `files == 0` with errors means the provider wall blocked everything: the run
+/// produced nothing actionable and must be reported as failed, not partial.
+/// Errors with at least one file found stay partial.
+fn ddl_search_status(errors: i64, matched_files: i64) -> JobStatus {
+    if errors == 0 {
+        JobStatus::Success
+    } else if matched_files == 0 {
+        JobStatus::Failed
+    } else {
+        JobStatus::Partial
+    }
+}
+
 fn to_available_release(
     provider_id: &str,
     result: &DdlProviderSearchResultDto,
@@ -338,6 +393,22 @@ mod tests {
         assert_eq!(release.provider.as_deref(), Some("fourtoutici"));
         assert_eq!(release.external_id.as_deref(), Some("file-42"));
         assert_eq!(release.matched_missing_volumes, vec![3]);
+    }
+
+    #[test]
+    fn ddl_search_without_errors_is_success() {
+        assert_eq!(ddl_search_status(0, 0), JobStatus::Success);
+    }
+
+    #[test]
+    fn ddl_search_with_errors_and_no_file_is_failed() {
+        // Production case 2026-11-02: 81 errors, 0 file.
+        assert_eq!(ddl_search_status(81, 0), JobStatus::Failed);
+    }
+
+    #[test]
+    fn ddl_search_with_errors_and_some_files_is_partial() {
+        assert_eq!(ddl_search_status(3, 2), JobStatus::Partial);
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]

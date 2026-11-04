@@ -321,6 +321,16 @@ pub enum NotificationEvent {
         library_name: Option<String>,
         error: String,
     },
+    /// A download job finished with only some of its units of work failing.
+    DownloadDetectionPartial {
+        library_name: Option<String>,
+        /// Job type that partially failed (`prowlarr_rss`, `ddl_search`, ...).
+        job_type: String,
+        /// Indexers/providers that returned an error during this run.
+        failed_indexers: Vec<String>,
+        /// Total number of unit-level errors recorded by the job.
+        errors: i64,
+    },
     // Torrent import (qBittorrent download completed → files imported into library)
     TorrentImportCompleted {
         library_name: Option<String>,
@@ -840,6 +850,32 @@ fn format_event(event: &NotificationEvent) -> String {
             ]
             .join("\n")
         }
+        NotificationEvent::DownloadDetectionPartial {
+            library_name,
+            job_type,
+            failed_indexers,
+            errors,
+        } => {
+            let lib = library_name.as_deref().unwrap_or("All libraries");
+            let mut lines = vec![
+                "⚠️ <b>Download detection partially failed</b>".to_string(),
+                String::new(),
+                format!("📂 <b>Library:</b> {lib}"),
+                format!("🏷 <b>Job:</b> {job_type}"),
+                format!("❌ <b>Errors:</b> {errors}"),
+            ];
+            if !failed_indexers.is_empty() {
+                lines.push(format!(
+                    "🔌 <b>Failed indexers:</b> {}",
+                    failed_indexers
+                        .iter()
+                        .map(|name| truncate(name, 40))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            lines.join("\n")
+        }
         NotificationEvent::TorrentImportCompleted {
             library_name,
             series_name,
@@ -979,6 +1015,9 @@ fn is_event_enabled(config: &TelegramConfig, event: &NotificationEvent) -> bool 
         }
         NotificationEvent::DownloadDetectionFailed { .. } => {
             config.events.download_detection_failed
+        }
+        NotificationEvent::DownloadDetectionPartial { .. } => {
+            config.events.download_detection_completed
         }
         NotificationEvent::TorrentImportCompleted { .. } => config.events.torrent_import_completed,
         NotificationEvent::TorrentImportFailed { .. } => config.events.torrent_import_failed,

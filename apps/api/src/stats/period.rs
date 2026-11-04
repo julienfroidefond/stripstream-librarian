@@ -274,7 +274,7 @@ pub(super) async fn jobs_over_time(pool: &PgPool, period: &str) -> Result<Vec<Pg
                         END AS cat,
                         COUNT(*) AS c
                     FROM index_jobs
-                    WHERE status IN ('success', 'failed')
+                    WHERE status IN ('success', 'partial', 'failed')
                       AND finished_at >= CURRENT_DATE - INTERVAL '6 days'
                     GROUP BY finished_at::date, cat
                 ) cnt ON cnt.dt = d.dt
@@ -315,7 +315,7 @@ pub(super) async fn jobs_over_time(pool: &PgPool, period: &str) -> Result<Vec<Pg
                         END AS cat,
                         COUNT(*) AS c
                     FROM index_jobs
-                    WHERE status IN ('success', 'failed')
+                    WHERE status IN ('success', 'partial', 'failed')
                       AND finished_at >= DATE_TRUNC('week', NOW() - INTERVAL '2 months')
                     GROUP BY DATE_TRUNC('week', finished_at), cat
                 ) cnt ON cnt.dt = d.dt
@@ -356,7 +356,7 @@ pub(super) async fn jobs_over_time(pool: &PgPool, period: &str) -> Result<Vec<Pg
                         END AS cat,
                         COUNT(*) AS c
                     FROM index_jobs
-                    WHERE status IN ('success', 'failed')
+                    WHERE status IN ('success', 'partial', 'failed')
                       AND finished_at >= DATE_TRUNC('month', NOW()) - INTERVAL '11 months'
                     GROUP BY DATE_TRUNC('month', finished_at), cat
                 ) cnt ON cnt.dt = d.dt

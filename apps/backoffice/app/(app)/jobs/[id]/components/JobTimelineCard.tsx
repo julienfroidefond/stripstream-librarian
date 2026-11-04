@@ -1,6 +1,6 @@
 import { Card, CardHeader, CardTitle, CardContent } from "@/app/components/ui";
 import type { TranslateFunction } from "@/lib/i18n/dictionaries";
-import { isCompletedJobStatus, isFailedJobStatus } from "@/lib/jobStatus";
+import { isCompletedJobStatus, isFailedJobStatus, isPartialJobStatus } from "@/lib/jobStatus";
 
 interface JobTimelineCardProps {
   job: {
@@ -23,6 +23,7 @@ interface JobTimelineCardProps {
 
 export function JobTimelineCard({ job, isThumbnailOnly, t, locale, formatDuration }: JobTimelineCardProps) {
   const isCompleted = isCompletedJobStatus(job.status);
+  const isPartial = isPartialJobStatus(job.status);
   const isFailed = isFailedJobStatus(job.status);
   const isExtractingPages = job.status === "extracting_pages";
   const isThumbnailPhase = job.status === "generating_thumbnails";
@@ -150,11 +151,11 @@ export function JobTimelineCard({ job, isThumbnailOnly, t, locale, formatDuratio
             {job.finished_at && (
               <div className="flex items-start gap-4">
                 <div className={`w-3.5 h-3.5 rounded-full mt-0.5 shrink-0 z-10 ${
-                  isCompleted ? "bg-success" : isFailed ? "bg-destructive" : "bg-muted"
+                  isCompleted ? "bg-success" : isPartial ? "bg-warning" : isFailed ? "bg-destructive" : "bg-muted"
                 }`} />
                 <div className="flex-1 min-w-0">
                   <span className="text-sm font-medium text-foreground">
-                    {isCompleted ? t("jobDetail.finished") : isFailed ? t("jobDetail.failed") : t("jobDetail.cancelled")}
+                    {isCompleted ? t("jobDetail.finished") : isPartial ? t("jobDetail.partial") : isFailed ? t("jobDetail.failed") : t("jobDetail.cancelled")}
                   </span>
                   <p className="text-xs text-muted-foreground">{new Date(job.finished_at).toLocaleString(locale)}</p>
                 </div>

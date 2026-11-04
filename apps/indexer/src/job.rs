@@ -109,7 +109,7 @@ pub async fn cleanup_stale_jobs(pool: &PgPool) -> Result<()> {
     let purged = sqlx::query(
         r#"
         DELETE FROM index_jobs
-        WHERE status IN ('success', 'failed', 'cancelled')
+        WHERE status IN ('success', 'partial', 'failed', 'cancelled')
           AND created_at < NOW() - INTERVAL '90 days'
         "#,
     )

@@ -66,7 +66,9 @@ export function JobsList({ initialJobs, libraries, highlightJobId }: JobsListPro
 
   // Derive unique types, statuses, libraries for filter options
   const jobTypes = [...new Set(jobs.map(j => j.type))].sort();
-  const jobStatuses = [...new Set(jobs.map(j => j.status))].sort();
+  // `partial` is always offered even when the current page holds none: the
+  // whole point of the status is to find those runs.
+  const jobStatuses = [...new Set([...jobs.map(j => j.status), "partial"])].sort();
   const jobLibraryIds = [...new Set(jobs.map(j => j.library_id).filter(Boolean))] as string[];
 
   const totalPages = Math.ceil(filteredJobs.length / PAGE_SIZE);

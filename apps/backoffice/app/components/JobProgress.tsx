@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "@/lib/i18n/context";
 import { StatusBadge, Badge, ProgressBar } from "./ui";
-import { isPhase2Status } from "@/lib/jobStatus";
+import { isPhase2Status, isTerminalJobStatus } from "@/lib/jobStatus";
 
 interface ProgressEvent {
   job_id: string;
@@ -65,7 +65,7 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
 
         setProgress(progressData);
 
-        if (data.status === "success" || data.status === "failed" || data.status === "cancelled") {
+        if (isTerminalJobStatus(data.status)) {
           setIsComplete(true);
           eventSource.close();
           onCompleteRef.current?.();
@@ -113,7 +113,9 @@ export function JobProgress({ jobId, onComplete }: JobProgressProps) {
       <div className="flex items-center justify-between mb-3">
         <StatusBadge status={progress.status} />
         {isComplete && (
-          <Badge variant="success">{t("jobProgress.done")}</Badge>
+          <Badge variant={progress.status === "partial" ? "warning" : "success"}>
+            {progress.status === "partial" ? t("jobProgress.partial") : t("jobProgress.done")}
+          </Badge>
         )}
       </div>
 

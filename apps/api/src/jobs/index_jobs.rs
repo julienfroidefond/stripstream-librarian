@@ -42,6 +42,8 @@ pub struct IndexJobResponse {
     #[schema(value_type = Option<String>)]
     pub book_id: Option<Uuid>,
     pub r#type: String,
+    /// One of `pending`, `running`, `extracting_pages`, `generating_thumbnails`,
+    /// `success`, `partial`, `failed` or `cancelled`.
     pub status: String,
     #[schema(value_type = Option<String>)]
     pub started_at: Option<DateTime<Utc>>,
@@ -73,6 +75,8 @@ pub struct IndexJobDetailResponse {
     #[schema(value_type = Option<String>)]
     pub book_id: Option<Uuid>,
     pub r#type: String,
+    /// One of `pending`, `running`, `extracting_pages`, `generating_thumbnails`,
+    /// `success`, `partial`, `failed` or `cancelled`.
     pub status: String,
     #[schema(value_type = Option<String>)]
     pub started_at: Option<DateTime<Utc>>,
@@ -105,6 +109,8 @@ pub struct JobErrorResponse {
 #[derive(Serialize, ToSchema)]
 pub struct ProgressEvent {
     pub job_id: String,
+    /// One of `pending`, `running`, `extracting_pages`, `generating_thumbnails`,
+    /// `success`, `partial`, `failed` or `cancelled`.
     pub status: String,
     pub current_file: Option<String>,
     pub progress_percent: Option<i32>,
@@ -759,7 +765,11 @@ pub async fn stream_job_progress(
                         }
 
                         // Stop streaming if job is finished
-                        if status == "success" || status == "failed" || status == "cancelled" {
+                        if status == "success"
+                            || status == "partial"
+                            || status == "failed"
+                            || status == "cancelled"
+                        {
                             break;
                         }
                     }

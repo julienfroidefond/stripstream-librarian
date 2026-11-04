@@ -109,6 +109,16 @@ async fn diagnostics_aggregates_libraries_jobs_and_files(pool: PgPool) {
     .unwrap();
 
     sqlx::query(
+        "INSERT INTO index_jobs (id, library_id, type, status, started_at, finished_at, error_opt, stats_json) \
+         VALUES ($1, $2, 'metadata_refresh', 'partial', NOW() - INTERVAL '3 hours', NOW() - INTERVAL '2 hours', '1/2 series en erreur', '{\"errors\": 1}'::jsonb)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(lib_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
         "INSERT INTO index_jobs (id, library_id, type, status, started_at) \
          VALUES ($1, $2, 'scan', 'running', NOW())",
     )
@@ -150,10 +160,13 @@ async fn diagnostics_aggregates_libraries_jobs_and_files(pool: PgPool) {
     assert!(!report.thumbnails.directory.is_empty());
 
     // Jobs
-    assert_eq!(report.jobs.total, 3);
+    assert_eq!(report.jobs.total, 4);
     assert_eq!(report.jobs.pending, 1);
     assert_eq!(report.jobs.running, 1);
     assert_eq!(report.jobs.failed_last_24h, 1);
+    assert_eq!(report.jobs.partial_last_24h, 1);
+    // Aggregated from the partial job's `stats_json.errors`.
+    assert_eq!(report.jobs.errors_total, 1);
     assert_eq!(report.jobs.recent_failures.len(), 1);
     let failure = &report.jobs.recent_failures[0];
     assert_eq!(failure.id, failed_job);
@@ -177,13 +190,23 @@ async fn diagnostics_aggregates_libraries_jobs_and_files(pool: PgPool) {
         Some("2026-01-02T03:04:05+00:00".to_string())
     );
 
-    // Job breakdown: the three jobs are all `scan`, none of them stuck.
+    // Job breakdown: three scans (busiest first) and one partial refresh.
     assert_eq!(report.jobs.stale_pending, 0);
-    assert_eq!(report.jobs.by_type.len(), 1);
+    assert_eq!(report.jobs.by_type.len(), 2);
     assert_eq!(report.jobs.by_type[0].job_type, "scan");
     assert_eq!(report.jobs.by_type[0].pending, 1);
     assert_eq!(report.jobs.by_type[0].running, 1);
     assert_eq!(report.jobs.by_type[0].failed_last_24h, 1);
+    assert_eq!(report.jobs.by_type[0].partial_last_24h, 0);
+    assert_eq!(report.jobs.by_type[0].errors_total, 0);
+    let refresh = report
+        .jobs
+        .by_type
+        .iter()
+        .find(|job| job.job_type == "metadata_refresh")
+        .expect("metadata_refresh breakdown missing");
+    assert_eq!(refresh.partial_last_24h, 1);
+    assert_eq!(refresh.errors_total, 1);
 
     // No heartbeat rows and nothing wrong with the data set.
     assert!(report.services.is_empty());

@@ -508,6 +508,7 @@ const en: Record<TranslationKey, string> = {
   "jobProgress.connectionLost": "Connection lost",
   "jobProgress.error": "Error: {{message}}",
   "jobProgress.done": "Done",
+  "jobProgress.partial": "Partially done",
   "jobProgress.currentFile": "Current: {{file}}",
   "jobProgress.pages": "pages",
   "jobProgress.thumbnails": "thumbnails",
@@ -523,6 +524,8 @@ const en: Record<TranslationKey, string> = {
   "jobDetail.completedIn": "Completed in {{duration}}",
   "jobDetail.failedAfter": "after {{duration}}",
   "jobDetail.jobFailed": "Job failed",
+  "jobDetail.jobPartial": "Job partially failed",
+  "jobDetail.partial": "Partial",
   "jobDetail.cancelled": "Cancelled",
   "jobDetail.overview": "Overview",
   "jobDetail.timeline": "Timeline",
@@ -696,6 +699,7 @@ const en: Record<TranslationKey, string> = {
   // Status badges
   "statusBadge.extracting_pages": "Extracting pages",
   "statusBadge.generating_thumbnails": "Thumbnails",
+  "statusBadge.partial": "Partial",
 
   // Jobs indicator
   "jobsIndicator.viewAll": "View all jobs",
@@ -1757,6 +1761,8 @@ const en: Record<TranslationKey, string> = {
   "diagnostics.jobsPending": "Pending",
   "diagnostics.jobsRunning": "Running",
   "diagnostics.jobsFailed24h": "Failures in 24 h",
+  "diagnostics.jobsPartial24h": "Partial in 24 h",
+  "diagnostics.jobsErrors24h": "Errors in 24 h",
   "diagnostics.recentFailures": "Recent failures",
   "diagnostics.noFailures": "No recent failure.",
   "diagnostics.books": "Books",

@@ -19,7 +19,7 @@ import { TelegramIncrementalResultsCard } from "./components/TelegramIncremental
 import { JobErrorsCard } from "./components/JobErrorsCard";
 import { JobEventsCard, type JobEvent } from "./components/JobEventsCard";
 import { formatDuration, formatRate } from "@/lib/format";
-import { isCancelledJobStatus, isCompletedJobStatus, isFailedJobStatus, isPhase2Status, isTerminalJobStatus } from "@/lib/jobStatus";
+import { isCancelledJobStatus, isCompletedJobStatus, isFailedJobStatus, isPartialJobStatus, isPhase2Status, isTerminalJobStatus } from "@/lib/jobStatus";
 
 interface JobDetailPageProps {
   params: Promise<{ id: string }>;
@@ -182,6 +182,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     : 0;
 
   const isCompleted = isCompletedJobStatus(job.status);
+  const isPartial = isPartialJobStatus(job.status);
   const isFailed = isFailedJobStatus(job.status);
   const isCancelled = isCancelledJobStatus(job.status);
   const isTerminal = isTerminalJobStatus(job.status);
@@ -282,7 +283,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
         )}
 
         {/* Thumbnail statistics */}
-        {isThumbnailOnly && isCompleted && job.total_files != null && (
+        {isThumbnailOnly && (isCompleted || isPartial) && job.total_files != null && (
           <ThumbnailStatsCard job={job} t={t} formatDuration={formatDuration} formatSpeed={formatRate} durationMs={durationMs} />
         )}
 

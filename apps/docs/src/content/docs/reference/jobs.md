@@ -61,9 +61,15 @@ Les tâches terminées (réussies, échouées ou annulées) sont automatiquement
 
 ```
 En attente → En cours → Terminée
+                     → Partielle
                      → Échouée
                      → Annulée
 ```
+
+Le statut **Partielle** signale une tâche qui a fait du travail utile mais dont une partie des unités a échoué
+(indexeur Prowlarr en erreur, série non rafraîchie, source Telegram muette…). Elle est terminale et n'est pas
+un succès : le détail des erreurs reste visible dans le rapport et le résumé du job. Une tâche est **Échouée**
+lorsque toutes les unités ont échoué (ou qu'aucun fichier n'a été trouvé alors que des erreurs sont remontées).
 
 ## Suivi de progression
 

@@ -19,6 +19,21 @@ pub(super) async fn jobs_diagnostics(pool: &sqlx::PgPool) -> Result<JobDiagnosti
             COUNT(*) FILTER (WHERE status = 'failed'
                               AND finished_at > NOW() - INTERVAL '24 hours')
                 AS failed_last_24h,
+            COUNT(*) FILTER (WHERE status = 'partial'
+                              AND finished_at > NOW() - INTERVAL '24 hours')
+                AS partial_last_24h,
+            COALESCE(SUM(
+                CASE WHEN jsonb_typeof(stats_json -> 'errors') = 'number'
+                     THEN (stats_json ->> 'errors')::bigint ELSE 0 END
+              + CASE WHEN jsonb_typeof(stats_json -> 'sources_failed') = 'number'
+                     THEN (stats_json ->> 'sources_failed')::bigint ELSE 0 END
+              + CASE WHEN jsonb_typeof(stats_json -> 'rss_indexer_stats') = 'array'
+                     THEN (SELECT COUNT(*)
+                             FROM jsonb_array_elements(stats_json -> 'rss_indexer_stats') AS idx
+                            WHERE idx ->> 'error' IS NOT NULL)
+                     ELSE 0 END
+            ) FILTER (WHERE finished_at > NOW() - INTERVAL '24 hours'), 0)::bigint
+                AS errors_total,
             COUNT(*) FILTER (WHERE status = 'pending'
                               AND created_at < NOW() - make_interval(mins => $1))
                 AS stale_pending,
@@ -41,6 +56,21 @@ pub(super) async fn jobs_diagnostics(pool: &sqlx::PgPool) -> Result<JobDiagnosti
             COUNT(*) FILTER (WHERE status = 'failed'
                               AND finished_at > NOW() - INTERVAL '24 hours')
                 AS failed_last_24h,
+            COUNT(*) FILTER (WHERE status = 'partial'
+                              AND finished_at > NOW() - INTERVAL '24 hours')
+                AS partial_last_24h,
+            COALESCE(SUM(
+                CASE WHEN jsonb_typeof(stats_json -> 'errors') = 'number'
+                     THEN (stats_json ->> 'errors')::bigint ELSE 0 END
+              + CASE WHEN jsonb_typeof(stats_json -> 'sources_failed') = 'number'
+                     THEN (stats_json ->> 'sources_failed')::bigint ELSE 0 END
+              + CASE WHEN jsonb_typeof(stats_json -> 'rss_indexer_stats') = 'array'
+                     THEN (SELECT COUNT(*)
+                             FROM jsonb_array_elements(stats_json -> 'rss_indexer_stats') AS idx
+                            WHERE idx ->> 'error' IS NOT NULL)
+                     ELSE 0 END
+            ) FILTER (WHERE finished_at > NOW() - INTERVAL '24 hours'), 0)::bigint
+                AS errors_total,
             MAX(finished_at) AS last_finished_at
         FROM index_jobs
         GROUP BY type
@@ -82,6 +112,8 @@ pub(super) async fn jobs_diagnostics(pool: &sqlx::PgPool) -> Result<JobDiagnosti
         pending: counts.get("pending"),
         running: counts.get("running"),
         failed_last_24h: counts.get("failed_last_24h"),
+        partial_last_24h: counts.get("partial_last_24h"),
+        errors_total: counts.get("errors_total"),
         stale_pending: counts.get("stale_pending"),
         oldest_pending_seconds: counts.get("oldest_pending_seconds"),
         by_type: by_type
@@ -91,6 +123,8 @@ pub(super) async fn jobs_diagnostics(pool: &sqlx::PgPool) -> Result<JobDiagnosti
                 pending: row.get("pending"),
                 running: row.get("running"),
                 failed_last_24h: row.get("failed_last_24h"),
+                partial_last_24h: row.get("partial_last_24h"),
+                errors_total: row.get("errors_total"),
                 last_finished_at: row.get("last_finished_at"),
             })
             .collect(),
