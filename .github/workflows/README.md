@@ -11,6 +11,7 @@ this page: it is not needed to write code, only to understand a pipeline failure
 | `ci-web.yml` | every pull request | backoffice and docs validation |
 | `dependabot-automerge.yml` | Dependabot pull requests | merges patch/minor and digest-only image bumps (see below) |
 | `deploy.yml` | push to `main` | change detection, image build/push, version bump and deploy |
+| `codeql.yml` | PR, push to `main`, weekly | CodeQL analysis per language, path-filtered (see below) |
 | `opencode.yml` | `ai` label, `/oc` mentions | OpenCode agent |
 
 The merge to `main` is deliberately **not re-validated**, so the PR checks must stay
@@ -101,6 +102,25 @@ and retries the merge a few times.
 a merge with the repository `GITHUB_TOKEN` does not trigger `push` workflows, so `deploy.yml`
 — version bump, image build, deployment — would silently not run. The PAT attributes the
 merge to its owner, like a human merge.
+
+## CodeQL (`codeql.yml`)
+
+CodeQL runs in **advanced setup**, not GitHub's default setup: default setup owns its own
+workflow and has no trigger-level path filter, so it ran the 13 min Rust analysis on every PR and
+every push to `main`, including a two-file workflow diff (PR #212, 2026-11-04: ~15 min of runners,
+then again on the merge commit).
+
+`codeql.yml` keeps one job per language, each gated on the surfaces it covers (Rust → `apps/api`,
+`apps/indexer`, `crates`, `Cargo.*`, `infra/migrations`; `javascript-typescript` →
+`apps/backoffice`, `apps/docs`; `actions` → `.github/workflows`). A skipped job reports in ~5 s, a
+docs-only PR analyzes nothing, and the weekly `schedule` run still analyzes everything. Rust keeps
+`build-mode: none`, the mode default setup already used: the extractor reads the sources without
+compiling, so there is no toolchain or cargo cache to wire and a broken build cannot fail the scan.
+
+Because default setup must not stay enabled alongside this workflow (double analyses, and the
+13 min `dynamic` run comes back), it is disabled at the repository level
+(`PATCH /repos/{owner}/{repo}/code-scanning/default-setup`, `{"state": "not-configured"}`). If
+`codeql.yml` is ever deleted, re-enable default setup from **Settings → Advanced Security**.
 
 ## OpenCode agent (`opencode.yml`)
 
