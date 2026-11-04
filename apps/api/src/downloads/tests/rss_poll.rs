@@ -342,6 +342,44 @@ async fn fetch_rss_records_a_failing_indexer_without_dropping_the_others() {
     );
 }
 
+#[tokio::test]
+async fn fetch_rss_records_an_indexer_with_an_invalid_id() {
+    let server = MockServer::start().await;
+    mount_indexers(
+        &server,
+        serde_json::json!([
+            { "id": 1, "name": "Good" },
+            { "id": "not-a-number", "name": "Broken" }
+        ]),
+    )
+    .await;
+    mount_search(
+        &server,
+        1,
+        serde_json::json!([release("g1", "Asterix T01")]),
+    )
+    .await;
+
+    let client = build_http_client_with_agent(Duration::from_secs(10)).unwrap();
+    let result = fetch_rss_releases(&client, &server.uri(), "key", &[7030])
+        .await
+        .unwrap();
+
+    // The healthy indexer still contributes, and the unusable entry is counted
+    // as an attempt so a fully malformed list cannot look like a success.
+    assert_eq!(result.releases.len(), 1);
+    assert_eq!(result.indexer_stats.len(), 2);
+    let broken = result
+        .indexer_stats
+        .iter()
+        .find(|s| s["name"] == "Broken")
+        .expect("the unparseable indexer must stay visible");
+    assert!(
+        broken.get("error").is_some(),
+        "an invalid id must produce an error stat"
+    );
+}
+
 // ── process_rss_poll ────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -574,6 +612,11 @@ async fn process_rss_poll_is_partial_when_some_indexers_fail(pool: sqlx::PgPool)
             .iter()
             .any(|s| s["name"] == "Bad" && s.get("error").is_some()),
         "the failing indexer must stay visible in stats_json"
+    );
+    assert_eq!(
+        stats["rss_releases"].as_array().map(Vec::len),
+        Some(1),
+        "a partial run must keep its RSS snapshot for the UI"
     );
     let error_opt: Option<String> = row.get("error_opt");
     assert!(

@@ -48,6 +48,12 @@ fn classify_incremental_sync(sources: &[IncrementalSourceResult]) -> (JobStatus,
     (classify_job(attempted, failed), failed, attempted)
 }
 
+/// Sources that could actually be read during the run. An empty channel was
+/// still scanned, so only source-health failures are excluded.
+fn count_scanned_sources(sources: &[IncrementalSourceResult]) -> usize {
+    sources.iter().filter(|s| !s.is_source_failure()).count()
+}
+
 // ---------------------------------------------------------------------------
 // Manual job trigger: enqueue a pending telegram_sync job
 // ---------------------------------------------------------------------------
@@ -302,10 +308,7 @@ pub async fn process_telegram_sync_incremental(
     .map_err(|e| format!("{e:?}"))?;
 
     let new_books: usize = per_source.iter().map(|source| source.new_books).sum();
-    let sources_scanned = per_source
-        .iter()
-        .filter(|source| source.messages_scanned > 0)
-        .count();
+    let sources_scanned = count_scanned_sources(&per_source);
     let persistence_errors: usize = per_source
         .iter()
         .map(|source| source.persistence_errors)
@@ -604,6 +607,15 @@ mod tests {
             classify_incremental_sync(&sources),
             (JobStatus::Success, 0, 2)
         );
+    }
+
+    #[test]
+    fn empty_but_healthy_channels_still_count_as_scanned() {
+        // `healthy(_, 0)` has messages_scanned = 0 but was resolved and read
+        // successfully: it must be reported as scanned, unlike a failed source.
+        let sources = vec![healthy("a", 0), healthy("b", 0), source_failure("c")];
+
+        assert_eq!(count_scanned_sources(&sources), 2);
     }
 
     #[test]

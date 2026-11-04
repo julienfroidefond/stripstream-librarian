@@ -883,19 +883,8 @@ pub(crate) async fn process_metadata_batch(
 
     // `processed` series were attempted; only the ones with an `error` event are
     // failed units. `no_results`/`low_confidence`/... are valid outcomes.
-    let status = classify_job(processed.max(0) as usize, counts.errors.max(0) as usize);
-    let error_summary = (status != JobStatus::Success)
-        .then(|| format!("{}/{} series en erreur", counts.errors, processed));
-
-    finish_job(
-        pool,
-        job_id,
-        status,
-        stats.clone(),
-        error_summary.as_deref(),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    let (status, error_summary) =
+        finish_batch_job(pool, job_id, processed, counts.errors, stats).await?;
 
     info!("[METADATA_BATCH] job={job_id} completed: {processed}/{total} series processed");
 
@@ -946,6 +935,26 @@ pub(crate) async fn process_metadata_batch(
     }
 
     Ok(())
+}
+
+/// Classify and close a metadata batch job. Extracted so the partial/success
+/// boundary is covered by a DB test without running real provider searches.
+async fn finish_batch_job(
+    pool: &PgPool,
+    job_id: Uuid,
+    processed: i32,
+    errors: i64,
+    stats: serde_json::Value,
+) -> Result<(JobStatus, Option<String>), String> {
+    let status = classify_job(processed.max(0) as usize, errors.max(0) as usize);
+    let error_summary = (status != JobStatus::Success)
+        .then(|| format!("{}/{} series en erreur", errors, processed));
+
+    finish_job(pool, job_id, status, stats, error_summary.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok((status, error_summary))
 }
 
 use super::batch_sync::{

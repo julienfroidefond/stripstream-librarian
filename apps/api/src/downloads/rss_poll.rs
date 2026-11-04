@@ -413,7 +413,8 @@ pub(crate) async fn process_rss_poll(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Keep rss_releases snapshot only for the 5 most recent successful jobs
+    // Keep rss_releases snapshot only for the 5 most recent successful or
+    // partially-successful jobs: a partial run still has a useful snapshot.
     let _ = sqlx::query(
         r#"
         UPDATE index_jobs
@@ -421,7 +422,7 @@ pub(crate) async fn process_rss_poll(
         WHERE type = 'prowlarr_rss'
           AND id NOT IN (
             SELECT id FROM index_jobs
-            WHERE type = 'prowlarr_rss' AND status = 'success'
+            WHERE type = 'prowlarr_rss' AND status IN ('success', 'partial')
             ORDER BY finished_at DESC
             LIMIT 5
           )
@@ -446,6 +447,7 @@ pub(crate) async fn process_rss_poll(
         }
         JobStatus::Partial => {
             let errors = failed_indexers.len() as i64;
+            let new_items = load_new_items(pool, library_id, job_started_at).await;
             notifications::notify(
                 pool.clone(),
                 notifications::NotificationEvent::DownloadDetectionPartial {
@@ -453,6 +455,9 @@ pub(crate) async fn process_rss_poll(
                     job_type: "prowlarr_rss".to_string(),
                     failed_indexers,
                     errors,
+                    found: count_found,
+                    new_releases,
+                    new_items,
                 },
             );
         }
@@ -473,22 +478,15 @@ pub(crate) async fn process_rss_poll(
     Ok(())
 }
 
-/// Send the "download detection completed" notification when the run found new
-/// releases (unchanged behaviour: silent when nothing new was detected).
-async fn notify_new_releases(
+/// Releases detected since `job_started_at`, grouped by series and capped at 10.
+/// Shared by the success and partial notifications so a partially failed run
+/// still reports what its healthy indexers found.
+async fn load_new_items(
     pool: &PgPool,
     library_id: Option<Uuid>,
     job_started_at: chrono::DateTime<chrono::Utc>,
-    total: i32,
-    count_found: i64,
-    new_releases: i64,
-    count_not_found: i64,
-) {
-    if new_releases <= 0 {
-        return;
-    }
-
-    let new_items: Vec<(String, String)> = if let Some(lid) = library_id {
+) -> Vec<(String, String)> {
+    if let Some(lid) = library_id {
         sqlx::query(
             r#"
             SELECT DISTINCT s.name AS series_name, rel->>'title' AS release_title
@@ -538,7 +536,25 @@ async fn notify_new_releases(
             )
         })
         .collect()
-    };
+    }
+}
+
+/// Send the "download detection completed" notification when the run found new
+/// releases (unchanged behaviour: silent when nothing new was detected).
+async fn notify_new_releases(
+    pool: &PgPool,
+    library_id: Option<Uuid>,
+    job_started_at: chrono::DateTime<chrono::Utc>,
+    total: i32,
+    count_found: i64,
+    new_releases: i64,
+    count_not_found: i64,
+) {
+    if new_releases <= 0 {
+        return;
+    }
+
+    let new_items = load_new_items(pool, library_id, job_started_at).await;
 
     notifications::notify(
         pool.clone(),
@@ -593,14 +609,25 @@ async fn fetch_rss_releases(
         return Err(format!("Prowlarr indexer list returned {status}: {text}"));
     };
 
-    let indexer_meta: Vec<(i64, String)> = indexers
-        .iter()
-        .filter_map(|i| {
-            let id = i["id"].as_i64()?;
-            let name = i["name"].as_str().unwrap_or("unknown").to_string();
-            Some((id, name))
-        })
-        .collect();
+    // An entry we cannot address is still an attempted indexer: surface it as an
+    // error stat instead of silently dropping it, otherwise a run in which only
+    // malformed entries exist would be classified as a bogus success.
+    let mut indexer_meta: Vec<(i64, String)> = Vec::with_capacity(indexers.len());
+    let mut invalid_indexers: Vec<serde_json::Value> = Vec::new();
+    for indexer in &indexers {
+        let name = indexer["name"].as_str().unwrap_or("unknown").to_string();
+        match indexer["id"].as_i64() {
+            Some(id) => indexer_meta.push((id, name)),
+            None => {
+                tracing::warn!("[RSS_POLL] indexer '{name}' has an invalid id, skipping");
+                invalid_indexers.push(serde_json::json!({
+                    "name": name,
+                    "count": 0,
+                    "error": "invalid or missing indexer id",
+                }));
+            }
+        }
+    }
 
     // Step 2: fire one request per indexer in parallel
     let tasks: Vec<_> = indexer_meta
@@ -650,6 +677,8 @@ async fn fetch_rss_releases(
             }
         }
     }
+
+    indexer_stats.extend(invalid_indexers);
 
     Ok(RssFetchResult {
         releases: all,

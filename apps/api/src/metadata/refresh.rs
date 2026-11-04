@@ -705,13 +705,7 @@ async fn process_metadata_refresh_inner(
         "changes": changes_only,
     });
 
-    let status = classify_job(total as usize, errors as usize);
-    let error_summary =
-        (status != JobStatus::Success).then(|| format!("{errors}/{total} series en erreur"));
-
-    finish_job(pool, job_id, status, stats, error_summary.as_deref())
-        .await
-        .map_err(|e| e.to_string())?;
+    let (status, error_summary) = finish_refresh_job(pool, job_id, total, errors, stats).await?;
 
     info!("[METADATA_REFRESH] job={job_id} completed: {refreshed} updated, {unchanged} unchanged, {errors} errors ({status:?})");
 
@@ -797,6 +791,26 @@ async fn process_metadata_refresh_inner(
 
 // refresh_link, diff helpers, sync_series_with_diff, sync_book_with_diff, rematch_unlinked_books
 // are now in super::refresh_sync
+
+/// Classify and close a metadata refresh job. Extracted so the partial/success
+/// boundary is covered by a DB test without hitting a provider.
+async fn finish_refresh_job(
+    pool: &PgPool,
+    job_id: Uuid,
+    total: i32,
+    errors: i32,
+    stats: serde_json::Value,
+) -> Result<(JobStatus, Option<String>), String> {
+    let status = classify_job(total.max(0) as usize, errors.max(0) as usize);
+    let error_summary =
+        (status != JobStatus::Success).then(|| format!("{errors}/{total} series en erreur"));
+
+    finish_job(pool, job_id, status, stats, error_summary.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok((status, error_summary))
+}
 
 #[cfg(test)]
 #[path = "tests/refresh.rs"]

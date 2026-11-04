@@ -740,19 +740,8 @@ pub async fn process_reading_status_push(
 
     // Only the series that errored are failed units; `skipped`/`no_books` are
     // normal outcomes.
-    let status = classify_job(processed as usize, count_errors.max(0) as usize);
-    let error_summary = (status != JobStatus::Success)
-        .then(|| format!("{count_errors}/{processed} series en erreur (sur {total} au total)"));
-
-    finish_job(
-        pool,
-        job_id,
-        status,
-        stats.clone(),
-        error_summary.as_deref(),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    let (status, error_summary) =
+        finish_reading_status_job(pool, job_id, processed, total, count_errors, stats).await?;
 
     info!(
         "[READING_STATUS_PUSH] job={job_id} completed: {}/{} series, pushed={count_pushed}, no_books={count_no_books}, errors={count_errors}",
@@ -871,6 +860,27 @@ async fn build_push_stats(pool: &PgPool, job_id: Uuid) -> serde_json::Value {
         "no_books": no_books,
         "errors": errors,
     })
+}
+
+/// Classify and close a reading-status job. Extracted so the partial/success
+/// boundary is covered by a DB test without calling AniList.
+async fn finish_reading_status_job(
+    pool: &PgPool,
+    job_id: Uuid,
+    processed: i32,
+    total: i32,
+    errors: i64,
+    stats: serde_json::Value,
+) -> Result<(JobStatus, Option<String>), String> {
+    let status = classify_job(processed.max(0) as usize, errors.max(0) as usize);
+    let error_summary = (status != JobStatus::Success)
+        .then(|| format!("{errors}/{processed} series en erreur (sur {total} au total)"));
+
+    finish_job(pool, job_id, status, stats, error_summary.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok((status, error_summary))
 }
 
 #[cfg(test)]

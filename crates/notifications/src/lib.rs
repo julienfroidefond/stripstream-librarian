@@ -335,6 +335,12 @@ pub enum NotificationEvent {
         failed_indexers: Vec<String>,
         /// Total number of unit-level errors recorded by the job.
         errors: i64,
+        /// Series for which releases were found by the healthy units.
+        found: i64,
+        /// Releases newly discovered during this (partially failed) run.
+        new_releases: i64,
+        /// New releases detected this run: (series_name, release_title), capped at 10
+        new_items: Vec<(String, String)>,
     },
     // Torrent import (qBittorrent download completed → files imported into library)
     TorrentImportCompleted {
@@ -883,6 +889,9 @@ fn format_event(event: &NotificationEvent) -> String {
             job_type,
             failed_indexers,
             errors,
+            found,
+            new_releases,
+            new_items,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
             let mut lines = vec![
@@ -890,8 +899,26 @@ fn format_event(event: &NotificationEvent) -> String {
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("🏷 <b>Job:</b> {job_type}"),
+                format!("📥 Found: <b>{found}</b>"),
                 format!("❌ <b>Errors:</b> {errors}"),
             ];
+            if *new_releases > 0 {
+                lines.push(format!("🆕 New releases: <b>{new_releases}</b>"));
+            }
+            if !new_items.is_empty() {
+                lines.push(String::new());
+                lines.push("📦 <b>New releases detected:</b>".to_string());
+                for (series, title) in new_items.iter().take(10) {
+                    lines.push(format!(
+                        "  • <b>{}</b> — {}",
+                        truncate(series, 40),
+                        truncate(title, 60)
+                    ));
+                }
+                if new_items.len() > 10 {
+                    lines.push(format!("  … and {} more", new_items.len() - 10));
+                }
+            }
             if !failed_indexers.is_empty() {
                 lines.push(format!(
                     "🔌 <b>Failed indexers:</b> {}",
@@ -1268,12 +1295,18 @@ mod tests {
             job_type: "prowlarr_rss".to_string(),
             failed_indexers: vec!["Indexer A".to_string(), "Indexer B".to_string()],
             errors: 2,
+            found: 4,
+            new_releases: 3,
+            new_items: vec![("Astérix".to_string(), "Astérix T01".to_string())],
         });
 
         assert!(text.contains("Download detection partially failed"));
         assert!(text.contains("prowlarr_rss"));
         assert!(text.contains("Indexer A, Indexer B"));
         assert!(text.contains("<b>Errors:</b> 2"));
+        assert!(text.contains("Found: <b>4</b>"));
+        assert!(text.contains("New releases: <b>3</b>"));
+        assert!(text.contains("Astérix T01"));
     }
 
     #[test]
@@ -1291,6 +1324,9 @@ mod tests {
             job_type: "ddl_search".to_string(),
             failed_indexers: vec![],
             errors: 1,
+            found: 0,
+            new_releases: 0,
+            new_items: vec![],
         };
 
         // Disabling the completed event must not silence partial runs.

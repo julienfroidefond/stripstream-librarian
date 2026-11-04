@@ -1,4 +1,5 @@
 use super::normalize_title;
+use uuid::Uuid;
 
 #[test]
 fn normalize_basic() {
@@ -595,4 +596,61 @@ async fn results_mapped_from_event_detail(pool: sqlx::PgPool) {
 
     let entity_name: Option<String> = row.get("entity_name");
     assert_eq!(entity_name.as_deref(), Some("Naruto"));
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn finish_reading_status_job_classifies_partial_and_empty_runs(pool: sqlx::PgPool) {
+    use crate::jobs::lifecycle::JobStatus;
+
+    let partial_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO index_jobs (id, type, status, started_at) VALUES ($1, 'reading_status_match', 'running', NOW())",
+    )
+    .bind(partial_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (status, summary) = super::finish_reading_status_job(
+        &pool,
+        partial_id,
+        2,
+        2,
+        1,
+        serde_json::json!({"errors": 1}),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(status, JobStatus::Partial);
+    assert!(summary.unwrap_or_default().contains("1/2"));
+    let stored: String = sqlx::query_scalar("SELECT status FROM index_jobs WHERE id = $1")
+        .bind(partial_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, "partial");
+
+    let empty_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO index_jobs (id, type, status, started_at) VALUES ($1, 'reading_status_match', 'running', NOW())",
+    )
+    .bind(empty_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (status, summary) =
+        super::finish_reading_status_job(&pool, empty_id, 0, 0, 0, serde_json::json!({}))
+            .await
+            .unwrap();
+
+    assert_eq!(status, JobStatus::Success);
+    assert!(summary.is_none());
+    let stored: String = sqlx::query_scalar("SELECT status FROM index_jobs WHERE id = $1")
+        .bind(empty_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, "success");
 }

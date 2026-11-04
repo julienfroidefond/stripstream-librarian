@@ -293,6 +293,9 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
                     job_type: "ddl_search".to_string(),
                     failed_indexers: failed_providers,
                     errors,
+                    found: matched_series,
+                    new_releases: matched_files,
+                    new_items: Vec::new(),
                 },
             );
         }
