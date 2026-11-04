@@ -47,7 +47,10 @@ pub async fn get_stats_overview(
                 COUNT(*) FILTER (WHERE brp.status = 'reading') AS reading,
                 COUNT(*) FILTER (WHERE brp.status = 'read') AS read
             FROM books b
-            LEFT JOIN book_reading_progress brp ON brp.book_id = b.id AND ($1::uuid IS NULL OR brp.user_id = $1)
+            -- Bound the join to the caller: an `IS NULL OR ...` predicate makes
+            -- every user's progress match and multiplies the aggregates below.
+            LEFT JOIN book_reading_progress brp
+              ON brp.book_id = b.id AND $1::uuid IS NOT NULL AND brp.user_id = $1
             "#,
         )
         .bind(user_id)

@@ -456,7 +456,7 @@ async fn get_stats_reading_status_and_reading_sections(pool: PgPool) {
     set_progress(&pool, b1, user, "read", None, Some(now)).await;
     set_progress(&pool, b2, user, "reading", Some(5), None).await;
 
-    let Json(resp) = get_stats(State(state), stats_query(None), None)
+    let Json(resp) = get_stats(State(state), stats_query(None), auth_user(user))
         .await
         .unwrap();
 
@@ -530,8 +530,125 @@ async fn get_stats_scopes_reading_to_authenticated_user(pool: PgPool) {
     let Json(unscoped) = get_stats(State(state), stats_query(None), None)
         .await
         .unwrap();
-    assert_eq!(unscoped.reading_status.reading, 2);
+    // Without a user context no progress row is joined, so nothing is counted
+    // as read/reading — but the reading lists still span every user.
+    assert_eq!(unscoped.reading_status.reading, 0);
+    assert_eq!(unscoped.reading_status.unread, 2);
     assert_eq!(unscoped.currently_reading.len(), 2);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_stats_counts_each_book_once_across_users(pool: PgPool) {
+    // Regression test for #214: the reading-progress join used to match every
+    // user's rows when no user context was provided, multiplying COUNT(*)/SUM().
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let alice = create_user(&pool, "alice").await;
+    let bob = create_user(&pool, "bob").await;
+
+    let b1 = create_simple_book(&pool, library, Some(series), "B1", 100).await;
+    let b2 = create_simple_book(&pool, library, Some(series), "B2", 200).await;
+    let b3 = create_simple_book(&pool, library, Some(series), "B3", 300).await;
+
+    // alice: b1 + b2; bob: b1 + b3 → 4 progress rows for 3 books, b1 shared.
+    set_progress(&pool, b1, alice, "read", None, Some(Utc::now())).await;
+    set_progress(&pool, b2, alice, "read", None, Some(Utc::now())).await;
+    set_progress(&pool, b1, bob, "read", None, Some(Utc::now())).await;
+    set_progress(&pool, b3, bob, "read", None, Some(Utc::now())).await;
+
+    // No user context: every book is unread, nothing is multiplied.
+    let Json(unscoped) = get_stats(State(state.clone()), stats_query(None), None)
+        .await
+        .unwrap();
+    assert_eq!(unscoped.overview.total_books, 3);
+    assert_eq!(unscoped.overview.total_pages, 600);
+    assert_eq!(unscoped.reading_status.unread, 3);
+    assert_eq!(unscoped.reading_status.reading, 0);
+    assert_eq!(unscoped.reading_status.read, 0);
+
+    assert_eq!(unscoped.by_library.len(), 1);
+    assert_eq!(unscoped.by_library[0].book_count, 3);
+    assert_eq!(unscoped.by_library[0].unread_count, 3);
+    assert_eq!(unscoped.by_library[0].read_count, 0);
+
+    assert_eq!(unscoped.top_series.len(), 1);
+    assert_eq!(unscoped.top_series[0].book_count, 3);
+    assert_eq!(unscoped.top_series[0].read_count, 0);
+    assert_eq!(unscoped.top_series[0].total_pages, 600);
+
+    // Scoped to alice: the shared book counts once.
+    let Json(scoped) = get_stats(State(state.clone()), stats_query(None), auth_user(alice))
+        .await
+        .unwrap();
+    assert_eq!(scoped.overview.total_books, 3);
+    assert_eq!(scoped.overview.total_pages, 600);
+    assert_eq!(scoped.reading_status.read, 2);
+    assert_eq!(scoped.reading_status.reading, 0);
+    assert_eq!(scoped.reading_status.unread, 1);
+    assert_eq!(scoped.by_library[0].book_count, 3);
+    assert_eq!(scoped.by_library[0].read_count, 2);
+    assert_eq!(scoped.by_library[0].unread_count, 1);
+    assert_eq!(scoped.top_series[0].book_count, 3);
+    assert_eq!(scoped.top_series[0].read_count, 2);
+    assert_eq!(scoped.top_series[0].total_pages, 600);
+
+    // Scoped to bob: same shape, different books.
+    let Json(bob_stats) = get_stats(State(state), stats_query(None), auth_user(bob))
+        .await
+        .unwrap();
+    assert_eq!(bob_stats.reading_status.read, 2);
+    assert_eq!(bob_stats.reading_status.unread, 1);
+    assert_eq!(bob_stats.top_series[0].book_count, 3);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn stats_overview_and_breakdown_count_each_book_once_across_users(pool: PgPool) {
+    // Same fixture as above, through the dashboard's dedicated endpoints.
+    let state = test_state(pool.clone());
+    let library = create_library(&pool, "main").await;
+    let series = create_series(&pool, library, "S1").await;
+    let alice = create_user(&pool, "alice").await;
+    let bob = create_user(&pool, "bob").await;
+
+    let b1 = create_simple_book(&pool, library, Some(series), "B1", 100).await;
+    let b2 = create_simple_book(&pool, library, Some(series), "B2", 200).await;
+    let b3 = create_simple_book(&pool, library, Some(series), "B3", 300).await;
+
+    set_progress(&pool, b1, alice, "read", None, Some(Utc::now())).await;
+    set_progress(&pool, b2, alice, "read", None, Some(Utc::now())).await;
+    set_progress(&pool, b1, bob, "read", None, Some(Utc::now())).await;
+    set_progress(&pool, b3, bob, "read", None, Some(Utc::now())).await;
+
+    let Json(overview) = get_stats_overview(State(state.clone()), None)
+        .await
+        .unwrap();
+    assert_eq!(overview.overview.total_books, 3);
+    assert_eq!(overview.overview.total_pages, 600);
+    assert_eq!(overview.reading_status.unread, 3);
+    assert_eq!(overview.reading_status.read, 0);
+
+    let Json(breakdown) = get_stats_breakdown(State(state.clone()), None)
+        .await
+        .unwrap();
+    let library_total: i64 = breakdown.by_library.iter().map(|l| l.book_count).sum();
+    assert_eq!(library_total, overview.overview.total_books);
+    assert_eq!(breakdown.by_library[0].book_count, 3);
+    assert_eq!(breakdown.by_library[0].unread_count, 3);
+    assert_eq!(breakdown.by_library[0].read_count, 0);
+    assert_eq!(breakdown.top_series[0].book_count, 3);
+    assert_eq!(breakdown.top_series[0].read_count, 0);
+    assert_eq!(breakdown.top_series[0].total_pages, 600);
+
+    let Json(scoped) = get_stats_breakdown(State(state), auth_user(alice))
+        .await
+        .unwrap();
+    assert_eq!(scoped.by_library[0].book_count, 3);
+    assert_eq!(scoped.by_library[0].read_count, 2);
+    assert_eq!(scoped.by_library[0].unread_count, 1);
+    assert_eq!(scoped.top_series[0].book_count, 3);
+    assert_eq!(scoped.top_series[0].read_count, 2);
+    assert_eq!(scoped.top_series[0].total_pages, 600);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -643,12 +760,16 @@ async fn get_stats_by_library_counts_sizes_and_status(pool: PgPool) {
     insert_file(&pool, a2, "cbz", 20, now).await;
     set_progress(&pool, a1, user, "read", None, Some(now)).await;
 
-    let Json(resp) = get_stats(State(state), stats_query(None), None)
-        .await
-        .unwrap();
+    let Json(scoped) = get_stats(
+        State(test_state(pool.clone())),
+        stats_query(None),
+        auth_user(user),
+    )
+    .await
+    .unwrap();
 
-    assert_eq!(resp.by_library.len(), 2);
-    let a = &resp.by_library[0];
+    assert_eq!(scoped.by_library.len(), 2);
+    let a = &scoped.by_library[0];
     assert_eq!(a.library_name, "A");
     assert_eq!(a.book_count, 2);
     assert_eq!(a.size_bytes, 30);
@@ -656,11 +777,54 @@ async fn get_stats_by_library_counts_sizes_and_status(pool: PgPool) {
     assert_eq!(a.reading_count, 0);
     assert_eq!(a.unread_count, 1);
 
-    let b = &resp.by_library[1];
+    let b = &scoped.by_library[1];
     assert_eq!(b.library_name, "B");
     assert_eq!(b.book_count, 1);
     assert_eq!(b.size_bytes, 0);
     assert_eq!(b.unread_count, 1);
+
+    // Without a user context the same library totals hold, with no reading.
+    let Json(unscoped) = get_stats(State(state), stats_query(None), None)
+        .await
+        .unwrap();
+    let a = &unscoped.by_library[0];
+    assert_eq!(a.book_count, 2);
+    assert_eq!(a.size_bytes, 30);
+    assert_eq!(a.read_count, 0);
+    assert_eq!(a.unread_count, 2);
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn get_stats_by_library_empty_library_has_zero_counters(pool: PgPool) {
+    // The outer `LEFT JOIN books` yields one NULL row per empty library: that
+    // must not be reported as a single unread book.
+    let state = test_state(pool.clone());
+    let _empty = create_library(&pool, "empty").await;
+    let populated = create_library(&pool, "populated").await;
+    create_simple_book(&pool, populated, None, "B1", 10).await;
+
+    let Json(resp) = get_stats(State(state.clone()), stats_query(None), None)
+        .await
+        .unwrap();
+
+    let empty_row = resp
+        .by_library
+        .iter()
+        .find(|l| l.library_name == "empty")
+        .unwrap();
+    assert_eq!(empty_row.book_count, 0);
+    assert_eq!(empty_row.read_count, 0);
+    assert_eq!(empty_row.reading_count, 0);
+    assert_eq!(empty_row.unread_count, 0);
+
+    let Json(breakdown) = get_stats_breakdown(State(state), None).await.unwrap();
+    let empty_row = breakdown
+        .by_library
+        .iter()
+        .find(|l| l.library_name == "empty")
+        .unwrap();
+    assert_eq!(empty_row.book_count, 0);
+    assert_eq!(empty_row.unread_count, 0);
 }
 
 #[sqlx::test(migrations = "../../infra/migrations")]
@@ -677,7 +841,7 @@ async fn get_stats_top_series_orders_by_book_count(pool: PgPool) {
     let _l1 = create_simple_book(&pool, library, Some(lonely), "L1", 5).await;
     set_progress(&pool, p1, user, "read", None, Some(Utc::now())).await;
 
-    let Json(resp) = get_stats(State(state), stats_query(None), None)
+    let Json(resp) = get_stats(State(state), stats_query(None), auth_user(user))
         .await
         .unwrap();
 
