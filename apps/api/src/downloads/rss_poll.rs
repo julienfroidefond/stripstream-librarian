@@ -189,11 +189,46 @@ pub(crate) async fn process_rss_poll(
     let client = build_http_client_with_agent(std::time::Duration::from_secs(60))
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
-    // Single RSS fetch regardless of how many libraries/series are covered
+    let library_name: Option<String> = if let Some(lid) = library_id {
+        sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
+            .bind(lid)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+
+    // Single RSS fetch regardless of how many libraries/series are covered.
+    // Failing to list the indexers is fatal: Prowlarr is unreachable or returned
+    // an unexpected payload. Never swallow it into an empty result set, which
+    // would report a bogus "nothing found" success.
     let RssFetchResult {
         releases: rss_releases,
         indexer_stats,
-    } = fetch_rss_releases(&client, &prowlarr_url, &prowlarr_api_key, &categories).await?;
+    } = match fetch_rss_releases(&client, &prowlarr_url, &prowlarr_api_key, &categories).await {
+        Ok(result) => result,
+        Err(error) => {
+            finish_job(
+                pool,
+                job_id,
+                JobStatus::Failed,
+                serde_json::json!({ "error": &error }),
+                Some(&error),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::DownloadDetectionFailed {
+                    library_name,
+                    error,
+                },
+            );
+            return Ok(());
+        }
+    };
 
     info!(
         "[RSS_POLL] job={job_id} fetched {} releases from Prowlarr ({} indexers)",
@@ -399,17 +434,6 @@ pub(crate) async fn process_rss_poll(
         "[RSS_POLL] job={job_id} completed: {total} series, found={count_found}, new_releases={new_releases}"
     );
 
-    let library_name: Option<String> = if let Some(lid) = library_id {
-        sqlx::query_scalar("SELECT name FROM libraries WHERE id = $1")
-            .bind(lid)
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten()
-    } else {
-        None
-    };
-
     match status {
         JobStatus::Failed => {
             notifications::notify(
@@ -559,9 +583,14 @@ async fn fetch_rss_releases(
         .map_err(|e| format!("Failed to fetch indexer list: {e}"))?;
 
     let indexers: Vec<serde_json::Value> = if indexers_resp.status().is_success() {
-        indexers_resp.json().await.unwrap_or_default()
+        indexers_resp
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse Prowlarr indexer list: {e}"))?
     } else {
-        vec![]
+        let status = indexers_resp.status();
+        let text = indexers_resp.text().await.unwrap_or_default();
+        return Err(format!("Prowlarr indexer list returned {status}: {text}"));
     };
 
     let indexer_meta: Vec<(i64, String)> = indexers

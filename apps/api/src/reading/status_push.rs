@@ -9,7 +9,9 @@ use uuid::Uuid;
 use crate::jobs::helpers::{
     insert_entity_event as insert_event, is_job_cancelled, update_progress,
 };
-use crate::jobs::lifecycle::{complete_job, fail_job, job_in_flight, JobScope};
+use crate::jobs::lifecycle::{
+    classify_job, fail_job, finish_job, job_in_flight, JobScope, JobStatus,
+};
 use crate::{error::ApiError, integrations::anilist, state::AppState};
 
 // ---------------------------------------------------------------------------
@@ -736,9 +738,21 @@ pub async fn process_reading_status_push(
         "errors": count_errors,
     });
 
-    complete_job(pool, job_id, stats.clone())
-        .await
-        .map_err(|e| e.to_string())?;
+    // Only the series that errored are failed units; `skipped`/`no_books` are
+    // normal outcomes.
+    let status = classify_job(processed as usize, count_errors.max(0) as usize);
+    let error_summary = (status != JobStatus::Success)
+        .then(|| format!("{count_errors}/{processed} series en erreur (sur {total} au total)"));
+
+    finish_job(
+        pool,
+        job_id,
+        status,
+        stats.clone(),
+        error_summary.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     info!(
         "[READING_STATUS_PUSH] job={job_id} completed: {}/{} series, pushed={count_pushed}, no_books={count_no_books}, errors={count_errors}",
@@ -753,18 +767,32 @@ pub async fn process_reading_status_push(
             .ok()
             .flatten();
 
-    notifications::notify(
-        pool.clone(),
-        notifications::NotificationEvent::ReadingStatusPushCompleted {
-            library_name,
-            total_series: total,
-            pushed: count_pushed as i32,
-            skipped: count_skipped,
-            no_books: count_no_books,
-            errors: count_errors,
-            pushed_series_names,
-        },
-    );
+    match status {
+        JobStatus::Failed => {
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::ReadingStatusPushFailed {
+                    library_name,
+                    error: error_summary
+                        .unwrap_or_else(|| format!("{count_errors}/{processed} series en erreur")),
+                },
+            );
+        }
+        JobStatus::Partial | JobStatus::Success => {
+            notifications::notify(
+                pool.clone(),
+                notifications::NotificationEvent::ReadingStatusPushCompleted {
+                    library_name,
+                    total_series: total,
+                    pushed: count_pushed as i32,
+                    skipped: count_skipped,
+                    no_books: count_no_books,
+                    errors: count_errors,
+                    pushed_series_names,
+                },
+            );
+        }
+    }
 
     Ok(())
 }

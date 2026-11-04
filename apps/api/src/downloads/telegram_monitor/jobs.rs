@@ -16,23 +16,36 @@ use super::flood;
 
 /// Per-source outcome of an incremental Telegram sync.
 ///
-/// `messages_scanned` is recorded even when nothing new is found, so the caller
-/// can tell "no new book" (healthy idle channel) from "no message read at all"
-/// (stuck scraper).
+/// Only source-health failures (resolve/iterate/auth) feed the job status.
+/// Per-message persistence errors and legitimately empty channels are recorded
+/// for the report but never turn a healthy sync into `partial`/`failed`.
 #[derive(Debug, Clone)]
 pub struct IncrementalSourceResult {
     pub username: String,
     pub new_books: usize,
     pub messages_scanned: usize,
+    /// Source-health failure: the channel could not be resolved or read.
     pub error: Option<String>,
+    /// Per-message persistence failures (DB insert). Non-fatal for the job.
+    pub persistence_errors: usize,
 }
 
 impl IncrementalSourceResult {
-    /// A source is suspicious when it errored or could not read a single
-    /// message during the run.
-    fn is_problem(&self) -> bool {
-        self.error.is_some() || self.messages_scanned == 0
+    /// Only source-health errors make the channel itself unhealthy.
+    fn is_source_failure(&self) -> bool {
+        self.error.is_some()
     }
+}
+
+/// Aggregate per-source results into the job terminal status.
+///
+/// `attempted` is the number of sources processed; `failed` only counts
+/// source-health failures. A DB insert error over otherwise healthy sources
+/// therefore stays `success`.
+fn classify_incremental_sync(sources: &[IncrementalSourceResult]) -> (JobStatus, usize, usize) {
+    let attempted = sources.len();
+    let failed = sources.iter().filter(|s| s.is_source_failure()).count();
+    (classify_job(attempted, failed), failed, attempted)
 }
 
 // ---------------------------------------------------------------------------
@@ -288,24 +301,18 @@ pub async fn process_telegram_sync_incremental(
     .await
     .map_err(|e| format!("{e:?}"))?;
 
-    let attempted = per_source.len();
     let new_books: usize = per_source.iter().map(|source| source.new_books).sum();
     let sources_scanned = per_source
         .iter()
         .filter(|source| source.messages_scanned > 0)
         .count();
-    let problem_sources: Vec<&IncrementalSourceResult> = per_source
+    let persistence_errors: usize = per_source
         .iter()
-        .filter(|source| source.is_problem())
-        .collect();
-    let status = classify_job(attempted, problem_sources.len());
-    let error_summary = (status != JobStatus::Success).then(|| {
-        format!(
-            "{}/{} source(s) en erreur ou sans message lu",
-            problem_sources.len(),
-            attempted
-        )
-    });
+        .map(|source| source.persistence_errors)
+        .sum();
+    let (status, failed_sources, attempted) = classify_incremental_sync(&per_source);
+    let error_summary = (status != JobStatus::Success)
+        .then(|| format!("{failed_sources}/{attempted} source(s) en erreur"));
 
     info!(
         "[TG_SYNC_INC] Job {job_id} complete: {new_books} new books across {sources_scanned} sources ({status:?})"
@@ -379,6 +386,7 @@ pub async fn process_telegram_sync_incremental(
                 "username": source.username,
                 "new_books": source.new_books,
                 "messages_scanned": source.messages_scanned,
+                "persistence_errors": source.persistence_errors,
             });
             if let Some(error) = &source.error {
                 value["error"] = serde_json::json!(error);
@@ -394,7 +402,8 @@ pub async fn process_telegram_sync_incremental(
         serde_json::json!({
             "new_books": new_books,
             "sources_scanned": sources_scanned,
-            "sources_failed": problem_sources.len(),
+            "sources_failed": failed_sources,
+            "persistence_errors": persistence_errors,
             "sources": sources_json,
             "recent_books": recent_books,
         }),
@@ -403,11 +412,14 @@ pub async fn process_telegram_sync_incremental(
     .await
     .map_err(|e| e.to_string())?;
 
+    // One notification per run: partial runs report their source counts here
+    // instead of also firing a separate failure event.
     notifications::notify(
         pool.clone(),
         notifications::NotificationEvent::TelegramSyncIncrementalCompleted {
             matched_books: notif_items.len(),
             sources_scanned,
+            sources_failed: failed_sources,
             per_source: matched_per_source.into_iter().collect(),
             new_items: notif_items,
         },
@@ -467,6 +479,7 @@ pub async fn do_incremental_sync(
                     new_books: 0,
                     messages_scanned: 0,
                     error: Some(format!("Channel @{username} not found")),
+                    persistence_errors: 0,
                 });
                 continue;
             }
@@ -477,6 +490,7 @@ pub async fn do_incremental_sync(
                     new_books: 0,
                     messages_scanned: 0,
                     error: Some(format!("Resolve @{username}: {e}")),
+                    persistence_errors: 0,
                 });
                 continue;
             }
@@ -484,6 +498,7 @@ pub async fn do_incremental_sync(
 
         let mut new_books = 0usize;
         let mut messages_scanned = 0usize;
+        let mut persistence_errors = 0usize;
         let mut source_error: Option<String> = None;
         let mut iter = client.iter_messages(&chat);
 
@@ -509,8 +524,10 @@ pub async fn do_incremental_sync(
                     )
                     .await
                     {
+                        // A persistence failure on one message does not make the
+                        // channel unhealthy: record it and keep scanning.
                         error!("[TG_SYNC_INC] Insert @{username} msg {msg_id}: {e}");
-                        source_error = Some(format!("Insert @{username} msg {msg_id}: {e}"));
+                        persistence_errors += 1;
                     }
                 }
                 Ok(None) => break,
@@ -527,9 +544,10 @@ pub async fn do_incremental_sync(
             new_books,
             messages_scanned,
             error: source_error,
+            persistence_errors,
         });
         info!(
-            "[TG_SYNC_INC] @{username}: {new_books} new books, {messages_scanned} messages scanned (since msg id {})",
+            "[TG_SYNC_INC] @{username}: {new_books} new books, {messages_scanned} messages scanned, {persistence_errors} persistence error(s) (since msg id {})",
             max_known.unwrap_or(0)
         );
     }
@@ -538,4 +556,80 @@ pub async fn do_incremental_sync(
     save_session_to_db(&pool, updated_bytes).await?;
 
     Ok(per_source)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn healthy(username: &str, new_books: usize) -> IncrementalSourceResult {
+        IncrementalSourceResult {
+            username: username.to_string(),
+            new_books,
+            messages_scanned: new_books,
+            error: None,
+            persistence_errors: 0,
+        }
+    }
+
+    fn source_failure(username: &str) -> IncrementalSourceResult {
+        IncrementalSourceResult {
+            username: username.to_string(),
+            new_books: 0,
+            messages_scanned: 0,
+            error: Some(format!("Channel @{username} not found")),
+            persistence_errors: 0,
+        }
+    }
+
+    #[test]
+    fn persistence_errors_do_not_make_a_healthy_sync_partial() {
+        // 9 books imported across 3 healthy sources, one message failed to
+        // persist: the sources are fine, so the job stays `success`.
+        let mut sources = vec![healthy("a", 4), healthy("b", 3), healthy("c", 2)];
+        sources[1].persistence_errors = 1;
+
+        let (status, failed, attempted) = classify_incremental_sync(&sources);
+
+        assert_eq!(status, JobStatus::Success);
+        assert_eq!(failed, 0);
+        assert_eq!(attempted, 3);
+    }
+
+    #[test]
+    fn an_empty_channel_is_not_a_failure() {
+        let sources = vec![healthy("a", 0), healthy("b", 0)];
+
+        assert_eq!(
+            classify_incremental_sync(&sources),
+            (JobStatus::Success, 0, 2)
+        );
+    }
+
+    #[test]
+    fn one_unreadable_source_among_healthy_ones_is_partial() {
+        let sources = vec![healthy("a", 2), source_failure("b"), healthy("c", 1)];
+
+        let (status, failed, attempted) = classify_incremental_sync(&sources);
+
+        assert_eq!(status, JobStatus::Partial);
+        assert_eq!(failed, 1);
+        assert_eq!(attempted, 3);
+    }
+
+    #[test]
+    fn every_source_failing_is_failed() {
+        let sources = vec![source_failure("a"), source_failure("b")];
+
+        let (status, failed, attempted) = classify_incremental_sync(&sources);
+
+        assert_eq!(status, JobStatus::Failed);
+        assert_eq!(failed, 2);
+        assert_eq!(attempted, 2);
+    }
+
+    #[test]
+    fn no_sources_configured_is_success() {
+        assert_eq!(classify_incremental_sync(&[]), (JobStatus::Success, 0, 0));
+    }
 }

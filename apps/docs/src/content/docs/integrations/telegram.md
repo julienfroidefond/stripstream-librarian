@@ -27,7 +27,7 @@ Vous pouvez activer ou désactiver chaque type de notification individuellement 
 | **Conversion CBR→CBZ** | Conversion terminée, en erreur |
 | **Métadonnées** | Métadonnées approuvées, auto-match terminé, auto-match en erreur, refresh terminé, refresh en erreur |
 | **Lecture** | Liaison AniList terminée, liaison en erreur, push AniList terminé, push en erreur |
-| **Téléchargements** | Détection de téléchargements terminée, détection en erreur |
+| **Téléchargements** | Détection de téléchargements terminée, détection partielle, détection en erreur |
 
 ## Contenu des notifications
 
@@ -37,7 +37,8 @@ Les notifications de succès les plus importantes incluent aussi un résumé uti
 - **Scan terminé sans nouveaux livres** : bibliothèque, type de scan, durée et compteurs
 - **Pull AniList terminé** : nombre de séries liées, puis la liste des séries effectivement liées pendant ce job
 - **Push AniList terminé** : nombre de séries poussées, puis la liste des séries effectivement envoyées à AniList
-- **Synchronisation Telegram Monitor** : uniquement les nouveaux fichiers rapprochés d'une série de votre bibliothèque ; aucune notification n'est envoyée si aucun fichier ne correspond
+- **Synchronisation Telegram Monitor** : uniquement les nouveaux fichiers rapprochés d'une série de votre bibliothèque ; aucune notification n'est envoyée si aucun fichier ne correspond. Une synchronisation partielle (une source illisible) est signalée une seule fois avec le nombre de sources en erreur
+- **Détection de téléchargements partielle** : une seule notification `download_detection_partial`, avec le type de job, le nombre d'erreurs et les indexeurs ou fournisseurs en échec. Elle possède son propre interrupteur et reste indépendante de la notification « terminée »
 
 Les listes sont volontairement tronquées si le job a produit beaucoup d'éléments.
 
@@ -56,5 +57,5 @@ Les notifications avec image utilisent l'API Telegram `sendPhoto` (upload multip
 
 Les notifications sont envoyées en mode fire-and-forget : un échec d'envoi ne bloque jamais l'opération principale qui l'a déclenchée.
 
-Codes d'événements internes : `scan_completed`, `scan_failed`, `scan_cancelled`, `thumbnail_completed`, `thumbnail_failed`, `conversion_completed`, `conversion_failed`, `metadata_approved`, `metadata_batch_completed`, `metadata_batch_failed`, `metadata_refresh_completed`, `metadata_refresh_failed`, `reading_status_match_completed`, `reading_status_match_failed`, `reading_status_push_completed`, `reading_status_push_failed`, `download_detection_completed`, `download_detection_failed`.
+Codes d'événements internes : `scan_completed`, `scan_failed`, `scan_cancelled`, `thumbnail_completed`, `thumbnail_failed`, `conversion_completed`, `conversion_failed`, `metadata_approved`, `metadata_batch_completed`, `metadata_batch_failed`, `metadata_refresh_completed`, `metadata_refresh_failed`, `reading_status_match_completed`, `reading_status_match_failed`, `reading_status_push_completed`, `reading_status_push_failed`, `download_detection_completed`, `download_detection_partial`, `download_detection_failed`.
 :::

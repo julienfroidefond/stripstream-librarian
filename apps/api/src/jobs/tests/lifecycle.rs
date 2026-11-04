@@ -302,11 +302,25 @@ async fn status_check_accepts_partial(pool: sqlx::PgPool) {
 
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn status_check_still_rejects_unknown_statuses(pool: sqlx::PgPool) {
-    let attempted = sqlx::query(
-        "INSERT INTO index_jobs (id, type, status) VALUES ($1, 'scan', 'partially_done')",
-    )
-    .bind(Uuid::new_v4())
-    .execute(&pool)
-    .await;
-    assert!(attempted.is_err());
+    // `partial` is the only value added by the migration: near-misses and
+    // case variants must still be rejected so the column stays a closed set.
+    for status in ["partially_done", "partial_success", "Partial", "done"] {
+        let attempted =
+            sqlx::query("INSERT INTO index_jobs (id, type, status) VALUES ($1, 'scan', $2)")
+                .bind(Uuid::new_v4())
+                .bind(status)
+                .execute(&pool)
+                .await;
+        assert!(
+            attempted.is_err(),
+            "status {status:?} should be rejected by index_jobs_status_check"
+        );
+    }
+
+    // ...while `partial` itself is accepted (see `status_check_accepts_partial`).
+    let accepted = insert_job(&pool, None, "scan", "partial").await;
+    assert_eq!(
+        job_row(&pool, accepted).await.get::<String, _>("status"),
+        "partial"
+    );
 }

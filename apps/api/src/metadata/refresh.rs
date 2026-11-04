@@ -765,19 +765,32 @@ async fn process_metadata_refresh_inner(
         }
     }
 
-    notifications::notify(
-        pool.clone(),
-        notifications::NotificationEvent::MetadataRefreshCompleted {
-            library_name,
-            refreshed,
-            unchanged,
-            errors,
-            series_fields_updated: series_fields_count,
-            books_fields_updated: books_fields_count,
-            details: detail_lines,
-            error_details: error_lines,
-        },
-    );
+    // One notification per run: a fully failed refresh reports the failure,
+    // otherwise the completion event carries the error counts and details.
+    if status == JobStatus::Failed {
+        notifications::notify(
+            pool.clone(),
+            notifications::NotificationEvent::MetadataRefreshFailed {
+                library_name,
+                error: error_summary
+                    .unwrap_or_else(|| format!("{errors}/{total} series en erreur")),
+            },
+        );
+    } else {
+        notifications::notify(
+            pool.clone(),
+            notifications::NotificationEvent::MetadataRefreshCompleted {
+                library_name,
+                refreshed,
+                unchanged,
+                errors,
+                series_fields_updated: series_fields_count,
+                books_fields_updated: books_fields_count,
+                details: detail_lines,
+                error_details: error_lines,
+            },
+        );
+    }
 
     Ok(())
 }

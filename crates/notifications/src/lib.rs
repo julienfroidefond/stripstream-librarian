@@ -43,6 +43,10 @@ pub struct EventToggles {
     pub reading_status_push_completed: bool,
     pub reading_status_push_failed: bool,
     pub download_detection_completed: bool,
+    /// A download job (RSS / DDL / detection) finished with partial failures.
+    /// Kept separate from `download_detection_completed` so both outcomes can be
+    /// toggled independently.
+    pub download_detection_partial: bool,
     pub download_detection_failed: bool,
     pub torrent_import_completed: bool,
     pub torrent_import_failed: bool,
@@ -69,6 +73,7 @@ impl Default for EventToggles {
             reading_status_push_completed: true,
             reading_status_push_failed: true,
             download_detection_completed: true,
+            download_detection_partial: true,
             download_detection_failed: true,
             torrent_import_completed: true,
             torrent_import_failed: true,
@@ -348,6 +353,9 @@ pub enum NotificationEvent {
         /// New files matched to a local series during this sync.
         matched_books: usize,
         sources_scanned: usize,
+        /// Sources that could not be read at all (resolve/auth/fetch failure).
+        /// `> 0` means the run only partially completed.
+        sources_failed: usize,
         /// Per-source breakdown of local matches: (channel_username, matched_books_count)
         per_source: Vec<(String, usize)>,
         /// New books matched to a local series: (series_name, volume_number), capped at 15
@@ -573,8 +581,13 @@ fn format_event(event: &NotificationEvent) -> String {
             new_matches,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
+            let title = if *errors > 0 {
+                "⚠️ <b>Metadata batch partially completed</b>"
+            } else {
+                "📊 <b>Metadata batch completed</b>"
+            };
             let mut lines = vec![
-                "📊 <b>Metadata batch completed</b>".to_string(),
+                title.to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("📋 <b>Processed:</b> {processed}/{total_series} series"),
@@ -643,8 +656,13 @@ fn format_event(event: &NotificationEvent) -> String {
             error_details,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
+            let title = if *errors > 0 {
+                "⚠️ <b>Metadata refresh partially completed</b>"
+            } else {
+                "🔄 <b>Metadata refresh completed</b>"
+            };
             let mut lines = vec![
-                "🔄 <b>Metadata refresh completed</b>".to_string(),
+                title.to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("📝 {refreshed} series refreshed, {unchanged} unchanged"),
@@ -689,8 +707,13 @@ fn format_event(event: &NotificationEvent) -> String {
             linked_series_names,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
+            let title = if *errors > 0 {
+                "⚠️ <b>Reading status match partially completed</b>"
+            } else {
+                "✅ <b>Reading status match completed</b>"
+            };
             let mut lines = vec![
-                "✅ <b>Reading status match completed</b>".to_string(),
+                title.to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("🔗 Linked: <b>{linked}</b> / <b>{total_series}</b> series"),
@@ -744,8 +767,13 @@ fn format_event(event: &NotificationEvent) -> String {
             pushed_series_names,
         } => {
             let lib = library_name.as_deref().unwrap_or("All libraries");
+            let title = if *errors > 0 {
+                "⚠️ <b>Reading status push partially completed</b>"
+            } else {
+                "✅ <b>Reading status push completed</b>"
+            };
             let mut lines = vec![
-                "✅ <b>Reading status push completed</b>".to_string(),
+                title.to_string(),
                 String::new(),
                 format!("📂 <b>Library:</b> {lib}"),
                 format!("⬆️ Pushed: <b>{pushed}</b> / <b>{total_series}</b> series"),
@@ -917,11 +945,19 @@ fn format_event(event: &NotificationEvent) -> String {
         NotificationEvent::TelegramSyncIncrementalCompleted {
             matched_books,
             sources_scanned,
+            sources_failed,
             per_source,
             new_items,
         } => {
+            let title = if *sources_failed > 0 {
+                format!(
+                    "⚠️ <b>Telegram — synchronisation partielle</b> ({sources_failed} source(s) en erreur)"
+                )
+            } else {
+                "📡 <b>Telegram — nouveaux livres associés</b>".to_string()
+            };
             let mut lines = vec![
-                "📡 <b>Telegram — nouveaux livres associés</b>".to_string(),
+                title,
                 String::new(),
                 format!("📥 <b>{matched_books}</b> livre{} associé{} à votre bibliothèque sur <b>{sources_scanned}</b> channel{}",
                     if *matched_books > 1 { "s" } else { "" },
@@ -1017,7 +1053,7 @@ fn is_event_enabled(config: &TelegramConfig, event: &NotificationEvent) -> bool 
             config.events.download_detection_failed
         }
         NotificationEvent::DownloadDetectionPartial { .. } => {
-            config.events.download_detection_completed
+            config.events.download_detection_partial
         }
         NotificationEvent::TorrentImportCompleted { .. } => config.events.torrent_import_completed,
         NotificationEvent::TorrentImportFailed { .. } => config.events.torrent_import_failed,
@@ -1053,10 +1089,13 @@ fn is_noteworthy(event: &NotificationEvent) -> bool {
         NotificationEvent::ReadingStatusPushCompleted { pushed, .. } => *pushed > 0,
         // Download detection: only if releases were found
         NotificationEvent::DownloadDetectionCompleted { found, .. } => *found > 0,
-        // Telegram incremental: only if a new file matched a local series
-        NotificationEvent::TelegramSyncIncrementalCompleted { matched_books, .. } => {
-            *matched_books > 0
-        }
+        // Telegram incremental: notify on new local matches, or when some
+        // sources failed (partial run) even if nothing matched.
+        NotificationEvent::TelegramSyncIncrementalCompleted {
+            matched_books,
+            sources_failed,
+            ..
+        } => *matched_books > 0 || *sources_failed > 0,
         // All failures, conversions, imports, manual actions → always noteworthy
         _ => true,
     }
@@ -1113,7 +1152,7 @@ pub fn notify(pool: PgPool, event: NotificationEvent) {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_event, NotificationEvent, TelegramConfig};
+    use super::{format_event, is_event_enabled, NotificationEvent, TelegramConfig};
 
     #[test]
     fn telegram_config_without_events_enables_all() {
@@ -1197,6 +1236,7 @@ mod tests {
         let text = format_event(&NotificationEvent::TelegramSyncIncrementalCompleted {
             matched_books: 1,
             sources_scanned: 2,
+            sources_failed: 0,
             per_source: vec![("bd_fr".to_string(), 1)],
             new_items: vec![("Les Géants".to_string(), Some(3))],
         });
@@ -1204,5 +1244,56 @@ mod tests {
         assert!(text.contains("livre associé à votre bibliothèque"));
         assert!(text.contains("<b>Les Géants</b> T03"));
         assert!(!text.contains("nouveaux livres détectés"));
+        assert!(!text.contains("synchronisation partielle"));
+    }
+
+    #[test]
+    fn telegram_incremental_sync_reports_partial_sources() {
+        let text = format_event(&NotificationEvent::TelegramSyncIncrementalCompleted {
+            matched_books: 0,
+            sources_scanned: 2,
+            sources_failed: 1,
+            per_source: vec![],
+            new_items: vec![],
+        });
+
+        assert!(text.contains("synchronisation partielle"));
+        assert!(text.contains("1 source(s) en erreur"));
+    }
+
+    #[test]
+    fn download_detection_partial_lists_failed_indexers() {
+        let text = format_event(&NotificationEvent::DownloadDetectionPartial {
+            library_name: Some("BD".to_string()),
+            job_type: "prowlarr_rss".to_string(),
+            failed_indexers: vec!["Indexer A".to_string(), "Indexer B".to_string()],
+            errors: 2,
+        });
+
+        assert!(text.contains("Download detection partially failed"));
+        assert!(text.contains("prowlarr_rss"));
+        assert!(text.contains("Indexer A, Indexer B"));
+        assert!(text.contains("<b>Errors:</b> 2"));
+    }
+
+    #[test]
+    fn download_detection_partial_has_its_own_toggle() {
+        let config: TelegramConfig = serde_json::from_value(serde_json::json!({
+            "bot_token": "t",
+            "chat_id": "c",
+            "enabled": true,
+            "events": { "download_detection_completed": false }
+        }))
+        .unwrap();
+
+        let partial = NotificationEvent::DownloadDetectionPartial {
+            library_name: None,
+            job_type: "ddl_search".to_string(),
+            failed_indexers: vec![],
+            errors: 1,
+        };
+
+        // Disabling the completed event must not silence partial runs.
+        assert!(is_event_enabled(&config, &partial));
     }
 }

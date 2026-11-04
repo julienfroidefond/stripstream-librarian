@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { config } from "@/lib/api";
+import { isTerminalJobStatus } from "@/lib/jobStatus";
 
 export async function GET(
   request: NextRequest,
@@ -44,12 +45,7 @@ export async function GET(
               }
 
               // Stop polling if job is complete
-              if (
-                data.status === "success" ||
-                data.status === "partial" ||
-                data.status === "failed" ||
-                data.status === "cancelled"
-              ) {
+              if (isTerminalJobStatus(data.status)) {
                 isActive = false;
                 try {
                   controller.close();

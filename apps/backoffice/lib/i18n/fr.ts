@@ -693,6 +693,8 @@ const fr = {
   "jobDetail.telegramIncrementalPerSource": "Détail par channel",
   "jobDetail.telegramIncrementalRecentBooks": "Fichiers trouvés ({{count}})",
   "jobDetail.telegramIncrementalNone": "Aucun nouveau fichier depuis la dernière synchro",
+  "jobDetail.telegramIncrementalPartial": "Synchro partielle — {{count}} source(s) illisible(s)",
+  "jobDetail.telegramIncrementalPersistenceErrors": "{{count}} erreur(s) d'écriture",
 
   // Status badges
   "statusBadge.extracting_pages": "Extraction des pages",
@@ -1069,6 +1071,7 @@ const fr = {
   "settings.eventCategoryConversion": "Conversion CBR → CBZ",
   "settings.eventCategoryMetadata": "Métadonnées",
   "settings.eventCompleted": "Terminé",
+  "settings.eventPartial": "Partiellement terminé",
   "settings.eventFailed": "Échoué",
   "settings.eventCancelled": "Annulé",
   "settings.eventLinked": "Liée",

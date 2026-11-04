@@ -344,6 +344,82 @@ async fn fetch_rss_records_a_failing_indexer_without_dropping_the_others() {
 
 // ── process_rss_poll ────────────────────────────────────────────────────────
 
+#[tokio::test]
+async fn fetch_rss_rejects_a_non_success_indexer_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/indexer"))
+        .respond_with(ResponseTemplate::new(503).set_body_string("prowlarr down"))
+        .mount(&server)
+        .await;
+
+    let client = build_http_client_with_agent(Duration::from_secs(10)).unwrap();
+    let error = fetch_rss_releases(&client, &server.uri(), "key", &[7030])
+        .await
+        .err()
+        .expect("a non-2xx indexer list must not be swallowed into an empty result");
+
+    assert!(
+        error.contains("indexer list returned 503"),
+        "unexpected: {error}"
+    );
+}
+
+#[tokio::test]
+async fn fetch_rss_rejects_an_unparseable_indexer_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/indexer"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+        .mount(&server)
+        .await;
+
+    let client = build_http_client_with_agent(Duration::from_secs(10)).unwrap();
+    let error = fetch_rss_releases(&client, &server.uri(), "key", &[7030])
+        .await
+        .err()
+        .expect("an unparseable indexer list must surface as an error");
+
+    assert!(
+        error.contains("Failed to parse Prowlarr indexer list"),
+        "unexpected: {error}"
+    );
+}
+
+#[sqlx::test(migrations = "../../infra/migrations")]
+async fn process_rss_poll_fails_when_the_indexer_list_is_unavailable(pool: sqlx::PgPool) {
+    let server = MockServer::start().await;
+    let lib = create_library(&pool, "rss_indexer_list_failed").await;
+    seed_series_with_missing_volume(&pool, lib, "Astérix", 1).await;
+
+    configure_prowlarr(&pool, &server.uri()).await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/indexer"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("boom"))
+        .mount(&server)
+        .await;
+
+    let job_id = create_job(&pool, None).await;
+    process_rss_poll(&pool, job_id, None).await.unwrap();
+
+    let row = sqlx::query("SELECT status, error_opt FROM index_jobs WHERE id = $1")
+        .bind(job_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        row.get::<String, _>("status"),
+        "failed",
+        "an unreachable indexer list is a failed run, not an empty success"
+    );
+    assert!(
+        row.get::<Option<String>, _>("error_opt")
+            .unwrap_or_default()
+            .contains("indexer list returned 500"),
+        "the job must record why it failed"
+    );
+}
+
 #[sqlx::test(migrations = "../../infra/migrations")]
 async fn process_rss_poll_completes_early_when_there_is_no_target(pool: sqlx::PgPool) {
     configure_prowlarr(&pool, "http://127.0.0.1:1").await;

@@ -67,9 +67,33 @@ En attente → En cours → Terminée
 ```
 
 Le statut **Partielle** signale une tâche qui a fait du travail utile mais dont une partie des unités a échoué
-(indexeur Prowlarr en erreur, série non rafraîchie, source Telegram muette…). Elle est terminale et n'est pas
+(indexeur Prowlarr en erreur, série non rafraîchie, source Telegram illisible…). Elle est terminale et n'est pas
 un succès : le détail des erreurs reste visible dans le rapport et le résumé du job. Une tâche est **Échouée**
-lorsque toutes les unités ont échoué (ou qu'aucun fichier n'a été trouvé alors que des erreurs sont remontées).
+lorsque toutes les unités tentées ont échoué.
+
+### Classement automatique : tentatives vs erreurs
+
+Le statut final se déduit du nombre d'**unités tentées** et du nombre d'**erreurs**. Le nombre de résultats
+trouvés n'entre jamais dans le calcul : ne rien trouver est un résultat normal.
+
+| Tentatives | Erreurs | Statut |
+|-----------|---------|--------|
+| 0 | 0 | **Terminée** |
+| 9 | 0 | **Terminée** |
+| 9 | 1 | **Partielle** |
+| 9 | 9 | **Échouée** |
+| 81 | 0 | **Terminée** |
+| 81 | 81 | **Échouée** |
+
+Cas particuliers :
+
+- **Recherche DDL** — une série interroge plusieurs fournisseurs : le statut compare les appels fournisseur
+  tentés au nombre d'échecs. Le cas de production du 2026-11-02 (81 appels tentés, 81 erreurs, 0 fichier) est
+  donc **Échouée**, tandis que 9 appels avec 1 erreur est **Partielle** même sans fichier trouvé.
+- **Telegram incrémental** — seules les sources illisibles (résolution, authentification, lecture) comptent
+  comme échecs. Une erreur d'écriture en base sur un message isolé, ou un channel vide, n'affecte pas le statut.
+- **RSS Prowlarr** — une liste d'indexeurs inaccessible (réponse non-2xx ou JSON invalide) est un échec global,
+  jamais un succès « vide ».
 
 ## Suivi de progression
 

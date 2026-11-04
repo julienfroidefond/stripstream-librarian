@@ -167,12 +167,20 @@ async fn diagnostics_aggregates_libraries_jobs_and_files(pool: PgPool) {
     assert_eq!(report.jobs.partial_last_24h, 1);
     // Aggregated from the partial job's `stats_json.errors`.
     assert_eq!(report.jobs.errors_total, 1);
-    assert_eq!(report.jobs.recent_failures.len(), 1);
+    assert_eq!(report.jobs.recent_failures.len(), 2);
     let failure = &report.jobs.recent_failures[0];
     assert_eq!(failure.id, failed_job);
     assert_eq!(failure.job_type, "scan");
     assert_eq!(failure.library_name.as_deref(), Some("Gon"));
     assert_eq!(failure.error.as_deref(), Some("boom"));
+    // Partial jobs also surface in the recent failures list (they still need a
+    // human look), with the summary recorded at completion time.
+    let partial_failure = &report.jobs.recent_failures[1];
+    assert_eq!(partial_failure.job_type, "metadata_refresh");
+    assert_eq!(
+        partial_failure.error.as_deref(),
+        Some("1/2 series en erreur")
+    );
 
     // Libraries
     assert_eq!(report.libraries.len(), 1);

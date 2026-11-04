@@ -94,6 +94,10 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
     let mut matched_series = 0i64;
     let mut matched_files = 0i64;
     let mut errors = 0i64;
+    // Number of provider calls actually attempted. A run that finds nothing is a
+    // normal outcome and must stay `success`; only attempted-but-failed calls
+    // drive the terminal status.
+    let mut attempted = 0i64;
     let mut failed_providers: Vec<String> = Vec::new();
     // Per-stage funnel counters: they show *why* a series yields nothing, which
     // the aggregate `series_with_results` cannot tell apart.
@@ -141,6 +145,7 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
 
         for (provider, base_url) in &providers {
             let meta = provider.meta();
+            attempted += 1;
             let files = match provider
                 .search(base_url, &target.series_name, PER_SERIES_LIMIT)
                 .await
@@ -239,11 +244,11 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
     // now matches nothing) are dropped, like the detection cleanup does.
     let _ = store::delete_empty(pool, None).await;
 
-    let status = ddl_search_status(errors, matched_files);
+    let status = ddl_search_status(attempted, errors);
     failed_providers.sort();
     failed_providers.dedup();
-    let error_summary =
-        (status != JobStatus::Success).then(|| format!("{errors} provider search(es) failed"));
+    let error_summary = (status != JobStatus::Success)
+        .then(|| format!("{errors}/{attempted} provider search(es) failed"));
 
     finish_job(
         pool,
@@ -254,6 +259,7 @@ pub async fn process_ddl_search(pool: &PgPool, job_id: Uuid) -> Result<(), Strin
             "series_with_results": matched_series,
             "files": matched_files,
             "providers": providers.len(),
+            "attempted": attempted,
             "errors": errors,
             "failed_providers": failed_providers,
             "series_without_missing_volumes": series_without_missing_volumes,
@@ -318,23 +324,18 @@ async fn strip_ddl_releases(pool: &PgPool, series_id: Uuid) -> Result<(), String
     .map_err(|e| e.to_string())
 }
 
-/// Map a ranked DDL search result to the shared release shape written to
-/// `available_downloads`.
 /// Map a DDL run to its terminal status.
 ///
-/// `files == 0` with errors means the provider wall blocked everything: the run
-/// produced nothing actionable and must be reported as failed, not partial.
-/// Errors with at least one file found stay partial.
-fn ddl_search_status(errors: i64, matched_files: i64) -> JobStatus {
-    if errors == 0 {
-        JobStatus::Success
-    } else if matched_files == 0 {
-        JobStatus::Failed
-    } else {
-        JobStatus::Partial
-    }
+/// Classification is based on provider calls actually attempted, never on the
+/// number of matched files: finding nothing is a normal outcome. Production
+/// case 2026-11-02 (81 attempted calls, 81 errors, 0 files) is a hard failure;
+/// 9 attempted calls with 1 error is partial even when no file matched.
+fn ddl_search_status(attempted: i64, errors: i64) -> JobStatus {
+    crate::jobs::lifecycle::classify_job(attempted.max(0) as usize, errors.max(0) as usize)
 }
 
+/// Map a ranked DDL search result to the shared release shape written to
+/// `available_downloads`.
 fn to_available_release(
     provider_id: &str,
     result: &DdlProviderSearchResultDto,
@@ -397,18 +398,22 @@ mod tests {
 
     #[test]
     fn ddl_search_without_errors_is_success() {
+        assert_eq!(ddl_search_status(9, 0), JobStatus::Success);
+        // Nothing attempted (no series to search) is a clean no-op.
         assert_eq!(ddl_search_status(0, 0), JobStatus::Success);
     }
 
     #[test]
-    fn ddl_search_with_errors_and_no_file_is_failed() {
-        // Production case 2026-11-02: 81 errors, 0 file.
-        assert_eq!(ddl_search_status(81, 0), JobStatus::Failed);
+    fn ddl_search_with_one_failure_over_nine_attempts_is_partial() {
+        // A run that found nothing is still a normal outcome: the single failed
+        // provider call is what makes it partial, not the absence of files.
+        assert_eq!(ddl_search_status(9, 1), JobStatus::Partial);
     }
 
     #[test]
-    fn ddl_search_with_errors_and_some_files_is_partial() {
-        assert_eq!(ddl_search_status(3, 2), JobStatus::Partial);
+    fn ddl_search_with_every_attempt_failing_is_failed() {
+        // Production case 2026-11-02: 81 attempted calls, 81 errors, 0 file.
+        assert_eq!(ddl_search_status(81, 81), JobStatus::Failed);
     }
 
     #[sqlx::test(migrations = "../../infra/migrations")]

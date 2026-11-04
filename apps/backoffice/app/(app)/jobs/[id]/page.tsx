@@ -47,6 +47,10 @@ interface JobDetails {
     removed_files?: number;
     errors?: number;
     warnings?: number;
+    /// DDL search: provider calls attempted vs failed, for the partial banner.
+    attempted?: number;
+    failed_providers?: string[];
+    rss_indexer_stats?: Array<{ id?: number; name?: string; count?: number; deduped?: number; error?: string }>;
     rss_releases?: Array<{ title: string; indexer?: string | null; size: number; seeders?: number | null; leechers?: number | null; publish_date?: string | null; categories?: string[] | null }>;
     synced?: number;
     new_books?: number;
@@ -54,7 +58,9 @@ interface JobDetails {
     all_series?: Array<{ series_name: string; book_count: number; extracted_names?: string[] }>;
     matched_series?: Array<{ telegram_name: string; series_id: string; series_name: string; book_count: number }>;
     sources_scanned?: number;
-    sources?: Array<{ username: string; new_books: number }>;
+    sources_failed?: number;
+    persistence_errors?: number;
+    sources?: Array<{ username: string; new_books: number; messages_scanned?: number; error?: string; persistence_errors?: number }>;
     recent_books?: Array<{ filename: string; series_name: string | null; volume_number: number | null; channel: string }>;
   } | null;
   error_opt: string | null;

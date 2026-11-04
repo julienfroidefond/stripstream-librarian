@@ -70,13 +70,21 @@ Nombre de fichiers stockés, taille totale, **miniatures manquantes** et **livre
 
 ## Tâches d'indexation
 
-Total, en attente, en cours, échecs des dernières 24 h, **tâches bloquées** et répartition par type
-(en attente, en cours, échecs sur 24 h, dernier passage).
+Total, en attente, en cours, **échecs** et **exécutions partielles** des dernières 24 h, **total
+d'erreurs** remontées, **tâches bloquées** et répartition par type (en attente, en cours, échecs et
+partielles sur 24 h, total d'erreurs, dernier passage).
+
+Une tâche **partielle** a terminé son travail mais certaines unités ont échoué ; elle est donc
+comptée séparément des succès et apparaît dans les **échecs récents** aux côtés des tâches
+`failed`, avec son message de résumé (`2/9 indexer(s) en erreur`, `1/2 series en erreur`…). Le
+total d'erreurs additionne les compteurs `errors`, `sources_failed` et les indexeurs Prowlarr en
+erreur de chaque tâche terminée.
 
 Une tâche **bloquée** est une tâche `pending` depuis plus de 30 minutes : le planificateur la
 considère comme en cours et n'en programme plus de nouvelle pour cette bibliothèque. La file se fige
 silencieusement — c'est le premier chiffre à regarder si plus rien ne progresse. La carte liste
-ensuite les **échecs récents** (type de tâche, bibliothèque, date, message d'erreur).
+ensuite les **échecs récents** (type de tâche, bibliothèque, date, message d'erreur), tâches
+partielles incluses.
 
 ## Intégrité des données
 

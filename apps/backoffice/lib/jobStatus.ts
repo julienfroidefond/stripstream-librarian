@@ -1,3 +1,14 @@
+/// Statuses that end a job's lifecycle (no further progress expected).
+/// Kept in one place so the SSE poller and the UI agree on when to stop.
+export const TERMINAL_JOB_STATUSES = [
+  "success",
+  "partial",
+  "failed",
+  "cancelled",
+] as const;
+
+export type TerminalJobStatus = (typeof TERMINAL_JOB_STATUSES)[number];
+
 export function isPhase2Status(status: string): boolean {
   return status === "extracting_pages" || status === "generating_thumbnails";
 }
@@ -27,10 +38,5 @@ export function isCancelledJobStatus(status: string): boolean {
 }
 
 export function isTerminalJobStatus(status: string): boolean {
-  return (
-    isCompletedJobStatus(status) ||
-    isPartialJobStatus(status) ||
-    isFailedJobStatus(status) ||
-    isCancelledJobStatus(status)
-  );
+  return (TERMINAL_JOB_STATUSES as readonly string[]).includes(status);
 }

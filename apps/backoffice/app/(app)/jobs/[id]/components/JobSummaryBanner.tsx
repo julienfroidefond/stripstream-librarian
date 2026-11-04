@@ -103,9 +103,22 @@ export function JobSummaryBanner({
   }
 
   if (isPartial) {
-    const s = job.stats_json as { errors?: number; sources_failed?: number; failed_providers?: string[] } | null;
-    const errors = s?.errors ?? s?.sources_failed ?? 0;
-    const failedProviders = s?.failed_providers ?? [];
+    const s = job.stats_json as {
+      errors?: number;
+      sources_failed?: number;
+      failed_providers?: string[];
+      rss_indexer_stats?: Array<{ name?: string; error?: string }>;
+    } | null;
+    // RSS stats carry per-indexer errors rather than a top-level `errors`
+    // counter; fold them into the error tally so the banner matches the job.
+    const rssFailures = (s?.rss_indexer_stats ?? []).filter(indexer => indexer.error);
+    const errors = s?.errors ?? (s?.sources_failed ?? 0) + rssFailures.length;
+    const failedProviders = [
+      ...(s?.failed_providers ?? []),
+      ...rssFailures
+        .map(indexer => indexer.name)
+        .filter((name): name is string => Boolean(name)),
+    ];
     return (
       <div className="mb-6 p-4 rounded-xl bg-warning/10 border border-warning/30 flex items-start gap-3">
         <svg className="w-5 h-5 text-warning mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

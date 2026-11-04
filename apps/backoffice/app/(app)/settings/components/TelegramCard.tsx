@@ -24,6 +24,7 @@ export const DEFAULT_EVENTS = {
   reading_status_push_completed: true,
   reading_status_push_failed: true,
   download_detection_completed: true,
+  download_detection_partial: true,
   download_detection_failed: true,
 };
 
@@ -170,6 +171,7 @@ export function TelegramCard({ handleUpdateSetting, initialData }: { handleUpdat
                 icon: "download" as const,
                 items: [
                   { key: "download_detection_completed" as const, label: t("settings.eventCompleted") },
+                  { key: "download_detection_partial" as const, label: t("settings.eventPartial") },
                   { key: "download_detection_failed" as const, label: t("settings.eventFailed") },
                 ],
               },

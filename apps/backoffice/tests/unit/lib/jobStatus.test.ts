@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  TERMINAL_JOB_STATUSES,
   isActiveJobStatus,
   isCancelledJobStatus,
   isCompletedJobStatus,
@@ -57,6 +58,30 @@ describe("isActiveJobStatus", () => {
     expect(isActiveJobStatus("success")).toBe(false);
     expect(isActiveJobStatus("failed")).toBe(false);
     expect(isActiveJobStatus("cancelled")).toBe(false);
+  });
+});
+
+describe("TERMINAL_JOB_STATUSES", () => {
+  it("is the single source of truth for the four terminal statuses", () => {
+    expect([...TERMINAL_JOB_STATUSES]).toEqual([
+      "success",
+      "partial",
+      "failed",
+      "cancelled",
+    ]);
+  });
+
+  it("matches the terminal predicates exactly", () => {
+    for (const status of ALL_STATUSES) {
+      const expected =
+        isCompletedJobStatus(status) ||
+        isPartialJobStatus(status) ||
+        isFailedJobStatus(status) ||
+        isCancelledJobStatus(status);
+      expect((TERMINAL_JOB_STATUSES as readonly string[]).includes(status)).toBe(
+        expected
+      );
+    }
   });
 });
 

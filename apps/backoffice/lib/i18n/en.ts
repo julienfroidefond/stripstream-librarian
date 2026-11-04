@@ -695,6 +695,8 @@ const en: Record<TranslationKey, string> = {
   "jobDetail.telegramIncrementalPerSource": "Breakdown by channel",
   "jobDetail.telegramIncrementalRecentBooks": "Files found ({{count}})",
   "jobDetail.telegramIncrementalNone": "No new files since last sync",
+  "jobDetail.telegramIncrementalPartial": "Partial sync — {{count}} source(s) could not be read",
+  "jobDetail.telegramIncrementalPersistenceErrors": "{{count}} write error(s)",
 
   // Status badges
   "statusBadge.extracting_pages": "Extracting pages",
@@ -1071,6 +1073,7 @@ const en: Record<TranslationKey, string> = {
   "settings.eventCategoryConversion": "CBR → CBZ Conversion",
   "settings.eventCategoryMetadata": "Metadata",
   "settings.eventCompleted": "Completed",
+  "settings.eventPartial": "Partially completed",
   "settings.eventFailed": "Failed",
   "settings.eventCancelled": "Cancelled",
   "settings.eventLinked": "Linked",

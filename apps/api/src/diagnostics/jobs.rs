@@ -99,7 +99,7 @@ pub(super) async fn jobs_diagnostics(pool: &sqlx::PgPool) -> Result<JobDiagnosti
             ) AS error
         FROM index_jobs j
         LEFT JOIN libraries l ON l.id = j.library_id
-        WHERE j.status = 'failed'
+        WHERE j.status IN ('failed', 'partial')
         ORDER BY j.finished_at DESC NULLS LAST, j.created_at DESC
         LIMIT 10
         "#,
