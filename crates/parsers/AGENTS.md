@@ -82,7 +82,26 @@ Patterns reconnus dans le nom de fichier (dans l'ordre de priorité) :
 - `#1`, `#01`
 - `- 1`, `- 01` (en fin de nom)
 
-Les packs de plage (`T01.T15`, `[T001.T104]`, `T01-T15`, `Tome 01 à Tome 15`) sont expansés.
+Les packs de plage (`T01.T15`, `[T001.T104]`, `T01-T15`, `Tome 01 à Tome 15`,
+`T01 to T15`) sont expansés — séparateurs `.`, `-`, `à`, `a`, `to`.
+
+Un `vN` (`v2`, `V2`, `v.2`) suit une règle à trois branches, dans cet ordre (issue #215) :
+
+1. **Point de départ de plage** si un séparateur et une borne suivent et que la plage est
+   expansible (`v1-v15` → 1..=15, `v01-105` → 1..=105). Le **zero padding de la borne
+   gauche** décide de l'acceptation d'une borne *nue* : `v07-15` → 7..=15 mais `v7-15` →
+   `[15]` (version 7, tome 15). Une borne préfixée par un marqueur (`v7-v15`) expanse
+   toujours. Si la plage détectée est rejetée (`n1 >= n2`, ou plus de 500 tomes), la borne
+   gauche garde sa lecture de tome (`v15-v1` → 15, `v01-1` → 1).
+2. **Version de série suivie d'un tome** : le tome réel est le prochain nombre plausible
+   (`v2 01` → 1, `V2#14` → 14, `v2 T03` → 3, `X-Men v2 001` → 1, `v2 HS 03` → HS 3 via
+   `extract_hs_info`). Un tag entre crochets n'est jamais un tome, mais il peut annoncer
+   celui qui suit (`[V2] 01` → 1).
+3. **Marqueur isolé** quand aucun tome plausible ne suit : il garde son sens historique de
+   tome, **avec ou sans padding** (`Berserk v12` → 12, `Berserk v2 [1080p]` → 2,
+   `Saga v2 (2019)` → 2, `v 2` → 2). Les tags qualité (`1080p`), les années et les
+   extensions sont rejetés par la sonde « y a-t-il un tome après le marqueur » et ne
+   deviennent jamais le tome.
 
 ### Nombre de pages / extraction
 
